@@ -1,0 +1,710 @@
+package me.bechberger.testorder.plugin;
+
+import me.bechberger.testorder.DependencyMap;
+import me.bechberger.testorder.TestOrderState;
+import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.logging.Log;
+import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
+
+/**
+ * Base class for test-order Mojos that share common configuration parameters
+ * and helper methods for state loading, change detection, and config writing.
+ */
+abstract class AbstractTestOrderMojo extends AbstractMojo {
+
+    @Parameter(defaultValue = "${project}", readonly = true, required = true)
+    protected MavenProject project;
+
+    @Parameter(defaultValue = "${session}", readonly = true, required = true)
+    protected MavenSession session;
+
+    protected ReactorContext ctx;
+
+    @Parameter(property = "testorder.index", defaultValue = "${project.basedir}/test-dependencies.lz4")
+    protected String indexFile;
+
+    @Parameter(property = "testorder.stateFile", defaultValue = "${project.basedir}/.test-order-state")
+    protected String stateFile;
+
+    @Parameter(property = "testorder.depsDir", defaultValue = "${project.build.directory}/test-order-deps")
+    protected String depsDir;
+
+    @Parameter(property = "testorder.hashFile", defaultValue = "${project.basedir}/.test-order-hashes.lz4")
+    protected String hashFile;
+
+    @Parameter(property = "testorder.testHashFile", defaultValue = "${project.basedir}/.test-order-test-hashes.lz4")
+    protected String testHashFile;
+
+    @Parameter(property = "testorder.methodHashFile", defaultValue = "${project.basedir}/.test-order-method-hashes.lz4")
+    protected String methodHashFile;
+
+    /** Main source root directory. Defaults to the first compile source root from the Maven model. */
+    @Parameter(property = "testorder.sourceRoot")
+    protected String sourceRoot;
+
+    /** Test source root directory. Defaults to the first test compile source root from the Maven model. */
+    @Parameter(property = "testorder.testSourceRoot")
+    protected String testSourceRoot;
+
+    /** Change detection mode: auto, since-last-run, since-last-commit, uncommitted, explicit */
+    @Parameter(property = "testorder.changeMode", defaultValue = "auto")
+    protected String changeMode;
+
+    /** Comma-separated changed class FQCNs (for explicit mode) */
+    @Parameter(property = "testorder.changed.classes")
+    protected String changedClasses;
+
+    /** Optional path to a scoring weights file (overrides state-file weights) */
+    @Parameter(property = "testorder.weights.file")
+    protected String weightsFile;
+
+    /** Optional path for verbose agent log output (disabled if not set) */
+    @Parameter(property = "testorder.verboseFile")
+    protected String verboseFile;
+
+    /** Enable method-level test ordering within classes (fail-fast on slow/flaky methods) */
+    @Parameter(property = "testorder.methodOrderingEnabled", defaultValue = "false")
+    protected boolean methodOrderingEnabled;
+
+    // ── Lifecycle helpers ─────────────────────────────────────────────
+
+    protected void initContext() throws MojoExecutionException {
+        ctx = new ReactorContext(session, project);
+        try { ctx.ensureSharedDirectories(); }
+        catch (IOException e) { throw new MojoExecutionException("Failed to create shared directories", e); }
+    }
+
+    protected Path resolveIndexPath() {
+        return ctx.resolveIndexFile(indexFile);
+    }
+
+    // ── State and change detection ────────────────────────────────────
+
+    protected TestOrderState loadState() {
+        Path path = ctx.resolveStateFile(stateFile);
+        if (!Files.exists(path)) return new TestOrderState();
+        try { return TestOrderState.load(path); }
+        catch (IOException e) {
+            getLog().warn("[test-order] Failed to load state: " + e.getMessage());
+            return new TestOrderState();
+        }
+    }
+
+    protected Set<String> detectChangedClasses() {
+        return detectChangedClasses(true);
+    }
+
+    protected Set<String> detectChangedClasses(boolean readOnly) {
+        return ChangeDetectionHelper.detectChangedClasses(ctx, changeMode, changedClasses,
+                ChangeDetectionHelper.resolveSourceRoot(project, sourceRoot),
+                ctx.resolveHashFile(hashFile), readOnly, getLog());
+    }
+
+    protected Set<String> detectChangedTestClasses() {
+        return detectChangedTestClasses(true);
+    }
+
+    protected Set<String> detectChangedTestClasses(boolean readOnly) {
+        return ChangeDetectionHelper.detectChangedTestClasses(ctx, changeMode,
+                ChangeDetectionHelper.resolveTestSourceRoot(project, testSourceRoot),
+                ctx.resolveTestHashFile(testHashFile), readOnly, getLog());
+    }
+
+    /**
+     * Detects changed test methods by comparing per-method hashes against the previous snapshot.
+     * Returns {@code className#methodName} keys.
+     */
+    protected Set<String> detectChangedMethods() {
+        return ChangeDetectionHelper.detectChangedMethods(
+                ChangeDetectionHelper.resolveTestSourceRoot(project, testSourceRoot),
+                ctx.resolveMethodHashFile(methodHashFile), getLog());
+    }
+
+    // ── Aggregation ───────────────────────────────────────────────────
+
+    protected boolean hasDepsFiles(Path depsDirPath) {
+        try (var stream = Files.list(depsDirPath)) {
+            return stream.anyMatch(f -> f.toString().endsWith(".deps"));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    protected void autoAggregate(Path depsDirPath, Path idxPath) throws MojoExecutionException {
+        try {
+            DependencyMap map = DependencyMap.aggregate(depsDirPath);
+            map.save(idxPath);
+            getLog().info("[test-order] Auto-aggregated " + map.size() + " test classes → " + idxPath);
+            warnIfNoDeps(map);
+        } catch (IOException e) {
+            throw new MojoExecutionException("Failed to auto-aggregate deps", e);
+        }
+    }
+
+    /**
+     * Returns the set of compiled test class FQCNs (non-inner, i.e. no {@code $}) that are
+     * present in {@code target/test-classes} but absent from the given dependency index.
+     * An empty set means the index is up-to-date with the compiled test output.
+     */
+    protected Set<String> findNewTestClasses(Path idxPath) {
+        if (!Files.exists(idxPath)) return Set.of();
+        Set<String> indexed;
+        try {
+            indexed = DependencyMap.load(idxPath).testClasses();
+        } catch (Exception e) {
+            getLog().debug("[test-order] Could not load index to check for new tests: " + e.getMessage());
+            return Set.of();
+        }
+        Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
+        if (!Files.isDirectory(testClassesDir)) return Set.of();
+        Set<String> newTests = new LinkedHashSet<>();
+        try (var walk = Files.walk(testClassesDir)) {
+            walk.filter(p -> p.toString().endsWith(".class") && !p.toString().contains("$"))
+                    .forEach(p -> {
+                        String relative = testClassesDir.relativize(p).toString();
+                        String fqcn = relative.replace('/', '.').replace('\\', '.')
+                                .replaceAll("\\.class$", "");
+                        if (!indexed.contains(fqcn)) {
+                            newTests.add(fqcn);
+                        }
+                    });
+        } catch (IOException e) {
+            getLog().debug("[test-order] Could not scan test-classes: " + e.getMessage());
+        }
+        return newTests;
+    }
+
+    /**
+     * Warns if the loaded dependency map has no meaningful dependencies (common with groupId/package mismatch).
+     * Detects both truly empty deps and deps that contain only framework/plugin classes.
+     */
+    protected void warnIfNoDeps(DependencyMap depMap) {
+        if (depMap.size() > 0) {
+            boolean noAppDeps = depMap.testClasses().stream()
+                    .allMatch(tc -> {
+                        var deps = depMap.get(tc);
+                        if (deps == null || deps.isEmpty()) return true;
+                        // Filter out self-references and known framework classes
+                        return deps.stream().allMatch(dep ->
+                                dep.equals(tc)
+                                        || dep.startsWith("me.bechberger.testorder.")
+                                        || dep.startsWith("org.junit.")
+                                        || dep.startsWith("org.opentest4j."));
+                    });
+            if (noAppDeps) {
+                getLog().warn("[test-order] No application-class dependencies found in the dependency index. "
+                        + "Test ordering will not be effective.");
+                getLog().warn("[test-order] If your source packages differ from the Maven groupId, "
+                        + "set -Dtestorder.includePackages=your.package.prefix");
+            }
+        }
+    }
+
+    /**
+     * Attempts auto-aggregation from the deps directory; throws if no deps directory exists.
+     */
+    protected void autoAggregateOrFail(Path idxPath) throws MojoExecutionException {
+        Path depsDirPath = ctx.resolveDepsDir(depsDir);
+        if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
+            autoAggregate(depsDirPath, idxPath);
+        } else {
+            throw new MojoExecutionException("No dependency index at " + idxPath
+                    + " and no .deps files found in " + depsDirPath
+                    + ". Run learn mode first: mvn test -Dtestorder.mode=learn");
+        }
+    }
+
+    // ── Hashes ────────────────────────────────────────────────────────
+
+    protected void snapshotHashes() {
+        ChangeDetectionHelper.snapshotHashes(
+                ChangeDetectionHelper.resolveSourceRoot(project, sourceRoot), ctx.resolveHashFile(hashFile),
+                ChangeDetectionHelper.resolveTestSourceRoot(project, testSourceRoot), ctx.resolveTestHashFile(testHashFile),
+                ctx.resolveMethodHashFile(methodHashFile),
+                getLog());
+    }
+
+    // ── Weights ───────────────────────────────────────────────────────
+
+    protected TestOrderState.ScoringWeights resolveWeights(TestOrderState state) {
+        TestOrderState.ScoringWeights sw = state.weights();
+        if (weightsFile != null && !weightsFile.isBlank()) {
+            Path wf = Path.of(weightsFile);
+            if (Files.exists(wf)) {
+                try { sw = TestOrderState.ScoringWeights.loadFromFile(wf).weights(); }
+                catch (IOException e) { getLog().warn("[test-order] Failed to load weights file: " + e.getMessage()); }
+            } else {
+                getLog().warn("[test-order] Weights file not found: " + wf.toAbsolutePath());
+            }
+        }
+        return sw;
+    }
+
+    // ── Orderer config ────────────────────────────────────────────────
+
+    /**
+     * Escapes a path string for use in a Java {@code .properties} file.
+     * Backslashes must be doubled because {@link java.util.Properties#load} treats
+     * them as escape characters (e.g. {@code \t} → tab).
+     */
+    private static String escapePropertyPath(Path path) {
+        return path.toAbsolutePath().toString().replace("\\", "\\\\");
+    }
+
+    /**
+     * Writes {@code junit-platform.properties} and {@code testorder-config.properties}
+     * to {@code target/test-classes}.
+     *
+     * @param scoreOverrides if non-null, writes {@code testorder.score.*} properties
+     */
+    protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests,
+                                      Map<String, Integer> scoreOverrides) throws MojoExecutionException {
+        writeOrdererConfig(changed, changedTests, Set.of(), scoreOverrides);
+    }
+
+    /**
+     * Writes {@code junit-platform.properties} and {@code testorder-config.properties}
+     * to {@code target/test-classes}.
+     *
+     * @param changedMethods className#methodName keys for changed test methods
+     * @param scoreOverrides if non-null, writes {@code testorder.score.*} properties
+     */
+    protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests,
+                                      Set<String> changedMethods,
+                                      Map<String, Integer> scoreOverrides) throws MojoExecutionException {
+        // Ensure test-order-junit (PriorityClassOrderer + TelemetryListener) is on the test classpath
+        Path junitJar = resolveArtifact("test-order-junit");
+        Path coreJar = resolveArtifact("test-order-core");
+        injectTestClasspath(junitJar, coreJar);
+        ensureListenerServiceFile();
+        injectNativeAccessFlag();
+
+        Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
+        try {
+            Files.createDirectories(testClassesDir);
+            Path propsFile = testClassesDir.resolve("junit-platform.properties");
+            try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
+                pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.PriorityClassOrderer");
+            }
+
+            Path configFile = testClassesDir.resolve("testorder-config.properties");
+            try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
+                pw.println("testorder.index.path=" + escapePropertyPath(ctx.resolveIndexFile(indexFile)));
+                pw.println("testorder.state.path=" + escapePropertyPath(ctx.resolveStateFile(stateFile)));
+                if (weightsFile != null && !weightsFile.isBlank()) {
+                    pw.println("testorder.weights.file=" + escapePropertyPath(Path.of(weightsFile)));
+                }
+                if (!changed.isEmpty()) {
+                    pw.println("testorder.changed.classes=" + String.join(",", changed));
+                }
+                if (!changedTests.isEmpty()) {
+                    pw.println("testorder.changed.test.classes=" + String.join(",", changedTests));
+                }
+                if (changedMethods != null && !changedMethods.isEmpty()) {
+                    pw.println("testorder.changed.methods=" + String.join(",", changedMethods));
+                }
+                if (scoreOverrides != null) {
+                    for (var e : scoreOverrides.entrySet()) {
+                        pw.println("testorder.score." + e.getKey() + "=" + e.getValue());
+                    }
+                }
+                if (methodOrderingEnabled) {
+                    pw.println("testorder.methodOrder.enabled=true");
+                }
+                // Pass project root and source root for structural diff / complexity computation
+                pw.println("testorder.project.root=" + escapePropertyPath(project.getBasedir().toPath()));
+                Path resolvedSourceRoot = ChangeDetectionHelper.resolveSourceRoot(project, sourceRoot);
+                pw.println("testorder.source.root=" + escapePropertyPath(resolvedSourceRoot));
+                pw.println("testorder.changeMode=" + changeMode);
+            }
+        } catch (IOException e) {
+            throw new MojoExecutionException("Failed to write orderer config", e);
+        }
+    }
+
+    protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests)
+            throws MojoExecutionException {
+        writeOrdererConfig(changed, changedTests, null);
+    }
+
+    // ── Learn mode ────────────────────────────────────────────────────
+
+    /**
+     * Configures Surefire for learn mode: attaches the agent, sets up the classpath,
+     * and configures system properties for the forked JVM.
+     *
+    * @param instrumentationMode METHOD_ENTRY, FULL, FULL_METHOD, or FULL_MEMBER
+     * @param includePackages     effective package filter (may be null)
+     * @param includeIndexInArgs  whether to pass the index file path to the agent
+     */
+    protected void configureLearnMode(String instrumentationMode, String includePackages,
+                                      boolean includeIndexInArgs) throws MojoExecutionException {
+        Plugin surefire = SurefireHelper.requireSurefirePlugin(project);
+        Xpp3Dom config = SurefireHelper.getOrCreateConfiguration(surefire);
+        String surefireArgLine = "";
+        Xpp3Dom argLineNode = config.getChild("argLine");
+        if (argLineNode != null && argLineNode.getValue() != null) {
+            surefireArgLine = argLineNode.getValue().trim();
+        }
+        boolean hasHardcodedSurefireArgLine = SurefireHelper.isHardcodedArgLine(surefireArgLine);
+
+        String projectArgLine = project.getProperties().getProperty("argLine", "").trim();
+
+        // Guard against double attachment (e.g. prepare bound in POM and also invoked on CLI)
+        String existingArgLine = (surefireArgLine + " " + projectArgLine).trim();
+        String existingDebug = project.getProperties().getProperty("maven.surefire.debug", "").trim();
+        if (existingArgLine.contains("test-order-agent") || existingDebug.contains("test-order-agent")) {
+            getLog().info("[test-order] Learn mode agent already configured — skipping duplicate attachment.");
+            return;
+        }
+
+        getLog().info("[test-order] Learn mode (" + instrumentationMode.toUpperCase()
+                + "): attaching agent, default fork mode");
+
+        Path agentJar = resolveArtifact("test-order-agent");
+        Path junitJar = resolveArtifact("test-order-junit");
+        Path coreJar = resolveArtifact("test-order-core");
+
+        StringBuilder agentArgs = new StringBuilder();
+        agentArgs.append("outputDir=").append(ctx.resolveDepsDir(depsDir).toAbsolutePath());
+        agentArgs.append(",mode=").append(instrumentationMode.toUpperCase());
+        if (includeIndexInArgs) {
+            agentArgs.append(",indexFile=").append(ctx.resolveIndexFile(indexFile).toAbsolutePath());
+        }
+        if (includePackages != null) {
+            agentArgs.append(",includePackages=").append(includePackages.replace(",", ";"));
+        }
+        if (verboseFile != null && !verboseFile.isEmpty()) {
+            agentArgs.append(",verboseFile=").append(Path.of(verboseFile).toAbsolutePath());
+        }
+
+        String statPathStr = ctx.resolveStateFile(stateFile).toAbsolutePath().toString();
+        // -Xshare:off suppresses the CDS warning caused by -javaagent appending
+        // to the bootstrap classpath.
+        String agentString = "-Xshare:off -javaagent:" + agentJar.toAbsolutePath() + "=" + agentArgs;
+        // Pass system properties via -D flags; using <systemPropertyVariables> XML
+        // modifications to an already-planned MojoExecution are not picked up by Surefire.
+        String sysProps = " -Dtestorder.learn=true"
+                + " -Dtestorder.instrumentation.mode=" + instrumentationMode.toUpperCase()
+                + " -Dtestorder.state.path=" + statPathStr;
+
+        // Suppress "restricted method" warnings from bundled lz4 native access
+        // (System.loadLibrary, sun.misc.Unsafe). Flag supported on JDK 16+.
+        String nativeAccess = nativeAccessFlag(existingArgLine);
+
+        if (hasHardcodedSurefireArgLine) {
+            // The Surefire argLine is a hardcoded literal with no Maven property placeholder.
+            // Modifying the Xpp3Dom in-memory is ineffective because Surefire captured its
+            // MojoExecution configuration before this goal ran.  Instead, use the
+            // maven.surefire.debug user property: Surefire reads this at fork-JVM time and
+            // appends the value verbatim to the JVM command line — exactly what we need.
+            getLog().info("[test-order] Surefire <argLine> is hardcoded; injecting agent "
+                + "via maven.surefire.debug user property.");
+            String debugValue = (agentString + sysProps + nativeAccess).trim();
+            project.getProperties().setProperty("maven.surefire.debug", debugValue);
+            System.setProperty("maven.surefire.debug", debugValue);
+        } else {
+            String mergedProjectArgLine = (projectArgLine + " " + agentString + sysProps + nativeAccess).trim();
+            String mergedSurefireArgLine = (surefireArgLine + " " + agentString + sysProps + nativeAccess).trim();
+            project.getProperties().setProperty("argLine", mergedProjectArgLine);
+            // Also set as a JVM/system property so Surefire picks it up even when its
+            // MojoExecution was configured before this goal ran.
+            System.setProperty("argLine", mergedProjectArgLine);
+            SurefireHelper.setChild(config, "argLine", mergedSurefireArgLine);
+        }
+
+        injectTestClasspath(junitJar, coreJar);
+        ensureListenerServiceFile();
+
+        snapshotHashes();
+    }
+
+    /**
+     * Resolves the effective includePackages value by combining:
+     * <ol>
+     *   <li>Source packages auto-detected from {@code src/main/java} (always included)</li>
+     *   <li>User-specified {@code includePackages} (additive)</li>
+     *   <li>groupId-based filter (fallback when nothing else is found and filterByGroupId is true)</li>
+     * </ol>
+     * Redundant prefixes are removed (e.g. if {@code com.example} and {@code com.example.app}
+     * are both detected, only {@code com.example} is kept).
+     */
+    protected static String resolveIncludePackages(String includePackages, boolean filterByGroupId,
+                                                   MavenProject project, Log log) {
+        List<String> prefixes = new ArrayList<>();
+
+        // 1. Always scan source root for actual packages
+        List<String> sourcePackages = detectSourcePackages(project, log);
+        prefixes.addAll(sourcePackages);
+
+        // 2. Add user-specified packages (additive)
+        if (includePackages != null && !includePackages.isBlank()) {
+            for (String pkg : includePackages.split(",")) {
+                String trimmed = pkg.trim();
+                if (!trimmed.isEmpty()) prefixes.add(trimmed);
+            }
+        }
+
+        // 3. Fall back to groupId only when nothing else was detected/configured.
+        if (filterByGroupId && prefixes.isEmpty()) {
+            String groupId = project.getGroupId();
+            if (groupId != null && !groupId.isBlank()) {
+                prefixes.add(groupId);
+            }
+        }
+
+        if (prefixes.isEmpty()) return null;
+
+        // Remove redundant prefixes (a prefix covered by a shorter one)
+        List<String> minimal = minimisePrefixes(prefixes);
+        String result = String.join(",", minimal);
+        log.info("[test-order] Instrumentation packages: " + result);
+        return result;
+    }
+
+    /** Remove prefixes that are already covered by a shorter prefix in the list. */
+    static List<String> minimisePrefixes(List<String> prefixes) {
+        List<String> sorted = prefixes.stream().distinct().sorted().toList();
+        List<String> result = new ArrayList<>();
+        for (String p : sorted) {
+            boolean covered = result.stream().anyMatch(r -> p.startsWith(r + ".") || p.equals(r));
+            if (!covered) result.add(p);
+        }
+        return result;
+    }
+
+    /**
+     * Scans the main source root(s) to detect top-level package prefixes.
+     * Walks down single-child directories to find a stable package prefix
+     * (e.g. {@code src/main/java/com/example/app} → {@code com.example.app}).
+     */
+    static List<String> detectSourcePackages(MavenProject project, Log log) {
+        List<String> result = new ArrayList<>();
+        Path sourceRoot = ChangeDetectionHelper.resolveSourceRoot(project, null);
+        scanPackagePrefixes(sourceRoot, result, log);
+        return result;
+    }
+
+    /**
+     * Scans a root directory for top-level package prefixes, walking down
+     * single-child directory chains until a branching point or .java files are found.
+     */
+    private static void scanPackagePrefixes(Path root, List<String> result, Log log) {
+        if (!Files.isDirectory(root)) return;
+        try (Stream<Path> topDirs = Files.list(root)) {
+            topDirs.filter(Files::isDirectory).forEach(dir -> {
+                String topPkg = dir.getFileName().toString();
+                Path current = dir;
+                StringBuilder pkg = new StringBuilder(topPkg);
+                while (true) {
+                    try (Stream<Path> children = Files.list(current)) {
+                        List<Path> childDirs = children.filter(Files::isDirectory).toList();
+                        boolean hasJavaFiles;
+                        try (Stream<Path> files = Files.list(current)) {
+                            hasJavaFiles = files.anyMatch(f -> f.toString().endsWith(".java"));
+                        }
+                        if (childDirs.size() == 1 && !hasJavaFiles) {
+                            current = childDirs.get(0);
+                            pkg.append('.').append(current.getFileName().toString());
+                        } else {
+                            break;
+                        }
+                    } catch (IOException e) {
+                        break;
+                    }
+                }
+                result.add(pkg.toString());
+            });
+        } catch (IOException e) {
+            log.debug("[test-order] Failed to scan source root " + root + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Returns {@code " --enable-native-access=ALL-UNNAMED"} unless the given
+     * existing argLine already contains the flag.
+     */
+    static String nativeAccessFlag(String existingArgLine) {
+        if (existingArgLine != null && existingArgLine.contains("--enable-native-access")) {
+            return "";
+        }
+        return " --enable-native-access=ALL-UNNAMED";
+    }
+
+    /**
+     * Ensures that {@code --enable-native-access=ALL-UNNAMED} is present in the
+     * Surefire argLine for the forked test JVM.  This suppresses JDK 22+ warnings
+     * from bundled lz4 native access ({@code System.loadLibrary},
+     * {@code sun.misc.Unsafe}).  Called from order-mode config paths that don't
+     * otherwise modify the argLine.
+     */
+    protected void injectNativeAccessFlag() {
+        Plugin surefire = SurefireHelper.findSurefirePlugin(project);
+        if (surefire == null) return;
+        Xpp3Dom config = SurefireHelper.getOrCreateConfiguration(surefire);
+
+        String surefireArgLine = "";
+        Xpp3Dom argLineNode = config.getChild("argLine");
+        if (argLineNode != null && argLineNode.getValue() != null) {
+            surefireArgLine = argLineNode.getValue().trim();
+        }
+        String projectArgLine = project.getProperties().getProperty("argLine", "").trim();
+        String combined = surefireArgLine + " " + projectArgLine;
+
+        if (combined.contains("--enable-native-access")) return;
+
+        String flag = " --enable-native-access=ALL-UNNAMED";
+        String newProjectArgLine = (projectArgLine + flag).trim();
+        project.getProperties().setProperty("argLine", newProjectArgLine);
+        System.setProperty("argLine", newProjectArgLine);
+        if (!surefireArgLine.isEmpty()) {
+            SurefireHelper.setChild(config, "argLine", (surefireArgLine + flag).trim());
+        }
+    }
+
+    /**
+     * Adds the given jar to Surefire's test classpath via the
+     * {@code maven.test.additionalClasspath} project property.
+     * <p>
+     * Using the property avoids the issue where Xpp3Dom modifications to the
+     * Surefire plugin configuration are not picked up by already-planned
+     * MojoExecution objects.
+     */
+    protected void injectTestClasspath(Path... jars) {
+        String existing = project.getProperties().getProperty("maven.test.additionalClasspath", "");
+        LinkedHashSet<String> entries = new LinkedHashSet<>();
+        if (!existing.isBlank()) {
+            for (String part : existing.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    entries.add(trimmed);
+                }
+            }
+        }
+        for (Path jar : jars) {
+            if (jar != null) {
+                entries.add(jar.toAbsolutePath().toString());
+            }
+        }
+        String classpath = String.join(",", entries);
+        project.getProperties().setProperty("maven.test.additionalClasspath", classpath);
+        // Same rationale as argLine: ensure Surefire sees this for already-planned executions.
+        System.setProperty("maven.test.additionalClasspath", classpath);
+    }
+
+    /**
+     * Writes the {@code META-INF/services/org.junit.platform.launcher.TestExecutionListener}
+     * service file directly into {@code target/test-classes} so that the JUnit Platform's
+     * ServiceLoader discovers our {@code TelemetryListener} regardless of classloader
+     * hierarchy or auto-detection configuration.
+     */
+    protected void ensureListenerServiceFile() throws MojoExecutionException {
+        Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
+        Path serviceDir = testClassesDir.resolve("META-INF").resolve("services");
+        Path serviceFile = serviceDir.resolve("org.junit.platform.launcher.TestExecutionListener");
+        try {
+            Files.createDirectories(serviceDir);
+            String listenerFqcn = "me.bechberger.testorder.TelemetryListener";
+            if (Files.exists(serviceFile)) {
+                String existing = Files.readString(serviceFile);
+                if (existing.contains(listenerFqcn)) {
+                    return;
+                }
+                // append to existing file (user may have their own listeners)
+                Files.writeString(serviceFile, existing.stripTrailing() + "\n" + listenerFqcn + "\n");
+            } else {
+                Files.writeString(serviceFile, listenerFqcn + "\n");
+            }
+        } catch (IOException e) {
+            throw new MojoExecutionException("Failed to write TelemetryListener service file", e);
+        }
+    }
+
+    // ── Artifact resolution ───────────────────────────────────────────
+
+    protected Path resolveArtifact(String artifactId) throws MojoExecutionException {
+        String repoPath = project.getProperties().getProperty("settings.localRepository",
+                System.getProperty("user.home") + "/.m2/repository");
+        Path localRepo = Path.of(repoPath);
+
+        String pluginVersion = null;
+        for (Plugin p : project.getBuildPlugins()) {
+            if ("test-order-maven-plugin".equals(p.getArtifactId())
+                    && "me.bechberger".equals(p.getGroupId())) {
+                pluginVersion = p.getVersion();
+                break;
+            }
+        }
+
+        for (String version : new String[]{ pluginVersion, project.getVersion() }) {
+            if (version == null) continue;
+            Path baseDir = localRepo.resolve("me/bechberger").resolve(artifactId).resolve(version);
+            Path match = findBestArtifactJar(baseDir, artifactId, version);
+            if (match != null) return match;
+        }
+
+        // Fallback for standalone/external projects: pick the most recently installed local version.
+        Path artifactRepoDir = localRepo.resolve("me/bechberger").resolve(artifactId);
+        if (Files.isDirectory(artifactRepoDir)) {
+            try (Stream<Path> versions = Files.list(artifactRepoDir)) {
+                Path newest = versions
+                        .filter(Files::isDirectory)
+                        .map(dir -> {
+                            String version = dir.getFileName().toString();
+                            return findBestArtifactJar(dir, artifactId, version);
+                        })
+                        .filter(p -> p != null && Files.exists(p))
+                        .max((a, b) -> {
+                            try {
+                                return Files.getLastModifiedTime(a).compareTo(Files.getLastModifiedTime(b));
+                            } catch (IOException e) {
+                                return 0;
+                            }
+                        })
+                        .orElse(null);
+                if (newest != null) {
+                    getLog().debug("[test-order] Resolved " + artifactId + " via local repo fallback: " + newest);
+                    return newest;
+                }
+            } catch (IOException ignored) {
+                // Handled by final error path below.
+            }
+        }
+
+        Path reactorFatJar = project.getBasedir().toPath().getParent()
+                .resolve(artifactId).resolve("target").resolve(artifactId + "-jar-with-dependencies.jar");
+        if (Files.exists(reactorFatJar)) return reactorFatJar;
+
+        Path reactorPath = project.getBasedir().toPath().getParent()
+                .resolve(artifactId).resolve("target").resolve(artifactId + ".jar");
+        if (Files.exists(reactorPath)) return reactorPath;
+
+        throw new MojoExecutionException("Cannot find " + artifactId + " jar. Build the parent project first.");
+    }
+
+    private Path findBestArtifactJar(Path baseDir, String artifactId, String version) {
+        Path fatJarPath = baseDir.resolve(artifactId + "-" + version + "-jar-with-dependencies.jar");
+        if (Files.exists(fatJarPath)) return fatJarPath;
+        Path shadedJarPath = baseDir.resolve(artifactId + "-" + version + "-all.jar");
+        if (Files.exists(shadedJarPath)) return shadedJarPath;
+        Path artifactPath = baseDir.resolve(artifactId + "-" + version + ".jar");
+        if (Files.exists(artifactPath)) return artifactPath;
+        return null;
+    }
+}

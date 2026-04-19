@@ -1,0 +1,3 @@
+# test-order dependency index v1
+me.bechberger.it.MathHelperTest	me.bechberger.it.MathHelper
+me.bechberger.it.StringHelperTest	me.bechberger.it.StringHelper

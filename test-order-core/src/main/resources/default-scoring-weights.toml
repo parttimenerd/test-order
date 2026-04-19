@@ -1,0 +1,122 @@
+# test-order scoring weights & configuration
+# Copy this file, change values, set -Dtestorder.weights.file=<path>
+# Or run: mvn test-order:optimize
+#
+# Each weight is a table with:
+#   value  — the scoring weight (required)
+#   range  — [min, max] for the optimizer (optional)
+
+[config]
+# Per-run decay factor for class-level failure scores (0 = no decay, 1 = full reset).
+# On save: historical scores are multiplied by (1 - failureDecay), then current-run
+# failures are added at full weight. A value of 0.3 retains 70% of previous scores.
+failureDecay = 0.3
+# Per-run decay factor for method-level failure scores.
+methodFailureDecay = 0.3
+# EMA alpha for class-level duration smoothing (0..1, higher = more weight on recent run).
+durationAlpha = 0.85
+# EMA alpha for method-level duration smoothing.
+methodDurationAlpha = 0.85
+# Failure scores below this threshold are pruned on save.
+failurePruneThreshold = 0.01
+
+# Bonus for new test classes not in the dependency index
+[newTest]
+value = 15
+range = [0, 50]
+
+# Bonus for changed test sources
+[changedTest]
+value = 9
+range = [0, 50]
+
+# Cap on failure-based bonus
+[maxFailure]
+value = 5
+range = [1, 10]
+
+# Bonus for fast tests (logarithmic: 1/8× median → full bonus, at median → 0)
+[speed]
+value = 1
+range = [0, 10]
+
+# Penalty for slow tests (logarithmic: 8× median → full penalty, at median → 0)
+[speedPenalty]
+value = 1
+range = [0, 10]
+
+# Max score from dependency overlap (ratio-based: overlap/totalDeps × weight)
+[depOverlap]
+value = 5
+range = [0, 10]
+
+# Bonus based on change complexity of overlapping dependencies.
+# Uses Deflate-compressed diff text as a proxy for information complexity.
+# More complex diffs compress less well and score higher.
+# Only applied in per-test depOverlap mode (not in set-cover mode).
+# Score = min(ceil(complexityOverlap / sqrt(totalDeps) × weight), weight)
+[changeComplexity]
+value = 2
+range = [0, 5]
+
+# Optional fixed bonus when a test directly overlaps a changed static field.
+# Applied once per test class and only with member-level overlap data.
+[staticFieldBonus]
+value = 0
+range = [0, 3]
+
+# Greedy set-cover bonus for dependency overlap scoring.
+# When > 0, replaces BOTH depOverlap and changeComplexity with a greedy
+# set-cover algorithm that awards geometrically declining bonuses (×0.8)
+# to tests that collectively cover all changed classes.
+# Set to 0 (default) to use the per-test depOverlap + changeComplexity instead.
+[coverageBonus]
+value = 0
+range = [0, 10]
+
+# ── Method-level scoring (for reordering methods within a class) ────
+# Enable via: testorder.methodOrder.enabled=true
+# Note: method-level ordering can expose hidden test dependencies.
+# Only enable if you're confident about independent test methods.
+
+# Method-level failure recency score factor
+[method-scores.failureRecency]
+value = 3.0
+range = [0.0, 10.0]
+
+# Method-level bonus for fast methods (logarithmic: 1/8× class median → full bonus)
+[method-scores.fast]
+value = 1.0
+range = [0.0, 10.0]
+
+# Method-level penalty for slow methods (logarithmic: 8× class median → full penalty)
+[method-scores.slow]
+value = 1.0
+range = [0.0, 10.0]
+
+# Method-level bonus for dependency overlap with changed classes
+# Requires FULL_METHOD instrumentation mode for per-method dependency tracking.
+# Score = min(overlap / sqrt(totalMethodDeps) × weight, weight)
+[method-scores.depOverlap]
+value = 2.0
+range = [0.0, 10.0]
+
+# Method-level bonus for new test methods (no telemetry history)
+# Untested methods are likely risky and should run early.
+[method-scores.newMethod]
+value = 5.0
+range = [0.0, 15.0]
+
+# Method-level bonus for changed test methods (source code changed since last run)
+# Uses per-method source hashing to detect individual method changes.
+[method-scores.changedMethod]
+value = 3.0
+range = [0.0, 10.0]
+
+# Method-level greedy set-cover bonus (analogous to class-level coverageBonus).
+# When > 0, replaces method depOverlap with greedy set-cover (geometric ×0.8 decline).
+# Set to 0 to use per-method depOverlap instead.
+[method-scores.coverageBonus]
+value = 0.0
+range = [0.0, 10.0]
+

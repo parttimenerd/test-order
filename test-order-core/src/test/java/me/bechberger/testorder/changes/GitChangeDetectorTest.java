@@ -1,0 +1,140 @@
+package me.bechberger.testorder.changes;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class GitChangeDetectorTest {
+
+    @TempDir
+    Path tempDir;
+
+    private void git(String... args) throws IOException, InterruptedException {
+        var cmd = new java.util.ArrayList<String>();
+        cmd.add("git");
+        java.util.Collections.addAll(cmd, args);
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.directory(tempDir.toFile());
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+        p.getInputStream().readAllBytes(); // consume output
+        int exitCode = p.waitFor();
+        if (exitCode != 0) {
+            throw new RuntimeException("git " + String.join(" ", args) + " failed with exit code " + exitCode);
+        }
+    }
+
+    @Test
+    void changedSinceLastCommit() throws Exception {
+        // init repo
+        git("init");
+        git("config", "user.email", "test@test.com");
+        git("config", "user.name", "Test");
+
+        // create initial file and commit
+        Path srcDir = tempDir.resolve("src/main/java/com/example");
+        Files.createDirectories(srcDir);
+        Files.writeString(srcDir.resolve("Foo.java"), "public class Foo {}");
+        git("add", ".");
+        git("commit", "-m", "initial");
+
+        // modify file and commit
+        Files.writeString(srcDir.resolve("Foo.java"), "public class Foo { int x; }");
+        git("add", ".");
+        git("commit", "-m", "modify Foo");
+
+        Set<String> changed = GitChangeDetector.changedSinceLastCommit(tempDir, "src/main/java/");
+        assertTrue(changed.contains("com.example.Foo"));
+    }
+
+    @Test
+    void uncommittedChanges() throws Exception {
+        git("init");
+        git("config", "user.email", "test@test.com");
+        git("config", "user.name", "Test");
+
+        Path srcDir = tempDir.resolve("src/main/java/com/example");
+        Files.createDirectories(srcDir);
+        Files.writeString(srcDir.resolve("Foo.java"), "public class Foo {}");
+        git("add", ".");
+        git("commit", "-m", "initial");
+
+        // unstaged change
+        Files.writeString(srcDir.resolve("Foo.java"), "public class Foo { int x; }");
+
+        Set<String> changed = GitChangeDetector.uncommittedChanges(tempDir, "src/main/java/");
+        assertTrue(changed.contains("com.example.Foo"));
+    }
+
+    @Test
+    void stagedChanges() throws Exception {
+        git("init");
+        git("config", "user.email", "test@test.com");
+        git("config", "user.name", "Test");
+
+        Path srcDir = tempDir.resolve("src/main/java/com/example");
+        Files.createDirectories(srcDir);
+        Files.writeString(srcDir.resolve("Foo.java"), "public class Foo {}");
+        git("add", ".");
+        git("commit", "-m", "initial");
+
+        // staged change
+        Files.writeString(srcDir.resolve("Bar.java"), "public class Bar {}");
+        git("add", ".");
+
+        Set<String> changed = GitChangeDetector.uncommittedChanges(tempDir, "src/main/java/");
+        assertTrue(changed.contains("com.example.Bar"));
+    }
+
+    @Test
+    void noChanges() throws Exception {
+        git("init");
+        git("config", "user.email", "test@test.com");
+        git("config", "user.name", "Test");
+
+        Path srcDir = tempDir.resolve("src/main/java/com/example");
+        Files.createDirectories(srcDir);
+        Files.writeString(srcDir.resolve("Foo.java"), "public class Foo {}");
+        git("add", ".");
+        git("commit", "-m", "initial");
+
+        // no changes since last commit — need a second commit so HEAD~1 exists
+        Files.writeString(srcDir.resolve("Foo.java"), "public class Foo { }");
+        git("add", ".");
+        git("commit", "-m", "second");
+
+        Set<String> uncommitted = GitChangeDetector.uncommittedChanges(tempDir, "src/main/java/");
+        assertTrue(uncommitted.isEmpty());
+    }
+
+    @Test
+    void deletedFileExtractsClassNamesFromGit() throws Exception {
+        git("init");
+        git("config", "user.email", "test@test.com");
+        git("config", "user.name", "Test");
+
+        Path srcDir = tempDir.resolve("src/main/java/com/example");
+        Files.createDirectories(srcDir);
+        // File with multiple top-level classes
+        Files.writeString(srcDir.resolve("Multi.java"),
+                "package com.example;\npublic class Multi {}\nclass MultiHelper {}");
+        git("add", ".");
+        git("commit", "-m", "initial");
+
+        // Delete the file and commit the deletion
+        Files.delete(srcDir.resolve("Multi.java"));
+        git("add", ".");
+        git("commit", "-m", "delete Multi");
+
+        Set<String> changed = GitChangeDetector.changedSinceLastCommit(tempDir, "src/main/java/");
+        // Both classes should be detected even though the file no longer exists on disk
+        assertTrue(changed.contains("com.example.Multi"), "should contain Multi");
+        assertTrue(changed.contains("com.example.MultiHelper"), "should contain MultiHelper");
+    }
+}

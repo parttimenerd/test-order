@@ -1,0 +1,38 @@
+// Gradle init script that applies the test-order plugin to any Gradle project.
+//
+// Usage:
+//   ./gradlew test --init-script path/to/test-order-init.gradle -Dtestorder.mode=learn
+//   ./gradlew test --init-script path/to/test-order-init.gradle
+//
+// The plugin auto-detects the mode:
+//   - First run (no index file): learns dependencies
+//   - Subsequent runs: orders tests by relevance to changed code
+//
+// Override mode explicitly:
+//   -Dtestorder.mode=learn    Force learn mode
+//   -Dtestorder.mode=order    Force order mode
+//   -Dtestorder.mode=skip     Disable the plugin
+
+initscript {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'me.bechberger:test-order-gradle-plugin:0.1.0-SNAPSHOT'
+    }
+}
+
+projectsLoaded {
+    allprojects { project ->
+        // Skip buildSrc — it is not an application module
+        if (project.buildFile.absolutePath.contains('buildSrc')) {
+            return
+        }
+        // Apply to every Java project. The plugin guards against double-apply
+        // in case a project's build.gradle also has the plugin in its plugins block.
+        project.plugins.withId('java') {
+            project.apply plugin: me.bechberger.testorder.gradle.TestOrderPlugin
+        }
+    }
+}

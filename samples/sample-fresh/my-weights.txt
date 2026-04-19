@@ -1,0 +1,7 @@
+# Custom weights file
+newTest = 25
+changedTest = 15
+maxFailure = 3
+speed = 2
+speedPenalty = 2
+depOverlap = 50
