@@ -7,6 +7,7 @@ import me.bechberger.testorder.TestScorer;
 import me.bechberger.testorder.TestSelector;
 import me.bechberger.testorder.changes.ChangeComplexity;
 import me.bechberger.testorder.changes.ChangeDetector;
+import me.bechberger.testorder.changes.ChangeDetectionSupport;
 import me.bechberger.testorder.changes.FileHashStore;
 import me.bechberger.testorder.changes.StructuralChangeAnalyzer;
 import me.bechberger.testorder.changes.StructuralChangeAnalyzer.ChangedMembers;
@@ -350,11 +351,13 @@ public class TestOrderPlugin implements Plugin<Project> {
             Path projectRoot = project.getProjectDir().toPath();
             Path sourceRoot = resolveMainSourceRoot(project);
             Path hashFile = ext.getHashFile().get().getAsFile().toPath();
-
-            ChangeDetector.Mode mode = resolveChangeMode(changeModeStr, hashFile);
-
-            Set<String> changed = ChangeDetector.detect(mode, projectRoot, sourceRoot, hashFile,
-                    explicitChanged.isEmpty() ? null : explicitChanged);
+                Set<String> changed = ChangeDetectionSupport.detectChangedClasses(
+                    changeModeStr,
+                    projectRoot,
+                    sourceRoot,
+                    hashFile,
+                    explicitChanged.isEmpty() ? null : explicitChanged,
+                    false);
             if (!changed.isEmpty()) {
                 testTask.systemProperty("testorder.changed.classes",
                         String.join(",", changed));
@@ -384,11 +387,12 @@ public class TestOrderPlugin implements Plugin<Project> {
             Path projectRoot = project.getProjectDir().toPath();
             Path testSourceRoot = resolveTestSourceRoot(project);
             Path testHashFile = ext.getTestHashFile().get().getAsFile().toPath();
-
-            ChangeDetector.Mode mode = resolveChangeMode(changeModeStr, testHashFile);
-
-            Set<String> changedTests = ChangeDetector.detect(mode, projectRoot,
-                    testSourceRoot, testHashFile, null);
+            Set<String> changedTests = ChangeDetectionSupport.detectChangedTestClasses(
+                changeModeStr,
+                projectRoot,
+                testSourceRoot,
+                testHashFile,
+                false);
             if (!changedTests.isEmpty()) {
                 testTask.systemProperty("testorder.changed.test.classes",
                         String.join(",", changedTests));
@@ -399,19 +403,6 @@ public class TestOrderPlugin implements Plugin<Project> {
             project.getLogger().debug("[test-order] Test class change detection failed: {}",
                     e.getMessage());
         }
-    }
-
-    /**
-     * Resolves the ChangeDetector.Mode from the configured changeMode string and hash file state.
-     */
-    private static ChangeDetector.Mode resolveChangeMode(String changeModeStr, Path hashFile) {
-        if ("auto".equalsIgnoreCase(changeModeStr)) {
-            return Files.exists(hashFile)
-                    ? ChangeDetector.Mode.SINCE_LAST_RUN
-                    : ChangeDetector.Mode.SINCE_LAST_COMMIT;
-        }
-        return ChangeDetector.Mode.valueOf(changeModeStr
-                .toUpperCase().replace("-", "_").replace(" ", "_"));
     }
 
     // -----------------------------------------------------------------------
@@ -485,9 +476,13 @@ public class TestOrderPlugin implements Plugin<Project> {
                         try {
                             Path hashFile = ext.getHashFile().get().getAsFile().toPath();
                             String changeModeStr = ext.getChangeMode().get();
-                            ChangeDetector.Mode cdMode = resolveChangeMode(changeModeStr, hashFile);
-                            changed = ChangeDetector.detectReadOnly(cdMode,
-                                    project.getProjectDir().toPath(), sourceRoot, hashFile, null);
+                            changed = ChangeDetectionSupport.detectChangedClasses(
+                                    changeModeStr,
+                                    project.getProjectDir().toPath(),
+                                    sourceRoot,
+                                    hashFile,
+                                    null,
+                                    true);
                         } catch (IOException e) {
                             project.getLogger().debug("[test-order] Change detection skipped: {}",
                                     e.getMessage());
@@ -501,9 +496,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                         Path testHashFile = ext.getTestHashFile().get().getAsFile().toPath();
                         String changeModeStr = ext.getChangeMode().get();
                         if (!"explicit".equalsIgnoreCase(changeModeStr)) {
-                            ChangeDetector.Mode cdMode = resolveChangeMode(changeModeStr, testHashFile);
-                            changedTests = ChangeDetector.detectReadOnly(cdMode,
-                                    project.getProjectDir().toPath(), testSourceRoot, testHashFile, null);
+                            changedTests = ChangeDetectionSupport.detectChangedTestClasses(
+                                    changeModeStr,
+                                    project.getProjectDir().toPath(),
+                                    testSourceRoot,
+                                    testHashFile,
+                                    true);
                         }
                     } catch (IOException e) {
                         project.getLogger().debug("[test-order] Test change detection skipped: {}",
@@ -906,16 +904,20 @@ public class TestOrderPlugin implements Plugin<Project> {
         String explicitChanged = ext.getChangedClasses().get();
         String propChanged = gradleOrSystemProperty(project, "testorder.changed.classes");
         if (propChanged != null && !propChanged.isBlank()) {
-            return commaSeparatedClasses(propChanged);
+            return ChangeDetectionSupport.parseExplicitClasses(propChanged);
         }
         if ("explicit".equalsIgnoreCase(ext.getChangeMode().get()) && explicitChanged != null && !explicitChanged.isBlank()) {
-            return commaSeparatedClasses(explicitChanged);
+            return ChangeDetectionSupport.parseExplicitClasses(explicitChanged);
         }
         try {
             Path hashFile = ext.getHashFile().get().getAsFile().toPath();
-            ChangeDetector.Mode mode = resolveChangeMode(ext.getChangeMode().get(), hashFile);
-            return ChangeDetector.detectReadOnly(mode, project.getProjectDir().toPath(),
-                    resolveMainSourceRoot(project), hashFile, explicitChanged.isEmpty() ? null : explicitChanged);
+            return ChangeDetectionSupport.detectChangedClasses(
+                    ext.getChangeMode().get(),
+                    project.getProjectDir().toPath(),
+                    resolveMainSourceRoot(project),
+                    hashFile,
+                    explicitChanged.isEmpty() ? null : explicitChanged,
+                    true);
         } catch (IOException e) {
             project.getLogger().debug("[test-order] Changed-class detection for select skipped: {}", e.getMessage());
             return Set.of();
@@ -928,20 +930,16 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
         try {
             Path testHashFile = ext.getTestHashFile().get().getAsFile().toPath();
-            ChangeDetector.Mode mode = resolveChangeMode(ext.getChangeMode().get(), testHashFile);
-            return ChangeDetector.detectReadOnly(mode, project.getProjectDir().toPath(),
-                    resolveTestSourceRoot(project), testHashFile, null);
+            return ChangeDetectionSupport.detectChangedTestClasses(
+                    ext.getChangeMode().get(),
+                    project.getProjectDir().toPath(),
+                    resolveTestSourceRoot(project),
+                    testHashFile,
+                    true);
         } catch (IOException e) {
             project.getLogger().debug("[test-order] Changed-test detection for select skipped: {}", e.getMessage());
             return Set.of();
         }
-    }
-
-    private static Set<String> commaSeparatedClasses(String classes) {
-        return Arrays.stream(classes.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private static void applySelectedTests(Test task, List<String> tests) {

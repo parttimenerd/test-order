@@ -1,6 +1,7 @@
 package me.bechberger.testorder.plugin;
 
 import me.bechberger.testorder.changes.ChangeDetector;
+import me.bechberger.testorder.changes.ChangeDetectionSupport;
 import me.bechberger.testorder.changes.FileHashStore;
 import me.bechberger.testorder.changes.MethodHashStore;
 import org.apache.maven.plugin.logging.Log;
@@ -143,22 +144,12 @@ final class ChangeDetectionHelper {
                                              Path sourceRoot, Path hashPath,
                                              String changedClasses, boolean readOnly,
                                              boolean skipExplicit) throws IOException {
-        if ("auto".equals(changeMode)) {
-            if (!skipExplicit && changedClasses != null && !changedClasses.isBlank()) {
-                return invoke(ChangeDetector.Mode.EXPLICIT, projectRoot, sourceRoot,
-                        hashPath, changedClasses, readOnly);
-            }
-            if (Files.exists(hashPath)) {
-                return invoke(ChangeDetector.Mode.SINCE_LAST_RUN, projectRoot, sourceRoot,
-                        hashPath, null, readOnly);
-            }
-            return invoke(ChangeDetector.Mode.SINCE_LAST_COMMIT, projectRoot, sourceRoot,
-                    hashPath, null, readOnly);
+        if (skipExplicit) {
+            return ChangeDetectionSupport.detectChangedTestClasses(
+                changeMode, projectRoot, sourceRoot, hashPath, readOnly);
         }
-
-        ChangeDetector.Mode mode = parseMode(changeMode);
-        if (skipExplicit && mode == ChangeDetector.Mode.EXPLICIT) return Set.of();
-        return invoke(mode, projectRoot, sourceRoot, hashPath, changedClasses, readOnly);
+        return ChangeDetectionSupport.detectChangedClasses(
+            changeMode, projectRoot, sourceRoot, hashPath, changedClasses, readOnly);
     }
 
     private static Set<String> invoke(ChangeDetector.Mode mode, Path projectRoot,
@@ -223,12 +214,6 @@ final class ChangeDetectionHelper {
     }
 
     static ChangeDetector.Mode parseMode(String changeMode) throws IOException {
-        return switch (changeMode) {
-            case "since-last-run" -> ChangeDetector.Mode.SINCE_LAST_RUN;
-            case "since-last-commit" -> ChangeDetector.Mode.SINCE_LAST_COMMIT;
-            case "uncommitted" -> ChangeDetector.Mode.UNCOMMITTED;
-            case "explicit" -> ChangeDetector.Mode.EXPLICIT;
-            default -> throw new IOException("Unknown changeMode: " + changeMode);
-        };
+        return ChangeDetectionSupport.parseMode(changeMode);
     }
 }
