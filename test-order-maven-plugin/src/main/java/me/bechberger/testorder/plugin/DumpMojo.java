@@ -17,7 +17,7 @@ import java.nio.file.Path;
 public class DumpMojo extends AbstractTestOrderMojo {
 
     /** Output text file. If not set, writes to stdout. */
-    @Parameter(property = "testorder.dump.output")
+    @Parameter(property = MavenPluginConfigKeys.DUMP_OUTPUT)
     private String outputFile;
 
     @Override
@@ -32,7 +32,8 @@ public class DumpMojo extends AbstractTestOrderMojo {
             DependencyMap map = DependencyMap.load(idxPath);
             if (map.size() == 0) {
                 getLog().info("[test-order] Dependency index is empty: " + idxPath);
-                getLog().info("[test-order] Run learn mode first: mvn test -Dtestorder.mode=learn");
+                getLog().info("[test-order] Run learn mode first: mvn test -D"
+                    + MavenPluginConfigKeys.MODE + "=learn");
                 return;
             }
             if (outputFile != null && !outputFile.isBlank()) {
@@ -40,11 +41,8 @@ public class DumpMojo extends AbstractTestOrderMojo {
                 map.saveText(out);
                 getLog().info("[test-order] Dumped " + map.size() + " test classes → " + out);
             } else {
-                // write V1 text to stdout
                 for (String tc : map.testClasses()) {
-                    System.out.print(tc);
-                    System.out.print('\t');
-                    System.out.println(String.join(",", map.get(tc)));
+                    getLog().info(tc + "\t" + String.join(",", map.get(tc)));
                 }
             }
         } catch (IOException e) {

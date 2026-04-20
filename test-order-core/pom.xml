@@ -46,20 +46,9 @@
             <version>3.8.2</version>
         </dependency>
         <dependency>
-            <groupId>org.tinylog</groupId>
-            <artifactId>tinylog-api</artifactId>
-            <version>2.7.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.tinylog</groupId>
-            <artifactId>tinylog-impl</artifactId>
-            <version>2.7.0</version>
-        </dependency>
-        <dependency>
             <groupId>com.github.javaparser</groupId>
             <artifactId>javaparser-core</artifactId>
             <version>3.26.4</version>
-            <optional>true</optional>
         </dependency>
 
         <!-- test -->
@@ -101,7 +90,26 @@
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>me.bechberger.testorder.Tool</mainClass>
                                 </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
+                            <relocations>
+                                <relocation>
+                                    <pattern>at.yawk.lz4</pattern>
+                                    <shadedPattern>me.bechberger.testorder.shaded.at.yawk.lz4</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.roaringbitmap</pattern>
+                                    <shadedPattern>me.bechberger.testorder.shaded.org.roaringbitmap</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.electronwill.nightconfig</pattern>
+                                    <shadedPattern>me.bechberger.testorder.shaded.com.electronwill.nightconfig</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>io.jenetics</pattern>
+                                    <shadedPattern>me.bechberger.testorder.shaded.io.jenetics</shadedPattern>
+                                </relocation>
+                            </relocations>
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>

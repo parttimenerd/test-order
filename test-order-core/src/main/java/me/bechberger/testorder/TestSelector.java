@@ -75,9 +75,10 @@ public class TestSelector {
         Set<String> allTests = new LinkedHashSet<>(depMap.testClasses());
         allTests.addAll(changedTestClasses);
 
-        TestScorer scorer = new TestScorer(weights, depMap, state,
-                changedClasses, changedTestClasses,
-                depMap.testClasses());
+        TestScorer scorer = new TestScorer.Builder(weights, depMap, state,
+                changedClasses, changedTestClasses)
+                .testClassNames(depMap.testClasses())
+                .build();
 
         List<ScoredTest> scored = new ArrayList<>();
         for (String tc : allTests) {

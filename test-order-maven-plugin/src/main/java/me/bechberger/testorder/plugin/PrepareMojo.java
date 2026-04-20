@@ -27,64 +27,64 @@ public class PrepareMojo extends AbstractTestOrderMojo {
      *       otherwise runs in order mode.</li>
      * </ul>
      */
-    @Parameter(property = "testorder.mode", defaultValue = "auto")
+    @Parameter(property = MavenPluginConfigKeys.MODE, defaultValue = "auto")
     private String mode;
 
     /** Comma-separated additional package prefixes to instrument (merged with auto-detected source packages) */
-    @Parameter(property = "testorder.includePackages")
+    @Parameter(property = MavenPluginConfigKeys.INCLUDE_PACKAGES)
     private String includePackages;
 
     /** When true (default) and no source packages are detected, fall back to the project groupId
      *  as an instrumentation filter. Source packages from src/main/java are always auto-detected. */
-    @Parameter(property = "testorder.filterByGroupId", defaultValue = "true")
+    @Parameter(property = MavenPluginConfigKeys.FILTER_BY_GROUP_ID, defaultValue = "true")
     private boolean filterByGroupId;
 
     /** Instrumentation mode: FULL (default), METHOD_ENTRY, FULL_METHOD, or FULL_MEMBER */
-    @Parameter(property = "testorder.instrumentationMode", defaultValue = "FULL")
+    @Parameter(property = MavenPluginConfigKeys.LEGACY_INSTRUMENTATION_MODE, defaultValue = "FULL")
     private String instrumentationMode;
 
     /** Score bonus for new test classes not in the dependency index */
-    @Parameter(property = "testorder.score.newTest", defaultValue = "15")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_NEW_TEST, defaultValue = "15")
     private int scoreNewTest;
 
     /** Score bonus for test classes whose source was modified */
-    @Parameter(property = "testorder.score.changedTest", defaultValue = "9")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_CHANGED_TEST, defaultValue = "9")
     private int scoreChangedTest;
 
     /** Maximum score bonus from failure frequency */
-    @Parameter(property = "testorder.score.maxFailure", defaultValue = "5")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_MAX_FAILURE, defaultValue = "5")
     private int scoreMaxFailure;
 
     /** Score bonus for tests with below-median duration */
-    @Parameter(property = "testorder.score.speed", defaultValue = "1")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_SPEED, defaultValue = "1")
     private int scoreSpeed;
 
     /** Score penalty for tests with above-median duration */
-    @Parameter(property = "testorder.score.speedPenalty", defaultValue = "1")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_SPEED_PENALTY, defaultValue = "1")
     private int scoreSpeedPenalty;
 
     /** Max score from dependency overlap (ratio-based) */
-    @Parameter(property = "testorder.score.depOverlap", defaultValue = "5")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_DEP_OVERLAP, defaultValue = "5")
     private int scoreDepOverlap;
 
     /** Score bonus based on change complexity of overlapping dependencies */
-    @Parameter(property = "testorder.score.changeComplexity", defaultValue = "2")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_CHANGE_COMPLEXITY, defaultValue = "2")
     private int scoreChangeComplexity;
 
     /** Optional fixed bonus when a test overlaps changed static field members */
-    @Parameter(property = "testorder.score.staticFieldBonus", defaultValue = "0")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_STATIC_FIELD_BONUS, defaultValue = "0")
     private int scoreStaticFieldBonus;
 
     /** Set-cover coverage bonus weight (0 = disabled, uses depOverlap instead) */
-    @Parameter(property = "testorder.score.coverageBonus", defaultValue = "0")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_COVERAGE_BONUS, defaultValue = "0")
     private int scoreCoverageBonus;
 
     /** Auto mode: switch to learn periodically after this many order-mode runs (0 = disabled). Ensures index stays fresh. */
-    @Parameter(property = "testorder.autoLearnRunThreshold", defaultValue = "0")
+    @Parameter(property = MavenPluginConfigKeys.AUTO_LEARN_RUN_THRESHOLD, defaultValue = "0")
     private int autoLearnRunThreshold;
 
     /** Auto mode: switch to learn when changed-class count reaches this threshold (0 = disabled). */
-    @Parameter(property = "testorder.autoLearnDiffThreshold", defaultValue = "0")
+    @Parameter(property = MavenPluginConfigKeys.AUTO_LEARN_DIFF_THRESHOLD, defaultValue = "0")
     private int autoLearnDiffThreshold;
 
     private static final Set<String> VALID_MODES = Set.of("auto", "learn", "order");
@@ -94,6 +94,12 @@ public class PrepareMojo extends AbstractTestOrderMojo {
     @Override
     public void execute() throws MojoExecutionException {
         initContext();
+        String canonicalInstrumentationMode = session != null && session.getUserProperties() != null
+                ? session.getUserProperties().getProperty(MavenPluginConfigKeys.INSTRUMENTATION_MODE)
+                : null;
+        if (canonicalInstrumentationMode != null && !canonicalInstrumentationMode.isBlank()) {
+            instrumentationMode = canonicalInstrumentationMode;
+        }
 
         if (!VALID_MODES.contains(mode)) {
             throw new MojoExecutionException("Invalid mode '" + mode + "'. Valid values: " + VALID_MODES);
@@ -147,7 +153,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
                         + " — switching to learn mode automatically.");
             } else {
                 getLog().warn("[test-order] New test class(es) not yet in the dependency index: " + names);
-                getLog().warn("[test-order] Run 'mvn test -Dtestorder.mode=learn' to index them for accurate ordering.");
+                getLog().warn("[test-order] Run 'mvn test -D" + MavenPluginConfigKeys.MODE
+                        + "=learn' to index them for accurate ordering.");
             }
         }
 

@@ -38,10 +38,14 @@
                 <groupId>me.bechberger</groupId>
                 <artifactId>test-order-maven-plugin</artifactId>
                 <version>${project.version}</version>
+                <configuration>
+                    <!-- Options: learn, combined (default), select, run-remaining, optimize, show-order, dump -->
+                    <mode>combined</mode>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
-                            <goal>prepare</goal>
+                            <goal>combined</goal>
                         </goals>
                     </execution>
                 </executions>

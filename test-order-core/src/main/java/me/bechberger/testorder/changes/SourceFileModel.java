@@ -66,7 +66,7 @@ public class SourceFileModel {
     // Flattened to avoid StackOverflowError: iterates per inner <...> block,
     // not per character (Java's regex engine recurses for each (?:A|B)* iteration).
     private static final String BOUNDED_GENERICS_REQUIRED =
-            "(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>)";  // up to 4 nesting levels
+            "(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>)";  // up to 6 nesting levels
     private static final String BOUNDED_GENERICS = BOUNDED_GENERICS_REQUIRED + "?";  // optional version
 
     static final Pattern TYPE_ISLAND = Pattern.compile(
@@ -321,11 +321,15 @@ public class SourceFileModel {
 
         // ── 1. pre-compute cumulative brace depth and paren depth ──
         int[] braceDepth = new int[len + 1];
-        int[] parenDepth = new int[len + 1];
+        // parenDepth is only needed for FIELDS mode — skip allocation otherwise
+        // to halve memory usage for TYPES and METHODS parsing.
+        int[] parenDepth = (detail == Detail.FIELDS) ? new int[len + 1] : null;
         for (int i = 0; i < len; i++) {
             char c = stripped.charAt(i);
             braceDepth[i + 1] = braceDepth[i] + (c == '{' ? 1 : c == '}' ? -1 : 0);
-            parenDepth[i + 1] = parenDepth[i] + (c == '(' ? 1 : c == ')' ? -1 : 0);
+            if (parenDepth != null) {
+                parenDepth[i + 1] = parenDepth[i] + (c == '(' ? 1 : c == ')' ? -1 : 0);
+            }
         }
 
         // ── 2. find type islands (depth 0) ───────────────────────
@@ -1063,18 +1067,27 @@ public class SourceFileModel {
             if (c == '"' && i + 2 < len && body.charAt(i + 1) == '"' && body.charAt(i + 2) == '"') {
                 sb.append('"').append('"').append('"');
                 i += 3;
-                while (i + 2 < len && !(body.charAt(i) == '"' && body.charAt(i + 1) == '"'
-                        && body.charAt(i + 2) == '"')) {
+                while (i < len) {
+                    // Handle escape sequences so that \" does not trigger
+                    // premature closure of the text block (e.g. \""")
+                    if (body.charAt(i) == '\\' && i + 1 < len) {
+                        sb.append(body.charAt(i)).append(body.charAt(i + 1));
+                        i += 2;
+                        continue;
+                    }
+                    // Check for closing """
+                    if (i + 2 < len && body.charAt(i) == '"' && body.charAt(i + 1) == '"'
+                            && body.charAt(i + 2) == '"') {
+                        sb.append('"').append('"').append('"');
+                        i += 3;
+                        break;
+                    }
                     if (body.charAt(i) == '\n') {
                         lineNum++;
                         textBlockLines.add(lineNum);
                     }
                     sb.append(body.charAt(i));
                     i++;
-                }
-                if (i + 2 < len) {
-                    sb.append('"').append('"').append('"');
-                    i += 3;
                 }
                 continue;
             }

@@ -17,6 +17,7 @@
 # Logs and local run artifacts
 *.log
 mvn.out
+mvn.err
 
 # Local tooling state
 .test-order/
@@ -29,3 +30,4 @@ mvn.out
 *.class
 *.out
 .test-order-state
+dependency-reduced-pom.xml

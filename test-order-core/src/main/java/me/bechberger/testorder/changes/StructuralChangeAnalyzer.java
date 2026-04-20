@@ -46,6 +46,9 @@ public class StructuralChangeAnalyzer {
      * Extracts changed members from a list of file diffs produced by {@link StructuralDiff}.
      */
     public static ChangedMembers fromDiffs(List<StructuralDiff.FileDiff> diffs) {
+        if (diffs.isEmpty()) {
+            return ChangedMembers.EMPTY;
+        }
         Set<String> classes = new LinkedHashSet<>();
         Set<String> memberKeys = new LinkedHashSet<>();
         Map<String, Set<String>> byClass = new LinkedHashMap<>();

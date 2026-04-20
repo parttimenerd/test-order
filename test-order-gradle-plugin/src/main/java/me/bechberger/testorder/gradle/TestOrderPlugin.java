@@ -1,8 +1,10 @@
 package me.bechberger.testorder.gradle;
 
 import me.bechberger.testorder.DependencyMap;
+import me.bechberger.testorder.PersistenceSupport;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.TestScorer;
+import me.bechberger.testorder.TestSelector;
 import me.bechberger.testorder.changes.ChangeComplexity;
 import me.bechberger.testorder.changes.ChangeDetector;
 import me.bechberger.testorder.changes.FileHashStore;
@@ -13,8 +15,10 @@ import java.util.stream.Collectors;
 import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ExternalModuleDependency;
+import org.gradle.api.plugins.ExtraPropertiesExtension;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.testing.Test;
@@ -22,8 +26,11 @@ import org.gradle.process.CommandLineArgumentProvider;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 
 /**
@@ -41,10 +48,12 @@ import java.util.*;
 public class TestOrderPlugin implements Plugin<Project> {
 
     static final String EXTENSION_NAME = "testOrder";
-    private static final String AGENT_CONFIG_NAME = "testOrderAgent";
+    static final String AGENT_CONFIG_NAME = "testOrderAgent";
+    private static final String STATE_LOCK_KEY = "testOrderStateLock";
+    private static final String STATE_LOCK_CHANNEL_KEY = "testOrderStateLockChannel";
 
     /** Group and version for the test-order artifacts. Must match the build. */
-    private static final String GROUP_ID = "me.bechberger";
+    static final String GROUP_ID = "me.bechberger";
     static final String VERSION = "0.1.0-SNAPSHOT";
 
     @Override
@@ -55,45 +64,22 @@ public class TestOrderPlugin implements Plugin<Project> {
             return;
         }
 
-        // 1. Register the extension DSL
-        TestOrderExtension ext = project.getExtensions().create(EXTENSION_NAME, TestOrderExtension.class);
-        ext.applyDefaults(project);
+        TestOrderExtensionConfigurator extensionConfigurator = new TestOrderExtensionConfigurator(this);
+        LearnModeConfigurator learnModeConfigurator = new LearnModeConfigurator(this);
+        OrderModeConfigurator orderModeConfigurator = new OrderModeConfigurator(this);
+        UtilityTaskRegistrar utilityTaskRegistrar = new UtilityTaskRegistrar(this);
 
-        // 2. Add a mavenLocal repo restricted to our group only.
-        //    CRITICAL: Do NOT add mavenLocal() or mavenCentral() to the project's repos
-        //    unconditionally — this changes dependency resolution order and can cause
-        //    stale/conflicting JARs in ~/.m2 to shadow correct versions (e.g. JUnit Platform),
-        //    breaking test execution on Gradle 9.x.
-        //    Instead, use exclusiveContent to restrict our mavenLocal to only serve
-        //    me.bechberger artifacts, so it cannot interfere with other dependencies.
-        project.getRepositories().maven(repo -> {
-            repo.setName("testOrderMavenLocal");
-            repo.setUrl(new File(System.getProperty("user.home"), ".m2/repository").toURI());
-            repo.mavenContent(content -> {
-                content.includeGroup(GROUP_ID);
-            });
-        });
+        TestOrderExtensionConfigurator.ConfiguredPlugin configured = extensionConfigurator.configure(project);
+        TestOrderExtension ext = configured.extension();
+        Configuration agentConf = configured.agentConfiguration();
 
-        // 3. Create hidden configuration for the agent JAR (needed for -javaagent path)
-        Configuration agentConf = createHiddenConfiguration(project, AGENT_CONFIG_NAME, false);
-        project.getDependencies().add(agentConf.getName(),
-                GROUP_ID + ":test-order-agent:" + VERSION);
-
-        // 4. Add test-order JARs to testRuntimeOnly — the Gradle-idiomatic way.
-        //    Using setClasspath().plus() bypasses Gradle 9.x's dependency resolution
-        //    and module detection, breaking JUnit Platform loading.
-        //    Adding to testRuntimeOnly lets Gradle handle classpath properly.
-        addTestOrderTestDependencies(project);
-
-        // 5. Register utility tasks
-        registerTasks(project, ext, agentConf);
-
-        // 6. Configure Test tasks after the build script has been evaluated
-        project.afterEvaluate(p -> configureTestTasks(p, ext, agentConf));
+        utilityTaskRegistrar.register(project, ext, agentConf);
+        project.afterEvaluate(p -> configureTestTasks(p, ext, agentConf,
+                learnModeConfigurator, orderModeConfigurator));
     }
 
-    private static Configuration createHiddenConfiguration(Project project, String name,
-                                                            boolean transitive) {
+    static Configuration createHiddenConfiguration(Project project, String name,
+                                                   boolean transitive) {
         // Avoid duplicate configurations (idempotent for init-script reapply)
         Configuration existing = project.getConfigurations().findByName(name);
         if (existing != null) return existing;
@@ -109,7 +95,7 @@ public class TestOrderPlugin implements Plugin<Project> {
      * This is the Gradle-idiomatic way to add JARs to the test classpath and ensures
      * compatibility with Gradle 9.x's stricter module/classpath handling.
      */
-    private void addTestOrderTestDependencies(Project project) {
+    void addTestOrderTestDependencies(Project project) {
         // Thin JUnit JAR (ServiceLoader + 3 classes) — non-transitive
         ExternalModuleDependency junitDep = (ExternalModuleDependency) project.getDependencies().create(
                 GROUP_ID + ":test-order-junit:" + VERSION);
@@ -127,20 +113,26 @@ public class TestOrderPlugin implements Plugin<Project> {
     // Test task configuration
     // -----------------------------------------------------------------------
 
-    private void configureTestTasks(Project project, TestOrderExtension ext,
-                                    Configuration agentConf) {
-        String resolvedMode = resolveMode(ext, project);
+    void configureTestTasks(Project project, TestOrderExtension ext,
+                            Configuration agentConf,
+                            LearnModeConfigurator learnModeConfigurator,
+                            OrderModeConfigurator orderModeConfigurator) {
+        String resolvedMode = orderModeConfigurator.resolveMode(ext, project);
 
         project.getTasks().withType(Test.class).configureEach(testTask -> {
+            if (testTask.getName().startsWith("testOrder")) {
+                return;
+            }
             // Suppress "restricted method" warnings from bundled lz4 native access
             // (System.loadLibrary, sun.misc.Unsafe). Flag supported on JDK 16+;
             // the plugin already requires JDK 17+ so this is always safe.
             testTask.jvmArgs("--enable-native-access=ALL-UNNAMED");
+            configureStateLocking(project, ext, testTask);
 
             if ("learn".equals(resolvedMode)) {
-                configureLearnMode(project, ext, testTask, agentConf);
+                learnModeConfigurator.configure(project, ext, testTask, agentConf);
             } else if ("order".equals(resolvedMode)) {
-                configureOrderMode(project, ext, testTask);
+                orderModeConfigurator.configure(project, ext, testTask);
             }
             // "skip" or unrecognized → do nothing (just add junit jar for telemetry)
         });
@@ -154,7 +146,7 @@ public class TestOrderPlugin implements Plugin<Project> {
      * Resolves the effective mode string: "learn", "order", or "skip".
      * Precedence: -Dtestorder.mode > -Ptestorder.mode > testOrder.mode DSL > auto-detect.
      */
-    private String resolveMode(TestOrderExtension ext, Project project) {
+    String resolveMode(TestOrderExtension ext, Project project) {
         String mode = ext.getMode().get();
 
         // Check Gradle property / system property override
@@ -181,8 +173,8 @@ public class TestOrderPlugin implements Plugin<Project> {
     // Learn mode
     // -----------------------------------------------------------------------
 
-    private void configureLearnMode(Project project, TestOrderExtension ext,
-                                    Test testTask, Configuration agentConf) {
+    void configureLearnMode(Project project, TestOrderExtension ext,
+                            Test testTask, Configuration agentConf) {
         project.getLogger().lifecycle("[test-order] Configuring learn mode for task :{}",
                 testTask.getName());
 
@@ -267,7 +259,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     // Order mode
     // -----------------------------------------------------------------------
 
-    private void configureOrderMode(Project project, TestOrderExtension ext, Test testTask) {
+    void configureOrderMode(Project project, TestOrderExtension ext, Test testTask) {
         File indexFile = ext.getIndexFile().getAsFile().get();
         if (!indexFile.exists()) {
             project.getLogger().warn("[test-order] Index file {} not found — skipping order mode. "
@@ -371,7 +363,7 @@ public class TestOrderPlugin implements Plugin<Project> {
             } else {
                 project.getLogger().info("[test-order] No changed classes detected");
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             project.getLogger().warn("[test-order] Change detection failed: {}", e.getMessage());
         }
 
@@ -403,7 +395,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 project.getLogger().lifecycle("[test-order] Detected {} changed test classes",
                         changedTests.size());
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             project.getLogger().debug("[test-order] Test class change detection failed: {}",
                     e.getMessage());
         }
@@ -426,8 +418,8 @@ public class TestOrderPlugin implements Plugin<Project> {
     // Task registration
     // -----------------------------------------------------------------------
 
-    private void registerTasks(Project project, TestOrderExtension ext,
-                               Configuration agentConf) {
+    void registerTasks(Project project, TestOrderExtension ext,
+                       Configuration agentConf) {
 
         project.getTasks().register("testOrderAggregate", task -> {
             task.setGroup("test-order");
@@ -496,7 +488,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             ChangeDetector.Mode cdMode = resolveChangeMode(changeModeStr, hashFile);
                             changed = ChangeDetector.detectReadOnly(cdMode,
                                     project.getProjectDir().toPath(), sourceRoot, hashFile, null);
-                        } catch (Exception e) {
+                        } catch (IOException e) {
                             project.getLogger().debug("[test-order] Change detection skipped: {}",
                                     e.getMessage());
                         }
@@ -513,7 +505,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             changedTests = ChangeDetector.detectReadOnly(cdMode,
                                     project.getProjectDir().toPath(), testSourceRoot, testHashFile, null);
                         }
-                    } catch (Exception e) {
+                    } catch (IOException e) {
                         project.getLogger().debug("[test-order] Test change detection skipped: {}",
                                 e.getMessage());
                     }
@@ -534,7 +526,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             }
                             changedMembers = analysis.changedMembers();
                             structuralDiffs = analysis.diffs();
-                        } catch (Exception e) {
+                        } catch (IOException e) {
                             project.getLogger().debug("[test-order] Structural analysis skipped: {}",
                                     e.getMessage());
                         }
@@ -557,12 +549,18 @@ public class TestOrderPlugin implements Plugin<Project> {
                     TestOrderState.ScoringWeights weights = state.weights() != null
                             ? state.weights() : TestOrderState.ScoringWeights.DEFAULT;
                     List<String> testClasses = new ArrayList<>(depMap.testClasses());
-                    TestScorer scorer = new TestScorer(weights, depMap, state, changed,
-                            changedTests,
-                            testClasses, changedMembers, changeComplexityMap);
+                    TestScorer scorer = new TestScorer.Builder(weights, depMap, state, changed, changedTests)
+                            .testClassNames(testClasses)
+                            .changedMembers(changedMembers)
+                            .changeComplexity(changeComplexityMap)
+                            .build();
+                    Map<String, TestScorer.ScoreResult> scoreCache = new HashMap<>(testClasses.size());
+                    for (String testClass : testClasses) {
+                        scoreCache.put(testClass, scorer.score(testClass));
+                    }
                     testClasses.sort((a, b) -> {
-                        int sa = scorer.score(a).score();
-                        int sb = scorer.score(b).score();
+                        int sa = scoreCache.get(a).score();
+                        int sb = scoreCache.get(b).score();
                         if (sa != sb) return Integer.compare(sb, sa);
                         // tie-break: shorter duration first, then alphabetical
                         long da = state.getDuration(a, Long.MAX_VALUE);
@@ -578,7 +576,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     if (!changedTests.isEmpty()) {
                         System.out.println("Changed test classes: " + String.join(", ", changedTests));
                     }
-                    System.out.println();
+                        System.out.println();
 
                     // Compute column widths
                     int maxName = "Test Class".length();
@@ -595,7 +593,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             "\u2014".repeat(8), "\u2014".repeat(8));
                     for (int i = 0; i < testClasses.size(); i++) {
                         String tc = testClasses.get(i);
-                        TestScorer.ScoreResult sr = scorer.score(tc);
+                        TestScorer.ScoreResult sr = scoreCache.get(tc);
                         long dur = state.getDuration(tc, -1);
                         System.out.printf(fmt,
                                 (i + 1) + ".",
@@ -609,6 +607,82 @@ public class TestOrderPlugin implements Plugin<Project> {
                     System.out.println();
                 } catch (IOException e) {
                     throw new GradleException("Failed to show test order", e);
+                }
+            });
+        });
+
+        project.getTasks().register("testOrderOptimize", task -> {
+            task.setGroup("test-order");
+            task.setDescription("Optimise scoring weights from the recorded run history");
+            task.doLast(t -> {
+                Path statePath = ext.getStateFile().get().getAsFile().toPath();
+                if (!Files.exists(statePath)) {
+                    throw new GradleException("[test-order] State file not found: " + statePath
+                            + ". Run some test-order test runs first.");
+                }
+                withStateFileLock(statePath, () -> {
+                    TestOrderState state = TestOrderState.load(statePath);
+                    long withFailures = state.runs().stream().filter(r -> r.totalFailures() > 0).count();
+                    project.getLogger().lifecycle("[test-order] Runs: {} total, {} with failures",
+                            state.runs().size(), withFailures);
+                    project.getLogger().lifecycle("[test-order] Current weights: {}", state.weights().format());
+                    long startMs = System.currentTimeMillis();
+                    TestOrderState.OptimizeResult optimized = state.optimize();
+                    long elapsedMs = System.currentTimeMillis() - startMs;
+                    if (optimized == null) {
+                        project.getLogger().warn("[test-order] Need at least {} runs with failures to optimise (have {}).",
+                                TestOrderState.MIN_RUNS_FOR_OPTIMISATION, withFailures);
+                        return null;
+                    }
+                    state.setWeights(optimized.weights());
+                    state.save(statePath);
+                    project.getLogger().lifecycle("[test-order] Optimised weights: {} ({:.1f}s)",
+                            optimized.weights().format(), elapsedMs / 1000.0);
+                    if (optimized.overfit()) {
+                        project.getLogger().warn("[test-order] Overfitting detected — default weights used instead.");
+                    }
+                    return null;
+                });
+            });
+        });
+
+        project.getTasks().register("testOrderSelect", Test.class, task -> {
+            configureDerivedTestTask(project, ext, task);
+            task.setGroup("test-order");
+            task.setDescription("Run the prioritized selected subset of tests and write remaining tests to disk");
+            configureStateLocking(project, ext, task);
+            configureOrderMode(project, ext, task);
+            task.doFirst("testOrderSelectPrepare", t -> {
+                TestSelector.Selection selection = selectTests(project, ext);
+                applySelectedTests((Test) t, selection.selected());
+                project.getLogger().lifecycle("[test-order] Selected {} tests, deferred {}",
+                        selection.selected().size(), selection.remaining().size());
+            });
+        });
+
+        project.getTasks().register("testOrderRunRemaining", Test.class, task -> {
+            configureDerivedTestTask(project, ext, task);
+            task.setGroup("test-order");
+            task.setDescription("Run only the deferred tests written by testOrderSelect");
+            configureStateLocking(project, ext, task);
+            task.doFirst("testOrderRunRemainingPrepare", t -> {
+                Path remainingFile = ext.getRemainingFile().get().getAsFile().toPath();
+                if (!Files.exists(remainingFile)) {
+                    project.getLogger().lifecycle("[test-order] No remaining-tests file found at {} — nothing to run.",
+                            remainingFile);
+                    applySelectedTests((Test) t, List.of());
+                    return;
+                }
+                try {
+                    List<String> tests = TestSelector.readTestList(remainingFile);
+                    if (tests.isEmpty()) {
+                        project.getLogger().lifecycle("[test-order] Remaining tests file is empty — skipping tests.");
+                    } else {
+                        project.getLogger().lifecycle("[test-order] Running {} remaining test classes", tests.size());
+                    }
+                    applySelectedTests((Test) t, tests);
+                } catch (IOException e) {
+                    throw new GradleException("Failed to read remaining tests file", e);
                 }
             });
         });
@@ -724,7 +798,10 @@ public class TestOrderPlugin implements Plugin<Project> {
         try {
             if (Files.isDirectory(root)) {
                 FileHashStore store = FileHashStore.scan(root);
-                store.save(hashFile);
+                PersistenceSupport.withFileLock(hashFile, () -> {
+                    store.save(hashFile);
+                    return null;
+                });
                 project.getLogger().info("[test-order] Saved {} hash snapshot: {}", label, hashFile);
             }
         } catch (IOException e) {
@@ -763,5 +840,187 @@ public class TestOrderPlugin implements Plugin<Project> {
             sj.add(seg.substring(0, 1));
         }
         return sj + "." + cls;
+    }
+
+    private static void configureDerivedTestTask(Project project, TestOrderExtension ext, Test task) {
+        SourceSetContainer sourceSets = project.getExtensions().findByType(SourceSetContainer.class);
+        if (sourceSets != null) {
+            SourceSet testSourceSet = sourceSets.findByName(SourceSet.TEST_SOURCE_SET_NAME);
+            if (testSourceSet != null) {
+                task.setTestClassesDirs(testSourceSet.getOutput().getClassesDirs());
+                task.setClasspath(testSourceSet.getRuntimeClasspath());
+            }
+        }
+        task.useJUnitPlatform();
+        task.jvmArgs("--enable-native-access=ALL-UNNAMED");
+        task.shouldRunAfter(project.getTasks().named("test"));
+        task.dependsOn(project.getTasks().named("testClasses"));
+        task.systemProperty("testorder.state.path",
+                ext.getStateFile().get().getAsFile().getAbsolutePath());
+    }
+
+    private static TestSelector.Selection selectTests(Project project, TestOrderExtension ext) {
+        Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
+        if (!Files.exists(indexPath)) {
+            throw new GradleException("[test-order] Index file not found: " + indexPath
+                    + ". Run tests in learn mode first.");
+        }
+        try {
+            DependencyMap depMap = DependencyMap.load(indexPath);
+            Path statePath = ext.getStateFile().get().getAsFile().toPath();
+            TestOrderState state = Files.exists(statePath)
+                    ? TestOrderState.load(statePath) : new TestOrderState();
+            Set<String> changed = detectChangedClassesForSelection(project, ext);
+            Set<String> changedTests = detectChangedTestClassesForSelection(project, ext);
+            TestOrderState.ScoringWeights weights = resolveWeights(state, ext);
+            Long seed = ext.getSelectSeed().isPresent() ? ext.getSelectSeed().get() : null;
+            TestSelector.Selection selection = new TestSelector(
+                    depMap,
+                    state,
+                    changed,
+                    changedTests,
+                    weights,
+                    new TestSelector.Config(resolveSelectTopN(project, ext), resolveSelectRandomM(project, ext), seed)
+            ).select();
+            TestSelector.writeTestList(selection.selected(), ext.getSelectedFile().get().getAsFile().toPath());
+            TestSelector.writeTestList(selection.remaining(), ext.getRemainingFile().get().getAsFile().toPath());
+            return selection;
+        } catch (IOException e) {
+            throw new GradleException("Failed to compute selected tests", e);
+        }
+    }
+
+    private static TestOrderState.ScoringWeights resolveWeights(TestOrderState state, TestOrderExtension ext)
+            throws IOException {
+        String weightsFile = ext.getWeightsFile().get();
+        if (weightsFile != null && !weightsFile.isBlank()) {
+            Path weightsPath = Path.of(weightsFile);
+            if (Files.exists(weightsPath)) {
+                return TestOrderState.ScoringWeights.loadFromFile(weightsPath).weights();
+            }
+        }
+        return state.weights() != null ? state.weights() : TestOrderState.ScoringWeights.DEFAULT;
+    }
+
+    private static Set<String> detectChangedClassesForSelection(Project project, TestOrderExtension ext) {
+        String explicitChanged = ext.getChangedClasses().get();
+        String propChanged = gradleOrSystemProperty(project, "testorder.changed.classes");
+        if (propChanged != null && !propChanged.isBlank()) {
+            return commaSeparatedClasses(propChanged);
+        }
+        if ("explicit".equalsIgnoreCase(ext.getChangeMode().get()) && explicitChanged != null && !explicitChanged.isBlank()) {
+            return commaSeparatedClasses(explicitChanged);
+        }
+        try {
+            Path hashFile = ext.getHashFile().get().getAsFile().toPath();
+            ChangeDetector.Mode mode = resolveChangeMode(ext.getChangeMode().get(), hashFile);
+            return ChangeDetector.detectReadOnly(mode, project.getProjectDir().toPath(),
+                    resolveMainSourceRoot(project), hashFile, explicitChanged.isEmpty() ? null : explicitChanged);
+        } catch (IOException e) {
+            project.getLogger().debug("[test-order] Changed-class detection for select skipped: {}", e.getMessage());
+            return Set.of();
+        }
+    }
+
+    private static Set<String> detectChangedTestClassesForSelection(Project project, TestOrderExtension ext) {
+        if ("explicit".equalsIgnoreCase(ext.getChangeMode().get())) {
+            return Set.of();
+        }
+        try {
+            Path testHashFile = ext.getTestHashFile().get().getAsFile().toPath();
+            ChangeDetector.Mode mode = resolveChangeMode(ext.getChangeMode().get(), testHashFile);
+            return ChangeDetector.detectReadOnly(mode, project.getProjectDir().toPath(),
+                    resolveTestSourceRoot(project), testHashFile, null);
+        } catch (IOException e) {
+            project.getLogger().debug("[test-order] Changed-test detection for select skipped: {}", e.getMessage());
+            return Set.of();
+        }
+    }
+
+    private static Set<String> commaSeparatedClasses(String classes) {
+        return Arrays.stream(classes.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private static void applySelectedTests(Test task, List<String> tests) {
+        task.filter(filter -> {
+            filter.setFailOnNoMatchingTests(false);
+            if (tests.isEmpty()) {
+                filter.includeTestsMatching("__testorder__.NoMatchingTests");
+            } else {
+                for (String testClass : tests) {
+                    filter.includeTestsMatching(testClass);
+                }
+            }
+        });
+    }
+
+    private static void configureStateLocking(Project project, TestOrderExtension ext, Test task) {
+        task.doFirst("acquireTestOrderStateLock", t -> {
+            Path statePath = ext.getStateFile().get().getAsFile().toPath();
+            Path lockPath = statePath.resolveSibling(statePath.getFileName() + ".lock");
+            try {
+                Files.createDirectories(lockPath.getParent());
+                FileChannel channel = FileChannel.open(lockPath,
+                        StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                FileLock lock = channel.lock();
+                ExtraPropertiesExtension extra = t.getExtensions().getExtraProperties();
+                extra.set(STATE_LOCK_CHANNEL_KEY, channel);
+                extra.set(STATE_LOCK_KEY, lock);
+                project.getLogger().info("[test-order] Acquired state lock {}", lockPath);
+            } catch (IOException e) {
+                throw new GradleException("Failed to acquire state lock for " + statePath, e);
+            }
+        });
+        task.doLast("releaseTestOrderStateLock", t -> releaseStateLock(t));
+    }
+
+    private static void releaseStateLock(Task task) {
+        ExtraPropertiesExtension extra = task.getExtensions().getExtraProperties();
+        Object lockObj = extra.has(STATE_LOCK_KEY) ? extra.get(STATE_LOCK_KEY) : null;
+        Object channelObj = extra.has(STATE_LOCK_CHANNEL_KEY) ? extra.get(STATE_LOCK_CHANNEL_KEY) : null;
+        try {
+            if (lockObj instanceof FileLock lock) {
+                lock.release();
+            }
+        } catch (IOException ignored) {
+        }
+        try {
+            if (channelObj instanceof FileChannel channel) {
+                channel.close();
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    @FunctionalInterface
+    private interface LockAction<T> {
+        T run() throws IOException;
+    }
+
+    private static <T> T withStateFileLock(Path statePath, LockAction<T> action) {
+        Path lockPath = statePath.resolveSibling(statePath.getFileName() + ".lock");
+        try {
+            Files.createDirectories(lockPath.getParent());
+            try (FileChannel channel = FileChannel.open(lockPath,
+                    StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                 FileLock ignored = channel.lock()) {
+                return action.run();
+            }
+        } catch (IOException e) {
+            throw new GradleException("Failed while holding state lock for " + statePath, e);
+        }
+    }
+
+    private static int resolveSelectTopN(Project project, TestOrderExtension ext) {
+        String override = gradleOrSystemProperty(project, "testorder.select.topN");
+        return override != null && !override.isBlank() ? Integer.parseInt(override) : ext.getSelectTopN().get();
+    }
+
+    private static int resolveSelectRandomM(Project project, TestOrderExtension ext) {
+        String override = gradleOrSystemProperty(project, "testorder.select.randomM");
+        return override != null && !override.isBlank() ? Integer.parseInt(override) : ext.getSelectRandomM().get();
     }
 }

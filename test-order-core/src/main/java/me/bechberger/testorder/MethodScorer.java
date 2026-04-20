@@ -160,8 +160,6 @@ public class MethodScorer {
 
         // Build coverage map: methodKey -> set of changed classes it covers
         Map<String, Set<String>> coverage = new LinkedHashMap<>();
-        // Reverse index: changed class -> method keys that cover it
-        Map<String, List<String>> classToMethods = new HashMap<>();
         for (MethodMetadata m : methods) {
             String methodKey = m.className() + "#" + m.methodName();
             Set<String> methodDeps = depMap.getMethodDeps(methodKey);
@@ -172,46 +170,16 @@ public class MethodScorer {
             }
             if (!covered.isEmpty()) {
                 coverage.put(methodKey, covered);
-                for (String c : covered) {
-                    classToMethods.computeIfAbsent(c, k -> new ArrayList<>()).add(methodKey);
-                }
             }
         }
-
-        // Maintain incremental uncovered count per method
-        Map<String, Integer> remainingCount = new HashMap<>(coverage.size());
-        for (var entry : coverage.entrySet()) {
-            remainingCount.put(entry.getKey(), entry.getValue().size());
-        }
-
-        Set<String> uncovered = new HashSet<>(changedClasses);
         Map<String, Double> bonuses = new HashMap<>();
         double bonus = weight;
 
-        while (!uncovered.isEmpty() && !remainingCount.isEmpty()) {
-            String best = null;
-            int bestCount = 0;
-            for (var entry : remainingCount.entrySet()) {
-                if (entry.getValue() > bestCount) {
-                    bestCount = entry.getValue();
-                    best = entry.getKey();
-                }
-            }
-            if (best == null || bestCount == 0) break;
-            bonuses.put(best, bonus);
-            Set<String> bestCoverage = coverage.get(best);
-            for (String c : bestCoverage) {
-                if (uncovered.remove(c)) {
-                    for (String mk : classToMethods.getOrDefault(c, List.of())) {
-                        Integer cnt = remainingCount.get(mk);
-                        if (cnt != null) {
-                            remainingCount.put(mk, cnt - 1);
-                        }
-                    }
-                }
-            }
-            remainingCount.remove(best);
+        SetCoverComputer.Result<String> result =
+                new SetCoverComputer<>(coverage, changedClasses).compute();
+        for (String best : result.order()) {
             bonus = Math.max(bonus * SET_COVER_DECLINE, 0.1);
+            bonuses.put(best, bonus / SET_COVER_DECLINE);
         }
 
         return bonuses;

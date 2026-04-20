@@ -2,8 +2,11 @@ package me.bechberger.testorder.changes;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -317,5 +320,69 @@ class StructuralDiffTest {
         StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), oldSource, newSource);
         // Comments are stripped before parsing — purely comment changes should produce no structural diff
         assertFalse(diff.hasChanges(), "Comment-only changes should not appear as structural changes");
+    }
+
+    @Test
+    void parseGitBatchResponseSupportsPresentAndMissingFiles() throws Exception {
+        byte[] payload = (
+                "abc123 blob 11\nhello world\n"
+                        + "HEAD:src/Missing.java missing\n")
+                .getBytes(StandardCharsets.UTF_8);
+
+        Map<String, String> result = StructuralDiff.parseGitBatchResponse(
+                List.of("src/Foo.java", "src/Missing.java"),
+                new ByteArrayInputStream(payload));
+
+        assertEquals("hello world", result.get("src/Foo.java"));
+        assertTrue(result.containsKey("src/Missing.java"));
+        assertNull(result.get("src/Missing.java"));
+    }
+
+    @Test
+    void removingOneOfTwoAbstractOverloadsDetected() {
+        // Two abstract overloads with the same name but different parameter types
+        String oldSource = """
+                package com.x;
+                public interface Processor {
+                    void process(int x);
+                    void process(String s);
+                }
+                """;
+        // One overload removed
+        String newSource = """
+                package com.x;
+                public interface Processor {
+                    void process(int x);
+                }
+                """;
+        StructuralDiff.FileDiff diff = StructuralDiff.diffSources(
+                Path.of("Processor.java"), oldSource, newSource);
+        assertTrue(diff.hasChanges(),
+                "Removing an abstract overload should be detected as a change");
+        boolean hasProcessChange = diff.changes().stream()
+                .anyMatch(c -> c.name().equals("process"));
+        assertTrue(hasProcessChange,
+                "Change should mention 'process'; got: " + diff.changes());
+    }
+
+    @Test
+    void addingAbstractOverloadDetected() {
+        String oldSource = """
+                package com.x;
+                public interface Svc {
+                    void handle(int x);
+                }
+                """;
+        String newSource = """
+                package com.x;
+                public interface Svc {
+                    void handle(int x);
+                    void handle(String s);
+                }
+                """;
+        StructuralDiff.FileDiff diff = StructuralDiff.diffSources(
+                Path.of("Svc.java"), oldSource, newSource);
+        assertTrue(diff.hasChanges(),
+                "Adding an abstract overload should be detected");
     }
 }

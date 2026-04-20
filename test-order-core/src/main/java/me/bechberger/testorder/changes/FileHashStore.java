@@ -1,5 +1,7 @@
 package me.bechberger.testorder.changes;
 
+import me.bechberger.testorder.PersistenceSupport;
+
 import java.io.*;
 import java.nio.file.*;
 import java.security.MessageDigest;
@@ -35,7 +37,7 @@ public class FileHashStore {
         }
         try (Stream<Path> walk = Files.walk(sourceRoot)) {
             for (Path file : walk.filter(p -> Files.isRegularFile(p) && SourceFileModel.isSourceFile(p.toString())).toList()) {
-                String relativePath = sourceRoot.relativize(file).toString();
+                String relativePath = sourceRoot.relativize(file).toString().replace('\\', '/');
                 String hash = sha256(file);
                 hashes.put(relativePath, hash);
             }
@@ -51,7 +53,8 @@ public class FileHashStore {
         if (parent != null) {
             Files.createDirectories(parent);
         }
-        try (LZ4FrameOutputStream lz4os = new LZ4FrameOutputStream(Files.newOutputStream(hashFile));
+        Path tempFile = PersistenceSupport.temporarySibling(hashFile);
+        try (LZ4FrameOutputStream lz4os = new LZ4FrameOutputStream(Files.newOutputStream(tempFile));
              PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os))) {
             for (var entry : hashes.entrySet()) {
                 pw.print(entry.getKey());
@@ -59,6 +62,7 @@ public class FileHashStore {
                 pw.println(entry.getValue());
             }
         }
+        PersistenceSupport.moveIntoPlace(tempFile, hashFile);
     }
 
     /**
@@ -66,13 +70,15 @@ public class FileHashStore {
      */
     public static FileHashStore load(Path hashFile) throws IOException {
         Map<String, String> hashes = new TreeMap<>();
-        try (LZ4FrameInputStream lz4is = new LZ4FrameInputStream(Files.newInputStream(hashFile));
+        Path loadPath = PersistenceSupport.resolveLoadPath(hashFile);
+        try (LZ4FrameInputStream lz4is = new LZ4FrameInputStream(Files.newInputStream(loadPath));
              BufferedReader br = new BufferedReader(new InputStreamReader(lz4is))) {
             String line;
             while ((line = br.readLine()) != null) {
                 int tab = line.indexOf('\t');
                 if (tab > 0) {
-                    hashes.put(line.substring(0, tab), line.substring(tab + 1));
+                    String key = line.substring(0, tab).replace('\\', '/');
+                    hashes.put(key, line.substring(tab + 1));
                 }
             }
         }

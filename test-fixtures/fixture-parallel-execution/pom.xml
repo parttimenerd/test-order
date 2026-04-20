@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>me.bechberger.testorder</groupId>
+        <artifactId>test-fixtures-parent</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>fixture-parallel-execution</artifactId>
+    <name>Parallel Test Execution Fixture</name>
+    <description>Fixture for testing test-order with Maven parallel test execution (forkMode, threads, parallelGroups)</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- Enable parallel test execution: 2 threads per core -->
+                    <parallel>methods</parallel>
+                    <threadCount>4</threadCount>
+                    <!-- Each test fork in its own JVM process -->
+                    <forkMode>perthread</forkMode>
+                    <forkCount>2</forkCount>
+                    <reuseForks>false</reuseForks>
+                    <!-- Test ordering is still critical for performance even in parallel -->
+                    <testFailureIgnore>false</testFailureIgnore>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

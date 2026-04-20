@@ -61,10 +61,6 @@ public class IntelligentClassFilter {
             "$Lambda$", "EnhancerBySpringCGLIB", "FastClass", "MethodAccessor"
     };
     
-    private static final String[] TEST_CLASS_MARKERS = {
-            "Test", "Tests", "Mock", "Stub", "Spy", "Fake"
-    };
-    
     private final Strategy strategy;
     private final List<Pattern> includePatterns;
     private final List<Pattern> excludePatterns;
@@ -313,12 +309,10 @@ public class IntelligentClassFilter {
      */
     private boolean isTestClass(String className) {
         String simpleName = className.substring(className.lastIndexOf('/') + 1);
-        for (String marker : TEST_CLASS_MARKERS) {
-            if (simpleName.contains(marker)) {
-                return true;
-            }
-        }
-        return false;
+        return simpleName.startsWith("Test")
+                || simpleName.endsWith("Test")
+                || simpleName.endsWith("Tests")
+                || simpleName.endsWith("TestCase");
     }
     
     /**
@@ -326,6 +320,7 @@ public class IntelligentClassFilter {
      */
     public void clearCache() {
         filterCache.clear();
+        cacheSize.set(0);
     }
     
     /**

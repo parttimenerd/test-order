@@ -1,5 +1,6 @@
 package me.bechberger.testorder.gradle;
 
+import me.bechberger.testorder.DependencyMap;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,7 +15,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -36,6 +40,11 @@ class SpringBootCoreModulesIT {
     private static final String CORE_TEST_MODULE = ":core:spring-boot-test";
     private static final String CORE_CHANGED_CLASS = "org.springframework.boot.SpringApplication";
     private static final String CORE_CHANGED_FILE_CLASS = "org.springframework.boot.Banner";
+    private static final String CORE_TEST_MODULE_CHANGED_CLASS =
+            "org.springframework.boot.test.context.SpringBootContextLoader";
+    private static final String OUTPUT_CAPTURE_DEPENDENCY =
+            "org.springframework.boot.test.system.OutputCapture";
+    private static final Pattern SHOW_ORDER_ROW_PATTERN = Pattern.compile("^(\\d+)\\.\\s+(\\S+)\\s+(.*)$");
 
     @TempDir
     static Path tempDir;
@@ -57,8 +66,8 @@ class SpringBootCoreModulesIT {
 
         coreModuleDir = springBootDir.resolve("core/spring-boot");
         coreTestModuleDir = springBootDir.resolve("core/spring-boot-test");
-        springJavaHome = findJavaHomeAtLeast(25).orElse(null);
-        publishJavaHome = findJavaHomeForPluginBuild().orElse(null);
+        springJavaHome = findSpringJavaHome().orElse(null);
+        publishJavaHome = findPublishJavaHome().orElse(null);
         Assumptions.assumeTrue(springJavaHome != null, "A Java 25+ home is required for Spring Boot runs");
         Assumptions.assumeTrue(publishJavaHome != null, "A Java 17-24 home is required to publish test-order artifacts");
 
@@ -82,6 +91,7 @@ class SpringBootCoreModulesIT {
         assertTrue(result.output().contains("[test-order] Configuring learn mode"));
         assertArtifactsExist(coreModuleDir);
         assertTrue(countDepsFiles(coreModuleDir) >= 1, "Expected .deps files for the filtered learn run");
+        assertTrackedDependency(coreModuleDir, CORE_TEST, CORE_CHANGED_CLASS);
     }
 
     @Test
@@ -97,7 +107,9 @@ class SpringBootCoreModulesIT {
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(result.output().contains("Predicted test execution order"));
         assertTrue(result.output().contains("Changed classes: " + CORE_CHANGED_CLASS));
-        assertTrue(result.output().contains("SpringApplicationTests"));
+        ShowOrderRow row = showOrderRow(result.output(), "SpringApplicationTests");
+        assertTrue(row.score() > 0, "Expected a positive score for SpringApplicationTests:\n" + result.output());
+        assertTrue(row.depOverlap() > 0, "Expected dependency overlap for SpringApplicationTests:\n" + result.output());
     }
 
     @Test
@@ -116,12 +128,49 @@ class SpringBootCoreModulesIT {
 
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(result.output().contains("[test-order] Configuring order mode"));
+        assertTrue(result.output().contains("[test-order] Using explicitly provided changed classes"));
         assertTrue(Files.exists(coreModuleDir.resolve(".test-order-state")));
         assertTrue(Files.exists(coreModuleDir.resolve(".test-order-hashes.lz4")));
     }
 
     @Test
     @Order(4)
+    @DisplayName("Spring Boot core auto mode switches to order after learn")
+    void coreAutoModeUsesLearnedIndex() throws IOException {
+        ensureCoreLearnBaseline();
+
+        CommandResult result = runSpringBoot(springBootDir,
+                "--rerun-tasks",
+                CORE_MODULE + ":test",
+                "--tests", CORE_TEST);
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("[test-order] Configuring order mode"));
+    }
+
+    @Test
+    @Order(5)
+    @DisplayName("Spring Boot core skip mode leaves no plugin artifacts behind")
+    void coreSkipModeDisablesPlugin() throws IOException {
+        cleanGeneratedArtifacts(coreModuleDir);
+
+        CommandResult result = runSpringBoot(springBootDir,
+                "--rerun-tasks",
+                CORE_MODULE + ":test",
+                "-Dtestorder.mode=skip",
+                "--tests", CORE_TEST);
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertFalse(result.output().contains("[test-order] Configuring learn mode"));
+        assertFalse(result.output().contains("[test-order] Configuring order mode"));
+        assertFalse(Files.exists(coreModuleDir.resolve("test-dependencies.lz4")),
+                "Skip mode should not create an aggregated dependency index");
+        assertFalse(Files.isDirectory(coreModuleDir.resolve("build/test-order-deps")),
+                "Skip mode should not create a deps directory");
+    }
+
+    @Test
+    @Order(6)
     @DisplayName("Spring Boot test module learn mode writes index, deps, and state")
     void coreTestModuleLearnModeProducesArtifacts() throws IOException {
         cleanGeneratedArtifacts(coreTestModuleDir);
@@ -137,10 +186,12 @@ class SpringBootCoreModulesIT {
         assertTrue(result.output().contains("[test-order] Configuring learn mode"));
         assertArtifactsExist(coreTestModuleDir);
         assertTrue(countDepsFiles(coreTestModuleDir) >= 2, "Expected .deps files for the filtered learn run");
+        assertTrackedDependency(coreTestModuleDir, CORE_TEST_MODULE_TESTS.get(0), OUTPUT_CAPTURE_DEPENDENCY);
+        assertTrackedDependency(coreTestModuleDir, CORE_TEST_MODULE_TESTS.get(1), CORE_TEST_MODULE_CHANGED_CLASS);
     }
 
     @Test
-    @Order(5)
+    @Order(7)
     @DisplayName("Spring Boot test module supports all instrumentation modes")
     void coreTestModuleSupportsAllInstrumentationModes() throws IOException {
         for (String mode : List.of("METHOD_ENTRY", "FULL", "FULL_METHOD", "FULL_MEMBER")) {
@@ -157,11 +208,19 @@ class SpringBootCoreModulesIT {
             assertArtifactsExist(coreTestModuleDir);
             assertTrue(countDepsFiles(coreTestModuleDir) >= 2,
                     "Expected .deps files for instrumentation mode " + mode);
+            assertTrackedDependency(coreTestModuleDir, CORE_TEST_MODULE_TESTS.get(0), OUTPUT_CAPTURE_DEPENDENCY);
+            assertTrackedDependency(coreTestModuleDir, CORE_TEST_MODULE_TESTS.get(1), CORE_TEST_MODULE_CHANGED_CLASS);
+
+            DependencyMap aggregated = aggregateDependencyMapFromDeps(coreTestModuleDir);
+            if ("FULL_METHOD".equals(mode) || "FULL_MEMBER".equals(mode)) {
+                assertTrue(aggregated.hasMethodDeps(),
+                        "Expected per-method dependency data for instrumentation mode " + mode);
+            }
         }
     }
 
     @Test
-    @Order(6)
+    @Order(8)
     @DisplayName("Spring Boot core auto, since-last-run, and uncommitted detect a real source edit")
     void coreChangeModesDetectEditedClass() throws IOException {
         ensureCoreLearnBaseline();
@@ -185,7 +244,7 @@ class SpringBootCoreModulesIT {
     }
 
     @Test
-    @Order(7)
+    @Order(9)
     @DisplayName("Spring Boot core since-last-commit detects a changed class in a temporary worktree")
     void coreSinceLastCommitDetectsHeadChange() throws IOException {
         Path worktreeDir = tempDir.resolve("spring-boot-worktree");
@@ -268,6 +327,53 @@ class SpringBootCoreModulesIT {
         try (var files = Files.walk(moduleDir.resolve("build/test-order-deps"))) {
             return files.filter(path -> path.getFileName().toString().endsWith(".deps")).count();
         }
+    }
+
+    private static void assertTrackedDependency(Path moduleDir, String testClass, String dependency) throws IOException {
+        DependencyMap aggregated = aggregateDependencyMapFromDeps(moduleDir);
+        DependencyMap index = loadDependencyMap(moduleDir);
+
+        assertEquals(aggregated, index,
+                "Expected aggregated dependency index to match emitted .deps files for " + moduleDir);
+        assertTrue(index.testClasses().contains(testClass),
+                "Expected " + testClass + " in dependency index for " + moduleDir);
+        assertTrue(index.get(testClass).contains(dependency),
+                "Expected " + testClass + " to depend on " + dependency + " in the aggregated index");
+        assertTrue(readDepsFile(moduleDir, testClass).contains(dependency),
+                "Expected " + testClass + ".deps to contain " + dependency);
+    }
+
+    private static DependencyMap loadDependencyMap(Path moduleDir) throws IOException {
+        return DependencyMap.load(moduleDir.resolve("test-dependencies.lz4"));
+    }
+
+    private static DependencyMap aggregateDependencyMapFromDeps(Path moduleDir) throws IOException {
+        return DependencyMap.aggregate(moduleDir.resolve("build/test-order-deps"));
+    }
+
+    private static Set<String> readDepsFile(Path moduleDir, String testClass) throws IOException {
+        return Files.readAllLines(moduleDir.resolve("build/test-order-deps").resolve(testClass + ".deps")).stream()
+                .map(String::trim)
+                .filter(line -> !line.isEmpty())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private static ShowOrderRow showOrderRow(String output, String simpleClassName) {
+        String line = output.lines()
+                .filter(candidate -> candidate.contains(simpleClassName))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected a show-order row for " + simpleClassName
+                        + " but none was present.\n" + output));
+        Matcher matcher = SHOW_ORDER_ROW_PATTERN.matcher(line.trim());
+        assertTrue(matcher.matches(), "Unexpected show-order row format: " + line);
+
+        String[] pieces = matcher.group(3).trim().split("\\s+");
+        assertTrue(pieces.length >= 3, "Expected score and deps columns in row: " + line);
+        return new ShowOrderRow(
+                Integer.parseInt(matcher.group(1)),
+                matcher.group(2),
+                Integer.parseInt(pieces[1]),
+                Integer.parseInt(pieces[2]));
     }
 
     private static void cleanGeneratedArtifacts(Path moduleDir) throws IOException {
@@ -423,6 +529,20 @@ class SpringBootCoreModulesIT {
         return current;
     }
 
+    private static Optional<String> findSpringJavaHome() {
+        return findSpecificJavaHome("25+")
+                .or(() -> findSpecificJavaHome("25"))
+                .or(() -> findSpecificJavaHome("26"))
+                .or(() -> findJavaHomeAtLeast(25));
+    }
+
+    private static Optional<String> findPublishJavaHome() {
+        return findSpecificJavaHome("21")
+                .or(() -> findSpecificJavaHome("24"))
+                .or(() -> findSpecificJavaHome("17"))
+                .or(SpringBootCoreModulesIT::findJavaHomeForPluginBuild);
+    }
+
     private static Optional<String> findJavaHomeForPluginBuild() {
         int current = Runtime.version().feature();
         if (current >= 17 && current <= 24) {
@@ -551,4 +671,5 @@ class SpringBootCoreModulesIT {
 
     private record CommandResult(int exitCode, String output) {}
     private record JavaHome(Path path, int version) {}
+    private record ShowOrderRow(int rank, String displayName, int score, int depOverlap) {}
 }

@@ -2,7 +2,6 @@ package me.bechberger.testorder;
 
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.MethodOrdererContext;
-import org.tinylog.Logger;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -23,12 +22,12 @@ import java.util.*;
  */
 public class PriorityMethodOrderer implements MethodOrderer {
 
-    private static TestOrderState pendingState;
-    private static TestOrderState.MethodScoringWeights methodWeights;
-    private static boolean enabled = false;
-    private static DependencyMap depMap;
-    private static Set<String> changedClasses;
-    private static Set<String> changedMethods;
+    private static volatile TestOrderState pendingState;
+    private static volatile TestOrderState.MethodScoringWeights methodWeights;
+    private static volatile boolean enabled = false;
+    private static volatile DependencyMap depMap;
+    private static volatile Set<String> changedClasses;
+    private static volatile Set<String> changedMethods;
 
     /**
      * Called by PriorityClassOrderer to inject the state, weights, and dep map for method ordering.
@@ -45,6 +44,15 @@ public class PriorityMethodOrderer implements MethodOrderer {
         PriorityMethodOrderer.depMap = depMap;
         PriorityMethodOrderer.changedClasses = changedClasses;
         PriorityMethodOrderer.changedMethods = changedMethods;
+    }
+
+    static synchronized void clearPendingState() {
+        pendingState = null;
+        methodWeights = null;
+        enabled = false;
+        depMap = null;
+        changedClasses = null;
+        changedMethods = null;
     }
 
     @Override
@@ -80,7 +88,7 @@ public class PriorityMethodOrderer implements MethodOrderer {
             if (hasDurations && hasFailures) break;
         }
         if (!hasDurations && !hasFailures) {
-            Logger.debug("[method-order] {}: no telemetry available; using source order",
+            TestOrderLogger.debug("[method-order] {}: no telemetry available; using source order",
                     className);
             return;
         }
@@ -92,12 +100,12 @@ public class PriorityMethodOrderer implements MethodOrderer {
 
         // Log class-level stats
         long classMedian = scores.stream().map(s -> s.classMedianMs()).findFirst().orElse(0L);
-        Logger.debug("[method-order] {}: median_duration={}ms, {} methods",
+        TestOrderLogger.debug("[method-order] {}: median_duration={}ms, {} methods",
                 className, classMedian, methods.size());
 
         // Log each method's score
         for (MethodScorer.MethodScoreResult score : scores) {
-            Logger.debug("[method-order] → {}: score={} (recency={}, speed={}, depOverlap={}, coverage={}, new={}, changed={}, classMedian={}ms)",
+            TestOrderLogger.debug("[method-order] → {}: score={} (recency={}, speed={}, depOverlap={}, coverage={}, new={}, changed={}, classMedian={}ms)",
                     score.methodName(),
                     String.format("%.1f", score.score()),
                     String.format("%.1f", score.failureRecencyBonus()),

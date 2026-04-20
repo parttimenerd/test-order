@@ -32,32 +32,32 @@ import java.util.Set;
 public class CombinedMojo extends AbstractTestOrderMojo {
 
     /** Comma-separated additional package prefixes to instrument (merged with auto-detected source packages) */
-    @Parameter(property = "testorder.includePackages")
+    @Parameter(property = MavenPluginConfigKeys.INCLUDE_PACKAGES)
     private String includePackages;
 
     /** When true (default) and no source packages are detected, fall back to the project groupId. */
-    @Parameter(property = "testorder.filterByGroupId", defaultValue = "true")
+    @Parameter(property = MavenPluginConfigKeys.FILTER_BY_GROUP_ID, defaultValue = "true")
     private boolean filterByGroupId;
 
-    @Parameter(property = "testorder.instrumentationMode", defaultValue = "FULL")
+    @Parameter(property = MavenPluginConfigKeys.LEGACY_INSTRUMENTATION_MODE, defaultValue = "FULL")
     private String instrumentationMode;
 
     /** Number of top-scored test classes to always include. */
-    @Parameter(property = "testorder.select.topN", defaultValue = "20")
+    @Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "20")
     private int topN;
 
     /** Number of random fast tests to include for coverage diversity. */
-    @Parameter(property = "testorder.select.randomM", defaultValue = "10")
+        @Parameter(property = MavenPluginConfigKeys.SELECT_RANDOM_M, defaultValue = "10")
     private int randomM;
 
-    @Parameter(property = "testorder.select.seed")
+        @Parameter(property = MavenPluginConfigKeys.SELECT_SEED)
     private Long seed;
 
-    @Parameter(property = "testorder.select.remainingFile",
+        @Parameter(property = MavenPluginConfigKeys.SELECT_REMAINING_FILE,
             defaultValue = "${project.build.directory}/test-order-remaining.txt")
     private String remainingFile;
 
-    @Parameter(property = "testorder.select.selectedFile",
+        @Parameter(property = MavenPluginConfigKeys.SELECTED_FILE,
             defaultValue = "${project.build.directory}/test-order-selected.txt")
     private String selectedFile;
 
@@ -65,16 +65,22 @@ public class CombinedMojo extends AbstractTestOrderMojo {
      * Whether to emit a reminder for running deferred tests via
      * {@code mvn test-order:run-remaining test} when any were deferred.
      */
-    @Parameter(property = "testorder.combined.runRemaining", defaultValue = "true")
+    @Parameter(property = MavenPluginConfigKeys.COMBINED_RUN_REMAINING, defaultValue = "true")
     private boolean runRemaining;
 
     /** Optimise weights every N successful runs (0 = never). */
-    @Parameter(property = "testorder.combined.optimizeEvery", defaultValue = "10")
+    @Parameter(property = MavenPluginConfigKeys.COMBINED_OPTIMIZE_EVERY, defaultValue = "10")
     private int optimizeEvery;
 
     @Override
     public void execute() throws MojoExecutionException {
         initContext();
+        String canonicalInstrumentationMode = session != null && session.getUserProperties() != null
+                ? session.getUserProperties().getProperty(MavenPluginConfigKeys.INSTRUMENTATION_MODE)
+                : null;
+        if (canonicalInstrumentationMode != null && !canonicalInstrumentationMode.isBlank()) {
+            instrumentationMode = canonicalInstrumentationMode;
+        }
         SurefireHelper.validateNoClassLevelParallel(project, getLog());
 
         Path idxPath = resolveIndexPath();
@@ -100,6 +106,7 @@ public class CombinedMojo extends AbstractTestOrderMojo {
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to load dependency index", e);
         }
+        depMap = currentModuleDependencyMap(depMap);
         warnIfNoDeps(depMap);
 
         TestOrderState state = loadState();
@@ -125,7 +132,7 @@ public class CombinedMojo extends AbstractTestOrderMojo {
 
         // configure Surefire for the selected subset
         if (!selection.selected().isEmpty()) {
-            SurefireHelper.configureIncludes(project, selection.selected(), false);
+            SurefireHelper.configureIncludes(project, selection.selected(), true);
         } else {
             getLog().info("[test-order] No tests selected — skipping test execution.");
             project.getProperties().setProperty("skipTests", "true");
@@ -133,8 +140,10 @@ public class CombinedMojo extends AbstractTestOrderMojo {
         writeOrdererConfig(changed, changedTests);
 
         // set project properties so a second execution can find the remaining tests
-        project.getProperties().setProperty("testorder.remaining.file",
-                Path.of(remainingFile).toAbsolutePath().toString());
+        String remainingPath = Path.of(remainingFile).toAbsolutePath().toString();
+        project.getProperties().setProperty(MavenPluginConfigKeys.SELECT_REMAINING_FILE, remainingPath);
+        // Preserve legacy project property name for compatibility with existing tooling.
+        project.getProperties().setProperty("testorder.remaining.file", remainingPath);
         project.getProperties().setProperty("testorder.combined.active", "true");
         if (runRemaining && !selection.remaining().isEmpty()) {
             getLog().info("[test-order] Remaining tests written to " + remainingFile
@@ -143,13 +152,13 @@ public class CombinedMojo extends AbstractTestOrderMojo {
 
         // check if we should trigger optimization
         if (optimizeEvery > 0) {
-            long totalRuns = state.runs().size();
-            if (totalRuns > 0 && totalRuns % optimizeEvery == 0) {
+            if (state.runsSinceLearn() > 0 && state.runsSinceLearn() % optimizeEvery == 0) {
                 getLog().info("[test-order] Triggering periodic weight optimisation (every "
                         + optimizeEvery + " runs)…");
                 TestOrderState.OptimizeResult optimized = state.optimize();
                 if (optimized != null) {
                     state.setWeights(optimized.weights());
+                    state.resetRunsSinceLearn();
                     try {
                         state.save(ctx.resolveStateFile(stateFile));
                         getLog().info("[test-order] Optimised weights saved: " + optimized.weights().format());

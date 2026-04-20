@@ -41,7 +41,7 @@
                 <executions>
                     <execution>
                         <goals>
-                            <goal>prepare</goal>
+                            <goal>combined</goal>
                         </goals>
                     </execution>
                 </executions>

@@ -1,5 +1,7 @@
 package me.bechberger.testorder.changes;
 
+import me.bechberger.testorder.TestOrderLogger;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -50,15 +52,22 @@ public class ChangeDetector {
                                         String explicitClasses, boolean readOnly) throws IOException {
         String gitPrefix = toGitPrefix(projectRoot, sourceRoot);
         Path absoluteSourceRoot = projectRoot.resolve(sourceRoot);
-
-        return switch (mode) {
-            case SINCE_LAST_RUN -> detectSinceLastRun(absoluteSourceRoot, hashFile, !readOnly);
-            case SINCE_LAST_COMMIT -> mergeUncommitted(
-                    GitChangeDetector.changedSinceLastCommit(projectRoot, gitPrefix),
-                    projectRoot, gitPrefix);
-            case UNCOMMITTED -> GitChangeDetector.uncommittedChanges(projectRoot, gitPrefix);
-            case EXPLICIT -> parseExplicit(explicitClasses);
-        };
+        try {
+            return switch (mode) {
+                case SINCE_LAST_RUN -> detectSinceLastRun(absoluteSourceRoot, hashFile, !readOnly);
+                case SINCE_LAST_COMMIT -> mergeUncommitted(
+                        GitChangeDetector.changedSinceLastCommit(projectRoot, gitPrefix),
+                        projectRoot, gitPrefix);
+                case UNCOMMITTED -> GitChangeDetector.uncommittedChanges(projectRoot, gitPrefix);
+                case EXPLICIT -> parseExplicit(explicitClasses);
+            };
+        } catch (IOException e) {
+            if (mode == Mode.SINCE_LAST_COMMIT || mode == Mode.UNCOMMITTED) {
+                TestOrderLogger.warn("Git-based change detection failed, falling back to hash-based detection: {}", e.getMessage());
+                return detectSinceLastRun(absoluteSourceRoot, hashFile, !readOnly);
+            }
+            throw e;
+        }
     }
 
     /** Best-effort merge of uncommitted changes on top of a base result. */
@@ -89,6 +98,9 @@ public class ChangeDetector {
             relative = sourceRoot;
         }
         String prefix = relative.toString().replace('\\', '/');
+        if (prefix.isBlank()) {
+            return "";
+        }
         if (!prefix.endsWith("/")) prefix += "/";
         return prefix;
     }

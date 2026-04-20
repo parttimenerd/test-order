@@ -49,6 +49,8 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <jacoco.version>0.8.14</jacoco.version>
+        <testorder.coverage.minimum>0.0</testorder.coverage.minimum>
         <javassist.version>3.29.2-GA</javassist.version>
         <femtocli.version>0.4.0</femtocli.version>
         <lz4.version>1.10.4</lz4.version>
@@ -62,15 +64,11 @@
     <modules>
         <module>test-order-agent</module>
         <module>test-order-core</module>
+        <module>test-order-cli</module>
         <module>test-order-junit</module>
         <module>test-order-maven-plugin</module>
-        <module>test-order-example</module>
-        <module>test-order-example-service</module>
-        <module>test-order-example-kotlin</module>
-        <module>test-order-example-junit5</module>
-        <module>test-order-fields-methods-example</module>
+        <module>test-order-coverage-mojo</module>
         <module>test-order-benchmarks</module>
-        <module>samples/sample-shop</module>
     </modules>
 
     <dependencyManagement>
@@ -93,7 +91,91 @@
         </dependencies>
     </dependencyManagement>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>enforce</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireMavenVersion>
+                                    <version>3.8.0</version>
+                                </requireMavenVersion>
+                                <requireJavaVersion>
+                                    <version>17</version>
+                                </requireJavaVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>INSTRUCTION</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${testorder.coverage.minimum}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report-aggregate</id>
+                        <phase>verify</phase>
+                        <inherited>false</inherited>
+                        <goals>
+                            <goal>report-aggregate</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.reporting.outputDirectory}/jacoco-aggregate</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
     <profiles>
+        <profile>
+            <id>examples</id>
+            <modules>
+                <module>test-order-example</module>
+                <module>test-order-example-service</module>
+                <module>test-order-example-kotlin</module>
+                <module>test-order-example-junit5</module>
+                <module>test-order-fields-methods-example</module>
+                <module>samples/sample-shop</module>
+            </modules>
+        </profile>
         <profile>
             <id>release</id>
             <build>

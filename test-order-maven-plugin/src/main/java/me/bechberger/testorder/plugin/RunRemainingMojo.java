@@ -23,7 +23,7 @@ public class RunRemainingMojo extends AbstractMojo {
     private MavenProject project;
 
     /** File containing the remaining test classes (one FQCN per line). */
-    @Parameter(property = "testorder.select.remainingFile",
+        @Parameter(property = MavenPluginConfigKeys.SELECT_REMAINING_FILE,
             defaultValue = "${project.build.directory}/test-order-remaining.txt")
     private String remainingFile;
 

@@ -156,6 +156,28 @@ class ReactorContextTest {
     }
 
     @Test
+    void multiModule_perModuleMethodHashFiles() {
+        var mm = multiModuleSetup();
+        assertThat(mm.moduleACtx.resolveMethodHashFile("ignored"))
+                .isEqualTo(tempDir.resolve("root/.test-order/hashes/module-a-method-hashes.lz4"));
+        assertThat(mm.moduleBCtx.resolveMethodHashFile("ignored"))
+                .isEqualTo(tempDir.resolve("root/.test-order/hashes/module-b-method-hashes.lz4"));
+    }
+
+    @Test
+    void multiModule_distinctModulesHaveSeparateHashFilePaths() {
+        // Verify that different modules never resolve to the same hash file path,
+        // ensuring no cross-module hash file collision in parallel builds.
+        var mm = multiModuleSetup();
+        assertThat(mm.moduleACtx.resolveHashFile("ignored"))
+                .isNotEqualTo(mm.moduleBCtx.resolveHashFile("ignored"));
+        assertThat(mm.moduleACtx.resolveTestHashFile("ignored"))
+                .isNotEqualTo(mm.moduleBCtx.resolveTestHashFile("ignored"));
+        assertThat(mm.moduleACtx.resolveMethodHashFile("ignored"))
+                .isNotEqualTo(mm.moduleBCtx.resolveMethodHashFile("ignored"));
+    }
+
+    @Test
     void multiModule_gitRootIsReactorRoot() {
         var mm = multiModuleSetup();
         Path rootDir = tempDir.resolve("root");

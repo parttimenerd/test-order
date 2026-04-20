@@ -23,41 +23,41 @@
         <finalName>${project.artifactId}</finalName>
         <plugins>
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
                 <executions>
                     <execution>
                         <id>generate-runtime-jar</id>
-                        <phase>generate-sources</phase>
+                        <phase>process-classes</phase>
                         <goals>
-                            <goal>exec</goal>
+                            <goal>jar</goal>
                         </goals>
                         <configuration>
-                            <workingDirectory>${project.basedir}</workingDirectory>
-                            <executable>mvn</executable>
-                            <arguments>
-                                <argument>-f</argument>
-                                <argument>pom_runtime.xml</argument>
-                                <argument>package</argument>
-                                <argument>-q</argument>
-                                <argument>-Dmaven.test.skip=true</argument>
-                            </arguments>
+                            <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+                            <classifier>runtime</classifier>
+                            <includes>
+                                <include>me/bechberger/testorder/agent/runtime/**</include>
+                            </includes>
                         </configuration>
                     </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
                     <execution>
                         <id>copy-runtime-jar</id>
-                        <phase>generate-sources</phase>
+                        <phase>process-classes</phase>
                         <goals>
-                            <goal>exec</goal>
+                            <goal>run</goal>
                         </goals>
                         <configuration>
-                            <workingDirectory>${project.basedir}</workingDirectory>
-                            <executable>cp</executable>
-                            <arguments>
-                                <argument>target/test-order-runtime.jar</argument>
-                                <argument>target/classes/test-order-runtime.jar</argument>
-                            </arguments>
+                            <target>
+                                <copy file="${project.build.directory}/${project.build.finalName}-runtime.jar"
+                                      tofile="${project.build.outputDirectory}/test-order-runtime.jar"
+                                      overwrite="true"/>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>

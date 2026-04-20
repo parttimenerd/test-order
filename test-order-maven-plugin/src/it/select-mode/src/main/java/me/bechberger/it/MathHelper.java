@@ -1,0 +1,7 @@
+package me.bechberger.it;
+
+public class MathHelper {
+    public static int add(int a, int b) {
+        return a + b;
+    }
+}

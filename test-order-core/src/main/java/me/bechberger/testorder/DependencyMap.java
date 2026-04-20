@@ -30,6 +30,7 @@ public class DependencyMap {
 
     /** LZ4 frame magic bytes (big-endian read of 04 22 4D 18). */
     private static final int LZ4_MAGIC = 0x04224D18;
+    static final long MAX_COMPRESSED_FILE_SIZE = 1_000_000_000L;
 
     /** Magic marker inside the LZ4 payload. */
     private static final byte[] MAGIC_V2 = {'T', 'O', '2', '\n'};
@@ -69,7 +70,7 @@ public class DependencyMap {
     }
 
     public Set<String> get(String testClass) {
-        return dependencies.getOrDefault(testClass, Collections.emptySet());
+        return Collections.unmodifiableSet(dependencies.getOrDefault(testClass, Collections.emptySet()));
     }
 
     /** Store deps directly without copying — for use by loadBinary where sets are already constructed. */
@@ -94,12 +95,12 @@ public class DependencyMap {
 
     /** Get per-method dependencies. Returns empty set if not available. */
     public Set<String> getMethodDeps(String className, String methodName) {
-        return methodDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet());
+        return Collections.unmodifiableSet(methodDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet()));
     }
 
     /** Get per-method dependencies by composite key (className#methodName). */
     public Set<String> getMethodDeps(String methodKey) {
-        return methodDependencies.getOrDefault(methodKey, Collections.emptySet());
+        return Collections.unmodifiableSet(methodDependencies.getOrDefault(methodKey, Collections.emptySet()));
     }
 
     /** Returns all method keys (className#methodName) that have dependency data. */
@@ -121,7 +122,7 @@ public class DependencyMap {
 
     /** Get per-test-class member deps. Returns empty set if not available. */
     public Set<String> getMemberDeps(String testClass) {
-        return memberDependencies.getOrDefault(testClass, Collections.emptySet());
+        return Collections.unmodifiableSet(memberDependencies.getOrDefault(testClass, Collections.emptySet()));
     }
 
     /** Whether this map has any member-level dependency data. */
@@ -136,12 +137,12 @@ public class DependencyMap {
 
     /** Get per-test-method member deps. Returns empty set if not available. */
     public Set<String> getMethodMemberDeps(String methodKey) {
-        return methodMemberDependencies.getOrDefault(methodKey, Collections.emptySet());
+        return Collections.unmodifiableSet(methodMemberDependencies.getOrDefault(methodKey, Collections.emptySet()));
     }
 
     /** Get per-test-method member deps by class and method name. */
     public Set<String> getMethodMemberDeps(String className, String methodName) {
-        return methodMemberDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet());
+        return Collections.unmodifiableSet(methodMemberDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet()));
     }
 
     /**
@@ -194,9 +195,14 @@ public class DependencyMap {
      * plus optional per-method dependency section). Falls back to V2 if no method deps.
      */
     public void save(Path indexFile) throws IOException {
-        try (OutputStream fos = Files.newOutputStream(indexFile);
-             LZ4FrameOutputStream lz4 = new LZ4FrameOutputStream(fos);
-             DataOutputStream out = new DataOutputStream(lz4)) {
+        Path parent = indexFile.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        Path tempFile = PersistenceSupport.temporarySibling(indexFile);
+        try (OutputStream fos = Files.newOutputStream(tempFile);
+              LZ4FrameOutputStream lz4 = new LZ4FrameOutputStream(fos);
+              DataOutputStream out = new DataOutputStream(lz4)) {
 
             boolean hasMethodData = !methodDependencies.isEmpty();
             boolean hasMemberData = !memberDependencies.isEmpty() || !methodMemberDependencies.isEmpty();
@@ -325,6 +331,7 @@ public class DependencyMap {
                 }
             }
         }
+        PersistenceSupport.moveIntoPlace(tempFile, indexFile);
     }
 
     // ---- V1 text save ----
@@ -333,7 +340,12 @@ public class DependencyMap {
      * Saves in V1 text format (human-readable, one test per line).
      */
     public void saveText(Path indexFile) throws IOException {
-        try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(indexFile))) {
+        Path parent = indexFile.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        Path tempFile = PersistenceSupport.temporarySibling(indexFile);
+        try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(tempFile))) {
             pw.println(HEADER_V1);
             for (var entry : dependencies.entrySet()) {
                 pw.print(entry.getKey());
@@ -341,6 +353,7 @@ public class DependencyMap {
                 pw.println(String.join(",", entry.getValue()));
             }
         }
+        PersistenceSupport.moveIntoPlace(tempFile, indexFile);
     }
 
     // ---- auto-detecting load ----
@@ -349,18 +362,28 @@ public class DependencyMap {
      * Loads a dependency index, auto-detecting V1 (text) vs V2 (LZ4 binary) format.
      */
     public static DependencyMap load(Path indexFile) throws IOException {
-        // peek at first 4 bytes to distinguish formats
+        Path loadPath = PersistenceSupport.resolveLoadPath(indexFile);
+        try {
+            return loadDetected(loadPath);
+        } catch (IOException primaryFailure) {
+            Path tempFile = PersistenceSupport.temporarySibling(indexFile);
+            if (!loadPath.equals(tempFile) && Files.exists(tempFile)) {
+                return loadDetected(tempFile);
+            }
+            throw primaryFailure;
+        }
+    }
+
+    private static DependencyMap loadDetected(Path indexFile) throws IOException {
+        validateCompressedFileSize(indexFile);
         int magic;
         try (DataInputStream peek = new DataInputStream(Files.newInputStream(indexFile))) {
             if (Files.size(indexFile) < 4) {
-                return loadText(indexFile); // too short for binary; treat as text
+                return loadText(indexFile);
             }
             magic = peek.readInt();
         }
-        if (magic == LZ4_MAGIC) {
-            return loadBinary(indexFile);
-        }
-        return loadText(indexFile);
+        return magic == LZ4_MAGIC ? loadBinary(indexFile) : loadText(indexFile);
     }
 
     private static DependencyMap loadText(Path indexFile) throws IOException {
@@ -387,6 +410,24 @@ public class DependencyMap {
     private static void checkSize(int size, String label, Path file) throws IOException {
         if (size < 0 || size > MAX_BLOCK_SIZE) {
             throw new IOException(label + " size " + size + " out of range in " + file);
+        }
+    }
+
+    static void validateCompressedFileSize(Path file) throws IOException {
+        validateCompressedFileSize(Files.size(file), file);
+    }
+
+    static void validateCompressedFileSize(long size, Path file) throws IOException {
+        if (size > MAX_COMPRESSED_FILE_SIZE) {
+            throw new IOException("Compressed dependency index exceeds safe size limit: " + size + " bytes in " + file);
+        }
+    }
+
+    private static final int MAX_ENTRY_COUNT = 1_000_000;
+
+    private static void validateCount(int count, String label) throws IOException {
+        if (count < 0 || count > MAX_ENTRY_COUNT) {
+            throw new IOException("Invalid " + label + " in dependency index: " + count);
         }
     }
 
@@ -437,6 +478,7 @@ public class DependencyMap {
                 // convert bitmap to class name set (HashSet for O(1) contains at runtime)
                 Set<String> deps = new HashSet<>((int) (depBitmap.getLongCardinality() * 2));
                 depBitmap.forEach((int id) -> deps.add(trie.getName(id)));
+                Set<String> sharedDeps = Collections.unmodifiableSet(deps);
 
                 // member test indices bitmap
                 int memberSize = in.readInt();
@@ -446,12 +488,12 @@ public class DependencyMap {
                 RoaringBitmap memberBitmap = new RoaringBitmap();
                 memberBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(memberBytes)));
 
-                memberBitmap.forEach((int ti) -> depSets[ti] = deps);
+                memberBitmap.forEach((int ti) -> depSets[ti] = sharedDeps);
             }
 
             // build map preserving test insertion order (putDirect avoids re-copying)
             for (int i = 0; i < testCount; i++) {
-                map.putDirect(testNames[i], depSets[i] != null ? depSets[i] : new HashSet<>());
+                map.putDirect(testNames[i], depSets[i] != null ? depSets[i] : Collections.emptySet());
             }
 
             // V3/V4: read per-method dependency section
@@ -475,9 +517,11 @@ public class DependencyMap {
             if (isV4) {
                 // Per-test-class member deps
                 int memberEntryCount = in.readInt();
+                validateCount(memberEntryCount, "memberEntryCount");
                 for (int i = 0; i < memberEntryCount; i++) {
                     String testClass = in.readUTF();
                     int memberCount = in.readInt();
+                    validateCount(memberCount, "memberCount");
                     Set<String> members = new HashSet<>(memberCount * 2);
                     for (int j = 0; j < memberCount; j++) {
                         members.add(in.readUTF());
@@ -486,9 +530,11 @@ public class DependencyMap {
                 }
                 // Per-test-method member deps
                 int methodMemberCount = in.readInt();
+                validateCount(methodMemberCount, "methodMemberCount");
                 for (int i = 0; i < methodMemberCount; i++) {
                     String methodKey = in.readUTF();
                     int memberCount = in.readInt();
+                    validateCount(memberCount, "memberCount");
                     Set<String> members = new HashSet<>(memberCount * 2);
                     for (int j = 0; j < memberCount; j++) {
                         members.add(in.readUTF());
@@ -502,7 +548,8 @@ public class DependencyMap {
     }
 
     /**
-     * Aggregates all {@code .deps} and {@code .mdeps} files from a directory into a single DependencyMap.
+     * Aggregates all {@code .deps}, {@code .mdeps}, {@code .members}, and {@code .mmembers}
+     * files from a directory into a single DependencyMap.
      * Each {@code .deps} file is named {@code <TestClass>.deps} and contains one class FQCN per line.
      * Each {@code .mdeps} file contains per-method deps: first line is {@code # className#methodName},
      * remaining lines are dependency FQCNs.
@@ -528,6 +575,23 @@ public class DependencyMap {
                                 .filter(s -> !s.isEmpty() && !s.startsWith("#"))
                                 .collect(Collectors.toCollection(TreeSet::new));
                         map.putMethodDeps(methodKey, deps);
+                    }
+                } else if (fileName.endsWith(".members")) {
+                    String testClass = fileName.substring(0, fileName.length() - 8); // strip .members
+                    Set<String> members = Files.readAllLines(file).stream()
+                            .map(String::trim)
+                            .filter(s -> !s.isEmpty() && !s.startsWith("#"))
+                            .collect(Collectors.toCollection(TreeSet::new));
+                    map.putMemberDeps(testClass, members);
+                } else if (fileName.endsWith(".mmembers")) {
+                    List<String> lines = Files.readAllLines(file);
+                    if (!lines.isEmpty() && lines.get(0).startsWith("# ")) {
+                        String methodKey = lines.get(0).substring(2).trim();
+                        Set<String> members = lines.stream().skip(1)
+                                .map(String::trim)
+                                .filter(s -> !s.isEmpty() && !s.startsWith("#"))
+                                .collect(Collectors.toCollection(TreeSet::new));
+                        map.putMethodMemberDeps(methodKey, members);
                     }
                 }
             }
@@ -632,9 +696,11 @@ public class DependencyMap {
             map = new DependencyMap();
         }
 
-        // Collect all .deps files
+        // Collect all dependency files
         var depFiles = new java.util.ArrayList<Path>();
         var mdepsFiles = new java.util.ArrayList<Path>();
+        var memberFiles = new java.util.ArrayList<Path>();
+        var methodMemberFiles = new java.util.ArrayList<Path>();
         try (var stream = Files.list(depsDir)) {
             stream.forEach(path -> {
                 String name = path.getFileName().toString();
@@ -642,17 +708,24 @@ public class DependencyMap {
                     depFiles.add(path);
                 } else if (name.endsWith(".mdeps")) {
                     mdepsFiles.add(path);
+                } else if (name.endsWith(".members")) {
+                    memberFiles.add(path);
+                } else if (name.endsWith(".mmembers")) {
+                    methodMemberFiles.add(path);
                 }
             });
         }
 
-        if (depFiles.isEmpty() && mdepsFiles.isEmpty()) {
+        if (depFiles.isEmpty() && mdepsFiles.isEmpty()
+                && memberFiles.isEmpty() && methodMemberFiles.isEmpty()) {
             return; // nothing to aggregate
         }
 
         long startTime = System.currentTimeMillis();
         long depCount = 0;
         long methodDepCount = 0;
+        long memberDepCount = 0;
+        long methodMemberDepCount = 0;
 
         // Load .deps files (each represents one test class → deps)
         var pool = java.util.concurrent.ForkJoinPool.commonPool();
@@ -682,7 +755,7 @@ public class DependencyMap {
                     map.dependencies.put(entry.getKey(), existing);
                     depCount++;
                 }
-            } catch (Exception e) {
+            } catch (java.util.concurrent.ExecutionException | InterruptedException e) {
                 System.err.println("[test-order] Error loading .deps file: " + e.getMessage());
             }
         }
@@ -724,8 +797,81 @@ public class DependencyMap {
                     map.methodDependencies.put(entry.getKey(), existing);
                     methodDepCount++;
                 }
-            } catch (Exception e) {
+            } catch (java.util.concurrent.ExecutionException | InterruptedException e) {
                 System.err.println("[test-order] Error loading .mdeps file: " + e.getMessage());
+            }
+        }
+
+        // Load .members files (each represents one test class -> member deps)
+        var memberTasks = memberFiles.parallelStream().map(memberFile ->
+                pool.submit(() -> {
+                    String testClass = memberFile.getFileName().toString();
+                    testClass = testClass.substring(0, testClass.length() - 8); // remove .members
+                    try {
+                        Set<String> members = Files.readAllLines(memberFile).stream()
+                                .map(String::trim)
+                                .filter(line -> !line.isEmpty() && !line.startsWith("#"))
+                                .collect(Collectors.toCollection(TreeSet::new));
+                        return java.util.Map.entry(testClass, members);
+                    } catch (IOException e) {
+                        System.err.println("[test-order] Failed to read " + memberFile + ": " + e.getMessage());
+                        return null;
+                    }
+                })
+        ).collect(Collectors.toList());
+
+        for (var task : memberTasks) {
+            try {
+                var entry = task.get();
+                if (entry != null) {
+                    Set<String> existing = map.memberDependencies.getOrDefault(entry.getKey(), new TreeSet<>());
+                    existing.addAll(entry.getValue());
+                    map.memberDependencies.put(entry.getKey(), existing);
+                    memberDepCount++;
+                }
+            } catch (java.util.concurrent.ExecutionException | InterruptedException e) {
+                System.err.println("[test-order] Error loading .members file: " + e.getMessage());
+            }
+        }
+
+        // Load .mmembers files (each represents one test method -> member deps)
+        var mmemberTasks = methodMemberFiles.parallelStream().map(mmemberFile ->
+                pool.submit(() -> {
+                    try {
+                        java.util.List<String> lines = Files.readAllLines(mmemberFile);
+                        if (lines.isEmpty()) return null;
+
+                        String methodKey = null;
+                        Set<String> members = new TreeSet<>();
+                        for (String line : lines) {
+                            if (line.startsWith("# ")) {
+                                methodKey = line.substring(2).trim();
+                            } else if (!line.trim().isEmpty()) {
+                                members.add(line.trim());
+                            }
+                        }
+                        if (methodKey != null && !members.isEmpty()) {
+                            return java.util.Map.entry(methodKey, members);
+                        }
+                        return null;
+                    } catch (IOException e) {
+                        System.err.println("[test-order] Failed to read " + mmemberFile + ": " + e.getMessage());
+                        return null;
+                    }
+                })
+        ).collect(Collectors.toList());
+
+        for (var task : mmemberTasks) {
+            try {
+                var entry = task.get();
+                if (entry != null) {
+                    Set<String> existing = map.methodMemberDependencies.getOrDefault(entry.getKey(), new TreeSet<>());
+                    existing.addAll(entry.getValue());
+                    map.methodMemberDependencies.put(entry.getKey(), existing);
+                    methodMemberDepCount++;
+                }
+            } catch (java.util.concurrent.ExecutionException | InterruptedException e) {
+                System.err.println("[test-order] Error loading .mmembers file: " + e.getMessage());
             }
         }
 
@@ -735,7 +881,8 @@ public class DependencyMap {
 
         long duration = System.currentTimeMillis() - startTime;
         System.out.println("[test-order] Aggregated " + depCount + " test classes + " + methodDepCount
-                + " test methods from .deps files in " + duration + "ms");
+            + " test methods + " + memberDepCount + " class-member sets + "
+            + methodMemberDepCount + " method-member sets from deps files in " + duration + "ms");
     }
 
     @Override

@@ -2036,5 +2036,29 @@ class SourceFileModelTest {
                 assertFalse(line.isBlank(), "should not have blank lines: [" + compact + "]");
             }
         }
+
+        @Test
+        void textBlockWithEscapedTripleQuotesNotPrematurelyClosed() {
+            // Text block containing \""" — the escaped quote must not close the text block
+            String src = "package com.x;\n"
+                    + "public class T {\n"
+                    + "    String m() {\n"
+                    + "        return \"\"\"\n"
+                    + "            before \\\"\"\" after\n"
+                    + "            \"\"\";\n"
+                    + "    }\n"
+                    + "    int code() { return 42; }\n"
+                    + "}\n";
+            var model = parse(src, "com.x");
+            // Both methods should be found — if the text block is prematurely closed,
+            // the parser may swallow 'code()' into the text block residue
+            var mMethod = model.methods().stream().filter(m -> m.name().equals("m")).findFirst().orElseThrow();
+            var codeMethod = model.methods().stream().filter(m -> m.name().equals("code")).findFirst().orElseThrow();
+            assertNotNull(mMethod.compactBody());
+            assertNotNull(codeMethod.compactBody());
+            // The compact body of m() must contain the escaped triple-quote content intact
+            assertTrue(mMethod.compactBody().contains("before"));
+            assertTrue(mMethod.compactBody().contains("after"));
+        }
     }
 }

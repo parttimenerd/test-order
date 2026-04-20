@@ -2,6 +2,9 @@ package me.bechberger.testorder.agent;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.InputStream;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class ClassTransformerTest {
@@ -142,6 +145,25 @@ class ClassTransformerTest {
         ClassTransformer t = createTransformer("com.example");
         // generated markers take priority over includePackages
         assertFalse(t.shouldInstrument("com/example/MyService$$EnhancerBySpringCGLIB"));
+    }
+
+    @Test
+    void transformsLoadableApplicationClassBytes() throws IOException {
+        ClassTransformer t = createTransformer("com.example.app");
+        byte[] input;
+        try (InputStream in = com.example.app.SampleAppClass.class.getResourceAsStream("SampleAppClass.class")) {
+            assertNotNull(in);
+            input = in.readAllBytes();
+        }
+        byte[] transformed = t.transform(
+                null,
+                com.example.app.SampleAppClass.class.getClassLoader(),
+                "com/example/app/SampleAppClass",
+                null,
+                null,
+                input);
+        assertNotSame(input, transformed);
+        assertTrue(transformed.length > input.length);
     }
 
     // ── mode wiring ────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -286,5 +287,30 @@ class ToolTest {
 
         assertTrue(stdout.contains("No changes detected"),
                 "Non-existent source dir should not crash, should report no changes");
+    }
+
+    @Test
+    void missingSubcommandExitsWithCode1InSubprocess() throws Exception {
+        String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        String classpath = System.getProperty("java.class.path");
+
+        Process process = new ProcessBuilder(
+                javaBin,
+                "-cp",
+                classpath,
+                Tool.class.getName())
+                .redirectErrorStream(true)
+                .start();
+
+        byte[] outputBytes;
+        try (InputStream in = process.getInputStream()) {
+            outputBytes = in.readAllBytes();
+        }
+        int exit = process.waitFor();
+        String output = new String(outputBytes);
+
+        assertEquals(1, exit, "Running Tool without subcommand should exit with status 1");
+        assertTrue(output.contains("Specify a subcommand"),
+                "Expected missing-subcommand message, got: " + output);
     }
 }

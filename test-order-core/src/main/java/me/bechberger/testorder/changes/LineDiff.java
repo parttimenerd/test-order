@@ -1,6 +1,7 @@
 package me.bechberger.testorder.changes;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -59,7 +60,7 @@ public class LineDiff {
             }
         }
 
-        // Traceback to collect diff lines (reverse order)
+        // Traceback to collect diff lines (reverse order, then reversed)
         List<String> changes = new ArrayList<>();
         int i = m, j = n;
         while (i > 0 || j > 0) {
@@ -74,6 +75,7 @@ public class LineDiff {
             }
         }
 
+        Collections.reverse(changes);
         return String.join("\n", changes);
     }
 

@@ -85,10 +85,13 @@ public class IntelligentClassFilterTest {
                 .build();
         
         assertFalse(filter.shouldInstrument("com/example/UserServiceTest"));
-        assertFalse(filter.shouldInstrument("com/example/MockRepository"));
-        assertFalse(filter.shouldInstrument("com/example/FakeFactory"));
+        assertFalse(filter.shouldInstrument("com/example/TestRepository"));
+        assertFalse(filter.shouldInstrument("com/example/UserServiceTestCase"));
         
         assertTrue(filter.shouldInstrument("com/example/UserService"));
+        assertTrue(filter.shouldInstrument("com/example/ContestService"));
+        assertTrue(filter.shouldInstrument("com/example/MockitoExtension"));
+        assertTrue(filter.shouldInstrument("com/example/ProtestHandler"));
     }
     
     @Test
@@ -183,5 +186,27 @@ public class IntelligentClassFilterTest {
         
         // Not in whitelist → rejected (even without explicit exclude)
         assertFalse(filter.shouldInstrument("com/other/Bar"));
+    }
+
+    @Test
+    @DisplayName("Bug #88: clearCache resets cacheSize so new entries can be cached again")
+    public void testClearCacheResetsCacheSize() {
+        filter = new IntelligentClassFilter.Builder()
+                .strategy(IntelligentClassFilter.Strategy.SMART)
+                .explicitInclude("com.example")
+                .maxCacheSize(2)
+                .build();
+
+        // Fill the cache to capacity
+        filter.shouldInstrument("com/example/One");
+        filter.shouldInstrument("com/example/Two");
+
+        // Clear and verify new entries can be cached again
+        filter.clearCache();
+        filter.shouldInstrument("com/example/Three");
+        filter.shouldInstrument("com/example/Four");
+
+        IntelligentClassFilter.CacheStats stats = filter.getCacheStats();
+        assertTrue(stats.currentSize() > 0, "Cache should have entries after clearCache + new lookups");
     }
 }

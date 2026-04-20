@@ -236,6 +236,21 @@ class ChangeDetectorTest {
         assertEquals(Set.of("com.example.A", "com.example.B"), result);
     }
 
+    @Test
+    void gitModesFallBackToHashDetectionOutsideGitRepo() throws IOException {
+        Path srcRoot = tempDir.resolve("src/main/java");
+        Files.createDirectories(srcRoot.resolve("com/example"));
+        Files.writeString(srcRoot.resolve("com/example/Foo.java"), "public class Foo {}");
+
+        Set<String> result = ChangeDetector.detect(
+                ChangeDetector.Mode.SINCE_LAST_COMMIT,
+                tempDir, Path.of("src/main/java"),
+                tempDir.resolve("hashes.lz4"), null
+        );
+
+        assertEquals(Set.of("com.example.Foo"), result);
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     //  Regression: Mode.parse accepts hyphenated and uppercase formats
     //  (BUG_REPORT_2 #10)
@@ -262,5 +277,29 @@ class ChangeDetectorTest {
         assertEquals(ChangeDetector.Mode.SINCE_LAST_RUN, ChangeDetector.Mode.parse(null));
         assertEquals(ChangeDetector.Mode.SINCE_LAST_RUN, ChangeDetector.Mode.parse(""));
         assertEquals(ChangeDetector.Mode.SINCE_LAST_RUN, ChangeDetector.Mode.parse("  "));
+    }
+    // ── Tier 3e ────────────────────────────────────────────────────────────
+
+    @Test
+    void sinceLastCommitWithSingleCommitRepoFallsBackGracefully() throws Exception {
+        // When HEAD~1 doesn't exist (single-commit repo), the detector must not
+        // crash; it should either return all tracked files or an empty set.
+        git(tempDir, "init");
+        git(tempDir, "config", "user.email", "test@test.com");
+        git(tempDir, "config", "user.name", "Test");
+
+        Path srcDir = tempDir.resolve("src/main/java/com/example");
+        Files.createDirectories(srcDir);
+        Files.writeString(srcDir.resolve("Foo.java"), "public class Foo {}");
+        git(tempDir, "add", ".");
+        git(tempDir, "commit", "-m", "initial");
+
+        // Only one commit exists — HEAD~1 doesn't exist; must not throw
+        assertDoesNotThrow(() -> {
+            ChangeDetector.detect(
+                    ChangeDetector.Mode.SINCE_LAST_COMMIT,
+                    tempDir, Path.of("src/main/java"),
+                    tempDir.resolve("hashes.lz4"), null);
+        }, "SINCE_LAST_COMMIT on a single-commit repo must not throw");
     }
 }

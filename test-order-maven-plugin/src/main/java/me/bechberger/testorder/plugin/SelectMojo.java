@@ -23,24 +23,24 @@ import java.util.Set;
 public class SelectMojo extends AbstractTestOrderMojo {
 
     /** Number of top-scored test classes to always include. */
-    @Parameter(property = "testorder.select.topN", defaultValue = "20")
+    @Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "20")
     private int topN;
 
     /** Number of random fast tests to include for coverage diversity. */
-    @Parameter(property = "testorder.select.randomM", defaultValue = "10")
+    @Parameter(property = MavenPluginConfigKeys.SELECT_RANDOM_M, defaultValue = "10")
     private int randomM;
 
     /** Random seed for reproducible selection (optional). */
-    @Parameter(property = "testorder.select.seed")
+    @Parameter(property = MavenPluginConfigKeys.SELECT_SEED)
     private Long seed;
 
     /** File to write the remaining (not selected) test classes to. */
-    @Parameter(property = "testorder.select.remainingFile",
+        @Parameter(property = MavenPluginConfigKeys.SELECT_REMAINING_FILE,
             defaultValue = "${project.build.directory}/test-order-remaining.txt")
     private String remainingFile;
 
     /** File to write the selected test classes to (for reference / debugging). */
-    @Parameter(property = "testorder.select.selectedFile",
+        @Parameter(property = MavenPluginConfigKeys.SELECTED_FILE,
             defaultValue = "${project.build.directory}/test-order-selected.txt")
     private String selectedFile;
 
@@ -62,6 +62,7 @@ public class SelectMojo extends AbstractTestOrderMojo {
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to load dependency index", e);
         }
+        depMap = currentModuleDependencyMap(depMap);
         warnIfNoDeps(depMap);
 
         TestOrderState state = loadState();

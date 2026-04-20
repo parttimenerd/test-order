@@ -75,6 +75,21 @@ public abstract class TestOrderExtension {
     /** Optional weights override file path. */
     public abstract Property<String> getWeightsFile();
 
+    /** Number of top-scored tests to always select. */
+    public abstract Property<Integer> getSelectTopN();
+
+    /** Number of diverse fast tests to additionally select. */
+    public abstract Property<Integer> getSelectRandomM();
+
+    /** Optional random seed for deterministic selection. */
+    public abstract Property<Long> getSelectSeed();
+
+    /** File containing the selected test classes. */
+    public abstract RegularFileProperty getSelectedFile();
+
+    /** File containing deferred test classes for run-remaining. */
+    public abstract RegularFileProperty getRemainingFile();
+
     // ---- Scoring Weights ----
 
     public abstract Property<Integer> getScoreNewTest();
@@ -104,6 +119,11 @@ public abstract class TestOrderExtension {
         getVerboseFile().convention("");
         getMethodOrderingEnabled().convention(false);
         getWeightsFile().convention("");
+        getSelectTopN().convention(20);
+        getSelectRandomM().convention(10);
+        getSelectSeed().convention((Long) null);
+        getSelectedFile().convention(project.getLayout().getBuildDirectory().file("test-order-selected.txt"));
+        getRemainingFile().convention(project.getLayout().getBuildDirectory().file("test-order-remaining.txt"));
         // Score weight conventions intentionally omitted — when not explicitly configured,
         // PriorityClassOrderer uses weights from the state file (possibly optimizer-tuned)
         // or its own defaults.  Setting conventions here would always override those.

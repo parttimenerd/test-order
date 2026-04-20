@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -136,5 +137,31 @@ class GitChangeDetectorTest {
         // Both classes should be detected even though the file no longer exists on disk
         assertTrue(changed.contains("com.example.Multi"), "should contain Multi");
         assertTrue(changed.contains("com.example.MultiHelper"), "should contain MultiHelper");
+    }
+
+    @Test
+    void changedSinceLastCommitFallsBackWhenHeadParentIsMissing() throws Exception {
+        git("init");
+        git("config", "user.email", "test@test.com");
+        git("config", "user.name", "Test");
+
+        Path srcDir = tempDir.resolve("src/main/java/com/example");
+        Files.createDirectories(srcDir);
+        Files.writeString(srcDir.resolve("Foo.java"), "public class Foo {}");
+        git("add", ".");
+        git("commit", "-m", "initial");
+
+        Set<String> changed = GitChangeDetector.changedSinceLastCommit(tempDir, "src/main/java/");
+        assertEquals(Set.of("com.example.Foo"), changed);
+    }
+
+    @Test
+    void readFileFromGitReturnsNullWhenCommitRefMissing() throws Exception {
+        Method method = GitChangeDetector.class.getDeclaredMethod(
+                "readFileFromGit", Path.class, String.class, String.class);
+        method.setAccessible(true);
+
+        Object result = method.invoke(null, tempDir, null, "src/main/java/com/example/Foo.java");
+        assertNull(result);
     }
 }

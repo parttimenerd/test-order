@@ -1,0 +1,7 @@
+target/
+.test-order-state
+.test-order-hashes.lz4
+.test-order-test-hashes.lz4
+.test-order-method-hashes.lz4
+test-dependencies.lz4
+*.out

@@ -1,0 +1,7 @@
+// Test: Stream API (Java 8)
+// Expected Version: 8
+// Required Features: AUTOBOXING, LAMBDAS, STREAM_API
+import java.util.stream.*;
+class Tiny_StreamAPI_Java8 {
+    void test() { Stream.of(1,2,3).filter(x -> x > 1).count(); }
+}

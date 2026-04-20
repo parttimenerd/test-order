@@ -56,7 +56,7 @@ class UserPerspectiveIT {
         if (root.getFileName().toString().equals("test-order-maven-plugin")) {
             root = root.getParent();
         }
-        project = new TestProject(root.resolve("sample-shop"),
+        project = new TestProject(root.resolve("samples/sample-shop"),
                 List.of("-Dtestorder.includePackages=com.example"));
     }
 

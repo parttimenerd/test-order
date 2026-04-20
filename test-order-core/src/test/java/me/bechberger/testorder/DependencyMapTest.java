@@ -139,6 +139,31 @@ class DependencyMapTest {
         assertEquals(Set.of("com.example.Bar", "com.example.Baz"), map.get("com.example.BarTest"));
     }
 
+        @Test
+        void aggregateLoadsMemberDependencyFiles() throws IOException {
+        Path depsDir = tempDir.resolve("deps-with-members");
+        Files.createDirectories(depsDir);
+
+        Files.writeString(depsDir.resolve("com.example.FooTest.deps"),
+            "com.example.Foo\n");
+        Files.writeString(depsDir.resolve("com.example.FooTest.members"),
+            "com.example.Foo#fieldA\ncom.example.Foo#doWork\n");
+        Files.writeString(depsDir.resolve("com.example.FooTest#testA.mmembers"),
+            "# com.example.FooTest#testA\ncom.example.Foo#doWork\n");
+        Files.writeString(depsDir.resolve("com.example.FooTest#testA.mdeps"),
+            "# com.example.FooTest#testA\ncom.example.Foo\n");
+
+        DependencyMap map = DependencyMap.aggregate(depsDir);
+
+        assertEquals(Set.of("com.example.Foo"), map.get("com.example.FooTest"));
+        assertEquals(Set.of("com.example.Foo#fieldA", "com.example.Foo#doWork"),
+            map.getMemberDeps("com.example.FooTest"));
+        assertEquals(Set.of("com.example.Foo#doWork"),
+            map.getMethodMemberDeps("com.example.FooTest#testA"));
+        assertEquals(Set.of("com.example.Foo"),
+            map.getMethodDeps("com.example.FooTest#testA"));
+        }
+
     @Test
     void getAffectedTests() {
         DependencyMap map = new DependencyMap();
@@ -207,6 +232,15 @@ class DependencyMapTest {
                 "# test-order dependency index v1\n\ncom.example.FooTest\tcom.example.Foo\n\n");
         DependencyMap map = DependencyMap.load(indexFile);
         assertEquals(1, map.size());
+    }
+
+    @Test
+    void compressedIndexSizeGuardRejectsHugeFiles() throws IOException {
+        Path indexFile = tempDir.resolve("too-large.idx");
+        IOException error = assertThrows(IOException.class,
+                () -> DependencyMap.validateCompressedFileSize(
+                        DependencyMap.MAX_COMPRESSED_FILE_SIZE + 1, indexFile));
+        assertTrue(error.getMessage().contains("safe size limit"));
     }
 
     @Test
@@ -301,5 +335,135 @@ class DependencyMapTest {
         assertEquals(2, map.size());
         assertEquals(Set.of("com.example.A", "com.example.B"), map.get("com.example.ATest"));
         assertEquals(Set.of("com.example.C"), map.get("com.example.BTest"));
+    }
+
+        @Test
+        void aggregateFromDepsDirectoryLoadsMemberDependencyFiles() throws IOException {
+        Path depsDir = tempDir.resolve("parallel-deps-with-members");
+        Files.createDirectories(depsDir);
+
+        Files.writeString(depsDir.resolve("com.example.BarTest.deps"),
+            "com.example.Bar\n");
+        Files.writeString(depsDir.resolve("com.example.BarTest.members"),
+            "com.example.Bar#fieldX\ncom.example.Bar#run\n");
+        Files.writeString(depsDir.resolve("com.example.BarTest#testB.mdeps"),
+            "# com.example.BarTest#testB\ncom.example.Bar\n");
+        Files.writeString(depsDir.resolve("com.example.BarTest#testB.mmembers"),
+            "# com.example.BarTest#testB\ncom.example.Bar#run\n");
+
+        Path indexFile = tempDir.resolve("aggregated.lz4");
+        DependencyMap.aggregateFromDepsDirectory(depsDir, indexFile);
+
+        DependencyMap loaded = DependencyMap.load(indexFile);
+        assertEquals(Set.of("com.example.Bar"), loaded.get("com.example.BarTest"));
+        assertEquals(Set.of("com.example.Bar#fieldX", "com.example.Bar#run"),
+            loaded.getMemberDeps("com.example.BarTest"));
+        assertEquals(Set.of("com.example.Bar"),
+            loaded.getMethodDeps("com.example.BarTest#testB"));
+        assertEquals(Set.of("com.example.Bar#run"),
+            loaded.getMethodMemberDeps("com.example.BarTest#testB"));
+        }
+
+    @Test
+    void getDependenciesReturnsUnmodifiableSet() {
+        DependencyMap map = new DependencyMap();
+        map.put("com.example.FooTest", Set.of("com.example.Foo", "com.example.Bar"));
+
+        Set<String> deps = map.get("com.example.FooTest");
+        assertThrows(UnsupportedOperationException.class, () -> deps.add("com.example.Baz"));
+        assertThrows(UnsupportedOperationException.class, () -> deps.remove("com.example.Foo"));
+    }
+
+    @Test
+    void getMemberDepsReturnsUnmodifiableSet() {
+        DependencyMap map = new DependencyMap();
+        map.putMemberDeps("com.example.FooTest", Set.of("com.example.Foo#doWork", "com.example.Bar#init"));
+
+        Set<String> deps = map.getMemberDeps("com.example.FooTest");
+        assertThrows(UnsupportedOperationException.class, () -> deps.add("com.example.X#y"));
+    }
+
+    @Test
+    void validateCompressedFileSizeThrowsForOversizedFile() throws IOException {
+        Path dummy = tempDir.resolve("dummy.lz4");
+        Files.writeString(dummy, "x");
+        long overLimit = 1_000_000_001L;
+        assertThrows(IOException.class,
+                () -> DependencyMap.validateCompressedFileSize(overLimit, dummy));
+    }
+
+    @Test
+    void validateCompressedFileSizeAcceptsExactLimit() throws IOException {
+        Path dummy = tempDir.resolve("dummy.lz4");
+        Files.writeString(dummy, "x");
+        // should not throw at the exact limit
+        assertDoesNotThrow(() -> DependencyMap.validateCompressedFileSize(1_000_000_000L, dummy));
+    }
+
+    // ── Tier 3c: row-dedup immutability and corrupt binary ─────────────────
+
+    @Test
+    void rowDeduplicatedSetsAreImmutable() throws IOException {
+        // Two tests share the same dependency set → row-deduplicated after round-trip.
+        // The returned set must be unmodifiable to prevent consumer mutation from
+        // corrupting all tests that share that row (IMPROVEMENT_PLAN.md #51).
+        DependencyMap map = new DependencyMap();
+        Set<String> shared = Set.of("com.example.A", "com.example.B", "com.example.C");
+        map.put("com.example.Test1", shared);
+        map.put("com.example.Test2", shared);
+
+        Path idx = tempDir.resolve("dedup-immutable.lz4");
+        map.save(idx);
+        DependencyMap loaded = DependencyMap.load(idx);
+
+        Set<String> deps1 = loaded.get("com.example.Test1");
+        Set<String> deps2 = loaded.get("com.example.Test2");
+
+        // Both must be equal (same content)
+        assertEquals(deps1, deps2, "Row-deduplicated sets should have equal content");
+
+        // Mutation must throw UnsupportedOperationException to prevent corruption
+        assertThrows(UnsupportedOperationException.class, () -> deps1.add("com.example.NEW"),
+                "Row-deduplicated dep set must be unmodifiable");
+        assertThrows(UnsupportedOperationException.class, () -> deps2.remove("com.example.A"),
+                "Row-deduplicated dep set must be unmodifiable");
+    }
+
+    @Test
+    void rowDeduplicatedSetsReturnedByGetAreImmutable() {
+        // Even when not loading from disk, classDeps() return must be unmodifiable
+        DependencyMap map = new DependencyMap();
+        map.put("com.example.Test1", Set.of("com.example.X"));
+        Set<String> deps = map.get("com.example.Test1");
+        assertThrows(UnsupportedOperationException.class, () -> deps.add("com.example.Y"),
+                "get() must return an unmodifiable set");
+    }
+
+    @Test
+    void loadTruncatedBinaryFileThrowsIOException() throws IOException {
+        // Write a file that starts with valid LZ4 magic header bytes but then has
+        // truncated/garbage content. loadBinary must fail with IOException rather
+        // than NPE, OOM, or silent wrong result.
+        Path idx = tempDir.resolve("truncated.lz4");
+        // Plausible starting bytes for LZ4 framing, then abrupt end
+        byte[] truncated = new byte[] {
+            0x04, (byte) 0x22, 0x4d, 0x18,  // LZ4 magic: 0x184D2204 (little-endian)
+            0x60, 0x70, 0x73, 0x00           // partial FLG + BD fields, no content
+        };
+        Files.write(idx, truncated);
+        assertThrows(IOException.class, () -> DependencyMap.load(idx),
+                "Loading a truncated binary file must throw IOException");
+    }
+
+    @Test
+    void loadCompletelyGarbageBinaryFileThrowsIOException() throws IOException {
+        // File with random bytes that happen to look like V2 binary (header check via magic)
+        // but contain invalid data — must fail gracefully.
+        Path idx = tempDir.resolve("garbage.lz4");
+        byte[] garbage = new byte[128];
+        for (int i = 0; i < garbage.length; i++) garbage[i] = (byte)(i * 7 + 3);
+        Files.write(idx, garbage);
+        assertThrows(IOException.class, () -> DependencyMap.load(idx),
+                "Loading garbage binary data must throw IOException");
     }
 }

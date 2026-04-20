@@ -16,7 +16,7 @@ public class OrderService {
 
     public boolean placeOrder(String item, int qty) {
         if (inventory.reserve(item, qty)) {
-            orderCount += 2;
+            orderCount++;
             return true;
         }
         return false;
@@ -30,7 +30,7 @@ public class OrderService {
     /** Called back by InventoryService when stock drops to zero. */
     public void onStockDepleted(String item) {
         // Auto-reorder logic
-        orderCount += 2;
+        orderCount++;
     }
 
     public int getOrderCount() {

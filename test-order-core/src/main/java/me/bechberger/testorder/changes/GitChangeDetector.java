@@ -1,6 +1,6 @@
 package me.bechberger.testorder.changes;
 
-import org.tinylog.Logger;
+import me.bechberger.testorder.TestOrderLogger;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -30,6 +30,11 @@ public class GitChangeDetector {
      * Shortcut for changes since the previous commit under a given source prefix.
      */
     public static Set<String> changedSinceLastCommit(Path projectRoot, String sourcePrefix) throws IOException {
+        if (!gitRevisionExists(projectRoot, "HEAD~1")) {
+            TestOrderLogger.warn("git revision HEAD~1 is unavailable; treating all tracked source files as changed");
+            List<String> trackedFiles = runGit(projectRoot, "ls-files", "--", sourcePrefix);
+            return javaFilesToClassNames(trackedFiles, sourcePrefix, projectRoot, "HEAD");
+        }
         return changedSinceCommit(projectRoot, "HEAD~1", sourcePrefix);
     }
 
@@ -64,15 +69,19 @@ public class GitChangeDetector {
                     classNames.addAll(SourceFileModel.fileToClassNames(relative, projectRoot.resolve(sourcePrefix)));
                 } else {
                     // File was deleted — try to read from git
-                    try {
-                        String content = readFileFromGit(projectRoot, commitRef, path);
-                        if (content != null) {
-                            classNames.addAll(SourceFileModel.fileToClassNames(relative, content));
-                        } else {
+                    if (commitRef == null || commitRef.isBlank()) {
+                        classNames.add(SourceFileModel.pathToClassName(relative));
+                    } else {
+                        try {
+                            String content = readFileFromGit(projectRoot, commitRef, path);
+                            if (content != null) {
+                                classNames.addAll(SourceFileModel.fileToClassNames(relative, content));
+                            } else {
+                                classNames.add(SourceFileModel.pathToClassName(relative));
+                            }
+                        } catch (IOException e) {
                             classNames.add(SourceFileModel.pathToClassName(relative));
                         }
-                    } catch (IOException e) {
-                        classNames.add(SourceFileModel.pathToClassName(relative));
                     }
                 }
             }
@@ -85,6 +94,9 @@ public class GitChangeDetector {
      * Used to extract class names from deleted files.
      */
     private static String readFileFromGit(Path projectRoot, String commitRef, String filePath) throws IOException {
+        if (commitRef == null || commitRef.isBlank()) {
+            return null;
+        }
         List<String> command = List.of("git", "show", commitRef + ":" + filePath);
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(projectRoot.toFile());
@@ -106,6 +118,15 @@ public class GitChangeDetector {
             return null;
         }
         return content;
+    }
+
+    private static boolean gitRevisionExists(Path workDir, String revision) {
+        try {
+            runGit(workDir, "rev-parse", "--verify", revision);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     private static List<String> runGit(Path workDir, String... args) throws IOException {
@@ -132,19 +153,17 @@ public class GitChangeDetector {
         try {
             if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
-                Logger.warn("git command timed out: {}", command);
+                TestOrderLogger.warn("git command timed out: {}", command);
                 return Collections.emptyList();
             }
             if (process.exitValue() != 0) {
-                for (String errLine : lines) {
-                    Logger.warn("git: {}", errLine);
-                }
-                return Collections.emptyList();
+                throw new IOException("git command failed: " + String.join(" ", command)
+                        + (lines.isEmpty() ? "" : " — " + String.join(" | ", lines)));
             }
         } catch (InterruptedException e) {
             process.destroyForcibly();
             Thread.currentThread().interrupt();
-            return Collections.emptyList();
+            throw new IOException("git command interrupted: " + String.join(" ", command), e);
         }
         return lines;
     }

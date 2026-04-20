@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
+import java.util.Set;
 
 import static org.gradle.testkit.runner.TaskOutcome.SUCCESS;
 import static org.junit.jupiter.api.Assertions.*;
@@ -278,6 +279,70 @@ class TestOrderPluginIntegrationTest {
     }
 
     @Test
+    @DisplayName("testOrderSelect runs the prioritized subset and writes selection files")
+    void selectTaskRunsSubset() throws IOException {
+        scaffoldProject();
+        runner("test", "-Dtestorder.mode=learn").build();
+
+        BuildResult result = runner("testOrderSelect",
+                "-Dtestorder.changeMode=explicit",
+                "-Dtestorder.changed.classes=com.example.app.Calculator",
+                "-Dtestorder.select.topN=1",
+                "-Dtestorder.select.randomM=0").build();
+
+        assertEquals(SUCCESS, result.task(":testOrderSelect").getOutcome());
+        assertTrue(Files.exists(projectDir.resolve("build/test-order-selected.txt")));
+        assertTrue(Files.exists(projectDir.resolve("build/test-order-remaining.txt")));
+        List<String> selected = Files.readAllLines(projectDir.resolve("build/test-order-selected.txt"));
+        List<String> remaining = Files.readAllLines(projectDir.resolve("build/test-order-remaining.txt"));
+        assertEquals(1, selected.size());
+        assertEquals(1, remaining.size());
+        assertNotEquals(selected.get(0), remaining.get(0));
+        assertEquals(Set.of("com.example.app.CalculatorTest", "com.example.app.StringUtilsTest"),
+                Set.of(selected.get(0), remaining.get(0)));
+        assertTrue(result.getOutput().contains("[test-order] Selected 1 tests, deferred 1"));
+        assertTrue(Files.exists(projectDir.resolve("build/test-results/testOrderSelect/TEST-" + selected.get(0) + ".xml")));
+        assertFalse(Files.exists(projectDir.resolve("build/test-results/testOrderSelect/TEST-" + remaining.get(0) + ".xml")));
+    }
+
+    @Test
+    @DisplayName("testOrderRunRemaining runs only deferred tests")
+    void runRemainingTaskRunsDeferredTests() throws IOException {
+        scaffoldProject();
+        runner("test", "-Dtestorder.mode=learn").build();
+        runner("testOrderSelect",
+                "-Dtestorder.changeMode=explicit",
+                "-Dtestorder.changed.classes=com.example.app.Calculator",
+                "-Dtestorder.select.topN=1",
+                "-Dtestorder.select.randomM=0").build();
+
+        BuildResult result = runner("testOrderRunRemaining").build();
+
+        assertEquals(SUCCESS, result.task(":testOrderRunRemaining").getOutcome());
+        List<String> deferred = Files.readAllLines(projectDir.resolve("build/test-order-remaining.txt"));
+        assertEquals(1, deferred.size());
+        assertTrue(result.getOutput().contains("[test-order] Running 1 remaining test classes"));
+        assertTrue(Files.exists(projectDir.resolve("build/test-results/testOrderRunRemaining/TEST-" + deferred.get(0) + ".xml")));
+    }
+
+    @Test
+    @DisplayName("testOrderOptimize updates the state file after learn and order runs")
+    void optimizeTaskPersistsWeights() throws IOException {
+        scaffoldProject();
+        runner("test", "-Dtestorder.mode=learn").build();
+        runner("clean", "test", "-Dtestorder.mode=order",
+                "-Dtestorder.changeMode=explicit",
+                "-Dtestorder.changed.classes=com.example.app.Calculator").build();
+
+        BuildResult result = runner("testOrderOptimize").build();
+
+        assertEquals(SUCCESS, result.task(":testOrderOptimize").getOutcome());
+        assertTrue(result.getOutput().contains("[test-order] Runs:"));
+        assertTrue(Files.exists(projectDir.resolve(".test-order-state")));
+        assertTrue(Files.size(projectDir.resolve(".test-order-state")) > 0);
+    }
+
+    @Test
     @DisplayName("testOrderShowOrder honors explicit changed classes")
     void showOrderHonorsExplicitChangedClasses() throws IOException {
         scaffoldProject();
@@ -353,6 +418,20 @@ class TestOrderPluginIntegrationTest {
         runner("clean", "test", "-Dtestorder.mode=learn").build();
         long indexSize2 = Files.size(projectDir.resolve("test-dependencies.lz4"));
         assertTrue(indexSize2 > 0);
+    }
+
+    @Test
+    @DisplayName("Combined mode works after learn without external logger dependencies")
+    void combinedModeWorksAfterLearn() throws IOException {
+        scaffoldProject();
+
+        runner("test", "-Dtestorder.mode=learn").build();
+
+        BuildResult result = runner("clean", "test", "-Dtestorder.mode=combined").build();
+
+        assertEquals(SUCCESS, result.task(":test").getOutcome());
+        assertFalse(result.getOutput().contains("org.tinylog.Logger"));
+        assertFalse(result.getOutput().contains("ClassNotFoundException"));
     }
 
     @Test
@@ -461,5 +540,94 @@ class TestOrderPluginIntegrationTest {
 
         BuildResult result = runner("test", "-Dtestorder.mode=learn").build();
         assertEquals(SUCCESS, result.task(":test").getOutcome());
+    }
+
+    @Test
+    @DisplayName("Multi-project: each subproject uses its own state file path")
+    void multiProjectSubprojectsHaveSeparateStateFiles() throws IOException {
+        // Settings: root + two subprojects
+        writeFile("settings.gradle", """
+                pluginManagement {
+                    repositories {
+                        mavenLocal()
+                        gradlePluginPortal()
+                        mavenCentral()
+                    }
+                }
+                rootProject.name = 'multi-project'
+                include 'sub-a', 'sub-b'
+                """);
+
+        writeFile("build.gradle", "");
+
+        // Sub-project A: Calculator
+        writeFile("sub-a/build.gradle", """
+                plugins {
+                    id 'java'
+                    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+                }
+                repositories { mavenLocal(); mavenCentral() }
+                dependencies {
+                    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+                    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+                }
+                test { useJUnitPlatform() }
+                """);
+        writeFile("sub-a/src/main/java/com/example/a/Calculator.java", """
+                package com.example.a;
+                public class Calculator { public int add(int a, int b) { return a + b; } }
+                """);
+        writeFile("sub-a/src/test/java/com/example/a/CalculatorTest.java", """
+                package com.example.a;
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.*;
+                class CalculatorTest { @Test void test() { assertEquals(5, new Calculator().add(2, 3)); } }
+                """);
+
+        // Sub-project B: StringUtils
+        writeFile("sub-b/build.gradle", """
+                plugins {
+                    id 'java'
+                    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+                }
+                repositories { mavenLocal(); mavenCentral() }
+                dependencies {
+                    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+                    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+                }
+                test { useJUnitPlatform() }
+                """);
+        writeFile("sub-b/src/main/java/com/example/b/StringUtils.java", """
+                package com.example.b;
+                public class StringUtils { public static String rev(String s) { return new StringBuilder(s).reverse().toString(); } }
+                """);
+        writeFile("sub-b/src/test/java/com/example/b/StringUtilsTest.java", """
+                package com.example.b;
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.*;
+                class StringUtilsTest { @Test void test() { assertEquals("cba", StringUtils.rev("abc")); } }
+                """);
+
+        // Run learn on both subprojects
+        BuildResult result = GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withArguments("test", "-Dtestorder.mode=learn")
+                .forwardOutput()
+                .build();
+
+        assertEquals(SUCCESS, result.task(":sub-a:test").getOutcome());
+        assertEquals(SUCCESS, result.task(":sub-b:test").getOutcome());
+
+        // Each subproject should have its own state file under its own directory
+        Path stateA = projectDir.resolve("sub-a/.test-order-state");
+        Path stateB = projectDir.resolve("sub-b/.test-order-state");
+
+        assertTrue(Files.exists(stateA),
+                "sub-a should have its own state file at sub-a/.test-order-state");
+        assertTrue(Files.exists(stateB),
+                "sub-b should have its own state file at sub-b/.test-order-state");
+
+        // The two state files must be distinct paths
+        assertNotEquals(stateA.toAbsolutePath(), stateB.toAbsolutePath());
     }
 }

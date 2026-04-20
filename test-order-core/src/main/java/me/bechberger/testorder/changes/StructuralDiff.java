@@ -1,6 +1,7 @@
 package me.bechberger.testorder.changes;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -105,6 +106,7 @@ public class StructuralDiff {
         Path absProjectRoot = projectRoot.toAbsolutePath().normalize();
         Path gitRoot = resolveGitRoot(projectRoot);
         Set<String> changedFiles = new TreeSet<>();
+        boolean hasHeadParent = includeLastCommit && gitRevisionExists(gitRoot, "HEAD~1");
 
         // Uncommitted (unstaged + staged)
         changedFiles.addAll(runGit(gitRoot, "diff", "--name-only"));
@@ -112,21 +114,28 @@ public class StructuralDiff {
         // Untracked
         changedFiles.addAll(runGit(gitRoot, "ls-files", "--others", "--exclude-standard"));
 
-        if (includeLastCommit) {
+        if (hasHeadParent) {
             changedFiles.addAll(runGit(gitRoot, "diff", "--name-only", "HEAD~1", "HEAD"));
         }
 
-        List<FileDiff> diffs = new ArrayList<>();
+        String gitRef = hasHeadParent ? "HEAD~1" : "HEAD";
+        List<String> relevantPaths = new ArrayList<>();
         for (String relPath : changedFiles) {
-            if (!relPath.endsWith(".java")) continue;
-
+            if (!relPath.endsWith(".java")) {
+                continue;
+            }
             Path absFile = gitRoot.resolve(relPath).normalize();
             if (!absFile.startsWith(absProjectRoot)) {
                 continue;
             }
-            String gitRef = includeLastCommit ? "HEAD~1" : "HEAD";
+            relevantPaths.add(relPath);
+        }
 
-            String oldSource = readFileFromGit(gitRoot, gitRef, relPath);
+        Map<String, String> oldSources = readFilesFromGit(gitRoot, gitRef, relevantPaths);
+        List<FileDiff> diffs = new ArrayList<>();
+        for (String relPath : relevantPaths) {
+            Path absFile = gitRoot.resolve(relPath).normalize();
+            String oldSource = oldSources.get(relPath);
             String newSource = Files.exists(absFile) ? Files.readString(absFile) : null;
 
             if (oldSource == null && newSource == null) continue;
@@ -150,6 +159,14 @@ public class StructuralDiff {
             throw new IOException("Failed to resolve git root for " + projectRoot);
         }
         return Path.of(lines.get(0)).toAbsolutePath().normalize();
+    }
+
+    private static boolean gitRevisionExists(Path workDir, String revision) {
+        try {
+            return !runGit(workDir, "rev-parse", "--verify", revision).isEmpty();
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     // ── Diff logic ───────────────────────────────────────────────────
@@ -228,11 +245,14 @@ public class StructuralDiff {
                             m.compactBody(), null));
                 }
             } else {
-                // Compare body hashes — collect old and new hash sets
-                Set<String> oldHashes = new HashSet<>(oldList.size());
+                // Compare body hashes — use sorted lists to detect overload count changes
+                // (a Set would collapse duplicate hashes, e.g. multiple abstract overloads)
+                List<String> oldHashes = new ArrayList<>(oldList.size());
                 for (var m : oldList) oldHashes.add(m.bodyHash() != null ? m.bodyHash() : "abstract");
-                Set<String> newHashes = new HashSet<>(newList.size());
+                List<String> newHashes = new ArrayList<>(newList.size());
                 for (var m : newList) newHashes.add(m.bodyHash() != null ? m.bodyHash() : "abstract");
+                Collections.sort(oldHashes);
+                Collections.sort(newHashes);
 
                 if (!oldHashes.equals(newHashes)) {
                     changes.add(new Change(Change.Kind.MODIFIED, Change.Category.METHOD,
@@ -376,26 +396,110 @@ public class StructuralDiff {
     // ── Git helpers ─────────────────────────────────────────────────
 
     private static String readFileFromGit(Path projectRoot, String ref, String relPath) throws IOException {
-        ProcessBuilder pb = new ProcessBuilder("git", "show", ref + ":" + relPath);
+        return readFilesFromGit(projectRoot, ref, List.of(relPath)).get(relPath);
+    }
+
+    private static Map<String, String> readFilesFromGit(Path projectRoot, String ref, Collection<String> relPaths)
+            throws IOException {
+        if (relPaths.isEmpty()) {
+            return Map.of();
+        }
+        ProcessBuilder pb = new ProcessBuilder("git", "cat-file", "--batch");
         pb.directory(projectRoot.toFile());
         pb.redirectErrorStream(false);
         Process process = pb.start();
-        String content;
-        try (var is = process.getInputStream()) {
-            content = new String(is.readAllBytes());
+        try (BufferedWriter writer = new BufferedWriter(
+                     new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8))) {
+            for (String relPath : relPaths) {
+                writer.write(ref);
+                writer.write(':');
+                writer.write(relPath);
+                writer.newLine();
+            }
         }
+
+        Map<String, String> contents;
+        try (BufferedInputStream input = new BufferedInputStream(process.getInputStream())) {
+            contents = parseGitBatchResponse(relPaths, input);
+        }
+
         try {
             if (!process.waitFor(30, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
-                throw new IOException("git show timed out for " + relPath);
+                throw new IOException("git cat-file timed out");
             }
-            if (process.exitValue() != 0) return null;
+            if (process.exitValue() != 0) {
+                String error;
+                try (InputStream errorStream = process.getErrorStream()) {
+                    error = new String(errorStream.readAllBytes(), StandardCharsets.UTF_8).strip();
+                }
+                throw new IOException("git cat-file failed" + (error.isEmpty() ? "" : ": " + error));
+            }
         } catch (InterruptedException e) {
             process.destroyForcibly();
             Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while reading git blobs", e);
+        }
+        return contents;
+    }
+
+    static Map<String, String> parseGitBatchResponse(Collection<String> relPaths, InputStream input)
+            throws IOException {
+        Map<String, String> contents = new LinkedHashMap<>();
+        BufferedInputStream buffered = input instanceof BufferedInputStream bis ? bis : new BufferedInputStream(input);
+        for (String relPath : relPaths) {
+            String header = readAsciiLine(buffered);
+            if (header == null || header.isBlank()) {
+                throw new EOFException("Unexpected end of git cat-file output for " + relPath);
+            }
+            if (header.endsWith(" missing")) {
+                contents.put(relPath, null);
+                continue;
+            }
+            String[] parts = header.split(" ", 3);
+            if (parts.length != 3) {
+                throw new IOException("Malformed git cat-file header for " + relPath + ": " + header);
+            }
+            int size = Integer.parseInt(parts[2]);
+            byte[] bytes = buffered.readNBytes(size);
+            if (bytes.length != size) {
+                throw new EOFException("Incomplete git blob for " + relPath);
+            }
+            contents.put(relPath, new String(bytes, StandardCharsets.UTF_8));
+            consumeRecordTerminator(buffered, relPath);
+        }
+        return contents;
+    }
+
+    private static String readAsciiLine(InputStream input) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        int next;
+        while ((next = input.read()) != -1) {
+            if (next == '\n') {
+                break;
+            }
+            if (next != '\r') {
+                buffer.write(next);
+            }
+        }
+        if (next == -1 && buffer.size() == 0) {
             return null;
         }
-        return content;
+        return buffer.toString(StandardCharsets.UTF_8);
+    }
+
+    private static void consumeRecordTerminator(InputStream input, String relPath) throws IOException {
+        int separator = input.read();
+        if (separator == '\n' || separator == -1) {
+            return;
+        }
+        if (separator == '\r') {
+            int next = input.read();
+            if (next == '\n' || next == -1) {
+                return;
+            }
+        }
+        throw new IOException("Malformed git cat-file record terminator for " + relPath);
     }
 
     private static List<String> runGit(Path workDir, String... args) throws IOException {

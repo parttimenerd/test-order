@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -101,5 +102,92 @@ class MavenPluginIT {
         assertThat(Files.isDirectory(surefireReports))
                 .withFailMessage("surefire-reports should exist (JUnit 6): " + surefireReports)
                 .isTrue();
+    }
+
+    @Test
+    void selectModeWritesSelectionFilesAndRunsSubset() throws IOException {
+        assertSelectFixture("select-mode");
+    }
+
+    @Test
+    void junit6SelectModeWritesSelectionFilesAndRunsSubset() throws IOException {
+        assertSelectFixture("select-mode-junit6");
+    }
+
+    @Test
+    void runRemainingModeRunsOnlyDeferredSubset() {
+        assertRunRemainingFixture("run-remaining-mode");
+    }
+
+    @Test
+    void junit6RunRemainingModeRunsOnlyDeferredSubset() {
+        assertRunRemainingFixture("run-remaining-mode-junit6");
+    }
+
+    @Test
+    void reactorLearnModeUsesSharedReactorDirectory() {
+        Path projectDir = itProjectsDir.resolve("reactor-learn-mode");
+        assertThat(Files.exists(projectDir)).isTrue();
+
+        Path sharedDepsDir = projectDir.resolve(".test-order/deps");
+        assertThat(Files.isDirectory(sharedDepsDir))
+                .withFailMessage("shared deps dir should exist: " + sharedDepsDir)
+                .isTrue();
+        assertThat(sharedDepsDir.resolve("me.bechberger.it.modulea.LibraryTest.deps")).exists();
+        assertThat(sharedDepsDir.resolve("me.bechberger.it.moduleb.ServiceTest.deps")).exists();
+
+        assertThat(Files.isDirectory(projectDir.resolve("module-a/target/surefire-reports"))).isTrue();
+        assertThat(Files.isDirectory(projectDir.resolve("module-b/target/surefire-reports"))).isTrue();
+    }
+
+    private void assertSelectFixture(String projectName) throws IOException {
+        Path projectDir = itProjectsDir.resolve(projectName);
+        assertThat(Files.exists(projectDir)).isTrue();
+
+        Path selectedFile = projectDir.resolve("target/test-order-selected.txt");
+        Path remainingFile = projectDir.resolve("target/test-order-remaining.txt");
+        assertThat(Files.exists(selectedFile))
+                .withFailMessage("selected file should exist: " + selectedFile)
+                .isTrue();
+        assertThat(Files.exists(remainingFile))
+                .withFailMessage("remaining file should exist: " + remainingFile)
+                .isTrue();
+
+        assertThat(Files.readAllLines(selectedFile)).containsExactly("me.bechberger.it.MathHelperTest");
+        assertThat(Files.readAllLines(remainingFile)).containsExactly("me.bechberger.it.StringHelperTest");
+
+        Path surefireReports = projectDir.resolve("target/surefire-reports");
+        assertThat(Files.isDirectory(surefireReports)).isTrue();
+        assertThat(reportClassNames(surefireReports)).containsExactly("me.bechberger.it.MathHelperTest");
+    }
+
+    private void assertRunRemainingFixture(String projectName) {
+        Path projectDir = itProjectsDir.resolve(projectName);
+        assertThat(Files.exists(projectDir)).isTrue();
+
+        Path surefireReports = projectDir.resolve("target/surefire-reports");
+        assertThat(Files.isDirectory(surefireReports))
+                .withFailMessage("surefire-reports should exist: " + surefireReports)
+                .isTrue();
+        assertThat(reportClassNames(surefireReports)).containsExactly("me.bechberger.it.StringHelperTest");
+
+        Path remainingFile = projectDir.resolve("target/test-order-remaining.txt");
+        assertThat(Files.exists(remainingFile))
+                .withFailMessage("remaining file should exist: " + remainingFile)
+                .isTrue();
+    }
+
+    private List<String> reportClassNames(Path surefireReports) {
+        try (var stream = Files.list(surefireReports)) {
+            return stream
+                    .map(Path::getFileName)
+                    .map(Path::toString)
+                    .filter(name -> name.startsWith("TEST-") && name.endsWith(".xml"))
+                    .map(name -> name.substring("TEST-".length(), name.length() - ".xml".length()))
+                    .sorted()
+                    .toList();
+        } catch (IOException e) {
+            throw new AssertionError("Failed to inspect surefire reports in " + surefireReports, e);
+        }
     }
 }

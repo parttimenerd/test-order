@@ -2,6 +2,7 @@ package me.bechberger.testorder;
 
 import me.bechberger.femtocli.FemtoCli;
 import me.bechberger.testorder.changes.StructuralChangeAnalyzer;
+import me.bechberger.testorder.changes.StructuralChangeAnalyzer.ChangedMembers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -259,6 +260,33 @@ class DepsAndScoringTest {
         assertEquals(0, result.score());
     }
 
+    @Test
+    void allDurationsUnknownDisablesSpeedScoring() {
+        // E1: when no durations are known, medianDuration=0, speed scoring must be disabled
+        DependencyMap depMap = buildDepMap(Map.of(
+                "com.Fast", Set.of("app.X"),
+                "com.Slow", Set.of("app.Y")));
+        TestOrderState state = new TestOrderState(); // no durations recorded
+
+        var weights = new TestOrderState.ScoringWeights(0, 0, 0, 5, 3, 0, 0);
+        TestScorer scorer = new TestScorer(weights, depMap, state,
+                Set.of(), Set.of(), depMap.testClasses());
+
+        assertEquals(0, scorer.medianDuration(),
+                "Median must be 0 when all durations are unknown");
+
+        var fast = scorer.score("com.Fast");
+        var slow = scorer.score("com.Slow");
+        assertFalse(fast.isFast(), "No test should be classified as fast when median is 0");
+        assertFalse(fast.isSlow(), "No test should be classified as slow when median is 0");
+        assertFalse(slow.isFast());
+        assertFalse(slow.isSlow());
+        assertEquals(0.0, fast.speedRatio(), 0.001, "Speed ratio must be 0.0");
+        assertEquals(0.0, slow.speedRatio(), 0.001, "Speed ratio must be 0.0");
+        assertEquals(0, fast.score(), "Score must be 0 when only speed weights are set");
+        assertEquals(0, slow.score(), "Score must be 0 when only speed weights are set");
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     //  Failure decay over multiple save/load cycles
     // ═══════════════════════════════════════════════════════════════════
@@ -339,6 +367,45 @@ class DepsAndScoringTest {
         // After enough cycles, com.A's score should be pruned to 0
         assertEquals(0.0, state.failureScore("com.A"), 0.001,
                 "Failure score should be pruned after " + cycles + " decay cycles");
+    }
+
+    @Test
+    void failureScorePruningIsLogged() throws IOException {
+        // E5: verify that the LOG.fine message fires when a score drops below threshold
+        Path file = tempDir.resolve("state");
+        TestOrderState state = new TestOrderState();
+
+        // Set a very aggressive decay so one cycle prunes immediately
+        state.setFailureDecay(0.999); // retain = 0.001, threshold default = 0.01
+        state.recordFailure("com.Fragile"); // score = 1.0
+        state.save(file); // first save — establishes score
+
+        // Capture log output from TestOrderState.LOG
+        var logRecords = new java.util.ArrayList<java.util.logging.LogRecord>();
+        var handler = new java.util.logging.Handler() {
+            @Override public void publish(java.util.logging.LogRecord record) { logRecords.add(record); }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        handler.setLevel(java.util.logging.Level.ALL);
+        var logger = java.util.logging.Logger.getLogger(TestOrderState.class.getName());
+        logger.addHandler(handler);
+        var oldLevel = logger.getLevel();
+        logger.setLevel(java.util.logging.Level.ALL);
+        try {
+            // Second save with pending data triggers decay: 1.0 * 0.001 = 0.001 < threshold (0.01)
+            state.recordFailure("com.OTHER");
+            state.save(file);
+
+            boolean foundPruneLog = logRecords.stream()
+                    .anyMatch(r -> r.getMessage() != null && r.getMessage().contains("Pruned failure score")
+                            && r.getMessage().contains("com.Fragile"));
+            assertTrue(foundPruneLog,
+                    "Expected a FINE log message about pruning com.Fragile; logs: " + logRecords);
+        } finally {
+            logger.removeHandler(handler);
+            logger.setLevel(oldLevel);
+        }
     }
 
     @Test
@@ -1210,9 +1277,15 @@ class DepsAndScoringTest {
         }
         assertEquals(50, state.runs().size(), "should cap at MAX_HISTORY_RUNS");
 
-        // First runs should have been dropped
-        assertEquals(10_000L, state.runs().get(0).timestamp(),
-                "oldest 10 runs should be dropped");
+        assertEquals(0L, state.runs().get(0).timestamp(),
+                "history thinning should retain an oldest anchor");
+        assertEquals(59_000L, state.runs().get(state.runs().size() - 1).timestamp(),
+                "most recent run should always be kept");
+        for (long i = 35_000L; i <= 59_000L; i += 1_000L) {
+            long timestamp = i;
+            assertTrue(state.runs().stream().anyMatch(run -> run.timestamp() == timestamp),
+                    "recent runs should be preserved densely");
+        }
 
         // Save/load preserves the cap
         Path file = tempDir.resolve("state");
@@ -1551,6 +1624,25 @@ class DepsAndScoringTest {
         // 10.0 / sqrt(1) * 2 = 20, min(20, 2) = 2 (capped)
         assertEquals(2, TestScorer.complexityScore(10.0, 1, 2));
     }
+
+        @Test
+        void setCoverBonusSkippedWhenChangedClassesEmpty() {
+                DependencyMap depMap = buildDepMap(Map.of(
+                                "com.A", Set.of("app.X"),
+                                "com.B", Set.of("app.Y")));
+                TestOrderState state = stateWithDurations(Map.of(
+                                "com.A", 100L,
+                                "com.B", 100L));
+
+                var weights = new TestOrderState.ScoringWeights(0, 0, 0, 0, 0, 0, 0, 0, 5);
+                TestScorer scorer = new TestScorer(weights, depMap, state,
+                                Set.of(), Set.of(), depMap.testClasses());
+
+                TestScorer.ScoreResult a = scorer.score("com.A");
+                TestScorer.ScoreResult b = scorer.score("com.B");
+                assertEquals(0, a.score(), "coverage bonus must be skipped when changedClasses is empty");
+                assertEquals(0, b.score(), "coverage bonus must be skipped when changedClasses is empty");
+        }
 
     @Test
     void scorerIncludesComplexityInScore() {
@@ -2201,5 +2293,55 @@ class DepsAndScoringTest {
     void lineDiffEmptyToSomething() {
         assertEquals(3, me.bechberger.testorder.changes.LineDiff.changedLineCount(
                 "", "a\nb\nc"));
+    }
+
+    // ─── TestScorer method-diff and zero-weights tests ────────────────
+
+    @Test
+    void scorerGivesHigherScoreToTestCoveringChangedMethod() {
+        var weights = new TestOrderState.ScoringWeights(0, 0, 0, 0, 0, 5, 0, 0, 0);
+        DependencyMap depMap = new DependencyMap();
+
+        // TestA depends on app.Service (class-level) and member app.Service#doWork
+        depMap.put("com.test.TestA", Set.of("app.Service"));
+        depMap.putMemberDeps("com.test.TestA", Set.of("app.Service#doWork"));
+
+        // TestB depends on app.Service (class-level) but only member app.Service#otherMethod
+        depMap.put("com.test.TestB", Set.of("app.Service"));
+        depMap.putMemberDeps("com.test.TestB", Set.of("app.Service#otherMethod"));
+
+        var state = new TestOrderState();
+        var changedClasses = Set.of("app.Service");
+        var changedMembers = new ChangedMembers(
+                changedClasses,
+                Set.of("app.Service#doWork"),
+                Map.of("app.Service", Set.of("doWork")),
+                Set.of());
+
+        List<String> tests = List.of("com.test.TestA", "com.test.TestB");
+        TestScorer scorer = new TestScorer.Builder(weights, depMap, state, changedClasses, Set.of())
+                .testClassNames(tests)
+                .changedMembers(changedMembers)
+                .build();
+
+        int scoreA = scorer.score("com.test.TestA").score();
+        int scoreB = scorer.score("com.test.TestB").score();
+        assertTrue(scoreA > scoreB,
+                "TestA (covers changed method) should score higher than TestB; got A=%d B=%d".formatted(scoreA, scoreB));
+    }
+
+    @Test
+    void allZeroWeightsProducesZeroScores() {
+        var weights = new TestOrderState.ScoringWeights(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        DependencyMap depMap = new DependencyMap();
+        depMap.put("com.test.TestA", Set.of("app.Foo"));
+        depMap.put("com.test.TestB", Set.of("app.Bar"));
+
+        var state = new TestOrderState();
+        List<String> tests = List.of("com.test.TestA", "com.test.TestB");
+        TestScorer scorer = new TestScorer(weights, depMap, state, Set.of("app.Foo"), Set.of(), tests);
+
+        assertEquals(0, scorer.score("com.test.TestA").score());
+        assertEquals(0, scorer.score("com.test.TestB").score());
     }
 }

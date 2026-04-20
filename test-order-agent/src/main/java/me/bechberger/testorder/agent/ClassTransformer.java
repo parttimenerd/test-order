@@ -41,17 +41,16 @@ public class ClassTransformer implements ClassFileTransformer {
     private final Agent.InstrumentationMode mode;
     private final FieldTrackingMode fieldTrackingMode;
     private final ClassIdMap classIdMap = ClassIdMap.getInstance();
-    private final ClassPool baseClassPool;
     private final ConcurrentHashMap<ClassLoader, ClassPool> loaderPools = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> classCallCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> memberCallCache = new ConcurrentHashMap<>();
 
+    /** Maximum entries per string cache to prevent unbounded growth in large builds. */
+    private static final int MAX_CACHE_ENTRIES = 50_000;
+
     public ClassTransformer(Agent options) {
         this.mode = options.getMode();
         this.fieldTrackingMode = fieldTrackingModeFor(mode);
-        this.baseClassPool = new ClassPool();
-        this.baseClassPool.appendSystemPath();
-
         // Build intelligent filter from options
         IntelligentClassFilter.Builder filterBuilder = new IntelligentClassFilter.Builder()
                 .strategy(options.getFilterStrategy())
@@ -106,13 +105,16 @@ public class ClassTransformer implements ClassFileTransformer {
 
     private ClassPool classPoolFor(ClassLoader loader) {
         if (loader == null) {
-            return baseClassPool;
+            ClassPool cp = new ClassPool(null);
+            cp.appendSystemPath();
+            return cp;
         }
         ClassPool existing = loaderPools.get(loader);
         if (existing != null) {
             return existing;
         }
-        ClassPool cp = new ClassPool(baseClassPool);
+        ClassPool cp = new ClassPool(null);
+        cp.appendSystemPath();
         cp.appendClassPath(new LoaderClassPath(loader));
         ClassPool prev = loaderPools.putIfAbsent(loader, cp);
         return prev != null ? prev : cp;
@@ -124,8 +126,11 @@ public class ClassTransformer implements ClassFileTransformer {
         int classId = classIdMap.getOrRegisterClass(fqcn);
         String result = (classId < 0) ? ""
                 : "me.bechberger.testorder.agent.runtime.UsageStore.recordUsageIdFast(" + classId + ");";
-        String prev = classCallCache.putIfAbsent(fqcn, result);
-        return prev != null ? prev : result;
+        if (classCallCache.size() < MAX_CACHE_ENTRIES) {
+            String prev = classCallCache.putIfAbsent(fqcn, result);
+            return prev != null ? prev : result;
+        }
+        return result;
     }
 
     private String recordMemberCall(String memberKey) {
@@ -134,8 +139,11 @@ public class ClassTransformer implements ClassFileTransformer {
         int memberId = classIdMap.getOrRegisterMember(memberKey);
         String result = (memberId < 0) ? ""
                 : "me.bechberger.testorder.agent.runtime.UsageStore.recordMemberUsageIdFast(" + memberId + ");";
-        String prev = memberCallCache.putIfAbsent(memberKey, result);
-        return prev != null ? prev : result;
+        if (memberCallCache.size() < MAX_CACHE_ENTRIES) {
+            String prev = memberCallCache.putIfAbsent(memberKey, result);
+            return prev != null ? prev : result;
+        }
+        return result;
     }
 
     @Override
@@ -195,8 +203,10 @@ public class ClassTransformer implements ClassFileTransformer {
         String fqcn = slashToDotCache.get(className);
         if (fqcn == null) {
             fqcn = className.replace('/', '.');
-            String prev = slashToDotCache.putIfAbsent(className, fqcn);
-            if (prev != null) fqcn = prev;
+            if (slashToDotCache.size() < MAX_CACHE_ENTRIES) {
+                String prev = slashToDotCache.putIfAbsent(className, fqcn);
+                if (prev != null) fqcn = prev;
+            }
         }
         String initialCall = recordClassCall(fqcn);
         if (initialCall.isEmpty()) {
@@ -351,7 +361,7 @@ public class ClassTransformer implements ClassFileTransformer {
             try {
                 declaringClass = fa.getClassName();
                 fieldName = fa.getFieldName();
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 return;
             }
             // skip self — already recorded by method-entry instrumentation

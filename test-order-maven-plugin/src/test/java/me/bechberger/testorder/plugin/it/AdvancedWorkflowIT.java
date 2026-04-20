@@ -87,6 +87,24 @@ class AdvancedWorkflowIT {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    //  2b. SHOW-ORDER FORMAT — column headers present in output
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    @Order(15)
+    @DisplayName("show-order: output contains expected column headers (#, Test Class, Score, Deps)")
+    void showOrderOutputContainsColumnHeaders() {
+        MavenResult result = project.maven().showOrder(CALCULATOR);
+        assertThat(result).succeeded();
+
+        String output = result.output();
+        assertThat(output).contains("#");
+        assertThat(output).contains("Test Class");
+        assertThat(output).contains("Score");
+        assertThat(output).contains("Deps");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     //  3. SHOW-ORDER — explicit changed classes affect scoring
     // ═══════════════════════════════════════════════════════════════════
 

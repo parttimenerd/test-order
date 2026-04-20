@@ -98,7 +98,16 @@ public class Agent implements Callable<Integer> {
         if (agentArgs == null || agentArgs.isBlank()) {
             return agent;
         }
-        FemtoCli.runAgent(agent, agentArgs);
+        try {
+            int exitCode = FemtoCli.runAgent(agent, agentArgs);
+            if (exitCode != 0) {
+                throw new IllegalArgumentException("Invalid agent arguments: " + agentArgs);
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("Invalid agent arguments: " + agentArgs, e);
+        }
         return agent;
     }
 
@@ -165,7 +174,7 @@ public class Agent implements Callable<Integer> {
 
         // extract and add runtime jar to bootstrap classpath
         try {
-            inst.appendToBootstrapClassLoaderSearch(new JarFile(getExtractedJARPath().toFile()));
+            appendRuntimeJarToBootstrap(inst, Agent.class.getClassLoader());
         } catch (IOException e) {
             throw new RuntimeException("Failed to add runtime jar to bootstrap classpath", e);
         }
@@ -173,11 +182,8 @@ public class Agent implements Callable<Integer> {
         // configure AgentLogger if verbose file is set (must be before UsageStore config so it can log)
         if (options.getVerboseFile() != null) {
             try {
-                Class<?> loggerClass = Class.forName(
-                        "me.bechberger.testorder.agent.runtime.AgentLogger", true, null);
-                loggerClass.getMethod("setVerboseFile", String.class)
-                        .invoke(null, options.getVerboseFile().toAbsolutePath().toString());
-            } catch (Exception e) {
+                configureAgentLogger(options.getVerboseFile(), null);
+            } catch (ReflectiveOperationException e) {
                 System.err.println("[test-order] Failed to configure AgentLogger: " + e.getMessage());
             }
         }
@@ -195,15 +201,29 @@ public class Agent implements Callable<Integer> {
                     || options.getMode() == InstrumentationMode.FULL_MEMBER;
                 usageStoreClass.getMethod("setMethodLevelRecordingEnabled", boolean.class)
                     .invoke(instance, methodLevel);
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException e) {
             throw new RuntimeException("Failed to configure UsageStore", e);
         }
 
         inst.addTransformer(new ClassTransformer(options), true);
     }
 
-    private static Path getExtractedJARPath() throws IOException {
-        try (InputStream in = Agent.class.getClassLoader().getResourceAsStream("test-order-runtime.jar")) {
+    static void configureAgentLogger(Path verboseFile, ClassLoader classLoader) throws ReflectiveOperationException {
+        Class<?> loggerClass = Class.forName(
+                "me.bechberger.testorder.agent.runtime.AgentLogger", true, classLoader);
+        loggerClass.getMethod("setVerboseFile", String.class)
+                .invoke(null, verboseFile.toAbsolutePath().toString());
+    }
+
+    static Path appendRuntimeJarToBootstrap(Instrumentation inst, ClassLoader resourceLoader)
+            throws IOException {
+        Path extractedJar = extractRuntimeJar(resourceLoader);
+        inst.appendToBootstrapClassLoaderSearch(new JarFile(extractedJar.toFile()));
+        return extractedJar;
+    }
+
+    static Path extractRuntimeJar(ClassLoader resourceLoader) throws IOException {
+        try (InputStream in = resourceLoader.getResourceAsStream("test-order-runtime.jar")) {
             if (in == null) {
                 throw new RuntimeException("Could not find test-order-runtime.jar");
             }

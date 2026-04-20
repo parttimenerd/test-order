@@ -77,6 +77,45 @@ class TestOrderStateTest {
     }
 
     @Test
+    void durationEmaAlphaZeroNeverUpdates() {
+        // E3: alpha=0 means duration stays at first recorded value forever
+        TestOrderState state = new TestOrderState();
+        state.setDurationAlpha(0.0);
+        state.recordDuration("com.A", 100);
+        assertEquals(100, state.getDuration("com.A", -1));
+        state.recordDuration("com.A", 999);
+        assertEquals(100, state.getDuration("com.A", -1), "alpha=0 should never update past the initial value");
+    }
+
+    @Test
+    void durationEmaAlphaOneOnlyLatestSample() {
+        // E4: alpha=1 means only the latest measurement is retained
+        TestOrderState state = new TestOrderState();
+        state.setDurationAlpha(1.0);
+        state.setEmaVarianceThreshold(0); // disable adaptive dampening
+        state.recordDuration("com.A", 100);
+        assertEquals(100, state.getDuration("com.A", -1));
+        state.recordDuration("com.A", 500);
+        assertEquals(500, state.getDuration("com.A", -1), "alpha=1 should use only the latest sample");
+        state.recordDuration("com.A", 42);
+        assertEquals(42, state.getDuration("com.A", -1));
+    }
+
+    @Test
+    void highVarianceDurationsUseMoreConservativeAlpha() {
+        TestOrderState state = new TestOrderState();
+        state.setDurationAlpha(0.85);
+        state.setEmaVarianceThreshold(0.2);
+
+        state.recordDuration("com.A", 100);
+        state.recordDuration("com.A", 300);
+        state.recordDuration("com.A", 1000);
+
+        assertTrue(state.getDuration("com.A", -1) < 700,
+                "Adaptive EMA should smooth a spike more than the fixed-alpha result");
+    }
+
+    @Test
     void durationDefaultValue() {
         TestOrderState state = new TestOrderState();
         assertEquals(-1, state.getDuration("unknown", -1));
@@ -152,8 +191,45 @@ class TestOrderStateTest {
                     i, 10, 0, -1, 1.0, List.of()));
         }
         assertEquals(TestOrderState.MAX_HISTORY_RUNS, state.runs().size());
-        // most recent should be kept
+        assertEquals(0, state.runs().get(0).timestamp(),
+                "Thinning should retain an anchor to the oldest history");
         assertEquals(59, state.runs().get(state.runs().size() - 1).timestamp());
+    }
+
+    @Test
+    void runHistoryThinningKeepsRecentRunsDense() {
+        TestOrderState state = new TestOrderState();
+        for (int i = 0; i < 60; i++) {
+            state.addRunRecord(new TestOrderState.RunRecord(
+                    i, 10, i % 3 == 0 ? 1 : 0, i % 3 == 0 ? i % 10 : -1, 0.8, List.of()));
+        }
+
+        Set<Long> timestamps = state.runs().stream()
+                .map(TestOrderState.RunRecord::timestamp)
+                .collect(java.util.stream.Collectors.toSet());
+        for (long i = 35; i < 60; i++) {
+            assertTrue(timestamps.contains(i), "Recent run " + i + " should be preserved");
+        }
+    }
+
+    @Test
+    void adaptiveDurationConfigRoundTrips() throws IOException {
+        TestOrderState state = new TestOrderState();
+        state.setEmaVarianceThreshold(0.15);
+        state.setHistoryMaxRuns(12);
+        state.recordDuration("com.A", 100);
+        state.recordDuration("com.A", 400);
+        state.recordMethodDuration("com.A", "testOne", 50);
+        state.recordMethodDuration("com.A", "testOne", 250);
+
+        Path file = tempDir.resolve("adaptive-state");
+        state.save(file);
+        TestOrderState loaded = TestOrderState.load(file);
+
+        assertEquals(0.15, loaded.emaVarianceThreshold(), 0.0001);
+        assertEquals(12, loaded.historyMaxRuns());
+        assertTrue(loaded.getDuration("com.A", -1) > 0);
+        assertTrue(loaded.getDurationMethod("com.A", "testOne", -1) > 0);
     }
 
     @Test
@@ -311,6 +387,22 @@ class TestOrderStateTest {
         assertEquals(0.25, TestOrderState.computeAPFD(outcomes), 0.001);
     }
 
+    @Test
+    void apfdEmptyOutcomesIsOne() {
+        // E7: computeAPFD with zero tests returns 1.0
+        assertEquals(1.0, TestOrderState.computeAPFD(List.of()));
+    }
+
+    @Test
+    void apfdNoFailuresIsOne() {
+        // E7: computeAPFD with m=0 (no failures) returns 1.0
+        List<TestOrderState.TestOutcome> outcomes = List.of(
+                new TestOrderState.TestOutcome("A", 0, false, false, 0, 0, 0.0, false, false, false, 0.0),
+                new TestOrderState.TestOutcome("B", 0, false, false, 0, 0, 0.0, false, false, false, 0.0)
+        );
+        assertEquals(1.0, TestOrderState.computeAPFD(outcomes));
+    }
+
     // --- Static coordination ---
 
     @Test
@@ -327,6 +419,66 @@ class TestOrderStateTest {
 
         TestOrderState.resetPending();
         assertFalse(TestOrderState.hasPendingData());
+    }
+
+    @Test
+    void pendingStateUpdatesAreAtomicAcrossThreads() throws Exception {
+        TestOrderState.resetPending();
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var setPath = executor.submit(() -> TestOrderState.setStatePath("/tmp/state"));
+            var setBreakdown = executor.submit(() -> TestOrderState.recordBreakdown("com.A",
+                    new TestOrderState.ScoreBreakdown(5, true, false, 1, 0, 0.5, true, false, 0.0)));
+            setPath.get();
+            setBreakdown.get();
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertTrue(TestOrderState.hasPendingData());
+        assertEquals("/tmp/state", TestOrderState.getPendingStatePath());
+        assertEquals(1, TestOrderState.getPendingBreakdowns().size());
+    }
+
+    @Test
+    void pendingStateReadWhileConcurrentWritesIsConsistent() throws Exception {
+        TestOrderState.resetPending();
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        int iterations = 500;
+        try {
+            var writer = executor.submit(() -> {
+                TestOrderState.setStatePath("/tmp/state");
+                for (int i = 0; i < iterations; i++) {
+                    TestOrderState.recordBreakdown(
+                            "com.T" + i,
+                            new TestOrderState.ScoreBreakdown(
+                                    i, i % 2 == 0, i % 3 == 0, i % 5, 10, 0.5,
+                                    i % 7 == 0, i % 11 == 0, 0.0));
+                }
+            });
+
+            var reader = executor.submit(() -> {
+                for (int i = 0; i < iterations; i++) {
+                    Map<String, TestOrderState.ScoreBreakdown> snapshot = TestOrderState.getPendingBreakdowns();
+                    for (var entry : snapshot.entrySet()) {
+                        assertNotNull(entry.getKey());
+                        assertNotNull(entry.getValue());
+                    }
+                    if (!snapshot.isEmpty()) {
+                        assertNotNull(TestOrderState.getPendingStatePath());
+                    }
+                }
+            });
+
+            writer.get();
+            reader.get();
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertTrue(TestOrderState.hasPendingData());
+        assertEquals("/tmp/state", TestOrderState.getPendingStatePath());
+        assertEquals(iterations, TestOrderState.getPendingBreakdowns().size());
     }
 
     @Test
@@ -366,6 +518,55 @@ class TestOrderStateTest {
         assertEquals(3, loaded.weights().speed());
         assertEquals(2, loaded.weights().speedPenalty());
         assertEquals(4, loaded.weights().depOverlap());
+    }
+
+    @Test
+    void saveIncludesSchemaVersion() throws IOException {
+        Path file = tempDir.resolve("state");
+        new TestOrderState().save(file);
+
+        byte[] raw = Files.readAllBytes(file);
+        String json;
+        try (var in = new LZ4BlockInputStream(new ByteArrayInputStream(raw))) {
+            json = new String(in.readAllBytes(), StandardCharsets.UTF_8).strip();
+        }
+        assertTrue(json.contains("\"schemaVersion\":1"));
+    }
+
+    @Test
+    void loadWithoutSchemaVersionStartsFresh() throws IOException {
+        String plainJson = """
+                {
+                  "weights": {"newTest": 15, "changedTest": 8, "maxFailure": 4, "speed": 2, "speedPenalty": 1, "depOverlap": 3},
+                  "durations": {"com.A": 100},
+                  "failureScores": {},
+                  "runs": []
+                }
+                """;
+        Path file = tempDir.resolve("legacy-state");
+        Files.writeString(file, plainJson);
+
+        TestOrderState loaded = TestOrderState.load(file);
+        assertEquals(TestOrderState.ScoringWeights.DEFAULT, loaded.weights());
+        assertEquals(-1, loaded.getDuration("com.A", -1));
+    }
+
+    @Test
+    void loadInvalidSchemaVersionFailsClearly() throws IOException {
+        String plainJson = """
+                {
+                  "schemaVersion": 99,
+                  "weights": {},
+                  "durations": {},
+                  "failureScores": {},
+                  "runs": []
+                }
+                """;
+        Path file = tempDir.resolve("future-state");
+        Files.writeString(file, plainJson);
+
+        IOException error = assertThrows(IOException.class, () -> TestOrderState.load(file));
+        assertTrue(error.getMessage().contains("schemaVersion"));
     }
 
     // --- Optimizer ---
@@ -581,6 +782,7 @@ class TestOrderStateTest {
         // Simulate an old-format plain JSON state file (uncompressed)
         String plainJson = """
                 {
+                  "schemaVersion": 1,
                   "weights": {"newTest": 15, "changedTest": 8, "maxFailure": 4, "speed": 2, "speedPenalty": 1, "depOverlap": 3},
                   "durations": {"com.A": 100},
                   "failureScores": {},
@@ -600,6 +802,7 @@ class TestOrderStateTest {
         // Old emaAlpha key is no longer migrated — defaults should be used
         String plainJson = """
                 {
+                  "schemaVersion": 1,
                   "config": {"emaAlpha": 0.5},
                   "weights": {"newTest": 15, "changedTest": 9, "maxFailure": 5, "speed": 1, "speedPenalty": 1, "depOverlap": 5},
                   "durations": {},
@@ -614,6 +817,42 @@ class TestOrderStateTest {
         // emaAlpha is ignored; defaults should be used
         assertEquals(TestOrderState.DEFAULT_DURATION_ALPHA, loaded.durationAlpha(), 0.001);
         assertEquals(TestOrderState.DEFAULT_METHOD_DURATION_ALPHA, loaded.methodDurationAlpha(), 0.001);
+    }
+
+    @Test
+    void invalidNumericFieldsFallBackToDefaults() throws IOException {
+        String plainJson = """
+                {
+                  "schemaVersion": 1,
+                  "config": {"runsSinceLearn": "not-a-number"},
+                  "weights": {"newTest": "bad"},
+                  "durations": {"com.A": "oops"},
+                  "failureScores": {"com.A": "still-bad"},
+                  "runs": [{"timestamp": "bad", "totalTests": "bad", "totalFailures": "bad", "apfd": "bad"}]
+                }
+                """;
+        Path file = tempDir.resolve("invalid-numbers");
+        Files.writeString(file, plainJson);
+
+        TestOrderState loaded = TestOrderState.load(file);
+        assertEquals(TestOrderState.ScoringWeights.DEFAULT.newTest(), loaded.weights().newTest());
+        assertEquals(0, loaded.getDuration("com.A", 0));
+        assertEquals(0.0, loaded.failureScore("com.A"), 0.001);
+        assertEquals(1, loaded.runs().size());
+    }
+
+    @Test
+    void invalidWeightRangeIsRejected() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new TestOrderState.WeightDef("bad", 1, 5, 4));
+        assertTrue(error.getMessage().contains("Invalid weight range"));
+    }
+
+    @Test
+    void l2PenaltyRequiresMatchingLengths() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> TestOrderState.l2Penalty(new int[]{1, 2}, new int[]{1}));
+        assertTrue(error.getMessage().contains("length mismatch"));
     }
 
     @Test
@@ -650,5 +889,161 @@ class TestOrderStateTest {
         assertEquals(3, byName.get("speed").defaultValue());
         assertEquals(-1, byName.get("speed").min()); // unset when range absent
         assertEquals(-1, byName.get("speed").max());
+    }
+
+    // ─── Schema version loading tests ────────────────────────────────
+
+    @Test
+    void loadStateWithMissingSchemaVersionReturnsEmpty(@TempDir Path tmp) throws IOException {
+        Path stateFile = tmp.resolve("state.json");
+        Files.writeString(stateFile, "{\"runs\":[]}");  // no schemaVersion field
+        TestOrderState state = TestOrderState.load(stateFile);
+        // Should return empty state rather than throwing
+        assertNotNull(state);
+        assertEquals(0, state.runs().size());
+    }
+
+    @Test
+    void loadStateWithOldSchemaVersionReturnsEmpty(@TempDir Path tmp) throws IOException {
+        Path stateFile = tmp.resolve("state.json");
+        Files.writeString(stateFile, "{\"schemaVersion\":0,\"runs\":[]}");
+        TestOrderState state = TestOrderState.load(stateFile);
+        assertNotNull(state);
+        assertEquals(0, state.runs().size());
+    }
+
+    @Test
+    void loadStateWithFutureSchemaVersionThrows(@TempDir Path tmp) throws IOException {
+        Path stateFile = tmp.resolve("state.json");
+        Files.writeString(stateFile, "{\"schemaVersion\":9999,\"runs\":[]}");
+        assertThrows(IOException.class, () -> TestOrderState.load(stateFile));
+    }
+
+    // ─── Optimizer guard tests ────────────────────────────────────────
+
+    @Test
+    void optimizeWithFewerThanMinRunsReturnsNull() {
+        TestOrderState state = new TestOrderState();
+        // Add fewer than MIN_RUNS_FOR_OPTIMISATION failure runs (with outcome data)
+        for (int i = 0; i < TestOrderState.MIN_RUNS_FOR_OPTIMISATION - 1; i++) {
+            var outcome = new TestOrderState.TestOutcome(
+                    "com.test.FooTest", 10, false, false, 1, 2, 5.0, false, false, true, 0.0);
+            state.addRunRecord(new TestOrderState.RunRecord(
+                    System.currentTimeMillis(), 1, 1, 0, 0.0, List.of(outcome)));
+        }
+        // optimize() should return null (not enough data)
+        assertNull(state.optimize());
+    }
+
+    @Test
+    void l2PenaltyWithMismatchedArraysThrows() {
+        int[] w = {1, 2, 3};
+        int[] defaults = {1, 2};
+        assertThrows(IllegalArgumentException.class,
+                () -> TestOrderState.l2Penalty(w, defaults));
+    }
+
+    @Test
+    void l2PenaltyWithMatchingArraysIsNonNegative() {
+        int[] w = {10, 5, 0};
+        int[] defaults = {5, 5, 5};
+        double penalty = TestOrderState.l2Penalty(w, defaults);
+        assertTrue(penalty >= 0);
+    }
+
+    // ─── State corrupt fallback test ─────────────────────────────────
+
+    @Test
+    void loadStateRecoverFromTempFileWhenMainIsCorrupt(@TempDir Path tmp) throws IOException {
+        Path stateFile = tmp.resolve("state.lz4");
+        Path tempFile = tmp.resolve("state.lz4.tmp");
+
+        // Write a valid state to the temp sibling
+        TestOrderState validState = new TestOrderState();
+        validState.recordDuration("com.example.FooTest", 42L);
+        validState.save(tempFile);
+
+        // Corrupt the main state file with invalid JSON (raw UTF-8, not lz4)
+        Files.writeString(stateFile, "{broken_json:!!!");
+
+        // Load should recover from the temp file
+        TestOrderState recovered = TestOrderState.load(stateFile);
+        assertNotNull(recovered);
+        // The valid state had a duration for FooTest; recovered state should have it
+        long dur = recovered.getDuration("com.example.FooTest", -1L);
+        assertEquals(42L, dur, "Should have recovered duration from temp file sibling");
+    }
+
+    // ─── PendingCoordinator concurrency test ─────────────────────────
+
+    @Test
+    void concurrentRecordBreakdownDoesNotLoseData() throws Exception {
+        TestOrderState.resetPending();
+        TestOrderState.setStatePath("/tmp/concurrent-state");
+
+        int threadCount = 50;
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(threadCount);
+        var latch = new java.util.concurrent.CountDownLatch(threadCount);
+        var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+        for (int i = 0; i < threadCount; i++) {
+            int idx = i;
+            futures.add(executor.submit(() -> {
+                latch.countDown();
+                try { latch.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                TestOrderState.recordBreakdown("com.test.Thread" + idx + "Test",
+                        new TestOrderState.ScoreBreakdown(idx, idx % 2 == 0, false, 0, 0, 0.0, false, false, 0.0));
+            }));
+        }
+        for (var f : futures) f.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertEquals(threadCount, TestOrderState.getPendingBreakdowns().size(),
+                "All thread breakdowns should be recorded without loss");
+        TestOrderState.resetPending();
+    }
+
+    // ── Bug #46: setFailurePruneThreshold validation ──
+
+    @Test
+    void setFailurePruneThresholdRejectsNegative() {
+        TestOrderState state = new TestOrderState();
+        assertThrows(IllegalArgumentException.class, () -> state.setFailurePruneThreshold(-0.1));
+    }
+
+    @Test
+    void setFailurePruneThresholdRejectsNaN() {
+        TestOrderState state = new TestOrderState();
+        assertThrows(IllegalArgumentException.class, () -> state.setFailurePruneThreshold(Double.NaN));
+    }
+
+    @Test
+    void setFailurePruneThresholdRejectsInfinity() {
+        TestOrderState state = new TestOrderState();
+        assertThrows(IllegalArgumentException.class, () -> state.setFailurePruneThreshold(Double.POSITIVE_INFINITY));
+    }
+
+    @Test
+    void setFailurePruneThresholdAcceptsZero() {
+        TestOrderState state = new TestOrderState();
+        state.setFailurePruneThreshold(0.0);
+        assertEquals(0.0, state.failurePruneThreshold());
+    }
+
+    @Test
+    void setFailurePruneThresholdAcceptsPositive() {
+        TestOrderState state = new TestOrderState();
+        state.setFailurePruneThreshold(0.05);
+        assertEquals(0.05, state.failurePruneThreshold());
+    }
+
+    // ── Bug #11: toInt/toDouble graceful degradation ──
+
+    @Test
+    void compactToOutcomeHandlesMalformedNumericFields() {
+        // Compact format: [className, flags, depOverlap, depTotal, failScore, ...]
+        // With non-numeric string for flags field — should return null instead of throwing
+        List<Object> malformed = List.of("com.example.FooTest", "not-a-number", "bad", "bad", "bad");
+        TestOrderState.TestOutcome outcome = TestOrderState.compactToOutcome(malformed);
+        assertNull(outcome, "Should return null for malformed compact entry, not throw");
     }
 }

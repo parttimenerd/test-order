@@ -1,0 +1,190 @@
+package me.bechberger.testorder.plugin;
+
+import me.bechberger.testorder.TestOrderState;
+import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.project.MavenProject;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Properties;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class PrepareMojoTest {
+
+    @TempDir
+    Path tempDir;
+
+    private PrepareMojo mojo;
+    private MavenProject project;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        mojo = new PrepareMojo();
+        project = mock(MavenProject.class);
+        when(project.getBasedir()).thenReturn(tempDir.toFile());
+        when(project.getProperties()).thenReturn(new Properties());
+        org.apache.maven.model.Build build = new org.apache.maven.model.Build();
+        build.setTestOutputDirectory(tempDir.resolve("test-classes").toString());
+        when(project.getBuild()).thenReturn(build);
+        when(project.getArtifactId()).thenReturn("test-artifact");
+        when(project.getBuildPlugins()).thenReturn(List.of());
+
+        // Mock MavenSession required by ReactorContext
+        MavenSession session = mock(MavenSession.class);
+        when(session.getProjects()).thenReturn(List.of(project));
+        when(session.getTopLevelProject()).thenReturn(project);
+        inject(mojo, "session", session);
+
+        inject(mojo, "project", project);
+        inject(mojo, "mode", "auto");
+        inject(mojo, "instrumentationMode", "FULL");
+        inject(mojo, "changeMode", "auto");
+        inject(mojo, "indexFile", tempDir.resolve("test-dependencies.lz4").toString());
+        inject(mojo, "stateFile", tempDir.resolve(".test-order-state").toString());
+        inject(mojo, "depsDir", tempDir.resolve("test-order-deps").toString());
+        inject(mojo, "hashFile", tempDir.resolve(".test-order-hashes.lz4").toString());
+        inject(mojo, "testHashFile", tempDir.resolve(".test-order-test-hashes.lz4").toString());
+        inject(mojo, "methodHashFile", tempDir.resolve(".test-order-method-hashes.lz4").toString());
+        inject(mojo, "filterByGroupId", true);
+        inject(mojo, "autoLearnRunThreshold", 0);
+        inject(mojo, "autoLearnDiffThreshold", 0);
+    }
+
+    @Test
+    void executeWithInvalidModeThrowsMojoExecutionException() throws Exception {
+        inject(mojo, "mode", "garbage");
+        MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
+        assertTrue(ex.getMessage().contains("garbage"), "Error should mention the invalid value");
+        assertTrue(ex.getMessage().toLowerCase().contains("learn")
+                || ex.getMessage().toLowerCase().contains("valid"),
+                "Error should hint at valid values, got: " + ex.getMessage());
+    }
+
+    @Test
+    void executeWithInvalidInstrumentationModeThrowsMojoExecutionException() throws Exception {
+        inject(mojo, "instrumentationMode", "INVALID");
+        MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
+        assertTrue(ex.getMessage().contains("INVALID"), "Error should mention the invalid value: " + ex.getMessage());
+    }
+
+    @Test
+    void executeWithValidModesDoesNotThrowOnModeCheck() throws Exception {
+        // "auto" with no index → should switch to learn mode, not throw on mode validation
+        inject(mojo, "mode", "auto");
+        // no index file exists, so it will attempt to switch to learn mode
+        // (which may throw if agent jar is missing — we only care the mode check passes)
+        try {
+            mojo.execute();
+        } catch (MojoExecutionException e) {
+            // Only acceptable if it's not about mode validation
+            assertFalse(e.getMessage().startsWith("Invalid mode"),
+                    "Should not throw 'Invalid mode' for valid mode 'auto': " + e.getMessage());
+        }
+    }
+
+    @Test
+    void injectingAgentWithPlaceholderArgLineDoesNotSetGlobalArgLineProperty() throws Exception {
+        // When Surefire argLine uses a property placeholder (e.g. ${argLine}),
+        // System.setProperty("argLine", ...) must NOT be called.
+        inject(mojo, "mode", "learn");
+        System.clearProperty("argLine");
+        try {
+            mojo.execute();
+        } catch (MojoExecutionException e) {
+            // Expected: no agent jar found in test classpath
+        }
+        assertNull(System.getProperty("argLine"),
+                "System.setProperty('argLine', ...) should NOT be called for placeholder argLine");
+    }
+
+    @Test
+    void autoLearnRunThreshold_triggersSwitchToLearnModeWhenReached() throws Exception {
+        // When runsSinceLearn >= autoLearnRunThreshold, auto mode should switch to learn.
+        // Verified by observing the surefire-not-found error from switchToLearnMode() path.
+        inject(mojo, "mode", "auto");
+        inject(mojo, "autoLearnRunThreshold", 3);
+
+        Path idxPath = tempDir.resolve("test-dependencies.lz4");
+        Files.write(idxPath, new byte[]{1, 2, 3});
+        inject(mojo, "indexFile", idxPath.toString());
+
+        TestOrderState state = new TestOrderState();
+        for (int i = 0; i < 3; i++) state.incrementRunsSinceLearn();
+        Path statePath = tempDir.resolve(".test-order-state");
+        state.save(statePath);
+        inject(mojo, "stateFile", statePath.toString());
+
+        MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
+        assertTrue(ex.getMessage().contains("maven-surefire-plugin not found"),
+                "Expected learn-mode path (surefire not found), got: " + ex.getMessage());
+    }
+
+    @Test
+    void autoLearnRunThreshold_doesNotTriggerWhenBelowThreshold() throws Exception {
+        // When runsSinceLearn < threshold, auto mode stays in order mode.
+        inject(mojo, "mode", "auto");
+        inject(mojo, "autoLearnRunThreshold", 5);
+
+        Path idxPath = tempDir.resolve("test-dependencies.lz4");
+        Files.write(idxPath, new byte[]{1, 2, 3});
+        inject(mojo, "indexFile", idxPath.toString());
+
+        TestOrderState state = new TestOrderState();
+        for (int i = 0; i < 2; i++) state.incrementRunsSinceLearn();
+        Path statePath = tempDir.resolve(".test-order-state");
+        state.save(statePath);
+        inject(mojo, "stateFile", statePath.toString());
+
+        // Order mode path should NOT require surefire-plugin (no learn mode).
+        // Execute may succeed (no exception) or throw something unrelated to surefire.
+        try {
+            mojo.execute();
+            // No exception is also valid — order mode ran successfully
+        } catch (MojoExecutionException e) {
+            assertFalse(e.getMessage().contains("maven-surefire-plugin not found"),
+                    "Should NOT enter learn-mode for runsSinceLearn=2 < threshold=5, got: " + e.getMessage());
+        }
+    }
+
+    @Test
+    void autoLearnDiffThreshold_triggersSwitchToLearnModeWhenReached() throws Exception {
+        // When changedClass count >= autoLearnDiffThreshold, auto mode should switch to learn.
+        inject(mojo, "mode", "auto");
+        inject(mojo, "autoLearnDiffThreshold", 1);
+        inject(mojo, "changeMode", "explicit");
+        inject(mojo, "changedClasses", "com.example.ChangedClass");
+
+        Path idxPath = tempDir.resolve("test-dependencies.lz4");
+        Files.write(idxPath, new byte[]{1, 2, 3});
+        inject(mojo, "indexFile", idxPath.toString());
+
+        MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
+        assertTrue(ex.getMessage().contains("maven-surefire-plugin not found"),
+                "Expected learn-mode path (surefire not found), got: " + ex.getMessage());
+    }
+
+    private static void inject(Object target, String fieldName, Object value) throws Exception {
+        Class<?> clazz = target.getClass();
+        while (clazz != null) {
+            try {
+                Field field = clazz.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                field.set(target, value);
+                return;
+            } catch (NoSuchFieldException e) {
+                clazz = clazz.getSuperclass();
+            }
+        }
+        throw new NoSuchFieldException("Field not found in class hierarchy: " + fieldName);
+    }
+}

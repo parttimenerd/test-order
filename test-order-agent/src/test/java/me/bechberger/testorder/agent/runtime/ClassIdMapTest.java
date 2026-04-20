@@ -17,29 +17,20 @@ import static org.junit.jupiter.api.Assertions.*;
 class ClassIdMapTest {
 
     @Test
-    void atomicAndVarHandleModesBehaveConsistently() {
-        ClassIdMap atomicMap = ClassIdMap.createForBenchmark(ClassIdMap.CounterMode.ATOMIC);
-        ClassIdMap varHandleMap = ClassIdMap.createForBenchmark(ClassIdMap.CounterMode.VAR_HANDLE);
+    void benchmarkFactoryUsesVarHandleCounter() {
+        ClassIdMap map = ClassIdMap.createForBenchmark();
 
         String classA = "test.mode.ClassA";
         String classB = "test.mode.ClassB";
         String memberA = classA + "#field";
 
-        int atomicA = atomicMap.getOrRegisterClass(classA);
-        int atomicB = atomicMap.getOrRegisterClass(classB);
-        int atomicMember = atomicMap.getOrRegisterMember(memberA);
+        int idA = map.getOrRegisterClass(classA);
+        int idB = map.getOrRegisterClass(classB);
+        int memberId = map.getOrRegisterMember(memberA);
 
-        int varHandleA = varHandleMap.getOrRegisterClass(classA);
-        int varHandleB = varHandleMap.getOrRegisterClass(classB);
-        int varHandleMember = varHandleMap.getOrRegisterMember(memberA);
-
-        assertEquals(0, atomicA);
-        assertEquals(1, atomicB);
-        assertTrue(atomicMember >= 8_000_000);
-
-        assertEquals(0, varHandleA);
-        assertEquals(1, varHandleB);
-        assertTrue(varHandleMember >= 8_000_000);
+        assertEquals(0, idA);
+        assertEquals(1, idB);
+        assertTrue(memberId >= 8_000_000);
     }
 
     @Test
@@ -141,5 +132,32 @@ class ClassIdMapTest {
             Thread.currentThread().interrupt();
             fail("Interrupted while waiting to start concurrent test");
         }
+    }
+
+    @Test
+    void getOrRegisterClassReturnsNegativeOneAtCapacity() throws Exception {
+        ClassIdMap map = ClassIdMap.createForBenchmark();
+
+        // Use reflection to set the class ID counter to MEMBER_ID_OFFSET - 1
+        // so the very next registration exhausts the class ID namespace.
+        int memberIdOffset = 8_000_000;
+        java.lang.reflect.Field nextClassIdField = ClassIdMap.class.getDeclaredField("nextClassId");
+        nextClassIdField.setAccessible(true);
+        Object counter = nextClassIdField.get(map);
+        java.lang.reflect.Field valueField = counter.getClass().getDeclaredField("value");
+        valueField.setAccessible(true);
+        valueField.setInt(counter, memberIdOffset - 1);
+
+        // Last valid ID
+        int lastId = map.getOrRegisterClass("com.Last");
+        assertEquals(memberIdOffset - 1, lastId);
+
+        // First overflow — must return -1, not throw
+        int overflowId = map.getOrRegisterClass("com.Overflow");
+        assertEquals(-1, overflowId, "getOrRegisterClass should return -1 when capacity exceeded");
+
+        // Repeated calls for same overflow key also return -1
+        int overflowId2 = map.getOrRegisterClass("com.Overflow");
+        assertEquals(-1, overflowId2);
     }
 }

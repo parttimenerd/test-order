@@ -6,6 +6,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.List;
 
 import static me.bechberger.testorder.plugin.it.TestOrderAssertions.assertThat;
@@ -40,7 +41,7 @@ class BugVerificationIT {
         if (root.getFileName().toString().equals("test-order-maven-plugin")) {
             root = root.getParent();
         }
-        project = new TestProject(root.resolve("sample-shop"),
+        project = new TestProject(root.resolve("samples/sample-shop"),
                 List.of("-Dtestorder.includePackages=com.example"));
     }
 
@@ -697,8 +698,104 @@ class BugVerificationIT {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    //  BUG: shallow-clone (single-commit repo) should not crash order mode
+    //
+    //  Steps: create a fresh git repo with one commit, learn, then order
+    //  with changeMode=since-last-commit.
+    //  Bug: git diff HEAD~1 fails when no parent commit exists.
+    //  Expected: build succeeds (graceful fallback to full re-scan).
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    @Order(180)
+    @DisplayName("BUG: order mode with since-last-commit in single-commit repo should not crash")
+    void orderModeSinceLastCommitOnSingleCommitRepoSucceeds(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempRepo) throws Exception {
+        // Copy the sample-shop project into a fresh temp dir
+        copyDirectory(project.getProjectDir(), tempRepo);
+
+        // Initialise a git repo with exactly one commit (no HEAD~1)
+        runGit(tempRepo, "init");
+        runGit(tempRepo, "config", "user.email", "test@test.com");
+        runGit(tempRepo, "config", "user.name", "Test");
+        runGit(tempRepo, "add", ".");
+        runGit(tempRepo, "commit", "-m", "initial");
+
+        TestProject shallowProject = new TestProject(tempRepo,
+                List.of("-Dtestorder.includePackages=com.example"));
+
+        // Learn first so an index exists
+        MavenResult learn = shallowProject.maven().learn();
+        assertThat(learn).succeeded();
+
+        // Order mode with since-last-commit — should gracefully handle no HEAD~1
+        MavenResult order = shallowProject.maven().run(
+                "clean", "test",
+                "-Dtestorder.mode=order",
+                "-Dtestorder.changeMode=since-last-commit");
+        assertThat(order).succeeded();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  BUG: corrupt state file should not crash the build
+    //
+    //  Steps: learn (creates state), write garbage to .test-order-state,
+    //  run order mode.
+    //  Expected: build succeeds; state file is recreated or treated as empty.
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    @Order(190)
+    @DisplayName("BUG: corrupt state file should be recovered, not crash the build")
+    void corruptStateFileShouldNotCrashBuild() throws Exception {
+        project.cleanAll();
+
+        // Learn to create a valid state file
+        MavenResult learn = project.maven().learn();
+        assertThat(learn).succeeded();
+
+        // Corrupt the state file with garbage bytes
+        java.nio.file.Path stateFile = project.getProjectDir().resolve(".test-order-state");
+        if (!java.nio.file.Files.exists(stateFile)) {
+            // Create it explicitly with garbage so the test is meaningful
+            java.nio.file.Files.write(stateFile, new byte[]{(byte) 0xFF, (byte) 0xFE, 0x00, 0x01, 0x02});
+        } else {
+            java.nio.file.Files.write(stateFile, new byte[]{(byte) 0xFF, (byte) 0xFE, 0x00, 0x01, 0x02});
+        }
+
+        // Order mode should survive the corrupt state
+        MavenResult order = project.maven().order(PRODUCT);
+        assertThat(order).succeeded();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     //  Helpers (private)
     // ═══════════════════════════════════════════════════════════════════
+
+    private static void copyDirectory(java.nio.file.Path src, java.nio.file.Path dst) throws Exception {
+        java.nio.file.Files.walk(src).forEach(source -> {
+            try {
+                java.nio.file.Path target = dst.resolve(src.relativize(source));
+                if (java.nio.file.Files.isDirectory(source)) {
+                    java.nio.file.Files.createDirectories(target);
+                } else {
+                    java.nio.file.Files.copy(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private static void runGit(java.nio.file.Path dir, String... args) throws Exception {
+        List<String> cmd = new java.util.ArrayList<>();
+        cmd.add("git");
+        cmd.addAll(java.util.Arrays.asList(args));
+        Process p = new ProcessBuilder(cmd)
+                .directory(dir.toFile())
+                .redirectErrorStream(true)
+                .start();
+        p.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+    }
 
     private int extractScore(String output, String testClassName) {
         for (String line : output.lines().toList()) {

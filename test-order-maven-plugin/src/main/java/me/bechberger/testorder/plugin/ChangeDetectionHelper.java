@@ -181,8 +181,15 @@ final class ChangeDetectionHelper {
                                             String changedClasses, Path sourceRoot,
                                             Path hashPath, boolean readOnly,
                                             Log log) {
-        Set<String> own = detectChangedClasses(ctx.project(), changeMode, changedClasses,
-                sourceRoot, hashPath, readOnly, log);
+        Set<String> own;
+        try {
+            own = detectChanges(changeMode, ctx.gitRoot(), sourceRoot, hashPath,
+                changedClasses, readOnly, false);
+        } catch (IOException e) {
+            log.warn("[test-order] Change detection failed: " + e.getMessage()
+                + " — falling back to no changes");
+            own = Set.of();
+        }
         ctx.storeChangedClasses(own);
         Set<String> upstream = ctx.collectUpstreamChangedClasses();
         if (upstream.isEmpty()) return own;
@@ -198,8 +205,15 @@ final class ChangeDetectionHelper {
     static Set<String> detectChangedTestClasses(ReactorContext ctx, String changeMode,
                                                 Path testSourceRoot, Path testHashPath,
                                                 boolean readOnly, Log log) {
-        Set<String> own = detectChangedTestClasses(ctx.project(), changeMode,
-                testSourceRoot, testHashPath, readOnly, log);
+        Set<String> own;
+        try {
+            own = detectChanges(changeMode, ctx.gitRoot(), testSourceRoot, testHashPath,
+                null, readOnly, true);
+        } catch (IOException e) {
+            log.warn("[test-order] Test change detection failed: " + e.getMessage()
+                + " — falling back to no changes");
+            own = Set.of();
+        }
         ctx.storeChangedTestClasses(own);
         Set<String> upstream = ctx.collectUpstreamChangedTestClasses();
         if (upstream.isEmpty()) return own;

@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * JMH Benchmarks for the runtime hot path.
  *
- * Includes an explicit A/B comparison between AtomicInteger and VarHandle ID counters.
+ * Uses the runtime ClassIdMap implementation (VarHandle-backed counters).
  * Run with: mvn clean install && java -jar target/benchmarks.jar
  */
 @BenchmarkMode(Mode.Throughput)
@@ -34,9 +34,6 @@ public class HotPathBenchmark {
 
     @State(Scope.Benchmark)
     public static class MapState {
-        @Param({"ATOMIC", "VAR_HANDLE"})
-        public String counterMode;
-
         ClassIdMap classIdMap;
         BitsetTracker tracker;
         String[] memberKeys;
@@ -44,7 +41,7 @@ public class HotPathBenchmark {
 
         @Setup(Level.Trial)
         public void setup() {
-            classIdMap = ClassIdMap.createForBenchmark(ClassIdMap.CounterMode.valueOf(counterMode));
+            classIdMap = ClassIdMap.createForBenchmark();
             tracker = new BitsetTracker();
             memberKeys = new String[TEST_CLASSES.length];
             classIds = new int[TEST_CLASSES.length];
@@ -121,7 +118,7 @@ public class HotPathBenchmark {
     }
 
     /**
-     * Benchmark BitsetTracker recording (atomic bitset operations).
+     * Benchmark BitsetTracker recording (lock-free bitset operations).
      */
     @Benchmark
     public void benchmarkBitsetRecording(MapState state) {

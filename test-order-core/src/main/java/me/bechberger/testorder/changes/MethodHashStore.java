@@ -1,5 +1,7 @@
 package me.bechberger.testorder.changes;
 
+import me.bechberger.testorder.PersistenceSupport;
+
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
@@ -56,7 +58,8 @@ public class MethodHashStore {
         if (parent != null) {
             Files.createDirectories(parent);
         }
-        try (LZ4FrameOutputStream lz4os = new LZ4FrameOutputStream(Files.newOutputStream(hashFile));
+        Path tempFile = PersistenceSupport.temporarySibling(hashFile);
+        try (LZ4FrameOutputStream lz4os = new LZ4FrameOutputStream(Files.newOutputStream(tempFile));
              PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os))) {
             for (var entry : hashes.entrySet()) {
                 pw.print(entry.getKey());
@@ -64,12 +67,14 @@ public class MethodHashStore {
                 pw.println(entry.getValue());
             }
         }
+        PersistenceSupport.moveIntoPlace(tempFile, hashFile);
     }
 
     /** Loads a previously saved method hash store. */
     public static MethodHashStore load(Path hashFile) throws IOException {
         Map<String, String> hashes = new TreeMap<>();
-        try (LZ4FrameInputStream lz4is = new LZ4FrameInputStream(Files.newInputStream(hashFile));
+        Path loadPath = PersistenceSupport.resolveLoadPath(hashFile);
+        try (LZ4FrameInputStream lz4is = new LZ4FrameInputStream(Files.newInputStream(loadPath));
              BufferedReader br = new BufferedReader(new InputStreamReader(lz4is))) {
             String line;
             while ((line = br.readLine()) != null) {

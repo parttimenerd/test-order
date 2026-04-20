@@ -144,4 +144,25 @@ class ClassNameTrieTest {
         assertTrue(trieSize < plainSize,
                 "trie (" + trieSize + " bytes) should be smaller than plain list (" + plainSize + " bytes)");
     }
+
+    // ── Bug #86: readVarInt shift bounds check ──
+
+    @Test
+    void readVarIntRejectsOverflowContinuationBytes() {
+        // 6 continuation bytes (all 0x80) followed by no terminator → shift exceeds 35
+        byte[] corrupt = {(byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80};
+        assertThrows(IOException.class, () ->
+                ClassNameTrie.readVarInt(new DataInputStream(new ByteArrayInputStream(corrupt))));
+    }
+
+    @Test
+    void readVarIntHandlesValidValues() throws IOException {
+        // Round-trip small, medium, and large values
+        for (int val : new int[]{0, 1, 127, 128, 16384, Integer.MAX_VALUE}) {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            ClassNameTrie.writeVarInt(new DataOutputStream(bos), val);
+            int read = ClassNameTrie.readVarInt(new DataInputStream(new ByteArrayInputStream(bos.toByteArray())));
+            assertEquals(val, read, "Round-trip failed for " + val);
+        }
+    }
 }

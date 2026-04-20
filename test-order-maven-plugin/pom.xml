@@ -15,6 +15,10 @@
     <name>Test Order Maven Plugin</name>
     <description>Maven plugin that orchestrates learn and order modes for test prioritization</description>
 
+    <properties>
+        <it.junit5.version>5.10.2</it.junit5.version>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.apache.maven</groupId>

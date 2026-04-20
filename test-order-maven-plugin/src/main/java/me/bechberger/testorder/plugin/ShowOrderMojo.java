@@ -24,39 +24,39 @@ import java.util.*;
 public class ShowOrderMojo extends AbstractTestOrderMojo {
 
     /** Score bonus for new test classes not in the dependency index */
-    @Parameter(property = "testorder.score.newTest")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_NEW_TEST)
     private Integer scoreNewTest;
 
     /** Score bonus for test classes whose source was modified */
-    @Parameter(property = "testorder.score.changedTest")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_CHANGED_TEST)
     private Integer scoreChangedTest;
 
     /** Maximum score bonus from failure frequency */
-    @Parameter(property = "testorder.score.maxFailure")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_MAX_FAILURE)
     private Integer scoreMaxFailure;
 
     /** Score bonus for tests with below-median duration */
-    @Parameter(property = "testorder.score.speed")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_SPEED)
     private Integer scoreSpeed;
 
     /** Score penalty for tests with above-median duration */
-    @Parameter(property = "testorder.score.speedPenalty")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_SPEED_PENALTY)
     private Integer scoreSpeedPenalty;
 
     /** Max score from dependency overlap (ratio-based) */
-    @Parameter(property = "testorder.score.depOverlap")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_DEP_OVERLAP)
     private Integer scoreDepOverlap;
 
     /** Max score from complexity-weighted dependency overlap */
-    @Parameter(property = "testorder.score.changeComplexity")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_CHANGE_COMPLEXITY)
     private Integer scoreChangeComplexity;
 
     /** Optional fixed bonus when a test overlaps changed static field members */
-    @Parameter(property = "testorder.score.staticFieldBonus")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_STATIC_FIELD_BONUS)
     private Integer scoreStaticFieldBonus;
 
     /** Set-cover coverage bonus weight (0 = disabled, uses depOverlap instead) */
-    @Parameter(property = "testorder.score.coverageBonus")
+    @Parameter(property = MavenPluginConfigKeys.SCORE_COVERAGE_BONUS)
     private Integer scoreCoverageBonus;
 
     @Override
@@ -98,17 +98,22 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
 
         ChangedMembers changedMembers = null;
         List<StructuralDiff.FileDiff> structuralDiffs = null;
-        if (!changed.isEmpty() && !"false".equals(System.getProperty("testorder.structuralDiff.enabled"))) {
+        if (!changed.isEmpty() && !"false".equals(System.getProperty(MavenPluginConfigKeys.STRUCTURAL_DIFF_ENABLED))) {
             try {
                 Path projectRoot = project.getBasedir().toPath().toAbsolutePath();
                 StructuralChangeAnalyzer.AnalysisResult analysis;
-                if ("since-last-commit".equals(changeMode)) {
+                String structuralDiffMode = resolveStructuralDiffMode();
+                if ("since-last-commit".equals(structuralDiffMode)) {
                     analysis = StructuralChangeAnalyzer.analyzeSinceLastCommitFull(projectRoot);
-                } else {
+                } else if ("uncommitted".equals(structuralDiffMode)) {
                     analysis = StructuralChangeAnalyzer.analyzeUncommittedFull(projectRoot);
+                } else {
+                    analysis = null;
                 }
-                changedMembers = analysis.changedMembers();
-                structuralDiffs = analysis.diffs();
+                if (analysis != null) {
+                    changedMembers = analysis.changedMembers();
+                    structuralDiffs = analysis.diffs();
+                }
             } catch (IOException e) {
                 getLog().debug("[test-order] Failed to compute structural diff: " + e.getMessage());
             }
@@ -142,8 +147,11 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
             }
         }
 
-        TestScorer scorer = new TestScorer(sw, depMap, state, changed, changedTests,
-            depMap.testClasses(), changedMembers, changeComplexityMap);
+        TestScorer scorer = new TestScorer.Builder(sw, depMap, state, changed, changedTests)
+                .testClassNames(depMap.testClasses())
+                .changedMembers(changedMembers)
+                .changeComplexity(changeComplexityMap)
+                .build();
 
         // score each test class
         record TestScore(String name, int score, int depOverlap, double failScore,
@@ -159,7 +167,8 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
 
         if (scored.isEmpty()) {
             getLog().info("[test-order] No test classes found in dependency index or test output.");
-            getLog().info("[test-order] Build tests or run learn mode first: mvn test -Dtestorder.mode=learn");
+                getLog().info("[test-order] Build tests or run learn mode first: mvn test -D"
+                    + MavenPluginConfigKeys.MODE + "=learn");
             return;
         }
 
@@ -170,14 +179,14 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
                 .thenComparing(TestScore::name));
 
         // print results
-        System.out.println();
+        getLog().info("");
         if (!changed.isEmpty()) {
-            System.out.println("Changed classes: " + changed);
+            getLog().info("Changed classes: " + changed);
         }
         if (!changedTests.isEmpty()) {
-            System.out.println("Changed test classes: " + changedTests);
+            getLog().info("Changed test classes: " + changedTests);
         }
-        System.out.println();
+        getLog().info("");
 
         // determine column widths
         int maxName = "Test Class".length();
@@ -187,20 +196,44 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
         }
 
         String fmt = "  %-4s %-" + maxName + "s %6s %5s %5s %8s %8s%n";
-        System.out.printf(fmt, "#", "Test Class", "Score", "Deps", "Fail", "Changed", "Duration");
-        System.out.printf(fmt, "—", "—".repeat(maxName), "—".repeat(6), "—".repeat(5), "—".repeat(5), "—".repeat(8), "—".repeat(8));
+        getLog().info(String.format(fmt, "#", "Test Class", "Score", "Deps", "Fail", "Changed", "Duration").stripTrailing());
+        getLog().info(String.format(fmt, "—", "—".repeat(maxName), "—".repeat(6), "—".repeat(5), "—".repeat(5), "—".repeat(8), "—".repeat(8)).stripTrailing());
         for (int i = 0; i < scored.size(); i++) {
             TestScore s = scored.get(i);
-            System.out.printf(fmt,
+            getLog().info(String.format(fmt,
                     (i + 1) + ".",
                     shortenName(s.name()),
                     s.score(),
                     s.depOverlap() > 0 ? s.depOverlap() : "",
                     s.failScore() > 0 ? String.format("%.1f", s.failScore()) : "",
                     s.isChanged() ? "yes" : "",
-                    s.duration() >= 0 ? s.duration() + "ms" : "");
+                    s.duration() >= 0 ? s.duration() + "ms" : "").stripTrailing());
         }
-        System.out.println();
+        getLog().info("");
+    }
+
+    /**
+     * Resolves the effective change mode for structural diffing.
+     * Since-last-run and explicit modes have no reliable structural-diff baseline,
+     * so structural complexity is disabled for those modes rather than using a
+     * mismatched git comparison.
+     */
+    protected String resolveStructuralDiffMode() {
+        if (changeMode == null || changeMode.isBlank()) {
+            return null;
+        }
+        return switch (changeMode) {
+            case "since-last-commit" -> "since-last-commit";
+            case "uncommitted" -> "uncommitted";
+            case "explicit", "since-last-run" -> null;
+            case "auto" -> {
+                if (changedClasses != null && !changedClasses.isBlank()) {
+                    yield null;
+                }
+                yield Files.exists(ctx.resolveHashFile(hashFile)) ? null : "since-last-commit";
+            }
+            default -> null;
+        };
     }
 
     private String shortenName(String fqcn) {

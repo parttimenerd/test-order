@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Singleton that records which application classes are used during test runs.
@@ -57,17 +58,24 @@ public class UsageStore {
      * methodLevelRecordingEnabled + currentMethodTracker).
      */
     private static final class ActiveTrackers {
-        static final ActiveTrackers IDLE = new ActiveTrackers(null, null);
+        static final ActiveTrackers IDLE = new ActiveTrackers(null, null, null);
+        final String testClassName;
         final BitsetTracker test;    // null when no test class is active
         final BitsetTracker method;  // null when outside a method window
-        ActiveTrackers(BitsetTracker test, BitsetTracker method) {
+        ActiveTrackers(String testClassName, BitsetTracker test, BitsetTracker method) {
+            this.testClassName = testClassName;
             this.test = test;
             this.method = method;
         }
     }
 
-    // Single volatile: one acquire-load gives both trackers.
-    private volatile ActiveTrackers active = ActiveTrackers.IDLE;
+    private final InheritableThreadLocal<ActiveTrackers> activeTrackers =
+            new InheritableThreadLocal<>() {
+                @Override
+                protected ActiveTrackers initialValue() {
+                    return ActiveTrackers.IDLE;
+                }
+            };
 
     // Only used in lifecycle methods (not hot path).
     private volatile boolean methodLevelRecordingEnabled;
@@ -115,12 +123,20 @@ public class UsageStore {
     /** Called when a test class starts execution. */
     public void startTestClass(String testClass) {
         BitsetTracker tracker = perTestTrackers.computeIfAbsent(testClass, k -> new BitsetTracker());
-        active = new ActiveTrackers(tracker, null);
+        activeTrackers.set(new ActiveTrackers(testClass, tracker, null));
     }
 
     /** Called when a test class finishes execution. */
+    public void endTestClass(String testClass) {
+        ActiveTrackers active = activeTrackers.get();
+        if (active.test != null && testClass.equals(active.testClassName)) {
+            activeTrackers.remove();
+        }
+    }
+
+    /** Backward-compatible overload. */
     public void endTestClass() {
-        active = ActiveTrackers.IDLE;
+        activeTrackers.remove();
     }
 
     // ── Test method lifecycle (called by TelemetryListener via reflection, FULL_METHOD mode) ──
@@ -134,7 +150,8 @@ public class UsageStore {
         }
         String methodKey = testClass + "#" + methodName;
         BitsetTracker tracker = perMethodTrackers.computeIfAbsent(methodKey, k -> new BitsetTracker());
-        active = new ActiveTrackers(active.test, tracker);
+        ActiveTrackers active = activeTrackers.get();
+        activeTrackers.set(new ActiveTrackers(active.testClassName, active.test, tracker));
     }
 
     /** Called when a test method finishes execution. */
@@ -142,7 +159,8 @@ public class UsageStore {
         if (!methodLevelRecordingEnabled) {
             return;
         }
-        active = new ActiveTrackers(active.test, null);
+        ActiveTrackers active = activeTrackers.get();
+        activeTrackers.set(new ActiveTrackers(active.testClassName, active.test, null));
     }
 
     // ── Recording ─────────────────────────────────────────────────────
@@ -152,7 +170,7 @@ public class UsageStore {
      * Hot path: one volatile read of {@code active}, then two plain field reads.
      */
     public void recordUsageId(int classId) {
-        ActiveTrackers a = active;          // single volatile acquire-load
+        ActiveTrackers a = activeTrackers.get();
         BitsetTracker t = a.test;
         if (t != null) t.recordClass(classId);
         BitsetTracker m = a.method;
@@ -164,7 +182,7 @@ public class UsageStore {
      * Hot path: one volatile read of {@code active}, then two plain field reads.
      */
     public void recordMemberUsageId(int memberId) {
-        ActiveTrackers a = active;          // single volatile acquire-load
+        ActiveTrackers a = activeTrackers.get();
         BitsetTracker t = a.test;
         if (t != null) t.recordMember(memberId);
         BitsetTracker m = a.method;
@@ -222,7 +240,7 @@ public class UsageStore {
             try {
                 Files.createDirectories(baseDir);
             } catch (IOException e) {
-                System.err.println("[test-order-agent] Failed to create output dir: " + outputDir);
+                AgentLogger.error("Failed to create output dir: " + outputDir, e);
                 return;
             }
             // Write incremental .deps files
@@ -232,6 +250,14 @@ public class UsageStore {
             // Write per-method .mdeps files
             if (!allMethodDeps.isEmpty()) {
                 writeMethodDepsFiles(baseDir, allMethodDeps);
+            }
+            // Write class-level member deps for FULL_MEMBER mode
+            if (!allMemberDeps.isEmpty()) {
+                writeMemberDepsFiles(baseDir, allMemberDeps);
+            }
+            // Write method-level member deps for FULL_MEMBER mode
+            if (!allMethodMemberDeps.isEmpty()) {
+                writeMethodMemberDepsFiles(baseDir, allMethodMemberDeps);
             }
             AgentLogger.log("[flush] Wrote incremental .deps files to " + outputDir + " (skipping direct merge)");
             return;
@@ -320,7 +346,7 @@ public class UsageStore {
             mergeMethod.invoke(null, Path.of(indexFile), deps);
             return true;
         } catch (Exception e) {
-            System.err.println("[test-order-agent] Direct index merge failed, falling back to .deps files: " + e.getMessage());
+            AgentLogger.error("Direct index merge failed, falling back to .deps files", e);
             return false;
         }
     }
@@ -330,8 +356,7 @@ public class UsageStore {
         try {
             Files.write(outFile, deps.stream().sorted().toList());
         } catch (IOException e) {
-            System.err.println("[test-order-agent] Failed to write deps file: " + outFile);
-            e.printStackTrace(System.err);
+            AgentLogger.error("Failed to write deps file: " + outFile, e);
         }
     }
 
@@ -350,8 +375,41 @@ public class UsageStore {
                 entry.getValue().stream().sorted().forEach(lines::add);
                 Files.write(outFile, lines);
             } catch (IOException e) {
-                System.err.println("[test-order-agent] Failed to write mdeps file: " + outFile);
-                e.printStackTrace(System.err);
+                AgentLogger.error("Failed to write mdeps file: " + outFile, e);
+            }
+        }
+    }
+
+    /**
+     * Writes class-level member deps as .members files.
+     * File name: testClass.members, content: one member key per line (depClass#member).
+     */
+    private void writeMemberDepsFiles(Path baseDir, Map<String, Set<String>> memberDeps) {
+        for (var entry : memberDeps.entrySet()) {
+            Path outFile = baseDir.resolve(entry.getKey() + ".members");
+            try {
+                Files.write(outFile, entry.getValue().stream().sorted().toList());
+            } catch (IOException e) {
+                AgentLogger.error("Failed to write members file: " + outFile, e);
+            }
+        }
+    }
+
+    /**
+     * Writes method-level member deps as .mmembers files.
+     * First line stores method key as '# class#method', remaining lines are member keys.
+     */
+    private void writeMethodMemberDepsFiles(Path baseDir, Map<String, Set<String>> methodMemberDeps) {
+        for (var entry : methodMemberDeps.entrySet()) {
+            String safeName = entry.getKey().replace('#', '_');
+            Path outFile = baseDir.resolve(safeName + ".mmembers");
+            try {
+                List<String> lines = new ArrayList<>(entry.getValue().size() + 1);
+                lines.add("# " + entry.getKey());
+                entry.getValue().stream().sorted().forEach(lines::add);
+                Files.write(outFile, lines);
+            } catch (IOException e) {
+                AgentLogger.error("Failed to write mmembers file: " + outFile, e);
             }
         }
     }

@@ -2,7 +2,6 @@ package me.bechberger.testorder.agent.runtime;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 
@@ -23,44 +22,15 @@ import java.lang.invoke.VarHandle;
  * <p>This enables atomic bitsets for recording test dependencies, eliminating
  * synchronization overhead in the hot path entirely.
  * 
- * <p><b>Counter Strategy:</b> Supports either AtomicInteger or VarHandle-backed counters.
- * Production singleton uses AtomicInteger by default; benchmark instances can choose either mode.
+ * <p><b>Counter Strategy:</b> Uses VarHandle-backed counters.
  */
 public class ClassIdMap {
-    public enum CounterMode {
-        ATOMIC,
-        VAR_HANDLE
-    }
-
     private interface IntCounter {
         int getAndIncrement();
 
         int decrementAndGet();
 
         int get();
-    }
-
-    private static final class AtomicIntCounter implements IntCounter {
-        private final AtomicInteger value;
-
-        private AtomicIntCounter(int initialValue) {
-            this.value = new AtomicInteger(initialValue);
-        }
-
-        @Override
-        public int getAndIncrement() {
-            return value.getAndIncrement();
-        }
-
-        @Override
-        public int decrementAndGet() {
-            return value.decrementAndGet();
-        }
-
-        @Override
-        public int get() {
-            return value.get();
-        }
     }
 
     private static final class VarHandleIntCounter implements IntCounter {
@@ -98,7 +68,7 @@ public class ClassIdMap {
         }
     }
 
-    private static final ClassIdMap INSTANCE = new ClassIdMap(CounterMode.VAR_HANDLE);
+    private static final ClassIdMap INSTANCE = new ClassIdMap();
     
     private static final int MEMBER_ID_OFFSET = 8_000_000; // members start at 8M
     private static final int CAPACITY_LIMIT = 16_000_000;  // total capacity: 16K classes + 8M members
@@ -118,25 +88,23 @@ public class ClassIdMap {
     private volatile String[] reverseClassNames;
     private volatile String[] reverseMemberNames;
     
-    private ClassIdMap(CounterMode counterMode) {
+    private ClassIdMap() {
         this.classToId = new ConcurrentHashMap<>(INITIAL_CLASS_MAP_CAPACITY);
         this.memberToId = new ConcurrentHashMap<>(INITIAL_MEMBER_MAP_CAPACITY);
-        this.nextClassId = createCounter(counterMode, 0);
-        this.nextMemberId = createCounter(counterMode, MEMBER_ID_OFFSET);
+        this.nextClassId = createCounter(0);
+        this.nextMemberId = createCounter(MEMBER_ID_OFFSET);
     }
     
     public static ClassIdMap getInstance() {
         return INSTANCE;
     }
 
-    public static ClassIdMap createForBenchmark(CounterMode counterMode) {
-        return new ClassIdMap(counterMode);
+    public static ClassIdMap createForBenchmark() {
+        return new ClassIdMap();
     }
 
-    private static IntCounter createCounter(CounterMode counterMode, int initialValue) {
-        return counterMode == CounterMode.VAR_HANDLE
-            ? new VarHandleIntCounter(initialValue)
-            : new AtomicIntCounter(initialValue);
+    private static IntCounter createCounter(int initialValue) {
+        return new VarHandleIntCounter(initialValue);
     }
     
     /**

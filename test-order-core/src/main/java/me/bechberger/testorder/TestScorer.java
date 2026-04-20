@@ -3,7 +3,11 @@ package me.bechberger.testorder;
 import me.bechberger.testorder.changes.StructuralChangeAnalyzer;
 import me.bechberger.testorder.changes.StructuralChangeAnalyzer.ChangedMembers;
 
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Array;
+import java.lang.reflect.Method;
 import java.util.*;
+import java.util.logging.Logger;
 
 /**
  * Unified test scoring logic used by {@link PriorityClassOrderer},
@@ -19,6 +23,11 @@ import java.util.*;
  * (or a static initializer changed, which affects all users implicitly).
  */
 public class TestScorer {
+
+    private static final Logger LOG = Logger.getLogger(TestScorer.class.getName());
+
+    private static final String SPRING_BOOT_TEST = "org.springframework.boot.test.context.SpringBootTest";
+    private static final String CONTEXT_CONFIGURATION = "org.springframework.test.context.ContextConfiguration";
 
     /** Half-range in log₂ space for speed buckets (covers 1/8× to 8× the median). */
     private static final double SPEED_LOG_HALF_RANGE = 3.0;
@@ -93,6 +102,85 @@ public class TestScorer {
     /** Cached overlap counts from set-cover computation (avoids recomputation in score()). */
     private final Map<String, Integer> cachedOverlapCounts;
 
+    /**
+     * Builder for {@link TestScorer} to avoid constructor overload ambiguity.
+     *
+     * <p>Required inputs are provided via the builder constructor; optional
+     * inputs are configured fluently before calling {@link #build()}.</p>
+     */
+    public static final class Builder {
+        private final TestOrderState.ScoringWeights weights;
+        private final DependencyMap depMap;
+        private final TestOrderState state;
+        private final Set<String> changedClasses;
+        private final Set<String> changedTestClasses;
+        private Iterable<String> testClassNames = List.of();
+        private ChangedMembers changedMembers;
+        private Map<String, Double> changeComplexity = Map.of();
+
+        /**
+         * Creates a builder with mandatory scorer dependencies.
+         *
+         * @param weights scoring weight configuration
+         * @param depMap dependency map used for overlap scoring
+         * @param state historical state for failure and duration signals
+         * @param changedClasses changed production classes
+         * @param changedTestClasses changed test classes
+         */
+        public Builder(TestOrderState.ScoringWeights weights, DependencyMap depMap,
+                       TestOrderState state, Set<String> changedClasses, Set<String> changedTestClasses) {
+            this.weights = Objects.requireNonNull(weights, "weights");
+            this.depMap = Objects.requireNonNull(depMap, "depMap");
+            this.state = Objects.requireNonNull(state, "state");
+            this.changedClasses = Objects.requireNonNullElse(changedClasses, Set.of());
+            this.changedTestClasses = Objects.requireNonNullElse(changedTestClasses, Set.of());
+        }
+
+        /**
+         * Sets test classes that should participate in scoring and median duration computation.
+         */
+        public Builder testClassNames(Iterable<String> testClassNames) {
+            this.testClassNames = Objects.requireNonNull(testClassNames, "testClassNames");
+            return this;
+        }
+
+        /**
+         * Supplies changed member information for member-level overlap scoring.
+         */
+        public Builder changedMembers(ChangedMembers changedMembers) {
+            this.changedMembers = changedMembers;
+            return this;
+        }
+
+        /**
+         * Supplies optional normalized complexity values per changed class.
+         */
+        public Builder changeComplexity(Map<String, Double> changeComplexity) {
+            this.changeComplexity = Objects.requireNonNullElse(changeComplexity, Map.of());
+            return this;
+        }
+
+        /**
+         * Builds an immutable scorer snapshot.
+         */
+        public TestScorer build() {
+            return new TestScorer(weights, depMap, state, changedClasses, changedTestClasses,
+                    testClassNames, changedMembers, changeComplexity);
+        }
+    }
+
+    /**
+     * Creates a {@link Builder} for {@link TestScorer}.
+     */
+    public static Builder builder(TestOrderState.ScoringWeights weights, DependencyMap depMap,
+                                  TestOrderState state, Set<String> changedClasses,
+                                  Set<String> changedTestClasses) {
+        return new Builder(weights, depMap, state, changedClasses, changedTestClasses);
+    }
+
+    /**
+     * Creates a scorer with defaults: no member-level change data and no complexity map.
+     */
     public TestScorer(TestOrderState.ScoringWeights weights, DependencyMap depMap,
                       TestOrderState state, Set<String> changedClasses,
                       Set<String> changedTestClasses,
@@ -101,6 +189,9 @@ public class TestScorer {
                 testClassNames, null, Map.of());
     }
 
+    /**
+     * Creates a scorer with member-level change data and default empty complexity map.
+     */
     public TestScorer(TestOrderState.ScoringWeights weights, DependencyMap depMap,
                       TestOrderState state, Set<String> changedClasses,
                       Set<String> changedTestClasses,
@@ -109,6 +200,9 @@ public class TestScorer {
                 testClassNames, changedMembers, Map.of());
     }
 
+    /**
+     * Creates a scorer with full configuration.
+     */
     public TestScorer(TestOrderState.ScoringWeights weights, DependencyMap depMap,
                       TestOrderState state, Set<String> changedClasses,
                       Set<String> changedTestClasses,
@@ -143,8 +237,6 @@ public class TestScorer {
 
         // Build coverage map: test -> set of changed classes it covers
         Map<String, Set<String>> coverage = new LinkedHashMap<>();
-        // Reverse index: changed class -> tests that cover it
-        Map<String, List<String>> classToTests = new HashMap<>();
         for (String test : testClassNames) {
             Set<String> deps = depMap.get(test);
             Set<String> memberDeps = depMap.hasMemberDeps()
@@ -155,47 +247,18 @@ public class TestScorer {
             cachedOverlapCounts.put(test, covered.size());
             if (!covered.isEmpty()) {
                 coverage.put(test, new HashSet<>(covered));
-                for (String c : covered) {
-                    classToTests.computeIfAbsent(c, k -> new ArrayList<>()).add(test);
-                }
             }
         }
-
-        // Maintain incremental uncovered count per test
-        Map<String, Integer> remainingCount = new HashMap<>(coverage.size());
-        for (var entry : coverage.entrySet()) {
-            remainingCount.put(entry.getKey(), entry.getValue().size());
-        }
-
-        Set<String> uncovered = new HashSet<>(changedClasses);
         Map<String, Integer> bonuses = new HashMap<>();
         int bonus = weight;
 
-        while (!uncovered.isEmpty() && !remainingCount.isEmpty()) {
-            // Pick the test with the highest remaining uncovered count
-            String best = null;
-            int bestCount = 0;
-            for (var entry : remainingCount.entrySet()) {
-                if (entry.getValue() > bestCount) {
-                    bestCount = entry.getValue();
-                    best = entry.getKey();
-                }
+        SetCoverComputer.Result<String> result =
+                new SetCoverComputer<>(coverage, changedClasses).compute();
+        for (String best : result.order()) {
+            if (result.initialCoverCounts().getOrDefault(best, 0) == 0) {
+                continue;
             }
-            if (best == null || bestCount == 0) break;
             bonuses.put(best, bonus);
-            // Decrement counts for tests sharing newly covered classes
-            Set<String> bestCoverage = coverage.get(best);
-            for (String c : bestCoverage) {
-                if (uncovered.remove(c)) {
-                    for (String test : classToTests.getOrDefault(c, List.of())) {
-                        Integer cnt = remainingCount.get(test);
-                        if (cnt != null) {
-                            remainingCount.put(test, cnt - 1);
-                        }
-                    }
-                }
-            }
-            remainingCount.remove(best);
             bonus = Math.max((int) (bonus * SET_COVER_DECLINE), 1);
         }
 
@@ -256,7 +319,11 @@ public class TestScorer {
         }
 
         boolean isNew = !depMap.testClasses().contains(testClassName);
-        if (isNew) score += weights.newTest();
+        if (isNew) {
+            score += weights.newTest();
+            LOG.fine(() -> "New test class (not in dependency map): " + testClassName
+                    + " — awarded newTest bonus of " + weights.newTest());
+        }
 
         long dur = state.getDuration(testClassName, -1);
         boolean isFast = false;
@@ -314,5 +381,54 @@ public class TestScorer {
         if (count == 0) return 0;
         java.util.Arrays.sort(buf, 0, count);
         return buf[count / 2];
+    }
+
+    static String springContextKey(Class<?> testClass) {
+        for (Annotation annotation : testClass.getAnnotations()) {
+            String annotationName = annotation.annotationType().getName();
+            if (SPRING_BOOT_TEST.equals(annotationName) || CONTEXT_CONFIGURATION.equals(annotationName)) {
+                String key = springContextKey(annotation);
+                if (key != null) {
+                    return annotationName + ":" + key;
+                }
+                return annotationName;
+            }
+        }
+        return null;
+    }
+
+    private static String springContextKey(Annotation annotation) {
+        List<String> parts = new ArrayList<>();
+        addAnnotationValues(annotation, "classes", parts);
+        addAnnotationValues(annotation, "value", parts);
+        addAnnotationValues(annotation, "locations", parts);
+        return parts.isEmpty() ? null : String.join("|", parts);
+    }
+
+    private static void addAnnotationValues(Annotation annotation, String attributeName, List<String> parts) {
+        try {
+            Method method = annotation.annotationType().getMethod(attributeName);
+            Object value = method.invoke(annotation);
+            if (value == null) {
+                return;
+            }
+            Class<?> valueType = value.getClass();
+            if (valueType.isArray()) {
+                int length = Array.getLength(value);
+                for (int i = 0; i < length; i++) {
+                    Object element = Array.get(value, i);
+                    if (element instanceof Class<?> klass) {
+                        parts.add(klass.getName());
+                    } else if (element != null) {
+                        parts.add(element.toString());
+                    }
+                }
+            } else if (value instanceof Class<?> klass) {
+                parts.add(klass.getName());
+            } else {
+                parts.add(value.toString());
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
     }
 }

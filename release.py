@@ -276,6 +276,25 @@ class ReleaseManager:
         self.run_command(["git", "push"], "Pushing commits")
         self.run_command(["git", "push", "--tags"], "Pushing tags")
 
+    def cleanup_git_release_state(self, version: str) -> None:
+        tag = f"v{version}"
+        print("\n-> Cleaning up local git release state")
+        subprocess.run(["git", "tag", "-d", tag], cwd=self.project_root,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        head = subprocess.run(
+            ["git", "log", "-1", "--pretty=%s"],
+            cwd=self.project_root,
+            capture_output=True,
+            text=True,
+        )
+        if head.returncode == 0 and head.stdout.strip() == f"Release {version}":
+            subprocess.run(
+                ["git", "reset", "--mixed", "HEAD~1"],
+                cwd=self.project_root,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
     def get_version_changelog_entry(self, version: str) -> str:
         if not self.changelog.exists():
             return ""
@@ -390,6 +409,7 @@ def main() -> None:
         return
 
     snapshots = manager.snapshot_files()
+    created_git_release_state = False
     try:
         manager.update_changelog_for_release(new)
         manager.update_root_pom_version(current, new)
@@ -398,13 +418,14 @@ def main() -> None:
         manager.update_readme_versions(current, new)
 
         manager.run_checks(include_its=not args.no_its)
-        if not args.no_deploy:
-            manager.deploy(use_release_profile=not args.no_release_profile)
 
         manager.git_commit_tag(new)
+        created_git_release_state = True
 
         if not args.no_push:
             manager.git_push()
+        if not args.no_deploy:
+            manager.deploy(use_release_profile=not args.no_release_profile)
         if not args.no_github_release:
             manager.create_github_release(new)
 
@@ -412,6 +433,8 @@ def main() -> None:
         print(f"Version: {new}")
     except Exception as exc:
         manager.restore_snapshots(snapshots)
+        if created_git_release_state:
+            manager.cleanup_git_release_state(new)
         print(f"\nRelease failed: {exc}")
         print("Local release edits were reverted automatically.")
         sys.exit(1)

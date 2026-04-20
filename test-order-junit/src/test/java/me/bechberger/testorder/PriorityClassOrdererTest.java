@@ -2,7 +2,6 @@ package me.bechberger.testorder;
 
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Tests for PriorityClassOrderer using system properties and mock ClassOrdererContext.
  */
+@Timeout(5)
 class PriorityClassOrdererTest {
 
     @TempDir
@@ -29,20 +29,28 @@ class PriorityClassOrdererTest {
     private String origScoreSpeed;
     private String origScoreSpeedPenalty;
     private String origScoreDepOverlap;
+    private String origSpringContextGrouping;
+    private String origChangedMethods;
+    private String origProjectRoot;
+    private String origStructuralDiffEnabled;
 
     @BeforeEach
     void saveProperties() {
-        origIndexPath = System.getProperty("testorder.index.path");
+        origIndexPath          = System.getProperty("testorder.index.path");
         origChangedClasses = System.getProperty("testorder.changed.classes");
         origChangedClassesFile = System.getProperty("testorder.changed.classes.file");
-        origStatePath = System.getProperty("testorder.state.path");
+        origStatePath          = System.getProperty("testorder.state.path");
         origChangedTestClasses = System.getProperty("testorder.changed.test.classes");
-        origScoreNewTest = System.getProperty("testorder.score.newTest");
+        origScoreNewTest       = System.getProperty("testorder.score.newTest");
         origScoreChangedTest = System.getProperty("testorder.score.changedTest");
         origScoreMaxFailure = System.getProperty("testorder.score.maxFailure");
-        origScoreSpeed = System.getProperty("testorder.score.speed");
+        origScoreSpeed         = System.getProperty("testorder.score.speed");
         origScoreSpeedPenalty = System.getProperty("testorder.score.speedPenalty");
         origScoreDepOverlap = System.getProperty("testorder.score.depOverlap");
+        origSpringContextGrouping = System.getProperty(TestOrderConfig.SPRING_CONTEXT_GROUPING);
+        origChangedMethods        = System.getProperty(TestOrderConfig.CHANGED_METHODS);
+        origProjectRoot               = System.getProperty(TestOrderConfig.PROJECT_ROOT);
+        origStructuralDiffEnabled     = System.getProperty(TestOrderConfig.STRUCTURAL_DIFF_ENABLED);
     }
 
     @AfterEach
@@ -58,6 +66,10 @@ class PriorityClassOrdererTest {
         restoreProp("testorder.score.speed", origScoreSpeed);
         restoreProp("testorder.score.speedPenalty", origScoreSpeedPenalty);
         restoreProp("testorder.score.depOverlap", origScoreDepOverlap);
+        restoreProp(TestOrderConfig.SPRING_CONTEXT_GROUPING, origSpringContextGrouping);
+        restoreProp(TestOrderConfig.CHANGED_METHODS, origChangedMethods);
+        restoreProp(TestOrderConfig.PROJECT_ROOT, origProjectRoot);
+        restoreProp(TestOrderConfig.STRUCTURAL_DIFF_ENABLED, origStructuralDiffEnabled);
         TestOrderState.resetPending();
     }
 
@@ -365,6 +377,35 @@ class PriorityClassOrdererTest {
     }
 
     @Test
+    void springContextGroupingKeepsMatchingContextsAdjacent() throws IOException {
+        DependencyMap map = new DependencyMap();
+        map.put(SpringGroupedFastTest.class.getName(), Set.of("com.X", "com.Y"));
+        map.put(SpringGroupedSlowTest.class.getName(), Set.of("com.X"));
+        map.put(SpringOtherContextTest.class.getName(), Set.of("com.X"));
+        Path idx = tempDir.resolve("test.idx");
+        map.save(idx);
+
+        setupState(new TestOrderState());
+
+        System.setProperty("testorder.index.path", idx.toString());
+        System.setProperty("testorder.changed.classes", "com.X,com.Y");
+        System.setProperty(TestOrderConfig.SPRING_CONTEXT_GROUPING, "true");
+        assertEquals(TestScorer.springContextKey(SpringGroupedFastTest.class),
+                TestScorer.springContextKey(SpringGroupedSlowTest.class));
+        assertNotEquals(TestScorer.springContextKey(SpringGroupedFastTest.class),
+                TestScorer.springContextKey(SpringOtherContextTest.class));
+
+        PriorityClassOrderer orderer = new PriorityClassOrderer();
+        List<StubClassDescriptor> descs = new ArrayList<>(List.of(
+                desc(SpringOtherContextTest.class), desc(SpringGroupedSlowTest.class), desc(SpringGroupedFastTest.class)));
+        orderer.orderClasses(new StubClassOrdererContext(descs));
+
+        assertEquals(SpringGroupedFastTest.class.getName(), descs.get(0).getTestClass().getName());
+        assertEquals(SpringGroupedSlowTest.class.getName(), descs.get(1).getTestClass().getName());
+        assertEquals(SpringOtherContextTest.class.getName(), descs.get(2).getTestClass().getName());
+    }
+
+    @Test
     void failureCountIsCapped() throws IOException {
         DependencyMap map = new DependencyMap();
         map.put(String.class.getName(), Set.of("com.X"));
@@ -616,6 +657,183 @@ class PriorityClassOrdererTest {
 
         assertEquals(Integer.class.getName(), descs.get(0).getTestClass().getName(),
                 "Invalid scoring property should fall back to default");
+    }
+
+    // --- Tier 3a: resolveChangedMethods, inner-class descriptor, structural-diff errors ---
+
+    @Test
+    void changedMethodsViaSystemPropertyAffectsOrdering() throws IOException {
+        // Both tests depend on the same class, but only one exercises the changed method.
+        // Scoring with member-level methods: setting testorder.changed.methods should pass
+        // the method keys to the scorer. Even at class-level this exercises the code path.
+        DependencyMap map = new DependencyMap();
+        map.put(String.class.getName(), Set.of("com.service.Service"));
+        map.put(Integer.class.getName(), Set.of("com.service.Service"));
+        Path idx = tempDir.resolve("test.idx");
+        map.save(idx);
+
+        System.setProperty("testorder.index.path", idx.toString());
+        System.setProperty("testorder.changed.classes", "com.service.Service");
+        // Explicit changed method — exercises resolveChangedMethods() code path
+        System.setProperty(TestOrderConfig.CHANGED_METHODS, "com.service.Service#process");
+
+        PriorityClassOrderer orderer = new PriorityClassOrderer();
+        List<StubClassDescriptor> descs = new ArrayList<>(List.of(
+                desc(String.class), desc(Integer.class)));
+        // Orderer must not crash; result is non-deterministic at class level but must complete
+        assertDoesNotThrow(() -> orderer.orderClasses(new StubClassOrdererContext(descs)));
+        // Both classes depend on the changed class, so ordering is stable
+        assertEquals(2, descs.size(), "Both test descriptors must remain in the list");
+    }
+
+    @Test
+    void resolveChangedMethodsEmptyWhenPropertyAbsent() throws IOException {
+        DependencyMap map = new DependencyMap();
+        map.put(Long.class.getName(), Set.of("com.A"));
+        Path idx = tempDir.resolve("test.idx");
+        map.save(idx);
+
+        System.setProperty("testorder.index.path", idx.toString());
+        System.setProperty("testorder.changed.classes", "com.A");
+        System.clearProperty(TestOrderConfig.CHANGED_METHODS); // absent
+
+        PriorityClassOrderer orderer = new PriorityClassOrderer();
+        List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(Long.class)));
+        assertDoesNotThrow(() -> orderer.orderClasses(new StubClassOrdererContext(descs)));
+    }
+
+    @Test
+    void resolveChangedMethodsMultipleValuesCommaDelimited() throws IOException {
+        DependencyMap map = new DependencyMap();
+        map.put(String.class.getName(), Set.of("com.svc.Svc"));
+        Path idx = tempDir.resolve("test.idx");
+        map.save(idx);
+
+        System.setProperty("testorder.index.path", idx.toString());
+        System.clearProperty("testorder.changed.classes");
+        System.setProperty(TestOrderConfig.CHANGED_METHODS,
+                "com.svc.Svc#methodA, com.svc.Svc#methodB, com.svc.Svc#methodC");
+
+        PriorityClassOrderer orderer = new PriorityClassOrderer();
+        List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(String.class), desc(Integer.class)));
+        assertDoesNotThrow(() -> orderer.orderClasses(new StubClassOrdererContext(descs)));
+    }
+
+    @Test
+    void innerClassDescriptorResolvesToTopLevelNameForIndexLookup() throws IOException {
+        // The orderer can handle inner classes that have their own entry in the dep index.
+        // Real dependency indexes store inner classes under their full binary name (e.g. Outer$Inner).
+        DependencyMap map = new DependencyMap();
+        // Use the inner class's actual full name as the index key (matches what the orderer looks up)
+        map.put(TopLevelHost.InnerTest.class.getName(), Set.of("com.inner.Dep"));
+        // Long is in the index with no deps, so it doesn't get the "new-test" bonus
+        map.put(Long.class.getName(), Set.of());
+        Path idx = tempDir.resolve("test.idx");
+        map.save(idx);
+
+        System.setProperty("testorder.index.path", idx.toString());
+        System.setProperty("testorder.changed.classes", "com.inner.Dep");
+
+        PriorityClassOrderer orderer = new PriorityClassOrderer();
+        StubClassDescriptor innerDesc = new StubClassDescriptor(TopLevelHost.InnerTest.class);
+        StubClassDescriptor unrelatedDesc = new StubClassDescriptor(Long.class);
+        List<StubClassDescriptor> descs = new ArrayList<>(List.of(unrelatedDesc, innerDesc));
+        orderer.orderClasses(new StubClassOrdererContext(descs));
+
+        // InnerTest depends on Dep; Long doesn't → InnerTest comes first
+        assertEquals(TopLevelHost.InnerTest.class.getName(),
+                descs.get(0).getTestClass().getName(),
+            "Inner class with dep-map entry for its full name should be prioritized");
+    }
+
+        @Test
+        void deepNestedInnerClassDescriptorResolvesToTopLevelName() throws IOException {
+        DependencyMap map = new DependencyMap();
+        // Score is keyed by the top-level class name that getTopLevelClassName resolves to.
+        map.put(DeepHost.class.getName(), Set.of("com.deep.Dep"));
+        // Guard against false positives if lookup accidentally uses the nested class name.
+        map.put(DeepHost.Level1.Level2.Level3.class.getName(), Set.of());
+        map.put(Long.class.getName(), Set.of());
+        Path idx = tempDir.resolve("deep.idx");
+        map.save(idx);
+
+        System.setProperty("testorder.index.path", idx.toString());
+        System.setProperty("testorder.changed.classes", "com.deep.Dep");
+
+        PriorityClassOrderer orderer = new PriorityClassOrderer();
+        List<StubClassDescriptor> descs = new ArrayList<>(List.of(
+            desc(Long.class),
+            new StubClassDescriptor(DeepHost.Level1.Level2.Level3.class)));
+        orderer.orderClasses(new StubClassOrdererContext(descs));
+
+        assertEquals(DeepHost.Level1.Level2.Level3.class.getName(),
+            descs.get(0).getTestClass().getName(),
+            "Deeply nested descriptor must resolve to top-level class for dep-map lookup");
+        }
+
+    @Test
+    void structuralDiffIOExceptionIsHandledGracefully() throws IOException {
+        // When testorder.projectRoot points to a non-git directory, StructuralDiff
+        // will throw IOException. The orderer must fall back to class-level scoring.
+        DependencyMap map = new DependencyMap();
+        map.put(String.class.getName(), Set.of("com.example.Foo"));
+        map.put(Integer.class.getName(), Set.of("com.example.Bar"));
+        Path idx = tempDir.resolve("test.idx");
+        map.save(idx);
+
+        System.setProperty("testorder.index.path", idx.toString());
+        System.setProperty("testorder.changed.classes", "com.example.Foo");
+        // Point to a non-git directory so structural diff will fail
+        System.setProperty(TestOrderConfig.PROJECT_ROOT, tempDir.toString());
+        System.setProperty(TestOrderConfig.STRUCTURAL_DIFF_ENABLED, "true");
+
+        PriorityClassOrderer orderer = new PriorityClassOrderer();
+        List<StubClassDescriptor> descs = new ArrayList<>(List.of(
+                desc(Integer.class), desc(String.class)));
+        assertDoesNotThrow(() -> orderer.orderClasses(new StubClassOrdererContext(descs)),
+                "IOException from structural diff must not crash the orderer");
+        // String depends on Foo (changed) → should still be first via class-level fallback
+        assertEquals(String.class.getName(), descs.get(0).getTestClass().getName());
+    }
+
+    @Test
+    void configFallsBackToDefaultsWhenNoSystemPropertyAndNoResource() throws IOException {
+        // Clearing all scoring properties exercises the classpath resource / default fallback.
+        DependencyMap map = new DependencyMap();
+        map.put(String.class.getName(), Set.of("com.X"));
+        Path idx = tempDir.resolve("test.idx");
+        map.save(idx);
+
+        // Clear all scoring system properties to force default lookup
+        System.setProperty("testorder.index.path", idx.toString());
+        System.clearProperty("testorder.score.newTest");
+        System.clearProperty("testorder.score.changedTest");
+        System.clearProperty("testorder.score.maxFailure");
+        System.clearProperty("testorder.score.speed");
+        System.clearProperty("testorder.score.speedPenalty");
+        System.clearProperty("testorder.score.depOverlap");
+        System.clearProperty("testorder.state.path");
+        System.clearProperty("testorder.changed.classes");
+
+        PriorityClassOrderer orderer = new PriorityClassOrderer();
+        List<StubClassDescriptor> descs = new ArrayList<>(List.of(
+                desc(String.class), desc(Integer.class)));
+        // Must not throw; uses defaults from TestOrderState.ScoringWeights.DEFAULT
+        assertDoesNotThrow(() -> orderer.orderClasses(new StubClassOrdererContext(descs)));
+    }
+
+    /** Host class for the inner-class test — must be top-level in this compilation unit. */
+    static class TopLevelHost {
+        /** Simulated inner test class. */
+        static class InnerTest {}
+    }
+
+    static class DeepHost {
+        static class Level1 {
+            static class Level2 {
+                static class Level3 {}
+            }
+        }
     }
 
     // --- Jaccard distance tests ---

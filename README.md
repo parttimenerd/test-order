@@ -470,10 +470,12 @@ mvn test -Dtestorder.mode=order
 When the same setting is provided in multiple places, priority is:
 
 1. System properties (`-Dtestorder.*`)
-2. Plugin `<configuration>` in `pom.xml`
-3. Internal defaults
+2. Weights file passed via `-Dtestorder.weights.file=...`
+3. Plugin `<configuration>` in `pom.xml`
+4. Persisted state file values (`.test-order-state`) such as optimized weights and run history
+5. Internal defaults
 
-Example: `-Dtestorder.mode=learn` overrides `<mode>order</mode>` in the POM for that invocation.
+Example: `-Dtestorder.mode=learn` overrides `<mode>order</mode>` in the POM for that invocation, and a weights file overrides optimized values stored in the state file.
 
 ### Auto mode (default)
 
@@ -669,6 +671,25 @@ Integration tests run the full Maven plugin against real sample projects, verify
 mvn clean install -DskipTests && mvn verify -Dtestorder.it=true -pl test-order-maven-plugin
 ```
 
+### Gradle integration tests against Spring Boot
+
+The Gradle plugin also has a heavy integration test that exercises a subset of the embedded `spring-boot` checkout across learn, order, auto, skip, change-detection, and instrumentation modes:
+
+```bash
+cd test-order-gradle-plugin
+JAVA_HOME="$JAVA_21_HOME" ./gradlew test \
+  --tests me.bechberger.testorder.gradle.SpringBootCoreModulesIT \
+  -Dtestorder.it=true \
+  -Dtestorder.java.21.home="$JAVA_21_HOME" \
+  -Dtestorder.java.25plus.home="$JAVA_25_PLUS_HOME"
+```
+
+Prerequisites:
+
+- `spring-boot/` must exist under the repository root
+- a Java 17-24 home must be available to build and publish the plugin artifacts
+- a Java 25+ home must be available for the Spring Boot subset run itself
+
 ### Test helper framework
 
 The integration tests use a helper framework in `test-order-maven-plugin/src/test/java/.../it/`:
@@ -703,6 +724,83 @@ mvn clean install -DskipTests && mvn -Prun-its verify -pl test-order-maven-plugi
 ```
 
 Fixtures in `test-order-maven-plugin/src/it/` (`basic-learn-mode`, `order-mode`, `aggregate-deps`, and JUnit 6 variants).
+
+## Troubleshooting
+
+### Tests are not being reordered
+
+Check the three prerequisites first:
+
+1. `test-dependencies.lz4` exists and was generated from a successful learn run.
+2. The run is in `order` or `auto` mode rather than `learn`.
+3. Your test framework is using Jupiter on the JUnit Platform and is not overriding the default class orderer.
+
+To inspect what the plugin thinks it should do, run:
+
+```bash
+mvn test-order:show-order -Dtestorder.debug=true
+```
+
+If no index exists yet, run a learn pass:
+
+```bash
+mvn test -Dtestorder.mode=learn
+```
+
+### Agent or classpath errors during learn mode
+
+The learn-mode Java agent adds bytecode instrumentation. If another agent or framework transformer also modifies the same classes, try these steps:
+
+- rerun with `-Dtestorder.debug=true` to surface more ordering and change-detection details
+- switch to `METHOD_ENTRY` mode first to confirm the basic path works
+- compare a plain `mvn test` run against `mvn test -Dtestorder.mode=learn`
+- keep JaCoCo or other agents enabled, but validate the final agent combination in your project rather than assuming all transformers compose identically
+
+If a project is timing-sensitive, prefer periodic learn runs in CI instead of always-on learn mode locally.
+
+### State file corruption or stale data
+
+If `.test-order-state` or hash snapshots were interrupted mid-write, delete the local state artifacts and rebuild them:
+
+```bash
+rm -f .test-order-state .test-order-hashes.lz4 .test-order-test-hashes.lz4
+mvn test -Dtestorder.mode=learn
+```
+
+The state and hash stores use atomic temp-file replacement, but removing stale local state is the fastest recovery path when switching branches or after an interrupted build.
+
+### Empty dependency index or missing package detection
+
+If the index is empty, verify that the agent is instrumenting your production packages:
+
+- ensure your code lives under `src/main/java` or `src/main/kotlin`
+- inspect auto-detected packages with `-Dtestorder.debug=true`
+- set `-Dtestorder.includePackages=com.yourcompany` explicitly if your layout is non-standard
+- for multi-module builds, run learn mode in the module that owns the application classes under test
+
+## FAQ
+
+### Does it support both JUnit 5 and JUnit 6?
+
+Yes. The project supports Jupiter on the JUnit Platform for both **JUnit 5.x** and **JUnit 6.x**, and the repository keeps fixture coverage for both lines instead of collapsing onto a single version.
+
+### Does it work with JaCoCo?
+
+Usually yes. JaCoCo and `test-order` can coexist because both are standard Java agents, but agent ordering and other bytecode transformers can still matter in a real build. Validate the final combination in your project, especially if you also use Mockito inline or other instrumentation-heavy tooling.
+
+### What about parameterized tests, Spring test slices, or Kotest?
+
+`test-order` prioritizes **test classes** first and can optionally prioritize **test methods** when method-level telemetry is enabled. Parameterized tests and Spring slices run through the same JUnit Platform lifecycle, but projects with custom engines or non-Jupiter abstractions should verify the resulting order in CI. Kotlin/Kotest setups that execute on the JUnit Platform can still benefit from change detection and learned dependency data, but should be treated as compatibility scenarios rather than assuming drop-in parity with plain Jupiter tests.
+
+### How do I debug change detection?
+
+Run with:
+
+```bash
+mvn test -Dtestorder.debug=true
+```
+
+That surfaces the detected mode, changed-class counts, and the scored ordering decisions used by the class orderer.
 
 ## Gradle plugin
 
@@ -749,12 +847,18 @@ See [test-order-gradle-plugin/test-order-init.gradle](test-order-gradle-plugin/t
 ## Project structure
 
 ```
-test-order-agent/          Java agent (bytecode instrumentation via javassist)
-test-order-junit/          JUnit extension, CLI tool, change detection
-test-order-maven-plugin/   Maven plugin (prepare, aggregate, snapshot goals)
-test-order-gradle-plugin/  Gradle plugin (learn, order, utility tasks)
-test-order-example/        Minimal Maven example project
-test-order-example-gradle/ Minimal Gradle example project
+test-order-agent/             Java agent (bytecode instrumentation via javassist)
+test-order-junit/             JUnit extension, CLI tool, change detection
+test-order-maven-plugin/      Maven plugin (prepare, aggregate, snapshot goals)
+test-order-gradle-plugin/     Gradle plugin (learn, order, utility tasks)
+test-order-cli/               CI artifact downloader (GitHub Actions, HTTP support)
+test-order-coverage-mojo/     Coverage analysis and least-tested class detection
+test-order-example/           Minimal Maven example project
+test-order-example-gradle/    Minimal Gradle example project
+test-order-example-junit5/    Maven compatibility fixture for JUnit 5
+test-order-example-kotlin/    Kotlin Maven example
+test-order-example-service/   Larger service-style Maven example
+test-order-fields-methods-example/ Field/method scoring example
 ```
 
 ## Dependencies
@@ -778,7 +882,12 @@ test-order-example-gradle/ Minimal Gradle example project
 TODO:
 
 
+
 - look at all options and improve usability
 - add tests with more example projects (e.g. multi-module, JUnit 6, larger codebases, apache collections, my own ones like condensed-data)
 - add more documentation (e.g. design decisions, index format, change detection strategies)
+
+
+- can you add a small VueJS based UI that visualizes the dependency index and scoring for a test class? It could show the test's dependencies, which ones changed, and how the score is computed from the components. This would be a great tool for understanding why certain tests are prioritized and for debugging the scoring system. It should also show the test history, like past failures and durations, to give a complete picture of the test's profile.
+
 

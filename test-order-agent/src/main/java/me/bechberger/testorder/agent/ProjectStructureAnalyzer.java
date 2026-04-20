@@ -1,6 +1,9 @@
 package me.bechberger.testorder.agent;
 
+import me.bechberger.testorder.agent.runtime.AgentLogger;
+
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -68,8 +71,8 @@ public class ProjectStructureAnalyzer {
             String content = Files.readString(pomFile);
             
             // Extract groupId and artifactId
-            String groupId = extractXmlTag(content, "groupId");
-            String artifactId = extractXmlTag(content, "artifactId");
+            String groupId = extractProjectXmlTag(content, "groupId");
+            String artifactId = extractProjectXmlTag(content, "artifactId");
             
             if (groupId != null && artifactId != null) {
                 // Main package: convert com.example:my-app → com.example.myapp
@@ -97,8 +100,8 @@ public class ProjectStructureAnalyzer {
             if (sourceDir != null && sourceDir.contains("src")) {
                 scanSourceDirectories();
             }
-        } catch (Exception e) {
-            // Silently fail - not all projects have pom.xml
+        } catch (IOException e) {
+            AgentLogger.warn("Failed to analyze pom.xml at " + pomFile + ": " + e.getMessage());
         }
     }
     
@@ -132,8 +135,8 @@ public class ProjectStructureAnalyzer {
             }
             
             scanSourceDirectories();
-        } catch (Exception e) {
-            // Silently fail
+        } catch (IOException e) {
+            AgentLogger.warn("Failed to analyze Gradle build file at " + buildFile + ": " + e.getMessage());
         }
     }
     
@@ -192,8 +195,14 @@ public class ProjectStructureAnalyzer {
         try {
             boolean hasJavaFiles = false;
             boolean hasSubdirs = false;
-            
-            for (File file : dir.toFile().listFiles()) {
+
+            File[] children = dir.toFile().listFiles();
+            if (children == null) {
+                AgentLogger.warn("Skipping unreadable directory during package scan: " + dir);
+                return;
+            }
+
+            for (File file : children) {
                 if (file.isFile() && (file.getName().endsWith(".java") || file.getName().endsWith(".kt"))) {
                     hasJavaFiles = true;
                 } else if (file.isDirectory() && !file.getName().startsWith(".")) {
@@ -206,8 +215,8 @@ public class ProjectStructureAnalyzer {
             if (hasJavaFiles && !packagePrefix.isEmpty()) {
                 result.add(packagePrefix);
             }
-        } catch (Exception e) {
-            // Silently fail
+        } catch (RuntimeException e) {
+            AgentLogger.warn("Failed while scanning packages in " + dir + ": " + e.getMessage());
         }
     }
     
@@ -223,6 +232,30 @@ public class ProjectStructureAnalyzer {
         var matcher = pattern.matcher(content);
         if (matcher.find()) {
             return matcher.group(1).trim();
+        }
+        return null;
+    }
+
+    /**
+     * Extract a project-level XML tag from a POM, skipping nested sections
+     * ({@code <parent>}, {@code <dependencies>}, {@code <build>}) that may
+     * contain the same tag name. Falls back to {@code <parent>} value for
+     * {@code groupId} when the project inherits it.
+     */
+    private String extractProjectXmlTag(String content, String tagName) {
+        // Strip sections that contain nested groupId/artifactId to avoid false matches
+        String stripped = content
+                .replaceAll("(?s)<parent>.*?</parent>", "")
+                .replaceAll("(?s)<dependencies>.*?</dependencies>", "")
+                .replaceAll("(?s)<build>.*?</build>", "")
+                .replaceAll("(?s)<profiles>.*?</profiles>", "");
+        String result = extractXmlTag(stripped, tagName);
+        if (result != null) {
+            return result;
+        }
+        // For groupId, fall back to parent's groupId (Maven inheritance)
+        if ("groupId".equals(tagName)) {
+            return extractXmlTag(content, tagName);
         }
         return null;
     }

@@ -1,13 +1,14 @@
 package me.bechberger.testorder;
 
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestPlan;
-import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.engine.TestSource;
+import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.engine.support.descriptor.ClassSource;
 import org.junit.platform.engine.support.descriptor.MethodSource;
-import org.tinylog.Logger;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -16,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * JUnit Platform TestExecutionListener that:
@@ -49,14 +52,19 @@ public class TelemetryListener implements TestExecutionListener {
     private final Set<String> executionOrderSet = ConcurrentHashMap.newKeySet();
     private final List<String> executionOrder = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final Set<String> failedClassNames = ConcurrentHashMap.newKeySet();
-    private final Map<String, Long> pendingDurations = new ConcurrentHashMap<>();
-    private final Map<String, Long> pendingMethodDurations = new ConcurrentHashMap<>();
+    private final Map<String, ConcurrentLinkedQueue<Long>> pendingDurations = new ConcurrentHashMap<>();
+    private final Map<String, ConcurrentLinkedQueue<Long>> pendingMethodDurations = new ConcurrentHashMap<>();
     private final Set<String> failedMethodNames = ConcurrentHashMap.newKeySet();
+    private final Set<String> warnedConcurrentClasses = ConcurrentHashMap.newKeySet();
+
+    /** Tracks whether testPlanExecutionFinished ran; used by the shutdown hook to avoid double-save. */
+    private volatile boolean finishedNormally;
+    private Thread shutdownHook;
 
     @Override
     public void testPlanExecutionStarted(TestPlan testPlan) {
-        learnMode = "true".equals(System.getProperty("testorder.learn"));
-        String instrumentationMode = System.getProperty("testorder.instrumentation.mode");
+        learnMode = "true".equals(System.getProperty(TestOrderConfig.LEARN));
+        String instrumentationMode = System.getProperty(TestOrderConfig.INSTRUMENTATION_MODE);
         fullMethodMode = "FULL_METHOD".equals(instrumentationMode)
             || "FULL_MEMBER".equals(instrumentationMode);
 
@@ -65,7 +73,14 @@ public class TelemetryListener implements TestExecutionListener {
         }
 
         // load state file path for failure + duration tracking
-        statePath = System.getProperty("testorder.state.path");
+        statePath = System.getProperty(TestOrderConfig.STATE_PATH);
+
+        // Register a JVM shutdown hook so accumulated durations/failures are not
+        // lost when the JVM terminates abnormally (e.g. OOM, kill signal) before
+        // testPlanExecutionFinished() runs.
+        finishedNormally = false;
+        shutdownHook = new Thread(this::emergencySave, "test-order-emergency-save");
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
 
     @Override
@@ -73,9 +88,10 @@ public class TelemetryListener implements TestExecutionListener {
         testIdentifier.getSource().ifPresent(source -> {
             if (source instanceof ClassSource classSource) {
                 String name = classSource.getClassName();
+                maybeWarnConcurrentExecution(name);
 
                 // track start time for duration (local map operation, very fast)
-                classStartTimes.putIfAbsent(name, System.currentTimeMillis());
+                classStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
 
                 // track execution order for run quality (O(1) dedup with ConcurrentHashSet)
                 if (executionOrderSet.add(name)) {
@@ -90,7 +106,7 @@ public class TelemetryListener implements TestExecutionListener {
             } else if (source instanceof MethodSource methodSource) {
                 // track method-level start time
                 String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
-                methodStartTimes.putIfAbsent(methodKey, System.currentTimeMillis());
+                methodStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
 
                 // In FULL_METHOD and FULL_MEMBER modes: start per-method dependency recording
                 if (fullMethodMode && learnMode && usageStoreInstance != null) {
@@ -105,7 +121,7 @@ public class TelemetryListener implements TestExecutionListener {
         if (learnMode && usageStoreInstance != null) {
             testIdentifier.getSource().ifPresent(source -> {
                 if (source instanceof ClassSource) {
-                    callEndTestClass();
+                    callEndTestClass(((ClassSource) source).getClassName());
                 }
             });
         }
@@ -121,9 +137,11 @@ public class TelemetryListener implements TestExecutionListener {
                     methodName = methodSource.getMethodName();
                 }
                 if (className != null) {
-                    // Record class-level failure once per class per run
-                    failedClassNames.add(className);
-                    // Record method-level failure
+                    // Record class-level failure under the top-level enclosing class
+                    // so that @Nested class failures are attributed to the outer class
+                    // (PriorityClassOrderer looks up scores by top-level class name)
+                    failedClassNames.add(toTopLevelClassName(className));
+                    // Record method-level failure (preserves nested class for method scoring)
                     if (methodName != null) {
                         String methodKey = className + "#" + methodName;
                         failedMethodNames.add(methodKey);
@@ -134,10 +152,12 @@ public class TelemetryListener implements TestExecutionListener {
         // record duration (both class-level and method-level)
         testIdentifier.getSource().ifPresent(source -> {
             if (source instanceof ClassSource classSource) {
-                Long start = classStartTimes.remove(classSource.getClassName());
+                Long start = classStartTimes.remove(testIdentifier.getUniqueId());
                 if (start != null) {
-                    long duration = System.currentTimeMillis() - start;
-                    pendingDurations.put(classSource.getClassName(), duration);
+                    long duration = elapsedMillis(start);
+                    pendingDurations
+                            .computeIfAbsent(classSource.getClassName(), ignored -> new ConcurrentLinkedQueue<>())
+                            .add(duration);
                 }
             } else if (source instanceof MethodSource methodSource) {
                 // In FULL_METHOD and FULL_MEMBER modes: end per-method dependency recording
@@ -146,10 +166,12 @@ public class TelemetryListener implements TestExecutionListener {
                 }
 
                 String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
-                Long start = methodStartTimes.remove(methodKey);
+                Long start = methodStartTimes.remove(testIdentifier.getUniqueId());
                 if (start != null) {
-                    long duration = System.currentTimeMillis() - start;
-                    pendingMethodDurations.put(methodKey, duration);
+                    long duration = elapsedMillis(start);
+                    pendingMethodDurations
+                            .computeIfAbsent(methodKey, ignored -> new ConcurrentLinkedQueue<>())
+                            .add(duration);
                 }
             }
         });
@@ -163,61 +185,113 @@ public class TelemetryListener implements TestExecutionListener {
             effectiveStatePath = TestOrderState.getPendingStatePath();
         }
 
-        // load state (deferred to here so the file is only read once, single-threaded)
+        boolean resetPending = false;
         if (effectiveStatePath != null && !effectiveStatePath.isEmpty()) {
-            try { state = TestOrderState.load(Path.of(effectiveStatePath)); }
-            catch (IOException e) { state = new TestOrderState(); }
+            Path stateFile = Path.of(effectiveStatePath);
+            try {
+                state = PersistenceSupport.withFileLock(stateFile, () -> {
+                    TestOrderState lockedState = loadStateOrEmpty(stateFile);
+                    applyHistoryMaxRuns(lockedState);
+                    applyPendingTelemetry(lockedState);
+                    if (TestOrderState.hasPendingData() && !executionOrder.isEmpty()) {
+                        TestOrderState.RunRecord record =
+                                TestOrderState.buildRunRecord(executionOrder, failedClassNames);
+                        lockedState.addRunRecord(record);
+                        boolean isLearnRun = Boolean.parseBoolean(System.getProperty(TestOrderConfig.LEARN, "false"));
+                        if (!isLearnRun) {
+                            lockedState.incrementRunsSinceLearn();
+                        }
+                        if (record.totalFailures() > 0) {
+                            TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
+                                    String.format("%.1f", record.apfd() * 100),
+                                    record.firstFailurePosition() + 1, record.totalTests());
+                        }
+                    }
+                    lockedState.save(stateFile);
+                    return lockedState;
+                });
+                resetPending = TestOrderState.hasPendingData() && !executionOrder.isEmpty();
+            } catch (IOException e) {
+                TestOrderLogger.error("Failed to save state: {}", e.getMessage());
+            }
         }
-
-        // apply pending durations and failures collected during the run
-        if (state != null) {
-            for (var entry : pendingDurations.entrySet()) {
-                state.recordDuration(entry.getKey(), entry.getValue());
-            }
-            for (String failed : failedClassNames) {
-                state.recordFailure(failed);
-            }
-            // Apply method-level durations and failures from pending
-            for (var entry : pendingMethodDurations.entrySet()) {
-                String[] parts = entry.getKey().split("#", 2);
-                if (parts.length == 2) {
-                    state.recordMethodDuration(parts[0], parts[1], entry.getValue());
-                }
-            }
-            for (String methodKey : failedMethodNames) {
-                String[] parts = methodKey.split("#", 2);
-                if (parts.length == 2) {
-                    state.recordMethodFailure(parts[0], parts[1]);
-                }
-            }
-        }
-
-        // save run quality record into state
-        if (TestOrderState.hasPendingData() && !executionOrder.isEmpty()) {
-            if (state != null) {
-                TestOrderState.RunRecord record =
-                        TestOrderState.buildRunRecord(executionOrder, failedClassNames);
-                state.addRunRecord(record);
-                // Increment counter for auto-learn threshold checks only in non-learn runs.
-                boolean isLearnRun = Boolean.parseBoolean(System.getProperty("testorder.learn", "false"));
-                if (!isLearnRun) {
-                    state.incrementRunsSinceLearn();
-                }
-                if (record.totalFailures() > 0) {
-                    Logger.info("Run APFD: {}% (first failure at position {}/{})",
-                            String.format("%.1f", record.apfd() * 100),
-                            record.firstFailurePosition() + 1, record.totalTests());
-                }
-            }
+        if (resetPending) {
             TestOrderState.resetPending();
         }
+        PriorityMethodOrderer.clearPendingState();
 
-        // save state file (durations, failures, run history all in one)
-        if (state != null && effectiveStatePath != null && !effectiveStatePath.isEmpty()) {
+        // Mark normal completion and remove the shutdown hook — the state was already saved.
+        finishedNormally = true;
+        if (shutdownHook != null) {
+            try { Runtime.getRuntime().removeShutdownHook(shutdownHook); }
+            catch (IllegalStateException ignored) { /* JVM already shutting down */ }
+        }
+    }
+
+    /**
+     * Emergency save invoked from the JVM shutdown hook when
+     * {@code testPlanExecutionFinished()} was never called (e.g. OOM, SIGTERM).
+     * Saves whatever durations and failures have been accumulated so far.
+     */
+    private void emergencySave() {
+        if (finishedNormally) return;
+
+        String effectiveStatePath = statePath;
+        if (effectiveStatePath == null || effectiveStatePath.isEmpty()) {
+            effectiveStatePath = TestOrderState.getPendingStatePath();
+        }
+        if (effectiveStatePath == null || effectiveStatePath.isEmpty()) return;
+
+        try {
+            Path stateFile = Path.of(effectiveStatePath);
+            PersistenceSupport.withFileLock(stateFile, () -> {
+                TestOrderState emergencyState = loadStateOrEmpty(stateFile);
+                applyHistoryMaxRuns(emergencyState);
+                applyPendingTelemetry(emergencyState);
+                emergencyState.save(stateFile);
+                return emergencyState;
+            });
+        } catch (Exception ignored) {
+            // Best-effort: shutdown hooks must not throw
+        }
+    }
+
+    private TestOrderState loadStateOrEmpty(Path stateFile) {
+        try {
+            return TestOrderState.load(stateFile);
+        } catch (IOException e) {
+            return new TestOrderState();
+        }
+    }
+
+    private void applyHistoryMaxRuns(TestOrderState targetState) {
+        String maxRunsProp = System.getProperty(TestOrderConfig.HISTORY_MAX_RUNS);
+        if (maxRunsProp != null) {
             try {
-                state.save(Path.of(effectiveStatePath));
-            } catch (IOException e) {
-                Logger.error("Failed to save state: {}", e.getMessage());
+                targetState.setHistoryMaxRuns(Integer.parseInt(maxRunsProp));
+            } catch (IllegalArgumentException ignored) {
+                // Fall back to default if the property is not a valid positive integer
+            }
+        }
+    }
+
+    private void applyPendingTelemetry(TestOrderState targetState) {
+        for (var entry : pendingDurations.entrySet()) {
+            entry.getValue().forEach(duration -> targetState.recordDuration(entry.getKey(), duration));
+        }
+        for (String failed : failedClassNames) {
+            targetState.recordFailure(failed);
+        }
+        for (var entry : pendingMethodDurations.entrySet()) {
+            String[] parts = entry.getKey().split("#", 2);
+            if (parts.length == 2) {
+                entry.getValue().forEach(duration -> targetState.recordMethodDuration(parts[0], parts[1], duration));
+            }
+        }
+        for (String methodKey : failedMethodNames) {
+            String[] parts = methodKey.split("#", 2);
+            if (parts.length == 2) {
+                targetState.recordMethodFailure(parts[0], parts[1]);
             }
         }
     }
@@ -242,13 +316,13 @@ public class TelemetryListener implements TestExecutionListener {
                     "me.bechberger.testorder.agent.runtime.UsageStore", true, null);
             usageStoreInstance = usageStoreClass.getMethod("getInstance").invoke(null);
             startTestClassMethod = usageStoreClass.getMethod("startTestClass", String.class);
-            endTestClassMethod = usageStoreClass.getMethod("endTestClass");
+            endTestClassMethod = usageStoreClass.getMethod("endTestClass", String.class);
             if (fullMethodMode) {
                 startTestMethodMethod = usageStoreClass.getMethod("startTestMethod", String.class, String.class);
                 endTestMethodMethod = usageStoreClass.getMethod("endTestMethod");
             }
         } catch (Exception e) {
-            Logger.error("Failed to initialize UsageStore reflection: {}", e.getMessage());
+            TestOrderLogger.error("Failed to initialize UsageStore reflection: {}", e.getMessage());
         }
     }
 
@@ -257,16 +331,16 @@ public class TelemetryListener implements TestExecutionListener {
         try {
             startTestClassMethod.invoke(usageStoreInstance, testClassName);
         } catch (Exception e) {
-            Logger.debug("Failed to call startTestClass: {}", e.getMessage());
+            TestOrderLogger.debug("Failed to call startTestClass: {}", e.getMessage());
         }
     }
 
-    private void callEndTestClass() {
+    private void callEndTestClass(String testClassName) {
         if (usageStoreInstance == null) return;
         try {
-            endTestClassMethod.invoke(usageStoreInstance);
+            endTestClassMethod.invoke(usageStoreInstance, testClassName);
         } catch (Exception e) {
-            Logger.debug("Failed to call endTestClass: {}", e.getMessage());
+            TestOrderLogger.debug("Failed to call endTestClass: {}", e.getMessage());
         }
     }
 
@@ -275,7 +349,7 @@ public class TelemetryListener implements TestExecutionListener {
         try {
             startTestMethodMethod.invoke(usageStoreInstance, className, methodName);
         } catch (Exception e) {
-            Logger.debug("Failed to call startTestMethod: {}", e.getMessage());
+            TestOrderLogger.debug("Failed to call startTestMethod: {}", e.getMessage());
         }
     }
 
@@ -284,7 +358,33 @@ public class TelemetryListener implements TestExecutionListener {
         try {
             endTestMethodMethod.invoke(usageStoreInstance);
         } catch (Exception e) {
-            Logger.debug("Failed to call endTestMethod: {}", e.getMessage());
+            TestOrderLogger.debug("Failed to call endTestMethod: {}", e.getMessage());
         }
+    }
+
+    private static long elapsedMillis(long startNanos) {
+        long elapsedNanos = System.nanoTime() - startNanos;
+        return TimeUnit.NANOSECONDS.toMillis(Math.max(0L, elapsedNanos));
+    }
+
+    private void maybeWarnConcurrentExecution(String className) {
+        if (!warnedConcurrentClasses.add(className)) {
+            return;
+        }
+        try {
+            Class<?> testClass = Class.forName(className);
+            Execution execution = testClass.getAnnotation(Execution.class);
+            if (execution != null && execution.value() == ExecutionMode.CONCURRENT) {
+                TestOrderLogger.warn("Test class {} uses @Execution(CONCURRENT); learn-mode dependency tracking may be inaccurate", className);
+            }
+        } catch (ClassNotFoundException ignored) {
+            warnedConcurrentClasses.remove(className);
+        }
+    }
+
+    /** Strips inner/nested class suffixes to get the top-level enclosing class name. */
+    static String toTopLevelClassName(String className) {
+        int dollar = className.indexOf('$');
+        return dollar > 0 ? className.substring(0, dollar) : className;
     }
 }

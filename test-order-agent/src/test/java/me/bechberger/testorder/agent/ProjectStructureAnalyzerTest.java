@@ -200,4 +200,18 @@ public class ProjectStructureAnalyzerTest {
         assertTrue(!userPkgs.isEmpty() || userPkgs.stream().anyMatch(p -> p.contains("com.company")),
                 "Should extract company group");
     }
+
+    @Test
+    @DisplayName("Unreadable package directories are skipped")
+    public void testUnreadablePackageDirectoryDoesNotCrash(@TempDir Path tempDir) throws IOException {
+        Path srcDir = tempDir.resolve("src/main/java/com/example");
+        Files.createDirectories(srcDir);
+        Files.writeString(srcDir.resolve("App.java"), "public class App {}");
+        Path brokenLink = srcDir.resolve("broken");
+        Files.createSymbolicLink(brokenLink, tempDir.resolve("missing-target"));
+
+        ProjectStructureAnalyzer analyzer = new ProjectStructureAnalyzer(tempDir);
+
+        assertTrue(analyzer.getUserPackages().stream().anyMatch(p -> p.contains("com.example")));
+    }
 }

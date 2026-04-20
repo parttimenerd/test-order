@@ -205,6 +205,9 @@ class ClassNameTrie {
         int shift = 0;
         int b;
         do {
+            if (shift >= 35) {
+                throw new IOException("VarInt overflow: too many continuation bytes");
+            }
             b = in.readByte() & 0xFF;
             value |= (b & 0x7F) << shift;
             shift += 7;

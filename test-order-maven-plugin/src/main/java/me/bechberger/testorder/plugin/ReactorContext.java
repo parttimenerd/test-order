@@ -22,8 +22,8 @@ import java.util.*;
 final class ReactorContext {
 
     private static final String SHARED_DIR_NAME = ".test-order";
-    private static final String CHANGED_CLASSES_KEY = "testorder.changed.classes.";
-    private static final String CHANGED_TEST_CLASSES_KEY = "testorder.changed.test.classes.";
+    private static final String CHANGED_CLASSES_KEY = MavenPluginConfigKeys.CHANGED_CLASSES + ".";
+    private static final String CHANGED_TEST_CLASSES_KEY = MavenPluginConfigKeys.CHANGED_TEST_CLASSES + ".";
 
     private final MavenSession session;
     private final MavenProject project;
