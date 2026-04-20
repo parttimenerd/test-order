@@ -295,6 +295,68 @@ mvn test-order:optimize -Dtestorder.weights-file=/path/to/weights.properties
 
 ---
 
+### Goal: `dashboard`
+
+Generates a self-contained HTML dashboard visualising the test-order scoring,
+dependency graph, run history, and distributions for your test suite.
+
+**Usage**: `mvn test-order:dashboard`
+
+**When to use**:
+- To understand *why* specific tests are prioritised
+- To debug the scoring system (Weights Explorer tab lets you try "what-if" weight changes live)
+- To review historical APFD trends and failure patterns
+- To share a snapshot of test health with your team (single HTML file, no server needed)
+
+**Output**: `target/test-order-dashboard/index.html` — a fully self-contained HTML file
+(Vue 3 + Chart.js + D3 via CDN). Open with any browser via `file://`.
+
+**Key Parameters**:
+| Parameter | Property | Default | Description |
+|-----------|----------|---------|-------------|
+| `dashboardOutput` | `testorder.dashboard.output` | `target/test-order-dashboard/index.html` | Path for the generated HTML file |
+| `coverageDir` | `testorder.dashboard.coverageDir` | `target/site/jacoco` | JaCoCo report dir (reserved for future use) |
+| `openBrowser` | `testorder.dashboard.open` | `false` | Auto-open in default browser after generation |
+
+**Dashboard tabs**:
+
+| Tab | Description |
+|-----|-------------|
+| **Test Explorer** | Sortable, filterable table of all tests with rank, score, dep overlap, fail score, duration, and badges (CHANGED/NEW/FAILING/FAST/SLOW/STATIC) |
+| **Score Breakdown** | Horizontal stacked bar chart showing each scoring component for the selected test, with plain-English explanation cards |
+| **Dependency Graph** | D3 force-directed graph of source class dependencies; toggle between Focus (selected test only), Changed subgraph (all tests touching changed classes), and Full |
+| **Project Timeline** | 4 synchronized charts: APFD trend, failures per run, time-to-first-failure, and test count — with a crosshair synchronized across all charts |
+| **Per-Test History** | Duration EMA trend, pass/fail strip (colored squares per run), score over time, and run position for the selected test |
+| **Distributions** | Score histogram, duration log-bucket histogram, dependency count distribution, and top-20 tests by failure score |
+| **Weights Explorer** | Interactive sliders to adjust all 9 scoring weights; re-scores every test live and shows the rank change table (Δ highlighted if >5) |
+| **Coverage Treemap** | Placeholder — JaCoCo treemap integration planned for a future release |
+
+**Examples**:
+```bash
+# Generate dashboard
+mvn test-order:dashboard
+
+# Generate and open in browser immediately
+mvn test-order:dashboard -Dtestorder.dashboard.open=true
+
+# Write to a custom location
+mvn test-order:dashboard -Dtestorder.dashboard.output=/tmp/my-dashboard.html
+```
+
+**In pom.xml**:
+```xml
+<plugin>
+  <groupId>me.bechberger</groupId>
+  <artifactId>test-order-maven-plugin</artifactId>
+  <configuration>
+    <dashboardOutput>${project.build.directory}/test-order-dashboard/index.html</dashboardOutput>
+    <openBrowser>false</openBrowser>
+  </configuration>
+</plugin>
+```
+
+---
+
 ### Goal: `coverage` (test-order-coverage-mojo)
 
 Analyzes test coverage across project and identifies least tested classes.
