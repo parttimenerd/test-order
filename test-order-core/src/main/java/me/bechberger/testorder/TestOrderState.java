@@ -62,6 +62,15 @@ public class TestOrderState {
     /** Resource-loaded default for pruning threshold of negligible failure scores. */
     static final double DEFAULT_FAILURE_PRUNE_THRESHOLD;
 
+    /** Resource-loaded default for EMA variance threshold in adaptive alpha calculation. */
+    static final double DEFAULT_EMA_VARIANCE_THRESHOLD;
+
+    /** Resource-loaded default for maximum run history size. */
+    static final int DEFAULT_HISTORY_MAX_RUNS;
+
+    /** Resource-loaded default for minimum adaptive alpha factor. */
+    static final double DEFAULT_MIN_ADAPTIVE_ALPHA_FACTOR;
+
     static {
         CommentedConfig resourceConfig = loadResourceConfig();
         WEIGHT_DEFS = Collections.unmodifiableList(buildWeightDefs(resourceConfig));
@@ -70,6 +79,9 @@ public class TestOrderState {
         DEFAULT_DURATION_ALPHA = readConfigDouble(resourceConfig, "durationAlpha");
         DEFAULT_METHOD_DURATION_ALPHA = readConfigDouble(resourceConfig, "methodDurationAlpha");
         DEFAULT_FAILURE_PRUNE_THRESHOLD = readConfigDouble(resourceConfig, "failurePruneThreshold");
+        DEFAULT_EMA_VARIANCE_THRESHOLD = readConfigDouble(resourceConfig, "emaVarianceThreshold");
+        DEFAULT_HISTORY_MAX_RUNS = readConfigInt(resourceConfig, "historyMaxRuns");
+        DEFAULT_MIN_ADAPTIVE_ALPHA_FACTOR = readConfigDouble(resourceConfig, "minAdaptiveAlphaFactor");
     }
 
     private static CommentedConfig loadResourceConfig() {
@@ -404,49 +416,25 @@ public class TestOrderState {
     // ── Instance state ────────────────────────────────────────────────
 
     /** Maximum number of run records to keep. */
-    public static final int MAX_HISTORY_RUNS = 50;
-    private static final double DEFAULT_EMA_VARIANCE_THRESHOLD = 0.35;
-    private static final double MIN_ADAPTIVE_ALPHA_FACTOR = 0.35;
+    public static final int MAX_HISTORY_RUNS = DEFAULT_HISTORY_MAX_RUNS;
+    private static final double MIN_ADAPTIVE_ALPHA_FACTOR = TestOrderState.DEFAULT_MIN_ADAPTIVE_ALPHA_FACTOR;
 
+    private final StateConfiguration config;
     private ScoringWeights weights;
     private MethodScoringWeights methodScoringWeights;
-    private double failureDecay = DEFAULT_FAILURE_DECAY;
-    private double methodFailureDecay = DEFAULT_METHOD_FAILURE_DECAY;
-    private double durationAlpha = DEFAULT_DURATION_ALPHA;
-    private double methodDurationAlpha = DEFAULT_METHOD_DURATION_ALPHA;
-    private double failurePruneThreshold = DEFAULT_FAILURE_PRUNE_THRESHOLD;
-    private double emaVarianceThreshold = DEFAULT_EMA_VARIANCE_THRESHOLD;
-    private int historyMaxRuns = MAX_HISTORY_RUNS;
-    /** Tracks how many order-mode runs have occurred since the last learn mode. */
-    private int runsSinceLearn = 0;
-    private final Map<String, Long> durations;
-    private final Map<String, Double> durationVariances;
-    /** Historical failure scores loaded from state file (decay applied). */
-    private final Map<String, Double> failureScores;
-    /** Failures recorded during the current run (not yet decayed). */
-    private final Map<String, Double> pendingFailureScores;
-    private final Map<String, Map<String, Double>> methodDurations;
-    private final Map<String, Map<String, Double>> methodDurationVariances;
-    /** Historical method failure scores loaded from state file. */
-    private final Map<String, Double> methodFailureScores;
-    /** Method failures recorded during the current run. */
-    private final Map<String, Double> pendingMethodFailureScores;
-    private final List<RunRecord> runs;
+    private final DurationTracker durationTracker;
+    private final FailureHistoryTracker failureHistory;
+    private final RunHistoryManager runHistory;
     /** True when addRunRecord was called since the last save — enables decay even on all-pass runs. */
     private boolean pendingRunCompleted;
 
     public TestOrderState() {
+        this.config = new StateConfiguration();
         this.weights = ScoringWeights.DEFAULT;
         this.methodScoringWeights = MethodScoringWeights.DEFAULT;
-        this.durations = new LinkedHashMap<>();
-        this.durationVariances = new LinkedHashMap<>();
-        this.failureScores = new LinkedHashMap<>();
-        this.pendingFailureScores = new LinkedHashMap<>();
-        this.methodDurations = new LinkedHashMap<>();
-        this.methodDurationVariances = new LinkedHashMap<>();
-        this.methodFailureScores = new LinkedHashMap<>();
-        this.pendingMethodFailureScores = new LinkedHashMap<>();
-        this.runs = new ArrayList<>();
+        this.durationTracker = new DurationTracker();
+        this.failureHistory = new FailureHistoryTracker();
+        this.runHistory = new RunHistoryManager();
     }
 
     // ── Weights ───────────────────────────────────────────────────────
@@ -456,61 +444,48 @@ public class TestOrderState {
 
     // ── Configuration ─────────────────────────────────────────────────
 
-    public double failureDecay() { return failureDecay; }
+    public double failureDecay() { return config.failureDecay(); }
     public void setFailureDecay(double d) {
-        if (d < 0 || d > 1) throw new IllegalArgumentException("failureDecay must be in [0, 1]: " + d);
-        this.failureDecay = d;
+        config.setFailureDecay(d);
     }
 
-    public double methodFailureDecay() { return methodFailureDecay; }
+    public double methodFailureDecay() { return config.methodFailureDecay(); }
     public void setMethodFailureDecay(double d) {
-        if (d < 0 || d > 1) throw new IllegalArgumentException("methodFailureDecay must be in [0, 1]: " + d);
-        this.methodFailureDecay = d;
+        config.setMethodFailureDecay(d);
     }
 
-    public double durationAlpha() { return durationAlpha; }
+    public double durationAlpha() { return config.durationAlpha(); }
     public void setDurationAlpha(double a) {
-        if (a < 0 || a > 1) throw new IllegalArgumentException("durationAlpha must be in [0, 1]: " + a);
-        this.durationAlpha = a;
+        config.setDurationAlpha(a);
     }
 
-    public double methodDurationAlpha() { return methodDurationAlpha; }
+    public double methodDurationAlpha() { return config.methodDurationAlpha(); }
     public void setMethodDurationAlpha(double a) {
-        if (a < 0 || a > 1) throw new IllegalArgumentException("methodDurationAlpha must be in [0, 1]: " + a);
-        this.methodDurationAlpha = a;
+        config.setMethodDurationAlpha(a);
     }
 
-    public double failurePruneThreshold() { return failurePruneThreshold; }
+    public double failurePruneThreshold() { return config.failurePruneThreshold(); }
     public void setFailurePruneThreshold(double t) {
-        if (Double.isNaN(t) || Double.isInfinite(t) || t < 0) {
-            throw new IllegalArgumentException("failurePruneThreshold must be >= 0 and finite: " + t);
-        }
-        this.failurePruneThreshold = t;
+        config.setFailurePruneThreshold(t);
     }
 
-    public double emaVarianceThreshold() { return emaVarianceThreshold; }
+    public double emaVarianceThreshold() { return config.emaVarianceThreshold(); }
     public void setEmaVarianceThreshold(double threshold) {
-        if (threshold < 0) {
-            throw new IllegalArgumentException("emaVarianceThreshold must be >= 0: " + threshold);
-        }
-        this.emaVarianceThreshold = threshold;
+        config.setEmaVarianceThreshold(threshold);
     }
 
-    public int historyMaxRuns() { return historyMaxRuns; }
+    public int historyMaxRuns() { return config.historyMaxRuns(); }
     public void setHistoryMaxRuns(int maxRuns) {
-        if (maxRuns <= 0) {
-            throw new IllegalArgumentException("historyMaxRuns must be > 0: " + maxRuns);
-        }
-        this.historyMaxRuns = maxRuns;
-        replaceRunHistory(thinRunHistory(runs, historyMaxRuns));
+        config.setHistoryMaxRuns(maxRuns);
+        runHistory.trimToMax(config.historyMaxRuns());
     }
 
     /** Get the number of order-mode runs since the last learn mode. */
-    public int runsSinceLearn() { return runsSinceLearn; }
+    public int runsSinceLearn() { return config.runsSinceLearn(); }
     /** Reset the counter (called when switching to learn mode). */
-    public void resetRunsSinceLearn() { this.runsSinceLearn = 0; }
+    public void resetRunsSinceLearn() { config.resetRunsSinceLearn(); }
     /** Increment the counter (called after each order-mode run). */
-    public void incrementRunsSinceLearn() { this.runsSinceLearn++; }
+    public void incrementRunsSinceLearn() { config.incrementRunsSinceLearn(); }
 
     /**
      * Removes duration and failure entries for test classes that do not appear
@@ -519,9 +494,9 @@ public class TestOrderState {
      * duration and waste disk space.
      */
     public void pruneStaleEntries() {
-        if (runs.isEmpty()) return;
+        if (runHistory.runs().isEmpty()) return;
         Set<String> activeClasses = new java.util.HashSet<>();
-        for (RunRecord run : runs) {
+        for (RunRecord run : runHistory.runs()) {
             if (run.outcomes() != null) {
                 for (TestOutcome outcome : run.outcomes()) {
                     activeClasses.add(outcome.testClass());
@@ -529,110 +504,83 @@ public class TestOrderState {
             }
         }
         if (activeClasses.isEmpty()) return;
-        durations.keySet().retainAll(activeClasses);
-        durationVariances.keySet().retainAll(activeClasses);
-        failureScores.keySet().retainAll(activeClasses);
-        methodDurations.keySet().retainAll(activeClasses);
-        methodDurationVariances.keySet().retainAll(activeClasses);
-        methodFailureScores.keySet().removeIf(k -> {
-            int hash = k.indexOf('#');
-            return hash > 0 && !activeClasses.contains(k.substring(0, hash));
-        });
+        durationTracker.pruneToActiveClasses(activeClasses);
+        failureHistory.pruneToActiveClasses(activeClasses);
     }
 
     // ── Durations ─────────────────────────────────────────────────────
 
     public long getDuration(String testClass, long defaultValue) {
-        return durations.getOrDefault(testClass, defaultValue);
+        return durationTracker.getClassDuration(testClass, defaultValue);
+    }
+
+    /** Returns the EMA variance of the class duration, or {@code defaultValue} if unknown. */
+    public double getDurationVariance(String testClass, double defaultValue) {
+        Double v = durationTracker.classDurationVariances().get(testClass);
+        return v != null ? v : defaultValue;
+    }
+
+    /** Returns all known class durations (EMA-smoothed, in ms). */
+    public Map<String, Long> getClassDurations() {
+        return durationTracker.classDurations();
     }
 
     public void recordDuration(String testClass, long measuredMs) {
-        Long previous = durations.get(testClass);
-        if (previous == null) {
-            durations.put(testClass, measuredMs);
-            durationVariances.put(testClass, 0.0);
-            return;
-        }
-        double variance = durationVariances.getOrDefault(testClass, 0.0);
-        double effectiveAlpha = adaptiveAlpha(durationAlpha, previous.doubleValue(), variance);
-        double delta = measuredMs - previous;
-        durations.put(testClass, Math.round(effectiveAlpha * measuredMs + (1.0 - effectiveAlpha) * previous));
-        durationVariances.put(testClass, updatedVariance(variance, delta, effectiveAlpha));
+        durationTracker.recordClassDuration(
+                testClass,
+                measuredMs,
+                config.durationAlpha(),
+                config.emaVarianceThreshold(),
+                MIN_ADAPTIVE_ALPHA_FACTOR);
     }
 
     // ── Failures (decayed moving average) ──────────────────────────────
 
     public void recordFailure(String testClass) {
-        pendingFailureScores.merge(testClass, 1.0, Double::sum);
-    }
-
-    /** @deprecated timestamp is ignored; use {@link #recordFailure(String)} instead. Scheduled for removal. */
-    @Deprecated(forRemoval = true)
-    public void recordFailure(String testClass, long epochMillis) {
-        recordFailure(testClass);
+        failureHistory.recordFailure(testClass);
     }
 
     /** Returns the current failure score (historical + pending from this run). */
     public double failureScore(String testClass) {
-        return failureScores.getOrDefault(testClass, 0.0)
-                + pendingFailureScores.getOrDefault(testClass, 0.0);
+        return failureHistory.failureScore(testClass);
     }
 
     /**
      * Returns pre-computed decayed failure scores.
      */
     public Map<String, Double> getFailureScores() {
-        return Collections.unmodifiableMap(failureScores);
+        return failureHistory.failureScores();
     }
 
     // ── Method-level durations ────────────────────────────────────────
 
     public double getDurationMethod(String className, String methodName, double defaultValue) {
-        return methodDurations.getOrDefault(className, Map.of())
-                .getOrDefault(methodName, defaultValue);
+        return durationTracker.getMethodDuration(className, methodName, defaultValue);
     }
 
     public void recordMethodDuration(String className, String methodName, long measuredMs) {
-        Map<String, Double> classDurations =
-                methodDurations.computeIfAbsent(className, ignored -> new LinkedHashMap<>());
-        Map<String, Double> classVariances =
-                methodDurationVariances.computeIfAbsent(className, ignored -> new LinkedHashMap<>());
-        Double previous = classDurations.get(methodName);
-        if (previous == null) {
-            classDurations.put(methodName, (double) measuredMs);
-            classVariances.put(methodName, 0.0);
-            return;
-        }
-        double variance = classVariances.getOrDefault(methodName, 0.0);
-        double effectiveAlpha = adaptiveAlpha(methodDurationAlpha, previous, variance);
-        double delta = measuredMs - previous;
-        classDurations.put(methodName,
-                (double) Math.round(effectiveAlpha * measuredMs + (1.0 - effectiveAlpha) * previous));
-        classVariances.put(methodName, updatedVariance(variance, delta, effectiveAlpha));
+        durationTracker.recordMethodDuration(
+            className,
+            methodName,
+            measuredMs,
+            config.methodDurationAlpha(),
+            config.emaVarianceThreshold(),
+            MIN_ADAPTIVE_ALPHA_FACTOR);
     }
 
     public Map<String, Map<String, Double>> getMethodDurations() {
-        return Collections.unmodifiableMap(methodDurations);
+        return durationTracker.methodDurations();
     }
 
     // ── Method-level failures (decayed moving average) ─────────────────
 
     public void recordMethodFailure(String className, String methodName) {
-        String key = className + "#" + methodName;
-        pendingMethodFailureScores.merge(key, 1.0, Double::sum);
-    }
-
-    /** @deprecated timestamp is ignored; use {@link #recordMethodFailure(String, String)} instead. Scheduled for removal. */
-    @Deprecated(forRemoval = true)
-    public void recordMethodFailure(String className, String methodName, long epochMillis) {
-        recordMethodFailure(className, methodName);
+        failureHistory.recordMethodFailure(className, methodName);
     }
 
     /** Returns the current method-level failure score (historical + pending). */
     public double methodFailureScore(String className, String methodName) {
-        String key = className + "#" + methodName;
-        return methodFailureScores.getOrDefault(key, 0.0)
-                + pendingMethodFailureScores.getOrDefault(key, 0.0);
+        return failureHistory.methodFailureScore(className, methodName);
     }
 
     /**
@@ -641,12 +589,12 @@ public class TestOrderState {
      * The {@code windowDays} parameter is accepted for API compatibility but ignored.
      */
     public Map<String, Double> getMethodRecencyWeightedFailureScores(int windowDays) {
-        return Collections.unmodifiableMap(methodFailureScores);
+        return failureHistory.methodFailureScores();
     }
 
     /** Returns an unmodifiable view of the raw method failure scores map. */
     public Map<String, Double> getMethodFailureScores() {
-        return Collections.unmodifiableMap(methodFailureScores);
+        return failureHistory.methodFailureScores();
     }
 
     // ── Method-level weights ──────────────────────────────────────────
@@ -656,72 +604,11 @@ public class TestOrderState {
 
     // ── Run history ───────────────────────────────────────────────────
 
-    public List<RunRecord> runs() { return Collections.unmodifiableList(runs); }
+    public List<RunRecord> runs() { return runHistory.runs(); }
 
     public synchronized void addRunRecord(RunRecord record) {
-        runs.add(record);
+        runHistory.add(record, config.historyMaxRuns());
         pendingRunCompleted = true;
-        replaceRunHistory(thinRunHistory(runs, historyMaxRuns));
-    }
-
-    private void replaceRunHistory(List<RunRecord> updatedRuns) {
-        runs.clear();
-        runs.addAll(updatedRuns);
-    }
-
-    static List<RunRecord> thinRunHistory(List<RunRecord> sourceRuns, int maxRuns) {
-        if (maxRuns <= 0) {
-            throw new IllegalArgumentException("maxRuns must be > 0: " + maxRuns);
-        }
-        if (sourceRuns.size() <= maxRuns) {
-            return new ArrayList<>(sourceRuns);
-        }
-        int recentKeep = Math.min(Math.max(1, maxRuns / 2), maxRuns);
-        int historicalSlots = maxRuns - recentKeep;
-        int recentStart = Math.max(0, sourceRuns.size() - recentKeep);
-        List<RunRecord> result = new ArrayList<>(maxRuns);
-        sampleHistoricalRuns(result, sourceRuns.subList(0, recentStart), historicalSlots);
-        result.addAll(sourceRuns.subList(recentStart, sourceRuns.size()));
-        return result;
-    }
-
-    private static void sampleHistoricalRuns(List<RunRecord> target, List<RunRecord> historicalRuns, int slots) {
-        if (slots <= 0 || historicalRuns.isEmpty()) {
-            return;
-        }
-        if (historicalRuns.size() <= slots) {
-            target.addAll(historicalRuns);
-            return;
-        }
-        Set<Integer> indices = new LinkedHashSet<>();
-        if (slots == 1) {
-            indices.add(historicalRuns.size() - 1);
-        } else {
-            for (int i = 0; i < slots; i++) {
-                int index = (int) Math.round(i * (historicalRuns.size() - 1.0) / (slots - 1.0));
-                indices.add(index);
-            }
-            for (int index = 0; indices.size() < slots && index < historicalRuns.size(); index++) {
-                indices.add(index);
-            }
-        }
-        indices.stream().sorted().forEach(index -> target.add(historicalRuns.get(index)));
-    }
-
-    private double adaptiveAlpha(double baseAlpha, double mean, double variance) {
-        if (baseAlpha <= 0 || mean <= 0 || variance <= 0 || emaVarianceThreshold <= 0) {
-            return baseAlpha;
-        }
-        double relativeStdDev = Math.sqrt(variance) / Math.max(mean, 1.0);
-        if (relativeStdDev <= emaVarianceThreshold) {
-            return baseAlpha;
-        }
-        double minAlpha = Math.max(0.05, baseAlpha * MIN_ADAPTIVE_ALPHA_FACTOR);
-        return Math.max(minAlpha, baseAlpha * (emaVarianceThreshold / relativeStdDev));
-    }
-
-    private static double updatedVariance(double previousVariance, double delta, double alpha) {
-        return alpha * delta * delta + (1.0 - alpha) * previousVariance;
     }
 
     // ── Static coordination (PriorityClassOrderer → TelemetryListener) ──
@@ -750,75 +637,6 @@ public class TestOrderState {
         PendingRunCoordinator.resetPending();
     }
 
-    // ── APFD ──────────────────────────────────────────────────────────
-
-    public static double computeAPFD(List<TestOutcome> orderedOutcomes) {
-        return APFDCalculator.computeAPFD(orderedOutcomes);
-    }
-
-    /**
-     * Cost-cognizant APFD (APFDc) using test execution time as cost.
-     * <p>
-     * APFDc measures the fraction of total fault-detection cost saved by running
-     * tests in the given order, weighted by the per-test execution time.
-     * Unlike standard APFD (which treats all tests as equal cost), APFDc rewards
-     * orderings that surface failures before expensive tests run.
-     * <p>
-     * Formula (Elbaum et al., all fault severities equal to 1):
-     * <pre>
-     *   APFDc = 1 - Σ_j (cost_up_to_first_detector_j - 0.5 * cost_of_detector_j)
-     *               / (total_cost × number_of_faults)
-     * </pre>
-     * Falls back to standard APFD when no duration data is available.
-     *
-     * @param orderedOutcomes outcomes in their prioritised execution order
-     * @param durations       EMA-smoothed class → duration map (from state)
-     * @return APFDc score in [0, 1]; higher is better
-     *
-     * @see <a href="https://doi.org/10.1145/566171.566187">Elbaum et al. (2002):
-     *      Test Case Prioritization: A Family of Empirical Studies</a>
-     */
-    public static double computeAPFDc(List<TestOutcome> orderedOutcomes,
-                                       Map<String, Long> durations) {
-        return APFDCalculator.computeAPFDc(orderedOutcomes, durations);
-    }
-
-    /**
-     * Recomputes APFD for outcomes re-ordered by the given weights.
-     * <p>
-     * Uses stored per-outcome data to faithfully reconstruct what each weight
-     * combination would produce:
-     * <ul>
-     *   <li><b>Speed:</b> uses {@code speedRatio} (weight-independent log-bucket position
-     *       in [-1, 1]) when available, falling back to legacy {@code isFast}/{@code isSlow}
-     *       booleans for old records.</li>
-     *   <li><b>Static field bonus:</b> uses {@code hasStaticFieldOverlap}.</li>
-     *   <li><b>coverageBonus:</b> when {@code > 0}, skips both depOverlap and
-     *       complexityScore (matching real scorer behaviour).  A faithful set-cover
-     *       re-run is not possible from stored outcomes, so depOverlap is used as a
-     *       proxy even in coverageBonus mode.</li>
-     * </ul>
-     */
-    public static double computeAPFDWithWeights(List<TestOutcome> outcomes, ScoringWeights w) {
-        return APFDCalculator.computeAPFDWithWeights(outcomes, w);
-    }
-
-    /**
-     * Like {@link #computeAPFDWithWeights} but returns APFDc (cost-cognizant)
-     * using EMA durations as test execution cost.
-     * Falls back to standard APFD when duration data is unavailable.
-     */
-    public static double computeAPFDcWithWeights(List<TestOutcome> outcomes,
-                                                  ScoringWeights w,
-                                                  Map<String, Long> durations) {
-        return APFDCalculator.computeAPFDcWithWeights(outcomes, w, durations);
-    }
-
-    /** Shared comparator: scores outcomes by the given weights (descending). */
-    private static Comparator<TestOutcome> reorderComparator(ScoringWeights w) {
-        return APFDCalculator.reorderComparator(w);
-    }
-
     /** Build a RunRecord from pending breakdowns and actual outcomes. */
     public static RunRecord buildRunRecord(List<String> executionOrder, Set<String> failedClasses) {
         Map<String, ScoreBreakdown> pendingBreakdowns = getPendingBreakdowns();
@@ -837,7 +655,7 @@ public class TestOrderState {
             }
         }
         return new RunRecord(System.currentTimeMillis(), executionOrder.size(),
-                failureCount, firstFailPos, computeAPFD(outcomes), outcomes);
+            failureCount, firstFailPos, APFDCalculator.computeAPFD(outcomes), outcomes);
     }
 
     // ── Persistence ──────────────────────────────────────────────────
@@ -852,29 +670,29 @@ public class TestOrderState {
 
         // config (only persist non-default values)
         Map<String, Object> configMap = new LinkedHashMap<>();
-        if (failureDecay != DEFAULT_FAILURE_DECAY)
-            configMap.put("failureDecay", failureDecay);
-        if (methodFailureDecay != DEFAULT_METHOD_FAILURE_DECAY)
-            configMap.put("methodFailureDecay", methodFailureDecay);
-        if (durationAlpha != DEFAULT_DURATION_ALPHA)
-            configMap.put("durationAlpha", durationAlpha);
-        if (methodDurationAlpha != DEFAULT_METHOD_DURATION_ALPHA)
-            configMap.put("methodDurationAlpha", methodDurationAlpha);
-        if (failurePruneThreshold != DEFAULT_FAILURE_PRUNE_THRESHOLD)
-            configMap.put("failurePruneThreshold", failurePruneThreshold);
-        if (emaVarianceThreshold != DEFAULT_EMA_VARIANCE_THRESHOLD)
-            configMap.put("emaVarianceThreshold", emaVarianceThreshold);
-        if (historyMaxRuns != MAX_HISTORY_RUNS)
-            configMap.put("historyMaxRuns", historyMaxRuns);
-        if (runsSinceLearn != 0)
-            configMap.put("runsSinceLearn", runsSinceLearn);
+        if (config.failureDecay() != DEFAULT_FAILURE_DECAY)
+            configMap.put("failureDecay", config.failureDecay());
+        if (config.methodFailureDecay() != DEFAULT_METHOD_FAILURE_DECAY)
+            configMap.put("methodFailureDecay", config.methodFailureDecay());
+        if (config.durationAlpha() != DEFAULT_DURATION_ALPHA)
+            configMap.put("durationAlpha", config.durationAlpha());
+        if (config.methodDurationAlpha() != DEFAULT_METHOD_DURATION_ALPHA)
+            configMap.put("methodDurationAlpha", config.methodDurationAlpha());
+        if (config.failurePruneThreshold() != DEFAULT_FAILURE_PRUNE_THRESHOLD)
+            configMap.put("failurePruneThreshold", config.failurePruneThreshold());
+        if (config.emaVarianceThreshold() != DEFAULT_EMA_VARIANCE_THRESHOLD)
+            configMap.put("emaVarianceThreshold", config.emaVarianceThreshold());
+        if (config.historyMaxRuns() != MAX_HISTORY_RUNS)
+            configMap.put("historyMaxRuns", config.historyMaxRuns());
+        if (config.runsSinceLearn() != 0)
+            configMap.put("runsSinceLearn", config.runsSinceLearn());
         if (!configMap.isEmpty())
             root.put("config", configMap);
 
         root.put("weights", new LinkedHashMap<>(weights.toMap()));
-        root.put("durations", new LinkedHashMap<>(durations));
-        if (!durationVariances.isEmpty()) {
-            root.put("durationVariances", new LinkedHashMap<>(durationVariances));
+        root.put("durations", new LinkedHashMap<>(durationTracker.classDurations()));
+        if (!durationTracker.classDurationVariances().isEmpty()) {
+            root.put("durationVariances", new LinkedHashMap<>(durationTracker.classDurationVariances()));
         }
 
         // failure scores: decay historical when a test run completed (detected via addRunRecord)
@@ -882,35 +700,18 @@ public class TestOrderState {
         // then add pending failures (current run) at full weight, prune.
         // When save() is called without a run (e.g. optimizer saving weights only),
         // scores are preserved without decay — decay represents "one run passed".
-        boolean hasRunData = pendingRunCompleted || !pendingFailureScores.isEmpty()
-                || !pendingMethodFailureScores.isEmpty();
-        double retain = hasRunData ? (1.0 - failureDecay) : 1.0;
-        Map<String, Object> mergedFailures = new LinkedHashMap<>();
-        // Iterate historical scores first, applying decay
-        for (var entry : failureScores.entrySet()) {
-            double historical = entry.getValue() * retain;
-            double pending = pendingFailureScores.getOrDefault(entry.getKey(), 0.0);
-            double total = historical + pending;
-            if (total >= failurePruneThreshold) {
-                mergedFailures.put(entry.getKey(), total);
-            } else if (entry.getValue() >= failurePruneThreshold) {
-                LOG.fine(() -> "Pruned failure score for " + entry.getKey()
-                        + ": " + entry.getValue() + " → " + total
-                        + " (threshold " + failurePruneThreshold + ")");
-            }
-        }
-        // Then add any pending-only entries (new failures not in historical)
-        for (var entry : pendingFailureScores.entrySet()) {
-            if (!failureScores.containsKey(entry.getKey())) {
-                if (entry.getValue() >= failurePruneThreshold) {
-                    mergedFailures.put(entry.getKey(), entry.getValue());
-                }
-            }
-        }
+        boolean hasRunData = pendingRunCompleted || failureHistory.hasPendingData();
+        FailureHistoryTracker.PersistedScores mergedFailureState = failureHistory.mergeForSave(
+                hasRunData,
+                config.failureDecay(),
+                config.methodFailureDecay(),
+                config.failurePruneThreshold(),
+                LOG);
+        Map<String, Object> mergedFailures = mergedFailureState.failureScores();
         root.put("failureScores", mergedFailures);
 
         // run history (capped at MAX_HISTORY_RUNS, most recent entries)
-        List<RunRecord> persistedRuns = thinRunHistory(runs, historyMaxRuns);
+        List<RunRecord> persistedRuns = RunHistoryManager.thinRunHistory(runHistory.runs(), config.historyMaxRuns());
         // Prune stale duration and failure entries for test classes no longer in runs
         pruneStaleEntries();
         List<Object> runsList = new ArrayList<>(persistedRuns.size());
@@ -920,9 +721,9 @@ public class TestOrderState {
         root.put("runs", runsList);
 
         // method durations (class → method → EMA duration)
-        if (!methodDurations.isEmpty()) {
+        if (!durationTracker.methodDurations().isEmpty()) {
             Map<String, Object> mdMap = new LinkedHashMap<>();
-            for (var classEntry : methodDurations.entrySet()) {
+            for (var classEntry : durationTracker.methodDurations().entrySet()) {
                 Map<String, Object> methods = new LinkedHashMap<>();
                 for (var methodEntry : classEntry.getValue().entrySet()) {
                     methods.put(methodEntry.getKey(), methodEntry.getValue());
@@ -931,9 +732,9 @@ public class TestOrderState {
             }
             root.put("methodDurations", mdMap);
         }
-        if (!methodDurationVariances.isEmpty()) {
+        if (!durationTracker.methodDurationVariances().isEmpty()) {
             Map<String, Object> mdvMap = new LinkedHashMap<>();
-            for (var classEntry : methodDurationVariances.entrySet()) {
+            for (var classEntry : durationTracker.methodDurationVariances().entrySet()) {
                 Map<String, Object> methods = new LinkedHashMap<>();
                 for (var methodEntry : classEntry.getValue().entrySet()) {
                     methods.put(methodEntry.getKey(), methodEntry.getValue());
@@ -944,23 +745,7 @@ public class TestOrderState {
         }
 
         // method failure scores: decay historical only when new run data exists, add pending, prune
-        double methodRetain = hasRunData ? (1.0 - methodFailureDecay) : 1.0;
-        Map<String, Object> mergedMethodFailures = new LinkedHashMap<>();
-        for (var entry : methodFailureScores.entrySet()) {
-            double historical = entry.getValue() * methodRetain;
-            double pending = pendingMethodFailureScores.getOrDefault(entry.getKey(), 0.0);
-            double total = historical + pending;
-            if (total >= failurePruneThreshold) {
-                mergedMethodFailures.put(entry.getKey(), total);
-            }
-        }
-        for (var entry : pendingMethodFailureScores.entrySet()) {
-            if (!methodFailureScores.containsKey(entry.getKey())) {
-                if (entry.getValue() >= failurePruneThreshold) {
-                    mergedMethodFailures.put(entry.getKey(), entry.getValue());
-                }
-            }
-        }
+        Map<String, Object> mergedMethodFailures = mergedFailureState.methodFailureScores();
         if (!mergedMethodFailures.isEmpty()) {
             root.put("methodFailureScores", mergedMethodFailures);
         }
@@ -981,73 +766,10 @@ public class TestOrderState {
     private transient List<RunRecord> persistedRunsAfterSave = List.of();
 
     void afterSave() {
-        failureScores.clear();
-        for (var e : persistedFailureScores.entrySet()) {
-            failureScores.put(e.getKey(), ((Number) e.getValue()).doubleValue());
-        }
-        pendingFailureScores.clear();
-        methodFailureScores.clear();
-        for (var e : persistedMethodFailureScores.entrySet()) {
-            methodFailureScores.put(e.getKey(), ((Number) e.getValue()).doubleValue());
-        }
-        pendingMethodFailureScores.clear();
-        replaceRunHistory(persistedRunsAfterSave);
+        failureHistory.applyPersisted(new FailureHistoryTracker.PersistedScores(
+                persistedFailureScores, persistedMethodFailureScores));
+        runHistory.replace(persistedRunsAfterSave);
         pendingRunCompleted = false;
-    }
-
-    /**
-     * Compact outcome serialization: packs booleans into a flags integer.
-     * <p>Flags: bit0=isNew, bit1=isChanged, bit2=isFast, bit3=isSlow, bit4=failed,
-     * bit5=hasStaticFieldOverlap.
-     * <p>Format: always {@code [testClass, flags, depOverlap, depTotal, failScore,
-     * complexityOverlap, speedRatio]} — a fixed 7-element list for simplicity and
-     * forward/backward compatibility.
-     */
-    static List<Object> outcomeToCompact(TestOutcome o) {
-        int flags = (o.isNew() ? 1 : 0)
-                  | (o.isChanged() ? 2 : 0)
-                  | (o.isFast() ? 4 : 0)
-                  | (o.isSlow() ? 8 : 0)
-                  | (o.failed() ? 16 : 0)
-                  | (o.hasStaticFieldOverlap() ? 32 : 0);
-        return List.of(o.testClass(), flags, o.depOverlap(), o.depTotal(), o.failScore(),
-                o.complexityOverlap(), o.speedRatio());
-    }
-
-    /**
-     * Deserializes a compact outcome.
-     * <p>Accepts the canonical format: {@code [testClass, flags, depOverlap, depTotal,
-     * failScore, complexityOverlap, speedRatio]}.
-     * <p>Returns {@code null} for any unrecognized or legacy format (e.g. all-numeric
-     * lists from old state files, plain integers, maps). Callers must filter nulls.
-     * This prevents stale state files from crashing test discovery.
-     */
-    static TestOutcome compactToOutcome(Object obj) {
-        if (!(obj instanceof List<?>)) {
-            LOG.fine("Skipping non-list outcome entry (legacy format): " + (obj == null ? "null" : obj.getClass().getSimpleName()));
-            return null;
-        }
-        List<Object> arr = Util.asList(obj);
-        if (arr.isEmpty() || !(arr.get(0) instanceof String)) {
-            LOG.fine("Skipping numeric/empty compact outcome entry (legacy format)");
-            return null;
-        }
-        try {
-            String tc = (String) arr.get(0);
-            int flags = toInt(arr.get(1));
-            return new TestOutcome(tc, 0,
-                    (flags & 1) != 0, (flags & 2) != 0,
-                    arr.size() > 2 ? toInt(arr.get(2)) : 0,
-                    arr.size() > 3 ? toInt(arr.get(3)) : 0,
-                    arr.size() > 4 ? toDouble(arr.get(4)) : 0.0,
-                    (flags & 4) != 0, (flags & 8) != 0, (flags & 16) != 0,
-                    arr.size() > 5 ? toDouble(arr.get(5)) : 0.0,
-                    arr.size() > 6 ? toDouble(arr.get(6)) : 0.0,
-                    (flags & 32) != 0);
-        } catch (NumberFormatException e) {
-            LOG.warning("Malformed compact outcome entry, skipping: " + e.getMessage());
-            return null;
-        }
     }
 
     private static Map<String, Object> runRecordToMap(RunRecord r) {
@@ -1059,7 +781,7 @@ public class TestOrderState {
         m.put("apfd", r.apfd());
         // omit outcomes for runs without failures — they are unused by the optimizer
         if (r.totalFailures() > 0) {
-            m.put("outcomes", r.outcomes().stream().map(TestOrderState::outcomeToCompact).toList());
+            m.put("outcomes", r.outcomes().stream().map(StateRecordCodec::outcomeToCompact).toList());
         }
         return m;
     }
@@ -1093,21 +815,21 @@ public class TestOrderState {
         if (root.containsKey("config")) {
             Map<String, Object> cm = safeMap(root.get("config"), "config");
             if (cm.containsKey("failureDecay"))
-                state.failureDecay = safeDouble(cm.get("failureDecay"), state.failureDecay, "config.failureDecay");
+                state.setFailureDecay(safeDouble(cm.get("failureDecay"), state.failureDecay(), "config.failureDecay"));
             if (cm.containsKey("methodFailureDecay"))
-                state.methodFailureDecay = safeDouble(cm.get("methodFailureDecay"), state.methodFailureDecay, "config.methodFailureDecay");
+                state.setMethodFailureDecay(safeDouble(cm.get("methodFailureDecay"), state.methodFailureDecay(), "config.methodFailureDecay"));
             if (cm.containsKey("durationAlpha"))
-                state.durationAlpha = safeDouble(cm.get("durationAlpha"), state.durationAlpha, "config.durationAlpha");
+                state.setDurationAlpha(safeDouble(cm.get("durationAlpha"), state.durationAlpha(), "config.durationAlpha"));
             if (cm.containsKey("methodDurationAlpha"))
-                state.methodDurationAlpha = safeDouble(cm.get("methodDurationAlpha"), state.methodDurationAlpha, "config.methodDurationAlpha");
+                state.setMethodDurationAlpha(safeDouble(cm.get("methodDurationAlpha"), state.methodDurationAlpha(), "config.methodDurationAlpha"));
             if (cm.containsKey("failurePruneThreshold"))
-                state.failurePruneThreshold = safeDouble(cm.get("failurePruneThreshold"), state.failurePruneThreshold, "config.failurePruneThreshold");
+                state.setFailurePruneThreshold(safeDouble(cm.get("failurePruneThreshold"), state.failurePruneThreshold(), "config.failurePruneThreshold"));
             if (cm.containsKey("emaVarianceThreshold"))
-                state.emaVarianceThreshold = safeDouble(cm.get("emaVarianceThreshold"), state.emaVarianceThreshold, "config.emaVarianceThreshold");
+                state.setEmaVarianceThreshold(safeDouble(cm.get("emaVarianceThreshold"), state.emaVarianceThreshold(), "config.emaVarianceThreshold"));
             if (cm.containsKey("historyMaxRuns"))
-                state.historyMaxRuns = safeInt(cm.get("historyMaxRuns"), state.historyMaxRuns, "config.historyMaxRuns");
+                state.setHistoryMaxRuns(safeInt(cm.get("historyMaxRuns"), state.historyMaxRuns(), "config.historyMaxRuns"));
             if (cm.containsKey("runsSinceLearn"))
-                state.runsSinceLearn = safeInt(cm.get("runsSinceLearn"), state.runsSinceLearn, "config.runsSinceLearn");
+                state.config.setRunsSinceLearn(safeInt(cm.get("runsSinceLearn"), 0, "config.runsSinceLearn"));
         }
 
         // weights
@@ -1124,13 +846,13 @@ public class TestOrderState {
         if (root.containsKey("durations")) {
             Map<String, Object> dm = safeMap(root.get("durations"), "durations");
             for (var e : dm.entrySet()) {
-                state.durations.put(e.getKey(), safeLong(e.getValue(), 0L, "durations." + e.getKey()));
+                state.durationTracker.putClassDuration(e.getKey(), safeLong(e.getValue(), 0L, "durations." + e.getKey()));
             }
         }
         if (root.containsKey("durationVariances")) {
             Map<String, Object> dvm = safeMap(root.get("durationVariances"), "durationVariances");
             for (var e : dvm.entrySet()) {
-                state.durationVariances.put(e.getKey(), safeDouble(e.getValue(), 0.0,
+                state.durationTracker.putClassDurationVariance(e.getKey(), safeDouble(e.getValue(), 0.0,
                         "durationVariances." + e.getKey()));
             }
         }
@@ -1139,7 +861,8 @@ public class TestOrderState {
         if (root.containsKey("failureScores")) {
             Map<String, Object> fsm = safeMap(root.get("failureScores"), "failureScores");
             for (var e : fsm.entrySet()) {
-                state.failureScores.put(e.getKey(), safeDouble(e.getValue(), 0.0, "failureScores." + e.getKey()));
+                state.failureHistory.loadFailureScore(e.getKey(),
+                        safeDouble(e.getValue(), 0.0, "failureScores." + e.getKey()));
             }
         }
 
@@ -1148,7 +871,7 @@ public class TestOrderState {
             for (Object item : safeList(root.get("runs"), "runs")) {
                 Map<String, Object> runMap = safeMap(item, "runs[]");
                 if (!runMap.isEmpty()) {
-                    state.runs.add(mapToRunRecord(runMap));
+                    state.runHistory.addRaw(mapToRunRecord(runMap));
                 }
             }
         }
@@ -1159,9 +882,8 @@ public class TestOrderState {
             for (var classEntry : mdMap.entrySet()) {
                 Map<String, Object> methods = safeMap(classEntry.getValue(), "methodDurations." + classEntry.getKey());
                 for (var methodEntry : methods.entrySet()) {
-                    state.methodDurations
-                            .computeIfAbsent(classEntry.getKey(), k -> new LinkedHashMap<>())
-                            .put(methodEntry.getKey(), safeDouble(methodEntry.getValue(), 0.0,
+                    state.durationTracker.putMethodDuration(classEntry.getKey(), methodEntry.getKey(),
+                            safeDouble(methodEntry.getValue(), 0.0,
                                     "methodDurations." + classEntry.getKey() + "." + methodEntry.getKey()));
                 }
             }
@@ -1172,10 +894,9 @@ public class TestOrderState {
                 Map<String, Object> methods = safeMap(classEntry.getValue(),
                         "methodDurationVariances." + classEntry.getKey());
                 for (var methodEntry : methods.entrySet()) {
-                    state.methodDurationVariances
-                            .computeIfAbsent(classEntry.getKey(), ignored -> new LinkedHashMap<>())
-                            .put(methodEntry.getKey(), safeDouble(methodEntry.getValue(), 0.0,
-                                    "methodDurationVariances." + classEntry.getKey() + "." + methodEntry.getKey()));
+                    state.durationTracker.putMethodDurationVariance(classEntry.getKey(), methodEntry.getKey(),
+                        safeDouble(methodEntry.getValue(), 0.0,
+                            "methodDurationVariances." + classEntry.getKey() + "." + methodEntry.getKey()));
                 }
             }
         }
@@ -1194,12 +915,12 @@ public class TestOrderState {
         if (root.containsKey("methodFailureScores")) {
             Map<String, Object> mfs = safeMap(root.get("methodFailureScores"), "methodFailureScores");
             for (var e : mfs.entrySet()) {
-                state.methodFailureScores.put(e.getKey(), safeDouble(e.getValue(), 0.0,
+                state.failureHistory.loadMethodFailureScore(e.getKey(), safeDouble(e.getValue(), 0.0,
                         "methodFailureScores." + e.getKey()));
             }
         }
 
-        state.replaceRunHistory(thinRunHistory(state.runs, state.historyMaxRuns));
+        state.runHistory.trimToMax(state.config.historyMaxRuns());
 
         return state;
     }
@@ -1207,7 +928,7 @@ public class TestOrderState {
     private static RunRecord mapToRunRecord(Map<String, Object> rm) {
         List<TestOutcome> outcomes = rm.containsKey("outcomes")
                 ? safeList(rm.get("outcomes"), "runs[].outcomes").stream()
-                    .map(TestOrderState::compactToOutcome)
+                    .map(obj -> StateRecordCodec.compactToOutcome(obj, LOG))
                     .filter(java.util.Objects::nonNull)
                     .toList()
                 : List.of();
@@ -1292,64 +1013,7 @@ public class TestOrderState {
         return Double.parseDouble(o.toString());
     }
 
-    private static boolean toBool(Object o) {
-        if (o == null) return false;
-        if (o instanceof Boolean b) return b;
-        return "true".equals(String.valueOf(o)) || "1".equals(String.valueOf(o));
-    }
-
     // ── Optimizer (jenetics-based genetic algorithm) ─────────────────
-
-    /** Minimum runs with failures needed for meaningful optimisation. */
-    public static final int MIN_RUNS_FOR_OPTIMISATION = 3;
-
-    /** Maximum generations for the genetic algorithm. */
-    private static final int MAX_GENERATIONS = 2000;
-
-    /** Number of generations without improvement before stopping early. */
-    private static final int STEADY_FITNESS_LIMIT = 200;
-
-    /** Population size for the genetic algorithm. */
-    private static final int POPULATION_SIZE = 150;
-
-    /**
-     * L2 regularization strength: penalises weights that deviate from defaults.
-     * <p>
-     * Scaled so that a single weight deviating by its full range (~50 units)
-     * costs approximately 0.05 APFDc points: {@code 0.00002 × 50² = 0.05}.
-     * This is enough to discourage gratuitous parameter shifts while allowing
-     * the optimizer to move weights when there's clear evidence.
-     *
-     * @see <a href="https://doi.org/10.1007/978-0-387-84858-7">Hastie, Tibshirani, Friedman (2009):
-     *      The Elements of Statistical Learning, §3.4 — Shrinkage Methods</a>
-     */
-    private static final double L2_LAMBDA = 0.00002;
-
-    /**
-     * Recency decay factor for expanding-window folds.
-     * Each fold's score is weighted by {@code (1 − decay)^(numFolds − foldIndex)},
-     * so recent folds contribute more. 0.15 means the oldest fold in a 10-fold
-     * window retains about 23% of the weight of the newest fold.
-     *
-     * @see <a href="https://doi.org/10.1109/TSE.2020.2979736">Elsner et al. (2021):
-     *      Empirically Evaluating Readily Available Information for Regression Test Optimization
-     *      in Continuous Integration — §IV.C on recency-weighted historical models</a>
-     */
-    private static final double RECENCY_DECAY = 0.15;
-
-    /**
-     * Minimum training window as a fraction of total runs.
-     * Expanding-window validation starts training on this fraction and grows
-     * by one run per fold until it reaches the last run.
-     */
-    private static final double MIN_TRAIN_FRACTION = 0.5;
-
-    /**
-     * Overfitting threshold: if validation APFDc falls below this fraction of
-     * the training APFDc, the optimized weights are considered overfit and
-     * discarded in favor of the defaults.
-     */
-    private static final double OVERFIT_THRESHOLD = 0.85;
 
     /** Result of the optimizer: weights plus diagnostic scores for reporting. */
     public record OptimizeResult(ScoringWeights weights, double trainScore,
@@ -1405,40 +1069,7 @@ public class TestOrderState {
      * @return optimised result, or {@code null} if insufficient data
      */
     public OptimizeResult optimize(List<WeightDef> defs) {
-        return ScoringOptimizer.optimize(runs, durations, defs, LOG);
+        return ScoringOptimizer.optimize(runHistory.runs(), durationTracker.classDurations(), defs, LOG);
     }
 
-    /** L2 penalty: {@code λ × Σ(wᵢ − defaultᵢ)²}. */
-    static double l2Penalty(int[] w, int[] defaults) {
-        return ScoringOptimizer.l2Penalty(w, defaults);
-    }
-
-    /** Fitness: average APFDc across all runs. */
-    static double evaluateWeights(int[] w, List<RunRecord> runs, Map<String, Long> durations) {
-        return ScoringOptimizer.evaluateWeights(w, runs, durations);
-    }
-
-    /**
-     * Expanding-window cross-validation with recency-weighted APFDc.
-     * <p>
-     * For each fold i (0-based), trains on runs {@code [0, minTrainSize + i)}
-     * and validates on run {@code minTrainSize + i}.  Training score is the
-     * average APFDc on the training window; the fold score is the APFDc on
-     * the single validation run.  The final fitness is the recency-weighted
-     * average of fold scores.
-     * <p>
-     * References:
-     * <ul>
-     *   <li>Hyndman &amp; Athanasopoulos (2021), <i>Forecasting: Principles and Practice</i>,
-     *       §5.4 — Time series cross-validation (expanding window).</li>
-     *   <li>Luo et al. (2019), <i>How Do Static and Dynamic Test Case Prioritization
-     *       Techniques Perform on Modern Software Systems?</i>, TSE —
-     *       demonstrates need for temporal validation in TCP.</li>
-     * </ul>
-     */
-    static double evaluateExpandingWindow(int[] w, List<RunRecord> runs,
-                                           Map<String, Long> durations,
-                                           int minTrainSize, int numFolds) {
-        return ScoringOptimizer.evaluateExpandingWindow(w, runs, durations, minTrainSize, numFolds);
-    }
 }

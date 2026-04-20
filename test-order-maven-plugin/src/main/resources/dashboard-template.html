@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Test Order Dashboard</title>
+<script src="https://cdn.tailwindcss.com" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4" crossorigin="anonymous"></script>
+<script src="https://d3js.org/d3.v7.min.js" crossorigin="anonymous"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif}
+.tab-btn{padding:8px 13px;font-size:11px;white-space:nowrap;border:none;border-bottom:2px solid transparent;cursor:pointer;color:#94a3b8;background:none;transition:all .15s}
+.tab-btn:hover{color:#e2e8f0;background:rgba(99,102,241,.07)}
+.tab-btn.active{color:#818cf8;border-bottom-color:#818cf8}
+.test-item{cursor:pointer;transition:background .1s;border-left:2px solid transparent}
+.test-item:hover{background:rgba(99,102,241,.09)}
+.test-item.selected{background:rgba(99,102,241,.17);border-left-color:#818cf8}
+.badge{display:inline-flex;align-items:center;padding:0 5px;border-radius:9999px;font-size:10px;font-weight:600;line-height:16px}
+.kpi{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 14px;min-width:108px;flex-shrink:0}
+.th-sort{cursor:pointer;user-select:none;white-space:nowrap}
+.th-sort:hover{color:#e2e8f0}
+</style>
+</head>
+<body style="background:#0f172a;color:#f1f5f9;height:100vh;overflow:hidden;">
+
+<script type="application/json" id="dashboard-data">/*DASHBOARD_DATA_PLACEHOLDER*/</script>
+
+<div id="app" style="height:100vh;display:flex;flex-direction:column;">
+
+  <!-- ── No-data splash ─────────────────────────────────────────── -->
+  <div v-if="!hasData" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+    <div style="font-size:3rem;">📊</div>
+    <h2 style="margin:0;color:#94a3b8;font-size:1.2rem;">No test data yet</h2>
+    <p style="margin:0;color:#475569;font-size:.85rem;">Run your Maven build with the test-order plugin to generate data.</p>
+    <p v-if="parseErr" style="margin:0;color:#f87171;font-size:.75rem;font-family:monospace;">{{parseErr}}</p>
+  </div>
+
+  <template v-if="hasData">
+
+  <!-- ── Header ────────────────────────────────────────────────── -->
+  <header style="background:#1e293b;border-bottom:1px solid #334155;padding:7px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0;">
+    <span style="font-weight:700;font-size:1.05rem;color:#818cf8;">{{dd.project.name}}</span>
+    <span style="color:#334155;">│</span>
+    <span style="color:#94a3b8;font-size:.8rem;">{{tests.length}} tests</span>
+    <span v-if="dd.changedClasses.length" style="color:#fbbf24;font-size:.8rem;">{{dd.changedClasses.length}} changed classes</span>
+    <span style="color:#94a3b8;font-size:.8rem;">median {{fmtDur(dd.medianDuration)}}</span>
+  </header>
+
+  <!-- ── KPI row ────────────────────────────────────────────────── -->
+  <div style="background:#1e293b;border-bottom:1px solid #334155;padding:6px 16px;display:flex;gap:8px;overflow-x:auto;flex-shrink:0;">
+    <div class="kpi">
+      <div style="color:#64748b;font-size:.65rem;margin-bottom:3px;">Avg APFD</div>
+      <div style="font-size:1.25rem;font-weight:700;" :style="{color:avgApfd===null?'#64748b':avgApfd>=.7?'#4ade80':avgApfd>=.5?'#fbbf24':'#f87171'}">
+        {{avgApfd!==null?(avgApfd*100).toFixed(1)+'%':'N/A'}}
+      </div>
+    </div>
+    <div class="kpi">
+      <div style="color:#64748b;font-size:.65rem;margin-bottom:3px;">Latest Failures</div>
+      <div style="font-size:1.25rem;font-weight:700;" :style="{color:latestRun&&latestRun.totalFailures>0?'#f87171':'#4ade80'}">
+        {{latestRun?latestRun.totalFailures:'—'}}
+      </div>
+    </div>
+    <div class="kpi">
+      <div style="color:#64748b;font-size:.65rem;margin-bottom:2px;">Fastest</div>
+      <div style="font-size:.78rem;font-weight:600;color:#67e8f9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px;">{{fastestTest?sn(fastestTest.name):'—'}}</div>
+      <div style="font-size:.68rem;color:#475569;">{{fastestTest&&fastestTest.duration>=0?fmtDur(fastestTest.duration):''}}</div>
+    </div>
+    <div class="kpi">
+      <div style="color:#64748b;font-size:.65rem;margin-bottom:2px;">Slowest</div>
+      <div style="font-size:.78rem;font-weight:600;color:#fb923c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px;">{{slowestTest?sn(slowestTest.name):'—'}}</div>
+      <div style="font-size:.68rem;color:#475569;">{{slowestTest&&slowestTest.duration>=0?fmtDur(slowestTest.duration):''}}</div>
+    </div>
+    <div class="kpi">
+      <div style="color:#64748b;font-size:.65rem;margin-bottom:3px;">Changed Tests</div>
+      <div style="font-size:1.25rem;font-weight:700;color:#fbbf24;">{{dd.changedTestClasses.length}}</div>
+    </div>
+    <div class="kpi">
+      <div style="color:#64748b;font-size:.65rem;margin-bottom:3px;">Total Runs</div>
+      <div style="font-size:1.25rem;font-weight:700;color:#818cf8;">{{runs.length}}</div>
+    </div>
+  </div>
+
+  <!-- ── Main ───────────────────────────────────────────────────── -->
+  <div style="flex:1;display:flex;overflow:hidden;">
+
+    <!-- Left panel -->
+    <aside style="width:215px;flex-shrink:0;background:#1e293b;border-right:1px solid #334155;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:7px 8px;border-bottom:1px solid #334155;flex-shrink:0;">
+        <input v-model="leftSearch" placeholder="Filter tests…"
+          style="width:100%;background:#0f172a;color:#e2e8f0;font-size:.72rem;padding:4px 8px;border:1px solid #334155;border-radius:4px;outline:none;">
+      </div>
+      <div style="flex:1;overflow-y:auto;">
+        <div v-for="t in leftTests" :key="t.name" class="test-item"
+          :class="{selected: selectedTest&&selectedTest.name===t.name}"
+          :style="{opacity:t.score===0?.4:1, padding:'5px 8px', borderBottom:'1px solid rgba(51,65,85,.35)'}"
+          @click="selectTest(t)">
+          <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;">
+            <span style="font-size:.68rem;color:#475569;width:22px;text-align:right;flex-shrink:0;">{{t.rank}}</span>
+            <span style="font-size:.73rem;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;" :title="t.name">{{sn(t.name)}}</span>
+          </div>
+          <div style="display:flex;gap:3px;margin-left:25px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:.7rem;font-weight:700;color:#818cf8;">{{t.score}}</span>
+            <span v-if="t.isChanged" class="badge" style="background:rgba(146,64,14,.45);color:#fbbf24;">C</span>
+            <span v-if="t.isNew" class="badge" style="background:rgba(20,83,45,.45);color:#4ade80;">N</span>
+            <span v-if="t.failScore>0" class="badge" style="background:rgba(127,29,29,.45);color:#f87171;">F</span>
+            <span v-if="t.isFast" class="badge" style="background:rgba(8,51,68,.45);color:#67e8f9;">⚡</span>
+            <span v-if="t.isSlow" class="badge" style="background:rgba(124,45,18,.45);color:#fb923c;">🐢</span>
+            <span v-if="t.hasStaticFieldOverlap" class="badge" style="background:rgba(88,28,135,.45);color:#c084fc;">S</span>
+          </div>
+        </div>
+        <div v-if="leftTests.length===0" style="padding:14px 8px;font-size:.75rem;color:#475569;text-align:center;">No tests match</div>
+      </div>
+    </aside>
+
+    <!-- Right column -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
+
+      <!-- Tab nav -->
+      <nav style="background:#1e293b;border-bottom:1px solid #334155;display:flex;overflow-x:auto;flex-shrink:0;">
+        <button v-for="tab in TABS" :key="tab.id" class="tab-btn" :class="{active:activeTab===tab.id}" @click="setTab(tab.id)">{{tab.label}}</button>
+      </nav>
+
+      <!-- Tab content -->
+      <main style="flex:1;overflow-y:auto;padding:14px 16px;">
+
+        <!-- ══ Tab 1: Test Explorer ══════════════════════════════ -->
+        <div v-if="activeTab==='explorer'">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <input v-model="searchQ" placeholder="Search tests…"
+              style="background:#1e293b;color:#e2e8f0;font-size:.8rem;padding:5px 10px;border:1px solid #334155;border-radius:5px;outline:none;width:260px;">
+            <span style="font-size:.75rem;color:#475569;">{{filteredTests.length}} / {{tests.length}}</span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:.75rem;">
+              <thead>
+                <tr style="color:#64748b;border-bottom:1px solid #334155;">
+                  <th v-for="col in ECOLS" :key="col.key" class="th-sort"
+                    :style="{padding:'6px 8px',textAlign:'left',color:sortKey===col.key?'#818cf8':'#64748b'}"
+                    @click="sortBy(col.key)">
+                    {{col.label}}<span v-if="sortKey===col.key"> {{sortDir==='asc'?'↑':'↓'}}</span>
+                  </th>
+                  <th style="padding:6px 8px;text-align:left;color:#64748b;">Badges</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="t in filteredTests" :key="t.name"
+                  style="border-bottom:1px solid rgba(51,65,85,.35);cursor:pointer;transition:background .1s;"
+                  :style="{opacity:t.score===0?.4:1, background:selectedTest&&selectedTest.name===t.name?'rgba(99,102,241,.12)':''}"
+                  @mouseover="$event.currentTarget.style.background='rgba(99,102,241,.07)'"
+                  @mouseleave="$event.currentTarget.style.background=selectedTest&&selectedTest.name===t.name?'rgba(99,102,241,.12)':''"
+                  @click="selectTest(t)">
+                  <td style="padding:5px 8px;color:#64748b;">{{t.rank}}</td>
+                  <td style="padding:5px 8px;color:#e2e8f0;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="t.name">{{sn(t.name)}}</td>
+                  <td style="padding:5px 8px;font-weight:700;color:#818cf8;">{{t.score}}</td>
+                  <td style="padding:5px 8px;color:#94a3b8;">{{t.depOverlap}}/{{t.depTotal}}</td>
+                  <td style="padding:5px 8px;" :style="{color:t.failScore>0?'#f87171':'#64748b'}">{{t.failScore.toFixed(1)}}</td>
+                  <td style="padding:5px 8px;color:#94a3b8;">{{t.duration>=0?fmtDur(t.duration):'—'}}</td>
+                  <td style="padding:5px 8px;">
+                    <div style="display:flex;gap:3px;flex-wrap:wrap;">
+                      <span v-if="t.isChanged" class="badge" style="background:rgba(146,64,14,.45);color:#fbbf24;">CHANGED</span>
+                      <span v-if="t.isNew" class="badge" style="background:rgba(20,83,45,.45);color:#4ade80;">NEW</span>
+                      <span v-if="t.failScore>0" class="badge" style="background:rgba(127,29,29,.45);color:#f87171;">FAILING</span>
+                      <span v-if="t.isFast" class="badge" style="background:rgba(8,51,68,.45);color:#67e8f9;">FAST</span>
+                      <span v-if="t.isSlow" class="badge" style="background:rgba(124,45,18,.45);color:#fb923c;">SLOW</span>
+                      <span v-if="t.hasStaticFieldOverlap" class="badge" style="background:rgba(88,28,135,.45);color:#c084fc;">STATIC</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ══ Tab 2: Score Breakdown ════════════════════════════ -->
+        <div v-if="activeTab==='breakdown'">
+          <div v-if="!selectedTest" style="height:180px;display:flex;align-items:center;justify-content:center;color:#475569;">
+            ← Select a test from the left panel
+          </div>
+          <div v-else>
+            <h3 style="margin:0 0 10px;font-size:.85rem;color:#94a3b8;">Score breakdown: <span style="color:#e2e8f0;">{{sn(selectedTest.name)}}</span> &nbsp; total = <span style="color:#818cf8;font-weight:700;">{{selectedTest.score}}</span></h3>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;margin-bottom:14px;height:72px;position:relative;">
+              <canvas id="bdChart"></canvas>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:8px;">
+              <template v-for="c in scoreComps" :key="c.label">
+                <div v-if="c.value!==0" style="background:#1e293b;border-radius:6px;padding:10px;">
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
+                    <span style="width:10px;height:10px;border-radius:2px;flex-shrink:0;" :style="{background:c.color}"></span>
+                    <span style="font-size:.78rem;font-weight:600;color:#e2e8f0;">{{c.label}}</span>
+                    <span style="margin-left:auto;font-size:.78rem;font-weight:700;" :style="{color:c.value>0?'#4ade80':'#f87171'}">{{c.value>0?'+':''}}{{c.value}}</span>
+                  </div>
+                  <p style="margin:0;font-size:.72rem;color:#64748b;">{{c.explanation}}</p>
+                </div>
+              </template>
+              <div v-if="scoreComps.every(c=>c.value===0)" style="grid-column:1/-1;text-align:center;color:#475569;padding:20px;">All score components are zero.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Tab 3: Dependency Graph ═══════════════════════════ -->
+        <div v-if="activeTab==='depgraph'" style="height:calc(100vh - 255px);min-height:380px;display:flex;flex-direction:column;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-shrink:0;flex-wrap:wrap;">
+            <span style="font-size:.75rem;color:#64748b;">View:</span>
+            <button v-for="m in GMODES" :key="m.id"
+              :disabled="m.id==='full'&&totalNodes>300"
+              @click="setGraphMode(m.id)"
+              :style="{padding:'3px 10px',fontSize:'.72rem',borderRadius:'4px',border:'1px solid',cursor:m.id==='full'&&totalNodes>300?'not-allowed':'pointer',background:graphMode===m.id?'#4338ca':'transparent',borderColor:graphMode===m.id?'#6366f1':'#334155',color:graphMode===m.id?'#e2e8f0':'#94a3b8',opacity:m.id==='full'&&totalNodes>300?.4:1}">
+              {{m.label}}<span v-if="m.id==='full'&&totalNodes>300" style="color:#fb923c;"> ({{totalNodes}})</span>
+            </button>
+            <span style="margin-left:auto;font-size:.7rem;color:#475569;display:flex;gap:10px;">
+              <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#3b82f6;vertical-align:middle;margin-right:3px;"></span>test</span>
+              <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;vertical-align:middle;margin-right:3px;"></span>changed</span>
+              <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#64748b;vertical-align:middle;margin-right:3px;"></span>unchanged</span>
+            </span>
+          </div>
+          <div v-if="!selectedTest&&graphMode==='focus'" style="flex:1;display:flex;align-items:center;justify-content:center;color:#475569;">
+            ← Select a test to view its dependency graph
+          </div>
+          <div v-else id="dg-wrap" style="flex:1;background:#1e293b;border-radius:6px;overflow:hidden;position:relative;"></div>
+        </div>
+
+        <!-- ══ Tab 4: Project Timeline ═══════════════════════════ -->
+        <div v-if="activeTab==='timeline'">
+          <div v-if="runs.length===0" style="height:180px;display:flex;align-items:center;justify-content:center;color:#475569;">No run history yet</div>
+          <div v-else style="display:flex;flex-direction:column;gap:10px;">
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">APFD over time <span style="color:#334155;">(dashed = 0.5 random baseline)</span></div>
+              <div style="height:100px;position:relative;"><canvas id="tl-apfd"></canvas></div>
+            </div>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Failures per run</div>
+              <div style="height:80px;position:relative;"><canvas id="tl-fail"></canvas></div>
+            </div>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">First failure position (hollow = no failure in run)</div>
+              <div style="height:80px;position:relative;"><canvas id="tl-ffp"></canvas></div>
+            </div>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Test count per run</div>
+              <div style="height:80px;position:relative;"><canvas id="tl-cnt"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Tab 5: Per-Test History ═══════════════════════════ -->
+        <div v-if="activeTab==='history'">
+          <div v-if="!selectedTest" style="height:180px;display:flex;align-items:center;justify-content:center;color:#475569;">
+            ← Select a test to view its run history
+          </div>
+          <div v-else style="display:flex;flex-direction:column;gap:10px;">
+            <h3 style="margin:0;font-size:.85rem;color:#94a3b8;">History: <span style="color:#e2e8f0;">{{sn(selectedTest.name)}}</span></h3>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Duration (ms) — dashed = current EMA</div>
+              <div style="height:90px;position:relative;"><canvas id="h-dur"></canvas></div>
+            </div>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Pass / Fail strip</div>
+              <div style="display:flex;flex-wrap:wrap;gap:3px;padding:4px 0;">
+                <div v-for="(r,i) in testOutcomes" :key="i"
+                  style="width:14px;height:14px;border-radius:2px;flex-shrink:0;cursor:default;"
+                  :title="fmtTime(r.ts)+(r.present?(r.failed?' — FAILED':' — passed'):' — not in run')"
+                  :style="{background:r.present?(r.failed?'#ef4444':'#22c55e'):'#1e293b',border:'1px solid',borderColor:r.present?(r.failed?'#b91c1c':'#15803d'):'#334155'}">
+                </div>
+              </div>
+            </div>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Score over time (recomputed with current weights)</div>
+              <div style="height:80px;position:relative;"><canvas id="h-score"></canvas></div>
+            </div>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Run position (lower = ran earlier)</div>
+              <div style="height:80px;position:relative;"><canvas id="h-pos"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Tab 6: Distributions ══════════════════════════════ -->
+        <div v-if="activeTab==='distributions'">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Score distribution</div>
+              <div style="height:160px;position:relative;"><canvas id="d-score"></canvas></div>
+            </div>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Duration distribution (log buckets)</div>
+              <div style="height:160px;position:relative;"><canvas id="d-dur"></canvas></div>
+            </div>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Dependency count distribution</div>
+              <div style="height:160px;position:relative;"><canvas id="d-deps"></canvas></div>
+            </div>
+            <div style="background:#1e293b;border-radius:6px;padding:10px;">
+              <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">Top 20 by fail score</div>
+              <div style="height:160px;position:relative;"><canvas id="d-fail"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ Tab 7: Weights Explorer ═══════════════════════════ -->
+        <div v-if="activeTab==='weights'">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <h3 style="margin:0;font-size:.85rem;color:#94a3b8;">Weight Sliders</h3>
+            <button @click="resetWeights" style="margin-left:auto;padding:4px 12px;font-size:.72rem;background:#334155;color:#e2e8f0;border:1px solid #475569;border-radius:4px;cursor:pointer;">Reset to defaults</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:6px;margin-bottom:16px;">
+            <div v-for="wd in dd.weightDefs" :key="wd.name" style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#1e293b;border-radius:5px;">
+              <span style="font-size:.73rem;color:#94a3b8;width:155px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="wd.name">{{wd.name}}</span>
+              <input type="range" :min="wd.min" :max="wd.max" step="1"
+                v-model.number="lw[wd.name]"
+                :disabled="wd.name==='coverageBonus'&&dd.weights.coverageBonus>0"
+                :title="wd.name==='coverageBonus'&&dd.weights.coverageBonus>0?'Set-cover bonus cannot be simulated client-side':''"
+                style="flex:1;accent-color:#6366f1;">
+              <span style="font-size:.73rem;color:#818cf8;width:26px;text-align:right;">{{lw[wd.name]}}</span>
+              <span style="font-size:.68rem;color:#334155;width:26px;text-align:right;">({{wd.defaultValue}})</span>
+              <span v-if="wd.name==='coverageBonus'&&dd.weights.coverageBonus>0" title="Cannot simulate set-cover bonus client-side" style="font-size:.75rem;">⚠️</span>
+            </div>
+          </div>
+          <h3 style="margin:0 0 8px;font-size:.85rem;color:#94a3b8;">Rank comparison</h3>
+          <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:.73rem;">
+              <thead style="position:sticky;top:0;background:#0f172a;">
+                <tr style="color:#64748b;border-bottom:1px solid #334155;">
+                  <th style="padding:5px 8px;text-align:left;">Test</th>
+                  <th style="padding:5px 8px;text-align:right;">Orig rank</th>
+                  <th style="padding:5px 8px;text-align:right;">Sim rank</th>
+                  <th style="padding:5px 8px;text-align:right;">Δ rank</th>
+                  <th style="padding:5px 8px;text-align:right;">Orig score</th>
+                  <th style="padding:5px 8px;text-align:right;">Sim score</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in simResults" :key="r.name"
+                  style="border-bottom:1px solid rgba(51,65,85,.3);"
+                  :style="{background:Math.abs(r.delta)>5?'rgba(120,53,15,.12)':''}">
+                  <td style="padding:4px 8px;color:#e2e8f0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="r.name">{{sn(r.name)}}</td>
+                  <td style="padding:4px 8px;text-align:right;color:#64748b;">{{r.origRank}}</td>
+                  <td style="padding:4px 8px;text-align:right;color:#64748b;">{{r.simRank}}</td>
+                  <td style="padding:4px 8px;text-align:right;font-weight:700;" :style="{color:r.delta<-5?'#4ade80':r.delta>5?'#f87171':'#475569'}">{{r.delta>0?'+':''}}{{r.delta}}</td>
+                  <td style="padding:4px 8px;text-align:right;color:#64748b;">{{r.origScore}}</td>
+                  <td style="padding:4px 8px;text-align:right;color:#818cf8;">{{r.simScore}}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ══ Tab 8: Coverage Treemap ═══════════════════════════ -->
+        <div v-if="activeTab==='coverage'" style="height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;">
+          <div style="font-size:2.5rem;">🗺️</div>
+          <p style="margin:0;color:#94a3b8;font-weight:500;">Coverage data not available</p>
+          <p style="margin:0;font-size:.78rem;color:#475569;">Coverage integration is reserved for a future plugin version.</p>
+        </div>
+
+      </main><!-- end tab content -->
+    </div><!-- end right column -->
+  </div><!-- end main -->
+
+  <!-- ── Footer ────────────────────────────────────────────────── -->
+  <footer style="background:#1e293b;border-top:1px solid #334155;padding:5px 16px;font-size:.7rem;color:#475569;display:flex;gap:12px;flex-shrink:0;overflow:hidden;">
+    <span>plugin v{{dd.project.pluginVersion}}</span>
+    <span>·</span>
+    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">state: {{dd.project.stateFilePath}}</span>
+    <span style="flex-shrink:0;">·</span>
+    <span style="flex-shrink:0;">generated: {{dd.project.generated}}</span>
+  </footer>
+
+  </template>
+</div><!-- end #app -->
+
+<script>
+'use strict';
+// ─── CDN globals ─────────────────────────────────────────────────────────────
+const { createApp, ref, computed, watch, onMounted, nextTick, reactive } = Vue;
+Chart.register(...Chart.registerables);
+
+// ─── Parse dashboard data ─────────────────────────────────────────────────────
+let _dd, _parseErr = null;
+try {
+  const raw = document.getElementById('dashboard-data').textContent.trim();
+  _dd = JSON.parse(raw);
+} catch(e) {
+  _parseErr = e.message;
+  _dd = null;
+}
+function norm(d) {
+  if (!d) return { project:{name:'Unknown',generated:'',pluginVersion:'?',stateFilePath:'',indexFilePath:''}, weights:{newTest:0,changedTest:0,maxFailure:0,speed:0,speedPenalty:0,depOverlap:0,changeComplexity:0,staticFieldBonus:0,coverageBonus:0}, weightDefs:[], config:{}, medianDuration:0, changedClasses:[], changedTestClasses:[], tests:[], runs:[], coverage:null };
+  d.tests = d.tests||[]; d.runs = d.runs||[]; d.changedClasses = d.changedClasses||[]; d.changedTestClasses = d.changedTestClasses||[]; d.weightDefs = d.weightDefs||[]; d.weights = d.weights||{}; d.project = d.project||{}; return d;
+}
+const dd = norm(_dd);
+
+// ─── Pure helpers ─────────────────────────────────────────────────────────────
+function computeScore(t, w) {
+  let s = 0;
+  if (t.depOverlap>0&&t.depTotal>0&&w.depOverlap>0)
+    s += Math.min(Math.ceil(t.depOverlap/Math.sqrt(t.depTotal)*w.depOverlap), w.depOverlap);
+  if (t.complexityOverlap>0&&t.depTotal>0&&w.changeComplexity>0)
+    s += Math.min(Math.ceil(t.complexityOverlap/Math.sqrt(t.depTotal)*w.changeComplexity), w.changeComplexity);
+  if (t.isChanged) s += w.changedTest;
+  if (t.isNew) s += w.newTest;
+  if (t.speedRatio<0) s += Math.round(Math.abs(t.speedRatio)*w.speed);
+  else if (t.speedRatio>0) s -= Math.round(t.speedRatio*w.speedPenalty);
+  if (t.hasStaticFieldOverlap&&w.staticFieldBonus>0) s += w.staticFieldBonus;
+  if (t.failScore>0) s += Math.min(Math.ceil(t.failScore), w.maxFailure);
+  return s;
+}
+function sn(fqcn) {
+  if (!fqcn) return '';
+  const p = fqcn.split('.');
+  return p.length <= 2 ? fqcn : p[p.length-2]+'.'+p[p.length-1];
+}
+function fmtDur(ms) {
+  if (ms==null||ms<0) return '?';
+  if (ms<1000) return ms+'ms';
+  if (ms<60000) return (ms/1000).toFixed(1)+'s';
+  return Math.floor(ms/60000)+'m '+Math.floor((ms%60000)/1000)+'s';
+}
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+}
+function chartOpts(extra={}) {
+  const base = {
+    responsive:true, maintainAspectRatio:false, animation:{duration:150},
+    plugins:{legend:{display:false},tooltip:{backgroundColor:'#1e293b',borderColor:'#475569',borderWidth:1,titleColor:'#e2e8f0',bodyColor:'#94a3b8',padding:8}},
+    scales:{
+      x:{ticks:{color:'#475569',font:{size:10}},grid:{color:'rgba(71,85,105,.25)'}},
+      y:{ticks:{color:'#475569',font:{size:10}},grid:{color:'rgba(71,85,105,.25)'}}
+    }
+  };
+  return Object.assign(base, extra);
+}
+
+// ─── Chart instance registry ──────────────────────────────────────────────────
+const CI = {};
+function mkChart(id, cfg) {
+  if (CI[id]) { try{CI[id].destroy();}catch(e){} delete CI[id]; }
+  const el = document.getElementById(id);
+  if (!el) return null;
+  CI[id] = new Chart(el, cfg);
+  return CI[id];
+}
+function destroyCharts(...ids) { ids.forEach(id=>{ if(CI[id]){try{CI[id].destroy();}catch(e){} delete CI[id];} }); }
+
+// ─── Crosshair sync plugin ────────────────────────────────────────────────────
+const TL_IDS = ['tl-apfd','tl-fail','tl-ffp','tl-cnt'];
+Chart.register({
+  id:'tlSync',
+  afterEvent(chart, args) {
+    if (!TL_IDS.includes(chart.canvas&&chart.canvas.id)) return;
+    const ev = args.event;
+    if (ev.type==='mousemove') {
+      const pts = chart.tooltip?.dataPoints;
+      if (!pts||!pts.length) return;
+      const idx = pts[0].dataIndex;
+      TL_IDS.forEach(id=>{
+        const c = CI[id]; if(!c||c===chart) return;
+        const ae = c.data.datasets.map((_,di)=>({datasetIndex:di,index:idx})).filter(p=>p.index<(c.data.datasets[p.datasetIndex]?.data?.length||0));
+        c.tooltip.setActiveElements(ae,{x:0,y:0}); c.update('none');
+      });
+    } else if (ev.type==='mouseout') {
+      TL_IDS.forEach(id=>{ const c=CI[id]; if(!c||c===chart) return; c.tooltip.setActiveElements([],{x:0,y:0}); c.update('none'); });
+    }
+  }
+});
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const TABS = [
+  {id:'explorer',label:'Test Explorer'},{id:'breakdown',label:'Score Breakdown'},
+  {id:'depgraph',label:'Dependency Graph'},{id:'timeline',label:'Project Timeline'},
+  {id:'history',label:'Per-Test History'},{id:'distributions',label:'Distributions'},
+  {id:'weights',label:'Weights Explorer'},{id:'coverage',label:'Coverage Treemap'}
+];
+const ECOLS = [
+  {key:'rank',label:'Rank'},{key:'name',label:'Name'},{key:'score',label:'Score'},
+  {key:'depOverlap',label:'Dep Overlap'},{key:'failScore',label:'Fail Score'},{key:'duration',label:'Duration'}
+];
+const GMODES = [{id:'focus',label:'Focus'},{id:'changed',label:'Changed subgraph'},{id:'full',label:'Full'}];
+
+// ─── Vue app ──────────────────────────────────────────────────────────────────
+createApp({
+  setup() {
+    const hasData = !!(dd.tests&&dd.tests.length>=0&&dd.project);
+    const parseErr = ref(_parseErr);
+
+    const selectedTest = ref(null);
+    const activeTab = ref('explorer');
+    const lw = reactive(Object.assign({}, dd.weights)); // live weights
+    const leftSearch = ref('');
+    const searchQ = ref('');
+    const sortKey = ref('rank');
+    const sortDir = ref('asc');
+    const graphMode = ref('focus');
+
+    // ── Derived data ──────────────────────────────────────────────
+    const tests = dd.tests;
+    const runs = [...(dd.runs||[])].sort((a,b)=>a.timestamp-b.timestamp);
+    const changedSet = new Set(dd.changedClasses||[]);
+
+    const leftTests = computed(()=>{
+      let arr = [...tests].sort((a,b)=>a.rank-b.rank);
+      if (leftSearch.value) { const q=leftSearch.value.toLowerCase(); arr=arr.filter(t=>t.name.toLowerCase().includes(q)); }
+      return arr;
+    });
+
+    const filteredTests = computed(()=>{
+      let arr = [...tests];
+      if (searchQ.value) { const q=searchQ.value.toLowerCase(); arr=arr.filter(t=>t.name.toLowerCase().includes(q)); }
+      arr.sort((a,b)=>{
+        let av=a[sortKey.value], bv=b[sortKey.value];
+        if (sortKey.value==='name'){av=sn(a.name);bv=sn(b.name);}
+        if (sortKey.value==='duration'){av=av<0?1e15:av;bv=bv<0?1e15:bv;}
+        const d = av<bv?-1:av>bv?1:0;
+        return sortDir.value==='asc'?d:-d;
+      });
+      return arr;
+    });
+
+    const latestRun = computed(()=>runs.length?runs[runs.length-1]:null);
+    const avgApfd = computed(()=>runs.length?runs.reduce((s,r)=>s+r.apfd,0)/runs.length:null);
+    const fastestTest = computed(()=>{ const w=tests.filter(t=>t.duration>=0); return w.length?w.reduce((a,b)=>a.duration<b.duration?a:b):null; });
+    const slowestTest = computed(()=>{ const w=tests.filter(t=>t.duration>=0); return w.length?w.reduce((a,b)=>a.duration>b.duration?a:b):null; });
+
+    const totalNodes = computed(()=>{
+      const s=new Set(); tests.forEach(t=>{s.add(t.name);(t.deps||[]).forEach(d=>s.add(d));});
+      return s.size;
+    });
+
+    // Score breakdown components for selected test
+    const scoreComps = computed(()=>{
+      const t=selectedTest.value; if(!t) return [];
+      const w=dd.weights;
+      const depOv = (t.depOverlap>0&&t.depTotal>0&&w.depOverlap>0)?Math.min(Math.ceil(t.depOverlap/Math.sqrt(t.depTotal)*w.depOverlap),w.depOverlap):0;
+      const cmplx = (t.complexityOverlap>0&&t.depTotal>0&&w.changeComplexity>0)?Math.min(Math.ceil(t.complexityOverlap/Math.sqrt(t.depTotal)*w.changeComplexity),w.changeComplexity):0;
+      const chg = t.isChanged?w.changedTest:0;
+      const isNew = t.isNew?w.newTest:0;
+      const spd = t.speedRatio<0?Math.round(Math.abs(t.speedRatio)*w.speed):0;
+      const pen = t.speedRatio>0?-Math.round(t.speedRatio*w.speedPenalty):0;
+      const stf = t.hasStaticFieldOverlap?w.staticFieldBonus:0;
+      const fail = t.failScore>0?Math.min(Math.ceil(t.failScore),w.maxFailure):0;
+      return [
+        {label:'Dep Overlap',value:depOv,color:'#3b82f6',explanation:`${t.depOverlap} of ${t.depTotal} deps overlap changed classes → min(⌈${t.depOverlap}/√${t.depTotal}×${w.depOverlap}⌉, ${w.depOverlap})`},
+        {label:'Change Complexity',value:cmplx,color:'#6366f1',explanation:`${t.complexityOverlap} complex-change overlaps → min(⌈${t.complexityOverlap}/√${t.depTotal}×${w.changeComplexity}⌉, ${w.changeComplexity})`},
+        {label:'Changed Test',value:chg,color:'#f59e0b',explanation:`Test class itself was modified (+${w.changedTest})`},
+        {label:'New Test',value:isNew,color:'#22c55e',explanation:`Newly added test class (+${w.newTest})`},
+        {label:'Speed Bonus',value:spd,color:'#06b6d4',explanation:`Faster than median — speedRatio ${t.speedRatio.toFixed(2)} (+${spd})`},
+        {label:'Speed Penalty',value:pen,color:'#f97316',explanation:`Slower than median — speedRatio ${t.speedRatio.toFixed(2)} (${pen})`},
+        {label:'Static Field',value:stf,color:'#a855f7',explanation:`Overlaps static field changes (+${w.staticFieldBonus})`},
+        {label:'Failure Recency',value:fail,color:'#ef4444',explanation:`failScore=${t.failScore.toFixed(2)} → min(⌈${t.failScore.toFixed(2)}⌉, ${w.maxFailure}) = ${fail}`},
+      ];
+    });
+
+    // Per-test run outcomes
+    const testOutcomes = computed(()=>{
+      if (!selectedTest.value) return [];
+      const name=selectedTest.value.name;
+      return runs.map(r=>{ const o=(r.outcomes||[]).find(o=>o.testClass===name); return {ts:r.timestamp,present:!!o,failed:o?o.failed:false,outcome:o||null}; });
+    });
+
+    // Weights simulation results
+    const simResults = computed(()=>{
+      const scored = tests.map(t=>({...t, simScore:computeScore(t,lw)}));
+      const sorted = [...scored].sort((a,b)=>b.simScore-a.simScore);
+      const rankMap = {}; sorted.forEach((t,i)=>rankMap[t.name]=i+1);
+      return [...tests].sort((a,b)=>a.rank-b.rank).map(t=>({
+        name:t.name, origRank:t.rank, simRank:rankMap[t.name],
+        delta:rankMap[t.name]-t.rank, origScore:t.score,
+        simScore:scored.find(s=>s.name===t.name).simScore
+      }));
+    });
+
+    // ── Actions ───────────────────────────────────────────────────
+    function selectTest(t) { selectedTest.value = t; }
+    function sortBy(key) {
+      if (sortKey.value===key) sortDir.value=sortDir.value==='asc'?'desc':'asc';
+      else { sortKey.value=key; sortDir.value='asc'; }
+    }
+    function resetWeights() { Object.assign(lw, dd.weights); }
+    function setGraphMode(id) { graphMode.value=id; nextTick(initDepGraph); }
+    function setTab(id) {
+      const old=activeTab.value;
+      destroyTabCharts(old);
+      activeTab.value=id;
+      nextTick(()=>initTabCharts(id));
+    }
+
+    // ── Chart tab map ─────────────────────────────────────────────
+    const TAB_CHARTS = {
+      breakdown:['bdChart'], timeline:TL_IDS, history:['h-dur','h-score','h-pos'],
+      distributions:['d-score','d-dur','d-deps','d-fail']
+    };
+    function destroyTabCharts(tab) { destroyCharts(...(TAB_CHARTS[tab]||[])); }
+    function initTabCharts(tab) {
+      if (tab==='breakdown') initBreakdown();
+      else if (tab==='timeline') initTimeline();
+      else if (tab==='history') initHistory();
+      else if (tab==='distributions') initDistributions();
+      else if (tab==='depgraph') initDepGraph();
+    }
+
+    // ── Score breakdown chart ─────────────────────────────────────
+    function initBreakdown() {
+      if (!selectedTest.value) return;
+      const comps = scoreComps.value.filter(c=>c.value!==0);
+      mkChart('bdChart',{
+        type:'bar',
+        data:{labels:[''],datasets:comps.map(c=>({label:c.label,data:[c.value],backgroundColor:c.color,stack:'s'}))},
+        options:{
+          indexAxis:'y', responsive:true, maintainAspectRatio:false, animation:{duration:150},
+          plugins:{legend:{display:true,position:'bottom',labels:{color:'#64748b',font:{size:10},boxWidth:12,padding:8}},tooltip:{backgroundColor:'#1e293b',borderColor:'#475569',borderWidth:1,titleColor:'#e2e8f0',bodyColor:'#94a3b8'}},
+          scales:{x:{stacked:true,ticks:{color:'#475569',font:{size:10}},grid:{color:'rgba(71,85,105,.25)'}},y:{stacked:true,display:false}}
+        }
+      });
+    }
+
+    // ── Timeline charts ───────────────────────────────────────────
+    function initTimeline() {
+      if (!runs.length) return;
+      const labels = runs.map(r=>fmtTime(r.timestamp));
+      const baseOpts = (yTitle)=>({
+        ...chartOpts(), plugins:{...chartOpts().plugins,tooltip:{...chartOpts().plugins.tooltip,mode:'index',intersect:false}},
+        scales:{x:{ticks:{color:'#475569',font:{size:9},maxRotation:30},grid:{color:'rgba(71,85,105,.25)'}},y:{ticks:{color:'#475569',font:{size:10}},grid:{color:'rgba(71,85,105,.25)'},title:{display:!!yTitle,text:yTitle||'',color:'#475569',font:{size:9}}}}
+      });
+
+      mkChart('tl-apfd',{type:'line',data:{labels,datasets:[
+        {label:'APFD %',data:runs.map(r=>+(r.apfd*100).toFixed(1)),borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.1)',fill:true,tension:.3,pointRadius:3,pointHoverRadius:5},
+        {label:'Random (50%)',data:labels.map(()=>50),borderColor:'#475569',borderDash:[6,4],borderWidth:1.5,pointRadius:0,tension:0}
+      ]},options:{...baseOpts('%'),plugins:{...baseOpts().plugins,legend:{display:true,labels:{color:'#64748b',font:{size:9},boxWidth:10,padding:6}}},scales:{...baseOpts().scales,y:{...baseOpts().scales.y,min:0,max:100}}}});
+
+      mkChart('tl-fail',{type:'bar',data:{labels,datasets:[{
+        label:'Failures',data:runs.map(r=>r.totalFailures),
+        backgroundColor:runs.map(r=>r.totalFailures>0?'rgba(239,68,68,.7)':'rgba(34,197,94,.5)')
+      }]},options:baseOpts('count')});
+
+      // First failure position: filled dot=failure, hollow=none
+      mkChart('tl-ffp',{type:'line',data:{labels,datasets:[{
+        label:'First failure position',
+        data:runs.map(r=>r.firstFailurePosition>=0?r.firstFailurePosition:0),
+        pointBackgroundColor:runs.map(r=>r.firstFailurePosition>=0?'rgba(239,68,68,.8)':'transparent'),
+        pointBorderColor:runs.map(r=>r.firstFailurePosition>=0?'rgba(239,68,68,.8)':'rgba(71,85,105,.7)'),
+        pointBorderWidth:1.5,pointRadius:5,showLine:false,borderColor:'transparent'
+      }]},options:baseOpts('position')});
+
+      mkChart('tl-cnt',{type:'line',data:{labels,datasets:[{
+        label:'Test count',data:runs.map(r=>r.totalTests),
+        borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.12)',fill:true,stepped:'before',tension:0
+      }]},options:baseOpts('tests')});
+    }
+
+    // ── Per-test history charts ───────────────────────────────────
+    function initHistory() {
+      if (!selectedTest.value||!runs.length) return;
+      const t = selectedTest.value;
+      const labels = runs.map(r=>fmtTime(r.timestamp));
+      const outcomes = testOutcomes.value;
+      const ema = t.duration>=0?t.duration:null;
+
+      mkChart('h-dur',{type:'line',data:{labels,datasets:[
+        {label:'EMA duration',data:labels.map(()=>ema),borderColor:'#818cf8',borderDash:[5,4],borderWidth:1.5,pointRadius:0,tension:0,spanGaps:true},
+      ]},options:chartOpts()});
+
+      const scores = runs.map(r=>{ const o=(r.outcomes||[]).find(o=>o.testClass===t.name); return o?computeScore(o,lw):null; });
+      mkChart('h-score',{type:'line',data:{labels,datasets:[{
+        label:'Score',data:scores,borderColor:'#818cf8',backgroundColor:'rgba(129,140,248,.12)',fill:true,tension:.3,spanGaps:true,pointRadius:3,
+        pointBackgroundColor:scores.map(s=>s===null?'transparent':'#818cf8')
+      }]},options:chartOpts()});
+
+      const positions = runs.map(r=>{ const idx=(r.outcomes||[]).findIndex(o=>o.testClass===t.name); return idx>=0?idx+1:null; });
+      const posOpts = {...chartOpts()};
+      posOpts.scales.y = {...posOpts.scales.y, reverse:true};
+      mkChart('h-pos',{type:'line',data:{labels,datasets:[{
+        label:'Position',data:positions,borderColor:'#f59e0b',tension:.3,spanGaps:true,pointRadius:3,
+        pointBackgroundColor:positions.map(p=>p===null?'transparent':'#f59e0b')
+      }]},options:posOpts});
+    }
+
+    // ── Distributions charts ──────────────────────────────────────
+    function initDistributions() {
+      // Score histogram
+      const scores = tests.map(t=>t.score);
+      const maxS = Math.max(...scores,1);
+      const bs = Math.max(1,Math.ceil(maxS/20));
+      const sBuckets = {};
+      scores.forEach(s=>{ const b=Math.floor(s/bs)*bs; sBuckets[b]=(sBuckets[b]||0)+1; });
+      const sKeys = Object.keys(sBuckets).map(Number).sort((a,b)=>a-b);
+      mkChart('d-score',{type:'bar',data:{
+        labels:sKeys.map(k=>`${k}`),
+        datasets:[{label:'Tests',data:sKeys.map(k=>sBuckets[k]),backgroundColor:'rgba(99,102,241,.7)',borderRadius:2}]
+      },options:{...chartOpts(),scales:{x:{ticks:{color:'#475569',font:{size:9}},grid:{color:'rgba(71,85,105,.2)'}},y:{ticks:{color:'#475569',font:{size:9}},grid:{color:'rgba(71,85,105,.2)'}}}}});
+
+      // Duration log-buckets
+      const dBkts = [0,0,0,0,0];
+      tests.forEach(t=>{ if(t.duration<0) return; if(t.duration<10)dBkts[0]++;else if(t.duration<100)dBkts[1]++;else if(t.duration<1000)dBkts[2]++;else if(t.duration<10000)dBkts[3]++;else dBkts[4]++; });
+      mkChart('d-dur',{type:'bar',data:{
+        labels:['<10ms','10-100ms','100ms-1s','1-10s','>10s'],
+        datasets:[{label:'Tests',data:dBkts,backgroundColor:['#06b6d4','#22c55e','#f59e0b','#f97316','#ef4444'],borderRadius:2}]
+      },options:{...chartOpts(),plugins:{...chartOpts().plugins,legend:{display:false}}}});
+
+      // Dep count histogram
+      const deps = tests.map(t=>t.depTotal||0);
+      const maxD = Math.max(...deps,1);
+      const db = Math.max(1,Math.ceil(maxD/15));
+      const dBuckets = {};
+      deps.forEach(d=>{ const b=Math.floor(d/db)*db; dBuckets[b]=(dBuckets[b]||0)+1; });
+      const dKeys = Object.keys(dBuckets).map(Number).sort((a,b)=>a-b);
+      mkChart('d-deps',{type:'bar',data:{
+        labels:dKeys.map(k=>`${k}`),
+        datasets:[{label:'Tests',data:dKeys.map(k=>dBuckets[k]),backgroundColor:'rgba(168,85,247,.7)',borderRadius:2}]
+      },options:{...chartOpts(),scales:{x:{ticks:{color:'#475569',font:{size:9}},grid:{color:'rgba(71,85,105,.2)'}},y:{ticks:{color:'#475569',font:{size:9}},grid:{color:'rgba(71,85,105,.2)'}}}}});
+
+      // Top 20 fail scores
+      const top20 = [...tests].filter(t=>t.failScore>0).sort((a,b)=>b.failScore-a.failScore).slice(0,20);
+      mkChart('d-fail',{type:'bar',data:{
+        labels:top20.map(t=>sn(t.name)),
+        datasets:[{label:'Fail score',data:top20.map(t=>+t.failScore.toFixed(2)),backgroundColor:'rgba(239,68,68,.7)',borderRadius:2}]
+      },options:{...chartOpts(),indexAxis:'y',scales:{
+        x:{ticks:{color:'#475569',font:{size:9}},grid:{color:'rgba(71,85,105,.2)'}},
+        y:{ticks:{color:'#475569',font:{size:8},maxTicksLimit:20},grid:{display:false}}
+      }}});
+    }
+
+    // ── Dependency graph (D3) ─────────────────────────────────────
+    function buildGraphData() {
+      const mode = graphMode.value;
+      const nodeMap = {}, links = [];
+      function addNode(id, type, changed) {
+        if (!nodeMap[id]) nodeMap[id]={id,type,changed:!!changed,shortLabel:sn(id),depCount:0};
+      }
+      if (mode==='focus') {
+        const t=selectedTest.value; if(!t) return {nodes:[],links:[]};
+        addNode(t.name,'test',false);
+        nodeMap[t.name].depCount=(t.deps||[]).length;
+        (t.deps||[]).forEach(dep=>{ addNode(dep,'dep',changedSet.has(dep)); links.push({source:t.name,target:dep,changed:changedSet.has(dep)}); });
+      } else if (mode==='changed') {
+        tests.forEach(t=>{
+          const touched=(t.deps||[]).some(d=>changedSet.has(d));
+          if (!touched&&!changedSet.has(t.name)) return;
+          addNode(t.name,'test',false); nodeMap[t.name].depCount=(t.deps||[]).length;
+          (t.deps||[]).filter(d=>changedSet.has(d)).forEach(dep=>{ addNode(dep,'dep',true); links.push({source:t.name,target:dep,changed:true}); });
+        });
+      } else { // full
+        tests.forEach(t=>{
+          addNode(t.name,'test',false); nodeMap[t.name].depCount=(t.deps||[]).length;
+          (t.deps||[]).forEach(dep=>{ addNode(dep,'dep',changedSet.has(dep)); links.push({source:t.name,target:dep,changed:changedSet.has(dep)}); });
+        });
+      }
+      return {nodes:Object.values(nodeMap),links};
+    }
+
+    function initDepGraph() {
+      const container = document.getElementById('dg-wrap');
+      if (!container) return;
+      d3.select(container).selectAll('*').remove();
+      const {nodes,links} = buildGraphData();
+      if (!nodes.length) {
+        container.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#475569;font-size:.8rem;">No dependency data for current selection</div>';
+        return;
+      }
+      const W=container.clientWidth||700, H=container.clientHeight||400;
+      const svg=d3.select(container).append('svg').attr('width',W).attr('height',H);
+      const g=svg.append('g');
+      svg.call(d3.zoom().scaleExtent([.1,4]).on('zoom',e=>g.attr('transform',e.transform)));
+
+      const sim=d3.forceSimulation(nodes)
+        .force('link',d3.forceLink(links).id(d=>d.id).distance(70))
+        .force('charge',d3.forceManyBody().strength(nodes.length>80?-80:-150))
+        .force('center',d3.forceCenter(W/2,H/2))
+        .force('collision',d3.forceCollide(16));
+
+      const link=g.append('g').selectAll('line').data(links).join('line')
+        .attr('stroke',d=>d.changed?'#f59e0b':'#334155').attr('stroke-width',1.5).attr('stroke-opacity',.6);
+
+      const node=g.append('g').selectAll('g').data(nodes).join('g')
+        .call(d3.drag()
+          .on('start',(e,d)=>{if(!e.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;})
+          .on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y;})
+          .on('end',(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}));
+
+      node.append('circle')
+        .attr('r',d=>d.type==='test'?11:7)
+        .attr('fill',d=>d.type==='test'?'#3b82f6':d.changed?'#ef4444':'#64748b')
+        .attr('stroke','#0f172a').attr('stroke-width',1.5);
+
+      node.append('text').attr('text-anchor','middle').attr('dy',d=>d.type==='test'?24:18)
+        .attr('font-size','9px').attr('fill','#94a3b8').text(d=>d.shortLabel);
+
+      // Tooltip
+      const tip=d3.select(container).append('div')
+        .style('position','absolute').style('background','#1e293b').style('border','1px solid #334155')
+        .style('padding','5px 9px').style('border-radius','4px').style('font-size','11px')
+        .style('color','#e2e8f0').style('pointer-events','none').style('opacity','0').style('z-index','10');
+
+      node.on('mouseover',(e,d)=>{
+        tip.style('opacity','1').html(`<strong>${d.id}</strong><br><span style="color:#64748b">${d.type==='test'?d.depCount+' deps':'dep · '+(d.changed?'<span style=color:#ef4444>changed</span>':'unchanged')}</span>`);
+      }).on('mousemove',e=>tip.style('left',(e.offsetX+12)+'px').style('top',(e.offsetY-10)+'px'))
+        .on('mouseout',()=>tip.style('opacity','0'));
+
+      sim.on('tick',()=>{
+        link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+        node.attr('transform',d=>`translate(${d.x},${d.y})`);
+      });
+    }
+
+    // ── Watchers ──────────────────────────────────────────────────
+    watch(activeTab,(newTab,oldTab)=>{ destroyTabCharts(oldTab); nextTick(()=>initTabCharts(newTab)); });
+
+    watch(selectedTest,()=>{
+      nextTick(()=>{
+        if (activeTab.value==='breakdown') initBreakdown();
+        else if (activeTab.value==='depgraph') initDepGraph();
+        else if (activeTab.value==='history') initHistory();
+      });
+    });
+
+    watch(graphMode,()=>{ if(activeTab.value==='depgraph') nextTick(initDepGraph); });
+
+    watch(lw,()=>{ if(activeTab.value==='history') nextTick(initHistory); },{deep:true});
+
+    onMounted(()=>{ nextTick(()=>initTabCharts(activeTab.value)); });
+
+    return {
+      hasData, parseErr, dd, tests, runs, selectedTest, activeTab, lw,
+      leftSearch, searchQ, sortKey, sortDir, graphMode,
+      leftTests, filteredTests, latestRun, avgApfd, fastestTest, slowestTest,
+      totalNodes, scoreComps, testOutcomes, simResults,
+      TABS, ECOLS, GMODES, Math,
+      selectTest, sortBy, resetWeights, setGraphMode, setTab, sn, fmtDur, fmtTime
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

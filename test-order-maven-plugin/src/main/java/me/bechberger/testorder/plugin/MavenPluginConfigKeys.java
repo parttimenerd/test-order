@@ -48,6 +48,12 @@ final class MavenPluginConfigKeys {
     static final String AUTO_LEARN_DIFF_THRESHOLD = "testorder.autoLearnDiffThreshold";
     static final String DUMP_OUTPUT = "testorder.dump.output";
 
+    // Dashboard goal keys
+    static final String DASHBOARD_OUTPUT = "testorder.dashboard.output";
+    static final String DASHBOARD_COVERAGE_DIR = "testorder.dashboard.coverageDir";
+    static final String DASHBOARD_OPEN = "testorder.dashboard.open";
+    static final String DASHBOARD_SEPARATE_ASSETS = "testorder.dashboard.separateAssets";
+
     // Legacy aliases kept for backward compatibility in Maven user properties
     static final String LEGACY_INDEX = "testorder.index";
     static final String LEGACY_STATE_FILE = "testorder.stateFile";
