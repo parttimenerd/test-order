@@ -329,6 +329,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     private static void injectChangedClasses(Project project, TestOrderExtension ext,
                                               Test testTask) {
         String changeModeStr = ext.getChangeMode().get();
+        ensureSupportedChangeMode(changeModeStr);
         String explicitChanged = ext.getChangedClasses().get();
 
         // Override from Gradle/system property
@@ -901,6 +902,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static Set<String> detectChangedClassesForSelection(Project project, TestOrderExtension ext) {
+        ensureSupportedChangeMode(ext.getChangeMode().get());
         String explicitChanged = ext.getChangedClasses().get();
         String propChanged = gradleOrSystemProperty(project, "testorder.changed.classes");
         if (propChanged != null && !propChanged.isBlank()) {
@@ -925,6 +927,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static Set<String> detectChangedTestClassesForSelection(Project project, TestOrderExtension ext) {
+        ensureSupportedChangeMode(ext.getChangeMode().get());
         if ("explicit".equalsIgnoreCase(ext.getChangeMode().get())) {
             return Set.of();
         }
@@ -953,6 +956,20 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
             }
         });
+    }
+
+    private static void ensureSupportedChangeMode(String changeMode) {
+        if (changeMode == null) {
+            throw new IllegalArgumentException("Unknown changeMode: null");
+        }
+        String normalized = changeMode.toLowerCase(Locale.ROOT);
+        if (!normalized.equals("auto")
+                && !normalized.equals("since-last-run")
+                && !normalized.equals("since-last-commit")
+                && !normalized.equals("uncommitted")
+                && !normalized.equals("explicit")) {
+            throw new IllegalArgumentException("Unknown changeMode: " + changeMode);
+        }
     }
 
     private static void configureStateLocking(Project project, TestOrderExtension ext, Test task) {
