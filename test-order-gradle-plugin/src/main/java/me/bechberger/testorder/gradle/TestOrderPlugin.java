@@ -9,11 +9,13 @@ import me.bechberger.testorder.changes.ChangeComplexity;
 import me.bechberger.testorder.changes.ChangeDetector;
 import me.bechberger.testorder.changes.ChangeDetectionSupport;
 import me.bechberger.testorder.changes.FileHashStore;
+import me.bechberger.testorder.changes.HashSnapshotSupport;
 import me.bechberger.testorder.changes.StructuralChangeAnalyzer;
 import me.bechberger.testorder.changes.StructuralChangeAnalyzer.ChangedMembers;
 import me.bechberger.testorder.changes.StructuralDiff;
 import java.util.stream.Collectors;
 import org.gradle.api.GradleException;
+import me.bechberger.testorder.OptimizationDefaults;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
@@ -25,14 +27,22 @@ import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.testing.Test;
 import org.gradle.process.CommandLineArgumentProvider;
 
+import me.bechberger.testorder.DashboardGenerator;
+import me.bechberger.testorder.DashboardGenerator.ScoredTest;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 
 /**
  * Gradle plugin for JUnit test class priority ordering based on runtime dependency telemetry.
@@ -128,7 +138,6 @@ public class TestOrderPlugin implements Plugin<Project> {
             // (System.loadLibrary, sun.misc.Unsafe). Flag supported on JDK 16+;
             // the plugin already requires JDK 17+ so this is always safe.
             testTask.jvmArgs("--enable-native-access=ALL-UNNAMED");
-            configureStateLocking(project, ext, testTask);
 
             if ("learn".equals(resolvedMode)) {
                 learnModeConfigurator.configure(project, ext, testTask, agentConf);
@@ -630,7 +639,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     long elapsedMs = System.currentTimeMillis() - startMs;
                     if (optimized == null) {
                         project.getLogger().warn("[test-order] Need at least {} runs with failures to optimise (have {}).",
-                                TestOrderState.MIN_RUNS_FOR_OPTIMISATION, withFailures);
+                                OptimizationDefaults.MIN_RUNS_FOR_OPTIMISATION, withFailures);
                         return null;
                     }
                     state.setWeights(optimized.weights());
@@ -649,7 +658,6 @@ public class TestOrderPlugin implements Plugin<Project> {
             configureDerivedTestTask(project, ext, task);
             task.setGroup("test-order");
             task.setDescription("Run the prioritized selected subset of tests and write remaining tests to disk");
-            configureStateLocking(project, ext, task);
             configureOrderMode(project, ext, task);
             task.doFirst("testOrderSelectPrepare", t -> {
                 TestSelector.Selection selection = selectTests(project, ext);
@@ -663,7 +671,6 @@ public class TestOrderPlugin implements Plugin<Project> {
             configureDerivedTestTask(project, ext, task);
             task.setGroup("test-order");
             task.setDescription("Run only the deferred tests written by testOrderSelect");
-            configureStateLocking(project, ext, task);
             task.doFirst("testOrderRunRemainingPrepare", t -> {
                 Path remainingFile = ext.getRemainingFile().get().getAsFile().toPath();
                 if (!Files.exists(remainingFile)) {
@@ -721,6 +728,181 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
             });
         });
+        project.getTasks().register("testOrderDashboard", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Generate an HTML dashboard visualising test scoring, dependencies, and run history");
+            task.doLast(t -> {
+                generateDashboard(project, ext);
+            });
+        });
+
+        project.getTasks().register("testOrderServe", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Generate and serve the test-order HTML dashboard on a local HTTP server");
+            task.doLast(t -> {
+                Path outPath = generateDashboard(project, ext);
+                serveDashboard(project, outPath.getParent());
+            });
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Dashboard helpers
+    // -----------------------------------------------------------------------
+
+    private static final List<String> DASHBOARD_ASSETS =
+            List.of("vue.global.prod.js", "chart.umd.min.js", "d3.min.js");
+
+    /** Builds and writes the dashboard HTML + assets; returns the path to index.html. */
+    private Path generateDashboard(Project project, TestOrderExtension ext) {
+        Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
+        Path statePath = ext.getStateFile().get().getAsFile().toPath();
+        Path outDir    = project.getLayout().getBuildDirectory()
+                .dir("test-order-dashboard").get().getAsFile().toPath();
+        Path htmlOut   = outDir.resolve("index.html");
+
+        if (!Files.exists(indexPath)) {
+            throw new GradleException("[test-order] Index file not found: " + indexPath
+                    + ". Run tests in learn mode first.");
+        }
+        try {
+            DependencyMap depMap = DependencyMap.load(indexPath);
+            TestOrderState state = Files.exists(statePath)
+                    ? TestOrderState.load(statePath) : new TestOrderState();
+
+            TestOrderState.ScoringWeights weights = state.weights() != null
+                    ? state.weights() : TestOrderState.ScoringWeights.DEFAULT;
+            List<String> testClasses = new ArrayList<>(depMap.testClasses());
+            TestScorer scorer = new TestScorer.Builder(
+                    weights, depMap, state,
+                    Collections.emptySet(), Collections.emptySet())
+                    .testClassNames(testClasses)
+                    .build();
+
+            List<ScoredTest> scored = new ArrayList<>();
+            for (String tc : testClasses) {
+                TestScorer.ScoreResult r = scorer.score(tc);
+                long dur   = state.getDuration(tc, -1);
+                double var = state.getDurationVariance(tc, -1.0);
+                scored.add(new ScoredTest(tc, r, dur, var));
+            }
+            scored.sort(Comparator
+                    .<ScoredTest, Integer>comparing(s -> s.result().score()).reversed()
+                    .thenComparingLong(s -> s.duration() >= 0 ? s.duration() : Long.MAX_VALUE)
+                    .thenComparing(ScoredTest::name));
+
+            long medianDuration = DashboardGenerator.computeMedian(scored.stream()
+                    .filter(s -> s.duration() >= 0)
+                    .mapToLong(ScoredTest::duration)
+                    .toArray());
+
+            DashboardGenerator gen = new DashboardGenerator(
+                    project.getName(), statePath.toString(),
+                    indexPath.toString(), "gradle");
+            Map<String, Object> data = gen.buildData(
+                    scored, Collections.emptySet(), Collections.emptySet(),
+                    state, weights, depMap, medianDuration);
+
+            String template;
+            try (InputStream is = TestOrderPlugin.class
+                    .getResourceAsStream("/dashboard-template.html")) {
+                if (is == null) {
+                    throw new GradleException(
+                            "[test-order] dashboard-template.html not found in plugin JAR");
+                }
+                template = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            String html = gen.injectIntoTemplate(template, data);
+
+            Files.createDirectories(outDir);
+            Files.writeString(htmlOut, html, StandardCharsets.UTF_8);
+
+            Path assetsDir = outDir.resolve("assets");
+            Files.createDirectories(assetsDir);
+            for (String asset : DASHBOARD_ASSETS) {
+                try (InputStream in = TestOrderPlugin.class
+                        .getResourceAsStream("/web-assets/" + asset)) {
+                    if (in == null) {
+                        throw new GradleException(
+                                "[test-order] Missing bundled asset: /web-assets/" + asset);
+                    }
+                    Files.copy(in, assetsDir.resolve(asset), StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+
+            project.getLogger().lifecycle("[test-order] Dashboard written to: {}", htmlOut);
+            project.getLogger().lifecycle("[test-order] Open in browser: file://{}",
+                    htmlOut.toAbsolutePath());
+            return htmlOut;
+        } catch (IOException e) {
+            throw new GradleException("Failed to generate test-order dashboard", e);
+        }
+    }
+
+    /** Starts a local HTTP server serving the dashboard directory and blocks until interrupted. */
+    private void serveDashboard(Project project, Path dashboardDir) {
+        try {
+            com.sun.net.httpserver.HttpServer server =
+                    com.sun.net.httpserver.HttpServer.create(new InetSocketAddress(0), 0);
+            int port = server.getAddress().getPort();
+
+            server.createContext("/", exchange -> {
+                String rawPath = exchange.getRequestURI().getPath();
+                Path requestedPath = dashboardDir.resolve(
+                        rawPath.replaceAll("^\\/+", "")).normalize();
+                if (!requestedPath.startsWith(dashboardDir)) {
+                    exchange.sendResponseHeaders(403, -1);
+                    return;
+                }
+                Path filePath;
+                if (rawPath.startsWith("/assets/")) {
+                    String assetName = rawPath.substring("/assets/".length());
+                    filePath = dashboardDir.resolve("assets").resolve(assetName);
+                } else {
+                    filePath = dashboardDir.resolve("index.html");
+                }
+                if (!Files.exists(filePath)) {
+                    exchange.sendResponseHeaders(404, -1);
+                    return;
+                }
+                String ct = filePath.toString().endsWith(".js")
+                        ? "application/javascript" : "text/html; charset=utf-8";
+                byte[] body = Files.readAllBytes(filePath);
+                exchange.getResponseHeaders().add("Content-Type", ct);
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+                exchange.getResponseBody().close();
+            });
+
+            server.start();
+            project.getLogger().lifecycle("[test-order] Dashboard served at: http://localhost:{}",
+                    port);
+            project.getLogger().lifecycle("[test-order] Press Ctrl+C to stop.");
+
+            try {
+                if (java.awt.Desktop.isDesktopSupported()
+                        && java.awt.Desktop.getDesktop()
+                                .isSupported(java.awt.Desktop.Action.BROWSE)) {
+                    java.awt.Desktop.getDesktop().browse(
+                            URI.create("http://localhost:" + port + "/"));
+                }
+            } catch (Exception ignored) { }
+
+            CountDownLatch latch = new CountDownLatch(1);
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                server.stop(1);
+                latch.countDown();
+            }));
+            try {
+                latch.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        } catch (IOException e) {
+            throw new GradleException("Failed to start dashboard HTTP server", e);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -795,12 +977,9 @@ public class TestOrderPlugin implements Plugin<Project> {
     private static void snapshotSingleDir(Path root, Path hashFile, String label,
                                            Project project) {
         try {
-            if (Files.isDirectory(root)) {
-                FileHashStore store = FileHashStore.scan(root);
-                PersistenceSupport.withFileLock(hashFile, () -> {
-                    store.save(hashFile);
-                    return null;
-                });
+            boolean written = PersistenceSupport.withFileLock(hashFile, () ->
+                    HashSnapshotSupport.snapshotDirectory(root, hashFile));
+            if (written) {
                 project.getLogger().info("[test-order] Saved {} hash snapshot: {}", label, hashFile);
             }
         } catch (IOException e) {
@@ -959,15 +1138,9 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static void ensureSupportedChangeMode(String changeMode) {
-        if (changeMode == null) {
-            throw new IllegalArgumentException("Unknown changeMode: null");
-        }
-        String normalized = changeMode.toLowerCase(Locale.ROOT);
-        if (!normalized.equals("auto")
-                && !normalized.equals("since-last-run")
-                && !normalized.equals("since-last-commit")
-                && !normalized.equals("uncommitted")
-                && !normalized.equals("explicit")) {
+        try {
+            ChangeDetectionSupport.normalizeMode(changeMode);
+        } catch (IOException e) {
             throw new IllegalArgumentException("Unknown changeMode: " + changeMode);
         }
     }
