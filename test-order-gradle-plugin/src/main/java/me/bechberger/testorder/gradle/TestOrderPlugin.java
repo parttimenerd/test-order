@@ -21,7 +21,6 @@ import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ExternalModuleDependency;
-import org.gradle.api.plugins.ExtraPropertiesExtension;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.testing.Test;
@@ -39,7 +38,6 @@ import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
@@ -60,9 +58,6 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     static final String EXTENSION_NAME = "testOrder";
     static final String AGENT_CONFIG_NAME = "testOrderAgent";
-    private static final String STATE_LOCK_KEY = "testOrderStateLock";
-    private static final String STATE_LOCK_CHANNEL_KEY = "testOrderStateLockChannel";
-
     /** Group and version for the test-order artifacts. Must match the build. */
     static final String GROUP_ID = "me.bechberger";
     static final String VERSION = "0.1.0-SNAPSHOT";
@@ -752,10 +747,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     // Dashboard helpers
     // -----------------------------------------------------------------------
 
-    private static final List<String> DASHBOARD_ASSETS =
-            List.of("vue.global.prod.js", "chart.umd.min.js", "d3.min.js");
-
-    /** Builds and writes the dashboard HTML + assets; returns the path to index.html. */
+    /** Builds and writes the self-contained dashboard HTML; returns the path to index.html. */
     private Path generateDashboard(Project project, TestOrderExtension ext) {
         Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
         Path statePath = ext.getStateFile().get().getAsFile().toPath();
@@ -815,22 +807,13 @@ public class TestOrderPlugin implements Plugin<Project> {
                 template = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             }
             String html = gen.injectIntoTemplate(template, data);
+            html = gen.injectAssets(html,
+                    loadPluginAsset("vue.global.prod.js"),
+                    loadPluginAsset("chart.umd.min.js"),
+                    loadPluginAsset("d3.min.js"));
 
             Files.createDirectories(outDir);
             Files.writeString(htmlOut, html, StandardCharsets.UTF_8);
-
-            Path assetsDir = outDir.resolve("assets");
-            Files.createDirectories(assetsDir);
-            for (String asset : DASHBOARD_ASSETS) {
-                try (InputStream in = TestOrderPlugin.class
-                        .getResourceAsStream("/web-assets/" + asset)) {
-                    if (in == null) {
-                        throw new GradleException(
-                                "[test-order] Missing bundled asset: /web-assets/" + asset);
-                    }
-                    Files.copy(in, assetsDir.resolve(asset), StandardCopyOption.REPLACE_EXISTING);
-                }
-            }
 
             project.getLogger().lifecycle("[test-order] Dashboard written to: {}", htmlOut);
             project.getLogger().lifecycle("[test-order] Open in browser: file://{}",
@@ -841,7 +824,19 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
     }
 
-    /** Starts a local HTTP server serving the dashboard directory and blocks until interrupted. */
+    /** Loads a bundled JS asset from the plugin classpath as a UTF-8 string. */
+    private static String loadPluginAsset(String name) {
+        try (InputStream in = TestOrderPlugin.class.getResourceAsStream("/web-assets/" + name)) {
+            if (in == null) {
+                throw new GradleException("[test-order] Missing bundled asset: /web-assets/" + name);
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new GradleException("Failed to load asset: " + name, e);
+        }
+    }
+
+    /** Starts a local HTTP server serving the self-contained dashboard HTML. */
     private void serveDashboard(Project project, Path dashboardDir) {
         try {
             com.sun.net.httpserver.HttpServer server =
@@ -849,28 +844,15 @@ public class TestOrderPlugin implements Plugin<Project> {
             int port = server.getAddress().getPort();
 
             server.createContext("/", exchange -> {
-                String rawPath = exchange.getRequestURI().getPath();
-                Path requestedPath = dashboardDir.resolve(
-                        rawPath.replaceAll("^\\/+", "")).normalize();
-                if (!requestedPath.startsWith(dashboardDir)) {
-                    exchange.sendResponseHeaders(403, -1);
-                    return;
-                }
-                Path filePath;
-                if (rawPath.startsWith("/assets/")) {
-                    String assetName = rawPath.substring("/assets/".length());
-                    filePath = dashboardDir.resolve("assets").resolve(assetName);
-                } else {
-                    filePath = dashboardDir.resolve("index.html");
-                }
-                if (!Files.exists(filePath)) {
+                // The HTML is fully self-contained — serve index.html for every request.
+                Path htmlFile = dashboardDir.resolve("index.html");
+                if (!Files.isRegularFile(htmlFile)) {
                     exchange.sendResponseHeaders(404, -1);
                     return;
                 }
-                String ct = filePath.toString().endsWith(".js")
-                        ? "application/javascript" : "text/html; charset=utf-8";
-                byte[] body = Files.readAllBytes(filePath);
-                exchange.getResponseHeaders().add("Content-Type", ct);
+                byte[] body = Files.readAllBytes(htmlFile);
+                exchange.getResponseHeaders().add("Content-Type", "text/html; charset=utf-8");
+                exchange.getResponseHeaders().add("Cache-Control", "no-cache");
                 exchange.sendResponseHeaders(200, body.length);
                 exchange.getResponseBody().write(body);
                 exchange.getResponseBody().close();
@@ -1142,44 +1124,6 @@ public class TestOrderPlugin implements Plugin<Project> {
             ChangeDetectionSupport.normalizeMode(changeMode);
         } catch (IOException e) {
             throw new IllegalArgumentException("Unknown changeMode: " + changeMode);
-        }
-    }
-
-    private static void configureStateLocking(Project project, TestOrderExtension ext, Test task) {
-        task.doFirst("acquireTestOrderStateLock", t -> {
-            Path statePath = ext.getStateFile().get().getAsFile().toPath();
-            Path lockPath = statePath.resolveSibling(statePath.getFileName() + ".lock");
-            try {
-                Files.createDirectories(lockPath.getParent());
-                FileChannel channel = FileChannel.open(lockPath,
-                        StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-                FileLock lock = channel.lock();
-                ExtraPropertiesExtension extra = t.getExtensions().getExtraProperties();
-                extra.set(STATE_LOCK_CHANNEL_KEY, channel);
-                extra.set(STATE_LOCK_KEY, lock);
-                project.getLogger().info("[test-order] Acquired state lock {}", lockPath);
-            } catch (IOException e) {
-                throw new GradleException("Failed to acquire state lock for " + statePath, e);
-            }
-        });
-        task.doLast("releaseTestOrderStateLock", t -> releaseStateLock(t));
-    }
-
-    private static void releaseStateLock(Task task) {
-        ExtraPropertiesExtension extra = task.getExtensions().getExtraProperties();
-        Object lockObj = extra.has(STATE_LOCK_KEY) ? extra.get(STATE_LOCK_KEY) : null;
-        Object channelObj = extra.has(STATE_LOCK_CHANNEL_KEY) ? extra.get(STATE_LOCK_CHANNEL_KEY) : null;
-        try {
-            if (lockObj instanceof FileLock lock) {
-                lock.release();
-            }
-        } catch (IOException ignored) {
-        }
-        try {
-            if (channelObj instanceof FileChannel channel) {
-                channel.close();
-            }
-        } catch (IOException ignored) {
         }
     }
 

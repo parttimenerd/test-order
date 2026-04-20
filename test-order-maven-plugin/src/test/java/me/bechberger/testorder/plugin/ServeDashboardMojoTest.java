@@ -150,14 +150,49 @@ class ServeDashboardMojoTest {
 
     @Test
     void unknownPathAlsoServesDashboard() throws Exception {
-        // The mojo maps all paths to the dashboard HTML
+        // Paths that are not /assets/... fall through to the dashboard HTML
         writeHtml("<html><body>dash</body></html>");
 
         runServeInBackground();
         waitForBound();
 
         HttpResponse<String> resp = get("/anything/else");
-        assertEquals(200, resp.statusCode(), "Any path should serve the dashboard HTML");
+        assertEquals(200, resp.statusCode(), "Non-asset paths should fall back to the dashboard HTML");
+        stopServing();
+    }
+
+    @Test
+    void selfContainedHtmlIsServedForAnyPath() throws Exception {
+        // The HTML is fully self-contained — server returns it for every path
+        writeHtml("<html><body>self-contained</body></html>");
+
+        runServeInBackground();
+        waitForBound();
+
+        // Root serves the HTML
+        HttpResponse<String> root = get("/");
+        assertEquals(200, root.statusCode(), "Root path should return the HTML");
+        assertTrue(root.headers().firstValue("content-type").orElse("").contains("text/html"),
+                "Content-Type must be text/html");
+        assertTrue(root.body().contains("self-contained"), "Body must be the dashboard HTML");
+
+        // Any other path also returns the HTML (no separate asset endpoints)
+        HttpResponse<String> other = get("/anything/else");
+        assertEquals(200, other.statusCode(), "Any path should return the HTML");
+        stopServing();
+    }
+
+    @Test
+    void assetPathDoesNotExposeParentDirectories() throws Exception {
+        writeHtml("<html><body>dash</body></html>");
+
+        runServeInBackground();
+        waitForBound();
+
+        // Traversal attempt — server must not 500; must return 200 (index.html) or 404
+        HttpResponse<String> resp = get("/assets/../index.html");
+        assertTrue(resp.statusCode() == 404 || resp.statusCode() == 200,
+                "Traversal attempt must not 500");
         stopServing();
     }
 

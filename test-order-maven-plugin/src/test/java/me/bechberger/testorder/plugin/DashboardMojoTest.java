@@ -81,6 +81,21 @@ class DashboardMojoTest {
     }
 
     @Test
+    void withSimpleIndexInlinesWebAssets() throws Exception {
+        writeMinimalIndex();
+        mojo.execute();
+        String html = Files.readString(resolveOutput());
+        // Assets must be inlined — no external <script src="./assets/..."> references
+        assertFalse(html.contains("src=\"./assets/"), "HTML must not contain external asset src references");
+        // Each library's known identifier must appear inline
+        assertTrue(html.contains("Vue"),   "Vue.js must be inlined in HTML");
+        assertTrue(html.contains("Chart"), "Chart.js must be inlined in HTML");
+        assertTrue(html.contains("d3"),    "D3 must be inlined in HTML");
+        assertTrue(Files.size(resolveOutput()) > 500_000,
+                "Self-contained HTML should be >500 KB (contains all three libraries)");
+    }
+
+    @Test
     void generatedHtmlIsNonEmpty() throws Exception {
         writeMinimalIndex();
         mojo.execute();

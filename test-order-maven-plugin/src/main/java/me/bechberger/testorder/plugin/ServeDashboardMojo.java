@@ -71,7 +71,7 @@ public class ServeDashboardMojo extends DashboardMojo {
     }
 
     /** Bound port after the server starts; 0 until then. Accessible for testing. */
-    volatile int boundPort = 0;
+    public volatile int boundPort = 0;
 
     private void startServer(Path htmlPath) throws MojoExecutionException {
         HttpServer server;
@@ -81,7 +81,7 @@ public class ServeDashboardMojo extends DashboardMojo {
             throw new MojoExecutionException("Failed to bind HTTP server on port " + port, e);
         }
 
-        server.createContext("/", exchange -> serveFile(exchange, htmlPath));
+        server.createContext("/", exchange -> handleRequest(exchange, htmlPath.getParent()));
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         server.start();
 
@@ -107,14 +107,22 @@ public class ServeDashboardMojo extends DashboardMojo {
         }
     }
 
-    private void serveFile(HttpExchange exchange, Path htmlPath) throws IOException {
+    private void handleRequest(HttpExchange exchange, Path dir) throws IOException {
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod()) &&
             !"HEAD".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
             return;
         }
 
-        byte[] body = Files.readAllBytes(htmlPath);
+        // The generated HTML is fully self-contained (assets inlined), so serve
+        // index.html for every request — no separate /assets/ needed.
+        Path target = dir.resolve("index.html");
+        if (!Files.isRegularFile(target)) {
+            exchange.sendResponseHeaders(404, -1);
+            return;
+        }
+
+        byte[] body = Files.readAllBytes(target);
         exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
         exchange.getResponseHeaders().set("Cache-Control", "no-cache");
 
