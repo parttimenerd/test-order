@@ -70,6 +70,9 @@ public class ServeDashboardMojo extends DashboardMojo {
         startServer(htmlPath);
     }
 
+    /** Bound port after the server starts; 0 until then. Accessible for testing. */
+    volatile int boundPort = 0;
+
     private void startServer(Path htmlPath) throws MojoExecutionException {
         HttpServer server;
         try {
@@ -82,8 +85,8 @@ public class ServeDashboardMojo extends DashboardMojo {
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         server.start();
 
-        int actualPort = server.getAddress().getPort();
-        String url = "http://localhost:" + actualPort;
+        boundPort = server.getAddress().getPort();
+        String url = "http://localhost:" + boundPort;
 
         getLog().info("[test-order] Dashboard served at: " + url);
         getLog().info("[test-order] Press Ctrl+C to stop.");
@@ -99,6 +102,7 @@ public class ServeDashboardMojo extends DashboardMojo {
         try {
             latch.await();
         } catch (InterruptedException e) {
+            server.stop(0);
             Thread.currentThread().interrupt();
         }
     }
