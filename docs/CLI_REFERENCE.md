@@ -8,9 +8,10 @@ Complete reference for all Maven plugin goals, Gradle plugin options, and config
 
 1. [Maven Plugin Goals](#maven-plugin-goals)
 2. [Configuration Parameters](#configuration-parameters)
-3. [Common Use Cases](#common-use-cases)
-4. [Property Naming Convention](#property-naming-convention)
-5. [Error Messages & Troubleshooting](#error-messages--troubleshooting)
+3. [Parameter Validation](#parameter-validation)
+4. [Common Use Cases](#common-use-cases)
+5. [Property Naming Convention](#property-naming-convention)
+6. [Error Messages & Troubleshooting](#error-messages--troubleshooting)
 
 ---
 
@@ -484,6 +485,134 @@ mvn test-order:combined test \
 
 ---
 
+## Parameter Validation
+
+All test-order Maven parameters are validated at startup to catch configuration errors early. This section describes validation rules and error messages you may encounter.
+
+### Validation Overview
+
+Parameters are validated in three phases:
+
+1. **Base Class Validation** (AbstractTestOrderMojo):
+   - `changeMode` - must be valid enum value
+   - `changedClasses` - required when using explicit mode
+   - `weightsFile` - must exist if specified
+
+2. **Combined Mojo Validation** (CombinedMojo):
+   - `instrumentationMode` - must be FULL or SMART
+   - `selectTopN` - must be >= 0
+   - `selectRandomM` - must be >= 0
+   - Warning if both selections are 0 (no tests will run)
+   - `optimizeEvery` - must be >= 0
+
+3. **Coverage Mojo Validation** (CoverageMojo):
+   - `threshold` - must be 0-100
+   - `outputDirectory` - auto-created if missing
+   - `outputFormat` - must be markdown or json
+
+### Change Mode Validation
+
+**Valid values**: `auto`, `since-last-run`, `since-last-commit`, `uncommitted`, `explicit`
+
+```bash
+# ✅ Valid
+mvn test-order:combined test -Dtestorder.change-mode=auto
+
+# ✅ Valid (case insensitive)
+mvn test-order:combined test -Dtestorder.change-mode=SINCE-LAST-RUN
+
+# ❌ Invalid - will throw error
+mvn test-order:combined test -Dtestorder.change-mode=invalid
+# Error: [test-order] Invalid changeMode 'invalid'. Valid values are: auto, since-last-run, since-last-commit, uncommitted, explicit
+```
+
+### Explicit Mode Requirements
+
+When using `explicit` mode, you MUST provide the `changedClasses` parameter:
+
+```bash
+# ❌ Invalid - missing changedClasses
+mvn test-order:combined test -Dtestorder.change-mode=explicit
+
+# ✅ Valid - changedClasses provided
+mvn test-order:combined test \
+  -Dtestorder.change-mode=explicit \
+  -Dtestorder.changed-classes=com.example.UserService,com.example.PaymentService
+```
+
+### Instrumentation Mode Validation
+
+**Valid values**: `FULL`, `SMART`
+
+```bash
+# ✅ Valid
+mvn test-order:combined test -Dtestorder.instrumentation-mode=FULL
+
+# ✅ Valid (case insensitive)
+mvn test-order:combined test -Dtestorder.instrumentation-mode=smart
+
+# ❌ Invalid - will throw error
+mvn test-order:combined test -Dtestorder.instrumentation-mode=partial
+# Error: [test-order] Invalid instrumentationMode 'partial'. Valid values are: FULL, SMART
+```
+
+### Selection Parameter Validation
+
+Both `selectTopN` and `selectRandomM` must be non-negative:
+
+```bash
+# ✅ Valid
+mvn test-order:combined test -Dtestorder.select-top-n=20 -Dtestorder.select-random-m=10
+
+# ⚠️ Warning - both are 0, no tests will be selected
+mvn test-order:combined test -Dtestorder.select-top-n=0 -Dtestorder.select-random-m=0
+# Warning: [test-order] Both selectTopN and selectRandomM are 0 — no tests will be selected. Set selectTopN to at least 1.
+
+# ❌ Invalid - negative value
+mvn test-order:combined test -Dtestorder.select-top-n=-5
+# Error: [test-order] selectTopN cannot be negative: -5
+```
+
+### Weights File Validation
+
+If `weightsFile` is specified, it must exist:
+
+```bash
+# ✅ Valid - file exists
+mvn test-order:combined test -Dtestorder.weights-file=./weights.txt
+
+# ❌ Invalid - file doesn't exist
+mvn test-order:combined test -Dtestorder.weights-file=./nonexistent.txt
+# Error: [test-order] weightsFile './nonexistent.txt' does not exist
+```
+
+### Coverage Threshold Validation
+
+Coverage thresholds must be between 0 and 100:
+
+```bash
+# ✅ Valid
+mvn test-order:coverage -Dtestorder.threshold-percent=50
+
+# ❌ Invalid - out of range
+mvn test-order:coverage -Dtestorder.threshold-percent=150
+# Error: [test-order] threshold must be between 0 and 100, got 150
+```
+
+### Common Validation Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `Invalid changeMode 'xxx'` | Typo in mode value | Use: auto, since-last-run, since-last-commit, uncommitted, explicit |
+| `changedClasses is required when using explicit mode` | Missing parameter | Add `-Dtestorder.changed-classes=...` |
+| `selectTopN cannot be negative: -5` | Negative value | Use >= 0 |
+| `Both selectTopN and selectRandomM are 0` | No tests selected | Set selectTopN to at least 1 |
+| `weightsFile './file.txt' does not exist` | File not found | Check path and ensure file exists |
+| `Invalid instrumentationMode 'HYBRID'` | Invalid enum value | Use FULL or SMART |
+| `threshold must be between 0 and 100` | Out of range | Specify 0-100 |
+
+---
+
 ## Common Use Cases
 
 ### Use Case 1: Local Development (Fast Feedback)
@@ -672,6 +801,102 @@ Some older properties use alternate names. Both work:
 | `testorder.instrumentation-mode` | `testorder.instrumentation-mode` | FULL or SMART |
 
 **Recommendation**: Use canonical hyphenated names for new code.
+
+---
+
+## Quick Start Guide (Default Behavior)
+
+### Zero Configuration (Recommended for 80% of Projects)
+
+The test-order defaults are optimized for typical Maven projects. You likely need **zero configuration**:
+
+```bash
+# First run: initialize + run test selection
+mvn test-order:combined test
+
+# Subsequent runs: automatically selective
+mvn test-order:combined test
+
+# When you're confident: run all tests
+mvn test
+```
+
+**What happens with defaults**:
+- **Change Mode**: `auto` - detects changes automatically
+- **Selection**: Top 20 tests + 10 random tests
+- **Instrumentation**: FULL bytecode analysis
+- **Dependencies**: Stored in `target/test-order-deps`
+- **State**: Cached in `.test-order-state`
+
+### When to Customize
+
+#### Local Development (Faster Feedback)
+
+Use `selectTopN=10` for even faster feedback:
+
+```bash
+mvn test-order:combined test -Dtestorder.select-top-n=10
+```
+
+**Trade-off**: Runs fewer tests (10 vs 20), misses some regressions, but 20% faster
+
+#### CI/CD (Safety Over Speed)
+
+Run full test suite or increase random selection:
+
+```bash
+# Option 1: Full suite (safest)
+mvn test
+
+# Option 2: More selective tests
+mvn test-order:combined test -Dtestorder.select-top-n=50 -Dtestorder.select-random-m=20
+```
+
+#### Branch Merges (Different Change Detection)
+
+When you want to run tests only for the branch's changes:
+
+```bash
+# Since last commit on main
+mvn test-order:combined test -Dtestorder.change-mode=since-last-commit
+
+# Only uncommitted changes
+mvn test-order:combined test -Dtestorder.change-mode=uncommitted
+```
+
+#### Specific Classes Changed (Explicit Mode)
+
+When you know exactly which classes were modified:
+
+```bash
+mvn test-order:combined test \
+  -Dtestorder.change-mode=explicit \
+  -Dtestorder.changed-classes=com.example.PaymentService,com.example.OrderProcessor
+```
+
+### Default Values Reference
+
+| Parameter | Default | Good For | Consider Changing |
+|-----------|---------|----------|-------------------|
+| `changeMode` | `auto` | ✅ Most projects | Branches, explicit testing |
+| `selectTopN` | `20` | ✅ Most projects | Faster dev (10), safer CI (50) |
+| `selectRandomM` | `10` | ✅ Most projects | High coverage needs (20) |
+| `instrumentationMode` | `FULL` | ✅ Most projects | Large codebases (SMART) |
+| `stateFile` | `.test-order-state` | ✅ Works everywhere | Custom storage paths |
+| `hashFile` | `.test-order-hashes.lz4` | ✅ Works everywhere | Custom storage paths |
+| `depsDirectory` | `target/test-order-deps` | ✅ Ignored in .git* | Never change |
+
+### How Defaults Cover Common Scenarios
+
+| Scenario | Default Behavior | Result |
+|----------|------------------|--------|
+| First run | Learn mode (builds index, runs all tests) | No tests skipped initially |
+| Regular dev | Selective (top 20 + 10 random) | ~30 tests run (~80% coverage) |
+| Test fails | Re-run full suite | All tests included |
+| Code change | Auto-detects changed files | Tests for changed code prioritized |
+| Branch merge | Auto-detects merge commits | All affected code tested |
+
+**Key Insight**: Defaults are tuned so 80% of projects work without configuration. The 20% exception cases get custom parameters.
 
 ---
 

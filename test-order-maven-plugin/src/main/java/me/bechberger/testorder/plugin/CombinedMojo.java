@@ -79,6 +79,8 @@ public class CombinedMojo extends AbstractTestOrderMojo {
     @Override
     public void execute() throws MojoExecutionException {
         initContext();
+        validateCombinedMojoParameters();
+        
         String canonicalInstrumentationMode = session != null && session.getUserProperties() != null
                 ? session.getUserProperties().getProperty(MavenPluginConfigKeys.INSTRUMENTATION_MODE)
                 : null;
@@ -175,5 +177,43 @@ public class CombinedMojo extends AbstractTestOrderMojo {
 
         // snapshot hashes for next run
         snapshotHashes();
+    }
+
+    /**
+     * Validates CombinedMojo-specific parameters.
+     */
+    private void validateCombinedMojoParameters() throws MojoExecutionException {
+        ParameterValidator validator = new ParameterValidator(getLog());
+
+        // Validate instrumentation mode
+        validator.validateInstrumentationMode(instrumentationMode);
+
+        // Validate selection parameters
+        if (topN < 0) {
+            throw new MojoExecutionException(
+                "[test-order] selectTopN cannot be negative: " + topN
+            );
+        }
+
+        if (randomM < 0) {
+            throw new MojoExecutionException(
+                "[test-order] selectRandomM cannot be negative: " + randomM
+            );
+        }
+
+        // Warn if both are zero (no tests will be selected)
+        if (topN == 0 && randomM == 0) {
+            getLog().warn(
+                "[test-order] Both selectTopN and selectRandomM are 0 — no tests will be selected. "
+                + "Set selectTopN to at least 1."
+            );
+        }
+
+        // Validate optimization frequency
+        if (optimizeEvery < 0) {
+            throw new MojoExecutionException(
+                "[test-order] optimizeEvery cannot be negative: " + optimizeEvery
+            );
+        }
     }
 }

@@ -94,9 +94,28 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
     protected void initContext() throws MojoExecutionException {
         applyCanonicalUserPropertyOverrides();
+        validateParameters();
         ctx = new ReactorContext(session, project);
         try { ctx.ensureSharedDirectories(); }
         catch (IOException e) { throw new MojoExecutionException("Failed to create shared directories", e); }
+    }
+
+    /**
+     * Validates all parameters are valid and sensible.
+     */
+    protected void validateParameters() throws MojoExecutionException {
+        ParameterValidator validator = new ParameterValidator(getLog());
+        
+        // Validate changeMode
+        validator.validateChangeMode(changeMode);
+        
+        // Validate explicit mode requirements
+        validator.validateExplicitModeRequirements(changeMode, changedClasses);
+        
+        // Validate file paths if provided
+        if (weightsFile != null && !weightsFile.isBlank()) {
+            validator.validateFilePath(weightsFile, "weightsFile");
+        }
     }
 
     /**

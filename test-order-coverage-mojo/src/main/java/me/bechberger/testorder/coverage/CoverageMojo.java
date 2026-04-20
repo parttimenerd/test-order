@@ -45,6 +45,13 @@ public class CoverageMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        // Validate parameters
+        CoverageParameterValidator validator = new CoverageParameterValidator(getLog());
+        validator.validateThreshold(threshold);
+        validator.validateOutputFormat(outputFormat);
+        validator.validateOutputDirectory(outputDir.getAbsolutePath(), "outputDir");
+        validator.validateIncludeModules(includeModules);
+
         getLog().info("Starting coverage analysis with threshold: " + threshold + "%");
 
         try {

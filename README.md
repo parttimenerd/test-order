@@ -10,6 +10,25 @@ Compatible with JUnit 5 (Jupiter 5.x) and JUnit 6 (Jupiter 6.x).
 
 **Requires Java 17 or later.**
 
+## Quick Start
+
+For most projects, zero configuration is needed:
+
+```bash
+# First run: learns test dependencies
+mvn test-order:combined test
+
+# Subsequent runs: automatically selective based on changes
+mvn test-order:combined test
+
+# When you need safety: run full test suite
+mvn test
+```
+
+That's it! Defaults work for ~80% of projects.
+
+**For advanced configuration and complete CLI reference**: See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md)
+
 ## How it works
 
 1. **Learn mode** — A Java agent instruments application classes to record which ones each test class exercises. The plugin writes a dependency index (`test-dependencies.lz4`) directly during the run. (`.deps` files are a fallback path and can still be aggregated manually.)
@@ -889,5 +908,4 @@ TODO:
 
 
 - can you add a small VueJS based UI that visualizes the dependency index and scoring for a test class? It could show the test's dependencies, which ones changed, and how the score is computed from the components. This would be a great tool for understanding why certain tests are prioritized and for debugging the scoring system. It should also show the test history, like past failures and durations, to give a complete picture of the test's profile.
-
-
+It should essentially be a small dashboard.
