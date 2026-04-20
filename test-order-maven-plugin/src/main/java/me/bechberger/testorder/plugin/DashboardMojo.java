@@ -41,7 +41,7 @@ public class DashboardMojo extends ShowOrderMojo {
     /** Output HTML file path. */
     @Parameter(property = MavenPluginConfigKeys.DASHBOARD_OUTPUT,
                defaultValue = "${project.build.directory}/test-order-dashboard/index.html")
-    private String dashboardOutput;
+    protected String dashboardOutput;
 
     /** Optional JaCoCo coverage report directory. */
     @Parameter(property = MavenPluginConfigKeys.DASHBOARD_COVERAGE_DIR,
@@ -338,7 +338,7 @@ public class DashboardMojo extends ShowOrderMojo {
         return sorted.length % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
     }
 
-    private void tryOpenBrowser(URI uri) {
+    protected void tryOpenBrowser(URI uri) {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(uri);
@@ -346,6 +346,11 @@ public class DashboardMojo extends ShowOrderMojo {
         } catch (Exception e) {
             getLog().debug("[test-order] dashboard: could not open browser: " + e.getMessage());
         }
+    }
+
+    /** Returns the resolved output path for the generated dashboard HTML. */
+    protected Path resolveOutputPath() {
+        return Path.of(dashboardOutput);
     }
 
     /** Exposed for subclasses — identical to ShowOrderMojo's private method. */

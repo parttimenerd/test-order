@@ -53,6 +53,8 @@ final class MavenPluginConfigKeys {
     static final String DASHBOARD_COVERAGE_DIR = "testorder.dashboard.coverageDir";
     static final String DASHBOARD_OPEN = "testorder.dashboard.open";
     static final String DASHBOARD_SEPARATE_ASSETS = "testorder.dashboard.separateAssets";
+    static final String DASHBOARD_PORT = "testorder.dashboard.port";
+    static final String DASHBOARD_REGENERATE = "testorder.dashboard.regenerate";
 
     // Legacy aliases kept for backward compatibility in Maven user properties
     static final String LEGACY_INDEX = "testorder.index";

@@ -357,6 +357,38 @@ mvn test-order:dashboard -Dtestorder.dashboard.output=/tmp/my-dashboard.html
 
 ---
 
+### Goal: `serve`
+
+Generates (if needed) and serves the dashboard via an embedded HTTP server, then opens it in the browser. The server keeps running until the build is interrupted (Ctrl+C).
+
+**Usage**: `mvn test-order:serve`
+
+**When to use**:
+- For interactive exploration — the local HTTP server ensures CDN scripts load correctly
+- To share the dashboard on your local network (`http://<your-ip>:<port>`)
+- When `file://` protocol causes issues (e.g., strict browser security settings)
+
+**Key Parameters**:
+| Parameter | Property | Default | Description |
+|-----------|----------|---------|-------------|
+| `port` | `testorder.dashboard.port` | `0` (auto) | TCP port; `0` picks a free ephemeral port |
+| `regenerate` | `testorder.dashboard.regenerate` | `auto` | `auto` = generate only if file missing; `true` = always regenerate; `false` = never |
+| `dashboardOutput` | `testorder.dashboard.output` | `target/test-order-dashboard/index.html` | Path to the HTML file to serve |
+
+**Examples**:
+```bash
+# Generate (if needed) and serve on a random free port
+mvn test-order:serve
+
+# Force regeneration and serve on a fixed port
+mvn test-order:serve -Dtestorder.dashboard.regenerate=true -Dtestorder.dashboard.port=8080
+
+# Serve an already-generated file without regenerating
+mvn test-order:serve -Dtestorder.dashboard.regenerate=false
+```
+
+---
+
 ### Goal: `coverage` (test-order-coverage-mojo)
 
 Analyzes test coverage across project and identifies least tested classes.
