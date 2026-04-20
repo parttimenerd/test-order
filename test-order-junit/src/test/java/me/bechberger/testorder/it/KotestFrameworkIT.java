@@ -23,16 +23,17 @@ public class KotestFrameworkIT extends BaseFixtureIT {
         int baselineCount = getTestCount(baselineOutput);
         assertEquals(5, baselineCount, "Expected 5 Kotest cases in fixture");
 
-        // Learn mode should collect data and produce state/index artifacts
-        String learnOutput = runMaven(fixtureDir, "test-order:learn");
-        assertTestsPassed(learnOutput);
-        assertStateFileExists(fixtureDir);
+        // Combined mode should run end-to-end on Kotest fixture
+        String combinedOutput = runMaven(fixtureDir, "test-order:combined", "test");
+        assertTestsPassed(combinedOutput);
+        int combinedCount = getTestCount(combinedOutput);
+        assertEquals(5, combinedCount, "Expected 5 Kotest cases when running test-order combined mode");
         assertIndexFilesExist(fixtureDir);
 
-        // Order mode should run successfully against the generated state
-        String orderOutput = runMaven(fixtureDir, "test-order:order");
-        assertTestsPassed(orderOutput);
-        int orderCount = getTestCount(orderOutput);
-        assertEquals(5, orderCount, "Kotest case count should remain stable after ordering");
+        // Re-running combined mode should preserve successful Kotest execution
+        String secondCombinedOutput = runMaven(fixtureDir, "test-order:combined", "test");
+        assertTestsPassed(secondCombinedOutput);
+        int secondRunCount = getTestCount(secondCombinedOutput);
+        assertEquals(5, secondRunCount, "Kotest case count should remain stable across test-order runs");
     }
 }

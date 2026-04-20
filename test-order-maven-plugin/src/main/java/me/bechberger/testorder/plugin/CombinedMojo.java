@@ -31,34 +31,38 @@ import java.util.Set;
 @Mojo(name = "combined", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES)
 public class CombinedMojo extends AbstractTestOrderMojo {
 
-    /** Comma-separated additional package prefixes to instrument (merged with auto-detected source packages) */
+    /** Comma-separated additional package prefixes to instrument (merged with auto-detected source packages). Useful if classes are in non-standard packages. */
     @Parameter(property = MavenPluginConfigKeys.INCLUDE_PACKAGES)
     private String includePackages;
 
-    /** When true (default) and no source packages are detected, fall back to the project groupId. */
+    /** When true (default) and no source packages are detected, fall back to the project groupId for instrumentation. Set to false to only instrument explicitly specified packages. */
     @Parameter(property = MavenPluginConfigKeys.FILTER_BY_GROUP_ID, defaultValue = "true")
     private boolean filterByGroupId;
 
+    /** Instrumentation mode: FULL (instrument all classes) or SMART (instrument only test-related classes). */
     @Parameter(property = MavenPluginConfigKeys.LEGACY_INSTRUMENTATION_MODE, defaultValue = "FULL")
     private String instrumentationMode;
 
-    /** Number of top-scored test classes to always include. */
+    /** Number of top-scored test classes to always include in the fast subset. Top-scored tests are most likely to find regressions. */
     @Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "20")
     private int topN;
 
-    /** Number of random fast tests to include for coverage diversity. */
-        @Parameter(property = MavenPluginConfigKeys.SELECT_RANDOM_M, defaultValue = "10")
+    /** Number of random fast tests to include for coverage diversity. Adds randomness to catch edge cases not covered by top-scored tests. */
+    @Parameter(property = MavenPluginConfigKeys.SELECT_RANDOM_M, defaultValue = "10")
     private int randomM;
 
-        @Parameter(property = MavenPluginConfigKeys.SELECT_SEED)
+    /** Seed for randomM selection. When set, ensures deterministic random selection for reproducible test runs. */
+    @Parameter(property = MavenPluginConfigKeys.SELECT_SEED)
     private Long seed;
 
-        @Parameter(property = MavenPluginConfigKeys.SELECT_REMAINING_FILE,
-            defaultValue = "${project.build.directory}/test-order-remaining.txt")
+    /** Path to file containing list of deferred tests. These tests were not run in this invocation and can be run separately via 'run-remaining' goal. */
+    @Parameter(property = MavenPluginConfigKeys.SELECT_REMAINING_FILE,
+        defaultValue = "${project.build.directory}/test-order-remaining.txt")
     private String remainingFile;
 
-        @Parameter(property = MavenPluginConfigKeys.SELECTED_FILE,
-            defaultValue = "${project.build.directory}/test-order-selected.txt")
+    /** Path to file containing list of selected tests. Useful for CI/CD integration and debugging test selection. */
+    @Parameter(property = MavenPluginConfigKeys.SELECTED_FILE,
+        defaultValue = "${project.build.directory}/test-order-selected.txt")
     private String selectedFile;
 
     /**
@@ -68,7 +72,7 @@ public class CombinedMojo extends AbstractTestOrderMojo {
     @Parameter(property = MavenPluginConfigKeys.COMBINED_RUN_REMAINING, defaultValue = "true")
     private boolean runRemaining;
 
-    /** Optimise weights every N successful runs (0 = never). */
+    /** Optimise scoring weights every N successful test runs (0 = never, default = every 10 runs). Weight optimization improves prediction accuracy over time. */
     @Parameter(property = MavenPluginConfigKeys.COMBINED_OPTIMIZE_EVERY, defaultValue = "10")
     private int optimizeEvery;
 

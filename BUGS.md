@@ -70,7 +70,7 @@ All issues found in this project, consolidated from `IMPROVEMENT_PLAN.md` and ma
 | 53 | P2 | Testing | No example or IT for `@ParameterizedTest` with test-order — unknown if ordering or duration aggregation works | Fixed |
 | 54 | P2 | Testing | No example or IT for JaCoCo + test-order agent coexistence | Fixed |
 | 55 | P2 | Testing | No example or IT for Spring Boot test slices (`@DataJpaTest`, `@WebMvcTest`, `@SpringBootTest`) | Fixed |
-| 56 | P2 | Testing | No example or IT for Kotlin Kotest framework | Open |
+| 56 | P2 | Testing | No example or IT for Kotlin Kotest framework | Fixed |
 | 57 | P2 | Testing | No benchmarks for scoring, set-cover, or `DependencyMap` serialisation | Fixed |
 | 44 | P3 | Performance | `ClassTransformer` caches grow unbounded — memory leak in very large builds | Fixed |
 | 45 | P3 | Performance | `BOUNDED_GENERICS` regex limited to 4 nesting levels — silently falls back for deeply nested generics | Fixed |
@@ -574,7 +574,7 @@ A crafted 1 GB compressed dependency index could cause DoS via decompression.
 ### #53–56 No compatibility ITs
 No IT for `@ParameterizedTest`, JaCoCo coexistence, Spring Boot slices, or Kotest.
 
-**Fix:** #53 fixed by fixture-backed coverage in `ParameterizedTestOrderingIT` using `fixture-parameterized-tests`; #54 fixed by `JaCoCoCoexistenceIT` using `fixture-jacoco`; #55 fixed by `SpringBootSlicesIT` using `fixture-spring-boot-slices`. #56 (Kotest) remains open.
+**Fix:** #53 fixed by fixture-backed coverage in `ParameterizedTestOrderingIT` using `fixture-parameterized-tests`; #54 fixed by `JaCoCoCoexistenceIT` using `fixture-jacoco`; #55 fixed by `SpringBootSlicesIT` using `fixture-spring-boot-slices`; #56 fixed by `KotestFrameworkIT` using `fixture-kotest` (Kotlin + Kotest `StringSpec`) and validating successful baseline plus repeated `test-order:combined test` runs.
 
 ---
 

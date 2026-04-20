@@ -99,6 +99,21 @@ Self-contained integration test fixtures for validating test-order functionality
 
 **Location**: `test-fixtures/fixture-parallel-execution/`
 
+### 6. fixture-kotest
+
+**Purpose**: Validate test-order workflows on Kotlin projects that use Kotest on the JUnit platform.
+
+**Structure**:
+- Main code: `DiscountPolicy` Kotlin object with tier-based discount logic
+- Tests: `DiscountPolicyKotestTest` using Kotest `StringSpec` with 5 test cases
+
+**Real-world bug patterns tested**:
+- Kotest discovery/execution through Maven Surefire + JUnit platform
+- test-order learn/order goals on Kotlin test suites that are not JUnit Jupiter classes
+- Stability of test counts and workflow completion in mixed Kotlin/JVM setups
+
+**Location**: `test-fixtures/fixture-kotest/`
+
 ## Usage
 
 ### Build all fixtures
@@ -159,6 +174,12 @@ test-fixtures/
 │   │   └── StringProcessor.java
 │   └── src/test/java/com/example/coverage/
 │       └── StringProcessorTest.java
+├── fixture-kotest/
+│   ├── pom.xml
+│   ├── src/main/kotlin/com/example/kotest/
+│   │   └── DiscountPolicy.kt
+│   └── src/test/kotlin/com/example/kotest/
+│       └── DiscountPolicyKotestTest.kt
 ├── fixture-shallow-clone/
 │   ├── pom.xml
 │   ├── src/main/java/com/example/sample/

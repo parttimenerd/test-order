@@ -31,12 +31,15 @@ public class CoverageMojo extends AbstractMojo {
     @Parameter(property = "coverage.threshold", defaultValue = "50")
     private int threshold;
 
+    /** Output directory for generated coverage reports. */
     @Parameter(property = "coverage.outputDir", defaultValue = "${project.build.directory}/coverage-reports")
     private File outputDir;
 
+    /** Output format for coverage reports. Valid values: 'comprehensive' (default, markdown + JSON), 'markdown', 'json'. */
     @Parameter(property = "coverage.outputFormat", defaultValue = "comprehensive")
     private String outputFormat;
 
+    /** Comma-separated list of module names to include in analysis. If not set, all modules are included. Example: '-DincludeModules=core,cli' */
     @Parameter(property = "coverage.includeModules")
     private String includeModules;
 

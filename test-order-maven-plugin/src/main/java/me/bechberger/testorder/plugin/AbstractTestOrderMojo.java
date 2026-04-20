@@ -38,21 +38,27 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
     protected ReactorContext ctx;
 
+    /** Path to the dependency index file (LZ4 compressed binary format). Used by test-order to load and save test dependencies. */
     @Parameter(property = MavenPluginConfigKeys.LEGACY_INDEX, defaultValue = "${project.basedir}/test-dependencies.lz4")
     protected String indexFile;
 
+    /** Path to the state file for persisting test execution history and weights. Used to track test performance over time. */
     @Parameter(property = MavenPluginConfigKeys.LEGACY_STATE_FILE, defaultValue = "${project.basedir}/.test-order-state")
     protected String stateFile;
 
+    /** Directory for storing individual .deps files during learn mode. Aggregated into the index file via 'aggregate' goal. */
     @Parameter(property = MavenPluginConfigKeys.LEGACY_DEPS_DIR, defaultValue = "${project.build.directory}/test-order-deps")
     protected String depsDir;
 
+    /** Path to the hash file for main source files. Used for hash-based change detection when git is unavailable. */
     @Parameter(property = MavenPluginConfigKeys.LEGACY_HASH_FILE, defaultValue = "${project.basedir}/.test-order-hashes.lz4")
     protected String hashFile;
 
+    /** Path to the hash file for test source files. Used for hash-based change detection of test classes. */
     @Parameter(property = MavenPluginConfigKeys.LEGACY_TEST_HASH_FILE, defaultValue = "${project.basedir}/.test-order-test-hashes.lz4")
     protected String testHashFile;
 
+    /** Path to the hash file for test methods. Used for method-level change detection when enabled. */
     @Parameter(property = MavenPluginConfigKeys.LEGACY_METHOD_HASH_FILE, defaultValue = "${project.basedir}/.test-order-method-hashes.lz4")
     protected String methodHashFile;
 
@@ -76,7 +82,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
     @Parameter(property = MavenPluginConfigKeys.WEIGHTS_FILE)
     protected String weightsFile;
 
-    /** Optional path for verbose agent log output (disabled if not set) */
+    /** Optional path for verbose agent log output. When set, the test-order agent will output detailed diagnostic information about instrumentation and dependency detection. Useful for debugging incorrect test ordering. */
     @Parameter(property = MavenPluginConfigKeys.LEGACY_VERBOSE_FILE)
     protected String verboseFile;
 
