@@ -162,7 +162,8 @@ public class TestOrderPlugin implements Plugin<Project> {
             } else if ("order".equals(resolvedMode)) {
                 orderModeConfigurator.configure(project, ext, testTask);
             } else if ("optimize".equals(resolvedMode)) {
-                // Optimize mode: run tests in priority order, then tune scoring weights
+                // Optimize mode: run tests in priority order, then evolve scoring weights
+                // using a genetic algorithm (Jenetic) over the recorded run history
                 orderModeConfigurator.configure(project, ext, testTask);
                 testTask.doLast("testOrderOptimizeWeights", t -> {
                     Path statePath = ext.getStateFile().get().getAsFile().toPath();
