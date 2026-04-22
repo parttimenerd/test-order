@@ -75,7 +75,8 @@ public class DashboardMojo extends ShowOrderMojo {
 		Set<String> changed = detectChangedClasses();
 		Set<String> changedTests = detectChangedTestClasses();
 		TestOrderState state = loadState();
-		TestOrderState.ScoringWeights sw = resolveWeights(state);
+		TestOrderState.LoadedWeights lw = resolveLoadedWeights(state);
+		TestOrderState.ScoringWeights sw = lw.weights();
 
 		ChangedMembers changedMembers = null;
 		List<StructuralDiff.FileDiff> structuralDiffs = null;
@@ -141,7 +142,8 @@ public class DashboardMojo extends ShowOrderMojo {
 		// build JSON data model via shared DashboardGenerator
 		DashboardGenerator gen = new DashboardGenerator(project.getArtifactId(), stateFile, indexFile,
 				getPluginVersion());
-		Map<String, Object> data = gen.buildData(scored, changed, changedTests, state, sw, depMap, medianDuration);
+		Map<String, Object> data = gen.buildData(scored, changed, changedTests, state, sw, depMap, medianDuration,
+				lw.defs());
 
 		if (data.get("coverage") == null && depMap.size() > 0) {
 			getLog().warn("[test-order] Coverage data is null despite " + depMap.size()

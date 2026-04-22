@@ -72,6 +72,13 @@ class DashboardServerFixture implements AutoCloseable {
 				Set.of("com.example.ReportService", "com.example.OrderRepository", "com.example.UserRepository"));
 		map.save(tempDir.resolve("index.lz4"));
 
+		// Create a "new" test class (not in dep map) so the newTest weight slider
+		// has visible effect in the simulation — DashboardMojo discovers it by
+		// scanning target/test-classes for .class files.
+		Path testClassesDir = tempDir.resolve("target/test-classes/com/example");
+		Files.createDirectories(testClassesDir);
+		Files.createFile(testClassesDir.resolve("NewFeatureTest.class"));
+
 		TestOrderState state = new TestOrderState();
 
 		// Duration history

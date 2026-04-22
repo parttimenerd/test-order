@@ -443,12 +443,15 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	// ── Weights ───────────────────────────────────────────────────────
 
 	protected TestOrderState.ScoringWeights resolveWeights(TestOrderState state) {
-		TestOrderState.ScoringWeights sw = state.weights();
+		return resolveLoadedWeights(state).weights();
+	}
+
+	protected TestOrderState.LoadedWeights resolveLoadedWeights(TestOrderState state) {
 		if (weightsFile != null && !weightsFile.isBlank()) {
 			Path wf = Path.of(weightsFile);
 			if (Files.exists(wf)) {
 				try {
-					sw = TestOrderState.ScoringWeights.loadFromFile(wf).weights();
+					return TestOrderState.ScoringWeights.loadFromFile(wf);
 				} catch (IOException e) {
 					getLog().warn("[test-order] Failed to load weights file: " + e.getMessage());
 				}
@@ -456,7 +459,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				getLog().warn("[test-order] Weights file not found: " + wf.toAbsolutePath());
 			}
 		}
-		return sw;
+		TestOrderState.ScoringWeights sw = state.weights();
+		return new TestOrderState.LoadedWeights(sw, TestOrderState.WEIGHT_DEFS, state.failureDecay(),
+				state.methodFailureDecay(), state.durationAlpha(), state.methodDurationAlpha(),
+				state.failurePruneThreshold());
 	}
 
 	// ── Orderer config ────────────────────────────────────────────────

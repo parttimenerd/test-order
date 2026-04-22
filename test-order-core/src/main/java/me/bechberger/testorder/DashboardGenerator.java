@@ -80,6 +80,17 @@ public class DashboardGenerator {
 	 */
 	public Map<String, Object> buildData(List<ScoredTest> scored, Set<String> changed, Set<String> changedTests,
 			TestOrderState state, TestOrderState.ScoringWeights sw, DependencyMap depMap, long medianDuration) {
+		return buildData(scored, changed, changedTests, state, sw, depMap, medianDuration, TestOrderState.WEIGHT_DEFS);
+	}
+
+	/**
+	 * Overload that accepts explicit weight definitions (e.g. from a user-supplied
+	 * weights file), so that slider min/max/defaultValue in the dashboard reflect
+	 * the loaded configuration rather than the built-in TOML defaults.
+	 */
+	public Map<String, Object> buildData(List<ScoredTest> scored, Set<String> changed, Set<String> changedTests,
+			TestOrderState state, TestOrderState.ScoringWeights sw, DependencyMap depMap, long medianDuration,
+			List<TestOrderState.WeightDef> weightDefs) {
 
 		Map<String, Object> root = new LinkedHashMap<>();
 
@@ -106,16 +117,16 @@ public class DashboardGenerator {
 		root.put("weights", weightsMap);
 
 		// weight definitions (min/max for sliders)
-		List<Object> weightDefs = new ArrayList<>();
-		for (TestOrderState.WeightDef def : TestOrderState.WEIGHT_DEFS) {
+		List<Object> weightDefsJson = new ArrayList<>();
+		for (TestOrderState.WeightDef def : weightDefs) {
 			Map<String, Object> wd = new LinkedHashMap<>();
 			wd.put("name", def.name());
 			wd.put("defaultValue", def.defaultValue());
 			wd.put("min", def.min());
 			wd.put("max", def.max());
-			weightDefs.add(wd);
+			weightDefsJson.add(wd);
 		}
-		root.put("weightDefs", weightDefs);
+		root.put("weightDefs", weightDefsJson);
 
 		// state config
 		Map<String, Object> configMap = new LinkedHashMap<>();

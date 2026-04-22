@@ -339,7 +339,9 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   }
 
   function resetWeights() {
-    Object.assign(lw, dd.weights)
+    for (const wd of dd.weightDefs) {
+      lw[wd.name] = wd.defaultValue
+    }
   }
 
   function simSortByFn(key: string) {
