@@ -17,6 +17,26 @@ interface GNode extends d3.SimulationNodeDatum {
 }
 interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean }
 
+const searchText = vueRef('')
+let liveNodeSel: d3.Selection<SVGGElement, GNode, SVGGElement, unknown> | null = null
+
+function applySearch(q: string) {
+  if (!liveNodeSel) return
+  const lower = q.toLowerCase()
+  liveNodeSel.selectAll<SVGCircleElement, GNode>('circle')
+    .attr('opacity', (n: GNode) => !q || n.id.toLowerCase().includes(lower) ? 1 : 0.12)
+  liveNodeSel.selectAll<SVGTextElement, GNode>('text')
+    .attr('opacity', (n: GNode) => !q || n.id.toLowerCase().includes(lower) ? 1 : 0.12)
+}
+
+watch(searchText, q => applySearch(q))
+
+interface GNode extends d3.SimulationNodeDatum {
+  id: string; type: string; changed: boolean; shortLabel: string; depCount: number
+  mass?: number; pkg?: string
+}
+interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean }
+
 function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
   const mode = d.graphMode.value
   const nodeMap: Record<string, GNode> = {}
@@ -107,6 +127,8 @@ function initGraph() {
       .on('drag', (e, n) => { n.fx = e.x; n.fy = e.y })
       .on('end', (e, n) => { if (!e.active) sim.alphaTarget(0); n.fx = null; n.fy = null }))
 
+  liveNodeSel = node as unknown as d3.Selection<SVGGElement, GNode, SVGGElement, unknown>
+
   node.append('circle')
     .attr('r', n => { const base = n.type === 'test' || n.type === 'method' ? 9 : 6; return base + 1.5 * (n.mass || 1) })
     .attr('fill', n => n.type === 'test' || n.type === 'method' ? '#3b82f6' : n.changed ? '#ef4444' : '#64748b')
@@ -145,7 +167,7 @@ function initGraph() {
       .attr('x2', l => (l.target as GNode).x!).attr('y2', l => (l.target as GNode).y!)
     node.attr('transform', n => `translate(${n.x},${n.y})`)
     updateBubbles()
-  })
+  }).on('end', () => applySearch(searchText.value))
 }
 
 watch([() => d.selectedTest.value, () => d.selectedMethod.value, () => d.graphMode.value, () => d.selectedTests.value], () => {
@@ -173,6 +195,12 @@ defineExpose({ initGraph })
       >
         {{ m.label }}<span v-if="m.id === 'full' && d.totalNodes.value > 300" style="color:var(--orange)"> ({{ d.totalNodes.value }})</span>
       </button>
+      <input
+        v-model="searchText"
+        class="dep-graph__search"
+        placeholder="Search nodes…"
+        title="Filter visible nodes by class or method name"
+      />
       <span style="margin-left:auto;font-size:.68rem;color:var(--text-muted);display:flex;gap:10px">
         <span><span class="dep-graph__dot" style="background:#3b82f6"></span>test</span>
         <span><span class="dep-graph__dot" style="background:#ef4444"></span>changed</span>
@@ -191,6 +219,12 @@ defineExpose({ initGraph })
 .dep-graph__btn--active { background: #4338ca; border-color: var(--accent); color: var(--text); }
 .dep-graph__btn--disabled { cursor: not-allowed; opacity: .4; }
 .dep-graph__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; margin-right: 3px; }
+.dep-graph__search {
+  padding: 3px 8px; font-size: .7rem; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-card); color: var(--text); outline: none; width: 140px;
+  transition: border-color var(--tr-fast);
+}
+.dep-graph__search:focus { border-color: var(--accent); }
 </style>
 
 <style>

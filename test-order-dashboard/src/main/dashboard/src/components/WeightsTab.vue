@@ -4,6 +4,18 @@ import type { DashboardState } from '../composables/useDashboard'
 import { sn } from '../utils'
 
 const d = inject<DashboardState>('dashboard')!
+
+const WEIGHT_DESC: Record<string, string> = {
+  newTest:          'Boost for test classes that did not exist in the previous run — ensures new tests run early',
+  changedTest:      'Boost for test classes whose source was modified since the last run',
+  maxFailure:       'Boost scaled by historical failure rate — tests that fail often get higher priority',
+  speed:            'Bonus for fast tests — short-running tests receive a higher raw bonus',
+  speedPenalty:     'Penalty for slow tests — long-running tests are pushed later in the order',
+  depOverlap:       'Boost for tests whose class-level dependencies overlap with changed classes',
+  changeComplexity: 'Scales the dep-overlap bonus by the number of changed dependencies touched',
+  staticFieldBonus: 'Boost for tests that read static fields of changed classes',
+  coverageBonus:    'Boost based on line coverage of changed classes (requires JaCoCo coverage data)',
+}
 </script>
 
 <template>
@@ -13,8 +25,11 @@ const d = inject<DashboardState>('dashboard')!
       <button @click="d.resetWeights()" style="margin-left:auto;padding:3px 10px;font-size:.7rem;background:var(--border);color:var(--text);border:1px solid var(--text-muted);border-radius:4px;cursor:pointer">Reset to defaults</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:5px;margin-bottom:14px">
-      <div v-for="wd in d.dd.weightDefs" :key="wd.name" class="weights__slider-row">
-        <span class="weights__slider-label" :title="wd.name">{{ wd.name }}</span>
+      <div v-for="wd in d.dd.weightDefs" :key="wd.name" class="weights__slider-row" :title="WEIGHT_DESC[wd.name] || wd.name">
+        <div class="weights__slider-label-wrap">
+          <span class="weights__slider-label">{{ wd.name }}</span>
+          <span v-if="WEIGHT_DESC[wd.name]" class="weights__slider-desc">{{ WEIGHT_DESC[wd.name] }}</span>
+        </div>
         <input type="range" :min="wd.min" :max="wd.max" step="1" v-model.number="d.lw[wd.name]" class="weights__range">
         <span class="weights__slider-val">{{ d.lw[wd.name] }}</span>
         <span class="weights__slider-default">({{ wd.defaultValue }})</span>
@@ -62,8 +77,10 @@ const d = inject<DashboardState>('dashboard')!
 </template>
 
 <style scoped>
-.weights__slider-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--bg-card); border-radius: 5px; }
-.weights__slider-label { font-size: .7rem; color: var(--text-sec); width: 145px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.weights__slider-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: var(--bg-card); border-radius: 5px; }
+.weights__slider-label-wrap { display: flex; flex-direction: column; width: 145px; flex-shrink: 0; overflow: hidden; }
+.weights__slider-label { font-size: .7rem; color: var(--text-sec); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.weights__slider-desc { font-size: .58rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .weights__range { flex: 1; accent-color: var(--accent); }
 .weights__slider-val { font-size: .7rem; color: var(--accent-light); width: 24px; text-align: right; }
 .weights__slider-default { font-size: .65rem; color: var(--border); width: 24px; text-align: right; }
