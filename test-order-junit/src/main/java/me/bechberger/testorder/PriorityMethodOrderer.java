@@ -121,20 +121,54 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			scoreIndexMap.put(scores.get(i).methodName(), i);
 		}
 
-		// Sort by score descending (highest score runs first), maintain source order
-		// for ties
+		// Apply @TestOrder annotation overrides
+		Map<String, Double> effectiveScores = new HashMap<>(scores.size() * 2);
+		List<org.junit.jupiter.api.MethodDescriptor> pinFirstMethods = new ArrayList<>();
+		List<org.junit.jupiter.api.MethodDescriptor> pinLastMethods = new ArrayList<>();
+		for (MethodScorer.MethodScoreResult sr : scores) {
+			effectiveScores.put(sr.methodName(), sr.score());
+		}
+		for (org.junit.jupiter.api.MethodDescriptor md : context.getMethodDescriptors()) {
+			TestOrder ann = md.getMethod().getAnnotation(TestOrder.class);
+			if (ann == null)
+				continue;
+			String methodKey = className + "#" + md.getMethod().getName();
+			boolean isChanged = changedMethods != null && changedMethods.contains(methodKey);
+			double delta = ann.scoreBonus() + (isChanged ? ann.changeBonus() : 0);
+			TestOrder.Priority prio = ann.priority();
+			if (prio == TestOrder.Priority.FIRST) {
+				pinFirstMethods.add(md);
+			} else if (prio == TestOrder.Priority.LAST) {
+				pinLastMethods.add(md);
+			} else {
+				if (prio == TestOrder.Priority.HIGH)
+					delta += TestOrder.Priority.BOOST;
+				else if (prio == TestOrder.Priority.LOW)
+					delta -= TestOrder.Priority.BOOST;
+				if (delta != 0)
+					effectiveScores.merge(md.getMethod().getName(), delta, Double::sum);
+			}
+		}
+
+		// Sort by effective score descending, maintain source order for ties
 		context.getMethodDescriptors().sort((a, b) -> {
-			int scoreA = scoreIndexMap.getOrDefault(a.getMethod().getName(), -1);
-			int scoreB = scoreIndexMap.getOrDefault(b.getMethod().getName(), -1);
-
-			// Get scores in descending order
-			double sa = scoreA >= 0 ? scores.get(scoreA).score() : 0.0;
-			double sb = scoreB >= 0 ? scores.get(scoreB).score() : 0.0;
-
-			int cmp = Double.compare(sb, sa); // reverse: higher score first
+			boolean aPin1 = pinFirstMethods.contains(a), bPin1 = pinFirstMethods.contains(b);
+			boolean aPin0 = pinLastMethods.contains(a), bPin0 = pinLastMethods.contains(b);
+			if (aPin1 && !bPin1)
+				return -1;
+			if (!aPin1 && bPin1)
+				return 1;
+			if (aPin0 && !bPin0)
+				return 1;
+			if (!aPin0 && bPin0)
+				return -1;
+			double sa = effectiveScores.getOrDefault(a.getMethod().getName(), 0.0);
+			double sb = effectiveScores.getOrDefault(b.getMethod().getName(), 0.0);
+			int cmp = Double.compare(sb, sa); // higher score first
 			if (cmp == 0) {
-				// Tie: preserve source order (by index in original list)
-				return Integer.compare(scoreA, scoreB);
+				int ia = scoreIndexMap.getOrDefault(a.getMethod().getName(), -1);
+				int ib = scoreIndexMap.getOrDefault(b.getMethod().getName(), -1);
+				return Integer.compare(ia, ib);
 			}
 			return cmp;
 		});

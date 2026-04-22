@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>me.bechberger</groupId>
+        <artifactId>test-order-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>test-order-annotations</artifactId>
+    <name>Test Order Annotations</name>
+    <description>
+        Zero-dependency annotation library for test-order. Provides @TestOrder,
+        which lets you pin, boost, or demote individual test classes and methods
+        without touching scoring configuration.
+    </description>
+
+    <!-- No dependencies: the annotation is retained at runtime so the JVM can
+         read it via reflection, but it needs no third-party runtime. -->
+    <dependencies/>
+
+</project>

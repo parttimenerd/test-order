@@ -17,6 +17,11 @@
     <dependencies>
         <dependency>
             <groupId>me.bechberger</groupId>
+            <artifactId>test-order-annotations</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>me.bechberger</groupId>
             <artifactId>test-order-core</artifactId>
             <version>${project.version}</version>
         </dependency>

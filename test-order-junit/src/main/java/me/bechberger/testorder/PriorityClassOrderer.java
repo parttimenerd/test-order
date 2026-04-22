@@ -237,8 +237,60 @@ public class PriorityClassOrderer implements ClassOrderer {
 		}
 
 		// order: group by score descending, within each group use Jaccard diversity
-		orderByScoreAndDiversity(descriptors, scores, depMap, state,
+		// Apply @TestOrder annotation adjustments before sorting
+		List<ClassDescriptor> pinFirst = new ArrayList<>();
+		List<ClassDescriptor> pinLast = new ArrayList<>();
+		for (ClassDescriptor desc : mutableDescriptors) {
+			TestOrder ann = desc.getTestClass().getAnnotation(TestOrder.class);
+			if (ann == null)
+				continue;
+			String testClassName = getTopLevelClassName(desc);
+			int bonus = ann.scoreBonus();
+			int changeBonus = changedTestClasses.contains(testClassName) ? ann.changeBonus() : 0;
+			TestOrder.Priority prio = ann.priority();
+
+			if (prio == TestOrder.Priority.FIRST) {
+				pinFirst.add(desc);
+			} else if (prio == TestOrder.Priority.LAST) {
+				pinLast.add(desc);
+			} else {
+				int delta = bonus + changeBonus;
+				if (prio == TestOrder.Priority.HIGH)
+					delta += TestOrder.Priority.BOOST;
+				else if (prio == TestOrder.Priority.LOW)
+					delta -= TestOrder.Priority.BOOST;
+				if (delta != 0)
+					scores.merge(desc, delta, Integer::sum);
+			}
+			if (debug && (bonus != 0 || changeBonus != 0 || prio != TestOrder.Priority.NORMAL)) {
+				TestOrderLogger.debug(
+						"[test-order] @TestOrder on {}: priority={}, scoreBonus={}, changeBonus={} (applied={})",
+						testClassName, prio, bonus, ann.changeBonus(), changeBonus);
+			}
+		}
+		// Remove pinned descriptors from main list before score-based sort
+		mutableDescriptors.removeAll(pinFirst);
+		mutableDescriptors.removeAll(pinLast);
+		// Stable sort pinFirst by scoreBonus desc then name, pinLast by scoreBonus asc
+		// then name
+		pinFirst.sort(Comparator
+				.<ClassDescriptor, Integer>comparing(
+						d -> Optional.ofNullable(d.getTestClass().getAnnotation(TestOrder.class))
+								.map(TestOrder::scoreBonus).orElse(0))
+				.reversed().thenComparing(d -> getTopLevelClassName(d)));
+		pinLast.sort(
+				Comparator
+						.<ClassDescriptor, Integer>comparing(
+								d -> Optional.ofNullable(d.getTestClass().getAnnotation(TestOrder.class))
+										.map(TestOrder::scoreBonus).orElse(0))
+						.thenComparing(d -> getTopLevelClassName(d)));
+
+		orderByScoreAndDiversity(mutableDescriptors, scores, depMap, state,
 				getConfigBool(TestOrderConfig.SPRING_CONTEXT_GROUPING, false));
+
+		// Prepend FIRST-pinned and append LAST-pinned
+		mutableDescriptors.addAll(0, pinFirst);
+		mutableDescriptors.addAll(pinLast);
 
 		// Set up method-level ordering
 		boolean methodOrderingEnabled = getConfigBool(TestOrderConfig.METHOD_ORDER_ENABLED, false);

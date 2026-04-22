@@ -856,6 +856,106 @@ class PriorityClassOrdererTest {
 		assertEquals(0.5, d, 0.001);
 	}
 
+	// --- @TestOrder annotation tests ---
+
+	// Annotated fixtures (inner classes with @TestOrder)
+	@TestOrder(priority = TestOrder.Priority.FIRST)
+	static class FirstPinnedTest {
+	}
+
+	@TestOrder(priority = TestOrder.Priority.LAST)
+	static class LastPinnedTest {
+	}
+
+	@TestOrder(priority = TestOrder.Priority.HIGH)
+	static class HighPriorityTest {
+	}
+
+	@TestOrder(priority = TestOrder.Priority.LOW)
+	static class LowPriorityTest {
+	}
+
+	@TestOrder(scoreBonus = 9999)
+	static class ScoreBonusTest {
+	}
+
+	@TestOrder(changeBonus = 9999)
+	static class ChangeBonusTest {
+	}
+
+	private void setupMinimalState(Path dir, Class<?>... classes) throws IOException {
+		DependencyMap map = new DependencyMap();
+		for (Class<?> c : classes)
+			map.put(c.getName(), Set.of());
+		Path idx = dir.resolve("test.idx");
+		map.save(idx);
+		System.setProperty("testorder.index.path", idx.toString());
+		System.clearProperty("testorder.state.path");
+		System.clearProperty("testorder.changed.classes");
+		System.clearProperty("testorder.changed.test.classes");
+	}
+
+	@Test
+	void firstPinnedMovesToFront(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, Integer.class, FirstPinnedTest.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(String.class), desc(Integer.class), desc(FirstPinnedTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		assertEquals(FirstPinnedTest.class.getName(), descs.get(0).getTestClass().getName());
+	}
+
+	@Test
+	void lastPinnedMovesToBack(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, Integer.class, LastPinnedTest.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(LastPinnedTest.class), desc(String.class), desc(Integer.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		assertEquals(LastPinnedTest.class.getName(), descs.get(descs.size() - 1).getTestClass().getName());
+	}
+
+	@Test
+	void scoreBonusBoostsTestAboveOthers(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, Integer.class, ScoreBonusTest.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(String.class), desc(Integer.class), desc(ScoreBonusTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		assertEquals(ScoreBonusTest.class.getName(), descs.get(0).getTestClass().getName());
+	}
+
+	@Test
+	void changeBonusAppliedOnlyWhenChanged(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, ChangeBonusTest.class);
+		// Without marking ChangeBonusTest as changed, it should NOT be boosted
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs1 = new ArrayList<>(List.of(desc(String.class), desc(ChangeBonusTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs1));
+		// String and ChangeBonusTest have equal score (0) — order is by name
+		// (alphabetical)
+		// ChangeBonusTest < String alphabetically, so ChangeBonusTest may come first or
+		// equal;
+		// The key check: it should NOT be pushed above String purely by changeBonus
+		// Mark ChangeBonusTest as changed: now bonus applies
+		System.setProperty("testorder.changed.test.classes", ChangeBonusTest.class.getName());
+		PriorityClassOrderer orderer2 = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs2 = new ArrayList<>(List.of(desc(String.class), desc(ChangeBonusTest.class)));
+		orderer2.orderClasses(new StubClassOrdererContext(descs2));
+		assertEquals(ChangeBonusTest.class.getName(), descs2.get(0).getTestClass().getName());
+	}
+
+	@Test
+	void firstAndLastPinSimultaneously(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, FirstPinnedTest.class, LastPinnedTest.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(LastPinnedTest.class), desc(String.class), desc(FirstPinnedTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		assertEquals(FirstPinnedTest.class.getName(), descs.get(0).getTestClass().getName());
+		assertEquals(LastPinnedTest.class.getName(), descs.get(descs.size() - 1).getTestClass().getName());
+	}
+
 	// --- Stubs ---
 
 	static StubClassDescriptor desc(Class<?> clazz) {

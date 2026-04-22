@@ -72,6 +72,7 @@
     <modules>
         <module>test-order-agent</module>
         <module>test-order-core</module>
+        <module>test-order-annotations</module>
         <module>test-order-dashboard</module>
         <module>test-order-cli</module>
         <module>test-order-junit</module>
