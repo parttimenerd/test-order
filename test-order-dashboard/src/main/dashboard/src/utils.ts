@@ -2,7 +2,7 @@ import type { ScoringWeights, TestEntry, TestOutcome } from './types'
 
 /** Shorten a FQCN to Package.ClassName */
 export function sn(fqcn: string): string {
-  if (!fqcn) return ''
+  if (!fqcn) return '(unknown)'
   const p = fqcn.split('.')
   return p.length <= 2 ? fqcn : p[p.length - 2] + '.' + p[p.length - 1]
 }

@@ -35,8 +35,8 @@ const d = inject<DashboardState>('dashboard')!
             <th @click="d.simSortBy('simRank')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'simRank' }">
               Sim rank<span v-if="d.simSortKey.value === 'simRank'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
             </th>
-            <th @click="d.simSortBy('delta')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'delta' }">
-              Δ rank<span v-if="d.simSortKey.value === 'delta'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
+            <th @click="d.simSortBy('delta')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'delta' }" title="Rank shift: negative = test moves earlier (better), positive = moves later (worse)">
+              Rank shift<span v-if="d.simSortKey.value === 'delta'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
             </th>
             <th @click="d.simSortBy('origScore')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'origScore' }">
               Orig score<span v-if="d.simSortKey.value === 'origScore'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
@@ -51,7 +51,7 @@ const d = inject<DashboardState>('dashboard')!
             <td class="weights__td weights__td--name" :title="r.name">{{ sn(r.name) }}</td>
             <td class="weights__td weights__td--right weights__td--dim">{{ r.origRank }}</td>
             <td class="weights__td weights__td--right weights__td--dim">{{ r.simRank }}</td>
-            <td class="weights__td weights__td--right weights__td--delta" :class="{ 'weights__td--delta-up': r.delta < -5, 'weights__td--delta-down': r.delta > 5 }">{{ r.delta > 0 ? '+' : '' }}{{ r.delta }}</td>
+            <td class="weights__td weights__td--right weights__td--delta" :class="{ 'weights__td--delta-up': r.delta < -5, 'weights__td--delta-down': r.delta > 5 }" :title="r.delta < 0 ? 'Moves earlier (better)' : r.delta > 0 ? 'Moves later (worse)' : 'No change'">{{ r.delta === 0 ? '–' : r.delta > 0 ? '+' + r.delta : r.delta }}</td>
             <td class="weights__td weights__td--right weights__td--dim">{{ r.origScore }}</td>
             <td class="weights__td weights__td--right weights__td--accent">{{ r.simScore }}</td>
           </tr>

@@ -27,6 +27,7 @@ export interface DashboardState {
   showChangedPanel: ReturnType<typeof ref<boolean>>
   simSortKey: ReturnType<typeof ref<string>>
   simSortDir: ReturnType<typeof ref<string>>
+  badgeFilter: ReturnType<typeof ref<string | null>>
 
   // Constants
   TABS: ReturnType<typeof computed<TabDef[]>>
@@ -63,6 +64,7 @@ export interface DashboardState {
   resetWeights: () => void
   setGraphMode: (id: string) => void
   setTab: (id: string) => void
+  setBadgeFilter: (filter: string | null) => void
 }
 
 export function useDashboard(dd: DashboardData, parseError: string | null): DashboardState {
@@ -83,6 +85,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const showChangedPanel = ref(false)
   const simSortKey = ref('simScore')
   const simSortDir = ref('desc')
+  const badgeFilter = ref<string | null>(null)
   let lastClickedTestIndex = -1
   let lastClickedMethodIndex = -1
 
@@ -120,6 +123,10 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       const q = searchQ.value.toLowerCase()
       arr = arr.filter(t => t.name.toLowerCase().includes(q))
     }
+    if (badgeFilter.value === 'changed') arr = arr.filter(t => t.isChanged)
+    else if (badgeFilter.value === 'new') arr = arr.filter(t => t.isNew)
+    else if (badgeFilter.value === 'failing') arr = arr.filter(t => t.failScore > 0)
+    else if (badgeFilter.value === 'static') arr = arr.filter(t => t.hasStaticFieldOverlap)
     arr.sort((a, b) => {
       let av: string | number = (a as Record<string, unknown>)[sortKey.value] as string | number
       let bv: string | number = (b as Record<string, unknown>)[sortKey.value] as string | number
@@ -363,11 +370,15 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     selectedMethods.value = new Set()
   }
 
+  function setBadgeFilter(filter: string | null) {
+    badgeFilter.value = badgeFilter.value === filter ? null : filter
+  }
+
   return {
     dd, parseError, hasData, hasCoverage,
     selectedTest, selectedTests, activeTab, lw, searchQ, sortKey, sortDir,
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
-    showChangedPanel, simSortKey, simSortDir,
+    showChangedPanel, simSortKey, simSortDir, badgeFilter,
     TABS, SIDEBAR_SORT_COLS, GMODES,
     tests, runs, changedSet, hasMethodData,
     filteredTests, selectedTestObjects, latestRun, avgApfd,
@@ -375,6 +386,6 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     simResults, covPackages, covAvgTests, covPercent, selectionCoverage,
     origSCB,
     selectTest, drillDown, selectMethod,
-    sortBy, simSortBy: simSortByFn, resetWeights, setGraphMode, setTab,
+    sortBy, simSortBy: simSortByFn, resetWeights, setGraphMode, setTab, setBadgeFilter,
   }
 }

@@ -78,21 +78,24 @@ watch(() => d.lw, () => {
           <div class="tests-overview__kpi-label">Total Tests</div>
           <div class="tests-overview__kpi-value" style="color:var(--accent-light)">{{ d.tests.length }}</div>
         </div>
-        <div class="kpi tests-overview__kpi">
+        <div class="kpi tests-overview__kpi tests-overview__kpi--filter" :class="{ 'tests-overview__kpi--active': d.badgeFilter.value === 'changed' }" @click="d.setBadgeFilter('changed')" title="Click to filter by changed tests">
           <div class="tests-overview__kpi-label">Changed</div>
           <div class="tests-overview__kpi-value" style="color:var(--yellow)">{{ d.tests.filter(t => t.isChanged).length }}</div>
         </div>
-        <div class="kpi tests-overview__kpi">
+        <div class="kpi tests-overview__kpi tests-overview__kpi--filter" :class="{ 'tests-overview__kpi--active': d.badgeFilter.value === 'new' }" @click="d.setBadgeFilter('new')" title="Click to filter by new tests">
           <div class="tests-overview__kpi-label">New</div>
           <div class="tests-overview__kpi-value" style="color:var(--green)">{{ d.tests.filter(t => t.isNew).length }}</div>
         </div>
-        <div class="kpi tests-overview__kpi">
+        <div class="kpi tests-overview__kpi tests-overview__kpi--filter" :class="{ 'tests-overview__kpi--active': d.badgeFilter.value === 'failing' }" @click="d.setBadgeFilter('failing')" title="Click to filter by tests with recent failures">
           <div class="tests-overview__kpi-label">Failing</div>
           <div class="tests-overview__kpi-value" style="color:var(--red)">{{ d.tests.filter(t => t.failScore > 0).length }}</div>
         </div>
-        <div class="kpi tests-overview__kpi">
+        <div class="kpi tests-overview__kpi tests-overview__kpi--filter" :class="{ 'tests-overview__kpi--active': d.badgeFilter.value === 'static' }" @click="d.setBadgeFilter('static')" title="Tests sharing static field accesses with changed classes — click to filter">
           <div class="tests-overview__kpi-label">Static Overlap</div>
           <div class="tests-overview__kpi-value" style="color:var(--purple)">{{ d.tests.filter(t => t.hasStaticFieldOverlap).length }}</div>
+        </div>
+        <div v-if="d.badgeFilter.value" class="tests-overview__filter-clear" @click="d.setBadgeFilter(null)" title="Clear filter">
+          ✕ {{ d.badgeFilter.value }}
         </div>
       </div>
       <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px">All tests by priority</h3>
@@ -102,10 +105,10 @@ watch(() => d.lw, () => {
             <tr>
               <th class="th--right">Rank</th>
               <th class="th--left">Test</th>
-              <th class="th--right">Score</th>
+              <th class="th--right" title="Composite priority score — higher means run sooner">Score</th>
               <th class="th--left">Flags</th>
               <th class="th--right">Duration</th>
-              <th class="th--right">Deps</th>
+              <th class="th--right" title="Number of source-class dependencies tracked for this test">Deps</th>
             </tr>
           </thead>
           <tbody>
@@ -138,8 +141,8 @@ watch(() => d.lw, () => {
               <th class="th--right">Score</th>
               <th class="th--left">Flags</th>
               <th class="th--right">Duration</th>
-              <th class="th--right">Dep overlap</th>
-              <th class="th--right">Total deps</th>
+              <th class="th--right" title="Deps overlapping with changed source classes — higher means more relevant">Dep overlap</th>
+              <th class="th--right" title="Total source-class dependencies tracked for this test">Total deps</th>
             </tr>
           </thead>
           <tbody>
@@ -201,7 +204,7 @@ watch(() => d.lw, () => {
               :title="fmtTime(r.ts) + (r.present ? (r.failed ? ' — FAILED' : ' — passed') : ' — not in run')"
             ></div>
           </div>
-          <div class="card-label">Duration over runs</div>
+          <div class="card-label">Expected duration (EMA reference)</div>
           <div class="test-detail__canvas-wrap" style="height:50px"><canvas id="hd-main"></canvas></div>
         </div>
       </div>
@@ -248,6 +251,11 @@ watch(() => d.lw, () => {
 .tests-overview__kpi { padding: 6px 10px; }
 .tests-overview__kpi-label { color: var(--text-dim); font-size: .6rem; }
 .tests-overview__kpi-value { font-size: 1rem; font-weight: 700; }
+.tests-overview__kpi--filter { cursor: pointer; transition: border-color var(--tr-fast), background var(--tr-fast); }
+.tests-overview__kpi--filter:hover { border-color: rgba(99,102,241,.4); background: rgba(99,102,241,.06); }
+.tests-overview__kpi--active { border-color: var(--accent) !important; background: var(--accent-bg) !important; }
+.tests-overview__filter-clear { display: flex; align-items: center; padding: 4px 10px; font-size: .7rem; color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: color var(--tr-fast); }
+.tests-overview__filter-clear:hover { color: var(--text); }
 .tests-overview__thead { position: sticky; top: 0; background: var(--bg-base); z-index: 1; }
 .tests-overview__row { cursor: pointer; }
 .tests-overview__row--dimmed { opacity: .5; }
