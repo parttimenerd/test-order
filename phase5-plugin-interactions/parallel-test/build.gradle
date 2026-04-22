@@ -1,0 +1,26 @@
+plugins {
+    id 'java'
+}
+
+group 'com.example'
+version '1.0.0'
+
+sourceCompatibility = '17'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}
+
+tasks.named('test') {
+    useJUnit()
+    // Parallel execution configuration
+    maxParallelForks = 4
+    systemProperties = [
+        'org.junit.jupiter.execution.parallel.enabled': 'true',
+        'org.junit.jupiter.execution.parallel.mode.default': 'concurrent'
+    ]
+}

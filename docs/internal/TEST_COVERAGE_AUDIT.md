@@ -49,6 +49,10 @@ Plus 10 invoker IT fixtures in `test-order-maven-plugin/src/it/`.
 |-----------|------------------|----------------|
 | `DependencyMapTest` | DependencyMap | 15+ |
 | `TestOrderStateTest` | TestOrderState | 57 |
+| `StateConfigurationTest` | StateConfiguration | 11 |
+| `DurationTrackerTest` | DurationTracker | 3 |
+| `RunHistoryManagerTest` | RunHistoryManager | 3 |
+| `FailureHistoryTrackerTest` | FailureHistoryTracker | 5 |
 | `DepsAndScoringTest` | TestScorer, MethodScorer | 100 |
 | `SetCoverComputerTest` | SetCoverComputer | 22 |
 | `TestSelectorTest` | TestSelector | 11 |

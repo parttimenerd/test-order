@@ -56,10 +56,10 @@ Creates a snapshot of test dependencies (learns test class dependencies via byte
 **Example**:
 ```bash
 # Snapshot with git-based change detection
-mvn test-order:snapshot test -Dtestorder.change-mode=since-last-commit
+mvn test-order:snapshot test -Dtestorder.changeMode=since-last-commit
 
 # Snapshot with specific packages
-mvn test-order:snapshot test -Dtestorder.include-packages=com.example.util,com.example.service
+mvn test-order:snapshot test -Dtestorder.includePackages=com.example.util,com.example.service
 ```
 
 ---
@@ -83,7 +83,7 @@ Aggregates individual `.deps` files (from learn mode) into a single dependency i
 mvn test-order:aggregate
 
 # Aggregate from custom directory
-mvn test-order:aggregate -Dtestorder.deps-dir=/custom/deps/path
+mvn test-order:aggregate -Dtestorder.depsDir=/custom/deps/path
 ```
 
 ---
@@ -118,19 +118,19 @@ Complete local development workflow in one command:
 mvn test-order:combined test
 
 # Include custom packages
-mvn test-order:combined test -Dtestorder.include-packages=com.example.util
+mvn test-order:combined test -Dtestorder.includePackages=com.example.util
 
 # Use fixed seed for reproducible selection
-mvn test-order:combined test -Dtestorder.select-seed=12345
+mvn test-order:combined test -Dtestorder.select.seed=12345
 
 # Run more tests (50 top + 20 random)
-mvn test-order:combined test -Dtestorder.select-top-n=50 -Dtestorder.select-random-m=20
+mvn test-order:combined test -Dtestorder.select.topN=50 -Dtestorder.select.randomM=20
 
 # Disable automatic weight optimization
-mvn test-order:combined test -Dtestorder.combined-optimize-every=0
+mvn test-order:combined test -Dtestorder.combined.optimizeEvery=0
 
 # Run with verbose logging for debugging
-mvn test-order:combined test -Dtestorder.verbose-file=verbose.log
+mvn test-order:combined test -Dtestorder.verboseFile=verbose.log
 ```
 
 **Output Files**:
@@ -163,7 +163,7 @@ Runs tests that were deferred by previous `combined` or `select` invocation.
 mvn test-order:run-remaining test
 
 # Use custom remaining file
-mvn test-order:run-remaining test -Dtestorder.select-remaining-file=/tmp/my-remaining.txt
+mvn test-order:run-remaining test -Dtestorder.select.remainingFile=/tmp/my-remaining.txt
 ```
 
 ---
@@ -193,10 +193,10 @@ Selects a subset of tests without running them. Useful for CI/CD pipelines.
 mvn test-order:select
 
 # Select and write to custom file
-mvn test-order:select -Dtestorder.selected-file=/tmp/selected-tests.txt
+mvn test-order:select -Dtestorder.select.selectedFile=/tmp/selected-tests.txt
 
 # Select 100 tests reproducibly
-mvn test-order:select -Dtestorder.select-top-n=60 -Dtestorder.select-random-m=40 -Dtestorder.select-seed=42
+mvn test-order:select -Dtestorder.select.topN=60 -Dtestorder.select.randomM=40 -Dtestorder.select.seed=42
 ```
 
 ---
@@ -228,9 +228,9 @@ mvn test-order:show-order
 
 # Show order with custom scoring
 mvn test-order:show-order \
-  -Dtestorder.score-new-test=50 \
-  -Dtestorder.score-changed-test=40 \
-  -Dtestorder.score-max-failure=30
+  -Dtestorder.score.newTest=50 \
+  -Dtestorder.score.changedTest=40 \
+  -Dtestorder.score.maxFailure=30
 ```
 
 **Output Format**:
@@ -290,7 +290,7 @@ Optimizes scoring weights based on test failure history.
 mvn test-order:optimize
 
 # Optimize with custom weights
-mvn test-order:optimize -Dtestorder.weights-file=/path/to/weights.properties
+mvn test-order:optimize -Dtestorder.weights.file=/path/to/weights.properties
 ```
 
 ---
@@ -450,56 +450,56 @@ These parameters are available for all test-order goals.
 | Parameter | Property | Type | Default | Description |
 |-----------|----------|------|---------|-------------|
 | `indexFile` | `testorder.index` | String | `${project.basedir}/test-dependencies.lz4` | Dependency index file location |
-| `stateFile` | `testorder.state-file` | String | `${project.basedir}/.test-order-state` | Test execution state and history |
-| `depsDir` | `testorder.deps-dir` | String | `${project.build.directory}/test-order-deps` | Temporary deps file directory (learn mode) |
+| `stateFile` | `testorder.stateFile` | String | `${project.basedir}/.test-order-state` | Test execution state and history |
+| `depsDir` | `testorder.depsDir` | String | `${project.build.directory}/test-order-deps` | Temporary deps file directory (learn mode) |
 
 #### Hash Files (Change Detection)
 
 | Parameter | Property | Type | Default | Description |
 |-----------|----------|------|---------|-------------|
-| `hashFile` | `testorder.hash-file` | String | `${project.basedir}/.test-order-hashes.lz4` | Hash file for main source (git fallback) |
-| `testHashFile` | `testorder.test-hash-file` | String | `${project.basedir}/.test-order-test-hashes.lz4` | Hash file for test source |
-| `methodHashFile` | `testorder.method-hash-file` | String | `${project.basedir}/.test-order-method-hashes.lz4` | Hash file for test methods |
+| `hashFile` | `testorder.hashFile` | String | `${project.basedir}/.test-order-hashes.lz4` | Hash file for main source (git fallback) |
+| `testHashFile` | `testorder.testHashFile` | String | `${project.basedir}/.test-order-test-hashes.lz4` | Hash file for test source |
+| `methodHashFile` | `testorder.methodHashFile` | String | `${project.basedir}/.test-order-method-hashes.lz4` | Hash file for test methods |
 
 #### Source Directories
 
 | Parameter | Property | Type | Default | Description |
 |-----------|----------|------|---------|-------------|
-| `sourceRoot` | `testorder.source-root` | String | Auto-detected | Main source directory (Java source) |
-| `testSourceRoot` | `testorder.test-source-root` | String | Auto-detected | Test source directory (test classes) |
+| `sourceRoot` | `testorder.sourceRoot` | String | Auto-detected | Main source directory (Java source) |
+| `testSourceRoot` | `testorder.testSourceRoot` | String | Auto-detected | Test source directory (test classes) |
 
 #### Change Detection
 
 | Parameter | Property | Type | Default | Description |
 |-----------|----------|------|---------|-------------|
-| `changeMode` | `testorder.change-mode` | String | `auto` | Change detection mode. Valid values: `auto`, `since-last-run`, `since-last-commit`, `uncommitted`, `explicit`. See [Change Detection](#change-detection-modes) for details. |
-| `changedClasses` | `testorder.changed-classes` | String | None | Comma-separated fully qualified class names (for `explicit` mode only) |
+| `changeMode` | `testorder.changeMode` | String | `auto` | Change detection mode. Valid values: `auto`, `since-last-run`, `since-last-commit`, `uncommitted`, `explicit`. See [Change Detection](#change-detection-modes) for details. |
+| `changedClasses` | `testorder.changed.classes` | String | None | Comma-separated fully qualified class names (for `explicit` mode only) |
 
 #### Instrumentation & Analysis
 
 | Parameter | Property | Type | Default | Description |
 |-----------|----------|------|---------|-------------|
-| `includePackages` | `testorder.include-packages` | String | None | Comma-separated additional package prefixes to instrument |
-| `filterByGroupId` | `testorder.filter-by-group-id` | Boolean | true | Use project groupId if no source packages detected |
-| `instrumentationMode` | `testorder.instrumentation-mode` | String | `FULL` | Instrumentation mode: `FULL` or `SMART` |
+| `includePackages` | `testorder.includePackages` | String | None | Comma-separated additional package prefixes to instrument |
+| `filterByGroupId` | `testorder.filterByGroupId` | Boolean | true | Use project groupId if no source packages detected |
+| `instrumentationMode` | `testorder.instrumentation.mode` | String | `FULL` | Instrumentation mode: `FULL` or `SMART` |
 
 #### Scoring & Optimization
 
 | Parameter | Property | Type | Default | Description |
 |-----------|----------|------|---------|-------------|
-| `weightsFile` | `testorder.weights-file` | String | None | Override scoring weights from properties file |
+| `weightsFile` | `testorder.weights.file` | String | None | Override scoring weights from properties file |
 
 #### Debugging
 
 | Parameter | Property | Type | Default | Description |
 |-----------|----------|------|---------|-------------|
-| `verboseFile` | `testorder.verbose-file` | String | None | Enable verbose agent logging to file |
+| `verboseFile` | `testorder.verboseFile` | String | None | Enable verbose agent logging to file |
 
 #### Method-Level Ordering
 
 | Parameter | Property | Type | Default | Description |
 |-----------|----------|------|---------|-------------|
-| `methodOrderingEnabled` | `testorder.method-ordering-enabled` | Boolean | false | Enable method-level test ordering (experimental) |
+| `methodOrderingEnabled` | `testorder.methodOrder.enabled` | Boolean | false | Enable method-level test ordering (experimental) |
 
 ---
 
@@ -516,7 +516,7 @@ The `changeMode` parameter controls how test-order detects which classes have ch
 
 **Example**:
 ```bash
-mvn test-order:combined test -Dtestorder.change-mode=auto
+mvn test-order:combined test -Dtestorder.changeMode=auto
 ```
 
 ---
@@ -530,7 +530,7 @@ mvn test-order:combined test -Dtestorder.change-mode=auto
 
 **Example**:
 ```bash
-mvn test-order:combined test -Dtestorder.change-mode=since-last-commit
+mvn test-order:combined test -Dtestorder.changeMode=since-last-commit
 ```
 
 ---
@@ -544,7 +544,7 @@ mvn test-order:combined test -Dtestorder.change-mode=since-last-commit
 
 **Example**:
 ```bash
-mvn test-order:combined test -Dtestorder.change-mode=since-last-run
+mvn test-order:combined test -Dtestorder.changeMode=since-last-run
 ```
 
 ---
@@ -558,7 +558,7 @@ mvn test-order:combined test -Dtestorder.change-mode=since-last-run
 
 **Example**:
 ```bash
-mvn test-order:combined test -Dtestorder.change-mode=uncommitted
+mvn test-order:combined test -Dtestorder.changeMode=uncommitted
 ```
 
 ---
@@ -573,8 +573,8 @@ mvn test-order:combined test -Dtestorder.change-mode=uncommitted
 **Example**:
 ```bash
 mvn test-order:combined test \
-  -Dtestorder.change-mode=explicit \
-  -Dtestorder.changed-classes=com.example.UserService,com.example.PaymentProcessor
+  -Dtestorder.changeMode=explicit \
+  -Dtestorder.changed.classes=com.example.UserService,com.example.PaymentProcessor
 ```
 
 ---
@@ -610,13 +610,13 @@ Parameters are validated in three phases:
 
 ```bash
 # ✅ Valid
-mvn test-order:combined test -Dtestorder.change-mode=auto
+mvn test-order:combined test -Dtestorder.changeMode=auto
 
 # ✅ Valid (case insensitive)
-mvn test-order:combined test -Dtestorder.change-mode=SINCE-LAST-RUN
+mvn test-order:combined test -Dtestorder.changeMode=SINCE-LAST-RUN
 
 # ❌ Invalid - will throw error
-mvn test-order:combined test -Dtestorder.change-mode=invalid
+mvn test-order:combined test -Dtestorder.changeMode=invalid
 # Error: [test-order] Invalid changeMode 'invalid'. Valid values are: auto, since-last-run, since-last-commit, uncommitted, explicit
 ```
 
@@ -626,12 +626,12 @@ When using `explicit` mode, you MUST provide the `changedClasses` parameter:
 
 ```bash
 # ❌ Invalid - missing changedClasses
-mvn test-order:combined test -Dtestorder.change-mode=explicit
+mvn test-order:combined test -Dtestorder.changeMode=explicit
 
 # ✅ Valid - changedClasses provided
 mvn test-order:combined test \
-  -Dtestorder.change-mode=explicit \
-  -Dtestorder.changed-classes=com.example.UserService,com.example.PaymentService
+  -Dtestorder.changeMode=explicit \
+  -Dtestorder.changed.classes=com.example.UserService,com.example.PaymentService
 ```
 
 ### Instrumentation Mode Validation
@@ -640,13 +640,13 @@ mvn test-order:combined test \
 
 ```bash
 # ✅ Valid
-mvn test-order:combined test -Dtestorder.instrumentation-mode=FULL
+mvn test-order:combined test -Dtestorder.instrumentation.mode=FULL
 
 # ✅ Valid (case insensitive)
-mvn test-order:combined test -Dtestorder.instrumentation-mode=smart
+mvn test-order:combined test -Dtestorder.instrumentation.mode=smart
 
 # ❌ Invalid - will throw error
-mvn test-order:combined test -Dtestorder.instrumentation-mode=partial
+mvn test-order:combined test -Dtestorder.instrumentation.mode=partial
 # Error: [test-order] Invalid instrumentationMode 'partial'. Valid values are: FULL, SMART
 ```
 
@@ -656,14 +656,14 @@ Both `selectTopN` and `selectRandomM` must be non-negative:
 
 ```bash
 # ✅ Valid
-mvn test-order:combined test -Dtestorder.select-top-n=20 -Dtestorder.select-random-m=10
+mvn test-order:combined test -Dtestorder.select.topN=20 -Dtestorder.select.randomM=10
 
 # ⚠️ Warning - both are 0, no tests will be selected
-mvn test-order:combined test -Dtestorder.select-top-n=0 -Dtestorder.select-random-m=0
+mvn test-order:combined test -Dtestorder.select.topN=0 -Dtestorder.select.randomM=0
 # Warning: [test-order] Both selectTopN and selectRandomM are 0 — no tests will be selected. Set selectTopN to at least 1.
 
 # ❌ Invalid - negative value
-mvn test-order:combined test -Dtestorder.select-top-n=-5
+mvn test-order:combined test -Dtestorder.select.topN=-5
 # Error: [test-order] selectTopN cannot be negative: -5
 ```
 
@@ -673,10 +673,10 @@ If `weightsFile` is specified, it must exist:
 
 ```bash
 # ✅ Valid - file exists
-mvn test-order:combined test -Dtestorder.weights-file=./weights.txt
+mvn test-order:combined test -Dtestorder.weights.file=./weights.txt
 
 # ❌ Invalid - file doesn't exist
-mvn test-order:combined test -Dtestorder.weights-file=./nonexistent.txt
+mvn test-order:combined test -Dtestorder.weights.file=./nonexistent.txt
 # Error: [test-order] weightsFile './nonexistent.txt' does not exist
 ```
 
@@ -686,10 +686,10 @@ Coverage thresholds must be between 0 and 100:
 
 ```bash
 # ✅ Valid
-mvn test-order:coverage -Dtestorder.threshold-percent=50
+mvn test-order:coverage -Dtestorder.threshold.percent=50
 
 # ❌ Invalid - out of range
-mvn test-order:coverage -Dtestorder.threshold-percent=150
+mvn test-order:coverage -Dtestorder.threshold.percent=150
 # Error: [test-order] threshold must be between 0 and 100, got 150
 ```
 
@@ -698,7 +698,7 @@ mvn test-order:coverage -Dtestorder.threshold-percent=150
 | Error | Cause | Solution |
 |-------|-------|----------|
 | `Invalid changeMode 'xxx'` | Typo in mode value | Use: auto, since-last-run, since-last-commit, uncommitted, explicit |
-| `changedClasses is required when using explicit mode` | Missing parameter | Add `-Dtestorder.changed-classes=...` |
+| `changedClasses is required when using explicit mode` | Missing parameter | Add `-Dtestorder.changed.classes=...` |
 | `selectTopN cannot be negative: -5` | Negative value | Use >= 0 |
 | `Both selectTopN and selectRandomM are 0` | No tests selected | Set selectTopN to at least 1 |
 | `weightsFile './file.txt' does not exist` | File not found | Check path and ensure file exists |
@@ -748,12 +748,12 @@ Goal: Run all tests affected by PR changes, maximize coverage.
 
 ```bash
 # Detect PR changes (assuming conventional commit messages)
-mvn test-order:combined test -Dtestorder.change-mode=uncommitted
+mvn test-order:combined test -Dtestorder.changeMode=uncommitted
 
 # Or explicit: specify changed classes
 mvn test-order:combined test \
-  -Dtestorder.change-mode=explicit \
-  -Dtestorder.changed-classes=com.example.UserService
+  -Dtestorder.changeMode=explicit \
+  -Dtestorder.changed.classes=com.example.UserService
 
 # Run remaining tests for comprehensive coverage
 mvn test-order:run-remaining test
@@ -773,9 +773,9 @@ Goal: Efficient, reproducible testing with multiple stages.
 ```bash
 # Stage 1: Quick smoke tests (5-10 tests)
 mvn test-order:combined test \
-  -Dtestorder.select-top-n=10 \
-  -Dtestorder.select-random-m=0 \
-  -Dtestorder.change-mode=since-last-commit
+  -Dtestorder.select.topN=10 \
+  -Dtestorder.select.randomM=0 \
+  -Dtestorder.changeMode=since-last-commit
 
 # Stage 2: Comprehensive testing (if stage 1 passes)
 mvn test-order:run-remaining test
@@ -807,7 +807,7 @@ jobs:
       
       # Smoke tests
       - name: Smoke tests (fast)
-        run: mvn test-order:combined test -Dtestorder.select-top-n=10 -Dtestorder.change-mode=since-last-commit
+        run: mvn test-order:combined test -Dtestorder.select.topN=10 -Dtestorder.changeMode=since-last-commit
       
       # Full test suite
       - name: Full tests
@@ -831,13 +831,13 @@ Goal: Understand why tests run in particular order.
 mvn test-order:show-order
 
 # Show order for changed classes only
-mvn test-order:show-order -Dtestorder.change-mode=since-last-commit
+mvn test-order:show-order -Dtestorder.changeMode=since-last-commit
 
 # Dump full dependency index
 mvn test-order:dump
 
 # Enable verbose logging
-mvn test-order:combined test -Dtestorder.verbose-file=verbose.log
+mvn test-order:combined test -Dtestorder.verboseFile=verbose.log
 tail -f verbose.log
 ```
 
@@ -870,9 +870,9 @@ Use hyphenated names with `testorder.` prefix:
 
 ```bash
 mvn test-order:combined test \
-  -Dtestorder.change-mode=since-last-commit \
-  -Dtestorder.select-top-n=30 \
-  -Dtestorder.filter-by-group-id=true
+  -Dtestorder.changeMode=since-last-commit \
+  -Dtestorder.select.topN=30 \
+  -Dtestorder.filterByGroupId=true
 ```
 
 ### Legacy Names
@@ -882,17 +882,17 @@ Some older properties use alternate names. Both work:
 ```bash
 # Both are equivalent:
 -Dtestorder.index=/path/to/index.lz4
--Dtestorder.change-mode=auto
+-Dtestorder.changeMode=auto
 ```
 
 **Canonical to Legacy Mapping**:
 | Canonical | Legacy | Notes |
 |-----------|--------|-------|
 | `testorder.index` | `testorder.index` | No alias |
-| `testorder.state-file` | `testorder.state-file` | No alias |
-| `testorder.change-mode` | `testorder.change-mode` | No alias |
-| `testorder.filter-by-group-id` | `testorder.filter-by-group-id` | No alias |
-| `testorder.instrumentation-mode` | `testorder.instrumentation-mode` | FULL or SMART |
+| `testorder.stateFile` | `testorder.stateFile` | No alias |
+| `testorder.changeMode` | `testorder.changeMode` | No alias |
+| `testorder.filterByGroupId` | `testorder.filterByGroupId` | No alias |
+| `testorder.instrumentation.mode` | `testorder.instrumentation.mode` | FULL or SMART |
 
 **Recommendation**: Use canonical hyphenated names for new code.
 
@@ -929,7 +929,7 @@ mvn test
 Use `selectTopN=10` for even faster feedback:
 
 ```bash
-mvn test-order:combined test -Dtestorder.select-top-n=10
+mvn test-order:combined test -Dtestorder.select.topN=10
 ```
 
 **Trade-off**: Runs fewer tests (10 vs 20), misses some regressions, but 20% faster
@@ -943,7 +943,7 @@ Run full test suite or increase random selection:
 mvn test
 
 # Option 2: More selective tests
-mvn test-order:combined test -Dtestorder.select-top-n=50 -Dtestorder.select-random-m=20
+mvn test-order:combined test -Dtestorder.select.topN=50 -Dtestorder.select.randomM=20
 ```
 
 #### Branch Merges (Different Change Detection)
@@ -952,10 +952,10 @@ When you want to run tests only for the branch's changes:
 
 ```bash
 # Since last commit on main
-mvn test-order:combined test -Dtestorder.change-mode=since-last-commit
+mvn test-order:combined test -Dtestorder.changeMode=since-last-commit
 
 # Only uncommitted changes
-mvn test-order:combined test -Dtestorder.change-mode=uncommitted
+mvn test-order:combined test -Dtestorder.changeMode=uncommitted
 ```
 
 #### Specific Classes Changed (Explicit Mode)
@@ -964,8 +964,8 @@ When you know exactly which classes were modified:
 
 ```bash
 mvn test-order:combined test \
-  -Dtestorder.change-mode=explicit \
-  -Dtestorder.changed-classes=com.example.PaymentService,com.example.OrderProcessor
+  -Dtestorder.changeMode=explicit \
+  -Dtestorder.changed.classes=com.example.PaymentService,com.example.OrderProcessor
 ```
 
 ### Default Values Reference
@@ -1019,7 +1019,7 @@ mvn test-order:snapshot test
 
 ```bash
 # Correct usage
-mvn test-order:combined test -Dtestorder.change-mode=since-last-commit
+mvn test-order:combined test -Dtestorder.changeMode=since-last-commit
 ```
 
 ---
@@ -1045,8 +1045,8 @@ mvn test-order:coverage -Dcoverage.outputFormat=json
 
 ```bash
 mvn test-order:combined test \
-  -Dtestorder.change-mode=explicit \
-  -Dtestorder.changed-classes=com.example.A,com.example.B
+  -Dtestorder.changeMode=explicit \
+  -Dtestorder.changed.classes=com.example.A,com.example.B
 ```
 
 ---
@@ -1063,7 +1063,7 @@ mvn test-order:combined test \
 
 **Debugging**:
 ```bash
-mvn test-order:combined test -Dtestorder.verbose-file=verbose.log
+mvn test-order:combined test -Dtestorder.verboseFile=verbose.log
 cat verbose.log | grep -E "ERROR|WARN|instrumented"
 ```
 

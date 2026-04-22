@@ -6,6 +6,10 @@
 .vscode/
 *.iml
 
+# Python
+__pycache__/
+*.pyc
+
 # Java/Maven/Gradle build output
 **/target/
 **/build/
@@ -22,6 +26,11 @@ mvn.err
 # Local tooling state
 .test-order/
 
+# Dashboard build artifacts (Vite output + frontend-maven-plugin node)
+test-order-dashboard/src/main/resources/dashboard/dist/
+test-order-dashboard/src/main/dashboard/node_modules/
+test-order-dashboard/src/main/dashboard/node/
+
 # Temporary files
 *.tmp
 *.swp
@@ -29,5 +38,5 @@ mvn.err
 *.lz4
 *.class
 *.out
-.test-order-state
+.test-order/
 dependency-reduced-pom.xml

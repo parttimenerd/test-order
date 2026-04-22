@@ -23,7 +23,7 @@ Compares SHA-256 hashes of source files between current state and last recorded 
 
 ### How It Works
 ```
-Last run:  .test-order-hashes.lz4
+Last run:  .test-order/hashes.lz4
            {
              "src/main/java/Service.java": "abc123...",
              "src/main/java/Util.java": "def456..."

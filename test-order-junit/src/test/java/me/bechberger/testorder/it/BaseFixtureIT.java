@@ -1,7 +1,6 @@
 package me.bechberger.testorder.it;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -9,112 +8,166 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Objects;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Base class for integration tests that run real test-order workflows on fixture projects.
- * Provides common utilities for:
- * - Copying fixture projects to temp directories
- * - Running Maven goals
- * - Validating test order changes
+ * Base class for integration tests that run real test-order workflows on
+ * fixture projects. Provides common utilities for: - Copying fixture projects
+ * to temp directories - Running Maven goals - Validating test order changes
  */
 public abstract class BaseFixtureIT {
 
-    /**
-     * Copy a fixture project from test-fixtures to a temporary directory.
-     * Necessary because:
-     * 1. Fixtures must be independent (no dependency on workspace structure)
-     * 2. test-order creates state files that shouldn't pollute the fixture directory
-     * 3. Multiple tests should not interfere with each other's state
-     */
-    protected Path copyFixtureToTemp(String fixtureName, @TempDir Path tempDir) throws Exception {
-        Path fixtureSource = Path.of("test-fixtures", fixtureName);
-        assertTrue(Files.exists(fixtureSource), "Fixture not found: " + fixtureName);
+	/**
+	 * Copy a fixture project from test-fixtures to a temporary directory. Ensures
+	 * each fixture has the necessary compiler configuration for independent
+	 * execution.
+	 *
+	 * Necessary because: 1. Fixtures must be independent (no dependency on
+	 * workspace structure) 2. test-order creates state files that shouldn't pollute
+	 * the fixture directory 3. Multiple tests should not interfere with each
+	 * other's state 4. Fixtures need to compile with -parameters flag for Spring
+	 * Framework reflection
+	 */
+	protected Path copyFixtureToTemp(String fixtureName, @TempDir Path tempDir) throws Exception {
+		Path fixtureSource = Path.of("test-fixtures", fixtureName);
+		assertTrue(Files.exists(fixtureSource), "Fixture not found: " + fixtureName);
 
-        Path tempFixture = tempDir.resolve(fixtureName);
-        Files.createDirectories(tempFixture);
+		Path tempFixture = tempDir.resolve(fixtureName);
+		Files.createDirectories(tempFixture);
 
-        // Recursively copy fixture
-        Files.walk(fixtureSource)
-                .forEach(sourcePath -> {
-                    try {
-                        Path relative = fixtureSource.relativize(sourcePath);
-                        Path target = tempFixture.resolve(relative);
-                        if (Files.isDirectory(sourcePath)) {
-                            Files.createDirectories(target);
-                        } else {
-                            Files.copy(sourcePath, target, StandardCopyOption.REPLACE_EXISTING);
-                        }
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                });
+		// Recursively copy fixture
+		Files.walk(fixtureSource).forEach(sourcePath -> {
+			try {
+				Path relative = fixtureSource.relativize(sourcePath);
+				Path target = tempFixture.resolve(relative);
+				if (Files.isDirectory(sourcePath)) {
+					Files.createDirectories(target);
+				} else {
+					Files.copy(sourcePath, target, StandardCopyOption.REPLACE_EXISTING);
+				}
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
 
-        return tempFixture;
-    }
+		// Ensure the fixture pom.xml has the necessary compiler plugin configuration
+		// if it's missing (for compatibility with Spring Framework and other frameworks
+		// that need reflection parameter access)
+		ensureCompilerPluginConfiguration(tempFixture);
 
-    /**
-     * Run Maven command in the given project directory.
-     * Returns the build output for assertion.
-     */
-    protected String runMaven(Path projectDir, String... goals) throws Exception {
-        ProcessBuilder pb = new ProcessBuilder();
-        pb.command("mvn");
-        for (String goal : goals) {
-            pb.command().add(goal);
-        }
-        pb.directory(projectDir.toFile());
-        pb.redirectErrorStream(true);
+		return tempFixture;
+	}
 
-        Process process = pb.start();
-        String output = new String(process.getInputStream().readAllBytes());
-        int exitCode = process.waitFor();
+	/**
+	 * Ensure the fixture pom.xml includes maven-compiler-plugin with -parameters
+	 * flag. This handles fixtures that may not have inherited this from a parent
+	 * POM.
+	 */
+	private void ensureCompilerPluginConfiguration(Path fixtureDir) throws Exception {
+		Path pomFile = fixtureDir.resolve("pom.xml");
+		String pomContent = Files.readString(pomFile);
 
-        if (exitCode != 0) {
-            fail("Maven failed with exit code " + exitCode + ":\n" + output);
-        }
+		// Check if maven-compiler-plugin is already configured
+		if (pomContent.contains("maven-compiler-plugin")) {
+			return; // Already has configuration
+		}
 
-        return output;
-    }
+		// If not present, add it to the build/plugins section
+		String pluginConfig = """
+				            <plugin>
+				                <groupId>org.apache.maven.plugins</groupId>
+				                <artifactId>maven-compiler-plugin</artifactId>
+				                <version>3.13.0</version>
+				                <configuration>
+				                    <source>17</source>
+				                    <target>17</target>
+				                    <compilerArgs>
+				                        <arg>-parameters</arg>
+				                    </compilerArgs>
+				                </configuration>
+				            </plugin>
+				""";
 
-    /**
-     * Extract test class names from Maven output to validate reordering.
-     * Parses output like: "Tests run: 3, Failures: 0, Errors: 0, Skipped: 0"
-     */
-    protected int getTestCount(String output) {
-        // Pattern: "Tests run: \d+"
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("Tests run: (\\d+)");
-        java.util.regex.Matcher matcher = pattern.matcher(output);
-        if (matcher.find()) {
-            return Integer.parseInt(matcher.group(1));
-        }
-        fail("Could not extract test count from Maven output: " + output);
-        return -1;
-    }
+		// Find <plugins> section and add before </plugins>
+		String updated = pomContent.replaceFirst("(<build>.*?<plugins>)", "$1\n" + pluginConfig);
 
-    /**
-     * Verify test-order state file was created (indicates learn mode worked).
-     */
-    protected void assertStateFileExists(Path projectDir) {
-        Path stateFile = projectDir.resolve(".test-order");
-        assertTrue(Files.exists(stateFile), "test-order state file not created at: " + stateFile);
-    }
+		// If no <build><plugins> section exists, create one
+		if (updated.equals(pomContent)) {
+			// Try to add before </project>
+			updated = pomContent.replaceFirst("</project>", "\n    <build>\n        <plugins>\n" + pluginConfig
+					+ "\n        </plugins>\n    </build>\n</project>");
+		}
 
-    /**
-     * Verify test-order index files exist (dependency map, hashes).
-     */
-    protected void assertIndexFilesExist(Path projectDir) {
-        Path hashes = projectDir.resolve(".test-order-hashes.lz4");
-        assertTrue(Files.exists(hashes), ".test-order-hashes.lz4 not found");
-    }
+		Files.writeString(pomFile, updated);
+	}
 
-    /**
-     * Assert that test output shows no errors or failures.
-     */
-    protected void assertTestsPassed(String output) {
-        assertFalse(output.contains("ERROR"), "Maven output contains ERROR");
-        assertFalse(output.contains("FAILURE"), "Maven output contains FAILURE");
-        assertTrue(output.contains("BUILD SUCCESS") || !output.contains("BUILD FAILURE"),
-                "Maven build did not succeed");
-    }
+	/**
+	 * Run Maven command in the given project directory. Returns the build output
+	 * for assertion.
+	 */
+	protected String runMaven(Path projectDir, String... goals) throws Exception {
+		ProcessBuilder pb = new ProcessBuilder();
+		pb.command("mvn");
+		for (String goal : goals) {
+			pb.command().add(goal);
+		}
+		pb.directory(projectDir.toFile());
+		pb.redirectErrorStream(true);
+
+		Process process = pb.start();
+		String output = new String(process.getInputStream().readAllBytes());
+		int exitCode = process.waitFor();
+
+		if (exitCode != 0) {
+			fail("Maven failed with exit code " + exitCode + ":\n" + output);
+		}
+
+		return output;
+	}
+
+	/**
+	 * Extract test class names from Maven output to validate reordering. Parses
+	 * output like: "Tests run: 3, Failures: 0, Errors: 0, Skipped: 0"
+	 */
+	protected int getTestCount(String output) {
+		// Pattern: "Tests run: \d+"
+		java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("Tests run: (\\d+)");
+		java.util.regex.Matcher matcher = pattern.matcher(output);
+		if (matcher.find()) {
+			return Integer.parseInt(matcher.group(1));
+		}
+		fail("Could not extract test count from Maven output: " + output);
+		return -1;
+	}
+
+	/**
+	 * Verify test-order state file was created (indicates learn mode worked).
+	 */
+	protected void assertStateFileExists(Path projectDir) {
+		Path stateFile = projectDir.resolve(".test-order");
+		assertTrue(Files.exists(stateFile), "test-order state file not created at: " + stateFile);
+	}
+
+	/**
+	 * Verify test-order index files exist (dependency map, hashes).
+	 */
+	protected void assertIndexFilesExist(Path projectDir) {
+		Path stateDir = projectDir.resolve(".test-order");
+		assertTrue(Files.exists(stateDir), ".test-order directory not created");
+		Path hashes = stateDir.resolve("hashes.lz4");
+		assertTrue(Files.exists(hashes), ".test-order/hashes.lz4 not found");
+		Path dependencies = stateDir.resolve("test-dependencies.lz4");
+		assertTrue(Files.exists(dependencies), ".test-order/test-dependencies.lz4 not found");
+	}
+
+	/**
+	 * Assert that test output shows no errors or failures.
+	 */
+	protected void assertTestsPassed(String output) {
+		assertFalse(output.contains("ERROR"), "Maven output contains ERROR");
+		assertFalse(output.contains("FAILURE"), "Maven output contains FAILURE");
+		assertTrue(output.contains("BUILD SUCCESS") || !output.contains("BUILD FAILURE"),
+				"Maven build did not succeed");
+	}
 }

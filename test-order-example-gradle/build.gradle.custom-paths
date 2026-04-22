@@ -1,0 +1,26 @@
+plugins {
+    id 'java'
+    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+}
+
+group = 'com.example'
+version = '1.0.0'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+testOrder {
+    indexFile = file("custom-index.lz4")
+    stateFile = file("custom-state")
+}

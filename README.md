@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/parttimenerd/test-order/actions/workflows/ci.yml/badge.svg)](https://github.com/parttimenerd/test-order/actions/workflows/ci.yml)
 
-JUnit test class priority ordering based on runtime dependency telemetry.
+Test class priority ordering based on runtime dependency telemetry.
 
 Run the tests most likely affected by your latest code changes **first**, so failures surface faster.
 
-Compatible with JUnit 5 (Jupiter 5.x) and JUnit 6 (Jupiter 6.x).
+Supports **JUnit 5** (Jupiter 5.x), **JUnit 6** (Jupiter 6.x), and **TestNG** (7.x+).
 
 **Requires Java 17 or later.**
 
@@ -29,72 +29,72 @@ That's it! Defaults work for ~80% of projects.
 
 **For advanced configuration and complete CLI reference**: See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md)
 
-## See It In Action
+## Fail Your Tests Fast
 
-Watch a comprehensive demo of test-order's workflow on real projects:
+[![asciicast](https://asciinema.org/a/QhXjJtvug2nR2VVh.svg)](https://asciinema.org/a/QhXjJtvug2nR2VVh)
 
-```bash
-# View the asciinema recording
-asciinema play test-order-demo.cast
-```
+> *Fail your tests fast by using an intelligent test order.*
 
-**Or view online** (once uploaded to asciinema.org):
-[![asciicast](https://asciinema.org/a/PLACEHOLDER.svg)](https://asciinema.org/a/PLACEHOLDER)
-
-The demo runs through the complete workflow in about 3 minutes.
+The recording above walks through the full workflow on **Spring Petclinic** — a
+veterinary clinic app with ~24 test classes. In under 3 minutes you'll see:
 
 ### The Story
 
-Imagine you're working on a **large project with hundreds of tests**. You make a small change to a critical service. You run the tests... and wait. 15 minutes pass. 30 minutes later, a test finally fails because of *your change* — but you could have known in 2 minutes.
+You touch `OwnerController.java` — one file in a project with dozens of tests.
+Without test-order every test runs in the default order and the relevant
+failures hide somewhere in the middle of the suite. With test-order, the tests
+that exercise `OwnerController` jump to the **front of the queue** and fail
+immediately.
 
-This is where **test-order** changes the game.
+### What the Demo Shows
 
-### The Workflow
+1. **Learn** — A single `mvn test` run with the plugin collects a dependency
+   index: which test class exercises which source class.
 
-The demo shows the end-to-end experience:
+2. **Show order (baseline)** — Before any code change, `mvn test-order:show-order`
+   lists tests scored by speed only.
 
-1. **Learn Phase** — test-order's Java agent instruments your application, recording which classes each test exercises. A dependency index is built and cached (`.test-order/test-dependencies.lz4`).
+3. **Modify `OwnerController`** — A one-line change. The diff is shown.
 
-2. **Change Detection** — You modify code. Git identifies the changes.
+4. **Show order (after change)** — `OwnerControllerTests` jumps to rank 1;
+   related tests (`VisitControllerTests`, …) are boosted too.
 
-3. **Intelligent Ordering** — test-order analyzes the dependency index and identifies which tests are affected. Those tests move to the front of the queue.
+5. **Run prioritized** — `mvn test` executes tests in the new order.
+   Owner-related tests run first, giving instant feedback on the change.
 
-4. **Fast Feedback** — Tests that matter run first. You discover failures in seconds, not minutes. The risky tests execute immediately.
+6. **Second change** — `VetController` is modified instead. The order shifts
+   automatically: `VetControllerTests` moves to the top.
 
-### Real-World Examples in the Demo
+7. **History & Dashboard** — After several runs the plugin accumulates
+   duration and failure history. `mvn test-order:dashboard` generates an
+   interactive HTML report to explore scores, dependencies, and trends.
 
-The recording showcases two scenarios:
+### Key Takeaways
 
-**1. Spring Boot Petclinic** (small project)
-- A veterinary clinic management app with 24 test classes
-- When you modify `OwnerService.java`, test-order finds the 3 relevant tests
-- These tests run **first**, giving you instant feedback
-- Failure detection time: **0.7 seconds** (vs 2+ minutes without test-order)
+- Tests affected by your change run **first** — failures surface in seconds
+- No waiting for unrelated tests to finish before you see what broke
+- Zero configuration needed: just add the plugin and run `mvn test`
+- The dashboard gives full visibility into test scores and dependency data
 
-**2. Spring Boot Core Tests** (large project)
-- 523 test classes across 2,847 application classes  
-- When a critical core class changes, test-order identifies 87 affected tests
-- These tests prioritize to the front
-- Failure detection time: **45 seconds** (vs 12+ minutes without test-order)
-
-### The Value Proposition
-
-| Scenario | Without test-order | With test-order | Improvement |
-|----------|-------------------|-----------------|-------------|
-| Small change (Petclinic) | 2 minutes | 0.7 seconds | **170x faster** |
-| Critical change (Spring Boot) | 12 minutes | 45 seconds | **16x faster** |
-| Developer experience | Coffee break needed | Instant feedback | **Flow state enabled** |
-
-Key takeaways from the demo:
-- ✨ Failures on changed code surface **immediately**
-- ⚡ No waiting for unrelated tests to run
-- 🎯 Focus feedback on what matters
-- 🔧 Zero configuration needed in most cases
+```bash
+# Play the recording locally
+asciinema play demo.cast
+```
 
 ## How it works
 
 1. **Learn mode** — A Java agent instruments application classes to record which ones each test class exercises. The plugin writes a dependency index (`.test-order/test-dependencies.lz4`) directly during the run. (`.deps` files are a fallback path and can still be aggregated manually.)
-2. **Order mode** — A JUnit `ClassOrderer` reads the dependency index and a set of changed classes, then sorts test classes so those with the highest overlap run first.
+2. **Order mode** — A JUnit `ClassOrderer` (or TestNG `IMethodInterceptor`) reads the dependency index and a set of changed classes, then sorts test classes so those with the highest overlap run first.
+
+### Framework support
+
+| Framework | Learn mode | Order mode | Auto-discovery |
+|-----------|-----------|-----------|----------------|
+| **JUnit 5 / 6** | `TelemetryListener` (JUnit Platform) | `PriorityClassOrderer` + `PriorityMethodOrderer` | Via JUnit service files |
+| **TestNG 7.x+** | `TestNGTelemetryListener` (`ITestListener`) | `TestNGPriorityInterceptor` (`IMethodInterceptor`) | Via `META-INF/services/org.testng.ITestNGListener` |
+| **Kotest** | Via JUnit Platform (Kotest runner) | Via JUnit Platform | Same as JUnit |
+
+Both JUnit and TestNG modules share the same scoring engine (`TestScorer`, `MethodScorer`) from `test-order-core`. No configuration changes are needed — the Maven/Gradle plugins automatically detect which framework is on the test classpath and add the appropriate module.
 
 ## Intelligent instrumentation filtering
 
@@ -900,7 +900,51 @@ Usually yes. JaCoCo and `test-order` can coexist because both are standard Java 
 
 ### What about parameterized tests, Spring test slices, or Kotest?
 
-`test-order` prioritizes **test classes** first and can optionally prioritize **test methods** when method-level telemetry is enabled. Parameterized tests and Spring slices run through the same JUnit Platform lifecycle, but projects with custom engines or non-Jupiter abstractions should verify the resulting order in CI. Kotlin/Kotest setups that execute on the JUnit Platform can still benefit from change detection and learned dependency data, but should be treated as compatibility scenarios rather than assuming drop-in parity with plain Jupiter tests.
+`test-order` prioritizes **test classes** first and optionally prioritizes **test methods** when method-level telemetry is enabled.
+
+- **Parameterized tests**: Work on JUnit Platform; run through the same lifecycle as standard tests.
+- **Spring test slices**: Treated as regular test classes; dependency data is aggregated normally.
+- **Kotlin/Kotest**: **Fully supported** when using the JUnit Platform runner. See [Kotlin & Kotest Support](#kotlin--kotest-support) below for details and limitations.
+
+### Kotlin & Kotest Support
+
+`test-order` has **limited but tested** support for Kotlin projects using Kotest with the JUnit Platform runner.
+
+**What works:**
+- ✅ Kotest `StringSpec`, `FunSpec`, and other spec styles via JUnit Platform runner (kotest-runner-junit5)
+- ✅ Kotlin source detection in `src/main/kotlin` and `src/test/kotlin`
+- ✅ Dependency tracking on compiled Kotlin bytecode (no language-specific handling needed)
+- ✅ Change detection on `.kt` source files
+- ✅ Learn mode builds dependency indices for Kotest tests
+- ✅ Class-level test ordering applied to Kotest test specs
+
+**Limitations:**
+- 🔶 **Method-level ordering**: Kotest's DSL-based test definitions map to a single test spec class; method-level ordering may not align with test case structure.
+- 🔶 **Tested with**: Kotest 5.9.1 + JUnit Platform runner. Other Kotest configurations may behave differently.
+- 🔶 **Not supported**: Kotest tests run directly (without JUnit Platform runner) will not be reordered.
+
+**Maven Example:**
+```xml
+<dependency>
+    <groupId>io.kotest</groupId>
+    <artifactId>kotest-runner-junit5-jvm</artifactId>
+    <version>5.9.1</version>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>io.kotest</groupId>
+    <artifactId>kotest-assertions-core-jvm</artifactId>
+    <version>5.9.1</version>
+    <scope>test</scope>
+</dependency>
+```
+
+Verify Kotest integration with:
+```bash
+mvn clean test-order:combined test
+```
+
+See [test-order-example-kotlin](test-order-example-kotlin) and [fixture-kotest](test-order-junit/test-fixtures/fixture-kotest) for working examples.
 
 ### How do I debug change detection?
 
@@ -999,13 +1043,9 @@ TODO:
 - tighten quality profiles (`-Pquality` / `-Pquality-errorprone`) from advisory mode to strict CI enforcement once baseline findings are triaged
 
 
-use proper CSS classes instead of inline styles, use proper VueJS components and vuejs build system (call it in pom.xml if needed), make dashboard maintainable
 
+- find usuabiltiy issues, unexpected/surprising behaviour and more by using the plugin, like a normal user would, you have a lot of example projects in this main, record the found bugs with reproducer steps (integration test)
 
-and: there are too many files:
+TODO: explain acronoyms
 
-$ rm -rf .test-order
-
-maybe consolidate, or put into folder
-
-explain APFD in the tooltip over it and in the README, add a full spring boot petclinic workthrough with ascinema and embed it in the README (but keep shorter in time)
+TODO: can you have an advice pojo that suggests which test classes to split up (because the dependency overlap between methods is low)

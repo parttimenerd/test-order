@@ -4,4 +4,4 @@ if [ $# -ne 1 ]; then
   echo "Usage: $0 <folder>" >&2
   exit 1
 fi
-rm -f "$1/.test-order-state"
+rm -f "$1/.test-order/state.lz4"

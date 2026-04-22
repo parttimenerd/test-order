@@ -93,8 +93,8 @@ class TestOrderTestHarness:
         return failed
 
     def assert_state_file_records_failures(self) -> bool:
-        """Verify .test-order-state file records test failures"""
-        state_file = self.test_dir / ".test-order-state"
+        """Verify .test-order/state.lz4 file records test failures"""
+        state_file = self.test_dir / ".test-order" / "state.lz4"
         if not state_file.exists():
             self.results.append(
                 TestResult(
@@ -155,7 +155,7 @@ class TestOrderTestHarness:
         print("\n=== TEST 1: Learn Mode ===")
         
         # Clean
-        self.run_command("rm -rf target .test-order-* test-dependencies.lz4")
+        self.run_command("rm -rf target .test-order")
         
         # Run learn mode
         exit_code, stdout, stderr = self.run_command(
@@ -174,7 +174,7 @@ class TestOrderTestHarness:
             return
         
         # Check that index was created
-        if self.assert_file_exists("test-dependencies.lz4", "Learn mode should create index"):
+        if self.assert_file_exists(".test-order/test-dependencies.lz4", "Learn mode should create index"):
             self.results.append(
                 TestResult(
                     "learn_mode_creates_index",
@@ -478,7 +478,7 @@ class TestOrderTestHarness:
         print("\n=== TEST 8: Failure Detection and State Recording ===")
         
         # Clean state
-        self.run_command("rm -f .test-order-state")
+        self.run_command("rm -rf .test-order/state.lz4")
         
         # Introduce a bug
         calc_file = self.test_dir / "src/main/java/com/example/Calculator.java"
@@ -496,7 +496,7 @@ class TestOrderTestHarness:
                 self.run_command("mvn test -q 2>&1 > /dev/null")
             
             # Check state file
-            state_file = self.test_dir / ".test-order-state"
+            state_file = self.test_dir / ".test-order" / "state"
             if state_file.exists():
                 self.results.append(
                     TestResult(

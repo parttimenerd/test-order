@@ -1,245 +1,257 @@
 package me.bechberger.testorder.agent.runtime;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Maps class FQCNs and member names to small integer IDs for efficient bitset-based tracking.
- * Supports both class-level and member-level tracking (className#memberName).
- * Optimized for the common case where the map is stable (no new classes being loaded).
+ * Maps class FQCNs and member names to small integer IDs for efficient
+ * bitset-based tracking. Supports both class-level and member-level tracking
+ * (className#memberName). Optimized for the common case where the map is stable
+ * (no new classes being loaded).
  *
- * <p>Read path is lock-free via {@link ConcurrentHashMap#get(Object)}; write path synchronizes
- * only when an entry is missing and needs registration.
- * 
- * <p>Supports two namespaces:
+ * <p>
+ * Read path is lock-free via {@link ConcurrentHashMap#get(Object)}; write path
+ * synchronizes only when an entry is missing and needs registration.
+ *
+ * <p>
+ * Supports two namespaces:
  * <ul>
- *   <li><b>Classes</b> (IDs 0-8M): "com.example.Foo" → integer ID</li>
- *   <li><b>Members</b> (IDs 8M+): "com.example.Foo#field" → integer ID (offset)</li>
+ * <li><b>Classes</b> (IDs 0-8M): "com.example.Foo" → integer ID</li>
+ * <li><b>Members</b> (IDs 8M+): "com.example.Foo#field" → integer ID
+ * (offset)</li>
  * </ul>
- * 
- * <p>This enables atomic bitsets for recording test dependencies, eliminating
+ *
+ * <p>
+ * This enables atomic bitsets for recording test dependencies, eliminating
  * synchronization overhead in the hot path entirely.
- * 
- * <p><b>Counter Strategy:</b> Uses VarHandle-backed counters.
+ *
+ * <p>
+ * <b>Counter Strategy:</b> Uses VarHandle-backed counters.
  */
 public class ClassIdMap {
-    private interface IntCounter {
-        int getAndIncrement();
+	private interface IntCounter {
+		int getAndIncrement();
 
-        int decrementAndGet();
+		int decrementAndGet();
 
-        int get();
-    }
+		int get();
+	}
 
-    private static final class VarHandleIntCounter implements IntCounter {
-        private static final VarHandle VALUE_HANDLE;
+	private static final class VarHandleIntCounter implements IntCounter {
+		private static final VarHandle VALUE_HANDLE;
 
-        static {
-            try {
-                VALUE_HANDLE = MethodHandles.lookup().findVarHandle(VarHandleIntCounter.class, "value", int.class);
-            } catch (ReflectiveOperationException e) {
-                throw new ExceptionInInitializerError(e);
-            }
-        }
+		static {
+			try {
+				VALUE_HANDLE = MethodHandles.lookup().findVarHandle(VarHandleIntCounter.class, "value", int.class);
+			} catch (ReflectiveOperationException e) {
+				throw new ExceptionInInitializerError(e);
+			}
+		}
 
-        @SuppressWarnings("unused")
-        private volatile int value;
+		@SuppressWarnings("unused")
+		private volatile int value;
 
-        private VarHandleIntCounter(int initialValue) {
-            this.value = initialValue;
-        }
+		private VarHandleIntCounter(int initialValue) {
+			this.value = initialValue;
+		}
 
-        @Override
-        public int getAndIncrement() {
-            return (int) VALUE_HANDLE.getAndAdd(this, 1);
-        }
+		@Override
+		public int getAndIncrement() {
+			return (int) VALUE_HANDLE.getAndAdd(this, 1);
+		}
 
-        @Override
-        public int decrementAndGet() {
-            int previous = (int) VALUE_HANDLE.getAndAdd(this, -1);
-            return previous - 1;
-        }
+		@Override
+		public int decrementAndGet() {
+			int previous = (int) VALUE_HANDLE.getAndAdd(this, -1);
+			return previous - 1;
+		}
 
-        @Override
-        public int get() {
-            return value;
-        }
-    }
+		@Override
+		public int get() {
+			return value;
+		}
+	}
 
-    private static final ClassIdMap INSTANCE = new ClassIdMap();
-    
-    private static final int MEMBER_ID_OFFSET = 8_000_000; // members start at 8M
-    private static final int CAPACITY_LIMIT = 16_000_000;  // total capacity: 16K classes + 8M members
-    // Medium project: ~2 000 instrumented application classes; 4 096 avoids any rehash below that.
-    private static final int INITIAL_CLASS_MAP_CAPACITY = 4_096;
-    // Methods + fields per class ~8 on average → 4 096 classes × 8 = ~32 768; 32 768 avoids resize.
-    private static final int INITIAL_MEMBER_MAP_CAPACITY = 32_768;
-    
-    private final ConcurrentHashMap<String, Integer> classToId;
-    private final ConcurrentHashMap<String, Integer> memberToId;
-    private final IntCounter nextClassId;
-    private final IntCounter nextMemberId;
+	private static final ClassIdMap INSTANCE = new ClassIdMap();
 
-    // Reverse maps built lazily on first lookup (flush time only).
-    // Using plain String[] arrays indexed by ID avoids Integer autoboxing
-    // and is faster than ConcurrentHashMap<Integer, String>.
-    private volatile String[] reverseClassNames;
-    private volatile String[] reverseMemberNames;
-    
-    private ClassIdMap() {
-        this.classToId = new ConcurrentHashMap<>(INITIAL_CLASS_MAP_CAPACITY);
-        this.memberToId = new ConcurrentHashMap<>(INITIAL_MEMBER_MAP_CAPACITY);
-        this.nextClassId = createCounter(0);
-        this.nextMemberId = createCounter(MEMBER_ID_OFFSET);
-    }
-    
-    public static ClassIdMap getInstance() {
-        return INSTANCE;
-    }
+	private static final int MEMBER_ID_OFFSET = 8_000_000; // members start at 8M
+	private static final int CAPACITY_LIMIT = 16_000_000; // total capacity: 16K classes + 8M members
+	// Medium project: ~2 000 instrumented application classes; 4 096 avoids any
+	// rehash below that.
+	private static final int INITIAL_CLASS_MAP_CAPACITY = 4_096;
+	// Methods + fields per class ~8 on average → 4 096 classes × 8 = ~32 768; 32
+	// 768 avoids resize.
+	private static final int INITIAL_MEMBER_MAP_CAPACITY = 32_768;
 
-    public static ClassIdMap createForBenchmark() {
-        return new ClassIdMap();
-    }
+	private final ConcurrentHashMap<String, Integer> classToId;
+	private final ConcurrentHashMap<String, Integer> memberToId;
+	private final IntCounter nextClassId;
+	private final IntCounter nextMemberId;
 
-    private static IntCounter createCounter(int initialValue) {
-        return new VarHandleIntCounter(initialValue);
-    }
-    
-    /**
-     * Get or register a class name lazily. Lock-free via
-     * {@link ConcurrentHashMap#computeIfAbsent}; no explicit synchronization needed.
-     */
-    public int getOrRegisterClass(String className) {
-        Integer id = classToId.computeIfAbsent(className, k -> {
-            int newId = nextClassId.getAndIncrement();
-            if (newId >= MEMBER_ID_OFFSET) {
-                nextClassId.decrementAndGet();
-                AgentLogger.log("[ClassIdMap] WARNING: Class ID capacity exceeded: " + k);
-                return null; // don't store; caller gets -1
-            }
-            reverseClassNames = null; // invalidate cached reverse array
-            return newId;
-        });
-        return id != null ? id : -1;
-    }
-    
-    /**
-     * Get or register a member name (format: "className#memberName"). Lock-free via
-     * {@link ConcurrentHashMap#computeIfAbsent}.
-     */
-    public int getOrRegisterMember(String memberKey) {
-        Integer id = memberToId.computeIfAbsent(memberKey, k -> {
-            int newId = nextMemberId.getAndIncrement();
-            if (newId >= CAPACITY_LIMIT) {
-                nextMemberId.decrementAndGet();
-                AgentLogger.log("[ClassIdMap] WARNING: Member ID capacity exceeded: " + k);
-                return null;
-            }
-            reverseMemberNames = null; // invalidate cached reverse array
-            return newId;
-        });
-        return id != null ? id : -1;
-    }
-    
-    /**
-     * Get the ID for a class name, registering lazily if needed.
-     */
-    public int getClassId(String className) {
-        return getOrRegisterClass(className);
-    }
-    
-    /**
-     * Get the ID for a member name, registering lazily if needed.
-     */
-    public int getMemberId(String memberKey) {
-        return getOrRegisterMember(memberKey);
-    }
-    
-    /**
-     * Get the class name for an ID (returns null if not registered).
-     */
-    public String getClassName(int id) {
-        return getClassNameForId(id);
-    }
-    
-    /**
-     * Get the class name for an ID via lazy reverse array.
-     * The reverse array is built on first call and invalidated when new classes register.
-     */
-    public String getClassNameForId(int id) {
-        if (id < 0 || id >= MEMBER_ID_OFFSET) {
-            return null;
-        }
-        String[] rc = reverseClassNames;
-        if (rc == null || id >= rc.length) {
-            rc = rebuildClassReverse();
-        }
-        return (id < rc.length) ? rc[id] : null;
-    }
+	// Reverse maps built lazily on first lookup (flush time only).
+	// Using plain String[] arrays indexed by ID avoids Integer autoboxing
+	// and is faster than ConcurrentHashMap<Integer, String>.
+	private volatile String[] reverseClassNames;
+	private volatile String[] reverseMemberNames;
 
-    private String[] rebuildClassReverse() {
-        // Add safety margin: a concurrent registration may have incremented
-        // nextClassId after we snapshot the map, so over-size the array.
-        int size = nextClassId.get() + 64;
-        String[] arr = new String[size];
-        for (var e : classToId.entrySet()) {
-            int idx = e.getValue();
-            if (idx >= 0 && idx < size) arr[idx] = e.getKey();
-        }
-        reverseClassNames = arr;
-        return arr;
-    }
-    
-    /**
-     * Get the member name for an ID via lazy reverse array.
-     */
-    public String getMemberNameForId(int id) {
-        if (id < MEMBER_ID_OFFSET) {
-            return null;
-        }
-        int adjusted = id - MEMBER_ID_OFFSET;
-        String[] rm = reverseMemberNames;
-        if (rm == null || adjusted >= rm.length) {
-            rm = rebuildMemberReverse();
-        }
-        return (adjusted < rm.length) ? rm[adjusted] : null;
-    }
+	private ClassIdMap() {
+		this.classToId = new ConcurrentHashMap<>(INITIAL_CLASS_MAP_CAPACITY);
+		this.memberToId = new ConcurrentHashMap<>(INITIAL_MEMBER_MAP_CAPACITY);
+		this.nextClassId = createCounter(0);
+		this.nextMemberId = createCounter(MEMBER_ID_OFFSET);
+	}
 
-    private String[] rebuildMemberReverse() {
-        int size = nextMemberId.get() - MEMBER_ID_OFFSET + 64; // safety margin for concurrent registrations
-        if (size <= 0) return new String[0];
-        String[] arr = new String[size];
-        for (var e : memberToId.entrySet()) {
-            int idx = e.getValue() - MEMBER_ID_OFFSET;
-            if (idx >= 0 && idx < size) arr[idx] = e.getKey();
-        }
-        reverseMemberNames = arr;
-        return arr;
-    }
-    
-    /**
-     * Freeze the map after agent initialization is complete.
-     * No new classes can be registered after freezing.
-     */
-    public synchronized void freeze() {
-        // no-op now; lazy registration supported
-        AgentLogger.log("[ClassIdMap] Frozen with " + classToId.size() + " class entries and " + 
-                (nextMemberId.get() - MEMBER_ID_OFFSET) + " member entries");
-    }
-    
-    /**
-     * Returns the current number of registered class IDs.
-     */
-    public int size() {
-        return nextClassId.get();
-    }
-    
-    /**
-     * Returns true if the map has been frozen.
-     */
-    public boolean isFrozen() {
-        return false; // always allows registration now
-    }
+	public static ClassIdMap getInstance() {
+		return INSTANCE;
+	}
+
+	public static ClassIdMap createForBenchmark() {
+		return new ClassIdMap();
+	}
+
+	private static IntCounter createCounter(int initialValue) {
+		return new VarHandleIntCounter(initialValue);
+	}
+
+	/**
+	 * Get or register a class name lazily. Lock-free via
+	 * {@link ConcurrentHashMap#computeIfAbsent}; no explicit synchronization
+	 * needed.
+	 */
+	public int getOrRegisterClass(String className) {
+		Integer id = classToId.computeIfAbsent(className, k -> {
+			int newId = nextClassId.getAndIncrement();
+			if (newId >= MEMBER_ID_OFFSET) {
+				nextClassId.decrementAndGet();
+				AgentLogger.log("[ClassIdMap] WARNING: Class ID capacity exceeded: " + k);
+				return null; // don't store; caller gets -1
+			}
+			reverseClassNames = null; // invalidate cached reverse array
+			return newId;
+		});
+		return id != null ? id : -1;
+	}
+
+	/**
+	 * Get or register a member name (format: "className#memberName"). Lock-free via
+	 * {@link ConcurrentHashMap#computeIfAbsent}.
+	 */
+	public int getOrRegisterMember(String memberKey) {
+		Integer id = memberToId.computeIfAbsent(memberKey, k -> {
+			int newId = nextMemberId.getAndIncrement();
+			if (newId >= CAPACITY_LIMIT) {
+				nextMemberId.decrementAndGet();
+				AgentLogger.log("[ClassIdMap] WARNING: Member ID capacity exceeded: " + k);
+				return null;
+			}
+			reverseMemberNames = null; // invalidate cached reverse array
+			return newId;
+		});
+		return id != null ? id : -1;
+	}
+
+	/**
+	 * Get the ID for a class name, registering lazily if needed.
+	 */
+	public int getClassId(String className) {
+		return getOrRegisterClass(className);
+	}
+
+	/**
+	 * Get the ID for a member name, registering lazily if needed.
+	 */
+	public int getMemberId(String memberKey) {
+		return getOrRegisterMember(memberKey);
+	}
+
+	/**
+	 * Get the class name for an ID (returns null if not registered).
+	 */
+	public String getClassName(int id) {
+		return getClassNameForId(id);
+	}
+
+	/**
+	 * Get the class name for an ID via lazy reverse array. The reverse array is
+	 * built on first call and invalidated when new classes register.
+	 */
+	public String getClassNameForId(int id) {
+		if (id < 0 || id >= MEMBER_ID_OFFSET) {
+			return null;
+		}
+		String[] rc = reverseClassNames;
+		if (rc == null || id >= rc.length) {
+			rc = rebuildClassReverse();
+		}
+		return (id < rc.length) ? rc[id] : null;
+	}
+
+	private String[] rebuildClassReverse() {
+		// Add safety margin: a concurrent registration may have incremented
+		// nextClassId after we snapshot the map, so over-size the array.
+		int size = nextClassId.get() + 64;
+		String[] arr = new String[size];
+		for (var e : classToId.entrySet()) {
+			int idx = e.getValue();
+			if (idx >= 0 && idx < size)
+				arr[idx] = e.getKey();
+		}
+		reverseClassNames = arr;
+		return arr;
+	}
+
+	/**
+	 * Get the member name for an ID via lazy reverse array.
+	 */
+	public String getMemberNameForId(int id) {
+		if (id < MEMBER_ID_OFFSET) {
+			return null;
+		}
+		int adjusted = id - MEMBER_ID_OFFSET;
+		String[] rm = reverseMemberNames;
+		if (rm == null || adjusted >= rm.length) {
+			rm = rebuildMemberReverse();
+		}
+		return (adjusted < rm.length) ? rm[adjusted] : null;
+	}
+
+	private String[] rebuildMemberReverse() {
+		int size = nextMemberId.get() - MEMBER_ID_OFFSET + 64; // safety margin for concurrent registrations
+		if (size <= 0)
+			return new String[0];
+		String[] arr = new String[size];
+		for (var e : memberToId.entrySet()) {
+			int idx = e.getValue() - MEMBER_ID_OFFSET;
+			if (idx >= 0 && idx < size)
+				arr[idx] = e.getKey();
+		}
+		reverseMemberNames = arr;
+		return arr;
+	}
+
+	/**
+	 * Freeze the map after agent initialization is complete. No new classes can be
+	 * registered after freezing.
+	 */
+	public synchronized void freeze() {
+		// no-op now; lazy registration supported
+		AgentLogger.log("[ClassIdMap] Frozen with " + classToId.size() + " class entries and "
+				+ (nextMemberId.get() - MEMBER_ID_OFFSET) + " member entries");
+	}
+
+	/**
+	 * Returns the current number of registered class IDs.
+	 */
+	public int size() {
+		return nextClassId.get();
+	}
+
+	/**
+	 * Returns true if the map has been frozen.
+	 */
+	public boolean isFrozen() {
+		return false; // always allows registration now
+	}
 }

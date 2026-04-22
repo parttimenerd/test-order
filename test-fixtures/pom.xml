@@ -27,6 +27,7 @@
         <module>fixture-kotest</module>
         <module>fixture-shallow-clone</module>
         <module>fixture-parallel-execution</module>
+        <module>fixture-testng</module>
     </modules>
 
     <dependencyManagement>

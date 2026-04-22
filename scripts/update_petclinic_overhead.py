@@ -124,10 +124,10 @@ def benchmark(args: argparse.Namespace, repo_root: Path) -> dict[str, dict[str, 
     }
 
     cleanup_paths = [
-        petclinic_dir / "test-dependencies.lz4",
-        petclinic_dir / ".test-order-hashes.lz4",
+        petclinic_dir / ".test-order" / "test-dependencies.lz4",
+        petclinic_dir / ".test-order" / "hashes.lz4",
         petclinic_dir / ".test-order-test-hashes.lz4",
-        petclinic_dir / ".test-order-state",
+        petclinic_dir / ".test-order" / "state.lz4",
         petclinic_dir / ".test-order-durations",
         petclinic_dir / ".test-order-failures",
         petclinic_dir / ".test-order-method-durations",

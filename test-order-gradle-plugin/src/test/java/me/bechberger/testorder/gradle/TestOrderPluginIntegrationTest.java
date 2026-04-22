@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static org.gradle.testkit.runner.TaskOutcome.SUCCESS;
 import static org.junit.jupiter.api.Assertions.*;
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for the test-order Gradle plugin using Gradle TestKit.
  * Each test gets a fresh temporary project directory.
  */
+@Timeout(value = 8, unit = TimeUnit.MINUTES)
 class TestOrderPluginIntegrationTest {
 
     @TempDir
@@ -183,9 +185,9 @@ class TestOrderPluginIntegrationTest {
 
         assertEquals(SUCCESS, result.task(":test").getOutcome());
         assertTrue(result.getOutput().contains("[test-order] Configuring learn mode"));
-        assertTrue(Files.exists(projectDir.resolve("test-dependencies.lz4")),
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")),
                 "Index file should be created");
-        assertTrue(Files.exists(projectDir.resolve(".test-order-state")),
+        assertTrue(Files.exists(projectDir.resolve(".test-order/state.lz4")),
                 "State file should be created");
     }
 
@@ -198,7 +200,7 @@ class TestOrderPluginIntegrationTest {
                 "--tests", "com.example.app.CalculatorTest").build();
 
         assertEquals(SUCCESS, result.task(":test").getOutcome());
-        assertTrue(Files.exists(projectDir.resolve("test-dependencies.lz4")),
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")),
                 "Index file should be created even when only a filtered test subset runs");
         try (var depsFiles = Files.list(projectDir.resolve("build/test-order-deps"))) {
             assertTrue(depsFiles.anyMatch(path -> path.getFileName().toString().endsWith(".deps")),
@@ -210,7 +212,7 @@ class TestOrderPluginIntegrationTest {
     @DisplayName("Auto mode without index selects learn mode")
     void autoModeWithoutIndexSelectsLearn() throws IOException {
         scaffoldProject();
-        assertFalse(Files.exists(projectDir.resolve("test-dependencies.lz4")));
+        assertFalse(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")));
 
         BuildResult result = runner("test").build();
 
@@ -225,7 +227,7 @@ class TestOrderPluginIntegrationTest {
 
         // First: learn
         runner("test", "-Dtestorder.mode=learn").build();
-        assertTrue(Files.exists(projectDir.resolve("test-dependencies.lz4")));
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")));
 
         // Second: order
         BuildResult result = runner("clean", "test", "-Dtestorder.mode=order").build();
@@ -338,8 +340,8 @@ class TestOrderPluginIntegrationTest {
 
         assertEquals(SUCCESS, result.task(":testOrderOptimize").getOutcome());
         assertTrue(result.getOutput().contains("[test-order] Runs:"));
-        assertTrue(Files.exists(projectDir.resolve(".test-order-state")));
-        assertTrue(Files.size(projectDir.resolve(".test-order-state")) > 0);
+        assertTrue(Files.exists(projectDir.resolve(".test-order/state.lz4")));
+        assertTrue(Files.size(projectDir.resolve(".test-order/state.lz4")) > 0);
     }
 
     @Test
@@ -377,16 +379,16 @@ class TestOrderPluginIntegrationTest {
 
         // Learn to create files
         runner("test", "-Dtestorder.mode=learn").build();
-        assertTrue(Files.exists(projectDir.resolve("test-dependencies.lz4")));
-        assertTrue(Files.exists(projectDir.resolve(".test-order-state")));
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")));
+        assertTrue(Files.exists(projectDir.resolve(".test-order/state.lz4")));
 
         // Clean
         BuildResult result = runner("testOrderClean").build();
 
         assertEquals(SUCCESS, result.task(":testOrderClean").getOutcome());
-        assertFalse(Files.exists(projectDir.resolve("test-dependencies.lz4")),
+        assertFalse(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")),
                 "Index should be deleted");
-        assertFalse(Files.exists(projectDir.resolve(".test-order-state")),
+        assertFalse(Files.exists(projectDir.resolve(".test-order/state.lz4")),
                 "State should be deleted");
     }
 
@@ -407,7 +409,7 @@ class TestOrderPluginIntegrationTest {
 
         // First learn
         runner("test", "-Dtestorder.mode=learn").build();
-        long indexSize1 = Files.size(projectDir.resolve("test-dependencies.lz4"));
+        long indexSize1 = Files.size(projectDir.resolve(".test-order/test-dependencies.lz4"));
         assertTrue(indexSize1 > 0);
 
         // Order
@@ -416,7 +418,7 @@ class TestOrderPluginIntegrationTest {
 
         // Second learn (should overwrite index)
         runner("clean", "test", "-Dtestorder.mode=learn").build();
-        long indexSize2 = Files.size(projectDir.resolve("test-dependencies.lz4"));
+        long indexSize2 = Files.size(projectDir.resolve(".test-order/test-dependencies.lz4"));
         assertTrue(indexSize2 > 0);
     }
 
@@ -449,7 +451,7 @@ class TestOrderPluginIntegrationTest {
 
         assertEquals(SUCCESS, result.task(":test").getOutcome());
         assertTrue(result.getOutput().contains("[test-order] Configuring learn mode"));
-        assertTrue(Files.exists(projectDir.resolve("test-dependencies.lz4")));
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")));
     }
 
     @Test
@@ -486,7 +488,7 @@ class TestOrderPluginIntegrationTest {
 
         runner("test", "-Dtestorder.mode=learn").build();
 
-        Path stateFile = projectDir.resolve(".test-order-state");
+        Path stateFile = projectDir.resolve(".test-order/state.lz4");
         assertTrue(Files.exists(stateFile));
         assertTrue(Files.size(stateFile) > 0,
                 "State file should not be empty");
@@ -619,15 +621,135 @@ class TestOrderPluginIntegrationTest {
         assertEquals(SUCCESS, result.task(":sub-b:test").getOutcome());
 
         // Each subproject should have its own state file under its own directory
-        Path stateA = projectDir.resolve("sub-a/.test-order-state");
-        Path stateB = projectDir.resolve("sub-b/.test-order-state");
+        Path stateA = projectDir.resolve("sub-a/.test-order/state.lz4");
+        Path stateB = projectDir.resolve("sub-b/.test-order/state.lz4");
 
         assertTrue(Files.exists(stateA),
-                "sub-a should have its own state file at sub-a/.test-order-state");
+                "sub-a should have its own state file at sub-a/.test-order/state.lz4");
         assertTrue(Files.exists(stateB),
-                "sub-b should have its own state file at sub-b/.test-order-state");
+                "sub-b should have its own state file at sub-b/.test-order/state.lz4");
 
         // The two state files must be distinct paths
         assertNotEquals(stateA.toAbsolutePath(), stateB.toAbsolutePath());
+    }
+
+    @Test
+    @DisplayName("Kotlin: plugin works with mixed Java and Kotlin tests")
+    void kotlinTestsWorkWithPlugin() throws IOException {
+        writeFile("settings.gradle", """
+                pluginManagement {
+                    repositories {
+                        mavenLocal()
+                        gradlePluginPortal()
+                        mavenCentral()
+                    }
+                }
+                rootProject.name = 'kotlin-test-project'
+                """);
+
+        writeFile("build.gradle.kts", """
+                plugins {
+                    id("java")
+                    kotlin("jvm") version "2.3.20"
+                    id("me.bechberger.test-order") version "0.1.0-SNAPSHOT"
+                }
+                
+                group = "com.example"
+                version = "1.0.0"
+                
+                kotlin {
+                    jvmToolchain(21)
+                }
+                
+                repositories {
+                    mavenLocal()
+                    mavenCentral()
+                }
+                
+                dependencies {
+                    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+                    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.4")
+                    implementation("org.jetbrains.kotlin:kotlin-stdlib")
+                }
+                
+                tasks.test {
+                    useJUnitPlatform()
+                }
+                """);
+
+        // Create Kotlin source
+        writeFile("src/main/kotlin/com/example/Calculator.kt", """
+                package com.example
+                
+                class Calculator {
+                    fun add(a: Int, b: Int) = a + b
+                    fun multiply(a: Int, b: Int) = a * b
+                }
+                """);
+
+        // Create Kotlin test
+        writeFile("src/test/kotlin/com/example/CalculatorTest.kt", """
+                package com.example
+                
+                import org.junit.jupiter.api.Test
+                import org.junit.jupiter.api.Assertions.*
+                
+                class CalculatorTest {
+                    @Test fun testAdd() { assertEquals(5, Calculator().add(2, 3)) }
+                    @Test fun testMultiply() { assertEquals(6, Calculator().multiply(2, 3)) }
+                }
+                """);
+
+        BuildResult result = runner("test").build();
+        assertEquals(SUCCESS, result.task(":test").getOutcome(),
+                "Kotlin tests should run successfully");
+    }
+
+    @Test
+    @DisplayName("Kotlin: learn mode with Kotlin tests builds dependency index")
+    void kotlinLearnModeBuildsIndex() throws IOException {
+        writeFile("settings.gradle", """
+                pluginManagement {
+                    repositories {
+                        mavenLocal()
+                        gradlePluginPortal()
+                        mavenCentral()
+                    }
+                }
+                rootProject.name = 'kotlin-learn-project'
+                """);
+
+        writeFile("build.gradle.kts", """
+                plugins {
+                    id("java")
+                    kotlin("jvm") version "2.3.20"
+                    id("me.bechberger.test-order") version "0.1.0-SNAPSHOT"
+                }
+                
+                group = "com.example"
+                
+                repositories {
+                    mavenLocal()
+                    mavenCentral()
+                }
+                
+                dependencies {
+                    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+                    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.4")
+                    implementation("org.jetbrains.kotlin:kotlin-stdlib")
+                }
+                
+                tasks.test { useJUnitPlatform() }
+                """);
+
+        writeFile("src/main/kotlin/com/example/App.kt", "package com.example\nfun hello() = \"Hello\"");
+        writeFile("src/test/kotlin/com/example/AppTest.kt", 
+            "package com.example\nimport org.junit.jupiter.api.Test\nclass AppTest { @Test fun test() { } }");
+
+        BuildResult result = runner("test", "-Dtestorder.mode=learn").build();
+
+        assertEquals(SUCCESS, result.task(":test").getOutcome());
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")),
+                "Kotlin learn mode should create index");
     }
 }

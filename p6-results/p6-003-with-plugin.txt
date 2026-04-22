@@ -1,0 +1,14 @@
+[ERROR] COMPILATION ERROR : 
+[ERROR] /Users/i560383_1/code/experiments/test-order/p6-mixed-all-three/src/test/java/AllFrameworksTest.java:[2,1] a type with the same simple name is already defined by the single-type-import of org.junit.Test
+[ERROR] /Users/i560383_1/code/experiments/test-order/p6-mixed-all-three/src/test/java/AllFrameworksTest.java:[3,1] a type with the same simple name is already defined by the single-type-import of org.junit.jupiter.api.Test
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:testCompile (default-testCompile) on project p6-mixed-all-three: Compilation failure: Compilation failure: 
+[ERROR] /Users/i560383_1/code/experiments/test-order/p6-mixed-all-three/src/test/java/AllFrameworksTest.java:[2,1] a type with the same simple name is already defined by the single-type-import of org.junit.Test
+[ERROR] /Users/i560383_1/code/experiments/test-order/p6-mixed-all-three/src/test/java/AllFrameworksTest.java:[3,1] a type with the same simple name is already defined by the single-type-import of org.junit.jupiter.api.Test
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

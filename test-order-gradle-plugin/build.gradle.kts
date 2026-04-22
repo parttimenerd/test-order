@@ -21,6 +21,9 @@ dependencies {
     // for change detection, aggregation, and show-order tasks
     implementation("me.bechberger:test-order-core:${version}")
 
+    // Shared dashboard resources (template, CSS, JS, bundled libraries)
+    implementation("me.bechberger:test-order-dashboard:${version}")
+
     // Integration tests
     testImplementation(gradleTestKit())
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
@@ -46,6 +49,11 @@ tasks.withType<Test> {
     useJUnitPlatform()
     // Tests need these artifacts in mavenLocal
     dependsOn("publishToMavenLocal")
+
+    testLogging {
+        events("started", "passed", "failed", "skipped")
+        showStandardStreams = true
+    }
 
     listOf(
         "testorder.it",

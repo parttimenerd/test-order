@@ -17,7 +17,7 @@ class TestOrderExtensionTest {
 
         assertEquals("auto", extension.getMode().get());
         assertEquals("FULL", extension.getInstrumentationMode().get());
-        assertEquals(project.getLayout().getProjectDirectory().file("test-dependencies.lz4").getAsFile(),
+        assertEquals(project.getLayout().getProjectDirectory().file(".test-order/test-dependencies.lz4").getAsFile(),
                 extension.getIndexFile().get().getAsFile());
         assertEquals(project.getLayout().getBuildDirectory().dir("test-order-deps").get().getAsFile(),
                 extension.getDepsDir().get().getAsFile());

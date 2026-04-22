@@ -61,6 +61,22 @@ jobs:
           cd test-order-junit
           mvn -B -ntp test -Dtest=*IT
 
+      - name: Run Kotlin & Kotest specific tests
+        run: |
+          echo "=== Testing Kotlin & Kotest Support ==="
+          
+          # Test Kotest fixture
+          echo "Running Kotest integration tests..."
+          cd test-order-junit
+          mvn -B -ntp test -Dtest=KotestFrameworkIT
+          
+          # Test Kotlin source detection
+          echo "Running Kotlin source detection tests..."
+          cd ../test-order-agent
+          mvn -B -ntp test -Dtest=KotlinSourceDetectionTest
+          
+          echo "=== Kotlin & Kotest tests completed successfully ==="
+
       - name: Verify integration tests ran
         run: |
           python - <<'PY'

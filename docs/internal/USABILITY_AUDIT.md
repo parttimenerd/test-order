@@ -21,12 +21,12 @@ Comprehensive audit of all CLI options, Maven plugin parameters, and configurati
 
 | Parameter | Type | Default | Description | Issue |
 |-----------|------|---------|-------------|-------|
-| `indexFile` | String | `${project.basedir}/test-dependencies.lz4` | Index file location | ✅ OK |
-| `stateFile` | String | `${project.basedir}/.test-order-state` | State file location | ✅ OK |
+| `indexFile` | String | `${project.basedir}/.test-order/test-dependencies.lz4` | Index file location | ✅ OK |
+| `stateFile` | String | `${project.basedir}/.test-order/state.lz4` | State file location | ✅ OK |
 | `depsDir` | String | `${project.build.directory}/test-order-deps` | Deps directory | ✅ OK |
-| `hashFile` | String | `${project.basedir}/.test-order-hashes.lz4` | Main source hash file | 🟡 **No description** |
-| `testHashFile` | String | `${project.basedir}/.test-order-test-hashes.lz4` | Test source hash file | 🟡 **No description** |
-| `methodHashFile` | String | `${project.basedir}/.test-order-method-hashes.lz4` | Method hash file | 🟡 **No description** |
+| `hashFile` | String | `${project.basedir}/.test-order/hashes.lz4` | Main source hash file | 🟡 **No description** |
+| `testHashFile` | String | `${project.basedir}/.test-order/test-hashes.lz4` | Test source hash file | 🟡 **No description** |
+| `methodHashFile` | String | `${project.basedir}/.test-order/method-hashes.lz4` | Method hash file | 🟡 **No description** |
 | `sourceRoot` | String | Auto-detected | Main source directory | ✅ OK |
 | `testSourceRoot` | String | Auto-detected | Test source directory | ✅ OK |
 | `changeMode` | String | `auto` | Change detection: auto\|since-last-run\|since-last-commit\|uncommitted\|explicit | ✅ OK but values not clear |

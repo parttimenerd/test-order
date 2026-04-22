@@ -129,8 +129,8 @@ class SpringBootCoreModulesIT {
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(result.output().contains("[test-order] Configuring order mode"));
         assertTrue(result.output().contains("[test-order] Using explicitly provided changed classes"));
-        assertTrue(Files.exists(coreModuleDir.resolve(".test-order-state")));
-        assertTrue(Files.exists(coreModuleDir.resolve(".test-order-hashes.lz4")));
+        assertTrue(Files.exists(coreModuleDir.resolve(".test-order/state.lz4")));
+        assertTrue(Files.exists(coreModuleDir.resolve(".test-order/hashes.lz4")));
     }
 
     @Test
@@ -163,7 +163,7 @@ class SpringBootCoreModulesIT {
         assertEquals(0, result.exitCode(), result.output());
         assertFalse(result.output().contains("[test-order] Configuring learn mode"));
         assertFalse(result.output().contains("[test-order] Configuring order mode"));
-        assertFalse(Files.exists(coreModuleDir.resolve("test-dependencies.lz4")),
+        assertFalse(Files.exists(coreModuleDir.resolve(".test-order/test-dependencies.lz4")),
                 "Skip mode should not create an aggregated dependency index");
         assertFalse(Files.isDirectory(coreModuleDir.resolve("build/test-order-deps")),
                 "Skip mode should not create a deps directory");
@@ -297,7 +297,7 @@ class SpringBootCoreModulesIT {
     }
 
     private static void ensureCoreLearnBaseline() throws IOException {
-        if (Files.exists(coreModuleDir.resolve("test-dependencies.lz4"))) {
+        if (Files.exists(coreModuleDir.resolve(".test-order/test-dependencies.lz4"))) {
             return;
         }
         cleanGeneratedArtifacts(coreModuleDir);
@@ -311,13 +311,13 @@ class SpringBootCoreModulesIT {
     }
 
     private static void assertArtifactsExist(Path moduleDir) {
-        assertTrue(Files.exists(moduleDir.resolve("test-dependencies.lz4")),
+        assertTrue(Files.exists(moduleDir.resolve(".test-order/test-dependencies.lz4")),
                 "Expected aggregated dependency index in " + moduleDir);
-        assertTrue(Files.exists(moduleDir.resolve(".test-order-state")),
+        assertTrue(Files.exists(moduleDir.resolve(".test-order/state.lz4")),
                 "Expected state file in " + moduleDir);
-        assertTrue(Files.exists(moduleDir.resolve(".test-order-hashes.lz4")),
+        assertTrue(Files.exists(moduleDir.resolve(".test-order/hashes.lz4")),
                 "Expected source hash snapshot in " + moduleDir);
-        assertTrue(Files.exists(moduleDir.resolve(".test-order-test-hashes.lz4")),
+        assertTrue(Files.exists(moduleDir.resolve(".test-order/test-hashes.lz4")),
                 "Expected test hash snapshot in " + moduleDir);
         assertTrue(Files.isDirectory(moduleDir.resolve("build/test-order-deps")),
                 "Expected .deps directory in " + moduleDir);
@@ -344,7 +344,7 @@ class SpringBootCoreModulesIT {
     }
 
     private static DependencyMap loadDependencyMap(Path moduleDir) throws IOException {
-        return DependencyMap.load(moduleDir.resolve("test-dependencies.lz4"));
+        return DependencyMap.load(moduleDir.resolve(".test-order/test-dependencies.lz4"));
     }
 
     private static DependencyMap aggregateDependencyMapFromDeps(Path moduleDir) throws IOException {
@@ -367,20 +367,22 @@ class SpringBootCoreModulesIT {
         Matcher matcher = SHOW_ORDER_ROW_PATTERN.matcher(line.trim());
         assertTrue(matcher.matches(), "Unexpected show-order row format: " + line);
 
+        // The tail columns are: Score  Deps  Fail  Changed  Duration
+        // Fail, Changed, and Duration may be empty or contain non-numeric values (e.g. "3007ms").
+        // Split by whitespace and parse only the first two numeric tokens (score and deps).
         String[] pieces = matcher.group(3).trim().split("\\s+");
-        assertTrue(pieces.length >= 3, "Expected score and deps columns in row: " + line);
+        assertTrue(pieces.length >= 2, "Expected at least score and deps columns in row: " + line);
+        int score = Integer.parseInt(pieces[0]);
+        int depOverlap = Integer.parseInt(pieces[1]);
         return new ShowOrderRow(
                 Integer.parseInt(matcher.group(1)),
                 matcher.group(2),
-                Integer.parseInt(pieces[1]),
-                Integer.parseInt(pieces[2]));
+                score,
+                depOverlap);
     }
 
     private static void cleanGeneratedArtifacts(Path moduleDir) throws IOException {
-        Files.deleteIfExists(moduleDir.resolve("test-dependencies.lz4"));
-        Files.deleteIfExists(moduleDir.resolve(".test-order-state"));
-        Files.deleteIfExists(moduleDir.resolve(".test-order-hashes.lz4"));
-        Files.deleteIfExists(moduleDir.resolve(".test-order-test-hashes.lz4"));
+        deleteTree(moduleDir.resolve(".test-order"));
         deleteTree(moduleDir.resolve("build/test-order-deps"));
     }
 
@@ -426,12 +428,13 @@ class SpringBootCoreModulesIT {
 
     private static CommandResult runSpringBoot(Path baseDir, Path workingDir, Path initScript, String... args)
             throws IOException {
-        String[] command = new String[args.length + 4];
+        String[] command = new String[args.length + 5];
         command[0] = gradleWrapper(baseDir).toString();
         command[1] = "--no-daemon";
-        command[2] = "--init-script";
-        command[3] = initScript.toString();
-        System.arraycopy(args, 0, command, 4, args.length);
+        command[2] = "--no-build-cache";
+        command[3] = "--init-script";
+        command[4] = initScript.toString();
+        System.arraycopy(args, 0, command, 5, args.length);
         return runCommand(workingDir,
                 Map.of("JAVA_HOME", springJavaHome),
                 command);
@@ -449,27 +452,40 @@ class SpringBootCoreModulesIT {
             env.put("PATH", javaHome + "/bin:" + env.getOrDefault("PATH", ""));
         }
 
+        System.err.println("[IT] Running: " + String.join(" ", command));
         Process process = builder.start();
-        String output;
-        try (InputStream input = process.getInputStream()) {
-            output = readFully(input);
-        }
+
+        // Read output in a separate thread to avoid pipe-buffer deadlock
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        Thread reader = new Thread(() -> {
+            try (InputStream input = process.getInputStream()) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = input.read(buf)) != -1) {
+                    captured.write(buf, 0, n);
+                    System.err.write(buf, 0, n); // forward progress to test runner stderr
+                }
+            } catch (IOException e) {
+                // stream closed
+            }
+        }, "process-output-reader");
+        reader.setDaemon(true);
+        reader.start();
+
         try {
             if (!process.waitFor(COMMAND_TIMEOUT.toMinutes(), TimeUnit.MINUTES)) {
                 process.destroyForcibly();
-                fail("Command timed out: " + String.join(" ", command));
+                fail("Command timed out after " + COMMAND_TIMEOUT.toMinutes() + " minutes: "
+                        + String.join(" ", command) + "\nPartial output:\n"
+                        + captured.toString(StandardCharsets.UTF_8));
             }
+            reader.join(5000); // give the reader thread a moment to finish
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            process.destroyForcibly();
             fail("Command interrupted: " + String.join(" ", command));
         }
-        return new CommandResult(process.exitValue(), output);
-    }
-
-    private static String readFully(InputStream input) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        input.transferTo(output);
-        return output.toString(StandardCharsets.UTF_8);
+        return new CommandResult(process.exitValue(), captured.toString(StandardCharsets.UTF_8));
     }
 
     private static Path writeScopedInitScript(List<String> projectPaths) throws IOException {
@@ -497,7 +513,7 @@ class SpringBootCoreModulesIT {
 
                 projectsLoaded {
                     allprojects { project ->
-                        if (project.buildFile.absolutePath.contains('buildSrc')) {
+                        if (project.projectDir.name == 'buildSrc') {
                             return
                         }
                         if (!testOrderTargets.contains(project.path)) {

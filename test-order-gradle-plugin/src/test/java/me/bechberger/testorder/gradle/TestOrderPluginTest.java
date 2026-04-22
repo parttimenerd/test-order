@@ -93,6 +93,7 @@ class TestOrderPluginTest {
         TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
         extension.applyDefaults(project);
         Path indexFile = extension.getIndexFile().get().getAsFile().toPath();
+        Files.createDirectories(indexFile.getParent());
         Files.write(indexFile, new byte[]{1, 2, 3});
         extension.getMethodOrderingEnabled().set(true);
         extension.getWeightsFile().set(tempDir.resolve("weights.txt").toString());
@@ -132,7 +133,9 @@ class TestOrderPluginTest {
 
         assertEquals("learn", plugin.resolveMode(extension, project));
 
-        Files.write(extension.getIndexFile().get().getAsFile().toPath(), new byte[]{1});
+        Path idxP = extension.getIndexFile().get().getAsFile().toPath();
+        Files.createDirectories(idxP.getParent());
+        Files.write(idxP, new byte[]{1});
         assertEquals("order", plugin.resolveMode(extension, project));
 
         String old = System.getProperty("testorder.mode");

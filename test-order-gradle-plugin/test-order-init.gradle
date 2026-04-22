@@ -26,7 +26,7 @@ initscript {
 projectsLoaded {
     allprojects { project ->
         // Skip buildSrc — it is not an application module
-        if (project.buildFile.absolutePath.contains('buildSrc')) {
+        if (project.projectDir.name == 'buildSrc') {
             return
         }
         // Apply to every Java project. The plugin guards against double-apply

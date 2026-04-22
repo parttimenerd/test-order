@@ -1,0 +1,209 @@
+================================================================================
+PHASE 5 EXTENSION: GRADLE ADVANCED SCENARIOS - BUG REPORT
+================================================================================
+
+Date: 2026-04-21
+Total Bugs: 17
+Status: Complete
+
+================================================================================
+CRITICAL BUGS (2) - BLOCKS PRODUCTION USE
+================================================================================
+
+P5-GAD-004: Configuration Cache - Agent JAR Path Resolution
+  Severity: CRITICAL
+  Location: TestOrderPlugin.java:246 (AgentArgumentProvider.asArguments())
+  Problem: agentConf.getSingleFile() called at configuration time
+  Impact: Plugin incompatible with --configuration-cache flag
+  Fix: Use Gradle Provider API for lazy evaluation
+
+P5-GAD-010: Configuration Cache - System.getProperty("user.home")
+  Severity: CRITICAL
+  Location: TestOrderExtensionConfigurator.java:25
+  Problem: System.getProperty("user.home") accessed during configuration
+  Impact: Configuration cache incompatible; different results per machine
+  Fix: Use Provider API or resolve at execution time
+
+================================================================================
+HIGH SEVERITY BUGS (4) - MAJOR FUNCTIONALITY BROKEN
+================================================================================
+
+P5-GAD-001: Custom Test Task Types Not Supported
+  Severity: HIGH
+  Area: Custom Gradle Tasks
+  Problem: Only withType(Test.class) configures tasks
+  Impact: Custom test runners completely unsupported
+  Workaround: Document limitation; advise using standard Test class
+
+P5-GAD-005: Race Condition in Index File Writing
+  Severity: HIGH
+  Location: TestOrderPlugin.java:939 (aggregateDependencyFiles)
+  Problem: map.save(indexFile) without file locking
+  Impact: Index file corruption in parallel builds
+  Fix: Wrap with PersistenceSupport.withFileLock()
+
+P5-GAD-002: No Multi-Project Build Support
+  Severity: HIGH
+  Area: Multi-project Builds
+  Problem: No inheritance mechanism; no shared configuration
+  Impact: Difficult to use in large codebases
+  Fix: Implement parent project configuration inheritance
+
+P5-GAD-014: Multi-Project State File Collision
+  Severity: HIGH
+  Location: TestOrderExtension.java:110 (default convention)
+  Problem: All subprojects use same .test-order/state.lz4 file
+  Impact: Concurrent writes cause data corruption
+  Fix: Use project-specific state files or shared directory with locks
+
+================================================================================
+MEDIUM SEVERITY BUGS (8) - QUALITY/FUNCTIONALITY ISSUES
+================================================================================
+
+P5-GAD-003: No Parallel Execution Support
+  Severity: MEDIUM
+  Area: Gradle Parallel Execution
+  Problem: Plugin doesn't handle gradle --parallel --workers=N
+  Impact: Race conditions on shared files; no documentation
+  Fix: Add file locking to all I/O or disable in parallel mode
+
+P5-GAD-006: Fragile BuildSrc Detection
+  Severity: MEDIUM
+  Location: test-order-init.gradle:29
+  Problem: Uses string.contains('buildSrc') instead of proper path matching
+  Impact: Plugin applied to unintended projects
+  Fix: Use proper path matching via File.getParent().getFileName()
+
+P5-GAD-007: Silent Fallback When Invalid Mode Specified
+  Severity: MEDIUM
+  Area: Gradle Plugins Block
+  Problem: Invalid modes silently ignored; falls back to auto-detect
+  Impact: Typos like -Dtestorder.mode=lern not caught
+  Fix: Add validation; throw exception for invalid modes
+
+P5-GAD-009: Source Root Resolution Falls Back to Hardcoded Path
+  Severity: MEDIUM
+  Location: TestOrderPlugin.java:906
+  Problem: Falls back to "src/main/java" without validation
+  Impact: Custom SourceSet configurations ignored
+  Fix: Throw error if fallback doesn't exist
+
+P5-GAD-012: Unhandled NumberFormatException in Property Parsing
+  Severity: MEDIUM
+  Location: TestOrderPlugin.java:1150, 1155
+  Problem: Integer.parseInt(override) without try-catch
+  Impact: Invalid -Dtestorder.select.topN=invalid crashes build
+  Fix: Add try-catch with helpful error message
+
+P5-GAD-013: Dashboard Tasks Missing Input/Output Declarations
+  Severity: MEDIUM
+  Location: testOrderDashboard and testOrderServe registration
+  Problem: No @InputFile annotations or task dependencies declared
+  Impact: Gradle can't optimize task ordering; manual ordering required
+  Fix: Add inputs.file() declarations
+
+P5-GAD-016: Hardcoded Kotlin Source Path
+  Severity: MEDIUM
+  Location: TestOrderPlugin.java:568
+  Problem: Hardcodes "src/main/kotlin" instead of using SourceSetContainer
+  Impact: Custom Kotlin SourceSet directories not supported
+  Fix: Resolve via SourceSetContainer like Java sources
+
+P5-GAD-017: TestNG Detection Race Condition
+  Severity: MEDIUM
+  Location: TestOrderPlugin.java:84, 120
+  Problem: Two separate afterEvaluate callbacks; ordering not guaranteed
+  Impact: TestNG support may not be added before test configuration
+  Fix: Consolidate into single afterEvaluate block
+
+================================================================================
+LOW SEVERITY BUGS (3) - EDGE CASES / RESOURCE LEAKS
+================================================================================
+
+P5-GAD-008: HttpServer Resource Leak in serveDashboard
+  Severity: LOW
+  Location: serveDashboard() method
+  Problem: If exception before shutdown hook registered, server never stops
+  Impact: Port blockage (rare; only affects dashboard feature)
+  Fix: Use try-with-resources or proper exception handling
+
+P5-GAD-011: Sentinel Test Class Pattern Collision Risk
+  Severity: LOW
+  Location: applySelectedTests() method
+  Problem: Uses "__testorder__.NoMatchingTests" sentinel which could collide
+  Impact: If test class matches name, unexpected behavior
+  Fix: Use task.onlyIf { false } instead of sentinel pattern
+
+P5-GAD-015: testOrderClean Task Ignores Deletion Failures
+  Severity: LOW
+  Location: testOrderClean task
+  Problem: File::delete() called without checking return values
+  Impact: Failed deletions silently ignored (e.g., read-only files)
+  Fix: Check return values; fail task on deletion errors
+
+================================================================================
+SUMMARY BY IMPACT
+================================================================================
+
+Configuration Cache Incompatibility: 2 bugs (CRITICAL)
+  → Plugin cannot be used with Gradle 8.1+ configuration cache
+
+Multi-Project Build Issues: 4 bugs (1 HIGH, 3 MEDIUM)
+  → Unsuitable for large codebases with multiple projects
+
+Concurrency/Parallel Issues: 2 bugs (1 HIGH, 1 MEDIUM)
+  → Race conditions when using --parallel flag
+
+Custom Implementation Support: 2 bugs (1 HIGH, 1 MEDIUM)
+  → Cannot support custom test tasks or sourceset configs
+
+Data Validation: 2 bugs (both MEDIUM)
+  → Missing validation for user input properties
+
+Path Resolution: 2 bugs (both MEDIUM)
+  → Hardcoded paths ignore custom configurations
+
+Resource/Error Handling: 3 bugs (all LOW)
+  → Edge cases and resource leaks
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+IMMEDIATE (BLOCKS PRODUCTION):
+  1. Fix P5-GAD-004 - Configuration cache agent path
+  2. Fix P5-GAD-010 - Configuration cache system property
+  3. Fix P5-GAD-005 - Race condition in index file
+
+HIGH PRIORITY (NEXT RELEASE):
+  1. Fix P5-GAD-001 - Custom test task support
+  2. Fix P5-GAD-002 - Multi-project architecture
+  3. Fix P5-GAD-014 - State file isolation
+  4. Fix P5-GAD-003 - Parallel execution support
+
+MEDIUM PRIORITY (QUALITY):
+  1. Add comprehensive input validation
+  2. Use SourceSetContainer for all path resolution
+  3. Fix hardcoded paths and fallbacks
+
+DOCUMENTATION:
+  - Document Gradle version compatibility
+  - Document parallel execution limitations
+  - Document multi-project requirements
+  - Add troubleshooting guide
+
+================================================================================
+TESTING GAPS
+================================================================================
+
+Missing integration tests for:
+  ✗ --configuration-cache builds
+  ✗ --parallel --workers=N execution
+  ✗ Multi-project builds (10+ subprojects)
+  ✗ Custom test task implementations
+  ✗ Custom SourceSet configurations
+  ✗ TestNG projects
+  ✗ Kotlin-only projects
+  ✗ Edge cases and error conditions
+
+================================================================================

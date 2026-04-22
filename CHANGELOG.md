@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Change complexity scoring now respects structural (member-level) exclusion — only deps that match at member level contribute complexity
 - Backward-compat failure migration clamps `daysAgo` to ≥ 0 (clock skew could amplify scores)
 - ChangeComplexity.serialise() Javadoc corrected (stores normalised values, not raw sizes)
+- **Critical: Gradle integration test deadlock** — `configureStateLocking` acquired a file lock in the Gradle daemon's `doFirst`, while `TelemetryListener` tried to acquire the same lock in the worker JVM. Since `doLast` (which releases the lock) can't run until the worker finishes, this caused an infinite deadlock on every Gradle test run. Removed the redundant outer lock.
+- **MethodScorer set-cover bonus was a no-op** — `computeSetCoverBonuses()` divided by `SET_COVER_DECLINE` after multiplying, giving all methods the same bonus. Now stores bonus before reducing, matching `TestScorer`.
 
 ### Security
 

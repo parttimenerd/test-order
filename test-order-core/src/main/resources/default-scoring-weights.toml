@@ -19,6 +19,15 @@ durationAlpha = 0.85
 methodDurationAlpha = 0.85
 # Failure scores below this threshold are pruned on save.
 failurePruneThreshold = 0.01
+# Variance threshold used in adaptive EMA alpha calculation (0 = no adaptation).
+# When duration variance is below this threshold, alpha is dampened to smooth noise.
+# When variance is above this threshold, alpha is increased to track real changes.
+emaVarianceThreshold = 0.35
+# Maximum number of run records to retain in the state file.
+# When this limit is exceeded, older runs are sampled and discarded (preserving anchors).
+historyMaxRuns = 50
+# Minimum adaptive alpha factor to prevent excessive dampening in EMA calculation.
+minAdaptiveAlphaFactor = 0.35
 
 # Bonus for new test classes not in the dependency index
 [newTest]

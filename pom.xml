@@ -50,6 +50,13 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jacoco.version>0.8.14</jacoco.version>
+        <maven.checkstyle.version>3.4.0</maven.checkstyle.version>
+        <spotbugs.maven.plugin.version>4.9.8.1</spotbugs.maven.plugin.version>
+        <spotless.version>2.44.5</spotless.version>
+        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+        <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
+        <errorprone.version>2.31.0</errorprone.version>
+        <plexus.errorprone.version>2.15.0</plexus.errorprone.version>
         <testorder.coverage.minimum>0.0</testorder.coverage.minimum>
         <javassist.version>3.29.2-GA</javassist.version>
         <femtocli.version>0.4.0</femtocli.version>
@@ -59,16 +66,20 @@
         <junit.platform.version>6.0.3</junit.platform.version>
         <maven.api.version>3.9.6</maven.api.version>
         <maven.plugin.tools.version>3.11.0</maven.plugin.tools.version>
+        <testng.version>7.10.2</testng.version>
     </properties>
 
     <modules>
         <module>test-order-agent</module>
         <module>test-order-core</module>
+        <module>test-order-dashboard</module>
         <module>test-order-cli</module>
         <module>test-order-junit</module>
+        <module>test-order-testng</module>
         <module>test-order-maven-plugin</module>
         <module>test-order-coverage-mojo</module>
         <module>test-order-benchmarks</module>
+        <module>test-order-dashboard-ui-tests</module>
     </modules>
 
     <dependencyManagement>
@@ -93,10 +104,29 @@
                 <artifactId>junit-jupiter-params</artifactId>
                 <version>${junit.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.testng</groupId>
+                <artifactId>testng</artifactId>
+                <version>${testng.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven.compiler.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -163,6 +193,33 @@
                         <configuration>
                             <outputDirectory>${project.reporting.outputDirectory}/jacoco-aggregate</outputDirectory>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <eclipse>
+                            <version>4.33</version>
+                            <file>${maven.multiModuleProjectDirectory}/config/spotless/eclipse-formatter.xml</file>
+                        </eclipse>
+                        <importOrder>
+                            <order>java,javax,jakarta,org,com,</order>
+                        </importOrder>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>
@@ -246,6 +303,89 @@
                             <quiet>true</quiet>
                             <release>17</release>
                         </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>quality</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-checkstyle-plugin</artifactId>
+                        <version>${maven.checkstyle.version}</version>
+                        <executions>
+                            <execution>
+                                <id>checkstyle-verify</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                                <configuration>
+                                    <configLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/checkstyle.xml</configLocation>
+                                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                                    <!-- TODO: Flip to true after baseline cleanup to enforce style in CI. -->
+                                    <failOnViolation>false</failOnViolation>
+                                    <consoleOutput>true</consoleOutput>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>com.github.spotbugs</groupId>
+                        <artifactId>spotbugs-maven-plugin</artifactId>
+                        <version>${spotbugs.maven.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>spotbugs-verify</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                                <configuration>
+                                    <effort>Max</effort>
+                                    <threshold>Low</threshold>
+                                    <!-- TODO: Flip to true after initial findings are triaged/fixed. -->
+                                    <failOnError>false</failOnError>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>quality-errorprone</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <version>${maven.compiler.plugin.version}</version>
+                        <configuration>
+                            <release>17</release>
+                            <forceLegacyJavacApi>true</forceLegacyJavacApi>
+                            <compilerId>javac-with-errorprone</compilerId>
+                            <showWarnings>true</showWarnings>
+                            <compilerArgs>
+                                <!-- TODO: Promote selected checks from WARN to ERROR over time. -->
+                                <arg>-Xep:DeadException:WARN</arg>
+                                <arg>-Xep:EqualsIncompatibleType:WARN</arg>
+                            </compilerArgs>
+                        </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.codehaus.plexus</groupId>
+                                <artifactId>plexus-compiler-javac-errorprone</artifactId>
+                                <version>${plexus.errorprone.version}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>com.google.errorprone</groupId>
+                                <artifactId>error_prone_core</artifactId>
+                                <version>${errorprone.version}</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                 </plugins>
             </build>

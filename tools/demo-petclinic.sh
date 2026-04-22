@@ -22,11 +22,7 @@ SKIP_OPTS="-Dcheckstyle.skip -Dspring-javaformat.skip"
 EXCLUDE_ITS="-Dtest=!*IntegrationTests,!MySqlIntegrationTests,!PostgresIntegrationTests,!MysqlTestApplication"
 
 # Clean up any leftover test-order data
-rm -f "$PETCLINIC/test-dependencies.lz4" \
-      "$PETCLINIC/.test-order-hashes.lz4" \
-      "$PETCLINIC/.test-order-test-hashes.lz4" \
-      "$PETCLINIC/.test-order-failures" \
-      "$PETCLINIC/.test-order-durations"
+rm -rf "$PETCLINIC/.test-order"
 rm -rf "$PETCLINIC/target/test-order-deps"
 
 # ── Step 0: Ensure test-order artifacts are installed ───────────────────
@@ -90,10 +86,10 @@ echo ""
     grep -E '\[test-order\]|Tests run:|BUILD|Running ' || true
 
 echo ""
-if [ -f "$PETCLINIC/test-dependencies.lz4" ]; then
+if [ -f "$PETCLINIC/.test-order/test-dependencies.lz4" ]; then
     echo -e "${GREEN}✓ Dependency index created: test-dependencies.lz4${NC}"
     echo "  Contents (first 20 lines):"
-    head -20 "$PETCLINIC/test-dependencies.lz4" | sed 's/^/    /'
+    head -20 "$PETCLINIC/.test-order/test-dependencies.lz4" | sed 's/^/    /'
 else
     echo -e "${YELLOW}No index file yet — aggregating from .deps files${NC}"
     ls -la "$PETCLINIC/target/test-order-deps/" 2>/dev/null | head -10 | sed 's/^/    /'

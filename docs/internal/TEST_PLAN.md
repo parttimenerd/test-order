@@ -51,6 +51,10 @@ Systematic audit of every production class against its test coverage. Classes ar
 | **TestSelector** | TestSelectorTest | ✅ Expanded to 11 tests. Now covers empty input, all-new, topN > total, randomM > available, union completeness (E11–E15). |
 | **DependencyMap** | DependencyMapTest | ✅ Gaps covered: row-dedup immutability tested (save/load and in-memory), truncated and garbage binary load throw IOException tested. 4 new tests added. |
 | **TestOrderState** | TestOrderStateTest | ✅ Expanded to 57 tests. Covers EMA alpha smoothing (including alpha=0/1 edge cases), failure pruning, APFD edge cases (empty/no-failures), optimize() with insufficient data, schema version, weights I/O (E2–E7 addressed). |
+| **StateConfiguration** | StateConfigurationTest | ✅ 11 tests. Extracted from TestOrderState — covers validation, defaults, round-trip fidelity. |
+| **DurationTracker** | DurationTrackerTest | ✅ 3 tests. Extracted from TestOrderState — covers EMA updates, alpha edge cases, variance tracking. |
+| **RunHistoryManager** | RunHistoryManagerTest | ✅ 3 tests. Extracted from TestOrderState — covers add/cap/sample, thinning, chronological preservation. |
+| **FailureHistoryTracker** | FailureHistoryTrackerTest | ✅ 5 tests. Extracted from TestOrderState — covers decay, pending merge, prune, method-level tracking. |
 | **FileHashStore** | FileHashStoreTest | ✅ Gaps covered: round-trip forward-slash preservation tested, no-false-positive regression guard tested, truncated and random-bytes LZ4 load throw IOException tested. 4 new tests added. |
 | **ChangeDetector** | ChangeDetectorTest | ✅ Gaps covered: single-commit repo (HEAD~1 missing) falls back gracefully tested. Git-not-installed path covered by existing `gitModesFallBackToHashDetectionOutsideGitRepo`. 1 new test added. |
 | **Tool** | ToolTest | ✅ Added subprocess guard test for missing subcommand (`System.exit(1)` path) in `ToolTest`, verifying exit code and error message without terminating the test JVM. |

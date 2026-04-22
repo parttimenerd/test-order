@@ -2,15 +2,20 @@ package me.bechberger.testorder;
 
 import org.springframework.boot.test.context.SpringBootTest;
 
-class SpringConfigA {}
+class SpringConfigA {
+}
 
-class SpringConfigB {}
+class SpringConfigB {
+}
 
 @SpringBootTest(classes = SpringConfigA.class)
-class SpringGroupedFastTest {}
+class SpringGroupedFastTest {
+}
 
 @SpringBootTest(classes = SpringConfigA.class)
-class SpringGroupedSlowTest {}
+class SpringGroupedSlowTest {
+}
 
 @SpringBootTest(classes = SpringConfigB.class)
-class SpringOtherContextTest {}
+class SpringOtherContextTest {
+}
