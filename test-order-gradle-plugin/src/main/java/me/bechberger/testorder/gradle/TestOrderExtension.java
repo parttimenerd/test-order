@@ -11,7 +11,7 @@ import org.gradle.api.provider.Property;
  * Usage in build.gradle:
  * <pre>
  * testOrder {
- *     mode = "auto"               // auto | learn | order
+ *     mode = "auto"               // auto | learn | order | optimize | skip
  *     instrumentationMode = "FULL" // METHOD_ENTRY | FULL | FULL_METHOD | FULL_MEMBER
  *     includePackages = ""         // comma-separated package prefixes (auto-detected if empty)
  *     changeMode = "auto"          // auto | since-last-run | since-last-commit | uncommitted | explicit
@@ -30,10 +30,10 @@ public abstract class TestOrderExtension {
 
     // ---- Paths ----
 
-    /** Binary dependency index file (test-dependencies.lz4). */
+    /** Binary dependency index file (.test-order/test-dependencies.lz4). */
     public abstract RegularFileProperty getIndexFile();
 
-    /** State file for durations, failures, and run history (.test-order-state). */
+    /** State file for durations, failures, and run history (.test-order/state.lz4). */
     public abstract RegularFileProperty getStateFile();
 
     /** Directory for .deps text files produced in learn mode. */
@@ -106,12 +106,12 @@ public abstract class TestOrderExtension {
     void applyDefaults(Project project) {
         getMode().convention("auto");
         getInstrumentationMode().convention("FULL");
-        getIndexFile().convention(project.getLayout().getProjectDirectory().file("test-dependencies.lz4"));
-        getStateFile().convention(project.getLayout().getProjectDirectory().file(".test-order-state"));
+        getIndexFile().convention(project.getLayout().getProjectDirectory().file(".test-order/test-dependencies.lz4"));
+        getStateFile().convention(project.getLayout().getProjectDirectory().file(".test-order/state.lz4"));
         getDepsDir().convention(project.getLayout().getBuildDirectory().dir("test-order-deps"));
-        getHashFile().convention(project.getLayout().getProjectDirectory().file(".test-order-hashes.lz4"));
-        getTestHashFile().convention(project.getLayout().getProjectDirectory().file(".test-order-test-hashes.lz4"));
-        getMethodHashFile().convention(project.getLayout().getProjectDirectory().file(".test-order-method-hashes.lz4"));
+        getHashFile().convention(project.getLayout().getProjectDirectory().file(".test-order/hashes.lz4"));
+        getTestHashFile().convention(project.getLayout().getProjectDirectory().file(".test-order/test-hashes.lz4"));
+        getMethodHashFile().convention(project.getLayout().getProjectDirectory().file(".test-order/method-hashes.lz4"));
         getChangeMode().convention("auto");
         getChangedClasses().convention("");
         getIncludePackages().convention("");

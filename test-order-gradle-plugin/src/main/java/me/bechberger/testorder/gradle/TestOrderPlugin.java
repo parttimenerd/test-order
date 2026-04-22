@@ -28,27 +28,28 @@ import org.gradle.process.CommandLineArgumentProvider;
 
 import me.bechberger.testorder.DashboardGenerator;
 import me.bechberger.testorder.DashboardGenerator.ScoredTest;
+import me.bechberger.testorder.dashboard.DashboardResources;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 
 /**
  * Gradle plugin for JUnit test class priority ordering based on runtime dependency telemetry.
  * <p>
- * Supports two modes:
+ * Supports the following modes:
  * <ul>
  *   <li><b>learn</b> — attaches the instrumentation agent to collect test→dependency data</li>
  *   <li><b>order</b> — injects PriorityClassOrderer to reorder tests by predicted relevance</li>
+ *   <li><b>optimize</b> — runs tests in order mode, then tunes scoring weights from run history</li>
+ *   <li><b>auto</b> — selects learn or order automatically based on whether an index file exists</li>
+ *   <li><b>skip</b> — disables plugin behaviour for this run</li>
  * </ul>
  * <p>
  * Apply via {@code id "me.bechberger.test-order"} in the plugins block, or
@@ -98,6 +99,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     /**
      * Adds test-order-junit and test-order-core (shaded) as testRuntimeOnly dependencies.
+     * Also adds test-order-testng when TestNG is detected on the test classpath.
      * This is the Gradle-idiomatic way to add JARs to the test classpath and ensures
      * compatibility with Gradle 9.x's stricter module/classpath handling.
      */
@@ -113,6 +115,27 @@ public class TestOrderPlugin implements Plugin<Project> {
                 Map.of("group", GROUP_ID, "name", "test-order-core", "version", VERSION, "classifier", "all"));
         coreDep.setTransitive(false);
         project.getDependencies().add("testRuntimeOnly", coreDep);
+
+        // TestNG support: add after evaluation so user dependencies are resolved
+        project.afterEvaluate(p -> {
+            if (isTestNGOnTestClasspath(p)) {
+                ExternalModuleDependency testngDep = (ExternalModuleDependency) p.getDependencies().create(
+                        GROUP_ID + ":test-order-testng:" + VERSION);
+                testngDep.setTransitive(false);
+                p.getDependencies().add("testRuntimeOnly", testngDep);
+                p.getLogger().lifecycle("[test-order] TestNG detected — adding test-order-testng support");
+            }
+        });
+    }
+
+    /**
+     * Returns true when TestNG is declared as a test dependency in the project.
+     */
+    static boolean isTestNGOnTestClasspath(Project project) {
+        return project.getConfigurations().stream()
+                .filter(c -> c.getName().toLowerCase().contains("test"))
+                .flatMap(c -> c.getDependencies().stream())
+                .anyMatch(d -> "org.testng".equals(d.getGroup()) && "testng".equals(d.getName()));
     }
 
     // -----------------------------------------------------------------------
@@ -138,6 +161,45 @@ public class TestOrderPlugin implements Plugin<Project> {
                 learnModeConfigurator.configure(project, ext, testTask, agentConf);
             } else if ("order".equals(resolvedMode)) {
                 orderModeConfigurator.configure(project, ext, testTask);
+            } else if ("optimize".equals(resolvedMode)) {
+                // Optimize mode: run tests in priority order, then tune scoring weights
+                orderModeConfigurator.configure(project, ext, testTask);
+                testTask.doLast("testOrderOptimizeWeights", t -> {
+                    Path statePath = ext.getStateFile().get().getAsFile().toPath();
+                    if (!Files.exists(statePath)) {
+                        project.getLogger().warn(
+                                "[test-order] Optimize mode: state file not found at {} — skipping weight optimisation.",
+                                statePath);
+                        return;
+                    }
+                    withStateFileLock(statePath, () -> {
+                        TestOrderState state = TestOrderState.load(statePath);
+                        long withFailures = state.runs().stream()
+                                .filter(r -> r.totalFailures() > 0).count();
+                        TestOrderState.OptimizeResult optimized = state.optimize();
+                        if (optimized == null) {
+                            project.getLogger().info(
+                                    "[test-order] Need at least {} runs with failures to optimise (have {}).",
+                                    OptimizationDefaults.MIN_RUNS_FOR_OPTIMISATION, withFailures);
+                            return null;
+                        }
+                        state.setWeights(optimized.weights());
+                        try {
+                            state.save(statePath);
+                            project.getLogger().lifecycle(
+                                    "[test-order] Optimised scoring weights saved: {}",
+                                    optimized.weights().format());
+                        } catch (IOException e) {
+                            project.getLogger().warn(
+                                    "[test-order] Failed to save optimised weights: {}", e.getMessage());
+                        }
+                        if (optimized.overfit()) {
+                            project.getLogger().warn(
+                                    "[test-order] Overfitting detected — default weights used instead.");
+                        }
+                        return null;
+                    });
+                });
             }
             // "skip" or unrecognized → do nothing (just add junit jar for telemetry)
         });
@@ -160,8 +222,16 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         if ("learn".equalsIgnoreCase(mode)) return "learn";
         if ("order".equalsIgnoreCase(mode)) return "order";
+        if ("optimize".equalsIgnoreCase(mode)) return "optimize";
         if ("skip".equalsIgnoreCase(mode) || "off".equalsIgnoreCase(mode)
                 || "none".equalsIgnoreCase(mode)) return "skip";
+        if ("auto".equalsIgnoreCase(mode) || "combined".equalsIgnoreCase(mode)
+                || mode.isEmpty()) {
+            // fall through to auto-detect below
+        } else {
+            throw new GradleException("[test-order] Invalid mode: '" + mode
+                    + "'. Valid values: auto, learn, order, optimize, skip");
+        }
 
         // auto: learn if no index file exists, order otherwise
         File indexFile = ext.getIndexFile().getAsFile().get();
@@ -183,16 +253,25 @@ public class TestOrderPlugin implements Plugin<Project> {
         project.getLogger().lifecycle("[test-order] Configuring learn mode for task :{}",
                 testTask.getName());
 
+        // Resolve effective instrumentation mode: CLI property overrides extension DSL
+        String instrMode = ext.getInstrumentationMode().get();
+        String propInstrMode = gradleOrSystemProperty(project, "testorder.instrumentationMode");
+        if (propInstrMode == null) {
+            propInstrMode = gradleOrSystemProperty(project, "testorder.instrumentation.mode");
+        }
+        if (propInstrMode != null && !propInstrMode.isBlank()) {
+            instrMode = propInstrMode;
+        }
+
         // System properties for the forked test JVM
         testTask.systemProperty("testorder.learn", "true");
-        testTask.systemProperty("testorder.instrumentation.mode",
-                ext.getInstrumentationMode().get().toUpperCase());
+        testTask.systemProperty("testorder.instrumentation.mode", instrMode.toUpperCase());
         testTask.systemProperty("testorder.state.path",
                 ext.getStateFile().get().getAsFile().getAbsolutePath());
 
         // Attach agent lazily via CommandLineArgumentProvider (configuration-cache safe)
         testTask.getJvmArgumentProviders().add(
-                new AgentArgumentProvider(project, ext, agentConf));
+                new AgentArgumentProvider(project, ext, agentConf, instrMode.toUpperCase()));
 
         // Snapshot source and test hashes before tests run, so that future
         // SINCE_LAST_RUN change detection has a baseline to compare against.
@@ -205,58 +284,62 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     /**
-     * Provides the {@code -javaagent} argument at execution time,
-     * resolving the agent JAR lazily.
+     * Provides the {@code -javaagent} argument at execution time.
+     * All values are captured eagerly as plain strings at configuration time
+     * so the provider is serializable for Gradle's configuration cache.
+     * The agent classpath is stored as a {@link org.gradle.api.file.FileCollection}
+     * (not a raw {@link Configuration}) so Gradle can track and serialize it.
      */
     private static class AgentArgumentProvider implements CommandLineArgumentProvider {
-        private final Project project;
-        private final TestOrderExtension ext;
-        private final Configuration agentConf;
+        private final org.gradle.api.file.FileCollection agentClasspath;
+        private final String instrumentationMode;
+        private final String depsDirPath;
+        private final String indexFilePath;
+        private final String includePackages;
+        private final String verboseFile;
 
-        AgentArgumentProvider(Project project, TestOrderExtension ext, Configuration agentConf) {
-            this.project = project;
-            this.ext = ext;
-            this.agentConf = agentConf;
+        AgentArgumentProvider(Project project, TestOrderExtension ext,
+                              Configuration agentConf, String instrumentationMode) {
+            this.agentClasspath = agentConf;
+            this.instrumentationMode = instrumentationMode;
+            this.depsDirPath = ext.getDepsDir().get().getAsFile().getAbsolutePath();
+            this.indexFilePath = ext.getIndexFile().get().getAsFile().getAbsolutePath();
+            this.verboseFile = ext.getVerboseFile().get();
+            // Resolve include packages at configuration time
+            String configured = ext.getIncludePackages().get();
+            if (!configured.isEmpty()) {
+                this.includePackages = configured;
+            } else {
+                Path sourceRoot = resolveMainSourceRoot(project);
+                this.includePackages = PackageDetector.resolveIncludePackages(
+                        null,
+                        ext.getFilterByGroupId().get(),
+                        String.valueOf(project.getGroup()),
+                        sourceRoot,
+                        project.getLogger());
+            }
         }
 
         @Override
         public Iterable<String> asArguments() {
-            File agentJar = agentConf.getSingleFile();
+            File agentJar = agentClasspath.getSingleFile();
 
             StringBuilder agentArgs = new StringBuilder();
-            agentArgs.append("outputDir=").append(ext.getDepsDir().get().getAsFile().getAbsolutePath());
-            agentArgs.append(",mode=").append(ext.getInstrumentationMode().get().toUpperCase());
-            agentArgs.append(",indexFile=").append(ext.getIndexFile().get().getAsFile().getAbsolutePath());
+            agentArgs.append("outputDir=").append(depsDirPath);
+            agentArgs.append(",mode=").append(instrumentationMode);
+            agentArgs.append(",indexFile=").append(indexFilePath);
 
-            // Resolve include packages
-            String includePackages = resolvePackages();
             if (includePackages != null) {
                 agentArgs.append(",includePackages=").append(includePackages.replace(",", ";"));
             }
 
-            String verboseFile = ext.getVerboseFile().get();
             if (!verboseFile.isEmpty()) {
                 agentArgs.append(",verboseFile=").append(Path.of(verboseFile).toAbsolutePath());
             }
 
             return List.of(
                     "-Xshare:off",
-                    "-javaagent:" + agentJar.getAbsolutePath() + "=" + agentArgs);
-        }
-
-        private String resolvePackages() {
-            String configured = ext.getIncludePackages().get();
-            if (!configured.isEmpty()) {
-                return configured;
-            }
-            // Auto-detect from src/main/java
-            Path sourceRoot = resolveMainSourceRoot(project);
-            return PackageDetector.resolveIncludePackages(
-                    null,
-                    ext.getFilterByGroupId().get(),
-                    String.valueOf(project.getGroup()),
-                    sourceRoot,
-                    project.getLogger());
+                    "-javaagent:" + quoteIfNeeded(agentJar.getAbsolutePath()) + "=" + agentArgs);
         }
     }
 
@@ -541,8 +624,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                         List<Path> sourceRoots = new ArrayList<>();
                         sourceRoots.add(sourceRoot);
                         // Also check Kotlin source root
-                        Path ktRoot = project.getProjectDir().toPath()
-                                .resolve("src/main/kotlin");
+                        Path ktRoot = resolveKotlinSourceRoot(project);
                         if (Files.isDirectory(ktRoot)) {
                             sourceRoots.add(ktRoot);
                         }
@@ -709,10 +791,16 @@ public class TestOrderPlugin implements Plugin<Project> {
                 if (Files.isDirectory(depsDir)) {
                     try (var walk = Files.walk(depsDir)) {
                         walk.sorted(Comparator.reverseOrder())
-                            .map(Path::toFile)
-                            .forEach(File::delete);
+                            .forEach(p -> {
+                                try {
+                                    Files.deleteIfExists(p);
+                                } catch (IOException e) {
+                                    project.getLogger().warn("[test-order] Failed to delete {}: {}",
+                                            p, e.getMessage());
+                                }
+                            });
                     } catch (IOException e) {
-                        project.getLogger().warn("[test-order] Failed to delete {}: {}",
+                        project.getLogger().warn("[test-order] Failed to walk {}: {}",
                                 depsDir, e.getMessage());
                     }
                     deleted++;
@@ -727,6 +815,7 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setGroup("test-order");
             task.setDescription(
                     "Generate an HTML dashboard visualising test scoring, dependencies, and run history");
+            task.mustRunAfter("test");
             task.doLast(t -> {
                 generateDashboard(project, ext);
             });
@@ -736,6 +825,7 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setGroup("test-order");
             task.setDescription(
                     "Generate and serve the test-order HTML dashboard on a local HTTP server");
+            task.mustRunAfter("test");
             task.doLast(t -> {
                 Path outPath = generateDashboard(project, ext);
                 serveDashboard(project, outPath.getParent());
@@ -797,20 +887,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                     scored, Collections.emptySet(), Collections.emptySet(),
                     state, weights, depMap, medianDuration);
 
-            String template;
-            try (InputStream is = TestOrderPlugin.class
-                    .getResourceAsStream("/dashboard-template.html")) {
-                if (is == null) {
-                    throw new GradleException(
-                            "[test-order] dashboard-template.html not found in plugin JAR");
-                }
-                template = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            }
+            String template = DashboardResources.assembleTemplate();
             String html = gen.injectIntoTemplate(template, data);
-            html = gen.injectAssets(html,
-                    loadPluginAsset("vue.global.prod.js"),
-                    loadPluginAsset("chart.umd.min.js"),
-                    loadPluginAsset("d3.min.js"));
 
             Files.createDirectories(outDir);
             Files.writeString(htmlOut, html, StandardCharsets.UTF_8);
@@ -824,22 +902,11 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
     }
 
-    /** Loads a bundled JS asset from the plugin classpath as a UTF-8 string. */
-    private static String loadPluginAsset(String name) {
-        try (InputStream in = TestOrderPlugin.class.getResourceAsStream("/web-assets/" + name)) {
-            if (in == null) {
-                throw new GradleException("[test-order] Missing bundled asset: /web-assets/" + name);
-            }
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new GradleException("Failed to load asset: " + name, e);
-        }
-    }
-
     /** Starts a local HTTP server serving the self-contained dashboard HTML. */
     private void serveDashboard(Project project, Path dashboardDir) {
+        com.sun.net.httpserver.HttpServer server = null;
         try {
-            com.sun.net.httpserver.HttpServer server =
+            server =
                     com.sun.net.httpserver.HttpServer.create(new InetSocketAddress(0), 0);
             int port = server.getAddress().getPort();
 
@@ -873,8 +940,9 @@ public class TestOrderPlugin implements Plugin<Project> {
             } catch (Exception ignored) { }
 
             CountDownLatch latch = new CountDownLatch(1);
+            com.sun.net.httpserver.HttpServer serverRef = server;
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                server.stop(1);
+                serverRef.stop(1);
                 latch.countDown();
             }));
             try {
@@ -884,6 +952,10 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
         } catch (IOException e) {
             throw new GradleException("Failed to start dashboard HTTP server", e);
+        } finally {
+            if (server != null) {
+                server.stop(0);
+            }
         }
     }
 
@@ -923,6 +995,29 @@ public class TestOrderPlugin implements Plugin<Project> {
         return project.getProjectDir().toPath().resolve("src/test/java");
     }
 
+    /** Resolves the main Kotlin source root for the project, falling back to src/main/kotlin. */
+    static Path resolveKotlinSourceRoot(Project project) {
+        SourceSetContainer sourceSets =
+                project.getExtensions().findByType(SourceSetContainer.class);
+        if (sourceSets != null) {
+            SourceSet main = sourceSets.findByName(SourceSet.MAIN_SOURCE_SET_NAME);
+            if (main != null) {
+                for (File dir : main.getAllJava().getSrcDirs()) {
+                    if (dir.isDirectory() && dir.getAbsolutePath().contains("kotlin")) {
+                        return dir.toPath();
+                    }
+                }
+            }
+        }
+        // Fallback
+        return project.getProjectDir().toPath().resolve("src/main/kotlin");
+    }
+
+    /** Quotes a path string if it contains spaces (for javaagent arguments). */
+    private static String quoteIfNeeded(String path) {
+        return path.contains(" ") ? "\"" + path + "\"" : path;
+    }
+
     private static boolean aggregateDependencyFiles(Project project, TestOrderExtension ext,
                                                     boolean failIfMissing) {
         Path depsDir = ext.getDepsDir().get().getAsFile().toPath();
@@ -937,7 +1032,10 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
         try {
             DependencyMap map = DependencyMap.aggregate(depsDir);
-            map.save(indexFile);
+            PersistenceSupport.withFileLock(indexFile, () -> {
+                map.save(indexFile);
+                return null;
+            });
             project.getLogger().lifecycle("[test-order] Aggregated deps → {}", indexFile);
             return true;
         } catch (IOException e) {
@@ -1107,14 +1205,14 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static void applySelectedTests(Test task, List<String> tests) {
+        if (tests.isEmpty()) {
+            task.onlyIf("no tests selected by test-order", t -> false);
+            return;
+        }
         task.filter(filter -> {
             filter.setFailOnNoMatchingTests(false);
-            if (tests.isEmpty()) {
-                filter.includeTestsMatching("__testorder__.NoMatchingTests");
-            } else {
-                for (String testClass : tests) {
-                    filter.includeTestsMatching(testClass);
-                }
+            for (String testClass : tests) {
+                filter.includeTestsMatching(testClass);
             }
         });
     }
@@ -1133,14 +1231,8 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static <T> T withStateFileLock(Path statePath, LockAction<T> action) {
-        Path lockPath = statePath.resolveSibling(statePath.getFileName() + ".lock");
         try {
-            Files.createDirectories(lockPath.getParent());
-            try (FileChannel channel = FileChannel.open(lockPath,
-                    StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-                 FileLock ignored = channel.lock()) {
-                return action.run();
-            }
+            return PersistenceSupport.withFileLock(statePath, action::run);
         } catch (IOException e) {
             throw new GradleException("Failed while holding state lock for " + statePath, e);
         }
@@ -1148,11 +1240,27 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     private static int resolveSelectTopN(Project project, TestOrderExtension ext) {
         String override = gradleOrSystemProperty(project, "testorder.select.topN");
-        return override != null && !override.isBlank() ? Integer.parseInt(override) : ext.getSelectTopN().get();
+        if (override != null && !override.isBlank()) {
+            try {
+                return Integer.parseInt(override);
+            } catch (NumberFormatException e) {
+                throw new GradleException("[test-order] Invalid value for testorder.select.topN: '"
+                        + override + "' (expected integer)");
+            }
+        }
+        return ext.getSelectTopN().get();
     }
 
     private static int resolveSelectRandomM(Project project, TestOrderExtension ext) {
         String override = gradleOrSystemProperty(project, "testorder.select.randomM");
-        return override != null && !override.isBlank() ? Integer.parseInt(override) : ext.getSelectRandomM().get();
+        if (override != null && !override.isBlank()) {
+            try {
+                return Integer.parseInt(override);
+            } catch (NumberFormatException e) {
+                throw new GradleException("[test-order] Invalid value for testorder.select.randomM: '"
+                        + override + "' (expected integer)");
+            }
+        }
+        return ext.getSelectRandomM().get();
     }
 }
