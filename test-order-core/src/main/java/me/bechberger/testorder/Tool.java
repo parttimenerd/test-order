@@ -20,7 +20,8 @@ import me.bechberger.testorder.changes.StructuralDiff;
  */
 @Command(name = "test-order", mixinStandardHelpOptions = true, version = "0.1.0", description = "Manage JUnit test ordering based on dependency telemetry", subcommands = {
 		Tool.Aggregate.class, Tool.Affected.class, Tool.Stats.class, Tool.HashSnapshot.class, Tool.Changed.class,
-		Tool.Run.class, Tool.Dump.class, Tool.Optimize.class, Tool.Select.class, Tool.StructDiff.class })
+		Tool.Run.class, Tool.Dump.class, Tool.Optimize.class, Tool.Select.class, Tool.StructDiff.class,
+		Tool.Advise.class })
 public class Tool implements Runnable {
 
 	@Override
@@ -436,6 +437,61 @@ public class Tool implements Runnable {
 				} else {
 					List<StructuralDiff.FileDiff> diffs = StructuralDiff.diffUncommitted(root);
 					System.out.print(StructuralDiff.formatReport(diffs));
+				}
+				return 0;
+			} catch (IOException e) {
+				System.err.println("Error: " + e.getMessage());
+				return 1;
+			}
+		}
+	}
+
+	@Command(name = "advise", description = "Analyse per-method dependency overlap and suggest test classes to split", mixinStandardHelpOptions = true)
+	static class Advise implements Callable<Integer> {
+
+		@Parameters(description = "Dependency index file")
+		Path indexFile;
+
+		@Option(names = { "--threshold" }, description = "Similarity threshold (default: ${DEFAULT-VALUE}); "
+				+ "classes whose avg pairwise Jaccard similarity is below this are flagged", defaultValue = "0.3")
+		double threshold;
+
+		@Option(names = { "--verbose", "-v" }, description = "Print per-class details including suggested split groups")
+		boolean verbose;
+
+		@Override
+		public Integer call() {
+			try {
+				DependencyMap depMap = DependencyMap.load(indexFile);
+
+				if (!depMap.hasMethodDeps()) {
+					System.out.println("No per-method dependency data found in index.");
+					System.out.println(
+							"Ensure your test run includes the test-order agent with method-level coverage tracking.");
+					return 0;
+				}
+
+				List<TestSplitAdvice> advice = TestSplitAdvisor.analyze(depMap, threshold);
+
+				if (advice.isEmpty()) {
+					System.out.printf(
+							"No split candidates found (threshold=%.2f). All classes have sufficiently cohesive methods.%n",
+							threshold);
+					return 0;
+				}
+
+				System.out.printf("Found %d split candidate%s (threshold=%.2f):%n%n", advice.size(),
+						advice.size() == 1 ? "" : "s", threshold);
+
+				for (TestSplitAdvice a : advice) {
+					System.out.println("  " + a.summary());
+					if (verbose) {
+						System.out.println("  reason: " + a.reason());
+						for (int i = 0; i < a.suggestedGroups().size(); i++) {
+							System.out.printf("    group %d: %s%n", i + 1, a.suggestedGroups().get(i));
+						}
+						System.out.println();
+					}
 				}
 				return 0;
 			} catch (IOException e) {
