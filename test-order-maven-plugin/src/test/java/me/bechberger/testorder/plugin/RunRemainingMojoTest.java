@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
 
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -32,7 +33,12 @@ class RunRemainingMojoTest {
 		mojo = new TestableRunRemainingMojo();
 		project = projectWithSurefire(tempDir);
 
+		MavenSession session = mock(MavenSession.class);
+		when(session.getProjects()).thenReturn(List.of(project));
+		when(session.getTopLevelProject()).thenReturn(project);
+
 		inject(mojo, "project", project);
+		inject(mojo, "session", session);
 		inject(mojo, "remainingFile", tempDir.resolve("remaining.txt").toString());
 		inject(mojo, "skip", false);
 	}

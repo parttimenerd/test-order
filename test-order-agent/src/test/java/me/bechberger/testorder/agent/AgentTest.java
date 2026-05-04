@@ -140,9 +140,8 @@ class AgentTest {
 					transformers.add((ClassFileTransformer) args[0]);
 					yield null;
 				}
-				case "removeTransformer" -> false;
-				case "isRetransformClassesSupported", "isRedefineClassesSupported", "isModifiableClass",
-						"isNativeMethodPrefixSupported", "isModifiableModule" ->
+				case "removeTransformer", "isRetransformClassesSupported", "isRedefineClassesSupported",
+						"isModifiableClass", "isNativeMethodPrefixSupported", "isModifiableModule" ->
 					false;
 				case "getAllLoadedClasses", "getInitiatedClasses" -> new Class<?>[0];
 				case "getObjectSize" -> 0L;

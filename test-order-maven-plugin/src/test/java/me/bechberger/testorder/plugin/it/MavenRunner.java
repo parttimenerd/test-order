@@ -78,6 +78,16 @@ public class MavenRunner {
 		return run("test-order:dump");
 	}
 
+	/** Run {@code mvn test-order:export-json} */
+	public MavenResult exportJson() {
+		return run("test-order:export-json");
+	}
+
+	/** Run {@code mvn test-order:export-json -Dtestorder.exportJson.output=<path>} */
+	public MavenResult exportJsonTo(String outputPath) {
+		return run("test-order:export-json", "-Dtestorder.exportJson.output=" + outputPath);
+	}
+
 	/** Run {@code mvn test-order:aggregate} */
 	public MavenResult aggregate() {
 		return run("test-order:aggregate");
@@ -85,7 +95,7 @@ public class MavenRunner {
 
 	/** Run learn mode with METHOD_ENTRY instrumentation */
 	public MavenResult learnMethodEntry() {
-		return run("clean", "test", "-Dtestorder.mode=learn", "-Dtestorder.instrumentationMode=METHOD_ENTRY");
+		return run("clean", "test", "-Dtestorder.mode=learn", "-Dtestorder.instrumentation.mode=METHOD_ENTRY");
 	}
 
 	/** Run {@code mvn test-order:select test} with explicit changed classes */
@@ -103,9 +113,22 @@ public class MavenRunner {
 		return run("test-order:run-remaining", "test");
 	}
 
-	/** Run {@code mvn test-order:combined test} */
-	public MavenResult combined() {
-		return run("clean", "test-order:combined", "test");
+	/** Run {@code mvn test-order:auto test} */
+	public MavenResult auto() {
+		return run("clean", "test-order:auto", "test");
+	}
+
+	/**
+	 * Run {@code mvn test-order:auto test} with an explicit {@code testorder.mode}
+	 * value and optional explicit changed classes.
+	 */
+	public MavenResult autoWithMode(String mode, String... changedClasses) {
+		List<String> args = new ArrayList<>(List.of("clean", "test-order:auto", "test", "-Dtestorder.mode=" + mode));
+		if (changedClasses.length > 0) {
+			args.add("-Dtestorder.changeMode=explicit");
+			args.add("-Dtestorder.changed.classes=" + String.join(",", changedClasses));
+		}
+		return run(args.toArray(String[]::new));
 	}
 
 	/** Run {@code mvn test-order:optimize} */
@@ -124,6 +147,7 @@ public class MavenRunner {
 		List<String> command = new ArrayList<>();
 		command.add(mvn);
 		command.add("-B"); // batch mode (non-interactive)
+		command.add("-Dspotless.check.skip=true"); // ITs modify source files
 		command.addAll(defaultArgs);
 		command.addAll(List.of(args));
 

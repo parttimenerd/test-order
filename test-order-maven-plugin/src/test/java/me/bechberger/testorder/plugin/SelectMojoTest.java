@@ -9,6 +9,7 @@ import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -137,7 +138,8 @@ class SelectMojoTest {
 		}
 
 		@Override
-		protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests) throws MojoExecutionException {
+		protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests, Set<String> changedMethods,
+				Map<String, Integer> scoreOverrides) throws MojoExecutionException {
 			writeOrdererConfigCalled = true;
 		}
 	}
@@ -169,7 +171,8 @@ class SelectMojoTest {
 		}
 
 		@Override
-		protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests) throws MojoExecutionException {
+		protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests, Set<String> changedMethods,
+				Map<String, Integer> scoreOverrides) throws MojoExecutionException {
 			writeOrdererConfigCalled = true;
 		}
 	}

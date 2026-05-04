@@ -47,14 +47,15 @@ public class ChangeDetector {
 
 	private static Set<String> doDetect(Mode mode, Path projectRoot, Path sourceRoot, Path hashFile,
 			String explicitClasses, boolean readOnly) throws IOException {
+		Path gitRoot = findGitRoot(projectRoot);
 		String gitPrefix = toGitPrefix(projectRoot, sourceRoot);
 		Path absoluteSourceRoot = projectRoot.resolve(sourceRoot);
 		try {
 			return switch (mode) {
 				case SINCE_LAST_RUN -> detectSinceLastRun(absoluteSourceRoot, hashFile, !readOnly);
-				case SINCE_LAST_COMMIT -> mergeUncommitted(
-						GitChangeDetector.changedSinceLastCommit(projectRoot, gitPrefix), projectRoot, gitPrefix);
-				case UNCOMMITTED -> GitChangeDetector.uncommittedChanges(projectRoot, gitPrefix);
+				case SINCE_LAST_COMMIT ->
+					mergeUncommitted(GitChangeDetector.changedSinceLastCommit(gitRoot, gitPrefix), gitRoot, gitPrefix);
+				case UNCOMMITTED -> GitChangeDetector.uncommittedChanges(gitRoot, gitPrefix);
 				case EXPLICIT -> parseExplicit(explicitClasses);
 			};
 		} catch (IOException e) {
@@ -68,9 +69,9 @@ public class ChangeDetector {
 	}
 
 	/** Best-effort merge of uncommitted changes on top of a base result. */
-	private static Set<String> mergeUncommitted(Set<String> base, Path projectRoot, String gitPrefix) {
+	private static Set<String> mergeUncommitted(Set<String> base, Path gitRoot, String gitPrefix) {
 		try {
-			Set<String> uncommitted = GitChangeDetector.uncommittedChanges(projectRoot, gitPrefix);
+			Set<String> uncommitted = GitChangeDetector.uncommittedChanges(gitRoot, gitPrefix);
 			if (!uncommitted.isEmpty()) {
 				Set<String> merged = new TreeSet<>(base);
 				merged.addAll(uncommitted);
@@ -83,16 +84,26 @@ public class ChangeDetector {
 	}
 
 	/**
-	 * Converts a source root to a git-relative prefix path. Handles both absolute
-	 * and relative sourceRoot paths. E.g., for projectRoot=/home/proj,
-	 * sourceRoot=src/main/java → "src/main/java/"
+	 * Converts a source root to a git-relative prefix path. Uses {@code git
+	 * rev-parse --show-toplevel} to find the real git root, so that nested projects
+	 * (e.g. {@code samples/sample-basic}) produce correct prefixes like
+	 * {@code samples/sample-basic/src/main/java/} instead of just
+	 * {@code src/main/java/}.
 	 */
 	static String toGitPrefix(Path projectRoot, Path sourceRoot) {
-		Path relative;
+		Path absoluteSource;
 		if (sourceRoot.isAbsolute()) {
-			relative = projectRoot.relativize(sourceRoot);
+			absoluteSource = sourceRoot;
 		} else {
-			relative = sourceRoot;
+			absoluteSource = projectRoot.resolve(sourceRoot);
+		}
+		Path gitRoot = findGitRoot(projectRoot);
+		Path relative;
+		try {
+			relative = gitRoot.relativize(absoluteSource.toAbsolutePath().normalize());
+		} catch (IllegalArgumentException e) {
+			// Fallback: if git root and source are on different roots
+			relative = sourceRoot.isAbsolute() ? projectRoot.relativize(sourceRoot) : sourceRoot;
 		}
 		String prefix = relative.toString().replace('\\', '/');
 		if (prefix.isBlank()) {
@@ -101,6 +112,30 @@ public class ChangeDetector {
 		if (!prefix.endsWith("/"))
 			prefix += "/";
 		return prefix;
+	}
+
+	/**
+	 * Finds the git repository root via {@code git rev-parse --show-toplevel}.
+	 * Falls back to projectRoot if git is unavailable.
+	 */
+	private static Path findGitRoot(Path projectRoot) {
+		try {
+			ProcessBuilder pb = new ProcessBuilder("git", "rev-parse", "--show-toplevel");
+			pb.directory(projectRoot.toFile());
+			pb.redirectErrorStream(true);
+			Process process = pb.start();
+			String output;
+			try (var is = process.getInputStream()) {
+				output = new String(is.readAllBytes()).trim();
+			}
+			if (process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0
+					&& !output.isEmpty()) {
+				return Path.of(output).toAbsolutePath().normalize();
+			}
+		} catch (IOException | InterruptedException e) {
+			// fall through to default
+		}
+		return projectRoot.toAbsolutePath().normalize();
 	}
 
 	private static Set<String> detectSinceLastRun(Path absoluteSourceRoot, Path hashFile, boolean updateSnapshot)

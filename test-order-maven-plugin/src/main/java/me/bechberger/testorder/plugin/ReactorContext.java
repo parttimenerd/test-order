@@ -61,7 +61,10 @@ final class ReactorContext {
 		return project;
 	}
 	String moduleId() {
-		return project.getArtifactId();
+		// Use groupId-artifactId to avoid collisions when different modules share
+		// the same artifactId (e.g. multiple modules named "api" across groups)
+		String gid = project.getGroupId();
+		return (gid == null || gid.isEmpty()) ? project.getArtifactId() : gid + "-" + project.getArtifactId();
 	}
 
 	/**
@@ -88,29 +91,53 @@ final class ReactorContext {
 	// --- Path resolution ---
 
 	Path resolveIndexFile(String configured) {
-		return multiModule ? sharedDir.resolve("test-dependencies.lz4") : Path.of(configured);
+		return multiModule
+				? sharedDir.resolve("test-dependencies.lz4")
+				: resolveConfiguredPath(configured,
+						project.getBasedir().toPath().resolve(".test-order/test-dependencies.lz4"));
 	}
 
 	Path resolveStateFile(String configured) {
-		return multiModule ? sharedDir.resolve("state.lz4") : Path.of(configured);
+		return multiModule
+				? sharedDir.resolve("state.lz4")
+				: resolveConfiguredPath(configured, project.getBasedir().toPath().resolve(".test-order/state.lz4"));
 	}
 
 	Path resolveDepsDir(String configured) {
-		return multiModule ? sharedDir.resolve("deps") : Path.of(configured);
+		if (multiModule) {
+			return sharedDir.resolve("deps");
+		}
+		if (configured != null && !configured.isBlank()) {
+			return Path.of(configured);
+		}
+		return Path.of(project.getBuild().getDirectory()).resolve("test-order-deps");
 	}
 
 	Path resolveHashFile(String configured) {
-		return multiModule ? sharedDir.resolve("hashes").resolve(moduleId() + "-hashes.lz4") : Path.of(configured);
+		return multiModule
+				? sharedDir.resolve("hashes").resolve(moduleId() + "-hashes.lz4")
+				: resolveConfiguredPath(configured, project.getBasedir().toPath().resolve(".test-order/hashes.lz4"));
 	}
 
 	Path resolveTestHashFile(String configured) {
-		return multiModule ? sharedDir.resolve("hashes").resolve(moduleId() + "-test-hashes.lz4") : Path.of(configured);
+		return multiModule
+				? sharedDir.resolve("hashes").resolve(moduleId() + "-test-hashes.lz4")
+				: resolveConfiguredPath(configured,
+						project.getBasedir().toPath().resolve(".test-order/test-hashes.lz4"));
 	}
 
 	Path resolveMethodHashFile(String configured) {
 		return multiModule
 				? sharedDir.resolve("hashes").resolve(moduleId() + "-method-hashes.lz4")
-				: Path.of(configured);
+				: resolveConfiguredPath(configured,
+						project.getBasedir().toPath().resolve(".test-order/method-hashes.lz4"));
+	}
+
+	private Path resolveConfiguredPath(String configured, Path fallback) {
+		if (configured == null || configured.isBlank()) {
+			return fallback;
+		}
+		return Path.of(configured);
 	}
 
 	// --- Cross-module change propagation ---
@@ -160,7 +187,9 @@ final class ReactorContext {
 		Set<String> result = new LinkedHashSet<>();
 		List<MavenProject> upstream = graph.getUpstreamProjects(project, true);
 		for (MavenProject up : upstream) {
-			String value = session.getUserProperties().getProperty(keyPrefix + up.getArtifactId());
+			String gid = up.getGroupId();
+			String upId = (gid == null || gid.isEmpty()) ? up.getArtifactId() : gid + "-" + up.getArtifactId();
+			String value = session.getUserProperties().getProperty(keyPrefix + upId);
 			if (value != null && !value.isBlank()) {
 				Collections.addAll(result, value.split(","));
 			}

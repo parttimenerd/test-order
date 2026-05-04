@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import javassist.*;
@@ -232,34 +231,30 @@ public class ClassTransformer implements ClassFileTransformer {
 		Set<String> extra = null;
 		try {
 			CtClass[] interfaces = cc.getInterfaces();
-			if (interfaces.length > 0) {
-				for (CtClass iface : interfaces) {
-					String ifaceSlash = iface.getName().replace('.', '/');
-					if (!ifaceSlash.equals(className) && shouldInstrument(ifaceSlash)) {
-						if (extra == null)
-							extra = new HashSet<>();
-						extra.add(iface.getName());
-					}
+			for (CtClass iface : interfaces) {
+				String ifaceSlash = iface.getName().replace('.', '/');
+				if (!ifaceSlash.equals(className) && shouldInstrument(ifaceSlash)) {
+					if (extra == null)
+						extra = new HashSet<>();
+					extra.add(iface.getName());
 				}
 			}
 		} catch (NotFoundException ignored) {
 		}
 		try {
 			CtField[] fields = cc.getDeclaredFields();
-			if (fields.length > 0) {
-				for (CtField field : fields) {
-					try {
-						CtClass ft = field.getType();
-						if (ft.isInterface()) {
-							String ftSlash = ft.getName().replace('.', '/');
-							if (!ftSlash.equals(className) && shouldInstrument(ftSlash)) {
-								if (extra == null)
-									extra = new HashSet<>();
-								extra.add(ft.getName());
-							}
+			for (CtField field : fields) {
+				try {
+					CtClass ft = field.getType();
+					if (ft.isInterface()) {
+						String ftSlash = ft.getName().replace('.', '/');
+						if (!ftSlash.equals(className) && shouldInstrument(ftSlash)) {
+							if (extra == null)
+								extra = new HashSet<>();
+							extra.add(ft.getName());
 						}
-					} catch (NotFoundException ignored) {
 					}
+				} catch (NotFoundException ignored) {
 				}
 			}
 		} catch (RuntimeException ignored) {
@@ -274,11 +269,7 @@ public class ClassTransformer implements ClassFileTransformer {
 		}
 
 		String call = callBuilder.toString();
-		switch (mode) {
-			case FULL_MEMBER -> instrumentMethodEntry(cc, fqcn, call, true);
-			case FULL, FULL_METHOD -> instrumentMethodEntry(cc, fqcn, call, false);
-			case METHOD_ENTRY -> instrumentMethodEntry(cc, fqcn, call, false);
-		}
+		instrumentMethodEntry(cc, fqcn, call, mode == Agent.InstrumentationMode.FULL_MEMBER);
 	}
 
 	private void instrumentMethodEntry(CtClass cc, String selfFqcn, String selfCall, boolean recordMembers)

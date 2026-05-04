@@ -60,7 +60,7 @@ final class RunHistoryManager {
 			target.addAll(historicalRuns);
 			return;
 		}
-		Set<Integer> indices = new LinkedHashSet<>();
+		Set<Integer> indices = new LinkedHashSet<>(slots + 1);
 		if (slots == 1) {
 			indices.add(historicalRuns.size() - 1);
 		} else {
@@ -68,6 +68,7 @@ final class RunHistoryManager {
 				int index = (int) Math.round(i * (historicalRuns.size() - 1.0) / (slots - 1.0));
 				indices.add(index);
 			}
+			// Fill remaining slots from the start if rounding caused duplicates
 			for (int index = 0; indices.size() < slots && index < historicalRuns.size(); index++) {
 				indices.add(index);
 			}

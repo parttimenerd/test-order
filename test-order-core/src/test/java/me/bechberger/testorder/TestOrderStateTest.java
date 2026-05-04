@@ -883,22 +883,24 @@ class TestOrderStateTest {
 	// ─── Schema version loading tests ────────────────────────────────
 
 	@Test
-	void loadStateWithMissingSchemaVersionReturnsEmpty(@TempDir Path tmp) throws IOException {
+	void loadStateWithMissingSchemaVersionMigratesToCurrent(@TempDir Path tmp) throws IOException {
 		Path stateFile = tmp.resolve("state.json");
-		Files.writeString(stateFile, "{\"runs\":[]}"); // no schemaVersion field
+		// v0 state with actual data — migration should preserve it
+		Files.writeString(stateFile, "{\"durations\":{\"com.example.FooTest\":1500},\"weights\":{\"newTest\":20,\"changedTest\":15,\"maxFailure\":10,\"speed\":5,\"speedPenalty\":-3,\"depOverlap\":8,\"changeComplexity\":4,\"staticFieldBonus\":2,\"coverageBonus\":0},\"failureScores\":{},\"runs\":[]}");
 		TestOrderState state = TestOrderState.load(stateFile);
-		// Should return empty state rather than throwing
 		assertNotNull(state);
-		assertEquals(0, state.runs().size());
+		// Data should be preserved through migration, not discarded
+		assertEquals(1500, state.classDuration("com.example.FooTest"));
 	}
 
 	@Test
-	void loadStateWithOldSchemaVersionReturnsEmpty(@TempDir Path tmp) throws IOException {
+	void loadStateWithOldSchemaVersionMigrates(@TempDir Path tmp) throws IOException {
 		Path stateFile = tmp.resolve("state.json");
-		Files.writeString(stateFile, "{\"schemaVersion\":0,\"runs\":[]}");
+		Files.writeString(stateFile, "{\"schemaVersion\":0,\"durations\":{\"com.example.BarTest\":800},\"weights\":{\"newTest\":20,\"changedTest\":15,\"maxFailure\":10,\"speed\":5,\"speedPenalty\":-3,\"depOverlap\":8,\"changeComplexity\":4,\"staticFieldBonus\":2,\"coverageBonus\":0},\"failureScores\":{},\"runs\":[]}");
 		TestOrderState state = TestOrderState.load(stateFile);
 		assertNotNull(state);
-		assertEquals(0, state.runs().size());
+		// v0 → v1 migration should preserve data
+		assertEquals(800, state.classDuration("com.example.BarTest"));
 	}
 
 	@Test
@@ -906,6 +908,18 @@ class TestOrderStateTest {
 		Path stateFile = tmp.resolve("state.json");
 		Files.writeString(stateFile, "{\"schemaVersion\":9999,\"runs\":[]}");
 		assertThrows(IOException.class, () -> TestOrderState.load(stateFile));
+	}
+
+	@Test
+	void stateMigrationsBumpSchemaVersionAndPreserveFields() {
+		Map<String, Object> v0 = new java.util.LinkedHashMap<>();
+		v0.put("schemaVersion", 0);
+		v0.put("durations", Map.of("com.example.FooTest", 1234));
+
+		Map<String, Object> migrated = StateMigrations.migrate(v0, 0, 1);
+
+		assertEquals(1, migrated.get("schemaVersion"));
+		assertEquals(Map.of("com.example.FooTest", 1234), migrated.get("durations"));
 	}
 
 	// ─── Optimizer guard tests ────────────────────────────────────────

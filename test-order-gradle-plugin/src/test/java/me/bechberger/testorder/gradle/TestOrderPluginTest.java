@@ -43,8 +43,8 @@ class TestOrderPluginTest {
         assertTrue(project.getRepositories().stream().anyMatch(repo -> repo.getName().equals("testOrderMavenLocal")));
         assertEquals(1L, project.getTasks().stream().filter(task -> task.getName().equals("testOrderSelect")).count());
         assertTrue(project.getTasks().getNames().containsAll(Set.of(
-                "testOrderAggregate", "testOrderDump", "testOrderShowOrder", "testOrderOptimize",
-                "testOrderSelect", "testOrderRunRemaining", "testOrderClean")));
+                "testOrderAggregate", "testOrderDump", "testOrderExportJson", "testOrderShowOrder", "testOrderExplainOrder",
+                "testOrderOptimize", "testOrderSelect", "testOrderRunRemaining", "testOrderClean")));
 
         List<ExternalModuleDependency> runtimeDeps = project.getConfigurations().getByName("testRuntimeOnly")
                 .getDependencies().withType(ExternalModuleDependency.class).stream().collect(Collectors.toList());

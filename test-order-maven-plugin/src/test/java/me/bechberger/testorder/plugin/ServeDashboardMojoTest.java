@@ -184,9 +184,26 @@ class ServeDashboardMojoTest {
 		runServeInBackground();
 		waitForBound();
 
-		// Traversal attempt — server must not 500; must return 200 (index.html) or 404
+		// Traversal attempt — server must not 500; must return 200
+		// (dashboard HTML) or 404
 		HttpResponse<String> resp = get("/assets/../index.html");
 		assertTrue(resp.statusCode() == 404 || resp.statusCode() == 200, "Traversal attempt must not 500");
+		stopServing();
+	}
+
+	@Test
+	void servesCustomOutputFilename() throws Exception {
+		htmlFile = tempDir.resolve("target/test-order-dashboard/custom-dashboard.html");
+		inject(mojo, "dashboardOutput", htmlFile.toString());
+		String marker = "CUSTOM_OUTPUT_FILE_MARKER";
+		writeHtml("<html><body>" + marker + "</body></html>");
+
+		runServeInBackground();
+		waitForBound();
+
+		HttpResponse<String> resp = get("/");
+		assertEquals(200, resp.statusCode(), "Server should return HTTP 200 for custom output filename");
+		assertTrue(resp.body().contains(marker), "Server should serve the configured dashboard output file");
 		stopServing();
 	}
 
@@ -278,16 +295,16 @@ class ServeDashboardMojoTest {
 
 	static final class TestableServeDashboardMojo extends ServeDashboardMojo {
 		me.bechberger.testorder.TestOrderState overrideState;
-		Set<String> changedClasses = Set.of();
-		Set<String> changedTestClasses = Set.of();
+		Set<String> stubbedChangedClasses = Set.of();
+		Set<String> stubbedChangedTestClasses = Set.of();
 
 		@Override
 		protected Set<String> detectChangedClasses() {
-			return changedClasses;
+			return stubbedChangedClasses;
 		}
 		@Override
 		protected Set<String> detectChangedTestClasses() {
-			return changedTestClasses;
+			return stubbedChangedTestClasses;
 		}
 		@Override
 		protected me.bechberger.testorder.TestOrderState loadState() {

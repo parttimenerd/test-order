@@ -1,3 +1,0 @@
-Duration: 79.79s
-Tests: 15000
-

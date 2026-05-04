@@ -35,7 +35,7 @@ public class IntelligentClassFilter {
 	}
 
 	private static final String[] ALWAYS_SKIP_PREFIXES = { "java/", "jdk/", "sun/", "com/sun/", "javax/", "jakarta/",
-			"me/bechberger/testorder/agent/", "javassist/", "org/javassist/" };
+			"me/bechberger/testorder/agent/" };
 
 	/**
 	 * Index from first-char → offsets into ALWAYS_SKIP_PREFIXES that share that
@@ -77,10 +77,10 @@ public class IntelligentClassFilter {
 
 	public static class Builder {
 		private Strategy strategy = Strategy.SMART;
-		private List<String> includePatterns = new ArrayList<>();
-		private List<String> excludePatterns = new ArrayList<>();
-		private Set<String> explicitIncludes = new HashSet<>();
-		private Set<String> explicitExcludes = new HashSet<>();
+		private final List<String> includePatterns = new ArrayList<>();
+		private final List<String> excludePatterns = new ArrayList<>();
+		private final Set<String> explicitIncludes = new HashSet<>();
+		private final Set<String> explicitExcludes = new HashSet<>();
 		private boolean skipTestClasses = true;
 		private boolean useHeuristics = true;
 		private int maxCacheSize = 50_000;
@@ -167,11 +167,14 @@ public class IntelligentClassFilter {
 		cacheMisses.increment();
 		boolean result = evaluateFilter(className);
 
-		// Add to cache if not at capacity (O(1) check via atomic counter)
-		if (cacheSize.get() < maxCacheSize) {
-			if (filterCache.putIfAbsent(className, result) == null) {
-				cacheSize.incrementAndGet();
+		// Atomically claim a cache slot; roll back if over capacity
+		int slot = cacheSize.getAndIncrement();
+		if (slot < maxCacheSize) {
+			if (filterCache.putIfAbsent(className, result) != null) {
+				cacheSize.decrementAndGet(); // slot unused (duplicate key)
 			}
+		} else {
+			cacheSize.decrementAndGet(); // over capacity, release slot
 		}
 
 		return result;

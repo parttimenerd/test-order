@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
@@ -13,9 +14,9 @@ import java.util.logging.Logger;
 final class FailureHistoryTracker {
 
 	private final Map<String, Double> failureScores = new LinkedHashMap<>();
-	private final Map<String, Double> pendingFailureScores = new LinkedHashMap<>();
+	private final Map<String, Double> pendingFailureScores = new ConcurrentHashMap<>();
 	private final Map<String, Double> methodFailureScores = new LinkedHashMap<>();
-	private final Map<String, Double> pendingMethodFailureScores = new LinkedHashMap<>();
+	private final Map<String, Double> pendingMethodFailureScores = new ConcurrentHashMap<>();
 
 	void recordFailure(String testClass) {
 		pendingFailureScores.merge(testClass, 1.0, Double::sum);

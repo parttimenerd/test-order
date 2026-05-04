@@ -187,6 +187,38 @@ class ToolTest {
 		assertTrue(stdout.contains("com.example.Foo"));
 	}
 
+	@Test
+	void exportJsonSubcommandPrintsJsonToStdout() throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo"));
+		Path idx = tempDir.resolve("deps.idx");
+		map.save(idx);
+
+		String stdout = captureStdout(() -> runTool("export-json", idx.toString()));
+
+		assertTrue(stdout.contains("\"exportVersion\""));
+		assertTrue(stdout.contains("\"depFormatVersion\""));
+		assertTrue(stdout.contains("\"testClass\""));
+		assertTrue(stdout.contains("com.example.FooTest"));
+	}
+
+	@Test
+	void exportJsonSubcommandWritesOutputFile() throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo"));
+		Path idx = tempDir.resolve("deps.idx");
+		map.save(idx);
+		Path out = tempDir.resolve("deps.json");
+
+		int exit = runTool("export-json", idx.toString(), "--output", out.toString());
+
+		assertEquals(0, exit);
+		assertTrue(Files.exists(out));
+		String json = Files.readString(out);
+		assertTrue(json.contains("\"testClassCount\""));
+		assertTrue(json.contains("com.example.FooTest"));
+	}
+
 	// ═══════════════════════════════════════════════════════════════════
 	// Regression: CLI aggregate refuses to overwrite valid index
 	// (BUG_REPORT_2 #4: aggregate destroys valid index)

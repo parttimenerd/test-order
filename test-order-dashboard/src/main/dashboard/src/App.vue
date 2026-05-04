@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { provide } from 'vue'
+import { provide, onMounted, onUnmounted, ref } from 'vue'
 import { useDashboard } from './composables/useDashboard'
 import { parseDashboardData } from './data'
 import NoDataSplash from './components/NoDataSplash.vue'
@@ -15,6 +15,70 @@ import AppFooter from './components/AppFooter.vue'
 const { data, error } = parseDashboardData()
 const dashboard = useDashboard(data, error)
 provide('dashboard', dashboard)
+
+const toastMsg = ref('')
+let toastTimer = 0
+function showToast(msg: string) {
+  toastMsg.value = msg
+  clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => { toastMsg.value = '' }, 2200)
+}
+provide('showToast', showToast)
+
+function onKeydown(e: KeyboardEvent) {
+  const tag = (e.target as HTMLElement)?.tagName
+  const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+
+  // Escape: blur input → clear search → clear selection
+  if (e.key === 'Escape') {
+    if (dashboard.scoreModalOpen.value) {
+      e.preventDefault()
+      dashboard.closeScoreModal()
+      return
+    }
+    e.preventDefault()
+    if (isInput) {
+      ;(e.target as HTMLElement).blur()
+      return
+    }
+    if (dashboard.searchQ.value) { dashboard.searchQ.value = ''; return }
+    dashboard.clearSelection()
+    return
+  }
+
+  // "/" focuses sidebar search
+  if (e.key === '/' && !isInput) {
+    e.preventDefault()
+    const el = document.querySelector<HTMLInputElement>('[data-search-main]')
+    el?.focus()
+    return
+  }
+
+  if (isInput) return
+
+  switch (e.key) {
+    case 'ArrowDown':
+    case 'j':
+      e.preventDefault()
+      dashboard.navigateTest('down')
+      break
+    case 'ArrowUp':
+    case 'k':
+      e.preventDefault()
+      dashboard.navigateTest('up')
+      break
+    case 'Enter':
+      e.preventDefault()
+      dashboard.activateFocusedTest()
+      break
+    case '1': dashboard.setTab('tests'); break
+    case '2': dashboard.setTab('analytics'); break
+    case '3': dashboard.setTab('weights'); break
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', onKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
@@ -40,6 +104,36 @@ provide('dashboard', dashboard)
       </main>
     </div>
     <AppFooter />
+
+    <!-- Score details modal -->
+    <Transition name="modal-fade">
+      <div
+        v-if="dashboard.scoreModalOpen.value"
+        class="score-modal__overlay"
+        role="presentation"
+        @click="dashboard.closeScoreModal()"
+      >
+        <section
+          class="score-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="score-modal-title"
+          @click.stop
+        >
+          <header class="score-modal__header">
+            <h2 id="score-modal-title" class="score-modal__title">{{ dashboard.scoreModalTitle.value }}</h2>
+            <button class="score-modal__close" type="button" @click="dashboard.closeScoreModal()" aria-label="Close score details">×</button>
+          </header>
+          <p class="score-modal__hint">Verbose score breakdown</p>
+          <pre class="score-modal__body">{{ dashboard.scoreModalBody.value }}</pre>
+        </section>
+      </div>
+    </Transition>
+
+    <!-- Toast -->
+    <Transition name="toast">
+      <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
+    </Transition>
   </div>
 </template>
 
@@ -80,6 +174,100 @@ input:focus { box-shadow: 0 0 0 2px rgba(99, 102, 241, .3); background: var(--bg
 .tab-btn { padding: 7px 14px; font-size: .8rem; white-space: nowrap; border: none; border-bottom: 2px solid transparent; cursor: pointer; color: var(--text-sec); background: none; transition: all var(--tr-norm); font-weight: 500; }
 .tab-btn:hover { color: var(--text); background: var(--accent-bg); }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-bg); }
+
+/* Dark scrollbars */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #1e293b; color: var(--text); border: 1px solid var(--accent);
+  padding: 8px 20px; border-radius: 8px; font-size: .78rem; font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 100; pointer-events: none;
+}
+.toast-enter-active { transition: all .25s ease-out; }
+.toast-leave-active { transition: all .2s ease-in; }
+.toast-enter-from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+.toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+
+/* Smooth content transition */
+.fade-enter-active, .fade-leave-active { transition: opacity .15s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* Score modal */
+.score-modal__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, .72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 160;
+  padding: 20px;
+}
+.score-modal {
+  width: min(900px, 100%);
+  max-height: min(86vh, 820px);
+  display: flex;
+  flex-direction: column;
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .55);
+}
+.score-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(51, 65, 85, .6);
+}
+.score-modal__title {
+  margin: 0;
+  font-size: .86rem;
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.score-modal__close {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-sec);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.score-modal__close:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.score-modal__hint {
+  margin: 10px 14px 6px;
+  color: var(--text-muted);
+  font-size: .66rem;
+}
+.score-modal__body {
+  margin: 0 14px 14px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(51, 65, 85, .55);
+  background: #020617;
+  color: #cbd5e1;
+  font-size: .69rem;
+  line-height: 1.45;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity .16s ease; }
+.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
 </style>
 
 

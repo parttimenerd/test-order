@@ -64,8 +64,6 @@ public final class TestOrderConfig {
 	public static final String SELECT_SEED = "testorder.select.seed";
 	public static final String SELECT_REMAINING_FILE = "testorder.select.remainingFile";
 	public static final String SELECTED_FILE = "testorder.select.selectedFile";
-	public static final String COMBINED_RUN_REMAINING = "testorder.combined.runRemaining";
-	public static final String COMBINED_OPTIMIZE_EVERY = "testorder.combined.optimizeEvery";
 	public static final String AUTO_LEARN_RUN_THRESHOLD = "testorder.autoLearnRunThreshold";
 	public static final String AUTO_LEARN_DIFF_THRESHOLD = "testorder.autoLearnDiffThreshold";
 	public static final String DUMP_OUTPUT = "testorder.dump.output";
@@ -81,7 +79,6 @@ public final class TestOrderConfig {
 	public static final String LEGACY_TEST_SOURCE_ROOT = "testorder.testSourceRoot";
 	public static final String LEGACY_VERBOSE_FILE = "testorder.verboseFile";
 	public static final String LEGACY_METHOD_ORDERING_ENABLED = "testorder.methodOrderingEnabled";
-	public static final String LEGACY_INSTRUMENTATION_MODE = "testorder.instrumentationMode";
 
 	private TestOrderConfig() {
 	}

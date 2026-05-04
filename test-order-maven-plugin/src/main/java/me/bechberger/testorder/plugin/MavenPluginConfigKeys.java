@@ -1,5 +1,9 @@
 package me.bechberger.testorder.plugin;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
 /**
  * Centralized Maven plugin configuration keys.
  */
@@ -43,11 +47,14 @@ final class MavenPluginConfigKeys {
 	static final String SELECT_SEED = "testorder.select.seed";
 	static final String SELECT_REMAINING_FILE = "testorder.select.remainingFile";
 	static final String SELECTED_FILE = "testorder.select.selectedFile";
-	static final String COMBINED_RUN_REMAINING = "testorder.combined.runRemaining";
-	static final String COMBINED_OPTIMIZE_EVERY = "testorder.combined.optimizeEvery";
+	static final String AUTO_RUN_REMAINING = "testorder.auto.runRemaining";
+	static final String AUTO_OPTIMIZE_EVERY = "testorder.auto.optimizeEvery";
+	static final String SHOW_ORDER_FULL_NAMES = "testorder.showOrder.fullNames";
 	static final String AUTO_LEARN_RUN_THRESHOLD = "testorder.autoLearnRunThreshold";
 	static final String AUTO_LEARN_DIFF_THRESHOLD = "testorder.autoLearnDiffThreshold";
 	static final String DUMP_OUTPUT = "testorder.dump.output";
+	static final String EXPORT_JSON_OUTPUT = "testorder.exportJson.output";
+	static final String SHOW_ORDER_EXPLAIN = "testorder.showOrder.explain";
 
 	// Dashboard goal keys
 	static final String DASHBOARD_OUTPUT = "testorder.dashboard.output";
@@ -68,5 +75,79 @@ final class MavenPluginConfigKeys {
 	static final String LEGACY_TEST_SOURCE_ROOT = "testorder.testSourceRoot";
 	static final String LEGACY_VERBOSE_FILE = "testorder.verboseFile";
 	static final String LEGACY_METHOD_ORDERING_ENABLED = "testorder.methodOrderingEnabled";
-	static final String LEGACY_INSTRUMENTATION_MODE = "testorder.instrumentationMode";
+
+	/** All known testorder.* property keys (canonical + legacy). */
+	static final Set<String> ALL_KNOWN_KEYS = Set.of(INDEX_PATH, STATE_PATH, LEARN, INSTRUMENTATION_MODE, CHANGE_MODE,
+			PROJECT_ROOT, SOURCE_ROOT, WEIGHTS_FILE, CHANGED_CLASSES, CHANGED_TEST_CLASSES, CHANGED_METHODS,
+			METHOD_ORDER_ENABLED, STRUCTURAL_DIFF_ENABLED, SCORE_NEW_TEST, SCORE_CHANGED_TEST, SCORE_MAX_FAILURE,
+			SCORE_SPEED, SCORE_SPEED_PENALTY, SCORE_DEP_OVERLAP, SCORE_CHANGE_COMPLEXITY, SCORE_STATIC_FIELD_BONUS,
+			SCORE_COVERAGE_BONUS, MODE, INCLUDE_PACKAGES, FILTER_BY_GROUP_ID, SELECT_TOP_N, SELECT_RANDOM_M,
+			SELECT_SEED, SELECT_REMAINING_FILE, SELECTED_FILE, AUTO_RUN_REMAINING, AUTO_OPTIMIZE_EVERY,
+			AUTO_LEARN_RUN_THRESHOLD, AUTO_LEARN_DIFF_THRESHOLD,
+			DUMP_OUTPUT, EXPORT_JSON_OUTPUT, SHOW_ORDER_EXPLAIN, SHOW_ORDER_FULL_NAMES, DASHBOARD_OUTPUT, DASHBOARD_COVERAGE_DIR,
+			DASHBOARD_OPEN, DASHBOARD_SEPARATE_ASSETS, DASHBOARD_PORT, DASHBOARD_REGENERATE, LEGACY_INDEX,
+			LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE, LEGACY_TEST_HASH_FILE, LEGACY_METHOD_HASH_FILE,
+			LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT, LEGACY_VERBOSE_FILE, LEGACY_METHOD_ORDERING_ENABLED,
+			"testorder.skip", "testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file",
+			"testorder.methodOrder", "testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold",
+			"testorder.auto.active", "testorder.remaining.file");
+
+	/**
+	 * Find the closest known key to the given unknown key using Levenshtein
+	 * distance. Returns null if no key is within the threshold.
+	 */
+	static String findClosestKey(String unknown) {
+		int bestDist = Integer.MAX_VALUE;
+		String bestKey = null;
+		for (String known : ALL_KNOWN_KEYS) {
+			int dist = levenshtein(unknown.toLowerCase(), known.toLowerCase());
+			if (dist < bestDist) {
+				bestDist = dist;
+				bestKey = known;
+			}
+		}
+		return (bestDist > 0 && bestDist <= 3) ? bestKey : null;
+	}
+
+	/**
+	 * Find all unknown testorder.* user properties and return suggestions.
+	 */
+	static List<String> findUnknownProperties(java.util.Properties userProperties) {
+		List<String> warnings = new ArrayList<>();
+		if (userProperties == null)
+			return warnings;
+		for (String key : userProperties.stringPropertyNames()) {
+			if (!key.startsWith("testorder."))
+				continue;
+			if (ALL_KNOWN_KEYS.contains(key))
+				continue;
+			String suggestion = findClosestKey(key);
+			if (suggestion != null) {
+				warnings.add("Unknown property '" + key + "' — did you mean '" + suggestion + "'?");
+			} else {
+				warnings.add("Unknown property '" + key + "' — no matching testorder.* property found.");
+			}
+		}
+		return warnings;
+	}
+
+	/** Standard Levenshtein distance. */
+	static int levenshtein(String a, String b) {
+		int n = a.length(), m = b.length();
+		int[] prev = new int[m + 1];
+		int[] curr = new int[m + 1];
+		for (int j = 0; j <= m; j++)
+			prev[j] = j;
+		for (int i = 1; i <= n; i++) {
+			curr[0] = i;
+			for (int j = 1; j <= m; j++) {
+				int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+				curr[j] = Math.min(Math.min(curr[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+			}
+			int[] tmp = prev;
+			prev = curr;
+			curr = tmp;
+		}
+		return prev[m];
+	}
 }

@@ -519,6 +519,16 @@ public class TestOrderState {
 		config.incrementRunsSinceLearn();
 	}
 
+	/** Get the stored dependency fingerprint, or {@code null} if not yet recorded. */
+	public String dependencyFingerprint() {
+		return config.dependencyFingerprint();
+	}
+
+	/** Update the dependency fingerprint (called after learn mode). */
+	public void setDependencyFingerprint(String fingerprint) {
+		config.setDependencyFingerprint(fingerprint);
+	}
+
 	/**
 	 * Removes duration and failure entries for test classes that do not appear in
 	 * any current run record. This prevents the state file from accumulating stale
@@ -721,6 +731,8 @@ public class TestOrderState {
 			configMap.put("historyMaxRuns", config.historyMaxRuns());
 		if (config.runsSinceLearn() != 0)
 			configMap.put("runsSinceLearn", config.runsSinceLearn());
+		if (config.dependencyFingerprint() != null)
+			configMap.put("dependencyFingerprint", config.dependencyFingerprint());
 		if (!configMap.isEmpty())
 			root.put("config", configMap);
 
@@ -831,17 +843,24 @@ public class TestOrderState {
 			return state;
 		}
 		if (!root.containsKey("schemaVersion")) {
-			LOG.warning("State file schemaVersion missing; discarding state");
-			return state;
+			// Treat missing schemaVersion as version 0 and attempt migration
+			LOG.info("State file schemaVersion missing; treating as v0");
+			root = new java.util.LinkedHashMap<>(root);
+			root.put("schemaVersion", 0);
 		}
 		int schemaVersion = safeInt(root.get("schemaVersion"), 0, "schemaVersion");
-		if (schemaVersion < CURRENT_SCHEMA_VERSION) {
-			LOG.warning("State file schemaVersion " + schemaVersion + " is too old; discarding state");
-			return state;
-		}
 		if (schemaVersion > CURRENT_SCHEMA_VERSION) {
 			throw new IOException(
 					"Unsupported state schemaVersion " + schemaVersion + " (current " + CURRENT_SCHEMA_VERSION + ")");
+		}
+		if (schemaVersion < CURRENT_SCHEMA_VERSION) {
+			try {
+				root = StateMigrations.migrate(root, schemaVersion, CURRENT_SCHEMA_VERSION);
+			} catch (IllegalArgumentException e) {
+				LOG.warning("No migration path from schema v" + schemaVersion
+						+ " to v" + CURRENT_SCHEMA_VERSION + "; starting fresh");
+				return state;
+			}
 		}
 
 		// config — new decay-based params, with backward compat for old keys
@@ -869,6 +888,8 @@ public class TestOrderState {
 						safeInt(cm.get("historyMaxRuns"), state.historyMaxRuns(), "config.historyMaxRuns"));
 			if (cm.containsKey("runsSinceLearn"))
 				state.config.setRunsSinceLearn(safeInt(cm.get("runsSinceLearn"), 0, "config.runsSinceLearn"));
+			if (cm.containsKey("dependencyFingerprint") && cm.get("dependencyFingerprint") instanceof String fp)
+				state.config.setDependencyFingerprint(fp);
 		}
 
 		// weights

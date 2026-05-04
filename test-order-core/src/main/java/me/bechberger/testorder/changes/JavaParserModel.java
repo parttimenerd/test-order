@@ -150,6 +150,28 @@ class JavaParserModel {
 		String bodyText = null;
 		String bodyHash = null;
 		String compactBody = null;
+		String signatureText = null;
+
+		// Capture signature text (annotations + modifiers + return type + name + params)
+		// from original source for annotation-aware hashing
+		if (md.getRange().isPresent()) {
+			var fullRange = md.getRange().get();
+			int sigStart = positionToOffset(source, fullRange.begin.line, fullRange.begin.column);
+			if (sigStart >= 0) {
+				if (!isAbstract && md.getBody().isPresent() && md.getBody().get().getRange().isPresent()) {
+					var bodyRange = md.getBody().get().getRange().get();
+					int bodyStart = positionToOffset(source, bodyRange.begin.line, bodyRange.begin.column);
+					if (bodyStart >= 0 && bodyStart > sigStart) {
+						signatureText = source.substring(sigStart, bodyStart);
+					}
+				} else {
+					int sigEnd = positionToOffset(source, fullRange.end.line, fullRange.end.column);
+					if (sigEnd >= 0) {
+						signatureText = source.substring(sigStart, sigEnd + 1);
+					}
+				}
+			}
+		}
 
 		if (!isAbstract && md.getBody().isPresent() && md.getBody().get().getRange().isPresent()) {
 			var range = md.getBody().get().getRange().get();
@@ -163,7 +185,8 @@ class JavaParserModel {
 			}
 		}
 
-		methods.add(new SourceFileModel.MethodNode(name, fqcn, false, isAbstract, bodyText, bodyHash, compactBody));
+		methods.add(new SourceFileModel.MethodNode(name, fqcn, false, isAbstract, bodyText, bodyHash, compactBody,
+				signatureText));
 	}
 
 	private static void visitConstructor(ConstructorDeclaration cd, String fqcn, String stripped, String source,
@@ -172,6 +195,17 @@ class JavaParserModel {
 		String bodyText = null;
 		String bodyHash = null;
 		String compactBody = null;
+		String signatureText = null;
+
+		if (cd.getRange().isPresent() && cd.getBody().getRange().isPresent()) {
+			var fullRange = cd.getRange().get();
+			var bodyRange = cd.getBody().getRange().get();
+			int sigStart = positionToOffset(source, fullRange.begin.line, fullRange.begin.column);
+			int bodyStart = positionToOffset(source, bodyRange.begin.line, bodyRange.begin.column);
+			if (sigStart >= 0 && bodyStart >= 0 && bodyStart > sigStart) {
+				signatureText = source.substring(sigStart, bodyStart);
+			}
+		}
 
 		if (cd.getBody().getRange().isPresent()) {
 			var range = cd.getBody().getRange().get();
@@ -185,7 +219,8 @@ class JavaParserModel {
 			}
 		}
 
-		methods.add(new SourceFileModel.MethodNode(name, fqcn, true, false, bodyText, bodyHash, compactBody));
+		methods.add(new SourceFileModel.MethodNode(name, fqcn, true, false, bodyText, bodyHash, compactBody,
+				signatureText));
 	}
 
 	private static void visitField(FieldDeclaration fd, String fqcn, String stripped,

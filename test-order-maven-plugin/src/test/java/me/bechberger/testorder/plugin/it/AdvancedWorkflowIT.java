@@ -168,8 +168,48 @@ class AdvancedWorkflowIT {
 	@Order(40)
 	@DisplayName("combined: runs tests successfully")
 	void combinedModeRuns() {
-		MavenResult result = project.maven().combined();
+		MavenResult result = project.maven().auto();
 		assertThat(result).succeeded().outputContains("Tests run:");
+	}
+
+	@Test
+	@Order(41)
+	@DisplayName("combined mode=order: no index → warns and skips selection, does not learn")
+	void combinedOrderModeNoIndexDoesNotLearn() {
+		project.cleanAll();
+		// No index exists at this point
+		MavenResult result = project.maven().autoWithMode("order");
+		// Build should succeed (tests still run in default order), but must not trigger
+		// a learn pass
+		assertThat(result.output()).doesNotContain("[test-order] Learn mode")
+				.doesNotContain("[test-order] Saved source hash snapshot");
+		// The warning message for missing index should appear
+		assertThat(result.output()).containsAnyOf("No dependency index found", "skipping selection", "mode is 'order'");
+	}
+
+	@Test
+	@Order(42)
+	@DisplayName("combined mode=learn: always learns even when index already exists")
+	void combinedLearnModeAlwaysLearns() {
+		// Ensure index exists from previous combined run
+		project.cleanAll();
+		project.maven().learn();
+
+		// Now run combined with mode=learn — should still run learn regardless
+		MavenResult result = project.maven().autoWithMode("learn");
+		assertThat(result).succeeded();
+		assertThat(result.output()).contains("[test-order] Learn mode");
+	}
+
+	@Test
+	@Order(43)
+	@DisplayName("combined mode=skip: completes without test-order configuration")
+	void combinedSkipModeDoesNothing() {
+		MavenResult result = project.maven().autoWithMode("skip");
+		assertThat(result).succeeded();
+		// skip mode must not configure learn or order selection
+		assertThat(result.output()).doesNotContain("[test-order] Learn mode").doesNotContain("[test-order] Order mode")
+				.doesNotContain("[test-order] Selected");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

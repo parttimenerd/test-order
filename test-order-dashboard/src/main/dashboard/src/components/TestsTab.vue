@@ -8,8 +8,14 @@ import TestBadges from './TestBadges.vue'
 import DepGraph from './DepGraph.vue'
 
 const d = inject<DashboardState>('dashboard')!
+const showToast = inject<(msg: string) => void>('showToast')!
+
+function scoreTip(name: string): string {
+  return d.getScoreBreakdown(name, 'orig') + '\n\nClick to open detailed score modal'
+}
 
 function initDetailCharts(t: TestEntry) {
+  try {
   destroyCharts('bd-main', 'hd-main', 'hs-main', 'hp-main')
   const comps = d.scoreComps.value.filter(c => c.value !== 0)
   mkChart('bd-main', {
@@ -54,6 +60,7 @@ function initDetailCharts(t: TestEntry) {
       ] }, options: { ...chartOpts(), scales: { ...(co.scales || {}), y: { ...((co.scales?.y || {}) as Record<string, unknown>), reverse: true } } },
     })
   }
+  } catch (e) { console.error('[dashboard] Detail charts failed:', e) }
 }
 
 watch(() => d.selectedTest.value, (newVal) => {
@@ -115,7 +122,14 @@ watch(() => d.lw, () => {
             <tr v-for="t in d.filteredTests.value" :key="t.name" @click="d.selectTest(t, $event)" class="tests-overview__row" :class="{ 'tests-overview__row--dimmed': t.score === 0 }">
               <td class="td--right td--dim">#{{ t.rank }}</td>
               <td class="td--name" :title="t.name">{{ sn(t.name) }}</td>
-              <td class="td--right td--accent">{{ t.score }}</td>
+              <td class="td--right td--accent">
+                <button
+                  class="tests-score-btn"
+                  type="button"
+                  :title="scoreTip(t.name)"
+                  @click.stop="d.openScoreModal(t.name, 'orig', 'Tests Overview')"
+                >{{ t.score }}</button>
+              </td>
               <td><TestBadges :test="t" /></td>
               <td class="td--right td--dim">{{ t.duration >= 0 ? fmtDur(t.duration) : '' }}</td>
               <td class="td--right td--dim">{{ t.depTotal || 0 }}</td>
@@ -123,12 +137,16 @@ watch(() => d.lw, () => {
           </tbody>
         </table>
       </div>
-      <p style="color:var(--text-muted);font-size:.72rem;margin-top:10px">Click a test to see details · Ctrl/⌘+click for multi-select · Shift+click for range</p>
+      <p style="color:var(--text-muted);font-size:.72rem;margin-top:10px">
+        Click a test to see details · Ctrl/⌘+click for multi-select · Shift+click for range
+        <br><span style="font-size:.65rem">Keyboard: <kbd style="padding:0 3px;border:1px solid var(--border);border-radius:2px;font-size:.6rem;background:var(--bg-card)">j</kbd><kbd style="padding:0 3px;border:1px solid var(--border);border-radius:2px;font-size:.6rem;background:var(--bg-card);margin-left:1px">k</kbd> navigate · <kbd style="padding:0 3px;border:1px solid var(--border);border-radius:2px;font-size:.6rem;background:var(--bg-card)">⏎</kbd> select · <kbd style="padding:0 3px;border:1px solid var(--border);border-radius:2px;font-size:.6rem;background:var(--bg-card)">/</kbd> search · <kbd style="padding:0 3px;border:1px solid var(--border);border-radius:2px;font-size:.6rem;background:var(--bg-card)">1</kbd>-<kbd style="padding:0 3px;border:1px solid var(--border);border-radius:2px;font-size:.6rem;background:var(--bg-card)">3</kbd> tabs</span>
+      </p>
     </div>
 
     <!-- Multiple tests selected: comparison -->
     <div v-else-if="d.selectedTests.value.size > 1">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <button @click="d.clearSelection()" class="tests__back-btn" title="Clear selection (Esc)">← Back</button>
         <span style="font-size:.9rem;font-weight:700;color:var(--accent-light)">{{ d.selectedTests.value.size }} tests selected</span>
         <span style="font-size:.72rem;color:var(--text-muted)">Ctrl/⌘+click to toggle · click to focus one</span>
       </div>
@@ -150,7 +168,14 @@ watch(() => d.lw, () => {
               :class="{ 'tests-multi__row--focused': d.selectedTest.value && d.selectedTest.value.name === t.name }">
               <td class="td--right td--dim">#{{ t.rank }}</td>
               <td class="td--name td--narrow" :title="t.name">{{ sn(t.name) }}</td>
-              <td class="td--right td--accent">{{ t.score }}</td>
+              <td class="td--right td--accent">
+                <button
+                  class="tests-score-btn"
+                  type="button"
+                  :title="scoreTip(t.name)"
+                  @click.stop="d.openScoreModal(t.name, 'orig', 'Multi-select')"
+                >{{ t.score }}</button>
+              </td>
               <td><TestBadges :test="t" /></td>
               <td class="td--right td--dim">{{ t.duration >= 0 ? fmtDur(t.duration) : '' }}</td>
               <td class="td--right td--dim">{{ t.depOverlap }}</td>
@@ -163,11 +188,17 @@ watch(() => d.lw, () => {
     </div>
 
     <!-- Single test selected: detail view -->
-    <div v-else-if="d.selectedTest.value">
+    <div v-else-if="d.selectedTest.value" class="tests__detail-enter">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <button @click="d.clearSelection()" class="tests__back-btn" title="Back to overview (Esc)">← Back</button>
         <span style="font-size:.9rem;font-weight:700;color:var(--accent-light)">#{{ d.selectedTest.value.rank }}</span>
         <span style="font-size:.85rem;font-weight:600;color:var(--text);word-break:break-all">{{ d.selectedTest.value.name }}</span>
-        <span style="font-size:1rem;font-weight:700;color:var(--accent);margin-left:auto">Score: {{ d.selectedTest.value.score }}</span>
+        <button
+          type="button"
+          class="tests-detail-score-btn"
+          :title="scoreTip(d.selectedTest.value.name)"
+          @click="d.openScoreModal(d.selectedTest.value.name, 'orig', 'Test Detail')"
+        >Score: {{ d.selectedTest.value.score }}</button>
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">
         <TestBadges :test="d.selectedTest.value" size="md" />
@@ -293,4 +324,39 @@ watch(() => d.lw, () => {
 .test-detail__method-card--selected { background: rgba(99, 102, 241, .12); }
 .test-detail__method-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .test-detail__method-deps { color: var(--accent-light); font-weight: 600; flex-shrink: 0; margin-left: 8px; }
+
+/* Back button */
+.tests__back-btn {
+  padding: 3px 10px; font-size: .72rem; color: var(--text-sec);
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; transition: all var(--tr-fast); flex-shrink: 0;
+}
+.tests__back-btn:hover { color: var(--text); border-color: var(--accent); background: var(--accent-bg); }
+
+.tests-score-btn {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.tests-detail-score-btn {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+/* Slide-in animation for detail panel */
+.tests__detail-enter { animation: detailSlideIn .18s ease-out; }
+@keyframes detailSlideIn { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
 </style>

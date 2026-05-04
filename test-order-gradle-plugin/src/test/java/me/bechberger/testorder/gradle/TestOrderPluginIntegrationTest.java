@@ -217,7 +217,7 @@ class TestOrderPluginIntegrationTest {
         BuildResult result = runner("test").build();
 
         assertEquals(SUCCESS, result.task(":test").getOutcome());
-        assertTrue(result.getOutput().contains("auto-selecting learn mode"));
+        assertTrue(result.getOutput().contains("Configuring learn mode"));
     }
 
     @Test
@@ -316,7 +316,8 @@ class TestOrderPluginIntegrationTest {
                 "-Dtestorder.changeMode=explicit",
                 "-Dtestorder.changed.classes=com.example.app.Calculator",
                 "-Dtestorder.select.topN=1",
-                "-Dtestorder.select.randomM=0").build();
+                "-Dtestorder.select.randomM=0",
+                "-Dtestorder.auto.runRemaining=false").build();
 
         BuildResult result = runner("testOrderRunRemaining").build();
 
@@ -423,13 +424,13 @@ class TestOrderPluginIntegrationTest {
     }
 
     @Test
-    @DisplayName("Combined mode works after learn without external logger dependencies")
-    void combinedModeWorksAfterLearn() throws IOException {
+    @DisplayName("Auto mode works after learn without external logger dependencies")
+    void autoModeWorksAfterLearn() throws IOException {
         scaffoldProject();
 
         runner("test", "-Dtestorder.mode=learn").build();
 
-        BuildResult result = runner("clean", "test", "-Dtestorder.mode=combined").build();
+        BuildResult result = runner("clean", "test", "-Dtestorder.mode=auto").build();
 
         assertEquals(SUCCESS, result.task(":test").getOutcome());
         assertFalse(result.getOutput().contains("org.tinylog.Logger"));

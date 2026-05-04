@@ -70,11 +70,16 @@ public @interface TestOrder {
 	int scoreBonus() default 0;
 
 	/**
-	 * Additional score added only when test-order detects that this test class (or
-	 * the class that contains the annotated method) is in the set of
-	 * change-affected tests for the current run.
+	 * Additional score added only when test-order detects that the application code
+	 * touched by this test (or the test class itself) has changed in the current
+	 * run. Requires change-detection to be active.
 	 */
 	int changeBonus() default 0;
+
+	/**
+	 * <b>Note:</b> {@code @TestOrder} is not {@code @Inherited}; subclasses of an
+	 * annotated test class must be annotated independently.
+	 */
 
 	/** Priority levels for {@link TestOrder#priority()}. */
 	enum Priority {
@@ -101,6 +106,9 @@ public @interface TestOrder {
 
 		/**
 		 * Score delta applied by {@link #HIGH} (positive) and {@link #LOW} (negative).
+		 * Chosen to dominate typical computed scores (which rarely exceed ~50) while
+		 * still leaving room for {@link TestOrder#scoreBonus()} stacking. This value is
+		 * part of the public API; do not change it without a major version bump.
 		 */
 		public static final int BOOST = 1_000;
 	}

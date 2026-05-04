@@ -2,6 +2,7 @@ package me.bechberger.testorder.agent.runtime;
 
 import java.io.FileWriter;
 import java.io.PrintWriter;
+import java.util.function.Consumer;
 
 /**
  * Simple file-based logger for the test-order agent, living on the bootstrap
@@ -37,6 +38,9 @@ public class AgentLogger {
 
 	/** Log a message if verbose mode is active. No-op otherwise. */
 	public static void log(String message) {
+		if (!enabled) {
+			return;
+		}
 		write(writer -> writer.println(message));
 	}
 
@@ -46,21 +50,31 @@ public class AgentLogger {
 	}
 
 	public static void warn(String message) {
+		if (!enabled) {
+			return;
+		}
 		write(writer -> writer.println("[WARN] " + message));
 		System.err.println("[test-order] " + message);
 	}
 
 	public static void error(String message, Throwable throwable) {
+		// Always print errors to stderr so they are visible even without verbose mode.
+		System.err.println("[test-order] ERROR: " + message);
+		if (throwable != null) {
+			throwable.printStackTrace(System.err);
+		}
+		if (!enabled) {
+			return;
+		}
 		write(writer -> {
 			writer.println("[ERROR] " + message);
 			if (throwable != null) {
 				throwable.printStackTrace(writer);
 			}
 		});
-		System.err.println("[test-order] " + message);
 	}
 
-	private static synchronized void write(java.util.function.Consumer<PrintWriter> action) {
+	private static synchronized void write(Consumer<PrintWriter> action) {
 		PrintWriter current = writer;
 		if (current == null) {
 			return;

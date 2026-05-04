@@ -1,9 +1,0 @@
-package com.example.tests;
-
-public class Test01418 {
-
-    @org.junit.Test
-    public void test000() {
-        org.junit.Assert.assertTrue(true);
-    }
-}

@@ -111,7 +111,7 @@ class DashboardServerFixture implements AutoCloseable {
 		mojo.overrideState = state;
 
 		// Mark UserService as changed → boosts overlapping tests
-		mojo.changedClasses = Set.of("com.example.UserService");
+		mojo.stubbedChangedClasses = Set.of("com.example.UserService");
 
 		return this;
 	}
@@ -198,16 +198,16 @@ class DashboardServerFixture implements AutoCloseable {
 
 	static final class TestableServeDashboardMojo extends ServeDashboardMojo {
 		TestOrderState overrideState;
-		Set<String> changedClasses = Set.of();
-		Set<String> changedTestClasses = Set.of();
+		Set<String> stubbedChangedClasses = Set.of();
+		Set<String> stubbedChangedTestClasses = Set.of();
 
 		@Override
 		protected Set<String> detectChangedClasses() {
-			return changedClasses;
+			return stubbedChangedClasses;
 		}
 		@Override
 		protected Set<String> detectChangedTestClasses() {
-			return changedTestClasses;
+			return stubbedChangedTestClasses;
 		}
 		@Override
 		protected TestOrderState loadState() {

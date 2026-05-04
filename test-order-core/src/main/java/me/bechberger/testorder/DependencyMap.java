@@ -14,30 +14,39 @@ import net.jpountz.lz4.LZ4FrameOutputStream;
 /**
  * Maps test class FQCNs to the set of application class FQCNs they depend on.
  * <p>
- *
- * Supports two on-disk formats:
- * <ul>
- * <li><b>V1 (text)</b> — plain-text, one test per line, tab-separated
- * ({@code # test-order dependency index v1} header)</li>
- * <li><b>V2 (binary)</b> — LZ4-compressed binary with a radix-trie class name
- * dictionary, RoaringBitmap dependency sets, and row deduplication
- * (default)</li>
- * </ul>
- * {@link #save(Path)} writes V2. {@link #saveText(Path)} writes V1.
- * {@link #load(Path)} auto-detects the format.
+ * The on-disk format is a section-based binary format (version 1) inside an
+ * LZ4-compressed stream. The header is {@code TORD} (4 bytes) followed by a
+ * format version (2-byte big-endian short). Each payload section has a type
+ * tag, length prefix, and payload — unknown section types are skipped on read,
+ * enabling forward-compatible extensibility. {@link #save(Path)} writes v1.
+ * {@link #load(Path)} reads v1.
  */
 public class DependencyMap {
-
-	private static final String HEADER_V1 = "# test-order dependency index v1";
 
 	/** LZ4 frame magic bytes (big-endian read of 04 22 4D 18). */
 	private static final int LZ4_MAGIC = 0x04224D18;
 	static final long MAX_COMPRESSED_FILE_SIZE = 1_000_000_000L;
 
-	/** Magic marker inside the LZ4 payload. */
-	private static final byte[] MAGIC_V2 = { 'T', 'O', '2', '\n' };
-	private static final byte[] MAGIC_V3 = { 'T', 'O', '3', '\n' };
-	private static final byte[] MAGIC_V4 = { 'T', 'O', '4', '\n' };
+	/** Magic marker inside the LZ4 payload: ASCII "TORD". */
+	private static final byte[] FORMAT_MAGIC = { 'T', 'O', 'R', 'D' };
+
+	/** Current binary format version. */
+	static final short FORMAT_VERSION = 1;
+
+	// ── Section type constants ────────────────────────────────────────
+
+	/** Section type: radix trie dictionary of class names. */
+	static final short SECTION_TRIE = 1;
+	/** Section type: ordered list of test class IDs. */
+	static final short SECTION_TEST_CLASSES = 2;
+	/** Section type: row-deduplicated dependency groups. */
+	static final short SECTION_DEP_GROUPS = 3;
+	/** Section type: per-method dependency bitmaps. */
+	static final short SECTION_METHOD_DEPS = 4;
+	/** Section type: per-test-class member-level dependencies. */
+	static final short SECTION_MEMBER_DEPS = 5;
+	/** Section type: per-test-method member-level dependencies. */
+	static final short SECTION_METHOD_MEMBER_DEPS = 6;
 
 	private final Map<String, Set<String>> dependencies;
 
@@ -224,12 +233,11 @@ public class DependencyMap {
 		return dependencies.values().stream().mapToInt(Set::size).average().orElse(0);
 	}
 
-	// ---- V2 binary save (default) ----
-
 	/**
-	 * Saves in V3 binary format (LZ4-compressed, trie + RoaringBitmaps,
-	 * row-deduped, plus optional per-method dependency section). Falls back to V2
-	 * if no method deps.
+	 * Saves in section-based binary format v1 (LZ4-compressed, trie +
+	 * RoaringBitmaps, row-deduped, per-method deps, and member-level deps).
+	 * Each data block is written as a typed section with a length prefix so
+	 * that future readers can skip unknown sections.
 	 */
 	public void save(Path indexFile) throws IOException {
 		Path parent = indexFile.getParent();
@@ -241,9 +249,10 @@ public class DependencyMap {
 				LZ4FrameOutputStream lz4 = new LZ4FrameOutputStream(fos);
 				DataOutputStream out = new DataOutputStream(lz4)) {
 
-			boolean hasMethodData = !methodDependencies.isEmpty();
-			boolean hasMemberData = !memberDependencies.isEmpty() || !methodMemberDependencies.isEmpty();
-			out.write(hasMemberData ? MAGIC_V4 : hasMethodData ? MAGIC_V3 : MAGIC_V2);
+			// ── Header: magic + version ──────────────────────────────
+			out.write(FORMAT_MAGIC);
+			out.writeShort(FORMAT_VERSION);
+
 			// build trie over all class names (test + dep + method dep class names)
 			ClassNameTrie trie = new ClassNameTrie();
 			for (var entry : dependencies.entrySet()) {
@@ -253,8 +262,6 @@ public class DependencyMap {
 				}
 			}
 			for (var entry : methodDependencies.entrySet()) {
-				// method keys are className#methodName — we don't insert these as trie entries,
-				// but we do insert the dep class names
 				for (String dep : entry.getValue()) {
 					trie.insert(dep);
 				}
@@ -266,9 +273,7 @@ public class DependencyMap {
 			int testCount = testList.size();
 
 			// group tests by identical dependency set (row deduplication)
-			// Use a HashMap for O(1) lookup instead of linear scan over all groups
 			Map<RoaringBitmap, List<Integer>> groups = new HashMap<>();
-			// Preserve insertion order for deterministic output
 			List<RoaringBitmap> groupOrder = new ArrayList<>();
 			for (int ti = 0; ti < testCount; ti++) {
 				Set<String> deps = dependencies.get(testList.get(ti));
@@ -287,49 +292,67 @@ public class DependencyMap {
 				}
 			}
 
-			// write trie
-			ByteArrayOutputStream trieBuf = new ByteArrayOutputStream();
-			trie.writeTo(new DataOutputStream(trieBuf));
-			byte[] trieBytes = trieBuf.toByteArray();
-			out.writeInt(trieBytes.length);
-			out.write(trieBytes);
+			// Count sections to write
+			int sectionCount = 3; // trie + test classes + dep groups (always present)
+			if (!methodDependencies.isEmpty()) sectionCount++;
+			if (!memberDependencies.isEmpty()) sectionCount++;
+			if (!methodMemberDependencies.isEmpty()) sectionCount++;
+			out.writeInt(sectionCount);
 
-			// write test class IDs (in insertion order)
-			out.writeInt(testCount);
-			for (String tc : testList) {
-				out.writeInt(trie.getId(tc));
+			// ── Section: TRIE ────────────────────────────────────────
+			{
+				ByteArrayOutputStream trieBuf = new ByteArrayOutputStream();
+				trie.writeTo(new DataOutputStream(trieBuf));
+				byte[] trieBytes = trieBuf.toByteArray();
+				writeSection(out, SECTION_TRIE, trieBytes);
 			}
 
-			// write dependency groups
-			out.writeInt(groupOrder.size());
-			for (RoaringBitmap depBitmap : groupOrder) {
-				List<Integer> memberIndices = groups.get(depBitmap);
-
-				// dep set bitmap
-				depBitmap.runOptimize();
-				int depSize = depBitmap.serializedSizeInBytes();
-				out.writeInt(depSize);
-				depBitmap.serialize(out);
-
-				// member test indices bitmap
-				RoaringBitmap memberBitmap = new RoaringBitmap();
-				for (int idx : memberIndices) {
-					memberBitmap.add(idx);
+			// ── Section: TEST_CLASSES ────────────────────────────────
+			{
+				ByteArrayOutputStream buf = new ByteArrayOutputStream();
+				DataOutputStream s = new DataOutputStream(buf);
+				s.writeInt(testCount);
+				for (String tc : testList) {
+					s.writeInt(trie.getId(tc));
 				}
-				memberBitmap.runOptimize();
-				int memberSize = memberBitmap.serializedSizeInBytes();
-				out.writeInt(memberSize);
-				memberBitmap.serialize(out);
+				s.flush();
+				writeSection(out, SECTION_TEST_CLASSES, buf.toByteArray());
 			}
 
-			// V3/V4: write per-method dependency section
-			if (hasMethodData || hasMemberData) {
+			// ── Section: DEP_GROUPS ──────────────────────────────────
+			{
+				ByteArrayOutputStream buf = new ByteArrayOutputStream();
+				DataOutputStream s = new DataOutputStream(buf);
+				s.writeInt(groupOrder.size());
+				for (RoaringBitmap depBitmap : groupOrder) {
+					List<Integer> memberIndices = groups.get(depBitmap);
+
+					depBitmap.runOptimize();
+					int depSize = depBitmap.serializedSizeInBytes();
+					s.writeInt(depSize);
+					depBitmap.serialize(s);
+
+					RoaringBitmap memberBitmap = new RoaringBitmap();
+					for (int idx : memberIndices) {
+						memberBitmap.add(idx);
+					}
+					memberBitmap.runOptimize();
+					int memberSize = memberBitmap.serializedSizeInBytes();
+					s.writeInt(memberSize);
+					memberBitmap.serialize(s);
+				}
+				s.flush();
+				writeSection(out, SECTION_DEP_GROUPS, buf.toByteArray());
+			}
+
+			// ── Section: METHOD_DEPS (optional) ──────────────────────
+			if (!methodDependencies.isEmpty()) {
+				ByteArrayOutputStream buf = new ByteArrayOutputStream();
+				DataOutputStream s = new DataOutputStream(buf);
 				List<String> methodKeys = new ArrayList<>(methodDependencies.keySet());
-				out.writeInt(methodKeys.size());
+				s.writeInt(methodKeys.size());
 				for (String methodKey : methodKeys) {
-					// write method key as UTF string
-					out.writeUTF(methodKey);
-					// write dependency bitmap
+					s.writeUTF(methodKey);
 					Set<String> deps = methodDependencies.get(methodKey);
 					RoaringBitmap depBitmap = new RoaringBitmap();
 					for (String dep : deps) {
@@ -337,44 +360,62 @@ public class DependencyMap {
 					}
 					depBitmap.runOptimize();
 					int depSize = depBitmap.serializedSizeInBytes();
-					out.writeInt(depSize);
-					depBitmap.serialize(out);
+					s.writeInt(depSize);
+					depBitmap.serialize(s);
 				}
+				s.flush();
+				writeSection(out, SECTION_METHOD_DEPS, buf.toByteArray());
 			}
 
-			// V4: write member-level dependency sections
-			if (hasMemberData) {
-				// Per-test-class member deps
+			// ── Section: MEMBER_DEPS (optional) ──────────────────────
+			if (!memberDependencies.isEmpty()) {
+				ByteArrayOutputStream buf = new ByteArrayOutputStream();
+				DataOutputStream s = new DataOutputStream(buf);
 				List<String> memberKeys = new ArrayList<>(memberDependencies.keySet());
-				out.writeInt(memberKeys.size());
+				s.writeInt(memberKeys.size());
 				for (String testClass : memberKeys) {
-					out.writeUTF(testClass);
+					s.writeUTF(testClass);
 					Set<String> members = memberDependencies.get(testClass);
-					out.writeInt(members.size());
+					s.writeInt(members.size());
 					for (String memberKey : members) {
-						out.writeUTF(memberKey);
+						s.writeUTF(memberKey);
 					}
 				}
-				// Per-test-method member deps
+				s.flush();
+				writeSection(out, SECTION_MEMBER_DEPS, buf.toByteArray());
+			}
+
+			// ── Section: METHOD_MEMBER_DEPS (optional) ───────────────
+			if (!methodMemberDependencies.isEmpty()) {
+				ByteArrayOutputStream buf = new ByteArrayOutputStream();
+				DataOutputStream s = new DataOutputStream(buf);
 				List<String> methodMemberKeys = new ArrayList<>(methodMemberDependencies.keySet());
-				out.writeInt(methodMemberKeys.size());
+				s.writeInt(methodMemberKeys.size());
 				for (String methodKey : methodMemberKeys) {
-					out.writeUTF(methodKey);
+					s.writeUTF(methodKey);
 					Set<String> members = methodMemberDependencies.get(methodKey);
-					out.writeInt(members.size());
+					s.writeInt(members.size());
 					for (String memberKey : members) {
-						out.writeUTF(memberKey);
+						s.writeUTF(memberKey);
 					}
 				}
+				s.flush();
+				writeSection(out, SECTION_METHOD_MEMBER_DEPS, buf.toByteArray());
 			}
 		}
 		PersistenceSupport.moveIntoPlace(tempFile, indexFile);
 	}
 
-	// ---- V1 text save ----
+	/** Writes a section: type (short) + length (int) + payload bytes. */
+	private static void writeSection(DataOutputStream out, short type, byte[] payload) throws IOException {
+		out.writeShort(type);
+		out.writeInt(payload.length);
+		out.write(payload);
+	}
 
 	/**
-	 * Saves in V1 text format (human-readable, one test per line).
+	 * Saves in text format (human-readable, one test per line). For inspection and
+	 * debugging only; use {@link #save(Path)} for the canonical binary format.
 	 */
 	public void saveText(Path indexFile) throws IOException {
 		Path parent = indexFile.getParent();
@@ -383,7 +424,6 @@ public class DependencyMap {
 		}
 		Path tempFile = PersistenceSupport.temporarySibling(indexFile);
 		try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(tempFile))) {
-			pw.println(HEADER_V1);
 			for (var entry : dependencies.entrySet()) {
 				pw.print(entry.getKey());
 				pw.print('\t');
@@ -393,54 +433,23 @@ public class DependencyMap {
 		PersistenceSupport.moveIntoPlace(tempFile, indexFile);
 	}
 
-	// ---- auto-detecting load ----
-
 	/**
-	 * Loads a dependency index, auto-detecting V1 (text) vs V2 (LZ4 binary) format.
+	 * Loads a binary dependency index. Validates LZ4 framing and the inner
+	 * {@code TORD} magic + version header.
 	 */
 	public static DependencyMap load(Path indexFile) throws IOException {
 		Path loadPath = PersistenceSupport.resolveLoadPath(indexFile);
-		try {
-			return loadDetected(loadPath);
-		} catch (IOException primaryFailure) {
-			Path tempFile = PersistenceSupport.temporarySibling(indexFile);
-			if (!loadPath.equals(tempFile) && Files.exists(tempFile)) {
-				return loadDetected(tempFile);
-			}
-			throw primaryFailure;
-		}
-	}
-
-	private static DependencyMap loadDetected(Path indexFile) throws IOException {
-		validateCompressedFileSize(indexFile);
+		validateCompressedFileSize(loadPath);
 		int magic;
-		try (DataInputStream peek = new DataInputStream(Files.newInputStream(indexFile))) {
-			if (Files.size(indexFile) < 4) {
-				return loadText(indexFile);
-			}
+		try (DataInputStream peek = new DataInputStream(Files.newInputStream(loadPath))) {
 			magic = peek.readInt();
+		} catch (EOFException e) {
+			throw new IOException("Index file is too small to be a valid binary index: " + loadPath);
 		}
-		return magic == LZ4_MAGIC ? loadBinary(indexFile) : loadText(indexFile);
-	}
-
-	private static DependencyMap loadText(Path indexFile) throws IOException {
-		DependencyMap map = new DependencyMap();
-		List<String> lines = Files.readAllLines(indexFile);
-		for (String line : lines) {
-			if (line.startsWith("#") || line.isBlank())
-				continue;
-			int tab = line.indexOf('\t');
-			if (tab < 0)
-				continue;
-			String testClass = line.substring(0, tab);
-			String depsStr = line.substring(tab + 1);
-			Set<String> deps = depsStr.isEmpty()
-					? new TreeSet<>()
-					: Arrays.stream(depsStr.split(",")).map(String::trim).filter(s -> !s.isEmpty())
-							.collect(Collectors.toCollection(TreeSet::new));
-			map.put(testClass, deps);
+		if (magic != LZ4_MAGIC) {
+			throw new IOException("Not a valid binary index (wrong magic bytes): " + loadPath);
 		}
-		return map;
+		return loadBinary(loadPath);
 	}
 
 	/** Maximum allowed size for a single serialized block (64 MB). */
@@ -475,111 +484,154 @@ public class DependencyMap {
 				LZ4FrameInputStream lz4 = new LZ4FrameInputStream(fis);
 				DataInputStream in = new DataInputStream(lz4)) {
 
-			// verify magic (V2, V3, or V4)
+			// ── Verify header: magic + version ───────────────────────
 			byte[] magicBuf = new byte[4];
 			in.readFully(magicBuf);
-			boolean isV4 = Arrays.equals(magicBuf, MAGIC_V4);
-			boolean isV3 = !isV4 && Arrays.equals(magicBuf, MAGIC_V3);
-			if (!isV4 && !isV3 && !Arrays.equals(magicBuf, MAGIC_V2)) {
-				throw new IOException("Invalid binary magic in " + indexFile);
+			if (!Arrays.equals(magicBuf, FORMAT_MAGIC)) {
+				throw new IOException("Unsupported index format (expected TORD magic) in " + indexFile);
+			}
+			short version = in.readShort();
+			if (version != FORMAT_VERSION) {
+				throw new IOException("Unsupported dependency index format version " + version
+						+ " (expected " + FORMAT_VERSION + ") in " + indexFile
+						+ ". Please rebuild the dependency index.");
 			}
 
-			// read trie
-			int trieSize = in.readInt();
-			checkSize(trieSize, "Trie", indexFile);
-			byte[] trieBytes = new byte[trieSize];
-			in.readFully(trieBytes);
-			ClassNameTrie trie = ClassNameTrie.readFrom(new DataInputStream(new ByteArrayInputStream(trieBytes)));
-
-			// read test class IDs
-			int testCount = in.readInt();
-			String[] testNames = new String[testCount];
-			for (int i = 0; i < testCount; i++) {
-				testNames[i] = trie.getName(in.readInt());
+			// ── Read section count and iterate ───────────────────────
+			int sectionCount = in.readInt();
+			if (sectionCount < 0 || sectionCount > 100) {
+				throw new IOException("Invalid section count " + sectionCount + " in " + indexFile);
 			}
 
-			// read dependency groups
-			int groupCount = in.readInt();
-			// pre-fill map with empty sets in insertion order
+			ClassNameTrie trie = null;
+			String[] testNames = null;
+			Set<String>[] depSets = null;
 			DependencyMap map = new DependencyMap();
-			@SuppressWarnings("unchecked")
-			Set<String>[] depSets = new Set[testCount];
 
-			for (int g = 0; g < groupCount; g++) {
-				// dep set bitmap
-				int depSize = in.readInt();
-				checkSize(depSize, "Dependency bitmap", indexFile);
-				byte[] depBytes = new byte[depSize];
-				in.readFully(depBytes);
-				RoaringBitmap depBitmap = new RoaringBitmap();
-				depBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(depBytes)));
+			for (int si = 0; si < sectionCount; si++) {
+				short sectionType = in.readShort();
+				int sectionLength = in.readInt();
+				checkSize(sectionLength, "Section[" + sectionType + "]", indexFile);
 
-				// convert bitmap to class name set (HashSet for O(1) contains at runtime)
-				Set<String> deps = new HashSet<>((int) (depBitmap.getLongCardinality() * 2));
-				depBitmap.forEach((int id) -> deps.add(trie.getName(id)));
-				Set<String> sharedDeps = Collections.unmodifiableSet(deps);
-
-				// member test indices bitmap
-				int memberSize = in.readInt();
-				checkSize(memberSize, "Member bitmap", indexFile);
-				byte[] memberBytes = new byte[memberSize];
-				in.readFully(memberBytes);
-				RoaringBitmap memberBitmap = new RoaringBitmap();
-				memberBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(memberBytes)));
-
-				memberBitmap.forEach((int ti) -> depSets[ti] = sharedDeps);
-			}
-
-			// build map preserving test insertion order (putDirect avoids re-copying)
-			for (int i = 0; i < testCount; i++) {
-				map.putDirect(testNames[i], depSets[i] != null ? depSets[i] : Collections.emptySet());
-			}
-
-			// V3/V4: read per-method dependency section
-			if (isV3 || isV4) {
-				int methodCount = in.readInt();
-				for (int m = 0; m < methodCount; m++) {
-					String methodKey = in.readUTF();
-					int depSize = in.readInt();
-					checkSize(depSize, "Method dependency bitmap", indexFile);
-					byte[] depBytes = new byte[depSize];
-					in.readFully(depBytes);
-					RoaringBitmap depBitmap = new RoaringBitmap();
-					depBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(depBytes)));
-					Set<String> deps = new HashSet<>((int) (depBitmap.getLongCardinality() * 2));
-					depBitmap.forEach((int id) -> deps.add(trie.getName(id)));
-					map.methodDependencies.put(methodKey, deps);
+				switch (sectionType) {
+				case SECTION_TRIE -> {
+					byte[] trieBytes = new byte[sectionLength];
+					in.readFully(trieBytes);
+					trie = ClassNameTrie.readFrom(new DataInputStream(new ByteArrayInputStream(trieBytes)));
 				}
-			}
-
-			// V4: read member-level dependency sections
-			if (isV4) {
-				// Per-test-class member deps
-				int memberEntryCount = in.readInt();
-				validateCount(memberEntryCount, "memberEntryCount");
-				for (int i = 0; i < memberEntryCount; i++) {
-					String testClass = in.readUTF();
-					int memberCount = in.readInt();
-					validateCount(memberCount, "memberCount");
-					Set<String> members = new HashSet<>(memberCount * 2);
-					for (int j = 0; j < memberCount; j++) {
-						members.add(in.readUTF());
+				case SECTION_TEST_CLASSES -> {
+					byte[] payload = new byte[sectionLength];
+					in.readFully(payload);
+					DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
+					int testCount = s.readInt();
+					validateCount(testCount, "testCount");
+					testNames = new String[testCount];
+					for (int i = 0; i < testCount; i++) {
+						testNames[i] = Objects.requireNonNull(trie, "TRIE section must precede TEST_CLASSES")
+								.getName(s.readInt());
 					}
-					map.memberDependencies.put(testClass, members);
 				}
-				// Per-test-method member deps
-				int methodMemberCount = in.readInt();
-				validateCount(methodMemberCount, "methodMemberCount");
-				for (int i = 0; i < methodMemberCount; i++) {
-					String methodKey = in.readUTF();
-					int memberCount = in.readInt();
-					validateCount(memberCount, "memberCount");
-					Set<String> members = new HashSet<>(memberCount * 2);
-					for (int j = 0; j < memberCount; j++) {
-						members.add(in.readUTF());
+				case SECTION_DEP_GROUPS -> {
+					byte[] payload = new byte[sectionLength];
+					in.readFully(payload);
+					Objects.requireNonNull(trie, "TRIE section must precede DEP_GROUPS");
+					Objects.requireNonNull(testNames, "TEST_CLASSES section must precede DEP_GROUPS");
+					DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
+					int groupCount = s.readInt();
+					validateCount(groupCount, "groupCount");
+					@SuppressWarnings("unchecked")
+					Set<String>[] ds = new Set[testNames.length];
+					depSets = ds;
+					for (int g = 0; g < groupCount; g++) {
+						int depSize = s.readInt();
+						checkSize(depSize, "Dependency bitmap", indexFile);
+						byte[] depBytes = new byte[depSize];
+						s.readFully(depBytes);
+						RoaringBitmap depBitmap = new RoaringBitmap();
+						depBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(depBytes)));
+
+						Set<String> deps = new HashSet<>((int) (depBitmap.getLongCardinality() * 2));
+						ClassNameTrie finalTrie = trie;
+						depBitmap.forEach((int id) -> deps.add(finalTrie.getName(id)));
+						Set<String> sharedDeps = Collections.unmodifiableSet(deps);
+
+						int memberSize = s.readInt();
+						checkSize(memberSize, "Member bitmap", indexFile);
+						byte[] memberBytes = new byte[memberSize];
+						s.readFully(memberBytes);
+						RoaringBitmap memberBitmap = new RoaringBitmap();
+						memberBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(memberBytes)));
+						memberBitmap.forEach((int ti) -> depSets[ti] = sharedDeps);
 					}
-					map.methodMemberDependencies.put(methodKey, members);
+					// build map preserving test insertion order
+					for (int i = 0; i < testNames.length; i++) {
+						map.putDirect(testNames[i], depSets[i] != null ? depSets[i] : Collections.emptySet());
+					}
 				}
+				case SECTION_METHOD_DEPS -> {
+					byte[] payload = new byte[sectionLength];
+					in.readFully(payload);
+					Objects.requireNonNull(trie, "TRIE section must precede METHOD_DEPS");
+					DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
+					int methodCount = s.readInt();
+					validateCount(methodCount, "methodCount");
+					for (int m = 0; m < methodCount; m++) {
+						String methodKey = s.readUTF();
+						int depSize = s.readInt();
+						checkSize(depSize, "Method dependency bitmap", indexFile);
+						byte[] depBytes = new byte[depSize];
+						s.readFully(depBytes);
+						RoaringBitmap depBitmap = new RoaringBitmap();
+						depBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(depBytes)));
+						Set<String> deps = new HashSet<>((int) (depBitmap.getLongCardinality() * 2));
+						ClassNameTrie finalTrie = trie;
+						depBitmap.forEach((int id) -> deps.add(finalTrie.getName(id)));
+						map.methodDependencies.put(methodKey, deps);
+					}
+				}
+				case SECTION_MEMBER_DEPS -> {
+					byte[] payload = new byte[sectionLength];
+					in.readFully(payload);
+					DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
+					int memberEntryCount = s.readInt();
+					validateCount(memberEntryCount, "memberEntryCount");
+					for (int i = 0; i < memberEntryCount; i++) {
+						String testClass = s.readUTF();
+						int memberCount = s.readInt();
+						validateCount(memberCount, "memberCount");
+						Set<String> members = new HashSet<>(memberCount * 2);
+						for (int j = 0; j < memberCount; j++) {
+							members.add(s.readUTF());
+						}
+						map.memberDependencies.put(testClass, members);
+					}
+				}
+				case SECTION_METHOD_MEMBER_DEPS -> {
+					byte[] payload = new byte[sectionLength];
+					in.readFully(payload);
+					DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
+					int methodMemberCount = s.readInt();
+					validateCount(methodMemberCount, "methodMemberCount");
+					for (int i = 0; i < methodMemberCount; i++) {
+						String methodKey = s.readUTF();
+						int memberCount = s.readInt();
+						validateCount(memberCount, "memberCount");
+						Set<String> members = new HashSet<>(memberCount * 2);
+						for (int j = 0; j < memberCount; j++) {
+							members.add(s.readUTF());
+						}
+						map.methodMemberDependencies.put(methodKey, members);
+					}
+				}
+				default -> {
+					// Unknown section type — skip for forward compatibility
+					in.skipNBytes(sectionLength);
+				}
+				}
+			}
+
+			if (testNames == null) {
+				throw new IOException("Missing required TEST_CLASSES section in " + indexFile);
 			}
 
 			return map;
@@ -661,22 +713,22 @@ public class DependencyMap {
 
 		// Merge incrementally, deduplicating to save space
 		for (var entry : deps.entrySet()) {
-			Set<String> existing = map.dependencies.getOrDefault(entry.getKey(), new TreeSet<>());
+			Set<String> existing = new TreeSet<>(map.dependencies.getOrDefault(entry.getKey(), Set.of()));
 			existing.addAll(entry.getValue());
 			map.dependencies.put(entry.getKey(), existing);
 		}
 		for (var entry : methodDeps.entrySet()) {
-			Set<String> existing = map.methodDependencies.getOrDefault(entry.getKey(), new TreeSet<>());
+			Set<String> existing = new TreeSet<>(map.methodDependencies.getOrDefault(entry.getKey(), Set.of()));
 			existing.addAll(entry.getValue());
 			map.methodDependencies.put(entry.getKey(), existing);
 		}
 		for (var entry : memberDeps.entrySet()) {
-			Set<String> existing = map.memberDependencies.getOrDefault(entry.getKey(), new TreeSet<>());
+			Set<String> existing = new TreeSet<>(map.memberDependencies.getOrDefault(entry.getKey(), Set.of()));
 			existing.addAll(entry.getValue());
 			map.memberDependencies.put(entry.getKey(), existing);
 		}
 		for (var entry : methodMemberDeps.entrySet()) {
-			Set<String> existing = map.methodMemberDependencies.getOrDefault(entry.getKey(), new TreeSet<>());
+			Set<String> existing = new TreeSet<>(map.methodMemberDependencies.getOrDefault(entry.getKey(), Set.of()));
 			existing.addAll(entry.getValue());
 			map.methodMemberDependencies.put(entry.getKey(), existing);
 		}

@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -26,11 +25,20 @@ public class ProjectStructureAnalyzer {
 			"<dependency>.*?<groupId>(.*?)</groupId>.*?<artifactId>(.*?)</artifactId>.*?</dependency>", Pattern.DOTALL);
 	private static final Pattern GRADLE_DEP_PATTERN = Pattern
 			.compile("(?:implementation|api|compile)\\s*['\\\"]([^:]+):([^:]+):[^'\\\"]+['\\\"]");
+	private static final Pattern GRADLE_DOTTED_SOURCE_SET_PATTERN = Pattern.compile(
+			"sourceSets\\.(main|test)\\.(?:java|kotlin)\\.srcDirs?\\s*=\\s*(\\[[^\\]]*]|['\\\"][^'\\\"]+['\\\"])",
+			Pattern.DOTALL);
+	private static final Pattern GRADLE_BLOCK_SOURCE_SET_PATTERN = Pattern.compile(
+			"(main|test)\\s*\\{[^{}]*?(?:java|kotlin)\\s*\\{[^{}]*?srcDirs?\\s*(?:=)?\\s*(\\[[^\\]]*]|['\\\"][^'\\\"]+['\\\"])",
+			Pattern.DOTALL);
+	private static final Pattern QUOTED_PATH_PATTERN = Pattern.compile("['\\\"]([^'\\\"]+)['\\\"]");
 
 	private final Path projectRoot;
 	private final Set<String> userPackages = new HashSet<>();
 	private final Set<String> dependencyPackages = new HashSet<>();
 	private final Set<String> testPackages = new HashSet<>();
+	private final Set<Path> mainSourceRoots = new LinkedHashSet<>();
+	private final Set<Path> testSourceRoots = new LinkedHashSet<>();
 
 	public ProjectStructureAnalyzer(Path projectRoot) {
 		this.projectRoot = projectRoot;
@@ -41,9 +49,12 @@ public class ProjectStructureAnalyzer {
 	 * Analyze project structure: read pom.xml, settings.gradle, etc.
 	 */
 	private void analyze() {
+		boolean hasBuildDescriptor = false;
+
 		// Try Maven first
 		Path pomFile = projectRoot.resolve("pom.xml");
 		if (Files.exists(pomFile)) {
+			hasBuildDescriptor = true;
 			analyzeMavenProject(pomFile);
 		}
 
@@ -51,15 +62,19 @@ public class ProjectStructureAnalyzer {
 		Path buildGradle = projectRoot.resolve("build.gradle");
 		Path buildGradleKts = projectRoot.resolve("build.gradle.kts");
 		if (Files.exists(buildGradle)) {
+			hasBuildDescriptor = true;
 			analyzeGradleProject(buildGradle);
 		} else if (Files.exists(buildGradleKts)) {
+			hasBuildDescriptor = true;
 			analyzeGradleProject(buildGradleKts);
 		}
 
-		// Fallback: scan source directories
-		if (userPackages.isEmpty()) {
-			scanSourceDirectories();
+		// Fallback only when no build tool descriptor exists
+		if (!hasBuildDescriptor) {
+			addLegacyFallbackSourceRoots();
 		}
+
+		scanSourceDirectories();
 	}
 
 	/**
@@ -68,6 +83,10 @@ public class ProjectStructureAnalyzer {
 	private void analyzeMavenProject(Path pomFile) {
 		try {
 			String content = Files.readString(pomFile);
+
+			// Maven defaults, overridden/extended by explicit build configuration
+			addSourceRoot(mainSourceRoots, "src/main/java");
+			addSourceRoot(testSourceRoots, "src/test/java");
 
 			// Extract groupId and artifactId
 			String groupId = extractProjectXmlTag(content, "groupId");
@@ -83,21 +102,23 @@ public class ProjectStructureAnalyzer {
 			var matcher = MAVEN_DEP_PATTERN.matcher(content);
 			while (matcher.find()) {
 				String depGroupId = matcher.group(1).trim();
-				String depArtifactId = matcher.group(2).trim();
 
 				// Skip test dependencies
 				if (content.substring(matcher.end()).contains("<scope>test</scope>")) {
 					continue;
 				}
 
-				String depPackage = depGroupId + "." + depArtifactId.replace('-', '.');
 				dependencyPackages.add(depGroupId); // Add groupId as package prefix
 			}
 
 			// Look for source directory configuration
 			String sourceDir = extractXmlTag(content, "sourceDirectory");
-			if (sourceDir != null && sourceDir.contains("src")) {
-				scanSourceDirectories();
+			if (sourceDir != null) {
+				addSourceRoot(mainSourceRoots, sourceDir);
+			}
+			String testSourceDir = extractXmlTag(content, "testSourceDirectory");
+			if (testSourceDir != null) {
+				addSourceRoot(testSourceRoots, testSourceDir);
 			}
 		} catch (IOException e) {
 			AgentLogger.warn("Failed to analyze pom.xml at " + pomFile + ": " + e.getMessage());
@@ -110,6 +131,12 @@ public class ProjectStructureAnalyzer {
 	private void analyzeGradleProject(Path buildFile) {
 		try {
 			String content = Files.readString(buildFile);
+
+			// Gradle Java/Kotlin conventions, overridden/extended by sourceSets
+			addSourceRoot(mainSourceRoots, "src/main/java");
+			addSourceRoot(mainSourceRoots, "src/main/kotlin");
+			addSourceRoot(testSourceRoots, "src/test/java");
+			addSourceRoot(testSourceRoots, "src/test/kotlin");
 
 			// Extract group and artifactId
 			String group = extractGradleProperty(content, "group");
@@ -133,7 +160,7 @@ public class ProjectStructureAnalyzer {
 				dependencyPackages.add(depGroupId);
 			}
 
-			scanSourceDirectories();
+			collectGradleSourceRoots(content);
 		} catch (IOException e) {
 			AgentLogger.warn("Failed to analyze Gradle build file at " + buildFile + ": " + e.getMessage());
 		}
@@ -146,13 +173,8 @@ public class ProjectStructureAnalyzer {
 		if (userPackages.isEmpty()) {
 			Set<String> foundPackages = new HashSet<>();
 
-			// Check common source directories
-			String[] sourceDirs = { "src/main/java", "src/main/kotlin", "src/java", "src" };
-
-			for (String srcDir : sourceDirs) {
-				Path srcPath = projectRoot.resolve(srcDir);
+			for (Path srcPath : mainSourceRoots) {
 				if (Files.isDirectory(srcPath)) {
-					// Scan for package directories (first few levels)
 					scanPackages(srcPath, "", foundPackages, 0);
 				}
 			}
@@ -162,17 +184,63 @@ public class ProjectStructureAnalyzer {
 			}
 		}
 
-		// Also scan test directories
-		String[] testDirs = { "src/test/java", "src/test/kotlin", "test/java", "test" };
-
-		for (String testDir : testDirs) {
-			Path testPath = projectRoot.resolve(testDir);
+		for (Path testPath : testSourceRoots) {
 			if (Files.isDirectory(testPath)) {
 				Set<String> found = new HashSet<>();
 				scanPackages(testPath, "", found, 0);
 				testPackages.addAll(found);
 			}
 		}
+	}
+
+	private void addLegacyFallbackSourceRoots() {
+		addSourceRoot(mainSourceRoots, "src/main/java");
+		addSourceRoot(mainSourceRoots, "src/main/kotlin");
+		addSourceRoot(mainSourceRoots, "src/java");
+		addSourceRoot(mainSourceRoots, "src");
+		addSourceRoot(testSourceRoots, "src/test/java");
+		addSourceRoot(testSourceRoots, "src/test/kotlin");
+		addSourceRoot(testSourceRoots, "test/java");
+		addSourceRoot(testSourceRoots, "test");
+	}
+
+	private void addSourceRoot(Set<Path> target, String sourcePath) {
+		if (sourcePath == null || sourcePath.isBlank()) {
+			return;
+		}
+		Path normalized = projectRoot.resolve(sourcePath.trim()).normalize();
+		target.add(normalized);
+	}
+
+	private void collectGradleSourceRoots(String content) {
+		collectGradleSourceRootsFromPattern(content, GRADLE_DOTTED_SOURCE_SET_PATTERN);
+		collectGradleSourceRootsFromPattern(content, GRADLE_BLOCK_SOURCE_SET_PATTERN);
+	}
+
+	private void collectGradleSourceRootsFromPattern(String content, Pattern pattern) {
+		var matcher = pattern.matcher(content);
+		while (matcher.find()) {
+			String sourceSet = matcher.group(1).trim();
+			for (String path : extractQuotedPaths(matcher.group(2))) {
+				if ("main".equals(sourceSet)) {
+					addSourceRoot(mainSourceRoots, path);
+				} else if ("test".equals(sourceSet)) {
+					addSourceRoot(testSourceRoots, path);
+				}
+			}
+		}
+	}
+
+	private List<String> extractQuotedPaths(String sourceSetExpression) {
+		List<String> paths = new ArrayList<>();
+		if (sourceSetExpression == null) {
+			return paths;
+		}
+		var matcher = QUOTED_PATH_PATTERN.matcher(sourceSetExpression);
+		while (matcher.find()) {
+			paths.add(matcher.group(1).trim());
+		}
+		return paths;
 	}
 
 	/**
@@ -186,8 +254,6 @@ public class ProjectStructureAnalyzer {
 
 		try {
 			boolean hasJavaFiles = false;
-			boolean hasKotlinFiles = false;
-			boolean hasSubdirs = false;
 
 			File[] children = dir.toFile().listFiles();
 			if (children == null) {
@@ -200,7 +266,6 @@ public class ProjectStructureAnalyzer {
 					if (file.getName().endsWith(".java")) {
 						hasJavaFiles = true;
 					} else if (file.getName().endsWith(".kt")) {
-						hasKotlinFiles = true;
 						// Extract package from Kotlin source directly
 						String extractedPackage = KotlinSourceAnalyzer.extractPackage(file.toPath());
 						if (extractedPackage != null) {
@@ -208,13 +273,12 @@ public class ProjectStructureAnalyzer {
 						}
 					}
 				} else if (file.isDirectory() && !file.getName().startsWith(".")) {
-					hasSubdirs = true;
 					String newPrefix = packagePrefix.isEmpty() ? file.getName() : packagePrefix + "." + file.getName();
 					scanPackages(file.toPath(), newPrefix, result, depth + 1);
 				}
 			}
 
-			// For Java files (or mixed), use directory-based heuristic as fallback
+			// For Java files (or mixed), use directory-based heuristic
 			if (hasJavaFiles && !packagePrefix.isEmpty()) {
 				result.add(packagePrefix);
 			}

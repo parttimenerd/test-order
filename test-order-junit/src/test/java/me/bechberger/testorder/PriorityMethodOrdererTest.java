@@ -24,15 +24,98 @@ class PriorityMethodOrdererTest {
 		}
 	}
 
+	// Fixture with @Order annotations on methods
+	static class OrderedDummy {
+		@org.junit.jupiter.api.Order(1)
+		void alpha() {
+		}
+		@org.junit.jupiter.api.Order(2)
+		void beta() {
+		}
+		@org.junit.jupiter.api.Order(3)
+		void gamma() {
+		}
+	}
+
+	// Fixture with @TestMethodOrder on the class
+	@org.junit.jupiter.api.TestMethodOrder(org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class)
+	static class TestMethodOrderDummy {
+		void alpha() {
+		}
+		void beta() {
+		}
+		void gamma() {
+		}
+	}
+
+	// Fixture with partial @Order (only some methods)
+	static class PartialOrderDummy {
+		void alpha() {
+		}
+		@org.junit.jupiter.api.Order(1)
+		void beta() {
+		}
+		void gamma() {
+		}
+	}
+
+	// Fixture with @AlwaysRun on a method
+	static class AlwaysRunMethodDummy {
+		void alpha() {
+		}
+		void beta() {
+		}
+		@AlwaysRun
+		void gamma() {
+		}
+	}
+
+	// Fixture with both @AlwaysRun and @TestOrder(priority=LAST) on same method
+	static class AlwaysRunLastDummy {
+		void alpha() {
+		}
+		void beta() {
+		}
+		@AlwaysRun
+		@TestOrder(priority = TestOrder.Priority.LAST)
+		void gamma() {
+		}
+	}
+
 	private static Method alphaMethod;
 	private static Method betaMethod;
 	private static Method gammaMethod;
+	private static Method orderedAlpha, orderedBeta, orderedGamma;
+	private static Method tmoAlpha, tmoBeta, tmoGamma;
+	private static Method partialAlpha, partialBeta, partialGamma;
+	private static Method arAlpha, arBeta, arGamma;
+	private static Method arlAlpha, arlBeta, arlGamma;
 
 	@BeforeAll
 	static void loadMethods() throws NoSuchMethodException {
 		alphaMethod = DummyTests.class.getDeclaredMethod("alpha");
 		betaMethod = DummyTests.class.getDeclaredMethod("beta");
 		gammaMethod = DummyTests.class.getDeclaredMethod("gamma");
+
+		orderedAlpha = OrderedDummy.class.getDeclaredMethod("alpha");
+		orderedBeta = OrderedDummy.class.getDeclaredMethod("beta");
+		orderedGamma = OrderedDummy.class.getDeclaredMethod("gamma");
+
+		tmoAlpha = TestMethodOrderDummy.class.getDeclaredMethod("alpha");
+		tmoBeta = TestMethodOrderDummy.class.getDeclaredMethod("beta");
+		tmoGamma = TestMethodOrderDummy.class.getDeclaredMethod("gamma");
+
+		partialAlpha = PartialOrderDummy.class.getDeclaredMethod("alpha");
+		partialBeta = PartialOrderDummy.class.getDeclaredMethod("beta");
+		partialGamma = PartialOrderDummy.class.getDeclaredMethod("gamma");
+
+		arAlpha = AlwaysRunMethodDummy.class.getDeclaredMethod("alpha");
+		arBeta = AlwaysRunMethodDummy.class.getDeclaredMethod("beta");
+		arGamma = AlwaysRunMethodDummy.class.getDeclaredMethod("gamma");
+
+		arlAlpha = AlwaysRunLastDummy.class.getDeclaredMethod("alpha");
+		arlBeta = AlwaysRunLastDummy.class.getDeclaredMethod("beta");
+		arlGamma = AlwaysRunLastDummy.class.getDeclaredMethod("gamma");
 	}
 
 	@AfterEach
@@ -352,5 +435,420 @@ class PriorityMethodOrdererTest {
 		var field = PriorityMethodOrderer.class.getDeclaredField("pendingState");
 		field.setAccessible(true);
 		assertNull(field.get(null), "pendingState should be null after clearPendingState()");
+	}
+
+	// ── @Order annotation tests ───────────────────────────────────────
+
+	@Test
+	@DisplayName("@Order on methods → skips method reordering entirely")
+	void orderMethods_junitOrderAnnotation_skipsReordering() {
+		String className = OrderedDummy.class.getName();
+		TestOrderState state = new TestOrderState();
+		state.recordMethodFailure(className, "gamma");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		// Original order: gamma, alpha, beta — even though gamma has failure, @Order
+		// wins
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(orderedGamma), desc(orderedAlpha), desc(orderedBeta)));
+		var ctx = new StubMethodOrdererContext(OrderedDummy.class, descs);
+		orderer.orderMethods(ctx);
+
+		// Order preserved — skipped because @Order is present
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName());
+		assertEquals("alpha", ctx.getMethodDescriptors().get(1).getMethod().getName());
+		assertEquals("beta", ctx.getMethodDescriptors().get(2).getMethod().getName());
+	}
+
+	@Test
+	@DisplayName("@TestMethodOrder on class → skips method reordering")
+	void orderMethods_testMethodOrderAnnotation_skipsReordering() {
+		String className = TestMethodOrderDummy.class.getName();
+		TestOrderState state = new TestOrderState();
+		state.recordMethodFailure(className, "beta");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(List.of(desc(tmoGamma), desc(tmoAlpha), desc(tmoBeta)));
+		var ctx = new StubMethodOrdererContext(TestMethodOrderDummy.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName());
+		assertEquals("alpha", ctx.getMethodDescriptors().get(1).getMethod().getName());
+		assertEquals("beta", ctx.getMethodDescriptors().get(2).getMethod().getName());
+	}
+
+	@Test
+	@DisplayName("No @Order or @TestMethodOrder → still reorders by score")
+	void orderMethods_noJUnitOrder_stillReorders() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		state.recordMethodFailure(className, "beta");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(alphaMethod), desc(betaMethod), desc(gammaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("beta", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"beta has failure score → should be first");
+	}
+
+	@Test
+	@DisplayName("Partial @Order (only some methods) → skips reordering (conservative)")
+	void orderMethods_partialJUnitOrder_skipsReordering() {
+		String className = PartialOrderDummy.class.getName();
+		TestOrderState state = new TestOrderState();
+		state.recordMethodFailure(className, "gamma");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		// Original order: gamma, alpha, beta — even with failure on gamma, partial
+		// @Order → skip
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(partialGamma), desc(partialAlpha), desc(partialBeta)));
+		var ctx = new StubMethodOrdererContext(PartialOrderDummy.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName());
+		assertEquals("alpha", ctx.getMethodDescriptors().get(1).getMethod().getName());
+		assertEquals("beta", ctx.getMethodDescriptors().get(2).getMethod().getName());
+	}
+
+	@Test
+	@DisplayName("@TestOrder + @Order on same class → @Order wins, no reordering")
+	void orderMethods_testOrderAnnotation_withJUnitOrder_junitOrderWins() {
+		String className = OrderedDummy.class.getName();
+		TestOrderState state = new TestOrderState();
+		state.recordMethodFailure(className, "alpha");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(orderedBeta), desc(orderedGamma), desc(orderedAlpha)));
+		var ctx = new StubMethodOrdererContext(OrderedDummy.class, descs);
+		orderer.orderMethods(ctx);
+
+		// @Order present → original order preserved
+		assertEquals("beta", ctx.getMethodDescriptors().get(0).getMethod().getName());
+		assertEquals("gamma", ctx.getMethodDescriptors().get(1).getMethod().getName());
+		assertEquals("alpha", ctx.getMethodDescriptors().get(2).getMethod().getName());
+	}
+
+	// ── @AlwaysRun method tests ───────────────────────────────────────
+
+	@Test
+	@DisplayName("@AlwaysRun method pinned first")
+	void alwaysRunMethod_pinnedFirst() {
+		String className = AlwaysRunMethodDummy.class.getName();
+		TestOrderState state = new TestOrderState();
+		// Give all methods equal duration — gamma (@AlwaysRun) should still be first
+		state.recordMethodDuration(className, "alpha", 100);
+		state.recordMethodDuration(className, "beta", 100);
+		state.recordMethodDuration(className, "gamma", 100);
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(List.of(desc(arAlpha), desc(arBeta), desc(arGamma)));
+		var ctx = new StubMethodOrdererContext(AlwaysRunMethodDummy.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"@AlwaysRun method must be pinned first");
+	}
+
+	@Test
+	@DisplayName("@AlwaysRun method with failure on another — both get priority positions")
+	void alwaysRunMethod_withFailureScoring() {
+		String className = AlwaysRunMethodDummy.class.getName();
+		TestOrderState state = new TestOrderState();
+		state.recordMethodDuration(className, "alpha", 100);
+		state.recordMethodDuration(className, "beta", 100);
+		state.recordMethodDuration(className, "gamma", 100);
+		state.recordMethodFailure(className, "beta");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(List.of(desc(arAlpha), desc(arBeta), desc(arGamma)));
+		var ctx = new StubMethodOrdererContext(AlwaysRunMethodDummy.class, descs);
+		orderer.orderMethods(ctx);
+
+		// gamma pinned first (@AlwaysRun), beta second (failure), alpha last
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"@AlwaysRun method must be first");
+	}
+
+	@Test
+	@DisplayName("@AlwaysRun + @TestOrder(priority=LAST) → @AlwaysRun wins")
+	void alwaysRunMethod_combinedWithTestOrderLast() {
+		String className = AlwaysRunLastDummy.class.getName();
+		TestOrderState state = new TestOrderState();
+		state.recordMethodDuration(className, "alpha", 100);
+		state.recordMethodDuration(className, "beta", 100);
+		state.recordMethodDuration(className, "gamma", 100);
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(List.of(desc(arlAlpha), desc(arlBeta), desc(arlGamma)));
+		var ctx = new StubMethodOrdererContext(AlwaysRunLastDummy.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"@AlwaysRun must take precedence over @TestOrder(priority=LAST)");
+	}
+
+	// ── Parameterized method ordering tests ──────────────────────────────
+
+	@Test
+	@DisplayName("Parameterized method with failure runs first among equal-duration methods")
+	void orderMethods_parameterizedFailure_runsFirst() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		// Simulate aggregated durations from parameterized runs:
+		// alpha was run 5x (CsvSource), beta was run 3x, gamma was run 8x (ValueSource)
+		// EMA aggregation would produce these values
+		state.recordMethodDuration(className, "alpha", 100);
+		state.recordMethodDuration(className, "beta", 100);
+		state.recordMethodDuration(className, "gamma", 100);
+
+		// gamma failed in one of its parameterized invocations
+		state.recordMethodFailure(className, "gamma");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(alphaMethod), desc(betaMethod), desc(gammaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"Parameterized method that failed should run first");
+	}
+
+	@Test
+	@DisplayName("Parameterized method with aggregated fast duration runs before slow")
+	void orderMethods_parameterizedDurations_fastFirst() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		// Simulate aggregated durations: alpha fast (from 5 value-source runs),
+		// beta slow (from 3 csv-source runs), gamma fast
+		state.recordMethodDuration(className, "alpha", 10);
+		state.recordMethodDuration(className, "beta", 2000);
+		state.recordMethodDuration(className, "gamma", 15);
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(betaMethod), desc(gammaMethod), desc(alphaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertNotEquals("beta", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"Slow parameterized method must not run first");
+		assertEquals("beta", ctx.getMethodDescriptors().get(2).getMethod().getName(),
+				"Slow parameterized method must run last");
+	}
+
+	@Test
+	@DisplayName("Changed parameterized method runs first")
+	void orderMethods_changedParameterizedMethod_runsFirst() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		state.recordMethodDuration(className, "alpha", 100);
+		state.recordMethodDuration(className, "beta", 100);
+		state.recordMethodDuration(className, "gamma", 100);
+
+		// Mark gamma as changed (simulating a changed @ParameterizedTest method)
+		String gammaKey = className + "#gamma";
+		Set<String> changedMethods = Set.of(gammaKey);
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), changedMethods);
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(alphaMethod), desc(betaMethod), desc(gammaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"Changed parameterized method must run first");
+	}
+
+	@Test
+	@DisplayName("Multiple parameterized method failures sort by recency")
+	void orderMethods_multipleParameterizedFailures_sortedByRecency() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		state.recordMethodDuration(className, "alpha", 100);
+		state.recordMethodDuration(className, "beta", 100);
+		state.recordMethodDuration(className, "gamma", 100);
+
+		// Both alpha and gamma have failures (from different param sets)
+		state.recordMethodFailure(className, "alpha");
+		state.recordMethodFailure(className, "gamma");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(alphaMethod), desc(betaMethod), desc(gammaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		// beta (no failure) must be last
+		assertEquals("beta", ctx.getMethodDescriptors().get(2).getMethod().getName(),
+				"Method without failure must run after methods with parameterized failures");
+	}
+
+	@Test
+	@DisplayName("Parameterized failure + fast duration combined scoring")
+	void orderMethods_parameterizedFailureAndFast_combinedScore() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		// alpha: slow, no failure; beta: fast, with failure; gamma: medium, no failure
+		state.recordMethodDuration(className, "alpha", 1000);
+		state.recordMethodDuration(className, "beta", 10);
+		state.recordMethodDuration(className, "gamma", 100);
+		state.recordMethodFailure(className, "beta");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(alphaMethod), desc(betaMethod), desc(gammaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		// beta has both failure score and fast bonus → should be first
+		assertEquals("beta", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"Parameterized method with failure + fast duration should run first");
+		// alpha (slow, no failure) should be last
+		assertEquals("alpha", ctx.getMethodDescriptors().get(2).getMethod().getName(),
+				"Slow method without failure should run last");
+	}
+
+	@Test
+	@DisplayName("Single parameterized method (1 param set) with failure runs first")
+	void orderMethods_singleParameterizedInvocationWithFailure_runsFirst() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		// Degenerate: only 1 invocation each, like @ValueSource(ints = {42})
+		state.recordMethodDuration(className, "alpha", 50);
+		state.recordMethodDuration(className, "beta", 50);
+		state.recordMethodDuration(className, "gamma", 50);
+		state.recordMethodFailure(className, "alpha");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(betaMethod), desc(gammaMethod), desc(alphaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("alpha", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"Single-param method with failure should run first");
+	}
+
+	@Test
+	@DisplayName("Parameterized method with no telemetry preserves source order")
+	void orderMethods_parameterizedNoTelemetry_preservesSourceOrder() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		// No durations or failures recorded for these methods yet (first run)
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(gammaMethod), desc(alphaMethod), desc(betaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		// No telemetry → source order preserved
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName());
+		assertEquals("alpha", ctx.getMethodDescriptors().get(1).getMethod().getName());
+		assertEquals("beta", ctx.getMethodDescriptors().get(2).getMethod().getName());
+	}
+
+	// ── @RepeatedTest ────────────────────────────────────────────────────
+
+	@Test
+	@DisplayName("@RepeatedTest method with failure scored and ordered first")
+	void orderMethods_repeatedTestFailure_runsFirst() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		// "beta" is a @RepeatedTest whose aggregated repetitions recorded a failure
+		state.recordMethodDuration(className, "alpha", 100);
+		state.recordMethodDuration(className, "beta", 50);
+		state.recordMethodDuration(className, "beta", 50); // 2 repetitions
+		state.recordMethodDuration(className, "gamma", 200);
+		state.recordMethodFailure(className, "beta"); // failure in one repetition
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(alphaMethod), desc(gammaMethod), desc(betaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("beta", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"@RepeatedTest method with failure must run first");
+	}
+
+	// ── @TestFactory ─────────────────────────────────────────────────────
+
+	@Test
+	@DisplayName("@TestFactory method failure scored same as regular method")
+	void orderMethods_testFactoryFailure_runsFirst() {
+		String className = DummyTests.class.getName();
+		TestOrderState state = new TestOrderState();
+		// "gamma" is a @TestFactory that had its container-level failure recorded
+		state.recordMethodDuration(className, "alpha", 100);
+		state.recordMethodDuration(className, "beta", 100);
+		state.recordMethodDuration(className, "gamma", 100);
+		state.recordMethodFailure(className, "gamma");
+
+		PriorityMethodOrderer.setPendingState(state, TestOrderState.MethodScoringWeights.DEFAULT, true,
+				new DependencyMap(), Set.of(), Set.of());
+
+		PriorityMethodOrderer orderer = new PriorityMethodOrderer();
+		List<StubMethodDescriptor> descs = new ArrayList<>(
+				List.of(desc(alphaMethod), desc(betaMethod), desc(gammaMethod)));
+		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
+		orderer.orderMethods(ctx);
+
+		assertEquals("gamma", ctx.getMethodDescriptors().get(0).getMethod().getName(),
+				"@TestFactory method with failure must run first");
 	}
 }

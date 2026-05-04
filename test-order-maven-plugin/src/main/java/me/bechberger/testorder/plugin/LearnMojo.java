@@ -1,16 +1,26 @@
 package me.bechberger.testorder.plugin;
 
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 
 /**
- * Alias for the {@code combined} goal.
+ * Forces learn mode: always instrument tests and build dependency index.
  * <p>
- * Many users expect {@code mvn test-order:learn} to work. This Mojo simply
- * delegates to {@link CombinedMojo}.
+ * Unlike the {@code auto} goal, this goal always runs in learn mode regardless
+ * of the current {@code testorder.mode} setting.
  * <p>
  * Usage: {@code mvn test-order:learn test}
  */
 @Mojo(name = "learn", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES)
-public class LearnMojo extends CombinedMojo {
+public class LearnMojo extends AutoMojo {
+
+	@Override
+	public void execute() throws MojoExecutionException {
+		// Force learn mode regardless of configuration
+		if (session != null && session.getUserProperties() != null) {
+			session.getUserProperties().setProperty(MavenPluginConfigKeys.MODE, "learn");
+		}
+		super.execute();
+	}
 }

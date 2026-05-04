@@ -7,6 +7,7 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,12 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.PersistenceSupport;
 import me.bechberger.testorder.TestOrderState;
+import me.bechberger.testorder.ops.AlwaysRunScanner;
+import me.bechberger.testorder.ops.ChangeDetectionOps;
+import me.bechberger.testorder.ops.HashSnapshotOperation;
+import me.bechberger.testorder.ops.OrdererConfigOperation;
+import me.bechberger.testorder.ops.PluginContext;
+import me.bechberger.testorder.ops.PluginLog;
 
 /**
  * Base class for test-order Mojos that share common configuration parameters
@@ -40,18 +47,23 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 	protected ReactorContext ctx;
 
+	/** Returns a {@link PluginLog} backed by Maven's logger. */
+	protected PluginLog pluginLog() {
+		return MavenPluginLog.wrap(getLog());
+	}
+
 	/**
 	 * Path to the dependency index file (LZ4 compressed binary format). Used by
 	 * test-order to load and save test dependencies.
 	 */
-	@Parameter(property = MavenPluginConfigKeys.LEGACY_INDEX, defaultValue = "${project.basedir}/.test-order/test-dependencies.lz4")
+	@Parameter(property = MavenPluginConfigKeys.INDEX_PATH, defaultValue = "${project.basedir}/.test-order/test-dependencies.lz4")
 	protected String indexFile;
 
 	/**
 	 * Path to the state file for persisting test execution history and weights.
 	 * Used to track test performance over time.
 	 */
-	@Parameter(property = MavenPluginConfigKeys.LEGACY_STATE_FILE, defaultValue = "${project.basedir}/.test-order/state.lz4")
+	@Parameter(property = MavenPluginConfigKeys.STATE_PATH, defaultValue = "${project.basedir}/.test-order/state.lz4")
 	protected String stateFile;
 
 	/**
@@ -93,7 +105,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * Main source root directory. Defaults to the first compile source root from
 	 * the Maven model.
 	 */
-	@Parameter(property = MavenPluginConfigKeys.LEGACY_SOURCE_ROOT)
+	@Parameter(property = MavenPluginConfigKeys.SOURCE_ROOT)
 	protected String sourceRoot;
 
 	/**
@@ -107,7 +119,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * Change detection mode: auto, since-last-run, since-last-commit, uncommitted,
 	 * explicit
 	 */
-	@Parameter(property = MavenPluginConfigKeys.CHANGE_MODE, defaultValue = "auto")
+	@Parameter(property = MavenPluginConfigKeys.CHANGE_MODE, defaultValue = "uncommitted")
 	protected String changeMode;
 
 	/** Comma-separated changed class FQCNs (for explicit mode) */
@@ -130,8 +142,53 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * Enable method-level test ordering within classes (fail-fast on slow/flaky
 	 * methods)
 	 */
-	@Parameter(property = MavenPluginConfigKeys.LEGACY_METHOD_ORDERING_ENABLED, defaultValue = "false")
+	@Parameter(property = MavenPluginConfigKeys.METHOD_ORDER_ENABLED, defaultValue = "false")
 	protected boolean methodOrderingEnabled;
+
+	/**
+	 * Group Spring-context-sharing test classes together to reduce context reloads.
+	 * Beneficial for Spring Boot projects where context creation is expensive.
+	 */
+	@Parameter(property = "testorder.score.springContextGrouping", defaultValue = "false")
+	protected boolean springContextGrouping;
+
+	// ── Score override parameters (shared by auto, select, prepare, show-order) ──
+
+	/** Score bonus for new test classes not in the dependency index */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_NEW_TEST)
+	protected Integer scoreNewTest;
+
+	/** Score bonus for test classes whose source was modified */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_CHANGED_TEST)
+	protected Integer scoreChangedTest;
+
+	/** Maximum score bonus from failure frequency */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_MAX_FAILURE)
+	protected Integer scoreMaxFailure;
+
+	/** Score bonus for tests with below-median duration */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_SPEED)
+	protected Integer scoreSpeed;
+
+	/** Score penalty for tests with above-median duration */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_SPEED_PENALTY)
+	protected Integer scoreSpeedPenalty;
+
+	/** Max score from dependency overlap (ratio-based) */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_DEP_OVERLAP)
+	protected Integer scoreDepOverlap;
+
+	/** Score bonus based on change complexity of overlapping dependencies */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_CHANGE_COMPLEXITY)
+	protected Integer scoreChangeComplexity;
+
+	/** Optional fixed bonus when a test overlaps changed static field members */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_STATIC_FIELD_BONUS)
+	protected Integer scoreStaticFieldBonus;
+
+	/** Set-cover coverage bonus weight (0 = disabled, uses depOverlap instead) */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_COVERAGE_BONUS)
+	protected Integer scoreCoverageBonus;
 
 	// ── Lifecycle helpers ─────────────────────────────────────────────
 
@@ -141,6 +198,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			removeListenerServiceFiles();
 			return;
 		}
+		suppressLz4UnsafeWarnings();
+		warnUnknownProperties();
+		warnJUnit4Unsupported();
 		applyCanonicalUserPropertyOverrides();
 		validateParameters();
 		ctx = new ReactorContext(session, project);
@@ -172,32 +232,123 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	/**
-	 * Accept canonical property keys while preserving legacy Maven user-property
-	 * compatibility.
+	 * Warn about unknown testorder.* properties (likely typos) with Levenshtein
+	 * suggestions.
+	 */
+	private void warnUnknownProperties() {
+		if (session == null || session.getUserProperties() == null) {
+			return;
+		}
+		for (String warning : MavenPluginConfigKeys.findUnknownProperties(session.getUserProperties())) {
+			getLog().warn("[test-order] " + warning);
+		}
+	}
+
+	/**
+	 * Accept legacy property keys as fallbacks when canonical keys are not set.
+	 * This preserves backward compatibility for users still using the old property
+	 * names (e.g. testorder.index instead of testorder.index.path).
 	 */
 	private void applyCanonicalUserPropertyOverrides() {
 		if (session == null || session.getUserProperties() == null) {
 			return;
 		}
-		String value = session.getUserProperties().getProperty(MavenPluginConfigKeys.INDEX_PATH);
-		if (value != null && !value.isBlank())
-			indexFile = value;
-		value = session.getUserProperties().getProperty(MavenPluginConfigKeys.STATE_PATH);
-		if (value != null && !value.isBlank())
-			stateFile = value;
-		value = session.getUserProperties().getProperty(MavenPluginConfigKeys.SOURCE_ROOT);
-		if (value != null && !value.isBlank())
-			sourceRoot = value;
-		value = session.getUserProperties().getProperty(MavenPluginConfigKeys.CHANGE_MODE);
-		if (value != null && !value.isBlank())
-			changeMode = value;
-		value = session.getUserProperties().getProperty(MavenPluginConfigKeys.METHOD_ORDER_ENABLED);
-		if (value != null && !value.isBlank())
-			methodOrderingEnabled = Boolean.parseBoolean(value);
+		java.util.Properties props = session.getUserProperties();
+
+		// Legacy fallbacks — only apply if the canonical key was NOT explicitly set
+		applyLegacyFallback(props, MavenPluginConfigKeys.INDEX_PATH, MavenPluginConfigKeys.LEGACY_INDEX,
+				v -> indexFile = v);
+		applyLegacyFallback(props, MavenPluginConfigKeys.STATE_PATH, MavenPluginConfigKeys.LEGACY_STATE_FILE,
+				v -> stateFile = v);
+		applyLegacyFallback(props, MavenPluginConfigKeys.SOURCE_ROOT, MavenPluginConfigKeys.LEGACY_SOURCE_ROOT,
+				v -> sourceRoot = v);
+		applyLegacyFallback(props, MavenPluginConfigKeys.METHOD_ORDER_ENABLED,
+				MavenPluginConfigKeys.LEGACY_METHOD_ORDERING_ENABLED,
+				v -> methodOrderingEnabled = Boolean.parseBoolean(v));
+
+		// Warn about deprecated property usage
+		for (var entry : java.util.Map.of(MavenPluginConfigKeys.LEGACY_INDEX, MavenPluginConfigKeys.INDEX_PATH,
+				MavenPluginConfigKeys.LEGACY_STATE_FILE, MavenPluginConfigKeys.STATE_PATH,
+				MavenPluginConfigKeys.LEGACY_SOURCE_ROOT, MavenPluginConfigKeys.SOURCE_ROOT,
+				MavenPluginConfigKeys.LEGACY_METHOD_ORDERING_ENABLED, MavenPluginConfigKeys.METHOD_ORDER_ENABLED)
+				.entrySet()) {
+			String legacyVal = props.getProperty(entry.getKey());
+			if (legacyVal != null && !legacyVal.isBlank()) {
+				getLog().warn("[test-order] Deprecated property '" + entry.getKey() + "' — use '" + entry.getValue()
+						+ "' instead.");
+			}
+		}
+	}
+
+	private void applyLegacyFallback(java.util.Properties props, String canonical, String legacy,
+			java.util.function.Consumer<String> setter) {
+		String canonicalVal = props.getProperty(canonical);
+		if (canonicalVal != null && !canonicalVal.isBlank()) {
+			return; // canonical key is set, skip legacy
+		}
+		String legacyVal = props.getProperty(legacy);
+		if (legacyVal != null && !legacyVal.isBlank()) {
+			setter.accept(legacyVal);
+		}
 	}
 
 	protected Path resolveIndexPath() {
 		return ctx.resolveIndexFile(indexFile);
+	}
+
+	/**
+	 * Builds a framework-agnostic {@link PluginContext} from the Maven @Parameter
+	 * fields. Subclasses can override to add goal-specific fields (topN, randomM,
+	 * etc.).
+	 */
+	protected PluginContext.Builder buildPluginContextBuilder() {
+		Path resolvedSourceRoot = resolveSourceRoot();
+		Path resolvedTestSourceRoot = resolveTestSourceRoot();
+
+		List<Path> additionalSourceRoots = new ArrayList<>();
+		Path kotlinRoot = project.getBasedir().toPath().resolve("src/main/kotlin");
+		if (Files.isDirectory(kotlinRoot)) {
+			additionalSourceRoots.add(kotlinRoot);
+		}
+
+		return PluginContext.builder().projectRoot(project.getBasedir().toPath().toAbsolutePath())
+				.sourceRoot(resolvedSourceRoot).testSourceRoot(resolvedTestSourceRoot)
+				.additionalSourceRoots(additionalSourceRoots)
+				.testClassesDir(Path.of(project.getBuild().getTestOutputDirectory()))
+				.indexFile(ctx.resolveIndexFile(indexFile)).stateFile(ctx.resolveStateFile(stateFile))
+				.depsDir(ctx.resolveDepsDir(depsDir)).hashFile(ctx.resolveHashFile(hashFile))
+				.testHashFile(ctx.resolveTestHashFile(testHashFile))
+				.methodHashFile(ctx.resolveMethodHashFile(methodHashFile)).changeMode(changeMode)
+				.changedClasses(changedClasses)
+				.weightsFile(weightsFile != null && !weightsFile.isBlank() ? Path.of(weightsFile) : null)
+				.scoreOverrides(buildScoreOverrides()).methodOrderingEnabled(methodOrderingEnabled)
+				.springContextGrouping(springContextGrouping).groupId(project.getGroupId())
+				.verboseFile(verboseFile != null && !verboseFile.isBlank() ? Path.of(verboseFile) : null)
+				.dependencyFingerprintSupplier(() -> computeMavenDependencyFingerprint())
+				.projectName(project.getArtifactId()).log(pluginLog());
+	}
+
+	protected PluginContext buildPluginContext() {
+		return buildPluginContextBuilder().build();
+	}
+
+	/**
+	 * Computes a dependency fingerprint from the project's resolved artifacts.
+	 * Detects SNAPSHOT rebuilds, version bumps, and transitive changes.
+	 */
+	private String computeMavenDependencyFingerprint() {
+		var artifacts = project.getArtifacts();
+		if (artifacts == null || artifacts.isEmpty()) {
+			// Fallback to build-file fingerprinting
+			return me.bechberger.testorder.ops.BuildFileFingerprint.computeFromBuildFiles(
+					project.getBasedir().toPath());
+		}
+		var classpathEntries = artifacts.stream()
+				.filter(a -> a.getFile() != null)
+				.map(a -> a.getFile().toPath())
+				.toList();
+		return me.bechberger.testorder.ops.BuildFileFingerprint.compute(classpathEntries,
+				project.getBasedir().toPath());
 	}
 
 	/**
@@ -216,6 +367,34 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			throw new MojoExecutionException("Cannot write to cache directory: " + baseDir
 					+ (perms.isEmpty() ? "" : " (permissions: " + perms + ")") + ". Fix: chmod 755 " + baseDir);
 		}
+	}
+
+	// ── Source root resolution ────────────────────────────────────────
+
+	/**
+	 * Resolves the main source root. Priority: explicit config → Maven model →
+	 * fallback to src/main/java.
+	 */
+	protected Path resolveSourceRoot() {
+		if (sourceRoot != null && !sourceRoot.isBlank())
+			return Path.of(sourceRoot);
+		List<String> roots = project.getCompileSourceRoots();
+		if (roots != null && !roots.isEmpty())
+			return Path.of(roots.get(0));
+		return project.getBasedir().toPath().resolve("src/main/java");
+	}
+
+	/**
+	 * Resolves the test source root. Priority: explicit config → Maven model →
+	 * fallback to src/test/java.
+	 */
+	protected Path resolveTestSourceRoot() {
+		if (testSourceRoot != null && !testSourceRoot.isBlank())
+			return Path.of(testSourceRoot);
+		List<String> roots = project.getTestCompileSourceRoots();
+		if (roots != null && !roots.isEmpty())
+			return Path.of(roots.get(0));
+		return project.getBasedir().toPath().resolve("src/test/java");
 	}
 
 	// ── State and change detection ────────────────────────────────────
@@ -237,9 +416,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	protected Set<String> detectChangedClasses(boolean readOnly) {
-		return ChangeDetectionHelper.detectChangedClasses(ctx, changeMode, changedClasses,
-				ChangeDetectionHelper.resolveSourceRoot(project, sourceRoot), ctx.resolveHashFile(hashFile), readOnly,
-				getLog());
+		PluginLog plog = pluginLog();
+		Set<String> own = ChangeDetectionOps.detectChangedClassesWithKotlin(changeMode, ctx.gitRoot(),
+				resolveSourceRoot(), ctx.resolveHashFile(hashFile), changedClasses, readOnly, plog);
+		ctx.storeChangedClasses(own);
+		Set<String> upstream = ctx.collectUpstreamChangedClasses();
+		if (upstream.isEmpty())
+			return own;
+		Set<String> merged = new LinkedHashSet<>(own);
+		merged.addAll(upstream);
+		return merged;
 	}
 
 	/**
@@ -248,30 +434,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * match. Protects against silently wrong test selection (M-CRIT-1).
 	 */
 	protected void warnUnknownChangedClasses(Set<String> changed, DependencyMap depMap) throws MojoExecutionException {
-		if (changed.isEmpty() || !"explicit".equalsIgnoreCase(changeMode))
-			return;
-		Set<String> known = depMap.testClasses();
-		// Check against both the dependency map keys (test classes) and their dep
-		// values (production classes)
-		Set<String> allKnown = new java.util.HashSet<>(known);
-		for (String tc : known) {
-			allKnown.addAll(depMap.get(tc));
-		}
-		Set<String> unknown = new java.util.LinkedHashSet<>();
-		for (String cls : changed) {
-			if (!allKnown.contains(cls)) {
-				unknown.add(cls);
-			}
-		}
-		if (!unknown.isEmpty()) {
-			getLog().warn("[test-order] The following explicitly changed classes are not in the dependency index: "
-					+ String.join(", ", unknown));
-			if (unknown.size() == changed.size()) {
-				throw new MojoExecutionException(
-						"[test-order] None of the explicitly specified changed classes exist in the "
-								+ "dependency index. Check for typos or run learn mode first. " + "Changed classes: "
-								+ String.join(", ", changed));
-			}
+		try {
+			new me.bechberger.testorder.ops.ParameterValidator(pluginLog()).warnUnknownChangedClasses(changed, depMap,
+					changeMode);
+		} catch (IllegalArgumentException e) {
+			throw new MojoExecutionException(e.getMessage());
 		}
 	}
 
@@ -280,9 +447,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	protected Set<String> detectChangedTestClasses(boolean readOnly) {
-		return ChangeDetectionHelper.detectChangedTestClasses(ctx, changeMode,
-				ChangeDetectionHelper.resolveTestSourceRoot(project, testSourceRoot),
-				ctx.resolveTestHashFile(testHashFile), readOnly, getLog());
+		PluginLog plog = pluginLog();
+		Set<String> own = ChangeDetectionOps.detectChangedTestClassesWithKotlin(changeMode, ctx.gitRoot(),
+				resolveTestSourceRoot(), ctx.resolveTestHashFile(testHashFile), readOnly, plog);
+		ctx.storeChangedTestClasses(own);
+		Set<String> upstream = ctx.collectUpstreamChangedTestClasses();
+		if (upstream.isEmpty())
+			return own;
+		Set<String> merged = new LinkedHashSet<>(own);
+		merged.addAll(upstream);
+		return merged;
 	}
 
 	/**
@@ -290,9 +464,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * previous snapshot. Returns {@code className#methodName} keys.
 	 */
 	protected Set<String> detectChangedMethods() {
-		return ChangeDetectionHelper.detectChangedMethods(
-				ChangeDetectionHelper.resolveTestSourceRoot(project, testSourceRoot),
-				ctx.resolveMethodHashFile(methodHashFile), getLog());
+		return ChangeDetectionOps.detectChangedMethods(resolveTestSourceRoot(),
+				ctx.resolveMethodHashFile(methodHashFile), pluginLog());
 	}
 
 	// ── Aggregation ───────────────────────────────────────────────────
@@ -308,6 +481,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected void autoAggregate(Path depsDirPath, Path idxPath) throws MojoExecutionException {
 		try {
 			DependencyMap map = DependencyMap.aggregate(depsDirPath);
+			if (map.size() == 0) {
+				getLog().info(
+						"[test-order] No test dependencies found in " + depsDirPath + " — skipping index creation.");
+				return;
+			}
 			map.save(idxPath);
 			getLog().info("[test-order] Auto-aggregated " + map.size() + " test classes → " + idxPath);
 			warnIfNoDeps(map);
@@ -325,73 +503,25 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected Set<String> findNewTestClasses(Path idxPath) {
 		if (!Files.exists(idxPath))
 			return Set.of();
-		Set<String> indexed;
+		DependencyMap depMap;
 		try {
-			indexed = DependencyMap.load(idxPath).testClasses();
+			depMap = DependencyMap.load(idxPath);
 		} catch (Exception e) {
 			getLog().debug("[test-order] Could not load index to check for new tests: " + e.getMessage());
 			return Set.of();
 		}
-		Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
-		if (!Files.isDirectory(testClassesDir))
-			return Set.of();
-		Set<String> newTests = new LinkedHashSet<>();
-		try (var walk = Files.walk(testClassesDir)) {
-			walk.filter(p -> p.toString().endsWith(".class") && !p.toString().contains("$")).forEach(p -> {
-				String relative = testClassesDir.relativize(p).toString();
-				String fqcn = relative.replace('/', '.').replace('\\', '.').replaceAll("\\.class$", "");
-				if (!indexed.contains(fqcn)) {
-					newTests.add(fqcn);
-				}
-			});
-		} catch (IOException e) {
-			getLog().debug("[test-order] Could not scan test-classes: " + e.getMessage());
-		}
-		return newTests;
+		return me.bechberger.testorder.ops.TestClassDiscovery.findNewTestClasses(depMap,
+				Path.of(project.getBuild().getTestOutputDirectory()), pluginLog());
 	}
 
 	protected Set<String> currentModuleTestClasses() {
-		Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
-		if (!Files.isDirectory(testClassesDir)) {
-			return Set.of();
-		}
-		Set<String> tests = new LinkedHashSet<>();
-		try (Stream<Path> walk = Files.walk(testClassesDir)) {
-			walk.filter(path -> path.toString().endsWith(".class") && !path.toString().contains("$")).forEach(path -> {
-				String relative = testClassesDir.relativize(path).toString();
-				tests.add(relative.replace('/', '.').replace('\\', '.').replaceAll("\\.class$", ""));
-			});
-		} catch (IOException e) {
-			getLog().debug("[test-order] Could not scan current module test-classes: " + e.getMessage());
-		}
-		return tests;
+		return me.bechberger.testorder.ops.TestClassDiscovery
+				.scanTestClasses(Path.of(project.getBuild().getTestOutputDirectory()));
 	}
 
 	protected DependencyMap currentModuleDependencyMap(DependencyMap dependencyMap) {
-		Set<String> moduleTests = currentModuleTestClasses();
-		if (moduleTests.isEmpty()) {
-			return dependencyMap;
-		}
-		DependencyMap filtered = new DependencyMap();
-		for (String testClass : moduleTests) {
-			if (dependencyMap.testClasses().contains(testClass)) {
-				filtered.put(testClass, dependencyMap.get(testClass));
-				if (dependencyMap.hasMethodDeps()) {
-					for (String methodKey : dependencyMap.methodKeys()) {
-						if (methodKey.startsWith(testClass + "#")) {
-							filtered.putMethodDeps(methodKey, dependencyMap.getMethodDeps(methodKey));
-							if (dependencyMap.hasMemberDeps()) {
-								filtered.putMethodMemberDeps(methodKey, dependencyMap.getMethodMemberDeps(methodKey));
-							}
-						}
-					}
-				}
-				if (dependencyMap.hasMemberDeps()) {
-					filtered.putMemberDeps(testClass, dependencyMap.getMemberDeps(testClass));
-				}
-			}
-		}
-		return filtered;
+		return me.bechberger.testorder.ops.TestClassDiscovery.filterToModule(dependencyMap,
+				Path.of(project.getBuild().getTestOutputDirectory()));
 	}
 
 	/**
@@ -400,22 +530,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * contain only framework/plugin classes.
 	 */
 	protected void warnIfNoDeps(DependencyMap depMap) {
-		if (depMap.size() > 0) {
-			boolean noAppDeps = depMap.testClasses().stream().allMatch(tc -> {
-				var deps = depMap.get(tc);
-				if (deps == null || deps.isEmpty())
-					return true;
-				// Filter out self-references and known framework classes
-				return deps.stream().allMatch(dep -> dep.equals(tc) || dep.startsWith("me.bechberger.testorder.")
-						|| dep.startsWith("org.junit.") || dep.startsWith("org.opentest4j."));
-			});
-			if (noAppDeps) {
-				getLog().warn("[test-order] No application-class dependencies found in the dependency index. "
-						+ "Test ordering will not be effective.");
-				getLog().warn("[test-order] If your source packages differ from the Maven groupId, " + "set -D"
-						+ MavenPluginConfigKeys.INCLUDE_PACKAGES + "=your.package.prefix");
-			}
-		}
+		me.bechberger.testorder.ops.TestClassDiscovery.warnIfNoDeps(depMap,
+				"-D" + MavenPluginConfigKeys.INCLUDE_PACKAGES, pluginLog());
 	}
 
 	/**
@@ -435,45 +551,73 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	// ── Hashes ────────────────────────────────────────────────────────
 
 	protected void snapshotHashes() {
-		ChangeDetectionHelper.snapshotHashes(ChangeDetectionHelper.resolveSourceRoot(project, sourceRoot),
-				ctx.resolveHashFile(hashFile), ChangeDetectionHelper.resolveTestSourceRoot(project, testSourceRoot),
-				ctx.resolveTestHashFile(testHashFile), ctx.resolveMethodHashFile(methodHashFile), getLog());
+		PluginLog plog = pluginLog();
+		HashSnapshotOperation.snapshot(resolveSourceRoot(), ctx.resolveHashFile(hashFile), resolveTestSourceRoot(),
+				ctx.resolveTestHashFile(testHashFile),
+				(label, path) -> plog.info("[test-order] Saved " + label + " hash snapshot: " + path),
+				(label, msg) -> plog.warn("[test-order] Failed to save " + label + " hash snapshot: " + msg));
+		ChangeDetectionOps.snapshotMethodHashes(resolveTestSourceRoot(), ctx.resolveMethodHashFile(methodHashFile),
+				plog);
+	}
+
+	// ── @AlwaysRun discovery ──────────────────────────────────────────
+
+	/**
+	 * Scans compiled test classes in {@code target/test-classes} for the
+	 * {@code @AlwaysRun} annotation descriptor in the constant pool. Returns the
+	 * set of fully-qualified class names that carry the annotation.
+	 */
+	protected Set<String> discoverAlwaysRunClasses() {
+		Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
+		Set<String> result = AlwaysRunScanner.scan(testClassesDir);
+		if (!result.isEmpty()) {
+			getLog().info("[test-order] Discovered @AlwaysRun classes: " + result);
+		}
+		return result;
 	}
 
 	// ── Weights ───────────────────────────────────────────────────────
 
 	protected TestOrderState.ScoringWeights resolveWeights(TestOrderState state) {
-		return resolveLoadedWeights(state).weights();
+		return me.bechberger.testorder.ops.WeightResolverOperation.resolveWeights(
+				weightsFile != null && !weightsFile.isBlank() ? Path.of(weightsFile) : null, state, pluginLog());
 	}
 
 	protected TestOrderState.LoadedWeights resolveLoadedWeights(TestOrderState state) {
-		if (weightsFile != null && !weightsFile.isBlank()) {
-			Path wf = Path.of(weightsFile);
-			if (Files.exists(wf)) {
-				try {
-					return TestOrderState.ScoringWeights.loadFromFile(wf);
-				} catch (IOException e) {
-					getLog().warn("[test-order] Failed to load weights file: " + e.getMessage());
-				}
-			} else {
-				getLog().warn("[test-order] Weights file not found: " + wf.toAbsolutePath());
-			}
-		}
-		TestOrderState.ScoringWeights sw = state.weights();
-		return new TestOrderState.LoadedWeights(sw, TestOrderState.WEIGHT_DEFS, state.failureDecay(),
-				state.methodFailureDecay(), state.durationAlpha(), state.methodDurationAlpha(),
-				state.failurePruneThreshold());
+		return me.bechberger.testorder.ops.WeightResolverOperation.resolveLoadedWeights(
+				weightsFile != null && !weightsFile.isBlank() ? Path.of(weightsFile) : null, state, pluginLog());
+	}
+
+	/**
+	 * Resolves weights from state/file and applies any user-specified score
+	 * overrides.
+	 */
+	protected TestOrderState.ScoringWeights buildWeightsWithOverrides(TestOrderState state) {
+		TestOrderState.ScoringWeights sw = resolveWeights(state);
+		return me.bechberger.testorder.ops.WeightResolverOperation.applyOverrides(sw, scoreNewTest, scoreChangedTest,
+				scoreMaxFailure, scoreSpeed, scoreSpeedPenalty, scoreDepOverlap, scoreChangeComplexity,
+				scoreStaticFieldBonus, scoreCoverageBonus);
+	}
+
+	/**
+	 * Builds a map of score overrides from the user-specified score parameters.
+	 * Returns null if no overrides are set.
+	 */
+	protected Map<String, Integer> buildScoreOverrides() {
+		return me.bechberger.testorder.ops.WeightResolverOperation.buildScoreOverrides(scoreNewTest, scoreChangedTest,
+				scoreMaxFailure, scoreSpeed, scoreSpeedPenalty, scoreDepOverlap, scoreChangeComplexity,
+				scoreStaticFieldBonus, scoreCoverageBonus);
 	}
 
 	// ── Orderer config ────────────────────────────────────────────────
 
 	/**
-	 * Escapes a path string for use in a Java {@code .properties} file. Backslashes
-	 * must be doubled because {@link java.util.Properties#load} treats them as
-	 * escape characters (e.g. {@code \t} → tab).
+	 * Escapes a value for use in a Java {@code .properties} file. Backslashes must
+	 * be doubled because {@link java.util.Properties#load} treats them as escape
+	 * characters (e.g. {@code \t} → tab).
 	 */
-	private static String escapePropertyPath(Path path) {
-		return path.toAbsolutePath().toString().replace("\\", "\\\\");
+	private static String escapePropertyValue(String value) {
+		return value.replace("\\", "\\\\");
 	}
 
 	/**
@@ -508,6 +652,19 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 		injectNativeAccessFlag();
 
+		// L6: Warn if user's junit-platform.properties contains orderer config that we'll overwrite
+		warnConflictingJUnitPlatformProperties();
+
+		Path resolvedSourceRoot = resolveSourceRoot();
+
+		// Build framework-agnostic config map via shared operation
+		Map<String, String> configMap = OrdererConfigOperation.buildConfig(
+				new OrdererConfigOperation.OrdererInput(ctx.resolveIndexFile(indexFile).toAbsolutePath().toString(),
+						ctx.resolveStateFile(stateFile).toAbsolutePath().toString(), weightsFile, changed, changedTests,
+						changedMethods, scoreOverrides, methodOrderingEnabled, springContextGrouping,
+						project.getBasedir().toPath().toAbsolutePath().toString(),
+						resolvedSourceRoot.toAbsolutePath().toString(), changeMode));
+
 		Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
 		try {
 			Files.createDirectories(testClassesDir);
@@ -518,45 +675,51 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 			Path configFile = testClassesDir.resolve("testorder-config.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
-				pw.println(
-						MavenPluginConfigKeys.INDEX_PATH + "=" + escapePropertyPath(ctx.resolveIndexFile(indexFile)));
-				pw.println(
-						MavenPluginConfigKeys.STATE_PATH + "=" + escapePropertyPath(ctx.resolveStateFile(stateFile)));
-				if (weightsFile != null && !weightsFile.isBlank()) {
-					pw.println(MavenPluginConfigKeys.WEIGHTS_FILE + "=" + escapePropertyPath(Path.of(weightsFile)));
+				for (var entry : configMap.entrySet()) {
+					pw.println(entry.getKey() + "=" + escapePropertyValue(entry.getValue()));
 				}
-				if (!changed.isEmpty()) {
-					pw.println(MavenPluginConfigKeys.CHANGED_CLASSES + "=" + String.join(",", changed));
-				}
-				if (!changedTests.isEmpty()) {
-					pw.println(MavenPluginConfigKeys.CHANGED_TEST_CLASSES + "=" + String.join(",", changedTests));
-				}
-				if (changedMethods != null && !changedMethods.isEmpty()) {
-					pw.println(MavenPluginConfigKeys.CHANGED_METHODS + "=" + String.join(",", changedMethods));
-				}
-				if (scoreOverrides != null) {
-					for (var e : scoreOverrides.entrySet()) {
-						pw.println("testorder.score." + e.getKey() + "=" + e.getValue());
-					}
-				}
-				if (methodOrderingEnabled) {
-					pw.println(MavenPluginConfigKeys.METHOD_ORDER_ENABLED + "=true");
-				}
-				// Pass project root and source root for structural diff / complexity
-				// computation
-				pw.println(
-						MavenPluginConfigKeys.PROJECT_ROOT + "=" + escapePropertyPath(project.getBasedir().toPath()));
-				Path resolvedSourceRoot = ChangeDetectionHelper.resolveSourceRoot(project, sourceRoot);
-				pw.println(MavenPluginConfigKeys.SOURCE_ROOT + "=" + escapePropertyPath(resolvedSourceRoot));
-				pw.println(MavenPluginConfigKeys.CHANGE_MODE + "=" + changeMode);
 			}
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to write orderer config", e);
 		}
+		suggestSpringContextGrouping();
 	}
 
 	protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests) throws MojoExecutionException {
 		writeOrdererConfig(changed, changedTests, null);
+	}
+
+	/**
+	 * Writes a pre-built config map to {@code target/test-classes}
+	 * (junit-platform.properties + testorder-config.properties) and injects the
+	 * test-order runtime classpath. Use this when the config map has already been
+	 * computed by a shared workflow.
+	 */
+	protected void writeOrdererConfigFromMap(Map<String, String> configMap) throws MojoExecutionException {
+		injectTestClasspath(resolveOrdererClasspath());
+		ensureListenerServiceFile();
+		if (isTestNGOnTestClasspath()) {
+			ensureTestNGListenerServiceFile();
+		}
+		injectNativeAccessFlag();
+
+		Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
+		try {
+			Files.createDirectories(testClassesDir);
+			Path propsFile = testClassesDir.resolve("junit-platform.properties");
+			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
+				pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.PriorityClassOrderer");
+			}
+			Path configFile = testClassesDir.resolve("testorder-config.properties");
+			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
+				for (var entry : configMap.entrySet()) {
+					pw.println(entry.getKey() + "=" + escapePropertyValue(entry.getValue()));
+				}
+			}
+		} catch (IOException e) {
+			throw new MojoExecutionException("Failed to write orderer config", e);
+		}
+		suggestSpringContextGrouping();
 	}
 
 	// ── Learn mode ────────────────────────────────────────────────────
@@ -599,18 +762,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		Path agentJar = resolveArtifact("test-order-agent");
 
-		StringBuilder agentArgs = new StringBuilder();
-		agentArgs.append("outputDir=").append(ctx.resolveDepsDir(depsDir).toAbsolutePath());
-		agentArgs.append(",mode=").append(instrumentationMode.toUpperCase());
-		if (includeIndexInArgs) {
-			agentArgs.append(",indexFile=").append(ctx.resolveIndexFile(indexFile).toAbsolutePath());
-		}
-		if (includePackages != null) {
-			agentArgs.append(",includePackages=").append(includePackages.replace(",", ";"));
-		}
-		if (verboseFile != null && !verboseFile.isEmpty()) {
-			agentArgs.append(",verboseFile=").append(Path.of(verboseFile).toAbsolutePath());
-		}
+		String agentArgs = me.bechberger.testorder.AgentArgsBuilder.buildArgs(ctx.resolveDepsDir(depsDir),
+				instrumentationMode, includeIndexInArgs ? ctx.resolveIndexFile(indexFile) : null, includePackages,
+				verboseFile);
 
 		String statPathStr = ctx.resolveStateFile(stateFile).toAbsolutePath().toString();
 		// -Xshare:off suppresses the CDS warning caused by -javaagent appending
@@ -634,8 +788,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			// MojoExecution configuration before this goal ran. Instead, use the
 			// maven.surefire.debug user property: Surefire reads this at fork-JVM time and
 			// appends the value verbatim to the JVM command line — exactly what we need.
-			getLog().info("[test-order] Surefire <argLine> is hardcoded; injecting agent "
-					+ "via maven.surefire.debug user property.");
+			getLog().warn("[test-order] Surefire <argLine> is hardcoded (no @{argLine} or ${argLine} placeholder). "
+					+ "Injecting agent via maven.surefire.debug user property. "
+					+ "Consider using @{argLine} in your POM to chain agents safely.");
 			String existingDebugValue = project.getProperties() != null
 					? project.getProperties().getProperty("maven.surefire.debug")
 					: null;
@@ -672,98 +827,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 */
 	protected static String resolveIncludePackages(String includePackages, boolean filterByGroupId,
 			MavenProject project, Log log) {
-		List<String> prefixes = new ArrayList<>();
-
-		// 1. Always scan source root for actual packages
-		List<String> sourcePackages = detectSourcePackages(project, log);
-		prefixes.addAll(sourcePackages);
-
-		// 2. Add user-specified packages (additive)
-		if (includePackages != null && !includePackages.isBlank()) {
-			for (String pkg : includePackages.split(",")) {
-				String trimmed = pkg.trim();
-				if (!trimmed.isEmpty())
-					prefixes.add(trimmed);
-			}
-		}
-
-		// 3. Fall back to groupId only when nothing else was detected/configured.
-		if (filterByGroupId && prefixes.isEmpty()) {
-			String groupId = project.getGroupId();
-			if (groupId != null && !groupId.isBlank()) {
-				prefixes.add(groupId);
-			}
-		}
-
-		if (prefixes.isEmpty())
-			return null;
-
-		// Remove redundant prefixes (a prefix covered by a shorter one)
-		List<String> minimal = minimisePrefixes(prefixes);
-		String result = String.join(",", minimal);
-		log.info("[test-order] Instrumentation packages: " + result);
-		return result;
-	}
-
-	/** Remove prefixes that are already covered by a shorter prefix in the list. */
-	static List<String> minimisePrefixes(List<String> prefixes) {
-		List<String> sorted = prefixes.stream().distinct().sorted().toList();
-		List<String> result = new ArrayList<>();
-		for (String p : sorted) {
-			boolean covered = result.stream().anyMatch(r -> p.startsWith(r + ".") || p.equals(r));
-			if (!covered)
-				result.add(p);
+		List<String> roots = project.getCompileSourceRoots();
+		Path sourceRoot = (roots != null && !roots.isEmpty())
+				? Path.of(roots.get(0))
+				: project.getBasedir().toPath().resolve("src/main/java");
+		String result = me.bechberger.testorder.PackageDetectorSupport.resolveIncludePackages(sourceRoot,
+				includePackages, filterByGroupId, project.getGroupId());
+		if (result != null) {
+			log.info("[test-order] Instrumentation packages: " + result);
 		}
 		return result;
-	}
-
-	/**
-	 * Scans the main source root(s) to detect top-level package prefixes. Walks
-	 * down single-child directories to find a stable package prefix (e.g.
-	 * {@code src/main/java/com/example/app} → {@code com.example.app}).
-	 */
-	static List<String> detectSourcePackages(MavenProject project, Log log) {
-		List<String> result = new ArrayList<>();
-		Path sourceRoot = ChangeDetectionHelper.resolveSourceRoot(project, null);
-		scanPackagePrefixes(sourceRoot, result, log);
-		return result;
-	}
-
-	/**
-	 * Scans a root directory for top-level package prefixes, walking down
-	 * single-child directory chains until a branching point or .java files are
-	 * found.
-	 */
-	private static void scanPackagePrefixes(Path root, List<String> result, Log log) {
-		if (!Files.isDirectory(root))
-			return;
-		try (Stream<Path> topDirs = Files.list(root)) {
-			topDirs.filter(Files::isDirectory).forEach(dir -> {
-				String topPkg = dir.getFileName().toString();
-				Path current = dir;
-				StringBuilder pkg = new StringBuilder(topPkg);
-				while (true) {
-					try (Stream<Path> children = Files.list(current)) {
-						List<Path> childDirs = children.filter(Files::isDirectory).toList();
-						boolean hasJavaFiles;
-						try (Stream<Path> files = Files.list(current)) {
-							hasJavaFiles = files.anyMatch(f -> f.toString().endsWith(".java"));
-						}
-						if (childDirs.size() == 1 && !hasJavaFiles) {
-							current = childDirs.get(0);
-							pkg.append('.').append(current.getFileName().toString());
-						} else {
-							break;
-						}
-					} catch (IOException e) {
-						break;
-					}
-				}
-				result.add(pkg.toString());
-			});
-		} catch (IOException e) {
-			log.debug("[test-order] Failed to scan source root " + root + ": " + e.getMessage());
-		}
 	}
 
 	/**
@@ -845,6 +918,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected Path[] resolveOrdererClasspath() throws MojoExecutionException {
 		LinkedHashSet<Path> entries = new LinkedHashSet<>();
 		entries.add(resolveModuleOutputOrArtifact("test-order-junit"));
+		entries.add(resolveModuleOutputOrArtifact("test-order-annotations"));
 		if (isTestNGOnTestClasspath()) {
 			entries.add(resolveModuleOutputOrArtifact("test-order-testng"));
 		}
@@ -938,16 +1012,22 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		try {
 			Files.createDirectories(serviceDir);
 			String listenerFqcn = "me.bechberger.testorder.TelemetryListener";
-			if (Files.exists(serviceFile)) {
-				String existing = Files.readString(serviceFile);
-				if (existing.contains(listenerFqcn)) {
-					return;
-				}
-				// append to existing file (user may have their own listeners)
-				Files.writeString(serviceFile, existing.stripTrailing() + "\n" + listenerFqcn + "\n");
-			} else {
-				Files.writeString(serviceFile, listenerFqcn + "\n");
+			// Use a single atomic read-check-write to avoid TOCTOU races in
+			// parallel reactor builds (CWE-367)
+			String existing = "";
+			try {
+				existing = Files.readString(serviceFile);
+			} catch (java.nio.file.NoSuchFileException ignored) {
+				// File doesn't exist yet — will create below
 			}
+			if (existing.contains(listenerFqcn)) {
+				return;
+			}
+			// Append to existing content (user may have their own listeners)
+			String content = existing.isEmpty()
+					? listenerFqcn + "\n"
+					: existing.stripTrailing() + "\n" + listenerFqcn + "\n";
+			Files.writeString(serviceFile, content);
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to write TelemetryListener service file", e);
 		}
@@ -960,6 +1040,89 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected boolean isTestNGOnTestClasspath() {
 		return project.getDependencies().stream()
 				.anyMatch(d -> "org.testng".equals(d.getGroupId()) && "testng".equals(d.getArtifactId()));
+	}
+
+	/**
+	 * Returns {@code true} when the project declares {@code junit:junit} (JUnit 4)
+	 * as a dependency.
+	 */
+	protected boolean isJUnit4OnTestClasspath() {
+		return project.getDependencies().stream()
+				.anyMatch(d -> "junit".equals(d.getGroupId()) && "junit".equals(d.getArtifactId()));
+	}
+
+	/**
+	 * Returns {@code true} when the project declares a JUnit Jupiter dependency.
+	 */
+	protected boolean isJUnit5OnTestClasspath() {
+		return project.getDependencies().stream()
+				.anyMatch(d -> "org.junit.jupiter".equals(d.getGroupId()));
+	}
+
+	/**
+	 * Warns when JUnit 4 tests are detected on the classpath, since test-order
+	 * only supports JUnit 5 (Jupiter) and TestNG.
+	 */
+	protected void warnJUnit4Unsupported() {
+		if (isJUnit4OnTestClasspath()) {
+			if (isJUnit5OnTestClasspath()) {
+				getLog().warn("[test-order] JUnit 4 dependency detected alongside JUnit 5. "
+						+ "test-order only supports JUnit 5 (Jupiter) and TestNG — "
+						+ "JUnit 4 tests will not be reordered or tracked. "
+						+ "Consider migrating to JUnit 5 or using the JUnit Vintage engine.");
+			} else {
+				getLog().warn("[test-order] JUnit 4 dependency detected but no JUnit 5 (Jupiter) found. "
+						+ "test-order does NOT support JUnit 4 — tests will not be reordered or tracked. "
+						+ "Please migrate to JUnit 5 or add the JUnit Vintage engine with "
+						+ "junit-jupiter-engine on the test classpath.");
+			}
+		}
+	}
+
+	/**
+	 * Returns {@code true} when the project declares {@code spring-boot-test} or
+	 * {@code spring-test} as a dependency.
+	 */
+	protected boolean isSpringTestOnClasspath() {
+		return project.getDependencies().stream().anyMatch(
+				d -> "org.springframework.boot".equals(d.getGroupId()) && "spring-boot-test".equals(d.getArtifactId())
+						|| "org.springframework".equals(d.getGroupId()) && "spring-test".equals(d.getArtifactId()));
+	}
+
+	/**
+	 * Logs a suggestion to enable {@code springContextGrouping} when Spring test
+	 * dependencies are detected but the option is not enabled.
+	 */
+	protected void suggestSpringContextGrouping() {
+		if (!springContextGrouping && isSpringTestOnClasspath()) {
+			getLog().info("[test-order] Spring test dependency detected. Consider enabling "
+					+ "-Dtestorder.score.springContextGrouping=true to reduce Spring context reloads "
+					+ "caused by test reordering.");
+		}
+	}
+
+	/**
+	 * L6: Warns if the user has a {@code junit-platform.properties} in
+	 * {@code src/test/resources} that configures a ClassOrderer or MethodOrderer,
+	 * since test-order overwrites this file in {@code target/test-classes}.
+	 */
+	protected void warnConflictingJUnitPlatformProperties() {
+		Path srcTestResources = project.getBasedir().toPath().resolve("src/test/resources/junit-platform.properties");
+		if (Files.exists(srcTestResources)) {
+			try {
+				String content = Files.readString(srcTestResources);
+				if (content.contains("junit.jupiter.testclass.order.default")
+						|| content.contains("junit.jupiter.testmethod.order.default")) {
+					getLog().warn("[test-order] src/test/resources/junit-platform.properties contains orderer config — "
+							+ "test-order will overwrite it in target/test-classes. Remove orderer settings "
+							+ "from your junit-platform.properties to avoid conflicts.");
+				}
+				if (content.contains("junit.platform.execution.listeners.deactivate")) {
+					getLog().warn("[test-order] src/test/resources/junit-platform.properties contains "
+							+ "listener deactivation config — this may disable test-order's TelemetryListener.");
+				}
+			} catch (IOException ignored) { }
+		}
 	}
 
 	/**
@@ -1071,5 +1234,38 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.exists(shadedJarPath))
 			return shadedJarPath;
 		return null;
+	}
+
+	/**
+	 * Eagerly triggers LZ4 class loading while suppressing stderr output. The
+	 * bundled lz4-java library prints warnings about {@code sun.misc.Unsafe} access
+	 * on first use, which clutters the Maven output on every invocation.
+	 * <p>
+	 * Uses a thread-local approach: captures and filters the warning output rather
+	 * than globally redirecting System.err (which is unsafe in multi-threaded
+	 * builds).
+	 */
+	private static volatile boolean lz4Initialized;
+
+	private void suppressLz4UnsafeWarnings() {
+		if (lz4Initialized) {
+			return;
+		}
+		synchronized (AbstractTestOrderMojo.class) {
+			if (lz4Initialized) {
+				return;
+			}
+			java.io.PrintStream origErr = System.err;
+			try {
+				// Brief, synchronized suppression — only runs once per JVM
+				System.setErr(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+				Class.forName("net.jpountz.lz4.LZ4Factory");
+			} catch (ClassNotFoundException ignored) {
+				// LZ4 not on classpath — nothing to suppress
+			} finally {
+				System.setErr(origErr);
+				lz4Initialized = true;
+			}
+		}
 	}
 }

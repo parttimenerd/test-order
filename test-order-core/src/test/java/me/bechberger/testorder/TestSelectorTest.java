@@ -210,4 +210,67 @@ class TestSelectorTest {
 			assertTrue(sel.selected().size() >= 50, "Selection should include at least the configured top-N tests");
 		});
 	}
+
+	// ── @AlwaysRun class selection tests ──────────────────────────────
+
+	@Test
+	void alwaysRunClassesAlwaysSelected() {
+		DependencyMap depMap = buildDepMap(
+				Map.of("com.A", Set.of("app.X"), "com.B", Set.of("app.Y"), "com.Smoke", Set.of("app.Z")));
+		TestOrderState state = stateWithDurations(Map.of("com.A", 100L, "com.B", 200L, "com.Smoke", 50L));
+
+		// topN=0, randomM=0 → only alwaysRun should be selected
+		TestSelector.Selection sel = new TestSelector(depMap, state, Set.of(), Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(0, 0, 42L), Set.of("com.Smoke"))
+				.select();
+
+		assertTrue(sel.selected().contains("com.Smoke"),
+				"alwaysRun class must be selected even with zero topN/randomM");
+		assertEquals(1, sel.selected().size());
+	}
+
+	@Test
+	void alwaysRunClassesSelectedBeforeTopN() {
+		DependencyMap depMap = buildDepMap(
+				Map.of("com.A", Set.of("app.X"), "com.B", Set.of("app.Y"), "com.Smoke", Set.of("app.Z")));
+		TestOrderState state = stateWithDurations(Map.of("com.A", 100L, "com.B", 200L, "com.Smoke", 50L));
+		Set<String> changed = Set.of("app.X"); // com.A gets dep overlap score
+
+		TestSelector.Selection sel = new TestSelector(depMap, state, changed, Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(2, 0, 42L), Set.of("com.Smoke"))
+				.select();
+
+		assertTrue(sel.selected().contains("com.Smoke"));
+		// com.Smoke should appear before topN entries
+		int smokeIdx = sel.selected().indexOf("com.Smoke");
+		assertEquals(0, smokeIdx, "alwaysRun class should be first in selected list");
+	}
+
+	@Test
+	void alwaysRunClassesNotInRemaining() {
+		DependencyMap depMap = buildDepMap(
+				Map.of("com.A", Set.of("app.X"), "com.B", Set.of("app.Y"), "com.Smoke", Set.of("app.Z")));
+		TestOrderState state = stateWithDurations(Map.of("com.A", 100L, "com.B", 200L, "com.Smoke", 50L));
+
+		TestSelector.Selection sel = new TestSelector(depMap, state, Set.of(), Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(1, 0, 42L), Set.of("com.Smoke"))
+				.select();
+
+		assertFalse(sel.remaining().contains("com.Smoke"), "alwaysRun class must not appear in remaining");
+	}
+
+	@Test
+	void alwaysRunWithNewTestsBothSelected() {
+		DependencyMap depMap = buildDepMap(Map.of("com.A", Set.of("app.X"), "com.Smoke", Set.of("app.Z")));
+		TestOrderState state = stateWithDurations(Map.of("com.A", 100L, "com.Smoke", 50L));
+		// com.New is not in depMap → treated as new
+		Set<String> changedTests = Set.of("com.New");
+
+		TestSelector.Selection sel = new TestSelector(depMap, state, Set.of(), changedTests,
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(0, 0, 42L), Set.of("com.Smoke"))
+				.select();
+
+		assertTrue(sel.selected().contains("com.Smoke"), "alwaysRun must be selected");
+		assertTrue(sel.selected().contains("com.New"), "new test must be selected");
+	}
 }

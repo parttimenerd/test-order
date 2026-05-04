@@ -6,12 +6,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * Singleton that records which application classes are used during test runs.
@@ -37,6 +35,12 @@ import java.util.concurrent.ConcurrentMap;
  * etc.) are captured in class-level deps only; method-level deps contain only
  * what the test method itself touches.</li>
  * </ul>
+ * <p>
+ * <b>Known limitation (C5/M23):</b> Dependency tracking uses a plain field (not ThreadLocal)
+ * and assumes tests run sequentially on the test runner's thread. Code that executes on
+ * a different thread — such as {@code InvocationInterceptor} thread switching (e.g. Swing EDT),
+ * {@code @Timeout(threadMode = SEPARATE_THREAD)}, or {@code assertTimeoutPreemptively()} —
+ * will NOT have its class accesses recorded. This is an inherent architectural constraint.
  * <p>
  * On JVM shutdown, merges recorded dependencies directly into the binary index
  * file (via reflection into DependencyMap on the system classpath). Falls back
@@ -73,21 +77,23 @@ public class UsageStore {
 			this.test = test;
 			this.method = method;
 		}
+
+		ActiveTrackers createMethodTracker(BitsetTracker methodTracker) {
+			return new ActiveTrackers(this.testClassName, this.test, methodTracker);
+		}
 	}
 
-	private final InheritableThreadLocal<ActiveTrackers> activeTrackers = new InheritableThreadLocal<>() {
-		@Override
-		protected ActiveTrackers initialValue() {
-			return ActiveTrackers.IDLE;
-		}
-	};
+	// Plain field — tests never execute in parallel within the same JVM
+	// process, so no ThreadLocal or volatile is needed. Using a plain field
+	// gives the hot path exactly one field read instead of a ThreadLocal lookup.
+	private ActiveTrackers activeTrackers = ActiveTrackers.IDLE;
 
 	// Only used in lifecycle methods (not hot path).
 	private volatile boolean methodLevelRecordingEnabled;
 
-	private final java.util.concurrent.ConcurrentHashMap<String, BitsetTracker> perTestTrackers = new java.util.concurrent.ConcurrentHashMap<>(
+	private final ConcurrentHashMap<String, BitsetTracker> perTestTrackers = new ConcurrentHashMap<>(
 			INITIAL_TEST_CLASS_CAPACITY);
-	private final java.util.concurrent.ConcurrentHashMap<String, BitsetTracker> perMethodTrackers = new java.util.concurrent.ConcurrentHashMap<>(
+	private final ConcurrentHashMap<String, BitsetTracker> perMethodTrackers = new ConcurrentHashMap<>(
 			INITIAL_TEST_METHOD_CAPACITY);
 
 	private UsageStore() {
@@ -97,6 +103,9 @@ public class UsageStore {
 	public static UsageStore getInstance() {
 		return INSTANCE;
 	}
+
+	// ── Hot path recording (called by instrumented code via reflection)
+	// ───────────────
 
 	public static void recordUsageIdFast(int classId) {
 		INSTANCE.recordUsageId(classId);
@@ -128,20 +137,14 @@ public class UsageStore {
 	/** Called when a test class starts execution. */
 	public void startTestClass(String testClass) {
 		BitsetTracker tracker = perTestTrackers.computeIfAbsent(testClass, k -> new BitsetTracker());
-		activeTrackers.set(new ActiveTrackers(testClass, tracker, null));
+		activeTrackers = new ActiveTrackers(testClass, tracker, null);
 	}
 
 	/** Called when a test class finishes execution. */
 	public void endTestClass(String testClass) {
-		ActiveTrackers active = activeTrackers.get();
-		if (active.test != null && testClass.equals(active.testClassName)) {
-			activeTrackers.remove();
+		if (activeTrackers.test != null && testClass.equals(activeTrackers.testClassName)) {
+			activeTrackers = ActiveTrackers.IDLE;
 		}
-	}
-
-	/** Backward-compatible overload. */
-	public void endTestClass() {
-		activeTrackers.remove();
 	}
 
 	// ── Test method lifecycle (called by TelemetryListener via reflection,
@@ -158,8 +161,7 @@ public class UsageStore {
 		}
 		String methodKey = testClass + "#" + methodName;
 		BitsetTracker tracker = perMethodTrackers.computeIfAbsent(methodKey, k -> new BitsetTracker());
-		ActiveTrackers active = activeTrackers.get();
-		activeTrackers.set(new ActiveTrackers(active.testClassName, active.test, tracker));
+		activeTrackers = activeTrackers.createMethodTracker(tracker);
 	}
 
 	/** Called when a test method finishes execution. */
@@ -167,8 +169,7 @@ public class UsageStore {
 		if (!methodLevelRecordingEnabled) {
 			return;
 		}
-		ActiveTrackers active = activeTrackers.get();
-		activeTrackers.set(new ActiveTrackers(active.testClassName, active.test, null));
+		activeTrackers = activeTrackers.createMethodTracker(null);
 	}
 
 	// ── Recording ─────────────────────────────────────────────────────
@@ -179,11 +180,10 @@ public class UsageStore {
 	 * reads.
 	 */
 	public void recordUsageId(int classId) {
-		ActiveTrackers a = activeTrackers.get();
-		BitsetTracker t = a.test;
+		BitsetTracker t = activeTrackers.test;
 		if (t != null)
 			t.recordClass(classId);
-		BitsetTracker m = a.method;
+		BitsetTracker m = activeTrackers.method;
 		if (m != null)
 			m.recordClass(classId);
 	}
@@ -194,11 +194,10 @@ public class UsageStore {
 	 * reads.
 	 */
 	public void recordMemberUsageId(int memberId) {
-		ActiveTrackers a = activeTrackers.get();
-		BitsetTracker t = a.test;
+		BitsetTracker t = activeTrackers.test;
 		if (t != null)
 			t.recordMember(memberId);
-		BitsetTracker m = a.method;
+		BitsetTracker m = activeTrackers.method;
 		if (m != null)
 			m.recordMember(memberId);
 	}
@@ -249,7 +248,7 @@ public class UsageStore {
 		// When outputDir is set, always write .deps files first (safe for multi-fork).
 		// If indexFile is also set, attempt direct merge afterwards so the index is
 		// immediately available
-		// (e.g. CombinedMojo first-run learn mode).
+		// (e.g. AutoMojo first-run learn mode).
 		if (outputDir != null && !outputDir.isEmpty()) {
 			// Ensure output directory exists once (not per file)
 			Path baseDir = Path.of(outputDir);
@@ -290,9 +289,7 @@ public class UsageStore {
 
 		// Fallback: only use direct merge when no outputDir is configured (edge case)
 		if (indexFile != null && !indexFile.isEmpty()) {
-			if (tryDirectMerge(allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps)) {
-				return;
-			}
+			tryDirectMerge(allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps);
 		}
 	}
 

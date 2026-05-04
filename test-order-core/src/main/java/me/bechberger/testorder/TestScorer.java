@@ -101,6 +101,13 @@ public class TestScorer {
 	private final TestOrderState state;
 	private final Set<String> changedClasses;
 	private final Set<String> changedTestClasses;
+	/**
+	 * Combined set of changed production classes and changed test classes, used for
+	 * dependency overlap scoring. This ensures that tests depending on changed test
+	 * utility classes (e.g., TestHelper, AbstractBaseTest) receive a depOverlap
+	 * score boost.
+	 */
+	private final Set<String> effectiveChangedForOverlap;
 	private final ChangedMembers changedMembers;
 	private final Map<String, Double> failureScores;
 	private final Map<String, Double> changeComplexity;
@@ -231,6 +238,18 @@ public class TestScorer {
 		this.failureScores = state.getFailureScores();
 		this.medianDuration = computeMedianDuration(state, testClassNames);
 		this.cachedOverlapCounts = new HashMap<>();
+
+		// Build effective changed set: production classes + test utility classes.
+		// This ensures that tests depending on changed test helpers get a depOverlap
+		// boost.
+		if (changedTestClasses.isEmpty()) {
+			this.effectiveChangedForOverlap = changedClasses;
+		} else {
+			Set<String> merged = new LinkedHashSet<>(changedClasses);
+			merged.addAll(changedTestClasses);
+			this.effectiveChangedForOverlap = Collections.unmodifiableSet(merged);
+		}
+
 		this.setCoverBonuses = weights.coverageBonus() > 0
 				? computeSetCoverBonuses(testClassNames, weights.coverageBonus())
 				: Map.of();
@@ -246,7 +265,7 @@ public class TestScorer {
 	 *         changed class appear)
 	 */
 	private Map<String, Integer> computeSetCoverBonuses(Iterable<String> testClassNames, int weight) {
-		if (changedClasses.isEmpty() || weight <= 0)
+		if (effectiveChangedForOverlap.isEmpty() || weight <= 0)
 			return Map.of();
 
 		// Build coverage map: test -> set of changed classes it covers
@@ -255,7 +274,7 @@ public class TestScorer {
 			Set<String> deps = depMap.get(test);
 			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(test) : null;
 			Set<String> covered = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
-					changedClasses);
+					effectiveChangedForOverlap);
 			// cache overlap count to avoid re-calling computeOverlapClasses in score()
 			cachedOverlapCounts.put(test, covered.size());
 			if (!covered.isEmpty()) {
@@ -265,7 +284,7 @@ public class TestScorer {
 		Map<String, Integer> bonuses = new HashMap<>();
 		int bonus = weight;
 
-		SetCoverComputer.Result<String> result = new SetCoverComputer<>(coverage, changedClasses).compute();
+		SetCoverComputer.Result<String> result = new SetCoverComputer<>(coverage, effectiveChangedForOverlap).compute();
 		for (String best : result.order()) {
 			if (result.initialCoverCounts().getOrDefault(best, 0) == 0) {
 				continue;
@@ -292,7 +311,7 @@ public class TestScorer {
 		int depOverlap = 0;
 		double complexityOvlp = 0.0;
 		int staticFieldOverlap = 0;
-		if (!changedClasses.isEmpty()) {
+		if (!effectiveChangedForOverlap.isEmpty()) {
 			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(testClassName) : null;
 
 			if (!setCoverBonuses.isEmpty()) {
@@ -301,7 +320,7 @@ public class TestScorer {
 				score += setCoverBonuses.getOrDefault(testClassName, 0);
 			} else {
 				Set<String> overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps,
-						changedMembers, changedClasses);
+						changedMembers, effectiveChangedForOverlap);
 				depOverlap = overlapClasses.size();
 				score += depOverlapScore(depOverlap, depTotal, weights.depOverlap());
 
@@ -355,6 +374,102 @@ public class TestScorer {
 
 	public long medianDuration() {
 		return medianDuration;
+	}
+
+	/**
+	 * Returns the scoring weights used by this scorer.
+	 */
+	public TestOrderState.ScoringWeights weights() {
+		return weights;
+	}
+
+	/**
+	 * Produces a detailed {@link ExplainEntry} for a single test class, including
+	 * per-component point breakdowns and the full dependency list.
+	 *
+	 * @param testClassName
+	 *            fully-qualified test class name
+	 * @param rank
+	 *            1-based position in the sorted order (caller provides this after
+	 *            sorting)
+	 */
+	public ExplainEntry explain(String testClassName, int rank) {
+		int totalScore = 0;
+
+		// Changed test
+		boolean isChanged = changedTestClasses.contains(testClassName);
+		int changedTestPts = isChanged ? weights.changedTest() : 0;
+		totalScore += changedTestPts;
+
+		// Dependencies
+		Set<String> deps = depMap.get(testClassName);
+		int depTotal = deps.size();
+		Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(testClassName) : null;
+
+		Set<String> overlapClasses = Set.of();
+		int depOverlapPts = 0;
+		double complexityOvlp = 0.0;
+		int complexityPts = 0;
+		int staticFieldPts = 0;
+		boolean hasStaticFieldOvlp = false;
+		int setCoverPts = 0;
+
+		if (!effectiveChangedForOverlap.isEmpty()) {
+			if (!setCoverBonuses.isEmpty()) {
+				int overlap = cachedOverlapCounts.getOrDefault(testClassName, 0);
+				setCoverPts = setCoverBonuses.getOrDefault(testClassName, 0);
+				totalScore += setCoverPts;
+				// rebuild overlap classes for display
+				overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
+						effectiveChangedForOverlap);
+			} else {
+				overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
+						effectiveChangedForOverlap);
+				depOverlapPts = depOverlapScore(overlapClasses.size(), depTotal, weights.depOverlap());
+				totalScore += depOverlapPts;
+
+				if (!changeComplexity.isEmpty() && !overlapClasses.isEmpty()) {
+					for (String dep : overlapClasses) {
+						complexityOvlp += changeComplexity.getOrDefault(dep, 0.0);
+					}
+					complexityPts = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
+					totalScore += complexityPts;
+				}
+			}
+
+			if (weights.staticFieldBonus() > 0 && memberDeps != null && !memberDeps.isEmpty()) {
+				int sfOverlap = StructuralChangeAnalyzer.computeStaticFieldOverlap(memberDeps, changedMembers);
+				if (sfOverlap > 0) {
+					staticFieldPts = weights.staticFieldBonus();
+					hasStaticFieldOvlp = true;
+					totalScore += staticFieldPts;
+				}
+			}
+		}
+
+		// Failure history
+		double failScore = failureScores.getOrDefault(testClassName, 0.0);
+		int failurePts = failScore > 0 ? Math.min((int) Math.ceil(failScore), weights.maxFailure()) : 0;
+		totalScore += failurePts;
+
+		// New test
+		boolean isNew = !depMap.testClasses().contains(testClassName);
+		int newTestPts = isNew ? weights.newTest() : 0;
+		totalScore += newTestPts;
+
+		// Speed
+		long dur = state.getDuration(testClassName, -1);
+		double sRatio = 0.0;
+		int speedPts = 0;
+		if (medianDuration > 0 && dur >= 0) {
+			sRatio = speedRatio(dur, medianDuration);
+			speedPts = speedBucketScore(dur, medianDuration, weights.speed(), weights.speedPenalty());
+			totalScore += speedPts;
+		}
+
+		return new ExplainEntry(testClassName, rank, totalScore, isChanged, changedTestPts, deps, overlapClasses,
+				depOverlapPts, complexityOvlp, complexityPts, hasStaticFieldOvlp, staticFieldPts, failScore, failurePts,
+				isNew, newTestPts, dur, medianDuration, sRatio, speedPts, setCoverPts, weights);
 	}
 
 	/**

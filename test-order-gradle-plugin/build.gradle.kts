@@ -21,6 +21,9 @@ dependencies {
     // for change detection, aggregation, and show-order tasks
     implementation("me.bechberger:test-order-core:${version}")
 
+    // CI artifact downloading (GitHub Actions, GitLab CI, HTTP)
+    implementation("me.bechberger:test-order-ci:${version}")
+
     // Shared dashboard resources (template, CSS, JS, bundled libraries)
     implementation("me.bechberger:test-order-dashboard:${version}")
 

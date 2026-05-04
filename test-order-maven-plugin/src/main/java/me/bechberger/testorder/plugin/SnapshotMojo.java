@@ -1,12 +1,14 @@
 package me.bechberger.testorder.plugin;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.*;
 
 import me.bechberger.testorder.changes.FileHashStore;
+import me.bechberger.testorder.ops.HashSnapshotOperation;
 
 /**
  * Scans the source tree and saves a compressed file hash snapshot for future
@@ -20,9 +22,19 @@ public class SnapshotMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
-		snapshot(ChangeDetectionHelper.resolveSourceRoot(project, sourceRoot), ctx.resolveHashFile(hashFile));
-		snapshot(ChangeDetectionHelper.resolveTestSourceRoot(project, testSourceRoot),
-				ctx.resolveTestHashFile(testHashFile));
+		snapshot(resolveSourceRoot(), ctx.resolveHashFile(hashFile));
+		snapshot(resolveTestSourceRoot(), ctx.resolveTestHashFile(testHashFile));
+
+		// Also snapshot Kotlin source roots if they exist
+		Path projectRoot = project.getBasedir().toPath();
+		Path kotlinMain = projectRoot.resolve("src/main/kotlin");
+		if (Files.isDirectory(kotlinMain)) {
+			snapshot(kotlinMain, HashSnapshotOperation.kotlinHashFile(ctx.resolveHashFile(hashFile)));
+		}
+		Path kotlinTest = projectRoot.resolve("src/test/kotlin");
+		if (Files.isDirectory(kotlinTest)) {
+			snapshot(kotlinTest, HashSnapshotOperation.kotlinHashFile(ctx.resolveTestHashFile(testHashFile)));
+		}
 	}
 
 	private void snapshot(Path sourceRoot, Path outputFile) throws MojoExecutionException {

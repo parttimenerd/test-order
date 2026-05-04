@@ -95,6 +95,9 @@ public final class PersistenceSupport {
 			return action.call();
 		}
 		cleanupStaleLock(lockFile);
+		// Keep lock objects in the map permanently so all threads synchronize on
+		// the same instance. Removing eagerly caused a race where a waiting
+		// thread and a new arrival could obtain different lock objects.
 		Object jvmLock = JVM_LOCKS.computeIfAbsent(lockFile, ignored -> new Object());
 		synchronized (jvmLock) {
 			Path parent = lockFile.getParent();
@@ -110,8 +113,6 @@ public final class PersistenceSupport {
 				} finally {
 					HELD_LOCKS.get().remove(lockFile);
 				}
-			} finally {
-				JVM_LOCKS.remove(lockFile, jvmLock);
 			}
 		}
 	}

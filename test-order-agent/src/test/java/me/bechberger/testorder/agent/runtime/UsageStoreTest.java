@@ -16,32 +16,6 @@ import org.junit.jupiter.api.Test;
 class UsageStoreTest {
 
 	@Test
-	void recordsTestClassesPerThread() throws Exception {
-		UsageStore store = newStore();
-		int alphaId = ClassIdMap.getInstance().getOrRegisterClass("com.example.AlphaDependency");
-		int betaId = ClassIdMap.getInstance().getOrRegisterClass("com.example.BetaDependency");
-
-		var executor = Executors.newFixedThreadPool(2);
-		try {
-			CountDownLatch ready = new CountDownLatch(2);
-			CountDownLatch start = new CountDownLatch(1);
-			Future<?> alpha = executor
-					.submit(() -> runClassRecording(store, "com.example.AlphaTest", alphaId, ready, start));
-			Future<?> beta = executor
-					.submit(() -> runClassRecording(store, "com.example.BetaTest", betaId, ready, start));
-			assertTrue(ready.await(5, TimeUnit.SECONDS));
-			start.countDown();
-			alpha.get(5, TimeUnit.SECONDS);
-			beta.get(5, TimeUnit.SECONDS);
-		} finally {
-			executor.shutdownNow();
-		}
-
-		assertEquals(Set.of("com.example.AlphaDependency"), collectDeps(store).get("com.example.AlphaTest"));
-		assertEquals(Set.of("com.example.BetaDependency"), collectDeps(store).get("com.example.BetaTest"));
-	}
-
-	@Test
 	void concurrentThreadsHaveIsolatedTracking() throws Exception {
 		UsageStore store = newStore();
 

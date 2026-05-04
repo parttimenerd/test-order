@@ -271,10 +271,8 @@ class UserPerspectiveIT {
 	void relearnAfterSourceChange() {
 		try {
 			// Add a new method to Product
-			project.replaceInFile(PRODUCT_SRC, "public double getPrice() { return price; }", """
-					public double getPrice() { return price; }
-
-					public boolean isFree() { return price == 0; }""");
+			project.replaceInFile(PRODUCT_SRC, "\tpublic double getPrice() {\n\t\treturn price;\n\t}",
+					"\tpublic double getPrice() {\n\t\treturn price;\n\t}\n\n\tpublic boolean isFree() { return price == 0; }");
 
 			// Re-learn — this should update the index
 			project.deleteIfExists(".test-order/test-dependencies.lz4");
@@ -337,7 +335,7 @@ class UserPerspectiveIT {
 			project.maven().learn();
 		}
 
-		MavenResult result = project.maven().combined();
+		MavenResult result = project.maven().auto();
 		assertThat(result).succeeded().outputContains("Tests run:");
 	}
 

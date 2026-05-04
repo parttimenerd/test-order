@@ -33,14 +33,14 @@ public class KotestFrameworkIT extends BaseFixtureIT {
 		assertEquals(5, baselineCount, "Expected 5 Kotest cases in fixture");
 
 		// Combined mode should run end-to-end on Kotest fixture
-		String combinedOutput = runMaven(fixtureDir, "test-order:combined", "test");
+		String combinedOutput = runMaven(fixtureDir, "test-order:auto", "test");
 		assertTestsPassed(combinedOutput);
 		int combinedCount = getTestCount(combinedOutput);
 		assertEquals(5, combinedCount, "Expected 5 Kotest cases when running test-order combined mode");
 		assertIndexFilesExist(fixtureDir);
 
 		// Re-running combined mode should preserve successful Kotest execution
-		String secondCombinedOutput = runMaven(fixtureDir, "test-order:combined", "test");
+		String secondCombinedOutput = runMaven(fixtureDir, "test-order:auto", "test");
 		assertTestsPassed(secondCombinedOutput);
 		int secondRunCount = getTestCount(secondCombinedOutput);
 		assertEquals(5, secondRunCount, "Kotest case count should remain stable across test-order runs");
@@ -79,7 +79,7 @@ public class KotestFrameworkIT extends BaseFixtureIT {
 		assertIndexFilesExist(fixtureDir);
 
 		// Then run again and verify tests still pass (order mode applied automatically)
-		String orderOutput = runMaven(fixtureDir, "test-order:combined", "test");
+		String orderOutput = runMaven(fixtureDir, "test-order:auto", "test");
 		assertTestsPassed(orderOutput);
 		int orderCount = getTestCount(orderOutput);
 		assertEquals(5, orderCount, "Order mode should run all Kotest cases");
@@ -97,7 +97,7 @@ public class KotestFrameworkIT extends BaseFixtureIT {
 		// Run combined mode with method ordering enabled
 		// Note: Kotest spec styles may not have traditional method descriptors,
 		// so this tests that the ordering doesn't error out on Kotest.
-		String output = runMaven(fixtureDir, "clean", "-Dtestorder.methodOrder.enabled=true", "test-order:combined",
+		String output = runMaven(fixtureDir, "clean", "-Dtestorder.methodOrder.enabled=true", "test-order:auto",
 				"test");
 		assertTestsPassed(output);
 		int count = getTestCount(output);

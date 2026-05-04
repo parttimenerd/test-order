@@ -49,12 +49,12 @@ public class ProjectStructureAnalyzerTest {
 		Set<String> depPkgs = analyzer.getDependencyPackages();
 
 		// Should contain user package
-		assertTrue(!userPkgs.isEmpty(), "Should extract user package (found: " + userPkgs + ")");
+		assertFalse(userPkgs.isEmpty(), "Should extract user package (found: " + userPkgs + ")");
 		assertTrue(userPkgs.stream().anyMatch(p -> p.contains("com.example")),
 				"Should extract user package with com.example");
 
 		// Should contain Spring but not JUnit (test scope)
-		assertTrue(!depPkgs.isEmpty(), "Should extract dependency packages (found: " + depPkgs + ")");
+		assertFalse(depPkgs.isEmpty(), "Should extract dependency packages (found: " + depPkgs + ")");
 		// Note: Relaxed check - just ensure we have some dependencies
 		// (JUnit test scope should be excluded, Spring should be included)
 	}

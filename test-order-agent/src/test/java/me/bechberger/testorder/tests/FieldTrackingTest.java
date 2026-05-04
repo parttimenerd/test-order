@@ -90,8 +90,6 @@ public class FieldTrackingTest {
 		store.recordMemberUsageId(fooFieldId);
 		store.recordMemberUsageId(fooBarId);
 
-		store.endTestClass();
-
 		// Verify no exceptions and integration works
 		assertTrue(true, "recordMemberUsageId completed without errors");
 	}
@@ -145,7 +143,6 @@ public class FieldTrackingTest {
 		assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS), "parallel recording should finish");
 
 		store.endTestMethod();
-		store.endTestClass();
 		store.setMethodLevelRecordingEnabled(false);
 
 		Map<String, Set<String>> classDeps = invokeSnapshot(store, "collectDeps");

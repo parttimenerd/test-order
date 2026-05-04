@@ -883,6 +883,29 @@ class PriorityClassOrdererTest {
 	static class ChangeBonusTest {
 	}
 
+	// @Order annotation fixtures
+	@org.junit.jupiter.api.Order(1)
+	static class OrderedClassA {
+	}
+
+	@org.junit.jupiter.api.Order(2)
+	static class OrderedClassB {
+	}
+
+	// @AlwaysRun annotation fixtures
+	@AlwaysRun
+	static class AlwaysRunTest {
+	}
+
+	@AlwaysRun
+	@TestOrder(scoreBonus = 100)
+	static class AlwaysRunWithBonusTest {
+	}
+
+	@AlwaysRun
+	static class AlwaysRunTest2 {
+	}
+
 	private void setupMinimalState(Path dir, Class<?>... classes) throws IOException {
 		DependencyMap map = new DependencyMap();
 		for (Class<?> c : classes)
@@ -954,6 +977,316 @@ class PriorityClassOrdererTest {
 		orderer.orderClasses(new StubClassOrdererContext(descs));
 		assertEquals(FirstPinnedTest.class.getName(), descs.get(0).getTestClass().getName());
 		assertEquals(LastPinnedTest.class.getName(), descs.get(descs.size() - 1).getTestClass().getName());
+	}
+
+	// --- @Order annotation tests ---
+
+	@Test
+	void orderAnnotationClassesPlacedInOrderValue(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, OrderedClassB.class, OrderedClassA.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(String.class), desc(OrderedClassB.class), desc(OrderedClassA.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		// @Order(1) before @Order(2), both before score-ordered String
+		assertEquals(OrderedClassA.class.getName(), descs.get(0).getTestClass().getName());
+		assertEquals(OrderedClassB.class.getName(), descs.get(1).getTestClass().getName());
+	}
+
+	@Test
+	void orderAnnotationClassesAfterFirstPinned(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, FirstPinnedTest.class, OrderedClassA.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(String.class), desc(OrderedClassA.class), desc(FirstPinnedTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		// FIRST pinned first, then @Order, then score-ordered
+		assertEquals(FirstPinnedTest.class.getName(), descs.get(0).getTestClass().getName());
+		assertEquals(OrderedClassA.class.getName(), descs.get(1).getTestClass().getName());
+	}
+
+	@Test
+	void mixedOrderAndScoreOrderedClasses(@TempDir Path dir) throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of("com.Dep"));
+		map.put(Integer.class.getName(), Set.of());
+		map.put(OrderedClassA.class.getName(), Set.of());
+		Path idx = dir.resolve("test.idx");
+		map.save(idx);
+		System.setProperty("testorder.index.path", idx.toString());
+		System.setProperty("testorder.changed.classes", "com.Dep");
+		System.clearProperty("testorder.state.path");
+		System.clearProperty("testorder.changed.test.classes");
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(Integer.class), desc(OrderedClassA.class), desc(String.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		// @Order first, then String (has dep overlap), then Integer
+		assertEquals(OrderedClassA.class.getName(), descs.get(0).getTestClass().getName());
+	}
+
+	@Test
+	void noOrderAnnotation_normalBehavior(@TempDir Path dir) throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of("com.A"));
+		map.put(Integer.class.getName(), Set.of());
+		Path idx = dir.resolve("test.idx");
+		map.save(idx);
+		System.setProperty("testorder.index.path", idx.toString());
+		System.setProperty("testorder.changed.classes", "com.A");
+		System.clearProperty("testorder.state.path");
+		System.clearProperty("testorder.changed.test.classes");
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(Integer.class), desc(String.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		assertEquals(String.class.getName(), descs.get(0).getTestClass().getName());
+	}
+
+	// --- Parameterized class ordering tests ---
+
+	@Test
+	void parameterizedClassWithFailureOrderedFirst() throws IOException {
+		// Parameterized class Long had failures (aggregated from multiple arg sets)
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of("com.A"));
+		map.put(Integer.class.getName(), Set.of("com.B"));
+		map.put(Long.class.getName(), Set.of("com.C"));
+		Path idx = tempDir.resolve("test.idx");
+		map.save(idx);
+
+		TestOrderState state = new TestOrderState();
+		state.recordDuration(String.class.getName(), 100);
+		state.recordDuration(Integer.class.getName(), 100);
+		state.recordDuration(Long.class.getName(), 100);
+		// Long had failures from parameterized arg sets
+		state.recordFailure(Long.class.getName());
+		setupState(state);
+
+		System.setProperty("testorder.index.path", idx.toString());
+		System.clearProperty("testorder.changed.classes");
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(String.class), desc(Integer.class), desc(Long.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+
+		assertEquals(Long.class.getName(), descs.get(0).getTestClass().getName(),
+				"Parameterized class with failure should be ordered first");
+	}
+
+	@Test
+	void parameterizedClassWithAggregatedDurationOrderedBySpeed() throws IOException {
+		// String: fast (aggregated from 3 param-class arg sets), Integer: slow
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of("com.X"));
+		map.put(Integer.class.getName(), Set.of("com.Y"));
+		map.put(Long.class.getName(), Set.of("com.Z"));
+		Path idx = tempDir.resolve("test.idx");
+		map.save(idx);
+
+		TestOrderState state = new TestOrderState();
+		// String fast (aggregated), Integer slow, Long medium (our median anchor)
+		state.recordDuration(String.class.getName(), 10);
+		state.recordDuration(Integer.class.getName(), 5000);
+		state.recordDuration(Long.class.getName(), 100);
+		setupState(state);
+
+		System.setProperty("testorder.index.path", idx.toString());
+		System.setProperty("testorder.changed.classes", "com.X,com.Y,com.Z");
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(Integer.class), desc(Long.class), desc(String.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+
+		// Integer (slow) should not be first
+		assertNotEquals(Integer.class.getName(), descs.get(0).getTestClass().getName(),
+				"Slow parameterized class must not run first");
+	}
+
+	@Test
+	void parameterizedClassChangedDependencyOrderedFirst() throws IOException {
+		// Simulate a parameterized class whose dependency was changed
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of("com.Changed", "com.Stable"));
+		map.put(Integer.class.getName(), Set.of("com.Other"));
+		Path idx = tempDir.resolve("test.idx");
+		map.save(idx);
+
+		TestOrderState state = new TestOrderState();
+		state.recordDuration(String.class.getName(), 100);
+		state.recordDuration(Integer.class.getName(), 100);
+		setupState(state);
+
+		System.setProperty("testorder.index.path", idx.toString());
+		System.setProperty("testorder.changed.classes", "com.Changed");
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(Integer.class), desc(String.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+
+		// String depends on the changed class → higher dep overlap score
+		assertEquals(String.class.getName(), descs.get(0).getTestClass().getName(),
+				"Parameterized class depending on changed class should run first");
+	}
+
+	@Test
+	void parameterizedClassAsChangedTestClassGetsBonus() throws IOException {
+		// When a parameterized class itself is listed in changedTestClasses,
+		// it should receive the changedTest bonus and be ordered first.
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of("com.Dep"));
+		map.put(Integer.class.getName(), Set.of("com.Dep"));
+		Path idx = tempDir.resolve("test.idx");
+		map.save(idx);
+
+		TestOrderState state = new TestOrderState();
+		state.recordDuration(String.class.getName(), 100);
+		state.recordDuration(Integer.class.getName(), 100);
+		setupState(state);
+
+		System.setProperty("testorder.index.path", idx.toString());
+		System.clearProperty("testorder.changed.classes");
+		// Integer is the changed parameterized test class
+		System.setProperty("testorder.changed.test.classes", Integer.class.getName());
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(String.class), desc(Integer.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+
+		assertEquals(Integer.class.getName(), descs.get(0).getTestClass().getName(),
+				"Changed parameterized test class should be ordered first");
+	}
+
+	// --- @AlwaysRun annotation tests ---
+
+	@Test
+	void alwaysRunMovesToFront(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, Integer.class, AlwaysRunTest.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(String.class), desc(Integer.class), desc(AlwaysRunTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		assertEquals(AlwaysRunTest.class.getName(), descs.get(0).getTestClass().getName());
+	}
+
+	@Test
+	void alwaysRunAndFirstPinnedBothAtFront(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, AlwaysRunTest.class, FirstPinnedTest.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(String.class), desc(FirstPinnedTest.class), desc(AlwaysRunTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		// Both should be in the first two positions
+		Set<String> firstTwo = Set.of(descs.get(0).getTestClass().getName(), descs.get(1).getTestClass().getName());
+		assertTrue(firstTwo.contains(AlwaysRunTest.class.getName()));
+		assertTrue(firstTwo.contains(FirstPinnedTest.class.getName()));
+	}
+
+	@Test
+	void alwaysRunWithScoreBonus(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, AlwaysRunTest.class, AlwaysRunWithBonusTest.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(String.class), desc(AlwaysRunTest.class), desc(AlwaysRunWithBonusTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		// AlwaysRunWithBonusTest has scoreBonus=100, so it sorts first within pinned
+		// group
+		assertEquals(AlwaysRunWithBonusTest.class.getName(), descs.get(0).getTestClass().getName());
+		assertEquals(AlwaysRunTest.class.getName(), descs.get(1).getTestClass().getName());
+	}
+
+	@Test
+	void alwaysRunNotAffectedByScoreBasedSort(@TempDir Path dir) throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of("com.A", "com.B", "com.C"));
+		map.put(AlwaysRunTest.class.getName(), Set.of());
+		Path idx = dir.resolve("test.idx");
+		map.save(idx);
+		System.setProperty("testorder.index.path", idx.toString());
+		System.setProperty("testorder.changed.classes", "com.A,com.B,com.C");
+		System.clearProperty("testorder.state.path");
+		System.clearProperty("testorder.changed.test.classes");
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(String.class), desc(AlwaysRunTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		// AlwaysRunTest pinned first even though String has high dep overlap score
+		assertEquals(AlwaysRunTest.class.getName(), descs.get(0).getTestClass().getName());
+	}
+
+	@Test
+	void multipleAlwaysRunSortedByName(@TempDir Path dir) throws IOException {
+		setupMinimalState(dir, String.class, AlwaysRunTest2.class, AlwaysRunTest.class);
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(
+				List.of(desc(String.class), desc(AlwaysRunTest2.class), desc(AlwaysRunTest.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+		// Both @AlwaysRun at front, sorted by name (AlwaysRunTest < AlwaysRunTest2)
+		assertTrue(descs.get(0).getTestClass().getName().contains("AlwaysRunTest"));
+		assertTrue(descs.get(1).getTestClass().getName().contains("AlwaysRunTest"));
+		assertFalse(descs.get(2).getTestClass().getName().contains("AlwaysRun"));
+	}
+
+	// ── @Disabled class does not interfere with ordering ────────────────
+
+	@Test
+	void disabledClassDoesNotInterfereWithOrdering() throws IOException {
+		// @Disabled classes are excluded by JUnit during discovery.
+		// If a class descriptor set does NOT include the disabled class,
+		// ordering of the remaining classes must work normally.
+		TestOrderState state = new TestOrderState();
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of("com.example.Dep"));
+		map.put(Integer.class.getName(), Set.of("com.example.Dep"));
+		Path idx = tempDir.resolve("disabled-class-test.idx");
+		map.save(idx);
+		System.setProperty("testorder.index.path", idx.toString());
+		state.recordDuration(String.class.getName(), 100);
+		state.recordDuration(Integer.class.getName(), 200);
+		setupState(state);
+
+		System.setProperty("testorder.changed.classes", "com.example.Dep");
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		// Only enabled classes appear — DisabledClass is absent
+		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(Integer.class), desc(String.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+
+		// Ordering completes without errors — faster class runs first
+		assertEquals(String.class.getName(), descs.get(0).getTestClass().getName(),
+				"Faster class should be ordered first when @Disabled class is absent");
+	}
+
+	// ── @ClassTemplate ordered like parameterized class ─────────────────
+
+	@Test
+	void classTemplateWithFailureOrderedFirst() throws IOException {
+		// @ClassTemplate produces multiple ClassSource events identical to
+		// @ParameterizedClass — the orderer treats them the same.
+		TestOrderState state = new TestOrderState();
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of("com.example.Dep"));
+		map.put(Integer.class.getName(), Set.of("com.example.Dep"));
+		Path idx = tempDir.resolve("class-template-test.idx");
+		map.save(idx);
+		System.setProperty("testorder.index.path", idx.toString());
+		state.recordDuration(String.class.getName(), 100);
+		state.recordDuration(Integer.class.getName(), 100);
+		// Integer (simulating @ClassTemplate class) has a failure
+		state.recordFailure(Integer.class.getName());
+		setupState(state);
+
+		System.setProperty("testorder.changed.classes", "com.example.Dep");
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(String.class), desc(Integer.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+
+		assertEquals(Integer.class.getName(), descs.get(0).getTestClass().getName(),
+				"@ClassTemplate with failure must be ordered first");
 	}
 
 	// --- Stubs ---

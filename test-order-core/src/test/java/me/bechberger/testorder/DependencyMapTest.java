@@ -32,20 +32,18 @@ class DependencyMapTest {
 	}
 
 	@Test
-	void saveTextAndLoadRoundTrip() throws IOException {
+	void loadRejectsTextFormat() throws IOException {
 		DependencyMap original = new DependencyMap();
 		original.put("com.example.FooTest", Set.of("com.example.Foo", "com.example.Bar"));
-		original.put("com.example.BarTest", Set.of("com.example.Bar", "com.example.Baz"));
 
 		Path indexFile = tempDir.resolve("test.idx");
 		original.saveText(indexFile);
 
-		DependencyMap loaded = DependencyMap.load(indexFile);
-		assertEquals(original, loaded);
+		assertThrows(IOException.class, () -> DependencyMap.load(indexFile));
 	}
 
 	@Test
-	void v2BinarySmallerThanV1Text() throws IOException {
+	void binarySmallerThanText() throws IOException {
 		DependencyMap map = new DependencyMap();
 		// create data with lots of prefix redundancy
 		for (int i = 0; i < 20; i++) {
@@ -56,18 +54,18 @@ class DependencyMapTest {
 			map.put("org.springframework.samples.petclinic.test.TestClass" + i, deps);
 		}
 
-		Path v1 = tempDir.resolve("v1.idx");
-		Path v2 = tempDir.resolve("v2.idx");
-		map.saveText(v1);
-		map.save(v2);
+		Path textIdx = tempDir.resolve("text.idx");
+		Path binIdx = tempDir.resolve("bin.idx");
+		map.saveText(textIdx);
+		map.save(binIdx);
 
-		long v1Size = Files.size(v1);
-		long v2Size = Files.size(v2);
-		assertTrue(v2Size < v1Size, "V2 (" + v2Size + " bytes) should be smaller than V1 (" + v1Size + " bytes)");
+		long textSize = Files.size(textIdx);
+		long binSize = Files.size(binIdx);
+		assertTrue(binSize < textSize, "Binary (" + binSize + " bytes) should be smaller than text (" + textSize + " bytes)");
 	}
 
 	@Test
-	void v2RowDeduplication() throws IOException {
+	void rowDeduplication() throws IOException {
 		// two tests share the exact same dependency set → should be grouped
 		DependencyMap map = new DependencyMap();
 		Set<String> sharedDeps = Set.of("com.example.A", "com.example.B", "com.example.C");
@@ -85,7 +83,7 @@ class DependencyMapTest {
 	}
 
 	@Test
-	void v2EmptyDeps() throws IOException {
+	void emptyDeps() throws IOException {
 		DependencyMap map = new DependencyMap();
 		map.put("com.example.EmptyTest", Set.of());
 
@@ -98,7 +96,7 @@ class DependencyMapTest {
 	}
 
 	@Test
-	void v2PreservesInsertionOrder() throws IOException {
+	void preservesInsertionOrder() throws IOException {
 		DependencyMap map = new DependencyMap();
 		map.put("ZTest", Set.of("Z1"));
 		map.put("ATest", Set.of("A1"));
@@ -114,12 +112,10 @@ class DependencyMapTest {
 	}
 
 	@Test
-	void loadAutoDetectsV1() throws IOException {
+	void loadRejectsBinaryWithWrongMagic() throws IOException {
 		Path indexFile = tempDir.resolve("test.idx");
 		Files.writeString(indexFile, "# test-order dependency index v1\ncom.example.FooTest\tcom.example.Foo\n");
-		DependencyMap map = DependencyMap.load(indexFile);
-		assertEquals(1, map.size());
-		assertEquals(Set.of("com.example.Foo"), map.get("com.example.FooTest"));
+		assertThrows(IOException.class, () -> DependencyMap.load(indexFile));
 	}
 
 	@Test
@@ -211,18 +207,21 @@ class DependencyMapTest {
 
 	@Test
 	void loadWithEmptyDeps() throws IOException {
-		// test class with no dependencies (V1 text format)
+		DependencyMap original = new DependencyMap();
+		original.put("com.example.EmptyTest", Set.of());
 		Path indexFile = tempDir.resolve("test.idx");
-		Files.writeString(indexFile, "# test-order dependency index v1\ncom.example.EmptyTest\t\n");
+		original.save(indexFile);
 		DependencyMap map = DependencyMap.load(indexFile);
 		assertEquals(1, map.size());
 		assertTrue(map.get("com.example.EmptyTest").isEmpty());
 	}
 
 	@Test
-	void loadSkipsBlankLines() throws IOException {
+	void loadSingleEntry() throws IOException {
+		DependencyMap original = new DependencyMap();
+		original.put("com.example.FooTest", Set.of("com.example.Foo"));
 		Path indexFile = tempDir.resolve("test.idx");
-		Files.writeString(indexFile, "# test-order dependency index v1\n\ncom.example.FooTest\tcom.example.Foo\n\n");
+		original.save(indexFile);
 		DependencyMap map = DependencyMap.load(indexFile);
 		assertEquals(1, map.size());
 	}
@@ -289,7 +288,7 @@ class DependencyMapTest {
 	}
 
 	@Test
-	void v2EmptyMap() throws IOException {
+	void emptyMap() throws IOException {
 		DependencyMap map = new DependencyMap();
 		Path idx = tempDir.resolve("empty.idx");
 		map.save(idx);
@@ -450,5 +449,102 @@ class DependencyMapTest {
 		Files.write(idx, garbage);
 		assertThrows(IOException.class, () -> DependencyMap.load(idx),
 				"Loading garbage binary data must throw IOException");
+	}
+
+	// ── Section-based format v1: forward compatibility ─────────────────
+
+	@Test
+	void unknownSectionTypeIsSkippedOnLoad() throws IOException {
+		// Write a valid v1 index, then load it and verify that extra unknown
+		// section types are harmless — they get skipped by the reader.
+		// Strategy: save normally, then tamper with the file to inject an
+		// unknown section. Instead, we just verify the normal round-trip works
+		// (section-based format), and use a crafted binary to test skip logic.
+		DependencyMap original = new DependencyMap();
+		original.put("com.example.FooTest", Set.of("com.example.Foo"));
+
+		// Save normally to get a valid file
+		Path idx = tempDir.resolve("v1-unknown-section.lz4");
+		original.save(idx);
+
+		// Round-trip must work
+		DependencyMap loaded = DependencyMap.load(idx);
+		assertEquals(original, loaded);
+
+		// Now create a hand-crafted v1 file with an extra unknown section
+		Path crafted = tempDir.resolve("v1-crafted-unknown.lz4");
+		try (var fos = Files.newOutputStream(crafted);
+				var lz4 = new net.jpountz.lz4.LZ4FrameOutputStream(fos);
+				var out = new java.io.DataOutputStream(lz4)) {
+
+			out.write(new byte[] { 'T', 'O', 'R', 'D' }); // magic
+			out.writeShort(1);                              // version
+
+			out.writeInt(4); // sectionCount: trie + test_classes + dep_groups + unknown
+
+			// Build a minimal trie with one entry
+			var trie = new ClassNameTrie();
+			trie.insert("com.example.FooTest");
+			trie.insert("com.example.Foo");
+			trie.assignIds();
+
+			// Section 1: TRIE
+			var trieBuf = new java.io.ByteArrayOutputStream();
+			trie.writeTo(new java.io.DataOutputStream(trieBuf));
+			byte[] trieBytes = trieBuf.toByteArray();
+			out.writeShort(1); // SECTION_TRIE
+			out.writeInt(trieBytes.length);
+			out.write(trieBytes);
+
+			// Section 2: TEST_CLASSES
+			var tcBuf = new java.io.ByteArrayOutputStream();
+			var tcOut = new java.io.DataOutputStream(tcBuf);
+			tcOut.writeInt(1); // testCount
+			tcOut.writeInt(trie.getId("com.example.FooTest"));
+			tcOut.flush();
+			byte[] tcBytes = tcBuf.toByteArray();
+			out.writeShort(2); // SECTION_TEST_CLASSES
+			out.writeInt(tcBytes.length);
+			out.write(tcBytes);
+
+			// Section 3: DEP_GROUPS
+			var dgBuf = new java.io.ByteArrayOutputStream();
+			var dgOut = new java.io.DataOutputStream(dgBuf);
+			dgOut.writeInt(1); // groupCount
+			var depBitmap = new org.roaringbitmap.RoaringBitmap();
+			depBitmap.add(trie.getId("com.example.Foo"));
+			depBitmap.runOptimize();
+			int depSize = depBitmap.serializedSizeInBytes();
+			dgOut.writeInt(depSize);
+			depBitmap.serialize(dgOut);
+			var memberBitmap = new org.roaringbitmap.RoaringBitmap();
+			memberBitmap.add(0); // test index 0
+			memberBitmap.runOptimize();
+			int memberSize = memberBitmap.serializedSizeInBytes();
+			dgOut.writeInt(memberSize);
+			memberBitmap.serialize(dgOut);
+			dgOut.flush();
+			byte[] dgBytes = dgBuf.toByteArray();
+			out.writeShort(3); // SECTION_DEP_GROUPS
+			out.writeInt(dgBytes.length);
+			out.write(dgBytes);
+
+			// Section 4: UNKNOWN (type=999)
+			byte[] unknownPayload = "future data here".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			out.writeShort(999);
+			out.writeInt(unknownPayload.length);
+			out.write(unknownPayload);
+		}
+
+		// Must load successfully, skipping the unknown section
+		DependencyMap craftedLoaded = DependencyMap.load(crafted);
+		assertEquals(1, craftedLoaded.size());
+		assertEquals(Set.of("com.example.Foo"), craftedLoaded.get("com.example.FooTest"));
+	}
+
+	@Test
+	void formatVersionIsAccessible() {
+		// Verify the FORMAT_VERSION constant is exposed for ExportJsonOperation
+		assertEquals(1, DependencyMap.FORMAT_VERSION);
 	}
 }

@@ -25,6 +25,8 @@
         <playwright.version>1.52.0</playwright.version>
         <!-- Set to true on CI without display or Chromium; browser install step below handles it -->
         <playwright.skip>false</playwright.skip>
+        <!-- Browser-based UI tests are skipped unless explicitly enabled with -Dtestorder.ui=true -->
+        <skipITs>true</skipITs>
     </properties>
 
     <dependencies>
@@ -121,6 +123,7 @@
                     </execution>
                 </executions>
                 <configuration>
+                    <skipITs>${skipITs}</skipITs>
                     <includes>
                         <include>**/*IT.java</include>
                     </includes>
@@ -134,4 +137,20 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Activate browser-based UI tests: mvn verify -pl test-order-dashboard-ui-tests -Dtestorder.ui=true -->
+        <profile>
+            <id>ui-tests</id>
+            <activation>
+                <property>
+                    <name>testorder.ui</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+    </profiles>
 </project>

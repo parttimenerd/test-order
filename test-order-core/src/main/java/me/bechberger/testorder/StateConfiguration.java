@@ -37,6 +37,7 @@ public class StateConfiguration {
 	private double emaVarianceThreshold = TestOrderState.DEFAULT_EMA_VARIANCE_THRESHOLD;
 	private int historyMaxRuns = TestOrderState.DEFAULT_HISTORY_MAX_RUNS;
 	private int runsSinceLearn = 0;
+	private String dependencyFingerprint = null;
 
 	/**
 	 * Constructs a configuration with all default values from the resource file.
@@ -56,6 +57,7 @@ public class StateConfiguration {
 		this.emaVarianceThreshold = other.emaVarianceThreshold;
 		this.historyMaxRuns = other.historyMaxRuns;
 		this.runsSinceLearn = other.runsSinceLearn;
+		this.dependencyFingerprint = other.dependencyFingerprint;
 	}
 
 	// ── Failure Decay ─────────────────────────────────────────────────
@@ -264,7 +266,7 @@ public class StateConfiguration {
 	/**
 	 * Returns the count of order-mode test runs since the last learn mode.
 	 * <p>
-	 * This counter is used by the {@code combined} mojo to trigger periodic genetic
+	 * This counter is used by the {@code auto} mojo to trigger periodic genetic
 	 * algorithm weight optimization.
 	 * </p>
 	 *
@@ -302,6 +304,25 @@ public class StateConfiguration {
 		this.runsSinceLearn = value;
 	}
 
+	// ── Dependency Fingerprint ────────────────────────────────────────
+
+	/**
+	 * Returns the stored fingerprint of build/dependency files (pom.xml,
+	 * build.gradle, etc.) from the last learn run, or {@code null} if not yet
+	 * recorded.
+	 */
+	public String dependencyFingerprint() {
+		return dependencyFingerprint;
+	}
+
+	/**
+	 * Sets the dependency fingerprint. Called after a learn run completes to
+	 * record the current state of build files.
+	 */
+	public void setDependencyFingerprint(String fingerprint) {
+		this.dependencyFingerprint = fingerprint;
+	}
+
 	/**
 	 * Resets all configuration parameters to their default values from the resource
 	 * file.
@@ -315,5 +336,6 @@ public class StateConfiguration {
 		this.emaVarianceThreshold = TestOrderState.DEFAULT_EMA_VARIANCE_THRESHOLD;
 		this.historyMaxRuns = TestOrderState.DEFAULT_HISTORY_MAX_RUNS;
 		this.runsSinceLearn = 0;
+		this.dependencyFingerprint = null;
 	}
 }

@@ -41,7 +41,7 @@ class MavenCliIntegrationTest {
 	@Test
 	@DisplayName("INT-M-CLI-001: CLI Downloads Deps for Maven Plugin")
 	void testCliDownloadsDependenciesForMavenPlugin() throws IOException {
-		// Scenario: User runs `test-order-cli download` to cache deps for Maven plugin
+		// Scenario: User runs `mvn test-order:download` to cache deps for Maven plugin
 		// Expected: Deps cached in location Maven plugin can find
 
 		String cliConfig = """

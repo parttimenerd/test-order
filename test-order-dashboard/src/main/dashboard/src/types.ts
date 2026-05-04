@@ -169,3 +169,14 @@ export interface SelectionCoverage {
   percent: number
   sources: Set<string>
 }
+
+/** Run-to-run diff entry */
+export interface RunDiffEntry {
+  name: string
+  prevRank: number | null
+  currRank: number | null
+  rankDelta: number
+  prevFailed: boolean
+  currFailed: boolean
+  status: 'improved' | 'regressed' | 'recovered' | 'newly-failed' | 'new' | 'removed' | 'unchanged'
+}

@@ -202,6 +202,7 @@ class DashboardMojoTest {
 
 		TestOrderState state = new TestOrderState();
 		state.addRunRecord(TestOrderState.buildRunRecord(List.of("com.example.MyTest"), Set.of()));
+		state.save(tempDir.resolve(".test-order-state"));
 		mojo.overrideState = state;
 
 		mojo.execute();
@@ -218,6 +219,7 @@ class DashboardMojoTest {
 
 		TestOrderState state = new TestOrderState();
 		state.addRunRecord(TestOrderState.buildRunRecord(List.of("com.example.MyTest"), Set.of("com.example.MyTest")));
+		state.save(tempDir.resolve(".test-order-state"));
 		mojo.overrideState = state;
 
 		mojo.execute();
@@ -231,6 +233,7 @@ class DashboardMojoTest {
 		writeMinimalIndex();
 		TestOrderState state = new TestOrderState();
 		state.recordDuration("com.example.MyTest", 1234L);
+		state.save(tempDir.resolve(".test-order-state"));
 		mojo.overrideState = state;
 
 		mojo.execute();
@@ -251,6 +254,7 @@ class DashboardMojoTest {
 		writeMinimalIndex();
 		TestOrderState state = new TestOrderState();
 		state.recordDuration("com.example.MyTest", 500L);
+		state.save(tempDir.resolve(".test-order-state"));
 		mojo.overrideState = state;
 
 		mojo.execute();
@@ -261,7 +265,11 @@ class DashboardMojoTest {
 	@Test
 	void changedClassesArePopulated() throws Exception {
 		writeMinimalIndex();
-		mojo.changedClasses = Set.of("com.app.ChangedClass");
+		inject(mojo, "changeMode", "explicit");
+		// Set the String field on AbstractTestOrderMojo (parent) directly
+		Field f = AbstractTestOrderMojo.class.getDeclaredField("changedClasses");
+		f.setAccessible(true);
+		f.set(mojo, "com.app.ChangedClass");
 
 		mojo.execute();
 		String json = extractJson(Files.readString(resolveOutput()));
@@ -338,16 +346,16 @@ class DashboardMojoTest {
 
 	static final class TestableDashboardMojo extends DashboardMojo {
 		TestOrderState overrideState;
-		Set<String> changedClasses = Set.of();
-		Set<String> changedTestClasses = Set.of();
+		Set<String> stubbedChangedClasses = Set.of();
+		Set<String> stubbedChangedTestClasses = Set.of();
 
 		@Override
 		protected Set<String> detectChangedClasses() {
-			return changedClasses;
+			return stubbedChangedClasses;
 		}
 		@Override
 		protected Set<String> detectChangedTestClasses() {
-			return changedTestClasses;
+			return stubbedChangedTestClasses;
 		}
 		@Override
 		protected TestOrderState loadState() {

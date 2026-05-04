@@ -200,7 +200,7 @@ class SpringBootCoreModulesIT {
                     "--rerun-tasks",
                     CORE_TEST_MODULE + ":test",
                     "-Dtestorder.mode=learn",
-                    "-Dtestorder.instrumentationMode=" + mode,
+                    "-Dtestorder.instrumentation.mode=" + mode,
                     "--tests", CORE_TEST_MODULE_TESTS.get(0),
                     "--tests", CORE_TEST_MODULE_TESTS.get(1));
 

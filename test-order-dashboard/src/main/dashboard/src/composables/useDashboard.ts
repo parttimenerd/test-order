@@ -1,10 +1,12 @@
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, watch, onMounted, type Ref, type ComputedRef } from 'vue'
 import type {
-  DashboardData, TestEntry, MethodEntry, RunRecord,
+  DashboardData, TestEntry, MethodEntry, RunRecord, ScoringWeights,
   SortColumn, GraphMode, TabDef, ScoreComponent, TestRunOutcome,
-  SimResult, SelectionCoverage, CoverageClass,
+  SimResult, SelectionCoverage, CoverageClass, RunDiffEntry,
 } from '../types'
-import { sn, computeSetCoverBonuses, computeScore } from '../utils'
+import { sn, computeSetCoverBonuses, computeScore, computeApfd, exportTestsCsv, scoreTooltip } from '../utils'
+
+type ScoreMode = 'orig' | 'sim'
 
 export interface DashboardState {
   dd: DashboardData
@@ -13,24 +15,29 @@ export interface DashboardState {
   hasCoverage: boolean
 
   // Reactive UI state
-  selectedTest: ReturnType<typeof ref<TestEntry | null>>
-  selectedTests: ReturnType<typeof ref<Set<string>>>
-  activeTab: ReturnType<typeof ref<string>>
+  selectedTest: Ref<TestEntry | null>
+  selectedTests: Ref<Set<string>>
+  activeTab: Ref<string>
   lw: Record<string, number>
-  searchQ: ReturnType<typeof ref<string>>
-  sortKey: ReturnType<typeof ref<string>>
-  sortDir: ReturnType<typeof ref<string>>
-  graphMode: ReturnType<typeof ref<string>>
-  covSelectedClass: ReturnType<typeof ref<CoverageClass | null>>
-  selectedMethod: ReturnType<typeof ref<MethodEntry | null>>
-  selectedMethods: ReturnType<typeof ref<Set<string>>>
-  showChangedPanel: ReturnType<typeof ref<boolean>>
-  simSortKey: ReturnType<typeof ref<string>>
-  simSortDir: ReturnType<typeof ref<string>>
-  badgeFilter: ReturnType<typeof ref<string | null>>
+  searchQ: Ref<string>
+  sortKey: Ref<string>
+  sortDir: Ref<string>
+  graphMode: Ref<string>
+  covSelectedClass: Ref<CoverageClass | null>
+  selectedMethod: Ref<MethodEntry | null>
+  selectedMethods: Ref<Set<string>>
+  showChangedPanel: Ref<boolean>
+  simSortKey: Ref<string>
+  simSortDir: Ref<string>
+  badgeFilter: Ref<string | null>
+  focusedTestIndex: Ref<number>
+  covSearchQ: Ref<string>
+  scoreModalOpen: Ref<boolean>
+  scoreModalTitle: Ref<string>
+  scoreModalBody: Ref<string>
 
   // Constants
-  TABS: ReturnType<typeof computed<TabDef[]>>
+  TABS: ComputedRef<TabDef[]>
   SIDEBAR_SORT_COLS: SortColumn[]
   GMODES: GraphMode[]
 
@@ -38,22 +45,26 @@ export interface DashboardState {
   tests: TestEntry[]
   runs: RunRecord[]
   changedSet: Set<string>
-  hasMethodData: ReturnType<typeof computed<boolean>>
-  filteredTests: ReturnType<typeof computed<TestEntry[]>>
-  selectedTestObjects: ReturnType<typeof computed<TestEntry[]>>
-  latestRun: ReturnType<typeof computed<RunRecord | null>>
-  avgApfd: ReturnType<typeof computed<number | null>>
-  fastestTest: ReturnType<typeof computed<TestEntry | null>>
-  slowestTest: ReturnType<typeof computed<TestEntry | null>>
-  totalNodes: ReturnType<typeof computed<number>>
-  scoreComps: ReturnType<typeof computed<ScoreComponent[]>>
-  testOutcomes: ReturnType<typeof computed<TestRunOutcome[]>>
-  simResults: ReturnType<typeof computed<SimResult[]>>
-  covPackages: ReturnType<typeof computed<string[]>>
-  covAvgTests: ReturnType<typeof computed<string>>
-  covPercent: ReturnType<typeof computed<number>>
-  selectionCoverage: ReturnType<typeof computed<SelectionCoverage | null>>
+  hasMethodData: ComputedRef<boolean>
+  filteredTests: ComputedRef<TestEntry[]>
+  selectedTestObjects: ComputedRef<TestEntry[]>
+  latestRun: ComputedRef<RunRecord | null>
+  avgApfd: ComputedRef<number | null>
+  fastestTest: ComputedRef<TestEntry | null>
+  slowestTest: ComputedRef<TestEntry | null>
+  totalNodes: ComputedRef<number>
+  scoreComps: ComputedRef<ScoreComponent[]>
+  testOutcomes: ComputedRef<TestRunOutcome[]>
+  simResults: ComputedRef<SimResult[]>
+  covPackages: ComputedRef<string[]>
+  covAvgTests: ComputedRef<string>
+  covPercent: ComputedRef<number>
+  selectionCoverage: ComputedRef<SelectionCoverage | null>
   origSCB: Record<string, number>
+  simSetCoverBonuses: ComputedRef<Record<string, number>>
+  runDiff: ComputedRef<RunDiffEntry[]>
+  simApfd: ComputedRef<number | null>
+  filteredCovClasses: ComputedRef<CoverageClass[]>
 
   // Actions
   selectTest: (t: TestEntry, event: MouseEvent | null) => void
@@ -65,10 +76,34 @@ export interface DashboardState {
   setGraphMode: (id: string) => void
   setTab: (id: string) => void
   setBadgeFilter: (filter: string | null) => void
+  navigateTest: (dir: 'up' | 'down') => void
+  activateFocusedTest: () => void
+  clearSelection: () => void
+  navigateToTestFromCov: (testName: string) => void
+  exportCsv: () => void
+  getScoreBreakdown: (testName: string, mode: ScoreMode) => string
+  openScoreModal: (testName: string, mode: ScoreMode, sourceLabel?: string) => void
+  closeScoreModal: () => void
+
+  // Server connection
+  serverConnected: Ref<boolean>
+  optimizing: Ref<boolean>
+  optimizeError: Ref<string | null>
+  optimizeResult: Ref<OptimizeApiResult | null>
+  optimizeWeights: () => Promise<void>
+}
+
+export interface OptimizeApiResult {
+  weights: Record<string, number>
+  trainScore: number
+  validationScore: number
+  overfit: boolean
+  folds: number
+  error?: string
 }
 
 export function useDashboard(dd: DashboardData, parseError: string | null): DashboardState {
-  const hasData = !!(dd.tests && dd.tests.length >= 0 && dd.project)
+  const hasData = !!(dd.tests && dd.tests.length > 0)
   const hasCoverage = !!(dd.coverage && dd.coverage.classes && dd.coverage.classes.length)
 
   const selectedTest = ref<TestEntry | null>(null)
@@ -86,8 +121,56 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const simSortKey = ref('simScore')
   const simSortDir = ref('desc')
   const badgeFilter = ref<string | null>(null)
+  const focusedTestIndex = ref(-1)
+  const covSearchQ = ref('')
+  const scoreModalOpen = ref(false)
+  const scoreModalTitle = ref('')
+  const scoreModalBody = ref('')
   let lastClickedTestIndex = -1
   let lastClickedMethodIndex = -1
+
+  // Server connection state
+  const serverConnected = ref(false)
+  const optimizing = ref(false)
+  const optimizeError = ref<string | null>(null)
+  const optimizeResult = ref<OptimizeApiResult | null>(null)
+
+  // Detect if served by test-order server
+  function detectServer() {
+    fetch('/api/ping', { method: 'GET' })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { if (d && d.server === 'test-order') serverConnected.value = true })
+      .catch(() => { serverConnected.value = false })
+  }
+  // Run detection on next tick (after mount)
+  if (typeof window !== 'undefined') {
+    setTimeout(detectServer, 0)
+  }
+
+  async function optimizeWeightsFn() {
+    optimizing.value = true
+    optimizeError.value = null
+    optimizeResult.value = null
+    try {
+      const resp = await fetch('/api/optimize', { method: 'POST' })
+      const data = await resp.json()
+      if (data.error) {
+        optimizeError.value = data.error
+        return
+      }
+      optimizeResult.value = data as OptimizeApiResult
+      // Apply optimized weights to sliders
+      if (data.weights) {
+        for (const [k, v] of Object.entries(data.weights)) {
+          if (k in lw) lw[k] = v as number
+        }
+      }
+    } catch (e) {
+      optimizeError.value = (e as Error).message || 'Network error'
+    } finally {
+      optimizing.value = false
+    }
+  }
 
   const SIDEBAR_SORT_COLS: SortColumn[] = [
     { key: 'rank', label: 'Rank' },
@@ -128,10 +211,10 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     else if (badgeFilter.value === 'failing') arr = arr.filter(t => t.failScore > 0)
     else if (badgeFilter.value === 'static') arr = arr.filter(t => t.hasStaticFieldOverlap)
     arr.sort((a, b) => {
-      let av: string | number = (a as Record<string, unknown>)[sortKey.value] as string | number
-      let bv: string | number = (b as Record<string, unknown>)[sortKey.value] as string | number
+      let av: string | number = (a as unknown as Record<string, string | number>)[sortKey.value]
+      let bv: string | number = (b as unknown as Record<string, string | number>)[sortKey.value]
       if (sortKey.value === 'name') { av = sn(a.name); bv = sn(b.name) }
-      if (sortKey.value === 'duration') { av = av < 0 ? 1e15 : av; bv = bv < 0 ? 1e15 : bv }
+      if (sortKey.value === 'duration') { av = (av as number) < 0 ? 1e15 : av; bv = (bv as number) < 0 ? 1e15 : bv }
       const d = av < bv ? -1 : av > bv ? 1 : 0
       return sortDir.value === 'asc' ? d : -d
     })
@@ -197,23 +280,25 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
 
   const simResults = computed<SimResult[]>(() => {
     const bonuses = simSetCoverBonuses.value
-    const scored = tests.map(t => ({ ...t, simScore: computeScore(t, lw as DashboardData['weights'], bonuses) }))
+    const scored = tests.map(t => ({ ...t, simScore: computeScore(t, lw as unknown as ScoringWeights, bonuses) }))
     const sorted = [...scored].sort((a, b) => b.simScore - a.simScore)
     const rankMap: Record<string, number> = {}
+    const scoreMap = new Map<string, number>()
     sorted.forEach((t, i) => (rankMap[t.name] = i + 1))
+    scored.forEach(s => scoreMap.set(s.name, s.simScore))
     const rows: SimResult[] = tests.map(t => ({
       name: t.name,
       origRank: t.rank,
       simRank: rankMap[t.name],
       delta: rankMap[t.name] - t.rank,
       origScore: t.score,
-      simScore: scored.find(s => s.name === t.name)!.simScore,
+      simScore: scoreMap.get(t.name) ?? 0,
     }))
     const sk = simSortKey.value
     const sd = simSortDir.value
     rows.sort((a, b) => {
-      const av = sk === 'name' ? sn(a.name).toLowerCase() : (a as Record<string, unknown>)[sk] as number
-      const bv = sk === 'name' ? sn(b.name).toLowerCase() : (b as Record<string, unknown>)[sk] as number
+      const av = sk === 'name' ? sn(a.name).toLowerCase() : (a as unknown as Record<string, number>)[sk]
+      const bv = sk === 'name' ? sn(b.name).toLowerCase() : (b as unknown as Record<string, number>)[sk]
       const d = av < bv ? -1 : av > bv ? 1 : 0
       return sd === 'asc' ? d : -d
     })
@@ -257,6 +342,116 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     const covered = dd.coverage!.classes.filter(c => coveredSources.has(c.name)).length
     return { covered, total, percent: total > 0 ? Math.round((covered / total) * 100) : 0, sources: coveredSources }
   })
+
+  // ── Run diff (compare last 2 runs) ──────────────────────────
+  const runDiff = computed<RunDiffEntry[]>(() => {
+    if (runs.length < 2) return []
+    const prev = runs[runs.length - 2]
+    const curr = runs[runs.length - 1]
+    const prevScored = (prev.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB), failed: o.failed }))
+    const currScored = (curr.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB), failed: o.failed }))
+    prevScored.sort((a, b) => b.score - a.score)
+    currScored.sort((a, b) => b.score - a.score)
+    const prevRankMap = new Map<string, number>()
+    const prevFailMap = new Map<string, boolean>()
+    prevScored.forEach((t, i) => { prevRankMap.set(t.name, i + 1); prevFailMap.set(t.name, t.failed) })
+    const currRankMap = new Map<string, number>()
+    const currFailMap = new Map<string, boolean>()
+    currScored.forEach((t, i) => { currRankMap.set(t.name, i + 1); currFailMap.set(t.name, t.failed) })
+    const allNames = new Set([...prevRankMap.keys(), ...currRankMap.keys()])
+    const entries: RunDiffEntry[] = []
+    for (const name of allNames) {
+      const pr = prevRankMap.get(name) ?? null
+      const cr = currRankMap.get(name) ?? null
+      const pf = prevFailMap.get(name) ?? false
+      const cf = currFailMap.get(name) ?? false
+      const delta = pr !== null && cr !== null ? cr - pr : 0
+      let status: RunDiffEntry['status'] = 'unchanged'
+      if (pr === null) status = 'new'
+      else if (cr === null) status = 'removed'
+      else if (!pf && cf) status = 'newly-failed'
+      else if (pf && !cf) status = 'recovered'
+      else if (delta < -3) status = 'improved'
+      else if (delta > 3) status = 'regressed'
+      entries.push({ name, prevRank: pr, currRank: cr, rankDelta: delta, prevFailed: pf, currFailed: cf, status })
+    }
+    entries.sort((a, b) => {
+      const order: Record<string, number> = { 'newly-failed': 0, 'recovered': 1, 'new': 2, 'removed': 3, 'improved': 4, 'regressed': 5, 'unchanged': 6 }
+      return (order[a.status] ?? 9) - (order[b.status] ?? 9) || a.rankDelta - b.rankDelta
+    })
+    return entries
+  })
+
+  // ── Simulated APFD (replay last run with current slider weights) ──
+  const simApfd = computed<number | null>(() => {
+    const lastRun = runs.length ? runs[runs.length - 1] : null
+    if (!lastRun?.outcomes?.length) return null
+    const bonuses = simSetCoverBonuses.value
+    const scored = lastRun.outcomes.map(o => ({ ...o, simScore: computeScore(o, lw as unknown as ScoringWeights, bonuses) }))
+    scored.sort((a, b) => b.simScore - a.simScore)
+    return computeApfd(scored)
+  })
+
+  // ── Coverage search ─────────────────────────────────────────
+  const filteredCovClasses = computed<CoverageClass[]>(() => {
+    if (!dd.coverage?.classes) return []
+    if (!covSearchQ.value) return dd.coverage.classes
+    const q = covSearchQ.value.toLowerCase()
+    return dd.coverage.classes.filter(c => c.name.toLowerCase().includes(q) || c.package.toLowerCase().includes(q))
+  })
+
+  function getScoreBreakdown(testName: string, mode: ScoreMode): string {
+    const t = tests.find(x => x.name === testName)
+    if (!t) return 'No score data available for this test.'
+    const weights = mode === 'sim' ? (lw as unknown as ScoringWeights) : dd.weights
+    const bonuses = mode === 'sim' ? simSetCoverBonuses.value : origSCB
+    return scoreTooltip(t, weights, bonuses, dd.medianDuration, dd.changedClasses)
+  }
+
+  function openScoreModal(testName: string, mode: ScoreMode, sourceLabel?: string) {
+    const t = tests.find(x => x.name === testName)
+    if (!t) return
+    const score = mode === 'sim'
+      ? computeScore(t, lw as unknown as ScoringWeights, simSetCoverBonuses.value)
+      : t.score
+    const sourceSuffix = sourceLabel ? ` (${sourceLabel})` : ''
+    scoreModalTitle.value = `${sn(t.name)}${sourceSuffix} - ${mode === 'sim' ? 'Simulated' : 'Original'} score: ${score}`
+    scoreModalBody.value = getScoreBreakdown(testName, mode)
+    scoreModalOpen.value = true
+  }
+
+  function closeScoreModal() {
+    scoreModalOpen.value = false
+  }
+
+  // ── URL hash sync ───────────────────────────────────────────
+  function applyHash() {
+    try {
+      const h = window.location.hash.slice(1)
+      if (!h) return
+      const params = new URLSearchParams(h)
+      if (params.has('tab')) {
+        const tab = params.get('tab')!
+        if (['tests', 'analytics', 'weights'].includes(tab)) activeTab.value = tab
+      }
+      if (params.has('test')) {
+        const tName = params.get('test')!
+        const t = tests.find(x => x.name === tName)
+        if (t) { selectedTest.value = t; selectedTests.value = new Set([t.name]) }
+      }
+      if (params.has('filter')) badgeFilter.value = params.get('filter')
+    } catch { /* ignore hash parse errors */ }
+  }
+  function syncHash() {
+    const params = new URLSearchParams()
+    if (activeTab.value !== 'tests') params.set('tab', activeTab.value)
+    if (selectedTest.value && selectedTests.value.size === 1) params.set('test', selectedTest.value.name)
+    if (badgeFilter.value) params.set('filter', badgeFilter.value)
+    const hash = params.toString()
+    window.history.replaceState(null, '', hash ? '#' + hash : window.location.pathname)
+  }
+  applyHash()
+  watch([activeTab, selectedTest, badgeFilter], syncHash)
 
   // ── Actions ─────────────────────────────────────────────────
   function selectTest(t: TestEntry, event: MouseEvent | null) {
@@ -374,18 +569,72 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     badgeFilter.value = badgeFilter.value === filter ? null : filter
   }
 
+  function navigateTest(dir: 'up' | 'down') {
+    const list = filteredTests.value
+    if (!list.length) return
+    if (dir === 'down') {
+      focusedTestIndex.value = Math.min(focusedTestIndex.value + 1, list.length - 1)
+    } else {
+      focusedTestIndex.value = Math.max(focusedTestIndex.value - 1, 0)
+    }
+  }
+
+  function activateFocusedTest() {
+    const list = filteredTests.value
+    const idx = focusedTestIndex.value
+    if (idx >= 0 && idx < list.length) {
+      selectTest(list[idx], null)
+    }
+  }
+
+  function clearSelection() {
+    selectedTest.value = null
+    selectedTests.value = new Set()
+    selectedMethod.value = null
+    selectedMethods.value = new Set()
+    focusedTestIndex.value = -1
+  }
+
+  function navigateToTestFromCov(testName: string) {
+    const t = tests.find(x => x.name === testName)
+    if (!t) return
+    activeTab.value = 'tests'
+    selectedTest.value = t
+    selectedTests.value = new Set([t.name])
+    selectedMethod.value = null
+    selectedMethods.value = new Set()
+  }
+
+  function exportCsvFn() {
+    const csv = exportTestsCsv(filteredTests.value)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `test-order-${dd.project.name || 'export'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return {
     dd, parseError, hasData, hasCoverage,
     selectedTest, selectedTests, activeTab, lw, searchQ, sortKey, sortDir,
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
     showChangedPanel, simSortKey, simSortDir, badgeFilter,
+    focusedTestIndex, covSearchQ,
+    scoreModalOpen, scoreModalTitle, scoreModalBody,
     TABS, SIDEBAR_SORT_COLS, GMODES,
     tests, runs, changedSet, hasMethodData,
     filteredTests, selectedTestObjects, latestRun, avgApfd,
     fastestTest, slowestTest, totalNodes, scoreComps, testOutcomes,
     simResults, covPackages, covAvgTests, covPercent, selectionCoverage,
-    origSCB,
+    origSCB, simSetCoverBonuses, runDiff, simApfd, filteredCovClasses,
     selectTest, drillDown, selectMethod,
     sortBy, simSortBy: simSortByFn, resetWeights, setGraphMode, setTab, setBadgeFilter,
+    navigateTest, activateFocusedTest, clearSelection, navigateToTestFromCov,
+    getScoreBreakdown, openScoreModal, closeScoreModal,
+    exportCsv: exportCsvFn,
+    serverConnected, optimizing, optimizeError, optimizeResult,
+    optimizeWeights: optimizeWeightsFn,
   }
 }

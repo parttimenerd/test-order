@@ -7,10 +7,10 @@ const d = inject<DashboardState>('dashboard')!
 </script>
 
 <template>
-  <header style="background:var(--bg-card);border-bottom:1px solid var(--border);padding:6px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0;flex-wrap:wrap">
+  <header class="app-header">
     <span style="font-weight:700;font-size:1rem;color:var(--accent-light)">{{ d.dd.project.name }}</span>
     <span style="color:var(--border)">│</span>
-    <span class="app-header__stat">{{ d.tests.length }} tests</span>
+    <span class="app-header__stat app-header__stat--clickable" @click="d.setTab('tests')" title="Go to Tests tab">{{ d.tests.length }} tests</span>
     <span
       v-if="d.dd.changedClasses.length"
       style="color:var(--yellow);font-size:.78rem;cursor:pointer"
@@ -37,7 +37,14 @@ const d = inject<DashboardState>('dashboard')!
 </template>
 
 <style scoped>
+.app-header {
+  background: var(--bg-card); border-bottom: 1px solid var(--border);
+  padding: 6px 16px; display: flex; align-items: center; gap: 12px;
+  flex-shrink: 0; flex-wrap: wrap;
+}
 .app-header__stat { color: var(--text-sec); font-size: .78rem; }
+.app-header__stat--clickable { cursor: pointer; transition: color var(--tr-fast); }
+.app-header__stat--clickable:hover { color: var(--accent-light); }
 .changed-panel__tag {
   font-size: .65rem;
   padding: 1px 6px;

@@ -8,12 +8,12 @@ defineProps<{
 </script>
 
 <template>
-  <span v-if="test.isChanged" class="badge badge--changed" :class="{ 'badge--md': size === 'md' }">{{ size === 'md' ? 'CHANGED' : 'C' }}</span>
-  <span v-if="test.isNew" class="badge badge--new" :class="{ 'badge--md': size === 'md' }">{{ size === 'md' ? 'NEW' : 'N' }}</span>
-  <span v-if="test.failScore > 0" class="badge badge--fail" :class="{ 'badge--md': size === 'md' }">{{ size === 'md' ? 'FAILING' : 'F' }}</span>
-  <span v-if="test.isFast" class="badge badge--fast" :class="{ 'badge--md': size === 'md' }">{{ size === 'md' ? 'FAST' : '⚡' }}</span>
-  <span v-if="test.isSlow" class="badge badge--slow" :class="{ 'badge--md': size === 'md' }">{{ size === 'md' ? 'SLOW' : '🐢' }}</span>
-  <span v-if="test.hasStaticFieldOverlap" class="badge badge--static" :class="{ 'badge--md': size === 'md' }">{{ size === 'md' ? 'STATIC' : 'S' }}</span>
+  <span v-if="test.isChanged" class="badge badge--changed" :class="{ 'badge--md': size === 'md' }" title="Test class source was modified">{{ size === 'md' ? 'CHANGED' : 'CHG' }}</span>
+  <span v-if="test.isNew" class="badge badge--new" :class="{ 'badge--md': size === 'md' }" title="New test class — not seen in previous run">{{ size === 'md' ? 'NEW' : 'NEW' }}</span>
+  <span v-if="test.failScore > 0" class="badge badge--fail" :class="{ 'badge--md': size === 'md' }" title="Has recent failure history (failScore={{ test.failScore.toFixed(2) }})">{{ size === 'md' ? 'FAILING' : 'FAIL' }}</span>
+  <span v-if="test.isFast" class="badge badge--fast" :class="{ 'badge--md': size === 'md' }" title="Faster than median duration">{{ size === 'md' ? 'FAST' : '⚡' }}</span>
+  <span v-if="test.isSlow" class="badge badge--slow" :class="{ 'badge--md': size === 'md' }" title="Slower than median duration">{{ size === 'md' ? 'SLOW' : '🐢' }}</span>
+  <span v-if="test.hasStaticFieldOverlap" class="badge badge--static" :class="{ 'badge--md': size === 'md' }" title="Reads static fields of changed classes">{{ size === 'md' ? 'STATIC' : 'STAT' }}</span>
 </template>
 
 <style scoped>

@@ -39,15 +39,23 @@ public class TestSelector {
 	private final Set<String> changedTestClasses;
 	private final TestOrderState.ScoringWeights weights;
 	private final Config config;
+	private final Set<String> alwaysRunClasses;
 
 	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config) {
+		this(depMap, state, changedClasses, changedTestClasses, weights, config, Set.of());
+	}
+
+	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
+			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
+			Set<String> alwaysRunClasses) {
 		this.depMap = depMap;
 		this.state = state;
 		this.changedClasses = changedClasses;
 		this.changedTestClasses = changedTestClasses;
 		this.weights = weights;
 		this.config = config;
+		this.alwaysRunClasses = alwaysRunClasses != null ? alwaysRunClasses : Set.of();
 	}
 
 	/**
@@ -58,6 +66,7 @@ public class TestSelector {
 		List<ScoredTest> scored = scoreAndSort();
 
 		Set<String> selected = new LinkedHashSet<>();
+		selectAlwaysRun(scored, selected);
 		selectNewTests(scored, selected);
 		selectTopN(scored, selected);
 		selectDiverseFast(scored, selected);
@@ -94,6 +103,14 @@ public class TestSelector {
 
 	// ── Selection phases ──────────────────────────────────────────────
 
+	/** Phase 0: always include @AlwaysRun classes (before everything else). */
+	private void selectAlwaysRun(List<ScoredTest> scored, Set<String> selected) {
+		for (ScoredTest s : scored) {
+			if (alwaysRunClasses.contains(s.name()))
+				selected.add(s.name());
+		}
+	}
+
 	/** Phase 1: always include all new tests. */
 	private void selectNewTests(List<ScoredTest> scored, Set<String> selected) {
 		for (ScoredTest s : scored) {
@@ -102,8 +119,15 @@ public class TestSelector {
 		}
 	}
 
-	/** Phase 2: include the top-N highest-scored tests. */
+	/** Phase 2: include the top-N highest-scored tests. topN=-1 means select all. */
 	private void selectTopN(List<ScoredTest> scored, Set<String> selected) {
+		if (config.topN() < 0) {
+			// topN=-1 means "select all affected tests"
+			for (ScoredTest s : scored) {
+				selected.add(s.name());
+			}
+			return;
+		}
 		int added = 0;
 		for (ScoredTest s : scored) {
 			if (added >= config.topN())

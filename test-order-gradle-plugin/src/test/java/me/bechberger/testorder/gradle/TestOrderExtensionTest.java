@@ -21,7 +21,7 @@ class TestOrderExtensionTest {
                 extension.getIndexFile().get().getAsFile());
         assertEquals(project.getLayout().getBuildDirectory().dir("test-order-deps").get().getAsFile(),
                 extension.getDepsDir().get().getAsFile());
-        assertEquals(20, extension.getSelectTopN().get());
+        assertEquals(-1, extension.getSelectTopN().get());
         assertEquals(10, extension.getSelectRandomM().get());
         assertFalse(extension.getMethodOrderingEnabled().get());
         assertFalse(extension.getScoreNewTest().isPresent());

@@ -1,0 +1,40 @@
+package com.example.coverage;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Tests validation and utility methods only (3 methods). Should have lowest
+ * coverage score.
+ */
+class ValidationMethodsTest {
+
+	private WideCoverageService service;
+
+	@BeforeEach
+	void setUp() {
+		service = new WideCoverageService();
+	}
+
+	@Test
+	void testValidateEmpty() {
+		assertFalse(service.validate());
+	}
+
+	@Test
+	void testValidateWithItems() {
+		service.addItem("test");
+		assertTrue(service.validate());
+	}
+
+	@Test
+	void testClear() {
+		service.addItem("item1");
+		service.addItem("item2");
+		service.setMetadata("key", "value");
+		service.clear();
+		assertEquals(0, service.getItemCount());
+	}
+}

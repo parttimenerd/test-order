@@ -126,8 +126,8 @@ testOrder {
     // Auto-detected from src/main/java if left empty.
     includePackages = ""
 
-    // Change detection: "auto" | "since-last-run" | "since-last-commit" | "uncommitted" | "explicit"
-    changeMode = "auto"
+    // Change detection: "uncommitted" | "auto" | "since-last-run" | "since-last-commit" | "explicit"
+    changeMode = "uncommitted"
 
     // For changeMode = "explicit": comma-separated FQCNs of changed classes
     changedClasses = ""

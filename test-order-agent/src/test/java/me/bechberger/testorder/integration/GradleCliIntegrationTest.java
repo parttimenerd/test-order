@@ -243,7 +243,7 @@ class GradleCliIntegrationTest {
 
 	@Test
 	@DisplayName("INT-G-CLI-008: Gradle Plugin Error When CLI Config Missing")
-	void testGradleErrorWhenCLIConfigMissing() throws IOException {
+	void testGradleErrorWhenCLIConfigMissing() {
 		// Scenario: Gradle plugin relies on CLI config that doesn't exist
 		// Expected: Clear error message pointing to CLI config
 

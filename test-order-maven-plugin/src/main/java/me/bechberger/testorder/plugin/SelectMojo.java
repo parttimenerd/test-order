@@ -2,14 +2,16 @@ package me.bechberger.testorder.plugin;
 
 import java.io.IOException;
 import java.nio.file.*;
-import java.util.Set;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.*;
 
 import me.bechberger.testorder.DependencyMap;
-import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.TestSelector;
+import me.bechberger.testorder.ops.PluginContext;
+import me.bechberger.testorder.ops.SelectOperation;
+import me.bechberger.testorder.ops.workflows.OrderWorkflow;
+import me.bechberger.testorder.ops.workflows.SelectWorkflow;
 
 /**
  * Selects a fast subset of tests for CI: all new tests, the top-n by score, and
@@ -23,8 +25,8 @@ import me.bechberger.testorder.TestSelector;
 @Mojo(name = "select", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES)
 public class SelectMojo extends AbstractTestOrderMojo {
 
-	/** Number of top-scored test classes to always include. */
-	@Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "20")
+	/** Number of top-scored test classes to always include (-1 = all affected). */
+	@Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "-1")
 	private int topN;
 
 	/** Number of random fast tests to include for coverage diversity. */
@@ -57,37 +59,25 @@ public class SelectMojo extends AbstractTestOrderMojo {
 			autoAggregateOrFail(idxPath);
 		}
 
-		DependencyMap depMap;
-		try {
-			depMap = DependencyMap.load(idxPath);
-		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to load dependency index", e);
+		if ("explicit".equalsIgnoreCase(changeMode)) {
+			try {
+				warnUnknownChangedClasses(detectChangedClasses(), DependencyMap.load(idxPath));
+			} catch (IOException e) {
+				throw new MojoExecutionException("Failed to validate explicitly changed classes", e);
+			}
 		}
-		depMap = currentModuleDependencyMap(depMap);
-		warnIfNoDeps(depMap);
 
-		TestOrderState state = loadState();
-		Set<String> changed = detectChangedClasses();
-		Set<String> changedTests = detectChangedTestClasses();
+		PluginContext pctx = buildPluginContextBuilder().topN(topN).randomM(randomM).seed(seed)
+				.selectedFile(Path.of(selectedFile)).remainingFile(Path.of(remainingFile)).build();
 
-		warnUnknownChangedClasses(changed, depMap);
-
-		TestOrderState.ScoringWeights sw = resolveWeights(state);
-
-		TestSelector.Selection selection = new TestSelector(depMap, state, changed, changedTests, sw,
-				new TestSelector.Config(topN, randomM, seed)).select();
-
-		getLog().info("[test-order] Selected " + selection.selected().size() + " tests, deferred "
-				+ selection.remaining().size());
-
-		// write lists
+		SelectOperation.SelectResult result;
 		try {
-			TestSelector.writeTestList(selection.selected(), Path.of(selectedFile));
-			TestSelector.writeTestList(selection.remaining(), Path.of(remainingFile));
+			result = SelectWorkflow.select(pctx);
 			getLog().info("[test-order] Remaining tests → " + remainingFile);
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to write test lists", e);
+			throw new MojoExecutionException("Failed to select tests", e);
 		}
+		TestSelector.Selection selection = result.selection();
 
 		// configure Surefire to run only selected tests
 		if (!selection.selected().isEmpty()) {
@@ -98,10 +88,18 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		}
 
 		// also write the PriorityClassOrderer config so ordering still works within the
-		// subset
-		writeOrdererConfig(changed, changedTests);
+		// subset — use OrderWorkflow's change detection results for consistency
+		OrderWorkflow.OrderSetupResult orderResult;
+		try {
+			orderResult = OrderWorkflow.setup(pctx, loadState());
+		} catch (IOException e) {
+			throw new MojoExecutionException("Failed to set up test ordering", e);
+		}
+		writeOrdererConfig(orderResult.changedClasses(), orderResult.changedTests(), orderResult.changedMethods(),
+				buildScoreOverrides());
 
-		// Prevent a POM-bound combined goal from overriding the test selection
-		project.getProperties().setProperty("testorder.combined.active", "true");
+		// Prevent a POM-bound auto goal from overriding the test selection
+		project.getProperties().setProperty("testorder.auto.active", "true");
 	}
+
 }

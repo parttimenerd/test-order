@@ -196,8 +196,22 @@ public class SourceFileModel {
 																											// of {
 			String bodyText, // stripped body text (null if abstract)
 			String bodyHash, // SHA-256 hex of bodyText (null if abstract)
-			String compactBody // original body with comments and empty lines removed (null if abstract)
+			String compactBody, // original body with comments and empty lines removed (null if abstract)
+			String signatureText // original source text from match start to '{' (includes annotations, modifiers,
+								// params); null for synthesized methods
 	) {
+		/**
+		 * Returns a hash that includes both the method signature (with annotations) and
+		 * the body. This detects changes to annotation values (e.g. @CsvSource,
+		 * @MethodSource) that would not be caught by bodyHash alone.
+		 */
+		public String effectiveHash() {
+			if (bodyHash == null)
+				return null;
+			if (signatureText == null)
+				return bodyHash;
+			return sha256(signatureText + (bodyText != null ? bodyText : ""));
+		}
 	}
 
 	/** A static or instance initializer block inside a type. */
@@ -221,18 +235,70 @@ public class SourceFileModel {
 			return names;
 		}
 
-		/** Returns the method hashes as {@code fqcn#methodName → hash}. */
+		/**
+		 * Returns the method hashes as {@code fqcn#methodName → hash}.
+		 * <p>
+		 * The hash includes annotations and method body (via
+		 * {@link MethodNode#effectiveHash()}). Additionally, for methods annotated with
+		 * {@code @MethodSource}, the body hashes of the referenced provider methods
+		 * (within the same class) are incorporated, so that a change to a provider
+		 * method triggers a hash change for the test method that uses it.
+		 */
 		public Map<String, String> methodHashes() {
+			// First pass: build a lookup of body hashes by fqcn#name for provider
+			// resolution
+			Map<String, String> bodyHashIndex = new LinkedHashMap<>();
+			for (MethodNode m : methods) {
+				if (m.isConstructor || m.isAbstract || m.bodyHash == null)
+					continue;
+				String key = m.enclosingFqcn + "#" + m.name;
+				if (bodyHashIndex.containsKey(key)) {
+					bodyHashIndex.put(key, sha256(bodyHashIndex.get(key) + m.bodyHash));
+				} else {
+					bodyHashIndex.put(key, m.bodyHash);
+				}
+			}
+
+			// Second pass: compute effective hashes with @MethodSource provider resolution
 			Map<String, String> result = new LinkedHashMap<>();
 			for (MethodNode m : methods) {
 				if (m.isConstructor || m.isAbstract)
 					continue;
 				String key = m.enclosingFqcn + "#" + m.name;
+				String hash = m.effectiveHash();
+				if (hash == null)
+					continue;
+
+				// Resolve @MethodSource provider references and incorporate their hashes
+				List<String> providerRefs = extractMethodSourceRefs(m.signatureText, m.name);
+				if (!providerRefs.isEmpty()) {
+					StringBuilder composite = new StringBuilder(hash);
+					for (String ref : providerRefs) {
+						String providerKey;
+						if (ref.contains("#")) {
+							// Cross-class reference like "com.other.Class#method" — include as string
+							// (file-level change detection handles external class changes)
+							composite.append(ref);
+						} else {
+							// Same-class reference
+							providerKey = m.enclosingFqcn + "#" + ref;
+							String providerHash = bodyHashIndex.get(providerKey);
+							if (providerHash != null) {
+								composite.append(providerHash);
+							} else {
+								// Provider not found (might be inherited) — include name as sentinel
+								composite.append("unresolved:" + ref);
+							}
+						}
+					}
+					hash = sha256(composite.toString());
+				}
+
 				if (result.containsKey(key)) {
 					// overloads: combine hashes
-					result.put(key, sha256(result.get(key) + m.bodyHash));
+					result.put(key, sha256(result.get(key) + hash));
 				} else {
-					result.put(key, m.bodyHash);
+					result.put(key, hash);
 				}
 			}
 			return result;
@@ -534,9 +600,14 @@ public class SourceFileModel {
 			String bodyText = null;
 			String bodyHash = null;
 			String compactBody = null;
+			String signatureText = null;
 			if ("{".equals(terminator)) {
 				int bodyStart = matcher.end() - 1;
 				claimedBraces.add(bodyStart);
+				// Capture annotations + modifiers + return type + name + params from the
+				// ORIGINAL source (not stripped) so that annotation string values like
+				// @CsvSource({"1,2"}) are preserved in the hash.
+				signatureText = source.substring(matcher.start(), bodyStart);
 				if (!isAbstract) {
 					int bodyEnd = findMatchingBrace(stripped, bodyStart);
 					if (bodyEnd < 0)
@@ -546,9 +617,13 @@ public class SourceFileModel {
 					compactBody = removeCommentsAndEmptyLines(source.substring(bodyStart, bodyEnd + 1));
 					methodBodyRanges.add(new int[] { bodyStart, bodyEnd, expectedDepth });
 				}
+			} else {
+				// abstract method ending with ';' — capture signature from original source
+				signatureText = source.substring(matcher.start(), matcher.end());
 			}
 
-			methods.add(new MethodNode(name, enclosing.fqcn, isCtor, isAbstract, bodyText, bodyHash, compactBody));
+			methods.add(new MethodNode(name, enclosing.fqcn, isCtor, isAbstract, bodyText, bodyHash, compactBody,
+					signatureText));
 		}
 
 		return methods;
@@ -1275,6 +1350,75 @@ public class SourceFileModel {
 		}
 	}
 
+	// ── @MethodSource resolution ─────────────────────────────────────
+
+	/**
+	 * Pattern matching {@code @MethodSource} annotation with optional value. Handles:
+	 * <ul>
+	 * <li>{@code @MethodSource("providerName")}</li>
+	 * <li>{@code @MethodSource({"p1", "p2"})}</li>
+	 * <li>{@code @MethodSource(value = "providerName")}</li>
+	 * <li>{@code @MethodSource(value = {"p1", "p2"})}</li>
+	 * <li>{@code @MethodSource} (no args — defaults to test method name)</li>
+	 * </ul>
+	 */
+	private static final Pattern METHOD_SOURCE_PATTERN = Pattern
+			.compile("@MethodSource\\s*(?:\\(([^)]*?)\\))?", Pattern.DOTALL);
+
+	/** Extracts individual string values from annotation argument text. */
+	private static final Pattern STRING_VALUE_PATTERN = Pattern.compile("\"([^\"]*?)\"");
+
+	/**
+	 * Extracts the provider method references from a {@code @MethodSource}
+	 * annotation in the given signature text.
+	 *
+	 * @param signatureText the original source text of the method signature
+	 *                      (including annotations)
+	 * @param methodName    the test method name (used as default if @MethodSource
+	 *                      has no explicit value)
+	 * @return list of provider method references (may include "Class#method" for
+	 *         cross-class refs), empty if no @MethodSource found
+	 */
+	static List<String> extractMethodSourceRefs(String signatureText, String methodName) {
+		if (signatureText == null)
+			return List.of();
+		Matcher msMatcher = METHOD_SOURCE_PATTERN.matcher(signatureText);
+		if (!msMatcher.find())
+			return List.of();
+
+		String args = msMatcher.group(1);
+		if (args == null || args.isBlank()) {
+			// @MethodSource with no arguments defaults to a method with the same name
+			return List.of(methodName);
+		}
+
+		// Strip "value = " prefix if present
+		args = args.strip();
+		if (args.startsWith("value")) {
+			int eq = args.indexOf('=');
+			if (eq >= 0) {
+				args = args.substring(eq + 1).strip();
+			}
+		}
+
+		// Extract all string literals from the args
+		List<String> refs = new ArrayList<>();
+		Matcher valMatcher = STRING_VALUE_PATTERN.matcher(args);
+		while (valMatcher.find()) {
+			String ref = valMatcher.group(1).strip();
+			if (!ref.isEmpty()) {
+				refs.add(ref);
+			}
+		}
+
+		// If no string values found but @MethodSource is present, default to method
+		// name
+		if (refs.isEmpty()) {
+			refs.add(methodName);
+		}
+		return refs;
+	}
+
 	// ── Class name extraction (merged from SourceFileClassExtractor) ─
 
 	/**
@@ -1729,15 +1873,15 @@ public class SourceFileModel {
 
 		if (hasGetter && !existing.contains(getterName)) {
 			synthetic.add(new MethodNode(getterName, fqcn, false, false, null,
-					sha256("lombok:getter:" + field.declarationHash()), null));
+					sha256("lombok:getter:" + field.declarationHash()), null, null));
 		}
 		if (hasSetter && !existing.contains(setterName)) {
 			synthetic.add(new MethodNode(setterName, fqcn, false, false, null,
-					sha256("lombok:setter:" + field.declarationHash()), null));
+					sha256("lombok:setter:" + field.declarationHash()), null, null));
 		}
 		if (hasWith && !existing.contains("with" + capitalize(field.name()))) {
 			synthetic.add(new MethodNode("with" + capitalize(field.name()), fqcn, false, false, null,
-					sha256("lombok:with:" + field.declarationHash()), null));
+					sha256("lombok:with:" + field.declarationHash()), null, null));
 		}
 	}
 
@@ -1746,31 +1890,31 @@ public class SourceFileModel {
 			boolean hasAllArgsCtor, boolean hasNoArgsCtor, boolean hasReqArgsCtor, boolean hasBuilder) {
 		if (hasToString && !existing.contains("toString")) {
 			synthetic.add(new MethodNode("toString", fqcn, false, false, null,
-					sha256("lombok:toString:" + allFieldsHash), null));
+					sha256("lombok:toString:" + allFieldsHash), null, null));
 		}
 		if (hasEqualsHashCode) {
 			if (!existing.contains("equals")) {
 				synthetic.add(new MethodNode("equals", fqcn, false, false, null,
-						sha256("lombok:equals:" + allFieldsHash), null));
+						sha256("lombok:equals:" + allFieldsHash), null, null));
 			}
 			if (!existing.contains("hashCode")) {
 				synthetic.add(new MethodNode("hashCode", fqcn, false, false, null,
-						sha256("lombok:hashCode:" + allFieldsHash), null));
+						sha256("lombok:hashCode:" + allFieldsHash), null, null));
 			}
 		}
 		if (hasAllArgsCtor && !existing.contains(simpleName)) {
 			synthetic.add(new MethodNode(simpleName, fqcn, true, false, null,
-					sha256("lombok:allArgsCtor:" + allFieldsHash), null));
+					sha256("lombok:allArgsCtor:" + allFieldsHash), null, null));
 		} else if (hasReqArgsCtor && !existing.contains(simpleName)) {
 			synthetic.add(new MethodNode(simpleName, fqcn, true, false, null,
-					sha256("lombok:requiredArgsCtor:" + allFieldsHash), null));
+					sha256("lombok:requiredArgsCtor:" + allFieldsHash), null, null));
 		} else if (hasNoArgsCtor && !existing.contains(simpleName)) {
 			synthetic.add(new MethodNode(simpleName, fqcn, true, false, null,
-					sha256("lombok:noArgsCtor:" + allFieldsHash), null));
+					sha256("lombok:noArgsCtor:" + allFieldsHash), null, null));
 		}
 		if (hasBuilder && !existing.contains("builder")) {
 			synthetic.add(new MethodNode("builder", fqcn, false, false, null, sha256("lombok:builder:" + allFieldsHash),
-					null));
+					null, null));
 		}
 	}
 

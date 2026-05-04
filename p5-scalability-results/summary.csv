@@ -1,5 +1,0 @@
-TestName,Status,TestCount,Duration
-test-3000-classes,PASS,9000,29.25
-test-5000-classes,FAIL,10000,1.66
-test-7500-classes,PASS,15000,79.79
-test-10000-classes,PASS,10000,87.95

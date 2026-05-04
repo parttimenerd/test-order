@@ -1,19 +1,11 @@
 package me.bechberger.testorder;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.ClassDescriptor;
 import org.junit.jupiter.api.ClassOrderer;
 import org.junit.jupiter.api.ClassOrdererContext;
-
-import me.bechberger.testorder.changes.ChangeComplexity;
-import me.bechberger.testorder.changes.StructuralChangeAnalyzer;
-import me.bechberger.testorder.changes.StructuralChangeAnalyzer.ChangedMembers;
-import me.bechberger.testorder.changes.StructuralDiff;
 
 /**
  * JUnit ClassOrderer that prioritizes test classes based on a weighted score.
@@ -45,172 +37,61 @@ import me.bechberger.testorder.changes.StructuralDiff;
  */
 public class PriorityClassOrderer implements ClassOrderer {
 
-	private static final String CONFIG_RESOURCE = "testorder-config.properties";
-
-	/**
-	 * Guards against repeated "Failed to load state" error messages when the state
-	 * file is corrupt.
-	 */
-	private static volatile boolean stateLoadErrorLogged = false;
-
 	/**
 	 * Guards against repeated change-detection info messages across multiple
 	 * orderClasses() calls.
 	 */
-	private static volatile boolean changeDetectionLogged = false;
+	private static final AtomicBoolean changeDetectionLogged = new AtomicBoolean(false);
 
-	/** Lazily loaded config properties from classpath resource. */
-	private Properties configProps;
+	/** Shared config resolver (system props + classpath properties). */
+	private TestOrderConfigResolver config;
 
 	@Override
 	public void orderClasses(ClassOrdererContext context) {
-		String indexPath = getConfig(TestOrderConfig.INDEX_PATH);
-		if (indexPath == null || indexPath.isEmpty()) {
+		if (config == null) {
+			config = new TestOrderConfigResolver(getClass().getClassLoader());
+		}
+
+		ClassOrderingEngine.SetupResult s = ClassOrderingEngine.setup(config);
+		if (s == null) {
 			return;
 		}
-		Path idx = Path.of(indexPath);
-		if (!Files.exists(idx)) {
-			return;
-		}
-
-		DependencyMap depMap;
-		try {
-			depMap = DependencyMap.load(idx);
-		} catch (IOException e) {
-			TestOrderLogger.error("Failed to load dependency index: {}", e.getMessage());
-			return;
-		}
-
-		// load unified state (weights, durations, failure history)
-		String statePath = getConfig(TestOrderConfig.STATE_PATH);
-		TestOrderState state;
-		try {
-			state = (statePath != null && !statePath.isEmpty() && Files.exists(Path.of(statePath)))
-					? TestOrderState.load(Path.of(statePath))
-					: new TestOrderState();
-		} catch (IOException e) {
-			if (!stateLoadErrorLogged) {
-				stateLoadErrorLogged = true;
-				TestOrderLogger.error(
-						"Failed to load state: {} — falling back to defaults. " + "Delete the file to reset.",
-						e.getMessage());
-			}
-			state = new TestOrderState();
-		}
-
-		Set<String> changedClasses = resolveChangedClasses();
-		Set<String> changedTestClasses = resolveChangedTestClasses();
-		boolean debug = getConfigBool(TestOrderConfig.DEBUG, false);
-
-		// resolve scoring weights: system property > weights file > state file >
-		// defaults
-		TestOrderState.ScoringWeights sw = state.weights();
-		String weightsFilePath = getConfig(TestOrderConfig.WEIGHTS_FILE);
-		if (weightsFilePath != null && !weightsFilePath.isEmpty()) {
-			Path wf = Path.of(weightsFilePath);
-			if (Files.exists(wf)) {
-				try {
-					sw = TestOrderState.ScoringWeights.loadFromFile(wf).weights();
-				} catch (IOException e) {
-					TestOrderLogger.error("Failed to load weights file: {}", e.getMessage());
-				}
-			}
-		}
-		int newTestBonus = getConfigInt("testorder.score.newTest", sw.newTest());
-		int changedTestBonus = getConfigInt("testorder.score.changedTest", sw.changedTest());
-		int maxFailureBonus = getConfigInt("testorder.score.maxFailure", sw.maxFailure());
-		int speedBonus = getConfigInt("testorder.score.speed", sw.speed());
-		int speedPenalty = getConfigInt("testorder.score.speedPenalty", sw.speedPenalty());
-		int depOverlapWeight = getConfigInt("testorder.score.depOverlap", sw.depOverlap());
-		int changeComplexityWeight = getConfigInt("testorder.score.changeComplexity", sw.changeComplexity());
-		int staticFieldBonus = getConfigInt("testorder.score.staticFieldBonus", sw.staticFieldBonus());
-		int coverageBonus = getConfigInt("testorder.score.coverageBonus", sw.coverageBonus());
-		TestOrderState.ScoringWeights effectiveWeights = new TestOrderState.ScoringWeights(newTestBonus,
-				changedTestBonus, maxFailureBonus, speedBonus, speedPenalty, depOverlapWeight, changeComplexityWeight,
-				staticFieldBonus, coverageBonus);
 
 		// warn about negative weights (once)
-		if (newTestBonus < 0 || changedTestBonus < 0 || maxFailureBonus < 0 || speedBonus < 0 || depOverlapWeight < 0
-				|| changeComplexityWeight < 0) {
+		TestOrderState.ScoringWeights effectiveWeights = s.effectiveWeights();
+		if (effectiveWeights.newTest() < 0 || effectiveWeights.changedTest() < 0 || effectiveWeights.maxFailure() < 0
+				|| effectiveWeights.speed() < 0 || effectiveWeights.depOverlap() < 0
+				|| effectiveWeights.changeComplexity() < 0) {
 			TestOrderLogger.warn(
 					"One or more scoring weights are negative — " + "this inverts the scoring for those components.");
 		}
 
 		// set up run-quality tracking
-		if (statePath != null && !statePath.isEmpty()) {
-			TestOrderState.setStatePath(statePath);
+		if (s.statePath() != null && !s.statePath().isEmpty()) {
+			TestOrderState.setStatePath(s.statePath());
 		}
 
 		List<? extends ClassDescriptor> descriptors = context.getClassDescriptors();
 
-		// Sort descriptors by class name for deterministic ordering regardless of JUnit
+		// Create a mutable copy — JUnit may return an unmodifiable list
+		List<ClassDescriptor> mutableDescriptors = new ArrayList<>(descriptors);
+		// Sort by class name for deterministic ordering regardless of JUnit
 		// discovery order
-		@SuppressWarnings("unchecked")
-		List<ClassDescriptor> mutableDescriptors = (List<ClassDescriptor>) descriptors;
-		mutableDescriptors.sort(Comparator.comparing(this::getTopLevelClassName));
+		mutableDescriptors.sort(Comparator.comparing((ClassDescriptor d) -> getTopLevelClassName(d)));
 
 		List<String> testClassNames = descriptors.stream().map(this::getTopLevelClassName).toList();
 
-		// Compute structural change analysis for precise member-level scoring
-		ChangedMembers changedMembers = null;
-		List<StructuralDiff.FileDiff> structuralDiffs = null;
-		boolean structuralEnabled = getConfigBool(TestOrderConfig.STRUCTURAL_DIFF_ENABLED, true);
-		String projectRootStr = getConfig(TestOrderConfig.PROJECT_ROOT);
-		if (structuralEnabled && projectRootStr != null && !projectRootStr.isEmpty()) {
-			try {
-				Path projectRoot = Path.of(projectRootStr);
-				String changeMode = getConfig(TestOrderConfig.CHANGE_MODE);
-				StructuralChangeAnalyzer.AnalysisResult analysis;
-				if ("since-last-commit".equals(changeMode) || "SINCE_LAST_COMMIT".equals(changeMode)) {
-					analysis = StructuralChangeAnalyzer.analyzeSinceLastCommitFull(projectRoot);
-				} else {
-					analysis = StructuralChangeAnalyzer.analyzeUncommittedFull(projectRoot);
-				}
-				changedMembers = analysis.changedMembers();
-				structuralDiffs = analysis.diffs();
-				if (debug) {
-					TestOrderLogger.debug("[structural] {} classes with structural changes, {} changed members",
-							changedMembers.changedClasses().size(), changedMembers.changedMemberKeys().size());
-				}
-			} catch (IOException e) {
-				TestOrderLogger.debug("[structural] Failed to compute structural analysis: {}", e.getMessage());
-			}
-		}
-
-		// Compute change complexity for changed source files
-		Map<String, Double> changeComplexityMap = Map.of();
-		if (!changedClasses.isEmpty() && projectRootStr != null && !projectRootStr.isEmpty()) {
-			Path projectRoot = Path.of(projectRootStr);
-			String srcRoot = getConfig(TestOrderConfig.SOURCE_ROOT);
-			List<Path> sourceRoots = new ArrayList<>();
-			if (srcRoot != null && !srcRoot.isBlank()) {
-				sourceRoots.add(Path.of(srcRoot));
-			} else {
-				// fallback: standard Maven layout
-				sourceRoots.add(projectRoot.resolve("src/main/java"));
-				sourceRoots.add(projectRoot.resolve("src/main/kotlin"));
-			}
-			changeComplexityMap = ChangeComplexity.compute(changedClasses, sourceRoots, changedMembers,
-					structuralDiffs);
-		}
-		// Also try pre-computed complexity from config properties
-		if (changeComplexityMap.isEmpty()) {
-			changeComplexityMap = ChangeComplexity.deserialise(getConfig(TestOrderConfig.CHANGE_COMPLEXITY));
-		}
-
-		if (!changeDetectionLogged) {
-			changeDetectionLogged = true;
+		if (changeDetectionLogged.compareAndSet(false, true)) {
 			TestOrderLogger.info("[test-order] change detection mode={} changedClasses={} changedTests={}",
-					getConfig(TestOrderConfig.CHANGE_MODE), changedClasses.size(), changedTestClasses.size());
+					config.getConfig(TestOrderConfig.CHANGE_MODE), s.changedClasses().size(),
+					s.changedTestClasses().size());
 		}
-		if (debug) {
-			TestOrderLogger.debug("[test-order] changed classes: {}", changedClasses);
-			TestOrderLogger.debug("[test-order] changed test classes: {}", changedTestClasses);
+		if (s.debug()) {
+			TestOrderLogger.debug("[test-order] changed classes: {}", s.changedClasses());
+			TestOrderLogger.debug("[test-order] changed test classes: {}", s.changedTestClasses());
 		}
 
-		TestScorer scorer = new TestScorer.Builder(effectiveWeights, depMap, state, changedClasses, changedTestClasses)
-				.testClassNames(testClassNames).changedMembers(changedMembers).changeComplexity(changeComplexityMap)
-				.build();
+		TestScorer scorer = ClassOrderingEngine.buildScorer(s, testClassNames);
 
 		// score each test class
 		Map<ClassDescriptor, Integer> scores = new HashMap<>();
@@ -220,16 +101,10 @@ public class PriorityClassOrderer implements ClassOrderer {
 			scores.put(desc, result.score());
 
 			// record breakdown for run history
-			if (statePath != null && !statePath.isEmpty()) {
-				TestOrderState.recordBreakdown(testClassName,
-						new TestOrderState.ScoreBreakdown(result.score(), result.isNew(), result.isChanged(),
-								result.depOverlap(), result.depTotal(), result.failScore(), result.isFast(),
-								result.isSlow(), result.complexityOverlap(), result.speedRatio(),
-								result.hasStaticFieldOverlap()));
-			}
+			ClassOrderingEngine.recordBreakdown(s.statePath(), testClassName, result);
 
-			if (debug) {
-				long dur = state.getDuration(testClassName, -1);
+			if (s.debug()) {
+				long dur = s.state().getDuration(testClassName, -1);
 				TestOrderLogger.debug("{} score={} (deps={}, fail={}, new={}, changed={}, fast={}, slow={}, dur={})",
 						testClassName, result.score(), result.depOverlap(), result.failScore(), result.isNew(),
 						result.isChanged(), result.isFast(), result.isSlow(), dur >= 0 ? dur + "ms" : "?");
@@ -237,20 +112,36 @@ public class PriorityClassOrderer implements ClassOrderer {
 		}
 
 		// order: group by score descending, within each group use Jaccard diversity
-		// Apply @TestOrder annotation adjustments before sorting
+		// Apply @TestOrder, @AlwaysRun, and @Order annotation adjustments before
+		// sorting
 		List<ClassDescriptor> pinFirst = new ArrayList<>();
 		List<ClassDescriptor> pinLast = new ArrayList<>();
+		List<ClassDescriptor> junitOrdered = new ArrayList<>();
 		for (ClassDescriptor desc : mutableDescriptors) {
+			// JUnit's @Order: extract into a separate block sorted by @Order value,
+			// placed after FIRST-pinned but before score-ordered classes.
+			// @Order takes precedence over @TestOrder.
+			org.junit.jupiter.api.Order orderAnn = desc.getTestClass().getAnnotation(org.junit.jupiter.api.Order.class);
+			if (orderAnn != null) {
+				junitOrdered.add(desc);
+				if (s.debug()) {
+					TestOrderLogger.debug("[test-order] @Order({}) on {} — excluding from score-based sort",
+							orderAnn.value(), getTopLevelClassName(desc));
+				}
+				continue;
+			}
+			boolean alwaysRun = desc.getTestClass().isAnnotationPresent(AlwaysRun.class);
 			TestOrder ann = desc.getTestClass().getAnnotation(TestOrder.class);
-			if (ann == null)
+			if (!alwaysRun && ann == null)
 				continue;
 			String testClassName = getTopLevelClassName(desc);
-			int bonus = ann.scoreBonus();
-			int changeBonus = changedTestClasses.contains(testClassName) ? ann.changeBonus() : 0;
-			TestOrder.Priority prio = ann.priority();
+			int bonus = ann != null ? ann.scoreBonus() : 0;
+			int changeBonus = ann != null && s.changedTestClasses().contains(testClassName) ? ann.changeBonus() : 0;
+			TestOrder.Priority prio = ann != null ? ann.priority() : TestOrder.Priority.NORMAL;
 
-			if (prio == TestOrder.Priority.FIRST) {
-				pinFirst.add(desc);
+			if (alwaysRun || prio == TestOrder.Priority.FIRST) {
+				if (!pinFirst.contains(desc))
+					pinFirst.add(desc);
 			} else if (prio == TestOrder.Priority.LAST) {
 				pinLast.add(desc);
 			} else {
@@ -262,15 +153,16 @@ public class PriorityClassOrderer implements ClassOrderer {
 				if (delta != 0)
 					scores.merge(desc, delta, Integer::sum);
 			}
-			if (debug && (bonus != 0 || changeBonus != 0 || prio != TestOrder.Priority.NORMAL)) {
+			if (s.debug() && (bonus != 0 || changeBonus != 0 || prio != TestOrder.Priority.NORMAL)) {
 				TestOrderLogger.debug(
 						"[test-order] @TestOrder on {}: priority={}, scoreBonus={}, changeBonus={} (applied={})",
 						testClassName, prio, bonus, ann.changeBonus(), changeBonus);
 			}
 		}
-		// Remove pinned descriptors from main list before score-based sort
+		// Remove pinned and @Order descriptors from main list before score-based sort
 		mutableDescriptors.removeAll(pinFirst);
 		mutableDescriptors.removeAll(pinLast);
+		mutableDescriptors.removeAll(junitOrdered);
 		// Stable sort pinFirst by scoreBonus desc then name, pinLast by scoreBonus asc
 		// then name
 		pinFirst.sort(Comparator
@@ -284,51 +176,51 @@ public class PriorityClassOrderer implements ClassOrderer {
 								d -> Optional.ofNullable(d.getTestClass().getAnnotation(TestOrder.class))
 										.map(TestOrder::scoreBonus).orElse(0))
 						.thenComparing(d -> getTopLevelClassName(d)));
+		// Sort @Order classes by ascending @Order value, then alphabetically
+		junitOrdered.sort(Comparator.<ClassDescriptor, Integer>comparing(d -> {
+			org.junit.jupiter.api.Order o = d.getTestClass().getAnnotation(org.junit.jupiter.api.Order.class);
+			return o != null ? o.value() : Integer.MAX_VALUE;
+		}).thenComparing(d -> getTopLevelClassName(d)));
 
-		orderByScoreAndDiversity(mutableDescriptors, scores, depMap, state,
-				getConfigBool(TestOrderConfig.SPRING_CONTEXT_GROUPING, false));
+		orderByScoreAndDiversity(mutableDescriptors, scores, s.depMap(), s.state(),
+				config.getConfigBool(TestOrderConfig.SPRING_CONTEXT_GROUPING, false));
 
-		// Prepend FIRST-pinned and append LAST-pinned
+		// Prepend FIRST-pinned, then @Order block, then score-ordered, then LAST-pinned
+		mutableDescriptors.addAll(0, junitOrdered);
 		mutableDescriptors.addAll(0, pinFirst);
 		mutableDescriptors.addAll(pinLast);
 
 		// Set up method-level ordering
-		boolean methodOrderingEnabled = getConfigBool(TestOrderConfig.METHOD_ORDER_ENABLED, false);
+		boolean methodOrderingEnabled = config.getConfigBool(TestOrderConfig.METHOD_ORDER_ENABLED, false);
 		if (methodOrderingEnabled) {
-			// Load method-level weights
-			double methodFailureRecency = getConfigDouble("testorder.method.score.failureRecency",
-					state.methodScoringWeights().failureRecency());
-			double methodFast = getConfigDouble("testorder.method.score.fast", state.methodScoringWeights().fast());
-			double methodSlow = getConfigDouble("testorder.method.score.slow", state.methodScoringWeights().slow());
-			double methodDepOverlap = getConfigDouble("testorder.method.score.depOverlap",
-					state.methodScoringWeights().depOverlap());
-			double methodNewMethod = getConfigDouble("testorder.method.score.newMethod",
-					state.methodScoringWeights().newMethod());
-			double methodChangedMethod = getConfigDouble("testorder.method.score.changedMethod",
-					state.methodScoringWeights().changedMethod());
-			double methodCoverageBonus = getConfigDouble("testorder.method.score.coverageBonus",
-					state.methodScoringWeights().coverageBonus());
-			TestOrderState.MethodScoringWeights methodWeights = new TestOrderState.MethodScoringWeights(
-					methodFailureRecency, methodFast, methodSlow, methodDepOverlap, methodNewMethod,
-					methodChangedMethod, methodCoverageBonus);
+			TestOrderState.MethodScoringWeights methodWeights = config.resolveMethodWeights(s.state());
 
 			// Resolve changed methods
-			Set<String> changedMethods = resolveChangedMethods();
+			Set<String> changedMethods = config.resolveChangedMethods();
 
 			// Inject state, weights, and dependency map for method ordering
-			PriorityMethodOrderer.setPendingState(state, methodWeights, true, depMap, changedClasses, changedMethods);
+			PriorityMethodOrderer.setPendingState(s.state(), methodWeights, true, s.depMap(), s.changedClasses(),
+					changedMethods);
 			TestOrderLogger.debug(
 					"[method-order] enabled with weights: failureRecency={}, fast={}, slow={}, "
 							+ "depOverlap={}, newMethod={}, changedMethod={}, coverageBonus={}",
-					methodFailureRecency, methodFast, methodSlow, methodDepOverlap, methodNewMethod,
-					methodChangedMethod, methodCoverageBonus);
+					methodWeights.failureRecency(), methodWeights.fast(), methodWeights.slow(),
+					methodWeights.depOverlap(), methodWeights.newMethod(), methodWeights.changedMethod(),
+					methodWeights.coverageBonus());
 		}
 
-		if (debug) {
+		// Write the computed order back into the original list so JUnit sees it.
+		// JUnit's ClassOrderer contract requires in-place modification.
+		@SuppressWarnings("unchecked")
+		List<ClassDescriptor> originalList = (List<ClassDescriptor>) descriptors;
+		originalList.clear();
+		originalList.addAll(mutableDescriptors);
+
+		if (s.debug()) {
 			TestOrderLogger.debug("Final order:");
-			for (int i = 0; i < descriptors.size(); i++) {
-				TestOrderLogger.debug("  {}. {} (score={})", i + 1, descriptors.get(i).getTestClass().getName(),
-						scores.getOrDefault(descriptors.get(i), 0));
+			for (int i = 0; i < originalList.size(); i++) {
+				TestOrderLogger.debug("  {}. {} (score={})", i + 1, originalList.get(i).getTestClass().getName(),
+						scores.getOrDefault(originalList.get(i), 0));
 			}
 		}
 	}
@@ -338,86 +230,14 @@ public class PriorityClassOrderer implements ClassOrderer {
 	 * Jaccard-distance selection to maximise dependency diversity. Within a Jaccard
 	 * tie, shorter duration wins.
 	 */
+	@SuppressWarnings("unchecked")
 	private void orderByScoreAndDiversity(List<? extends ClassDescriptor> descriptors,
 			Map<ClassDescriptor, Integer> scores, DependencyMap depMap, TestOrderState state,
 			boolean springContextGrouping) {
-		// pre-compute top-level names and dep sets (avoid repeated reflection + map
-		// lookups)
-		Map<ClassDescriptor, String> nameCache = new HashMap<>(descriptors.size());
-		Map<ClassDescriptor, Set<String>> depsCache = new HashMap<>(descriptors.size());
-		Map<ClassDescriptor, String> springContextCache = new HashMap<>(descriptors.size());
-		for (ClassDescriptor d : descriptors) {
-			String name = getTopLevelClassName(d);
-			nameCache.put(d, name);
-			depsCache.put(d, depMap.get(name));
-			if (springContextGrouping) {
-				springContextCache.put(d, TestScorer.springContextKey(d.getTestClass()));
-			}
-		}
-
-		// group descriptors by score
-		TreeMap<Integer, List<ClassDescriptor>> groups = new TreeMap<>(Comparator.reverseOrder());
-		for (ClassDescriptor d : descriptors) {
-			groups.computeIfAbsent(scores.getOrDefault(d, 0), k -> new ArrayList<>()).add(d);
-		}
-
-		// greedy diversity selection across all groups (higher score groups first)
-		List<ClassDescriptor> result = new ArrayList<>(descriptors.size());
-		Set<String> coveredDeps = new HashSet<>();
-		String activeSpringContext = null;
-
-		for (var entry : groups.entrySet()) {
-			List<ClassDescriptor> group = new ArrayList<>(entry.getValue());
-			while (!group.isEmpty()) {
-				int bestIdx = -1;
-				double bestDistance = -1;
-				boolean bestMatchesSpringContext = false;
-				long bestDuration = Long.MAX_VALUE;
-				String bestName = null;
-
-				for (int i = 0; i < group.size(); i++) {
-					ClassDescriptor desc = group.get(i);
-					Set<String> deps = depsCache.get(desc);
-					double distance = TestSelector.jaccardDistance(deps, coveredDeps);
-					long dur = state.getDuration(nameCache.get(desc), Long.MAX_VALUE);
-					String name = nameCache.get(desc);
-					boolean matchesSpringContext = springContextGrouping && activeSpringContext != null
-							&& Objects.equals(activeSpringContext, springContextCache.get(desc));
-
-					if (distance > bestDistance
-							|| (distance == bestDistance && matchesSpringContext && !bestMatchesSpringContext)
-							|| (distance == bestDistance && matchesSpringContext == bestMatchesSpringContext
-									&& dur < bestDuration)
-							|| (distance == bestDistance && matchesSpringContext == bestMatchesSpringContext
-									&& dur == bestDuration && bestName != null && name.compareTo(bestName) < 0)) {
-						bestIdx = i;
-						bestDistance = distance;
-						bestMatchesSpringContext = matchesSpringContext;
-						bestDuration = dur;
-						bestName = name;
-					}
-				}
-
-				// O(1) swap-to-end removal instead of O(N) ArrayList.remove
-				ClassDescriptor best = group.get(bestIdx);
-				int last = group.size() - 1;
-				if (bestIdx != last) {
-					group.set(bestIdx, group.get(last));
-				}
-				group.remove(last);
-				result.add(best);
-				coveredDeps.addAll(depsCache.get(best));
-				if (springContextGrouping) {
-					activeSpringContext = springContextCache.get(best);
-				}
-			}
-		}
-
-		// replace contents in-place (descriptors is a mutable list)
-		@SuppressWarnings("unchecked")
 		List<ClassDescriptor> mutable = (List<ClassDescriptor>) descriptors;
-		mutable.clear();
-		mutable.addAll(result);
+		ClassOrderingEngine.orderByScoreAndDiversity(mutable, d -> scores.getOrDefault(d, 0),
+				this::getTopLevelClassName, depMap, state,
+				springContextGrouping ? d -> TestScorer.springContextKey(d.getTestClass()) : null);
 	}
 
 	private String getTopLevelClassName(ClassDescriptor descriptor) {
@@ -426,100 +246,5 @@ public class PriorityClassOrderer implements ClassOrderer {
 			clazz = clazz.getEnclosingClass();
 		}
 		return clazz.getName();
-	}
-
-	private Set<String> resolveChangedClasses() {
-		Set<String> result = new LinkedHashSet<>();
-		String explicit = getConfig(TestOrderConfig.CHANGED_CLASSES);
-		if (explicit != null && !explicit.isBlank()) {
-			for (String cls : explicit.split(",")) {
-				String trimmed = cls.trim();
-				if (!trimmed.isEmpty())
-					result.add(trimmed);
-			}
-		}
-		String filePath = getConfig(TestOrderConfig.CHANGED_CLASSES_FILE);
-		if (filePath != null && !filePath.isBlank()) {
-			Path f = Path.of(filePath);
-			if (Files.exists(f)) {
-				try {
-					Files.readAllLines(f).stream().map(String::trim).filter(s -> !s.isEmpty()).forEach(result::add);
-				} catch (IOException e) {
-					TestOrderLogger.error("Failed to read changed classes file: {}", e.getMessage());
-				}
-			}
-		}
-		return result;
-	}
-
-	private Set<String> resolveChangedTestClasses() {
-		Set<String> result = new LinkedHashSet<>();
-		String explicit = getConfig(TestOrderConfig.CHANGED_TEST_CLASSES);
-		if (explicit != null && !explicit.isBlank()) {
-			for (String cls : explicit.split(",")) {
-				String trimmed = cls.trim();
-				if (!trimmed.isEmpty())
-					result.add(trimmed);
-			}
-		}
-		return result;
-	}
-
-	private Set<String> resolveChangedMethods() {
-		Set<String> result = new LinkedHashSet<>();
-		String explicit = getConfig(TestOrderConfig.CHANGED_METHODS);
-		if (explicit != null && !explicit.isBlank()) {
-			for (String key : explicit.split(",")) {
-				String trimmed = key.trim();
-				if (!trimmed.isEmpty())
-					result.add(trimmed);
-			}
-		}
-		return result;
-	}
-
-	private String getConfig(String key) {
-		String val = System.getProperty(key);
-		if (val != null)
-			return val;
-		if (configProps == null) {
-			configProps = new Properties();
-			try (InputStream is = getClass().getClassLoader().getResourceAsStream(CONFIG_RESOURCE)) {
-				if (is != null)
-					configProps.load(is);
-			} catch (IOException e) {
-				TestOrderLogger.debug("Failed to load {}: {}", CONFIG_RESOURCE, e.getMessage());
-			}
-		}
-		return configProps.getProperty(key);
-	}
-
-	private boolean getConfigBool(String key, boolean defaultValue) {
-		String val = getConfig(key);
-		if (val == null)
-			return defaultValue;
-		return "true".equalsIgnoreCase(val.trim());
-	}
-
-	private int getConfigInt(String key, int defaultValue) {
-		String val = getConfig(key);
-		if (val != null && !val.isBlank()) {
-			try {
-				return Integer.parseInt(val.trim());
-			} catch (NumberFormatException ignored) {
-			}
-		}
-		return defaultValue;
-	}
-
-	private double getConfigDouble(String key, double defaultValue) {
-		String val = getConfig(key);
-		if (val != null && !val.isBlank()) {
-			try {
-				return Double.parseDouble(val.trim());
-			} catch (NumberFormatException ignored) {
-			}
-		}
-		return defaultValue;
 	}
 }

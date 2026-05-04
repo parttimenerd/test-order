@@ -3,7 +3,7 @@ package me.bechberger.testorder.plugin;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.*;
 
 import java.util.List;
 import java.util.Properties;
@@ -35,44 +35,91 @@ class SurefireHelperTest {
 	}
 
 	@Test
-	void rejectsClassLevelParallelInSurefire() {
+	void orderModeAllowsClassLevelParallelInSurefire() {
 		MavenProject project = projectWithSurefire(config(child("parallel", "classesAndMethods")));
 
-		assertThatThrownBy(() -> SurefireHelper.validateNoClassLevelParallel(project, mockLog()))
-				.isInstanceOf(MojoExecutionException.class)
-				.hasMessageContaining("class-level parallel execution is not supported");
+		assertThatCode(() -> SurefireHelper.validateNoClassLevelParallel(project, mockLog()))
+				.doesNotThrowAnyException();
 	}
 
 	@Test
-	void rejectsAllParallelInSurefire() {
+	void orderModeAllowsAllParallelInSurefire() {
 		MavenProject project = projectWithSurefire(config(child("parallel", "all")));
 
-		assertThatThrownBy(() -> SurefireHelper.validateNoClassLevelParallel(project, mockLog()))
-				.isInstanceOf(MojoExecutionException.class)
-				.hasMessageContaining("class-level parallel execution is not supported");
+		assertThatCode(() -> SurefireHelper.validateNoClassLevelParallel(project, mockLog()))
+				.doesNotThrowAnyException();
 	}
 
 	@Test
-	void rejectsJunitClassParallelInSystemPropertyVariables() {
+	void orderModeAllowsJunitClassParallelInSystemPropertyVariables() {
 		Xpp3Dom sysProps = child("systemPropertyVariables", null);
 		sysProps.addChild(child("junit.jupiter.execution.parallel.mode.classes.default", "concurrent"));
 		MavenProject project = projectWithSurefire(config(sysProps));
 
-		assertThatThrownBy(() -> SurefireHelper.validateNoClassLevelParallel(project, mockLog()))
-				.isInstanceOf(MojoExecutionException.class).hasMessageContaining("mode.classes.default=concurrent");
+		assertThatCode(() -> SurefireHelper.validateNoClassLevelParallel(project, mockLog()))
+				.doesNotThrowAnyException();
 	}
 
 	@Test
-	void rejectsJunitClassParallelInConfigurationParameters() {
+	void orderModeAllowsJunitClassParallelInConfigurationParameters() {
 		Xpp3Dom props = child("properties", null);
 		props.addChild(child("configurationParameters",
 				"junit.jupiter.execution.parallel.enabled=true\n"
-						+ "junit.jupiter.execution.parallel.mode.default=concurrent\n"
 						+ "junit.jupiter.execution.parallel.mode.classes.default=concurrent\n"));
 		MavenProject project = projectWithSurefire(config(props));
 
-		assertThatThrownBy(() -> SurefireHelper.validateNoClassLevelParallel(project, mockLog()))
-				.isInstanceOf(MojoExecutionException.class).hasMessageContaining("mode.classes.default=concurrent");
+		assertThatCode(() -> SurefireHelper.validateNoClassLevelParallel(project, mockLog()))
+				.doesNotThrowAnyException();
+	}
+
+	@Test
+	void learnModeRejectsClassLevelParallelInSurefire() {
+		MavenProject project = projectWithSurefire(config(child("parallel", "classesAndMethods")));
+
+		assertThatThrownBy(() -> SurefireHelper.rejectClassLevelParallelForLearn(project, mockLog()))
+				.isInstanceOf(MojoExecutionException.class)
+				.hasMessageContaining("not supported in learn mode");
+	}
+
+	@Test
+	void learnModeRejectsAllParallelInSurefire() {
+		MavenProject project = projectWithSurefire(config(child("parallel", "all")));
+
+		assertThatThrownBy(() -> SurefireHelper.rejectClassLevelParallelForLearn(project, mockLog()))
+				.isInstanceOf(MojoExecutionException.class)
+				.hasMessageContaining("not supported in learn mode");
+	}
+
+	@Test
+	void learnModeRejectsJunitClassParallelInSystemPropertyVariables() {
+		Xpp3Dom sysProps = child("systemPropertyVariables", null);
+		sysProps.addChild(child("junit.jupiter.execution.parallel.mode.classes.default", "concurrent"));
+		MavenProject project = projectWithSurefire(config(sysProps));
+
+		assertThatThrownBy(() -> SurefireHelper.rejectClassLevelParallelForLearn(project, mockLog()))
+				.isInstanceOf(MojoExecutionException.class)
+				.hasMessageContaining("not supported in learn mode");
+	}
+
+	@Test
+	void learnModeRejectsJunitClassParallelInConfigurationParameters() {
+		Xpp3Dom props = child("properties", null);
+		props.addChild(child("configurationParameters",
+				"junit.jupiter.execution.parallel.enabled=true\n"
+						+ "junit.jupiter.execution.parallel.mode.classes.default=concurrent\n"));
+		MavenProject project = projectWithSurefire(config(props));
+
+		assertThatThrownBy(() -> SurefireHelper.rejectClassLevelParallelForLearn(project, mockLog()))
+				.isInstanceOf(MojoExecutionException.class)
+				.hasMessageContaining("not supported in learn mode");
+	}
+
+	@Test
+	void learnModeAcceptsMethodParallelOnly() {
+		MavenProject project = projectWithSurefire(config(child("parallel", "methods")));
+
+		assertThatCode(() -> SurefireHelper.rejectClassLevelParallelForLearn(project, mockLog()))
+				.doesNotThrowAnyException();
 	}
 
 	@Test
@@ -219,5 +266,154 @@ class SurefireHelperTest {
 		Xpp3Dom testChild = dom.getChild("test");
 		assertNotNull(testChild);
 		assertEquals("com.test.X", testChild.getValue());
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// M4: warnListenerDeactivation
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void warnListenerDeactivation_wildcard() throws MojoExecutionException {
+		Xpp3Dom sysProps = child("systemPropertyVariables", null);
+		sysProps.addChild(child("junit.platform.execution.listeners.deactivate", "*"));
+		MavenProject project = projectWithSurefire(config(sysProps));
+		Log log = mockLog();
+
+		SurefireHelper.warnListenerDeactivation(project, log);
+
+		verify(log).warn(contains("TelemetryListener"));
+	}
+
+	@Test
+	void warnListenerDeactivation_noDeactivation() throws MojoExecutionException {
+		MavenProject project = projectWithSurefire(config());
+		Log log = mockLog();
+
+		SurefireHelper.warnListenerDeactivation(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnListenerDeactivation_inConfigParams() throws MojoExecutionException {
+		Xpp3Dom props = child("properties", null);
+		props.addChild(child("configurationParameters",
+				"junit.platform.execution.listeners.deactivate=me.bechberger.testorder.*\n"));
+		MavenProject project = projectWithSurefire(config(props));
+		Log log = mockLog();
+
+		SurefireHelper.warnListenerDeactivation(project, log);
+
+		verify(log).warn(contains("TelemetryListener"));
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// M12/M20: warnConflictingOrderers
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void warnConflictingOrderers_competingClassOrderer() throws MojoExecutionException {
+		Xpp3Dom sysProps = child("systemPropertyVariables", null);
+		sysProps.addChild(child("junit.jupiter.testclass.order.default",
+				"org.junit.jupiter.api.ClassOrderer$Random"));
+		MavenProject project = projectWithSurefire(config(sysProps));
+		Log log = mockLog();
+
+		SurefireHelper.warnConflictingOrderers(project, log);
+
+		verify(log).warn(contains("competing ClassOrderer"));
+	}
+
+	@Test
+	void warnConflictingOrderers_competingMethodOrderer() throws MojoExecutionException {
+		Xpp3Dom sysProps = child("systemPropertyVariables", null);
+		sysProps.addChild(child("junit.jupiter.testmethod.order.default",
+				"org.junit.jupiter.api.MethodOrderer$Random"));
+		MavenProject project = projectWithSurefire(config(sysProps));
+		Log log = mockLog();
+
+		SurefireHelper.warnConflictingOrderers(project, log);
+
+		verify(log).warn(contains("global MethodOrderer"));
+	}
+
+	@Test
+	void warnConflictingOrderers_noConflict() throws MojoExecutionException {
+		MavenProject project = projectWithSurefire(config());
+		Log log = mockLog();
+
+		SurefireHelper.warnConflictingOrderers(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnConflictingOrderers_ownOrdererAccepted() throws MojoExecutionException {
+		Xpp3Dom sysProps = child("systemPropertyVariables", null);
+		sysProps.addChild(child("junit.jupiter.testclass.order.default",
+				"me.bechberger.testorder.PriorityClassOrderer"));
+		MavenProject project = projectWithSurefire(config(sysProps));
+		Log log = mockLog();
+
+		SurefireHelper.warnConflictingOrderers(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnConflictingOrderers_inConfigParams() throws MojoExecutionException {
+		Xpp3Dom props = child("properties", null);
+		props.addChild(child("configurationParameters",
+				"junit.jupiter.testclass.order.default=org.junit.jupiter.api.ClassOrderer$ClassName\n"));
+		MavenProject project = projectWithSurefire(config(props));
+		Log log = mockLog();
+
+		SurefireHelper.warnConflictingOrderers(project, log);
+
+		verify(log).warn(contains("competing ClassOrderer"));
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// M24: Vintage parallel check in learnMode
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void learnModeRejectsVintageParallelInConfigParams() {
+		Xpp3Dom props = child("properties", null);
+		props.addChild(child("configurationParameters",
+				"junit.vintage.execution.parallel.enabled=true\n"));
+		MavenProject project = projectWithSurefire(config(props));
+
+		assertThatThrownBy(() -> SurefireHelper.rejectClassLevelParallelForLearn(project, mockLog()))
+				.isInstanceOf(MojoExecutionException.class)
+				.hasMessageContaining("Vintage");
+	}
+
+	@Test
+	void learnModeAcceptsDisabledVintageParallel() {
+		Xpp3Dom props = child("properties", null);
+		props.addChild(child("configurationParameters",
+				"junit.vintage.execution.parallel.enabled=false\n"));
+		MavenProject project = projectWithSurefire(config(props));
+
+		assertThatCode(() -> SurefireHelper.rejectClassLevelParallelForLearn(project, mockLog()))
+				.doesNotThrowAnyException();
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// C1: Order-mode parallel warning (warns but does not throw)
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void orderModeWarnsAboutJupiterClassParallel() throws MojoExecutionException {
+		Xpp3Dom sysProps = child("systemPropertyVariables", null);
+		sysProps.addChild(child("junit.jupiter.execution.parallel.enabled", "true"));
+		sysProps.addChild(child("junit.jupiter.execution.parallel.mode.classes.default", "concurrent"));
+		MavenProject project = projectWithSurefire(config(sysProps));
+		Log log = mockLog();
+
+		SurefireHelper.validateNoClassLevelParallel(project, log);
+
+		verify(log).warn(contains("ordering guarantees"));
 	}
 }

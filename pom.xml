@@ -46,8 +46,7 @@
     </distributionManagement>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jacoco.version>0.8.14</jacoco.version>
         <maven.checkstyle.version>3.4.0</maven.checkstyle.version>
@@ -74,11 +73,10 @@
         <module>test-order-core</module>
         <module>test-order-annotations</module>
         <module>test-order-dashboard</module>
-        <module>test-order-cli</module>
+        <module>test-order-ci</module>
         <module>test-order-junit</module>
         <module>test-order-testng</module>
         <module>test-order-maven-plugin</module>
-        <module>test-order-coverage-mojo</module>
         <module>test-order-benchmarks</module>
         <module>test-order-dashboard-ui-tests</module>
     </modules>
@@ -232,10 +230,10 @@
             <id>examples</id>
             <modules>
                 <module>test-order-example</module>
-                <module>test-order-example-service</module>
-                <module>test-order-example-kotlin</module>
-                <module>test-order-example-junit5</module>
-                <module>test-order-fields-methods-example</module>
+                <module>test-order-example/test-order-example-service</module>
+                <module>test-order-example/test-order-example-kotlin</module>
+                <module>test-order-example/test-order-example-junit5</module>
+                <module>test-order-example/test-order-fields-methods-example</module>
                 <module>samples/sample-shop</module>
             </modules>
         </profile>

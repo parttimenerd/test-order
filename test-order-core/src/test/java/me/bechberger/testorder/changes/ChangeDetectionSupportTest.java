@@ -67,6 +67,13 @@ class ChangeDetectionSupportTest {
 	}
 
 	@Test
+	void detectChangedClassesReturnsExplicitSetInUncommittedMode() throws Exception {
+		Set<String> changed = ChangeDetectionSupport.detectChangedClasses("uncommitted", tempDir,
+				tempDir.resolve("src/main/java"), tempDir.resolve("hashes.lz4"), "com.example.A, com.example.B", true);
+		assertEquals(Set.of("com.example.A", "com.example.B"), changed);
+	}
+
+	@Test
 	void detectChangedTestsSkipsExplicitMode() throws Exception {
 		Set<String> changedTests = ChangeDetectionSupport.detectChangedTestClasses("explicit", tempDir,
 				tempDir.resolve("src/test/java"), tempDir.resolve("test-hashes.lz4"), true);

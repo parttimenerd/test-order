@@ -14,7 +14,18 @@ export function mkChart(id: string, cfg: ChartConfiguration): Chart | null {
   }
   const el = document.getElementById(id) as HTMLCanvasElement | null
   if (!el) return null
-  CI[id] = new Chart(el, cfg)
+  try {
+    CI[id] = new Chart(el, cfg)
+  } catch (e) {
+    console.error(`[dashboard] Chart '${id}' init failed:`, e)
+    const ctx = el.getContext('2d')
+    if (ctx) {
+      ctx.fillStyle = '#64748b'
+      ctx.font = '11px sans-serif'
+      ctx.fillText('Chart error — see console', 8, 20)
+    }
+    return null
+  }
   return CI[id]
 }
 

@@ -99,7 +99,7 @@ public final class ChangeDetectionSupport {
 	public static Set<String> detectChangedClasses(String changeMode, Path projectRoot, Path sourceRoot, Path hashFile,
 			String changedClasses, boolean readOnly) throws IOException {
 		String normalized = normalizeMode(changeMode);
-		if ("auto".equals(normalized) && changedClasses != null && !changedClasses.isBlank()) {
+		if (changedClasses != null && !changedClasses.isBlank()) {
 			return parseExplicitClasses(changedClasses);
 		}
 		ChangeDetector.Mode mode = resolveMode(normalized, hashFile);

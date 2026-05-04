@@ -2,7 +2,7 @@
 import { inject, watch, nextTick, onMounted } from 'vue'
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
-import { sn } from '../utils'
+import { sn, DIST } from '../utils'
 import { mkChart, destroyCharts, chartOpts } from '../composables/useCharts'
 
 const d = inject<DashboardState>('dashboard')!
@@ -62,10 +62,11 @@ function initTimeline() {
 }
 
 function initDistributions() {
+  try {
   destroyCharts(...DIST_IDS)
   const scores = d.tests.map(t => t.score)
   const maxS = Math.max(...scores, 1)
-  const bs = Math.max(1, Math.ceil(maxS / 20))
+  const bs = Math.max(1, Math.ceil(maxS / DIST.MAX_SCORE_BUCKETS))
   const sBuckets: Record<number, number> = {}
   scores.forEach(s => { const b = Math.floor(s / bs) * bs; sBuckets[b] = (sBuckets[b] || 0) + 1 })
   const sKeys = Object.keys(sBuckets).map(Number).sort((a, b) => a - b)
@@ -83,7 +84,7 @@ function initDistributions() {
 
   const deps = d.tests.map(t => t.depTotal || 0)
   const maxD = Math.max(...deps, 1)
-  const db = Math.max(1, Math.ceil(maxD / 15))
+  const db = Math.max(1, Math.ceil(maxD / DIST.MAX_DEP_BUCKETS))
   const dBuckets: Record<number, number> = {}
   deps.forEach(dep => { const b = Math.floor(dep / db) * db; dBuckets[b] = (dBuckets[b] || 0) + 1 })
   const dKeys = Object.keys(dBuckets).map(Number).sort((a, b) => a - b)
@@ -92,17 +93,25 @@ function initDistributions() {
     options: { ...chartOpts(), scales: { x: { ticks: { color: '#475569', font: { size: 9 } }, grid: { color: 'rgba(71,85,105,.2)' } }, y: { ticks: { color: '#475569', font: { size: 9 } }, grid: { color: 'rgba(71,85,105,.2)' } } } },
   })
 
-  const top20 = [...d.tests].filter(t => t.failScore > 0).sort((a, b) => b.failScore - a.failScore).slice(0, 20)
+  const top20 = [...d.tests].filter(t => t.failScore > 0).sort((a, b) => b.failScore - a.failScore).slice(0, DIST.TOP_FAIL_COUNT)
   mkChart('d-fail', {
     type: 'bar', data: { labels: top20.map(t => sn(t.name)), datasets: [{ label: 'Fail score', data: top20.map(t => +t.failScore.toFixed(2)), backgroundColor: 'rgba(239,68,68,.7)', borderRadius: 2 }] },
-    options: { ...chartOpts(), indexAxis: 'y' as const, scales: { x: { ticks: { color: '#475569', font: { size: 9 } }, grid: { color: 'rgba(71,85,105,.2)' } }, y: { ticks: { color: '#475569', font: { size: 8 }, maxTicksLimit: 20 }, grid: { display: false } } } },
+    options: { ...chartOpts(), indexAxis: 'y' as const, scales: { x: { ticks: { color: '#475569', font: { size: 9 } }, grid: { color: 'rgba(71,85,105,.2)' } }, y: { ticks: { color: '#475569', font: { size: 8 }, maxTicksLimit: DIST.TOP_FAIL_COUNT }, grid: { display: false } } } },
   })
+  } catch (e) { console.error('[dashboard] Distribution charts failed:', e) }
 }
 
-function initCoverageTreemap() {
+// Treemap: separate layout build from color updates
+let treemapLeaves: d3.Selection<SVGRectElement, d3.HierarchyRectangularNode<unknown>, SVGSVGElement, unknown> | null = null
+let treemapColorScale: ((t: number) => string) | null = null
+let treemapMaxTests = 1
+
+function buildCoverageTreemap() {
+  try {
   const container = document.getElementById('cov-treemap')
   if (!container || !d.dd.coverage?.classes) return
   d3.select(container).selectAll('*').remove()
+  treemapLeaves = null
   const W = container.clientWidth || 700, H = container.clientHeight || 350
 
   const selCov = d.selectionCoverage.value
@@ -119,8 +128,8 @@ function initCoverageTreemap() {
   const hierarchy = d3.hierarchy(root).sum((nd: any) => nd.value || 0).sort((a, b) => (b.value || 0) - (a.value || 0))
   d3.treemap().size([W, H]).padding(2).paddingTop(16).round(true)(hierarchy as any)
 
-  const maxTests = Math.max(...d.dd.coverage.classes.map(c => c.testCount), 1)
-  const colorScale = d3.scaleSequential(t => d3.interpolateRgb('#ef4444', '#22c55e')(t)).domain([0, maxTests])
+  treemapMaxTests = Math.max(...d.dd.coverage.classes.map(c => c.testCount), 1)
+  treemapColorScale = d3.scaleSequential(t => d3.interpolateRgb('#ef4444', '#22c55e')(t)).domain([0, treemapMaxTests])
 
   const svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
 
@@ -137,7 +146,7 @@ function initCoverageTreemap() {
     .attr('fill', (nd: any) => {
       if (!nd.data.data) return '#334155'
       if (highlightSources) return highlightSources.has(nd.data.data.name) ? '#22c55e' : '#1e293b'
-      return colorScale(nd.data.data.testCount)
+      return treemapColorScale!(nd.data.data.testCount)
     })
     .attr('stroke', (nd: any) => highlightSources && nd.data.data && highlightSources.has(nd.data.data.name) ? '#16a34a' : '#0f172a')
     .attr('stroke-width', (nd: any) => highlightSources && nd.data.data && highlightSources.has(nd.data.data.name) ? 2 : 1)
@@ -161,16 +170,34 @@ function initCoverageTreemap() {
   }).on('mousemove', (e: MouseEvent) => tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'))
     .on('mouseout', () => tip.style('opacity', '0'))
     .on('click', (_e: MouseEvent, nd: any) => { if (nd.data.data) d.covSelectedClass.value = nd.data.data })
+
+  treemapLeaves = leaves as any
+  } catch (e) { console.error('[dashboard] Coverage treemap failed:', e) }
+}
+
+/** Fast path: only update treemap fill colors when selection changes */
+function updateTreemapColors() {
+  if (!treemapLeaves || !treemapColorScale) { buildCoverageTreemap(); return }
+  const selCov = d.selectionCoverage.value
+  const highlightSources = selCov ? selCov.sources : null
+  treemapLeaves
+    .attr('fill', (nd: any) => {
+      if (!nd.data.data) return '#334155'
+      if (highlightSources) return highlightSources.has(nd.data.data.name) ? '#22c55e' : '#1e293b'
+      return treemapColorScale!(nd.data.data.testCount)
+    })
+    .attr('stroke', (nd: any) => highlightSources && nd.data.data && highlightSources.has(nd.data.data.name) ? '#16a34a' : '#0f172a')
+    .attr('stroke-width', (nd: any) => highlightSources && nd.data.data && highlightSources.has(nd.data.data.name) ? 2 : 1)
 }
 
 function initAll() {
   if (d.activeTab.value !== 'analytics') return
-  nextTick(() => { initTimeline(); initDistributions(); initCoverageTreemap() })
+  nextTick(() => { try { initTimeline() } catch (e) { console.error('[dashboard] Timeline failed:', e) }; initDistributions(); buildCoverageTreemap() })
 }
 
 watch(() => d.activeTab.value, (tab) => { if (tab === 'analytics') initAll() })
-watch(() => d.selectedTests.value, () => { if (d.activeTab.value === 'analytics' && d.hasCoverage) nextTick(initCoverageTreemap) })
-watch(() => d.selectedMethods.value, () => { if (d.activeTab.value === 'analytics' && d.hasCoverage) nextTick(initCoverageTreemap) })
+watch(() => d.selectedTests.value, () => { if (d.activeTab.value === 'analytics' && d.hasCoverage) nextTick(updateTreemapColors) })
+watch(() => d.selectedMethods.value, () => { if (d.activeTab.value === 'analytics' && d.hasCoverage) nextTick(updateTreemapColors) })
 onMounted(initAll)
 </script>
 
@@ -199,13 +226,73 @@ onMounted(initAll)
         <div class="card"><div class="card-label">Top 20 by fail score</div><div class="analytics__canvas analytics__canvas--dist"><canvas id="d-fail"></canvas></div></div>
       </div>
 
+      <!-- Run comparison -->
+      <div v-if="d.runDiff.value.length" style="margin-bottom:14px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px">Last Run Comparison <span style="font-size:.65rem;color:var(--text-muted);font-weight:400">— vs previous run</span></h3>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <div class="kpi" style="padding:5px 10px">
+            <div style="font-size:.58rem;color:var(--text-dim)">Newly Failed</div>
+            <div style="font-size:.9rem;font-weight:700;color:var(--red)">{{ d.runDiff.value.filter(e => e.status === 'newly-failed').length }}</div>
+          </div>
+          <div class="kpi" style="padding:5px 10px">
+            <div style="font-size:.58rem;color:var(--text-dim)">Recovered</div>
+            <div style="font-size:.9rem;font-weight:700;color:var(--green)">{{ d.runDiff.value.filter(e => e.status === 'recovered').length }}</div>
+          </div>
+          <div class="kpi" style="padding:5px 10px">
+            <div style="font-size:.58rem;color:var(--text-dim)">New Tests</div>
+            <div style="font-size:.9rem;font-weight:700;color:var(--cyan)">{{ d.runDiff.value.filter(e => e.status === 'new').length }}</div>
+          </div>
+          <div class="kpi" style="padding:5px 10px">
+            <div style="font-size:.58rem;color:var(--text-dim)">Improved</div>
+            <div style="font-size:.9rem;font-weight:700;color:var(--green)">{{ d.runDiff.value.filter(e => e.status === 'improved').length }}</div>
+          </div>
+          <div class="kpi" style="padding:5px 10px">
+            <div style="font-size:.58rem;color:var(--text-dim)">Regressed</div>
+            <div style="font-size:.9rem;font-weight:700;color:var(--orange)">{{ d.runDiff.value.filter(e => e.status === 'regressed').length }}</div>
+          </div>
+        </div>
+        <div style="overflow-x:auto;max-height:260px;overflow-y:auto">
+          <table>
+            <thead style="position:sticky;top:0;background:var(--bg-base);z-index:1">
+              <tr>
+                <th style="padding:4px 8px;text-align:left">Test</th>
+                <th style="padding:4px 8px;text-align:left">Status</th>
+                <th style="padding:4px 8px;text-align:right">Prev Rank</th>
+                <th style="padding:4px 8px;text-align:right">Curr Rank</th>
+                <th style="padding:4px 8px;text-align:right">Shift</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="e in d.runDiff.value.filter(e => e.status !== 'unchanged')" :key="e.name">
+                <td style="padding:3px 8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="e.name">{{ sn(e.name) }}</td>
+                <td style="padding:3px 8px">
+                  <span class="badge" :class="{
+                    'analytics__diff--fail': e.status === 'newly-failed',
+                    'analytics__diff--recover': e.status === 'recovered',
+                    'analytics__diff--new': e.status === 'new',
+                    'analytics__diff--removed': e.status === 'removed',
+                    'analytics__diff--improved': e.status === 'improved',
+                    'analytics__diff--regressed': e.status === 'regressed',
+                  }">{{ e.status }}</span>
+                </td>
+                <td style="padding:3px 8px;text-align:right;color:var(--text-dim)">{{ e.prevRank ?? '—' }}</td>
+                <td style="padding:3px 8px;text-align:right;color:var(--text-dim)">{{ e.currRank ?? '—' }}</td>
+                <td style="padding:3px 8px;text-align:right;font-weight:700" :style="{ color: e.rankDelta < 0 ? 'var(--green)' : e.rankDelta > 0 ? 'var(--red)' : 'var(--text-muted)' }">
+                  {{ e.rankDelta === 0 ? '–' : e.rankDelta > 0 ? '+' + e.rankDelta : e.rankDelta }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Coverage -->
       <div v-if="d.hasCoverage">
         <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px">Coverage</h3>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
           <div class="kpi analytics__cov-kpi">
             <div class="analytics__cov-kpi-label">Source Classes</div>
-            <div class="analytics__cov-kpi-value analytics__cov-kpi-value--accent">{{ d.dd.coverage.totalSourceClasses }}</div>
+            <div class="analytics__cov-kpi-value analytics__cov-kpi-value--accent">{{ d.dd.coverage?.totalSourceClasses }}</div>
           </div>
           <div class="kpi analytics__cov-kpi">
             <div class="analytics__cov-kpi-label">Packages</div>
@@ -240,6 +327,18 @@ onMounted(initAll)
         </div>
 
         <!-- Treemap -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <div class="analytics__search-wrap">
+            <input
+              :value="d.covSearchQ.value"
+              @input="d.covSearchQ.value = ($event.target as HTMLInputElement).value"
+              placeholder="Search classes…"
+              class="analytics__search"
+            />
+            <button v-if="d.covSearchQ.value" class="analytics__search-clear" @click="d.covSearchQ.value = ''" title="Clear search">×</button>
+          </div>
+          <span v-if="d.covSearchQ.value" style="font-size:.65rem;color:var(--text-muted)">{{ d.filteredCovClasses.value.length }} matches</span>
+        </div>
         <div id="cov-treemap" style="background:var(--bg-card);border-radius:var(--radius);overflow:hidden;height:350px;position:relative"></div>
 
         <!-- Class detail panel -->
@@ -250,7 +349,12 @@ onMounted(initAll)
             <button @click="d.covSelectedClass.value = null" style="margin-left:auto;padding:2px 8px;font-size:.65rem;background:var(--border);color:var(--text-sec);border:1px solid var(--text-muted);border-radius:3px;cursor:pointer">✕</button>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
-            <span v-for="tn in d.covSelectedClass.value.tests" :key="tn" class="analytics__class-test-tag">{{ sn(tn) }}</span>
+            <span
+              v-for="tn in d.covSelectedClass.value.tests" :key="tn"
+              class="analytics__class-test-tag analytics__class-test-tag--clickable"
+              @click="d.navigateToTestFromCov(tn)"
+              :title="'Go to ' + tn + ' in Tests tab'"
+            >{{ sn(tn) }} →</span>
           </div>
           <div v-if="d.covSelectedClass.value.members?.length">
             <div class="card-label" style="margin-bottom:4px">Members ({{ d.covSelectedClass.value.members.length }})</div>
@@ -285,7 +389,30 @@ onMounted(initAll)
 .analytics__pct--yellow { color: var(--yellow); }
 .analytics__pct--red { color: var(--red); }
 .analytics__class-test-tag { font-size: .68rem; padding: 2px 6px; background: rgba(99, 102, 241, .15); color: var(--accent-light); border-radius: 3px; }
+.analytics__class-test-tag--clickable { cursor: pointer; transition: background var(--tr-fast); }
+.analytics__class-test-tag--clickable:hover { background: rgba(99, 102, 241, .35); }
+.analytics__diff--fail { background: rgba(127, 29, 29, .45); color: var(--red); }
+.analytics__diff--recover { background: rgba(20, 83, 45, .45); color: var(--green); }
+.analytics__diff--new { background: rgba(8, 51, 68, .45); color: var(--cyan); }
+.analytics__diff--removed { background: rgba(71, 85, 105, .45); color: var(--text-muted); }
+.analytics__diff--improved { background: rgba(20, 83, 45, .25); color: var(--green); }
+.analytics__diff--regressed { background: rgba(124, 45, 18, .25); color: var(--orange); }
 .analytics__member-card { background: var(--bg-base); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: .68rem; display: flex; justify-content: space-between; align-items: center; }
 .analytics__member-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .analytics__member-tests { color: var(--green); font-weight: 600; flex-shrink: 0; margin-left: 8px; }
+
+.analytics__search-wrap { position: relative; display: flex; align-items: center; }
+.analytics__search {
+  background: var(--bg-base); color: var(--text); font-size: .72rem; padding: 3px 24px 3px 8px;
+  border: 1px solid var(--border); border-radius: 4px; outline: none; width: 180px;
+  transition: border-color var(--tr-fast);
+}
+.analytics__search:focus { border-color: var(--accent); }
+.analytics__search-clear {
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: .85rem; line-height: 1; padding: 2px 5px; border-radius: 3px;
+  transition: color var(--tr-fast);
+}
+.analytics__search-clear:hover { color: var(--text); }
 </style>

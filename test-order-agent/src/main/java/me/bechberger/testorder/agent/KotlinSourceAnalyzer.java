@@ -126,10 +126,10 @@ public class KotlinSourceAnalyzer {
 		int i = 0;
 		while (i < content.length()) {
 			// Handle triple-quoted strings
-			if (i + 2 < content.length() && content.substring(i, i + 3).equals("\"\"\"")) {
+			if (i + 2 < content.length() && content.startsWith("\"\"\"", i)) {
 				// Skip until closing triple quote
 				i += 3;
-				while (i + 2 < content.length() && !content.substring(i, i + 3).equals("\"\"\"")) {
+				while (i + 2 < content.length() && !content.startsWith("\"\"\"", i)) {
 					result.append(' ');
 					i++;
 				}
@@ -178,7 +178,7 @@ public class KotlinSourceAnalyzer {
 			}
 
 			// Handle line comments
-			if (i + 1 < content.length() && content.substring(i, i + 2).equals("//")) {
+			if (i + 1 < content.length() && content.startsWith("//", i)) {
 				// Skip until end of line
 				while (i < content.length() && content.charAt(i) != '\n') {
 					result.append(' ');
@@ -192,12 +192,12 @@ public class KotlinSourceAnalyzer {
 			}
 
 			// Handle block comments
-			if (i + 1 < content.length() && content.substring(i, i + 2).equals("/*")) {
+			if (i + 1 < content.length() && content.startsWith("/*", i)) {
 				// Skip until closing */
 				result.append(' ');
 				result.append(' ');
 				i += 2;
-				while (i + 1 < content.length() && !content.substring(i, i + 2).equals("*/")) {
+				while (i + 1 < content.length() && !content.startsWith("*/", i)) {
 					result.append(content.charAt(i) == '\n' ? '\n' : ' ');
 					i++;
 				}

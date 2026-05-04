@@ -2,7 +2,6 @@ package me.bechberger.testorder.agent.runtime;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -31,15 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <b>Counter Strategy:</b> Uses VarHandle-backed counters.
  */
 public class ClassIdMap {
-	private interface IntCounter {
-		int getAndIncrement();
-
-		int decrementAndGet();
-
-		int get();
-	}
-
-	private static final class VarHandleIntCounter implements IntCounter {
+	// VarHandle-backed counter implementation
+	private static final class VarHandleIntCounter {
 		private static final VarHandle VALUE_HANDLE;
 
 		static {
@@ -57,18 +49,15 @@ public class ClassIdMap {
 			this.value = initialValue;
 		}
 
-		@Override
 		public int getAndIncrement() {
 			return (int) VALUE_HANDLE.getAndAdd(this, 1);
 		}
 
-		@Override
 		public int decrementAndGet() {
 			int previous = (int) VALUE_HANDLE.getAndAdd(this, -1);
 			return previous - 1;
 		}
 
-		@Override
 		public int get() {
 			return value;
 		}
@@ -80,15 +69,15 @@ public class ClassIdMap {
 	private static final int CAPACITY_LIMIT = 16_000_000; // total capacity: 16K classes + 8M members
 	// Medium project: ~2 000 instrumented application classes; 4 096 avoids any
 	// rehash below that.
-	private static final int INITIAL_CLASS_MAP_CAPACITY = 4_096;
+	private static final int INITIAL_CLASS_MAP_CAPACITY = 4_096 * 2;
 	// Methods + fields per class ~8 on average → 4 096 classes × 8 = ~32 768; 32
 	// 768 avoids resize.
-	private static final int INITIAL_MEMBER_MAP_CAPACITY = 32_768;
+	private static final int INITIAL_MEMBER_MAP_CAPACITY = 32_768 * 4;
 
 	private final ConcurrentHashMap<String, Integer> classToId;
 	private final ConcurrentHashMap<String, Integer> memberToId;
-	private final IntCounter nextClassId;
-	private final IntCounter nextMemberId;
+	private final VarHandleIntCounter nextClassId;
+	private final VarHandleIntCounter nextMemberId;
 
 	// Reverse maps built lazily on first lookup (flush time only).
 	// Using plain String[] arrays indexed by ID avoids Integer autoboxing
@@ -111,7 +100,7 @@ public class ClassIdMap {
 		return new ClassIdMap();
 	}
 
-	private static IntCounter createCounter(int initialValue) {
+	private static VarHandleIntCounter createCounter(int initialValue) {
 		return new VarHandleIntCounter(initialValue);
 	}
 
@@ -153,27 +142,6 @@ public class ClassIdMap {
 	}
 
 	/**
-	 * Get the ID for a class name, registering lazily if needed.
-	 */
-	public int getClassId(String className) {
-		return getOrRegisterClass(className);
-	}
-
-	/**
-	 * Get the ID for a member name, registering lazily if needed.
-	 */
-	public int getMemberId(String memberKey) {
-		return getOrRegisterMember(memberKey);
-	}
-
-	/**
-	 * Get the class name for an ID (returns null if not registered).
-	 */
-	public String getClassName(int id) {
-		return getClassNameForId(id);
-	}
-
-	/**
 	 * Get the class name for an ID via lazy reverse array. The reverse array is
 	 * built on first call and invalidated when new classes register.
 	 */
@@ -188,7 +156,12 @@ public class ClassIdMap {
 		return (id < rc.length) ? rc[id] : null;
 	}
 
-	private String[] rebuildClassReverse() {
+	private synchronized String[] rebuildClassReverse() {
+		// Double-check: another thread may have rebuilt while we waited
+		String[] existing = reverseClassNames;
+		if (existing != null && nextClassId.get() <= existing.length) {
+			return existing;
+		}
 		// Add safety margin: a concurrent registration may have incremented
 		// nextClassId after we snapshot the map, so over-size the array.
 		int size = nextClassId.get() + 64;
@@ -217,8 +190,14 @@ public class ClassIdMap {
 		return (adjusted < rm.length) ? rm[adjusted] : null;
 	}
 
-	private String[] rebuildMemberReverse() {
-		int size = nextMemberId.get() - MEMBER_ID_OFFSET + 64; // safety margin for concurrent registrations
+	private synchronized String[] rebuildMemberReverse() {
+		// Double-check: another thread may have rebuilt while we waited
+		String[] existing = reverseMemberNames;
+		int currentCount = nextMemberId.get() - MEMBER_ID_OFFSET;
+		if (existing != null && currentCount <= existing.length) {
+			return existing;
+		}
+		int size = currentCount + 64; // safety margin for concurrent registrations
 		if (size <= 0)
 			return new String[0];
 		String[] arr = new String[size];
@@ -231,27 +210,4 @@ public class ClassIdMap {
 		return arr;
 	}
 
-	/**
-	 * Freeze the map after agent initialization is complete. No new classes can be
-	 * registered after freezing.
-	 */
-	public synchronized void freeze() {
-		// no-op now; lazy registration supported
-		AgentLogger.log("[ClassIdMap] Frozen with " + classToId.size() + " class entries and "
-				+ (nextMemberId.get() - MEMBER_ID_OFFSET) + " member entries");
-	}
-
-	/**
-	 * Returns the current number of registered class IDs.
-	 */
-	public int size() {
-		return nextClassId.get();
-	}
-
-	/**
-	 * Returns true if the map has been frozen.
-	 */
-	public boolean isFrozen() {
-		return false; // always allows registration now
-	}
 }

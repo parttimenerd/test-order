@@ -9,14 +9,24 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # Java/Maven/Gradle build output
 **/target/
 **/build/
 **/out/
+*.class
 
-# Maven wrapper cache (kept out of repo by default)
-.mvn/timing.properties
+# Maven
+.mvn/
+dependency-reduced-pom.xml
+pom.xml.releaseBackup
+release.properties
+
+# Gradle
+.gradle/
+*.gradle.bak
 
 # Logs and local run artifacts
 *.log
@@ -36,7 +46,31 @@ test-order-dashboard/src/main/dashboard/node/
 *.swp
 *.swo
 *.lz4
-*.class
 *.out
-.test-order/
-dependency-reduced-pom.xml
+
+# External repos cloned for demos and benchmarks
+third-party/
+
+# System and cache files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+node_modules
+
+# Root-level debug / build-output artefacts
+*.exit
+build_status.txt
+cast-lines.txt
+debug.txt
+dep-tree.txt
+dump.out
+java_ver.txt
+asciinema-run.log
+dashboard-dev.log
+ps-check.txt
+pw-check.txt
+pw-dom.json
+terminal_check.txt
+testng-compile.out
+README\ improvements

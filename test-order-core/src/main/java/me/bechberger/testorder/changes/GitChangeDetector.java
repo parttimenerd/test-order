@@ -18,6 +18,13 @@ public class GitChangeDetector {
 	private static final int GIT_TIMEOUT_SECONDS = 30;
 
 	/**
+	 * Set of git roots for which the HEAD~1-unavailable warning has already been
+	 * emitted. Guards against duplicate warnings when both main and test sources
+	 * are checked in the same mojo execution.
+	 */
+	private static final Set<Path> warnedUnavailableRoots = Collections.synchronizedSet(new HashSet<>());
+
+	/**
 	 * Returns FQCNs of Java classes changed between a commit ref and HEAD, under
 	 * the given source prefix.
 	 */
@@ -32,7 +39,10 @@ public class GitChangeDetector {
 	 */
 	public static Set<String> changedSinceLastCommit(Path projectRoot, String sourcePrefix) throws IOException {
 		if (!gitRevisionExists(projectRoot, "HEAD~1")) {
-			TestOrderLogger.warn("git revision HEAD~1 is unavailable; treating all tracked source files as changed");
+			if (warnedUnavailableRoots.add(projectRoot.toAbsolutePath().normalize())) {
+				TestOrderLogger
+						.warn("git revision HEAD~1 is unavailable; treating all tracked source files as changed");
+			}
 			List<String> trackedFiles = runGit(projectRoot, "ls-files", "--", sourcePrefix);
 			return javaFilesToClassNames(trackedFiles, sourcePrefix, projectRoot, "HEAD");
 		}

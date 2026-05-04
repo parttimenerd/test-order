@@ -5,34 +5,33 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Shopping cart that holds products.
- * Depends on {@link Product}.
+ * Shopping cart that holds products. Depends on {@link Product}.
  */
 public class Cart {
 
-    private final List<Product> items = new ArrayList<>();
+	private final List<Product> items = new ArrayList<>();
 
-    public void add(Product product) {
-        items.add(product);
-    }
+	public void add(Product product) {
+		items.add(product);
+	}
 
-    public void remove(Product product) {
-        items.remove(product);
-    }
+	public void remove(Product product) {
+		items.remove(product);
+	}
 
-    public List<Product> getItems() {
-        return Collections.unmodifiableList(items);
-    }
+	public List<Product> getItems() {
+		return Collections.unmodifiableList(items);
+	}
 
-    public int size() {
-        return items.size();
-    }
+	public int size() {
+		return items.size();
+	}
 
-    public double total() {
-        return items.stream().mapToDouble(Product::getPrice).sum();
-    }
+	public double total() {
+		return items.stream().mapToDouble(Product::getPrice).sum();
+	}
 
-    public void clear() {
-        items.clear();
-    }
+	public void clear() {
+		items.clear();
+	}
 }

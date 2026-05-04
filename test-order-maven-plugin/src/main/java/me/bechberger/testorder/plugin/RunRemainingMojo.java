@@ -3,6 +3,7 @@ package me.bechberger.testorder.plugin;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.*;
@@ -11,7 +12,7 @@ import me.bechberger.testorder.TestSelector;
 
 /**
  * Configures Surefire to run the remaining test classes that were deferred by a
- * previous {@code test-order:select} or {@code test-order:combined} goal.
+ * previous {@code test-order:select} or {@code test-order:auto} goal.
  * <p>
  * Usage: {@code mvn test-order:run-remaining test}
  */
@@ -24,12 +25,13 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 
 	@Override
 	public void execute() throws MojoExecutionException {
+		initContext();
 		if (skip) {
 			getLog().info("[test-order] Skipping — testorder.skip=true");
 			return;
 		}
-		// Prevent a POM-bound combined goal from overriding the test selection
-		project.getProperties().setProperty("testorder.combined.active", "true");
+		// Prevent a POM-bound auto goal from overriding the test selection
+		project.getProperties().setProperty("testorder.auto.active", "true");
 
 		Path remaining = Path.of(remainingFile);
 		if (!Files.exists(remaining)) {
@@ -53,11 +55,18 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 
 		getLog().info("[test-order] Running " + tests.size() + " remaining test classes");
 
-		// Inject test-order classpath + service files so orderer/telemetry works
-		injectTestClasspath(resolveOrdererClasspath());
-		ensureListenerServiceFile();
-		if (isTestNGOnTestClasspath()) {
-			ensureTestNGListenerServiceFile();
+		// Write orderer config so remaining tests are still prioritized by
+		// failure history, duration, and dependency coverage (no change-based scoring).
+		// If the index file is available, write the full config; otherwise just
+		// inject the classpath and listener so telemetry still records outcomes.
+		if (indexFile != null && !indexFile.isBlank() && Files.exists(ctx.resolveIndexFile(indexFile))) {
+			writeOrdererConfig(Set.of(), Set.of());
+		} else {
+			injectTestClasspath(resolveOrdererClasspath());
+			ensureListenerServiceFile();
+			if (isTestNGOnTestClasspath()) {
+				ensureTestNGListenerServiceFile();
+			}
 		}
 
 		SurefireHelper.configureIncludes(project, tests, true);

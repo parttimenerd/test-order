@@ -5,6 +5,14 @@ import { sn } from '../utils'
 
 const d = inject<DashboardState>('dashboard')!
 
+function origTooltip(name: string): string {
+  return d.getScoreBreakdown(name, 'orig') + '\n\nClick to open detailed score modal'
+}
+
+function simTooltip(name: string): string {
+  return d.getScoreBreakdown(name, 'sim') + '\n\nClick to open detailed score modal'
+}
+
 const WEIGHT_DESC: Record<string, string> = {
   newTest:          'Boost for test classes that did not exist in the previous run — ensures new tests run early',
   changedTest:      'Boost for test classes whose source was modified since the last run',
@@ -21,8 +29,22 @@ const WEIGHT_DESC: Record<string, string> = {
 <template>
   <div v-if="d.activeTab.value === 'weights'">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <h3 style="font-size:.82rem;color:var(--text-sec)">Weight Sliders</h3>
-      <button @click="d.resetWeights()" style="margin-left:auto;padding:3px 10px;font-size:.7rem;background:var(--border);color:var(--text);border:1px solid var(--text-muted);border-radius:4px;cursor:pointer">Reset to defaults</button>
+      <h3 style="font-size:.82rem;color:var(--text-sec)">Weight Sliders</h3>      <div v-if="d.simApfd.value !== null" class="kpi" style="padding:4px 10px;margin-left:12px">
+        <div style="font-size:.55rem;color:var(--text-dim)">Simulated APFD</div>
+        <div style="font-size:.95rem;font-weight:700" :style="{ color: d.simApfd.value >= 0.7 ? 'var(--green)' : d.simApfd.value >= 0.5 ? 'var(--yellow)' : 'var(--red)' }">
+          {{ (d.simApfd.value * 100).toFixed(1) }}%
+        </div>
+      </div>
+      <div v-if="d.avgApfd.value !== null" style="font-size:.65rem;color:var(--text-muted);margin-left:4px" title="Original average APFD from saved runs">orig avg: {{ (d.avgApfd.value * 100).toFixed(1) }}%</div>      <button @click="d.resetWeights()" style="margin-left:auto;padding:3px 10px;font-size:.7rem;background:var(--border);color:var(--text);border:1px solid var(--text-muted);border-radius:4px;cursor:pointer">Reset to defaults</button>
+      <button v-if="d.serverConnected.value" @click="d.optimizeWeights()" :disabled="d.optimizing.value" class="weights__optimize-btn" :title="d.optimizing.value ? 'Running genetic algorithm…' : 'Run genetic algorithm to find optimal weights from run history'">
+        {{ d.optimizing.value ? 'Optimizing…' : '⚡ Optimize' }}
+      </button>
+    </div>
+    <div v-if="d.optimizeError.value" class="weights__opt-msg weights__opt-msg--err">{{ d.optimizeError.value }}</div>
+    <div v-if="d.optimizeResult.value && !d.optimizeError.value" class="weights__opt-msg weights__opt-msg--ok">
+      Optimized{{ d.optimizeResult.value.overfit ? ' (overfit → defaults)' : '' }}
+      — train APFDc: {{ (d.optimizeResult.value.trainScore * 100).toFixed(1) }}%
+      <span v-if="d.optimizeResult.value.folds > 0">, validation: {{ (d.optimizeResult.value.validationScore * 100).toFixed(1) }}%</span>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:5px;margin-bottom:14px">
       <div v-for="wd in d.dd.weightDefs" :key="wd.name" class="weights__slider-row" :title="WEIGHT_DESC[wd.name] || wd.name">
@@ -67,8 +89,22 @@ const WEIGHT_DESC: Record<string, string> = {
             <td class="weights__td weights__td--right weights__td--dim">{{ r.origRank }}</td>
             <td class="weights__td weights__td--right weights__td--dim">{{ r.simRank }}</td>
             <td class="weights__td weights__td--right weights__td--delta" :class="{ 'weights__td--delta-up': r.delta < -5, 'weights__td--delta-down': r.delta > 5 }" :title="r.delta < 0 ? 'Moves earlier (better)' : r.delta > 0 ? 'Moves later (worse)' : 'No change'">{{ r.delta === 0 ? '–' : r.delta > 0 ? '+' + r.delta : r.delta }}</td>
-            <td class="weights__td weights__td--right weights__td--dim">{{ r.origScore }}</td>
-            <td class="weights__td weights__td--right weights__td--accent">{{ r.simScore }}</td>
+            <td class="weights__td weights__td--right weights__td--dim weights__td--score">
+              <button
+                type="button"
+                class="weights__score-btn"
+                :title="origTooltip(r.name)"
+                @click.stop="d.openScoreModal(r.name, 'orig', 'Weights Original')"
+              >{{ r.origScore }}</button>
+            </td>
+            <td class="weights__td weights__td--right weights__td--accent weights__td--score">
+              <button
+                type="button"
+                class="weights__score-btn"
+                :title="simTooltip(r.name)"
+                @click.stop="d.openScoreModal(r.name, 'sim', 'Weights Simulated')"
+              >{{ r.simScore }}</button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -96,5 +132,22 @@ const WEIGHT_DESC: Record<string, string> = {
 .weights__td--delta { font-weight: 700; color: var(--text-muted); }
 .weights__td--delta-up { color: var(--green); }
 .weights__td--delta-down { color: var(--red); }
+.weights__td--score { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
+.weights__score-btn {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
 .weights__row--big-delta { background: rgba(120, 53, 15, .12); }
+.weights__optimize-btn { padding: 3px 10px; font-size: .7rem; background: var(--accent); color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+.weights__optimize-btn:disabled { opacity: .5; cursor: wait; }
+.weights__optimize-btn:hover:not(:disabled) { filter: brightness(1.15); }
+.weights__opt-msg { font-size: .65rem; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px; }
+.weights__opt-msg--err { background: rgba(239, 68, 68, .15); color: var(--red); }
+.weights__opt-msg--ok { background: rgba(34, 197, 94, .12); color: var(--green); }
 </style>

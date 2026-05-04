@@ -346,7 +346,7 @@ class BugVerificationIT {
 	void combinedModeFromScratchCreatesValidIndex() {
 		project.cleanAll();
 
-		MavenResult result = project.maven().combined();
+		MavenResult result = project.maven().auto();
 		assertThat(result).succeeded().outputContains("Tests run:");
 
 		// Index should exist and have all 3 test classes
@@ -410,7 +410,7 @@ class BugVerificationIT {
 		}
 		project.deleteIfExists(".test-order/state.lz4");
 
-		MavenResult result = project.maven().run("clean", "test-order:combined", "test",
+		MavenResult result = project.maven().run("clean", "test-order:auto", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
 				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0");
 		assertThat(result).succeeded();
@@ -759,5 +759,132 @@ class BugVerificationIT {
 			}
 		}
 		throw new AssertionError("Could not find score for " + testClassName + " in output:\n" + output);
+	}
+
+	private int countTestsRun(MavenResult result) {
+		return result.grepOutput("Tests run:").stream().mapToInt(line -> {
+			var m = java.util.regex.Pattern.compile("Tests run: (\\d+)").matcher(line);
+			return m.find() ? Integer.parseInt(m.group(1)) : 0;
+		}).sum();
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// topN=-1 (default): select runs ALL affected tests
+	//
+	// Steps: learn → select with topN=-1 (default) → all 3 tests
+	// should be selected because Product is depended on by all.
+	// Expected: selected count = 3, remaining = 0.
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	@Order(200)
+	@DisplayName("topN=-1 (default): select includes all affected tests")
+	void selectWithDefaultTopNSelectsAllAffected() {
+		if (!project.exists(".test-order/test-dependencies.lz4")) {
+			project.cleanAll();
+			project.maven().learn();
+		}
+
+		// Product is depended on by all 3 test classes
+		MavenResult result = project.maven().run("clean", "test-order:select", "test",
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT);
+		assertThat(result).succeeded();
+
+		String selected = project.readFile("target/test-order-selected.txt");
+		assertThat(selected).isNotNull();
+		List<String> selectedTests = selected.lines().filter(l -> !l.isBlank() && !l.startsWith("#")).toList();
+
+		// topN=-1 → all affected tests selected (Product is in all deps)
+		assertThat(selectedTests).as("topN=-1 should select all affected tests").hasSize(3).contains(PRODUCT_TEST,
+				CART_TEST, INVOICE_TEST);
+
+		// remaining file should be empty
+		String remaining = project.readFile("target/test-order-remaining.txt");
+		List<String> remainingTests = remaining == null
+				? List.of()
+				: remaining.lines().filter(l -> !l.isBlank() && !l.startsWith("#")).toList();
+		assertThat(remainingTests).as("topN=-1 should leave no remaining tests").isEmpty();
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// topN=-1: two-phase workflow runs everything in phase 1, phase 2 skips
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	@Order(210)
+	@DisplayName("topN=-1: run-remaining after all-affected select skips tests")
+	void runRemainingAfterAllAffectedSelectSkips() {
+		// Relies on the select from test 200
+		if (!project.exists("target/test-order-remaining.txt")) {
+			// Re-run select
+			project.maven().run("clean", "test-order:select", "test", "-Dtestorder.changeMode=explicit",
+					"-Dtestorder.changed.classes=" + PRODUCT);
+		}
+
+		MavenResult remaining = project.maven().runRemaining();
+		assertThat(remaining).succeeded();
+
+		// Should skip or run 0 tests since all were selected in phase 1
+		int testsRun = countTestsRun(remaining);
+		assertThat(testsRun).as("run-remaining should run 0 tests when all were selected").isEqualTo(0);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// topN=1: select caps to 1 affected, remaining gets the rest
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	@Order(220)
+	@DisplayName("topN=1: select caps to 1 affected, run-remaining gets the rest")
+	void selectWithTopN1CapsSelection() {
+		if (!project.exists(".test-order/test-dependencies.lz4")) {
+			project.cleanAll();
+			project.maven().learn();
+		}
+
+		MavenResult result = project.maven().run("clean", "test-order:select", "test",
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
+				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0");
+		assertThat(result).succeeded();
+
+		String selected = project.readFile("target/test-order-selected.txt");
+		assertThat(selected).isNotNull();
+		List<String> selectedTests = selected.lines().filter(l -> !l.isBlank() && !l.startsWith("#")).toList();
+		assertThat(selectedTests).as("topN=1, randomM=0 should select exactly 1 test").hasSize(1);
+
+		String remaining = project.readFile("target/test-order-remaining.txt");
+		assertThat(remaining).isNotNull();
+		List<String> remainingTests = remaining.lines().filter(l -> !l.isBlank() && !l.startsWith("#")).toList();
+		assertThat(remainingTests).as("remaining should have the other 2 tests").hasSize(2);
+
+		// run-remaining should execute the deferred tests
+		MavenResult remainingResult = project.maven().runRemaining();
+		assertThat(remainingResult).succeeded();
+		int testsRun = countTestsRun(remainingResult);
+		assertThat(testsRun).as("run-remaining should run the 2 deferred tests").isGreaterThanOrEqualTo(2);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// topN=-1 with combined mode: selects all affected
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	@Order(230)
+	@DisplayName("topN=-1: combined mode selects all affected tests")
+	void combinedModeWithDefaultTopNSelectsAllAffected() {
+		if (!project.exists(".test-order/test-dependencies.lz4")) {
+			project.cleanAll();
+			project.maven().learn();
+		}
+		project.deleteIfExists(".test-order/state.lz4");
+
+		MavenResult result = project.maven().run("clean", "test-order:auto", "test",
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT);
+		assertThat(result).succeeded();
+
+		// All 3 tests should have run
+		int testsRun = countTestsRun(result);
+		assertThat(testsRun).as("combined with topN=-1 and Product changed should run all 3 tests")
+				.isGreaterThanOrEqualTo(3);
 	}
 }

@@ -10,6 +10,7 @@ import org.apache.maven.plugins.annotations.*;
 
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.changes.ChangeDetectionSupport;
+import me.bechberger.testorder.ops.workflows.OrderWorkflow;
 
 /**
  * Prepares the test execution environment by configuring Surefire for either
@@ -52,50 +53,14 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	 * Instrumentation mode: FULL (default), METHOD_ENTRY, FULL_METHOD, or
 	 * FULL_MEMBER
 	 */
-	@Parameter(property = MavenPluginConfigKeys.LEGACY_INSTRUMENTATION_MODE, defaultValue = "FULL")
+	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "FULL")
 	private String instrumentationMode;
-
-	/** Score bonus for new test classes not in the dependency index */
-	@Parameter(property = MavenPluginConfigKeys.SCORE_NEW_TEST, defaultValue = "15")
-	private int scoreNewTest;
-
-	/** Score bonus for test classes whose source was modified */
-	@Parameter(property = MavenPluginConfigKeys.SCORE_CHANGED_TEST, defaultValue = "9")
-	private int scoreChangedTest;
-
-	/** Maximum score bonus from failure frequency */
-	@Parameter(property = MavenPluginConfigKeys.SCORE_MAX_FAILURE, defaultValue = "5")
-	private int scoreMaxFailure;
-
-	/** Score bonus for tests with below-median duration */
-	@Parameter(property = MavenPluginConfigKeys.SCORE_SPEED, defaultValue = "1")
-	private int scoreSpeed;
-
-	/** Score penalty for tests with above-median duration */
-	@Parameter(property = MavenPluginConfigKeys.SCORE_SPEED_PENALTY, defaultValue = "1")
-	private int scoreSpeedPenalty;
-
-	/** Max score from dependency overlap (ratio-based) */
-	@Parameter(property = MavenPluginConfigKeys.SCORE_DEP_OVERLAP, defaultValue = "5")
-	private int scoreDepOverlap;
-
-	/** Score bonus based on change complexity of overlapping dependencies */
-	@Parameter(property = MavenPluginConfigKeys.SCORE_CHANGE_COMPLEXITY, defaultValue = "2")
-	private int scoreChangeComplexity;
-
-	/** Optional fixed bonus when a test overlaps changed static field members */
-	@Parameter(property = MavenPluginConfigKeys.SCORE_STATIC_FIELD_BONUS, defaultValue = "0")
-	private int scoreStaticFieldBonus;
-
-	/** Set-cover coverage bonus weight (0 = disabled, uses depOverlap instead) */
-	@Parameter(property = MavenPluginConfigKeys.SCORE_COVERAGE_BONUS, defaultValue = "0")
-	private int scoreCoverageBonus;
 
 	/**
 	 * Auto mode: switch to learn periodically after this many order-mode runs (0 =
 	 * disabled). Ensures index stays fresh.
 	 */
-	@Parameter(property = MavenPluginConfigKeys.AUTO_LEARN_RUN_THRESHOLD, defaultValue = "0")
+	@Parameter(property = MavenPluginConfigKeys.AUTO_LEARN_RUN_THRESHOLD, defaultValue = "10")
 	private int autoLearnRunThreshold;
 
 	/**
@@ -105,7 +70,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	@Parameter(property = MavenPluginConfigKeys.AUTO_LEARN_DIFF_THRESHOLD, defaultValue = "0")
 	private int autoLearnDiffThreshold;
 
-	private static final Set<String> VALID_MODES = Set.of("auto", "learn", "order", "skip", "combined");
+	private static final Set<String> VALID_MODES = Set.of("auto", "learn", "order", "skip");
 	private static final Set<String> VALID_INSTR_MODES = Set.of("METHOD_ENTRY", "FULL", "FULL_METHOD", "FULL_MEMBER");
 
 	@Override
@@ -113,20 +78,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
-		String canonicalInstrumentationMode = session != null && session.getUserProperties() != null
-				? session.getUserProperties().getProperty(MavenPluginConfigKeys.INSTRUMENTATION_MODE)
-				: null;
-		if (canonicalInstrumentationMode != null && !canonicalInstrumentationMode.isBlank()) {
-			instrumentationMode = canonicalInstrumentationMode;
-		}
 
 		if (!VALID_MODES.contains(mode)) {
 			throw new MojoExecutionException("[test-order] Invalid mode '" + mode + "'. Valid values: " + VALID_MODES
 					+ ". Use -Dtestorder.mode=skip to disable test-order.");
-		}
-		// "combined" is an alias for "auto" (the combined goal sets this)
-		if ("combined".equals(mode)) {
-			mode = "auto";
 		}
 		if ("skip".equals(mode)) {
 			getLog().info("[test-order] Mode is 'skip' — no Surefire configuration changes.");
@@ -221,6 +176,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	}
 
 	private void switchToLearnMode() throws MojoExecutionException {
+		SurefireHelper.rejectClassLevelParallelForLearn(project, getLog());
 		String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
 		configureLearnMode(instrumentationMode, effectiveInclude, true);
 		TestOrderState state = loadState();
@@ -234,32 +190,19 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 	private void executeOrderMode() throws MojoExecutionException {
 		getLog().info("[test-order] Order mode: injecting PriorityClassOrderer");
+		SurefireHelper.validateNoClassLevelParallel(project, getLog());
+		SurefireHelper.warnListenerDeactivation(project, getLog());
+		SurefireHelper.warnConflictingOrderers(project, getLog());
 
-		Set<String> changed = detectChangedClasses(false);
-		if (changed.isEmpty()) {
-			getLog().info("[test-order] No changed classes detected — running tests in default order.");
-		} else {
-			getLog().info("[test-order] Changed classes: " + changed);
+		TestOrderState state = loadState();
+		OrderWorkflow.OrderSetupResult result;
+		try {
+			result = OrderWorkflow.setup(buildPluginContext(), state);
+		} catch (IOException e) {
+			throw new MojoExecutionException("Failed to set up test ordering", e);
 		}
 
-		Set<String> changedTests = detectChangedTestClasses(false);
-		if (!changedTests.isEmpty()) {
-			getLog().info("[test-order] Changed test classes: " + changedTests);
-		}
-
-		Set<String> changedMethods = Set.of();
-		if (methodOrderingEnabled) {
-			changedMethods = detectChangedMethods();
-			if (!changedMethods.isEmpty()) {
-				getLog().info("[test-order] Changed test methods: " + changedMethods);
-			}
-		}
-
-		Map<String, Integer> scores = Map.of("newTest", scoreNewTest, "changedTest", scoreChangedTest, "maxFailure",
-				scoreMaxFailure, "speed", scoreSpeed, "speedPenalty", scoreSpeedPenalty, "depOverlap", scoreDepOverlap,
-				"changeComplexity", scoreChangeComplexity, "staticFieldBonus", scoreStaticFieldBonus, "coverageBonus",
-				scoreCoverageBonus);
-
-		writeOrdererConfig(changed, changedTests, changedMethods, scores);
+		writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
+				buildScoreOverrides());
 	}
 }

@@ -60,7 +60,7 @@ class FieldsMethodsWorkflowIT {
 		project.cleanAll();
 
 		MavenResult result = project.maven().run("clean", "test", "-Dtestorder.mode=learn",
-				"-Dtestorder.instrumentationMode=FULL_MEMBER");
+				"-Dtestorder.instrumentation.mode=FULL_MEMBER");
 		assertThat(result).succeeded().outputContains("Tests run:");
 
 		DependencyMap depMap = project.loadIndex();
@@ -85,7 +85,7 @@ class FieldsMethodsWorkflowIT {
 		project.cleanAll();
 
 		MavenResult learn = project.maven().run("clean", "test", "-Dtestorder.mode=learn",
-				"-Dtestorder.instrumentationMode=FULL_MEMBER");
+				"-Dtestorder.instrumentation.mode=FULL_MEMBER");
 		assertThat(learn).succeeded();
 
 		MavenResult snapshot = project.maven().snapshot();
@@ -93,7 +93,7 @@ class FieldsMethodsWorkflowIT {
 
 		// Modify addItem method body so since-last-run detects WideCoverageService as
 		// changed
-		project.replaceInFile(WIDE_COVERAGE_SERVICE_SRC, "        accessCount++;\n", "        accessCount += 2;\n");
+		project.replaceInFile(WIDE_COVERAGE_SERVICE_SRC, "\t\taccessCount++;\n", "\t\taccessCount += 2;\n");
 
 		try {
 			MavenResult showOrder = project.maven().run("test-order:show-order",

@@ -57,7 +57,24 @@ public class PriorityMethodOrderer implements MethodOrderer {
 
 	@Override
 	public void orderMethods(MethodOrdererContext context) {
-		if (!enabled || pendingState == null || methodWeights == null) {
+		// Snapshot all volatile fields under the same lock used by setPendingState()
+		// to avoid seeing a partially-updated state (e.g., new 'enabled' but old
+		// 'pendingState' from a concurrent setPendingState() call).
+		final TestOrderState localState;
+		final TestOrderState.MethodScoringWeights localWeights;
+		final boolean localEnabled;
+		final DependencyMap localDepMap;
+		final Set<String> localChangedClasses;
+		final Set<String> localChangedMethods;
+		synchronized (PriorityMethodOrderer.class) {
+			localState = pendingState;
+			localWeights = methodWeights;
+			localEnabled = enabled;
+			localDepMap = depMap;
+			localChangedClasses = changedClasses;
+			localChangedMethods = changedMethods;
+		}
+		if (!localEnabled || localState == null || localWeights == null) {
 			// No reordering if disabled or state not available
 			return;
 		}
@@ -69,11 +86,36 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			return;
 		}
 
+		// C7: Warn when @Execution(CONCURRENT) is detected — method ordering is undermined
+		if (hasConcurrentExecution(context.getTestClass())) {
+			TestOrderLogger.warn(
+					"[method-order] {}: @Execution(CONCURRENT) detected — method ordering guarantees are weakened. "
+							+ "Methods are sorted but may not start in priority order.",
+					className);
+		}
+
+		// C4/C9: Warn and skip reordering when PER_CLASS lifecycle is active — reordering may break stateful tests
+		if (isPerClassLifecycle(context.getTestClass())) {
+			TestOrderLogger.warn(
+					"[method-order] {}: @TestInstance(PER_CLASS) detected — skipping method reordering "
+							+ "to avoid breaking stateful tests that depend on execution order.",
+					className);
+			return;
+		}
+
+		// Respect JUnit's @Order annotation: if any method in the class uses @Order,
+		// the user has declared an explicit ordering — do not override it.
+		if (hasJUnitOrderAnnotation(context)) {
+			TestOrderLogger.debug("[method-order] {}: @Order or @TestMethodOrder detected; skipping reordering",
+					className);
+			return;
+		}
+
 		// Build metadata for each method (use -1 for unknown duration)
 		List<MethodScorer.MethodMetadata> methodMetadata = new ArrayList<>();
 		for (Method m : methods) {
 			String methodName = m.getName();
-			double duration = pendingState.getDurationMethod(className, methodName, -1.0);
+			double duration = localState.getDurationMethod(className, methodName, -1.0);
 			methodMetadata.add(new MethodScorer.MethodMetadata(className, methodName, (long) duration, null));
 		}
 
@@ -84,7 +126,7 @@ public class PriorityMethodOrderer implements MethodOrderer {
 		for (MethodScorer.MethodMetadata m : methodMetadata) {
 			if (m.durationMs() >= 0)
 				hasDurations = true;
-			if (pendingState.methodFailureScore(m.className(), m.methodName()) > 0)
+			if (localState.methodFailureScore(m.className(), m.methodName()) > 0)
 				hasFailures = true;
 			if (hasDurations && hasFailures)
 				break;
@@ -95,7 +137,7 @@ public class PriorityMethodOrderer implements MethodOrderer {
 		}
 
 		// Score methods
-		MethodScorer scorer = new MethodScorer(methodWeights, pendingState, depMap, changedClasses, changedMethods);
+		MethodScorer scorer = new MethodScorer(localWeights, localState, localDepMap, localChangedClasses, localChangedMethods);
 		List<MethodScorer.MethodScoreResult> scores = scorer.score(methodMetadata);
 
 		// Log class-level stats
@@ -121,7 +163,7 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			scoreIndexMap.put(scores.get(i).methodName(), i);
 		}
 
-		// Apply @TestOrder annotation overrides
+		// Apply @TestOrder and @AlwaysRun annotation overrides
 		Map<String, Double> effectiveScores = new HashMap<>(scores.size() * 2);
 		List<org.junit.jupiter.api.MethodDescriptor> pinFirstMethods = new ArrayList<>();
 		List<org.junit.jupiter.api.MethodDescriptor> pinLastMethods = new ArrayList<>();
@@ -129,15 +171,17 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			effectiveScores.put(sr.methodName(), sr.score());
 		}
 		for (org.junit.jupiter.api.MethodDescriptor md : context.getMethodDescriptors()) {
+			boolean alwaysRun = md.getMethod().isAnnotationPresent(AlwaysRun.class);
 			TestOrder ann = md.getMethod().getAnnotation(TestOrder.class);
-			if (ann == null)
+			if (!alwaysRun && ann == null)
 				continue;
 			String methodKey = className + "#" + md.getMethod().getName();
-			boolean isChanged = changedMethods != null && changedMethods.contains(methodKey);
-			double delta = ann.scoreBonus() + (isChanged ? ann.changeBonus() : 0);
-			TestOrder.Priority prio = ann.priority();
-			if (prio == TestOrder.Priority.FIRST) {
-				pinFirstMethods.add(md);
+			boolean isChanged = localChangedMethods != null && localChangedMethods.contains(methodKey);
+			double delta = ann != null ? ann.scoreBonus() + (isChanged ? ann.changeBonus() : 0) : 0;
+			TestOrder.Priority prio = ann != null ? ann.priority() : TestOrder.Priority.NORMAL;
+			if (alwaysRun || prio == TestOrder.Priority.FIRST) {
+				if (!pinFirstMethods.contains(md))
+					pinFirstMethods.add(md);
 			} else if (prio == TestOrder.Priority.LAST) {
 				pinLastMethods.add(md);
 			} else {
@@ -172,5 +216,65 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			}
 			return cmp;
 		});
+	}
+
+	/**
+	 * Returns {@code true} if any method in the class uses JUnit's {@code @Order}
+	 * annotation or if the class declares {@code @TestMethodOrder} — in which case
+	 * we should not override the user's explicit ordering.
+	 */
+	private boolean hasJUnitOrderAnnotation(MethodOrdererContext context) {
+		// Check for @TestMethodOrder on the class itself
+		if (context.getTestClass().isAnnotationPresent(org.junit.jupiter.api.TestMethodOrder.class)) {
+			return true;
+		}
+		// Check for @Order on any test method
+		for (org.junit.jupiter.api.MethodDescriptor md : context.getMethodDescriptors()) {
+			if (md.getMethod().isAnnotationPresent(org.junit.jupiter.api.Order.class)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Detects @Execution(CONCURRENT) on the test class via reflection to avoid
+	 * a hard compile-time dependency on jupiter-api parallel classes.
+	 */
+	private boolean hasConcurrentExecution(Class<?> testClass) {
+		try {
+			Class<?> executionClass = Class.forName("org.junit.jupiter.api.parallel.Execution");
+			Object execution = testClass.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
+			if (execution != null) {
+				Object mode = executionClass.getMethod("value").invoke(execution);
+				return "CONCURRENT".equals(mode.toString());
+			}
+		} catch (ClassNotFoundException | ReflectiveOperationException ignored) {
+			// Jupiter parallel API not available
+		}
+		return false;
+	}
+
+	/**
+	 * Detects @TestInstance(Lifecycle.PER_CLASS) on the test class, either via
+	 * annotation or the global default config parameter.
+	 */
+	private boolean isPerClassLifecycle(Class<?> testClass) {
+		try {
+			Class<?> testInstanceClass = Class.forName("org.junit.jupiter.api.TestInstance");
+			Object annotation = testClass.getAnnotation(testInstanceClass.asSubclass(java.lang.annotation.Annotation.class));
+			if (annotation != null) {
+				Object lifecycle = testInstanceClass.getMethod("value").invoke(annotation);
+				return "PER_CLASS".equals(lifecycle.toString());
+			}
+		} catch (ClassNotFoundException | ReflectiveOperationException ignored) {
+			// TestInstance API not available
+		}
+		// Also check global default via system property (C9)
+		String globalDefault = System.getProperty("junit.jupiter.testinstance.lifecycle.default");
+		if ("per_class".equalsIgnoreCase(globalDefault)) {
+			return true;
+		}
+		return false;
 	}
 }

@@ -17,7 +17,9 @@ class TestOrderPluginTaskRegistrationTest {
 
         assertNotNull(project.getTasks().findByName("testOrderAggregate"));
         assertNotNull(project.getTasks().findByName("testOrderDump"));
+        assertNotNull(project.getTasks().findByName("testOrderExportJson"));
         assertNotNull(project.getTasks().findByName("testOrderShowOrder"));
+        assertNotNull(project.getTasks().findByName("testOrderExplainOrder"));
         assertNotNull(project.getTasks().findByName("testOrderOptimize"));
         assertNotNull(project.getTasks().findByName("testOrderSelect"));
         assertNotNull(project.getTasks().findByName("testOrderRunRemaining"));

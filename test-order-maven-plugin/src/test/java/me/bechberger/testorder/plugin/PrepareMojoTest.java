@@ -128,7 +128,7 @@ class PrepareMojoTest {
 		inject(mojo, "stateFile", statePath.toString());
 
 		MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
-		assertTrue(ex.getMessage().contains("maven-surefire-plugin not found"),
+		assertTrue(ex.getMessage().contains("not found in project"),
 				"Expected learn-mode path (surefire not found), got: " + ex.getMessage());
 	}
 
@@ -155,7 +155,7 @@ class PrepareMojoTest {
 			mojo.execute();
 			// No exception is also valid — order mode ran successfully
 		} catch (MojoExecutionException e) {
-			assertFalse(e.getMessage().contains("maven-surefire-plugin not found"),
+			assertFalse(e.getMessage().contains("not found in project"),
 					"Should NOT enter learn-mode for runsSinceLearn=2 < threshold=5, got: " + e.getMessage());
 		}
 	}
@@ -174,8 +174,104 @@ class PrepareMojoTest {
 		inject(mojo, "indexFile", idxPath.toString());
 
 		MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
-		assertTrue(ex.getMessage().contains("maven-surefire-plugin not found"),
+		assertTrue(ex.getMessage().contains("not found in project"),
 				"Expected learn-mode path (surefire not found), got: " + ex.getMessage());
+	}
+
+	@Test
+	void orderModeSupportsClassLevelParallelExecution() throws Exception {
+		// Class-level parallelism should be allowed in order mode.
+		// The PriorityClassOrderer is parallel-safe — ordering is a priority hint.
+		inject(mojo, "mode", "order");
+
+		Path idxPath = tempDir.resolve("test-dependencies.lz4");
+		Files.write(idxPath, new byte[] { 1, 2, 3 });
+		inject(mojo, "indexFile", idxPath.toString());
+
+		TestOrderState state = new TestOrderState();
+		Path statePath = tempDir.resolve(".test-order-state");
+		state.save(statePath);
+		inject(mojo, "stateFile", statePath.toString());
+
+		// Configure Surefire with class-level parallel
+		org.codehaus.plexus.util.xml.Xpp3Dom config = new org.codehaus.plexus.util.xml.Xpp3Dom("configuration");
+		org.codehaus.plexus.util.xml.Xpp3Dom parallel = new org.codehaus.plexus.util.xml.Xpp3Dom("parallel");
+		parallel.setValue("classesAndMethods");
+		config.addChild(parallel);
+
+		Plugin surefire = new Plugin();
+		surefire.setGroupId("org.apache.maven.plugins");
+		surefire.setArtifactId("maven-surefire-plugin");
+		surefire.setConfiguration(config);
+		when(project.getBuildPlugins()).thenReturn(List.of(surefire));
+
+		// Should NOT throw — class-level parallelism is supported in order mode
+		try {
+			mojo.execute();
+		} catch (MojoExecutionException e) {
+			assertFalse(e.getMessage().contains("parallel"),
+					"Order mode should allow class-level parallelism, got: " + e.getMessage());
+		}
+	}
+
+	@Test
+	void orderModeSupportsJunitClassConcurrentExecution() throws Exception {
+		// JUnit jupiter parallel mode.classes.default=concurrent is allowed in order mode.
+		inject(mojo, "mode", "order");
+
+		Path idxPath = tempDir.resolve("test-dependencies.lz4");
+		Files.write(idxPath, new byte[] { 1, 2, 3 });
+		inject(mojo, "indexFile", idxPath.toString());
+
+		TestOrderState state = new TestOrderState();
+		Path statePath = tempDir.resolve(".test-order-state");
+		state.save(statePath);
+		inject(mojo, "stateFile", statePath.toString());
+
+		// Configure JUnit class-level concurrency via systemPropertyVariables
+		org.codehaus.plexus.util.xml.Xpp3Dom config = new org.codehaus.plexus.util.xml.Xpp3Dom("configuration");
+		org.codehaus.plexus.util.xml.Xpp3Dom sysProps = new org.codehaus.plexus.util.xml.Xpp3Dom(
+				"systemPropertyVariables");
+		org.codehaus.plexus.util.xml.Xpp3Dom classesDefault = new org.codehaus.plexus.util.xml.Xpp3Dom(
+				"junit.jupiter.execution.parallel.mode.classes.default");
+		classesDefault.setValue("concurrent");
+		sysProps.addChild(classesDefault);
+		config.addChild(sysProps);
+
+		Plugin surefire = new Plugin();
+		surefire.setGroupId("org.apache.maven.plugins");
+		surefire.setArtifactId("maven-surefire-plugin");
+		surefire.setConfiguration(config);
+		when(project.getBuildPlugins()).thenReturn(List.of(surefire));
+
+		// Should NOT throw — class-level parallelism is supported in order mode
+		try {
+			mojo.execute();
+		} catch (MojoExecutionException e) {
+			assertFalse(e.getMessage().contains("parallel"),
+					"Order mode should allow JUnit class-level concurrency, got: " + e.getMessage());
+		}
+	}
+
+	@Test
+	void learnModeRejectsClassLevelParallelExecution() throws Exception {
+		// Class-level parallelism must be rejected in learn mode to protect dependency tracking.
+		inject(mojo, "mode", "learn");
+
+		org.codehaus.plexus.util.xml.Xpp3Dom config = new org.codehaus.plexus.util.xml.Xpp3Dom("configuration");
+		org.codehaus.plexus.util.xml.Xpp3Dom parallel = new org.codehaus.plexus.util.xml.Xpp3Dom("parallel");
+		parallel.setValue("classesAndMethods");
+		config.addChild(parallel);
+
+		Plugin surefire = new Plugin();
+		surefire.setGroupId("org.apache.maven.plugins");
+		surefire.setArtifactId("maven-surefire-plugin");
+		surefire.setConfiguration(config);
+		when(project.getBuildPlugins()).thenReturn(List.of(surefire));
+
+		MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
+		assertTrue(ex.getMessage().contains("not supported in learn mode"),
+				"Should reject class-level parallel in learn mode, got: " + ex.getMessage());
 	}
 
 	private static void inject(Object target, String fieldName, Object value) throws Exception {

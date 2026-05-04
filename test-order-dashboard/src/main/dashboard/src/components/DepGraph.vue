@@ -2,7 +2,7 @@
 import { inject, watch, onMounted, nextTick, ref as vueRef } from 'vue'
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
-import { sn } from '../utils'
+import { sn, GRAPH } from '../utils'
 import type { TestEntry, MethodEntry } from '../types'
 
 const props = defineProps<{
@@ -31,12 +31,6 @@ function applySearch(q: string) {
 
 watch(searchText, q => applySearch(q))
 
-interface GNode extends d3.SimulationNodeDatum {
-  id: string; type: string; changed: boolean; shortLabel: string; depCount: number
-  mass?: number; pkg?: string
-}
-interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean }
-
 function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
   const mode = d.graphMode.value
   const nodeMap: Record<string, GNode> = {}
@@ -56,7 +50,7 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
   }
 
   if (mode === 'focus') {
-    const selNames = d.selectedTests.value
+    const selNames = d.selectedTests.value!
     const focusTests = selNames.size > 0
       ? d.tests.filter(t => selNames.has(t.name))
       : (d.selectedTest.value ? [d.selectedTest.value] : [])
@@ -74,10 +68,33 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
       ;(t.deps || []).filter(dep => d.changedSet.has(dep)).forEach(dep => { addNode(dep, 'dep', true); links.push({ source: t.name, target: dep, changed: true }) })
     })
   } else {
-    d.tests.forEach(t => {
-      addNode(t.name, 'test', false); nodeMap[t.name].depCount = (t.deps || []).length
-      ;(t.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep) }) })
-    })
+    // For mode 'full' with too many nodes: aggregate by package
+    if (d.totalNodes.value > GRAPH.FULL_MODE_NODE_LIMIT) {
+      const pkgDeps: Record<string, Set<string>> = {}
+      d.tests.forEach(t => {
+        const tPkg = t.name.substring(0, t.name.lastIndexOf('.')) || '(default)'
+        if (!pkgDeps[tPkg]) pkgDeps[tPkg] = new Set()
+        ;(t.deps || []).forEach(dep => {
+          const dPkg = dep.substring(0, dep.lastIndexOf('.')) || '(default)'
+          if (dPkg !== tPkg) pkgDeps[tPkg].add(dPkg)
+        })
+      })
+      for (const [pkg, deps] of Object.entries(pkgDeps)) {
+        addNode(pkg, 'test', false)
+        nodeMap[pkg].depCount = deps.size
+        nodeMap[pkg].shortLabel = pkg.split('.').pop() || pkg
+        deps.forEach(depPkg => {
+          addNode(depPkg, 'dep', false)
+          nodeMap[depPkg].shortLabel = depPkg.split('.').pop() || depPkg
+          links.push({ source: pkg, target: depPkg, changed: false })
+        })
+      }
+    } else {
+      d.tests.forEach(t => {
+        addNode(t.name, 'test', false); nodeMap[t.name].depCount = (t.deps || []).length
+        ;(t.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep) }) })
+      })
+    }
   }
   return { nodes: Object.values(nodeMap), links }
 }
@@ -85,6 +102,7 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
 function initGraph() {
   const container = document.getElementById('dg-wrap')
   if (!container) return
+  try {
   d3.select(container).selectAll('*').remove()
   const { nodes, links } = buildGraphData()
   if (!nodes.length) {
@@ -112,10 +130,10 @@ function initGraph() {
 
   const bubbleGroup = g.insert('g', 'g').attr('class', 'pkg-bubbles')
   const sim = d3.forceSimulation(nodes)
-    .force('link', d3.forceLink<GNode, GLink>(links).id(n => n.id).distance(70))
-    .force('charge', d3.forceManyBody().strength(nodes.length > 80 ? -80 : -150))
+    .force('link', d3.forceLink<GNode, GLink>(links).id(n => n.id).distance(GRAPH.LINK_DISTANCE))
+    .force('charge', d3.forceManyBody().strength(nodes.length > GRAPH.CHARGE_THRESHOLD ? GRAPH.CHARGE_LARGE : GRAPH.CHARGE_SMALL))
     .force('center', d3.forceCenter(W / 2, H / 2))
-    .force('collision', d3.forceCollide(16))
+    .force('collision', d3.forceCollide(GRAPH.COLLISION_RADIUS))
     .velocityDecay(0.4)
 
   const link = g.append('g').selectAll('line').data(links).join('line')
@@ -144,30 +162,42 @@ function initGraph() {
     .on('mouseout', () => tip.style('opacity', '0'))
 
   function updateBubbles() {
-    bubbleGroup.selectAll('*').remove()
-    for (const [pkg, members] of Object.entries(pkgMap)) {
-      if (members.length < 2) continue
+    const entries = Object.entries(pkgMap).filter(([, m]) => m.length >= 2)
+    const rects = bubbleGroup.selectAll<SVGRectElement, [string, GNode[]]>('rect')
+      .data(entries, ([pkg]) => pkg)
+    rects.exit().remove()
+    const enter = rects.enter().append('rect').attr('rx', 12).attr('ry', 12).attr('stroke-width', 1)
+    const all = enter.merge(rects)
+    all.each(function([pkg, members]) {
       const xs = members.map(n => n.x!), ys = members.map(n => n.y!)
-      const pad = 22
+      const pad = GRAPH.BUBBLE_PAD
       const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad
       const x1 = Math.max(...xs) + pad, y1 = Math.max(...ys) + pad
-      bubbleGroup.append('rect').attr('x', x0).attr('y', y0).attr('width', x1 - x0).attr('height', y1 - y0)
-        .attr('rx', 12).attr('ry', 12)
+      d3.select(this).attr('x', x0).attr('y', y0).attr('width', x1 - x0).attr('height', y1 - y0)
         .attr('fill', pkgColors[pkg] || 'rgba(100,100,100,.06)')
         .attr('stroke', (pkgColors[pkg] || 'rgba(100,100,100,.06)').replace('0.08', '0.2'))
-        .attr('stroke-width', 1)
-      bubbleGroup.append('text').attr('x', x0 + 6).attr('y', y0 + 12)
-        .attr('font-size', '8px').attr('fill', '#64748b').attr('font-weight', '600')
+    })
+    // Labels
+    const labels = bubbleGroup.selectAll<SVGTextElement, [string, GNode[]]>('text')
+      .data(entries, ([pkg]) => pkg)
+    labels.exit().remove()
+    const enterL = labels.enter().append('text').attr('font-size', '8px').attr('fill', '#64748b').attr('font-weight', '600')
+    enterL.merge(labels).each(function([pkg, members]) {
+      const xs = members.map(n => n.x!), ys = members.map(n => n.y!)
+      const pad = GRAPH.BUBBLE_PAD
+      d3.select(this).attr('x', Math.min(...xs) - pad + 6).attr('y', Math.min(...ys) - pad + 12)
         .text(pkg.split('.').pop()!)
-    }
+    })
   }
 
+  let tickCount = 0
   sim.on('tick', () => {
     link.attr('x1', l => (l.source as GNode).x!).attr('y1', l => (l.source as GNode).y!)
       .attr('x2', l => (l.target as GNode).x!).attr('y2', l => (l.target as GNode).y!)
     node.attr('transform', n => `translate(${n.x},${n.y})`)
-    updateBubbles()
-  }).on('end', () => applySearch(searchText.value))
+    if (++tickCount % GRAPH.BUBBLE_TICK_INTERVAL === 0) updateBubbles()
+  }).on('end', () => { updateBubbles(); applySearch(searchText.value) })
+  } catch (e) { console.error('[dashboard] Dep graph failed:', e) }
 }
 
 watch([() => d.selectedTest.value, () => d.selectedMethod.value, () => d.graphMode.value, () => d.selectedTests.value], () => {
@@ -188,19 +218,21 @@ defineExpose({ initGraph })
       <button
         v-for="m in d.GMODES"
         :key="m.id"
-        :disabled="m.id === 'full' && d.totalNodes.value > 300"
         @click="d.setGraphMode(m.id)"
         class="dep-graph__btn"
-        :class="{ 'dep-graph__btn--active': d.graphMode.value === m.id, 'dep-graph__btn--disabled': m.id === 'full' && d.totalNodes.value > 300 }"
+        :class="{ 'dep-graph__btn--active': d.graphMode.value === m.id }"
       >
-        {{ m.label }}<span v-if="m.id === 'full' && d.totalNodes.value > 300" style="color:var(--orange)"> ({{ d.totalNodes.value }})</span>
+        {{ m.label }}<span v-if="m.id === 'full' && d.totalNodes.value > GRAPH.FULL_MODE_NODE_LIMIT" style="color:var(--orange)"> ({{ d.totalNodes.value }} → pkg)</span>
       </button>
-      <input
-        v-model="searchText"
-        class="dep-graph__search"
-        placeholder="Search nodes…"
-        title="Filter visible nodes by class or method name"
-      />
+      <div class="dep-graph__search-wrap">
+        <input
+          v-model="searchText"
+          class="dep-graph__search"
+          placeholder="Search nodes…"
+          title="Filter visible nodes by class or method name"
+        />
+        <button v-if="searchText" class="dep-graph__search-clear" @click="searchText = ''" title="Clear search">×</button>
+      </div>
       <span style="margin-left:auto;font-size:.68rem;color:var(--text-muted);display:flex;gap:10px">
         <span><span class="dep-graph__dot" style="background:#3b82f6"></span>test</span>
         <span><span class="dep-graph__dot" style="background:#ef4444"></span>changed</span>
@@ -220,11 +252,19 @@ defineExpose({ initGraph })
 .dep-graph__btn--disabled { cursor: not-allowed; opacity: .4; }
 .dep-graph__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; margin-right: 3px; }
 .dep-graph__search {
-  padding: 3px 8px; font-size: .7rem; border: 1px solid var(--border); border-radius: 4px;
+  padding: 3px 22px 3px 8px; font-size: .7rem; border: 1px solid var(--border); border-radius: 4px;
   background: var(--bg-card); color: var(--text); outline: none; width: 140px;
   transition: border-color var(--tr-fast);
 }
 .dep-graph__search:focus { border-color: var(--accent); }
+.dep-graph__search-wrap { position: relative; display: flex; align-items: center; }
+.dep-graph__search-clear {
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: .85rem; line-height: 1; padding: 2px 5px; border-radius: 3px;
+  transition: color var(--tr-fast);
+}
+.dep-graph__search-clear:hover { color: var(--text); }
 </style>
 
 <style>

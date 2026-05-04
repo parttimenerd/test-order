@@ -13,7 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Integration test for TestNG projects. Validates that test-order workflows
- * (learn, order, combined) run successfully on a project using TestNG instead
+ * (learn, order, auto) run successfully on a project using TestNG instead
  * of JUnit Jupiter.
  */
 public class TestNGFrameworkIT extends BaseFixtureIT {
@@ -30,15 +30,15 @@ public class TestNGFrameworkIT extends BaseFixtureIT {
 		assertEquals(EXPECTED_TEST_COUNT, getTestCount(baselineOutput),
 				"Expected " + EXPECTED_TEST_COUNT + " TestNG tests in fixture");
 
-		// Combined mode should run end-to-end on TestNG fixture
-		String combinedOutput = runMaven(fixtureDir, "test-order:combined", "test");
-		assertTestsPassed(combinedOutput);
-		assertEquals(EXPECTED_TEST_COUNT, getTestCount(combinedOutput),
-				"Expected " + EXPECTED_TEST_COUNT + " TestNG tests in combined mode");
+		// Auto mode should run end-to-end on TestNG fixture
+		String autoOutput = runMaven(fixtureDir, "test-order:auto", "test");
+		assertTestsPassed(autoOutput);
+		assertEquals(EXPECTED_TEST_COUNT, getTestCount(autoOutput),
+				"Expected " + EXPECTED_TEST_COUNT + " TestNG tests in auto mode");
 		assertIndexFilesExist(fixtureDir);
 
-		// Re-running combined mode should preserve successful execution
-		String secondOutput = runMaven(fixtureDir, "test-order:combined", "test");
+		// Re-running auto mode should preserve successful execution
+		String secondOutput = runMaven(fixtureDir, "test-order:auto", "test");
 		assertTestsPassed(secondOutput);
 		assertEquals(EXPECTED_TEST_COUNT, getTestCount(secondOutput),
 				"Test count should remain stable across test-order runs");
@@ -63,7 +63,7 @@ public class TestNGFrameworkIT extends BaseFixtureIT {
 		assertIndexFilesExist(fixtureDir);
 
 		// Run again with order applied
-		String orderOutput = runMaven(fixtureDir, "test-order:combined", "test");
+		String orderOutput = runMaven(fixtureDir, "test-order:auto", "test");
 		assertTestsPassed(orderOutput);
 		assertEquals(EXPECTED_TEST_COUNT, getTestCount(orderOutput), "Order mode should run all TestNG tests");
 	}

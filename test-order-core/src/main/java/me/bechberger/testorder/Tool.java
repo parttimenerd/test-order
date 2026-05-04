@@ -14,13 +14,15 @@ import me.bechberger.femtocli.annotations.Parameters;
 import me.bechberger.testorder.changes.ChangeDetector;
 import me.bechberger.testorder.changes.FileHashStore;
 import me.bechberger.testorder.changes.StructuralDiff;
+import me.bechberger.testorder.ops.ExportJsonOperation;
+import me.bechberger.testorder.ops.PluginLog;
 
 /**
  * CLI tool for managing test-order dependency indexes and change detection.
  */
 @Command(name = "test-order", mixinStandardHelpOptions = true, version = "0.1.0", description = "Manage JUnit test ordering based on dependency telemetry", subcommands = {
 		Tool.Aggregate.class, Tool.Affected.class, Tool.Stats.class, Tool.HashSnapshot.class, Tool.Changed.class,
-		Tool.Run.class, Tool.Dump.class, Tool.Optimize.class, Tool.Select.class, Tool.StructDiff.class,
+		Tool.Run.class, Tool.Dump.class, Tool.ExportJson.class, Tool.Optimize.class, Tool.Select.class, Tool.StructDiff.class,
 		Tool.Advise.class })
 public class Tool implements Runnable {
 
@@ -229,9 +231,9 @@ public class Tool implements Runnable {
 		}
 	}
 
-	@Command(name = "dump", description = "Dump a (binary) dependency index in human-readable V1 text format", mixinStandardHelpOptions = true)
+	@Command(name = "dump", description = "Dump a binary dependency index (data format v1) as human-readable text", mixinStandardHelpOptions = true)
 	static class Dump implements Callable<Integer> {
-		@Parameters(description = "Dependency index file (V1 or V2)")
+		@Parameters(description = "Dependency index file (binary data format v1)")
 		Path indexFile;
 
 		@Option(names = { "-o", "--output" }, description = "Output file (default: stdout)")
@@ -256,6 +258,60 @@ public class Tool implements Runnable {
 						System.out.print('\t');
 						System.out.println(String.join(",", map.get(tc)));
 					}
+				}
+				return 0;
+			} catch (IOException e) {
+				System.err.println("Error: " + e.getMessage());
+				return 1;
+			}
+		}
+	}
+
+	@Command(name = "export-json", description = "Export a binary dependency index (and history) as JSON", mixinStandardHelpOptions = true)
+	static class ExportJson implements Callable<Integer> {
+		@Parameters(description = "Dependency index file (binary data format v1)")
+		Path indexFile;
+
+		@Option(names = { "-o", "--output" }, description = "Output JSON file (default: stdout)")
+		Path output;
+
+		@Option(names = { "-s", "--state" }, description = "State file for history data (default: .test-order/state.lz4)")
+		Path stateFile;
+
+		@Override
+		public Integer call() {
+			try {
+				PluginLog log = new PluginLog() {
+					@Override
+					public void info(String message) {
+						System.err.println(message);
+					}
+
+					@Override
+					public void warn(String message) {
+						System.err.println(message);
+					}
+
+					@Override
+					public void debug(String message) {
+						// keep CLI output clean
+					}
+				};
+				Path resolvedState = stateFile;
+				if (resolvedState == null) {
+					// Try to auto-detect state file next to the index
+					Path candidate = indexFile.getParent() != null
+							? indexFile.getParent().resolve("state.lz4")
+							: Path.of(".test-order/state.lz4");
+					if (java.nio.file.Files.exists(candidate)) {
+						resolvedState = candidate;
+					}
+				}
+				if (output != null) {
+					ExportJsonOperation.export(indexFile, resolvedState, output, log);
+					System.out.printf("Exported dependency index as JSON → %s%n", output);
+				} else {
+					ExportJsonOperation.export(indexFile, resolvedState, System.out, log);
 				}
 				return 0;
 			} catch (IOException e) {

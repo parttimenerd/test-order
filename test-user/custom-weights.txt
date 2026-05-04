@@ -1,7 +1,0 @@
-# Custom weights for testing
-newTest = 30
-changedTest = 20
-maxFailure = 5
-speed = 3
-speedPenalty = 2
-depOverlap = 10

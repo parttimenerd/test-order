@@ -7,10 +7,10 @@ import java.nio.file.Path;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.*;
 
-import me.bechberger.testorder.DependencyMap;
+import me.bechberger.testorder.ops.DumpOperation;
 
 /**
- * Dumps a (binary V2) dependency index as human-readable V1 text format.
+ * Dumps a binary dependency index as human-readable text format.
  * <p>
  * Usage: {@code mvn test-order:dump}
  */
@@ -32,20 +32,10 @@ public class DumpMojo extends AbstractTestOrderMojo {
 		}
 
 		try {
-			DependencyMap map = DependencyMap.load(idxPath);
-			if (map.size() == 0) {
-				getLog().info("[test-order] Dependency index is empty: " + idxPath);
-				getLog().info("[test-order] Run learn mode first: mvn test -D" + MavenPluginConfigKeys.MODE + "=learn");
-				return;
-			}
 			if (outputFile != null && !outputFile.isBlank()) {
-				Path out = Path.of(outputFile);
-				map.saveText(out);
-				getLog().info("[test-order] Dumped " + map.size() + " test classes → " + out);
+				DumpOperation.dump(idxPath, Path.of(outputFile), pluginLog());
 			} else {
-				for (String tc : map.testClasses()) {
-					getLog().info(tc + "\t" + String.join(",", map.get(tc)));
-				}
+				DumpOperation.dump(idxPath, System.out, pluginLog());
 			}
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to dump index", e);
