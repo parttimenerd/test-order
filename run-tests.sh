@@ -11,6 +11,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+ensure_installed() {
+  if [[ ! -f target/.installed ]]; then
+    echo "=== Installing project artifacts ==="
+    mvn -B -ntp -DskipTests install
+    mkdir -p target && touch target/.installed
+  fi
+}
+
 run_unit() {
   echo "=== Unit tests ==="
   mvn -B -ntp test
@@ -18,13 +26,13 @@ run_unit() {
 
 run_it() {
   echo "=== Invoker fixture tests ==="
-  mvn -B -ntp -DskipTests install
+  ensure_installed
   mvn -B -ntp -Prun-its verify -pl test-order-maven-plugin
 }
 
 run_e2e() {
   echo "=== End-to-end integration tests ==="
-  mvn -B -ntp -DskipTests install
+  ensure_installed
   mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
 }
 

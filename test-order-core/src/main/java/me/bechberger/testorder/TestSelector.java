@@ -40,15 +40,22 @@ public class TestSelector {
 	private final TestOrderState.ScoringWeights weights;
 	private final Config config;
 	private final Set<String> alwaysRunClasses;
+	private final Map<String, Double> changeComplexity;
 
 	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config) {
-		this(depMap, state, changedClasses, changedTestClasses, weights, config, Set.of());
+		this(depMap, state, changedClasses, changedTestClasses, weights, config, Set.of(), Map.of());
 	}
 
 	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
 			Set<String> alwaysRunClasses) {
+		this(depMap, state, changedClasses, changedTestClasses, weights, config, alwaysRunClasses, Map.of());
+	}
+
+	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
+			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
+			Set<String> alwaysRunClasses, Map<String, Double> changeComplexity) {
 		this.depMap = depMap;
 		this.state = state;
 		this.changedClasses = changedClasses;
@@ -56,6 +63,7 @@ public class TestSelector {
 		this.weights = weights;
 		this.config = config;
 		this.alwaysRunClasses = alwaysRunClasses != null ? alwaysRunClasses : Set.of();
+		this.changeComplexity = changeComplexity != null ? changeComplexity : Map.of();
 	}
 
 	/**
@@ -86,7 +94,7 @@ public class TestSelector {
 		allTests.addAll(changedTestClasses);
 
 		TestScorer scorer = new TestScorer.Builder(weights, depMap, state, changedClasses, changedTestClasses)
-				.testClassNames(depMap.testClasses()).build();
+				.testClassNames(depMap.testClasses()).changeComplexity(changeComplexity).build();
 
 		List<ScoredTest> scored = new ArrayList<>();
 		for (String tc : allTests) {

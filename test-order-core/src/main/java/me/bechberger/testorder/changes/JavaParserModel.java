@@ -116,20 +116,20 @@ class JavaParserModel {
 		// Fields
 		if (detail == SourceFileModel.Detail.FIELDS) {
 			for (FieldDeclaration fd : td.getFields()) {
-				visitField(fd, fqcn, stripped, fields);
+				visitField(fd, fqcn, source, fields);
 			}
 
 			// Initializer blocks
 			if (td instanceof ClassOrInterfaceDeclaration coid) {
 				for (var member : coid.getMembers()) {
 					if (member instanceof InitializerDeclaration id) {
-						visitInitializer(id, fqcn, stripped, initializers);
+						visitInitializer(id, fqcn, source, initializers);
 					}
 				}
 			} else if (td instanceof EnumDeclaration ed) {
 				for (var member : ed.getMembers()) {
 					if (member instanceof InitializerDeclaration id) {
-						visitInitializer(id, fqcn, stripped, initializers);
+						visitInitializer(id, fqcn, source, initializers);
 					}
 				}
 			}
@@ -153,7 +153,8 @@ class JavaParserModel {
 		String signatureText = null;
 
 		// Capture signature text (annotations + modifiers + return type + name + params)
-		// from original source for annotation-aware hashing
+		// from original source, normalized for hashing (comments/whitespace ignored,
+		// strings preserved for annotation-aware hashing)
 		if (md.getRange().isPresent()) {
 			var fullRange = md.getRange().get();
 			int sigStart = positionToOffset(source, fullRange.begin.line, fullRange.begin.column);
@@ -162,12 +163,12 @@ class JavaParserModel {
 					var bodyRange = md.getBody().get().getRange().get();
 					int bodyStart = positionToOffset(source, bodyRange.begin.line, bodyRange.begin.column);
 					if (bodyStart >= 0 && bodyStart > sigStart) {
-						signatureText = source.substring(sigStart, bodyStart);
+						signatureText = SourceFileModel.normalizeForHashing(source.substring(sigStart, bodyStart));
 					}
 				} else {
 					int sigEnd = positionToOffset(source, fullRange.end.line, fullRange.end.column);
 					if (sigEnd >= 0) {
-						signatureText = source.substring(sigStart, sigEnd + 1);
+						signatureText = SourceFileModel.normalizeForHashing(source.substring(sigStart, sigEnd + 1));
 					}
 				}
 			}
@@ -177,9 +178,10 @@ class JavaParserModel {
 			var range = md.getBody().get().getRange().get();
 			int start = positionToOffset(source, range.begin.line, range.begin.column);
 			int end = positionToOffset(source, range.end.line, range.end.column);
-			if (start >= 0 && end >= 0 && end < stripped.length()) {
-				// include braces in body text (matches island parser convention)
-				bodyText = stripped.substring(start, end + 1);
+			if (start >= 0 && end >= 0 && end < source.length()) {
+				// Use normalizeForHashing on original body text so that comment/whitespace
+				// changes are ignored but string literal changes are detected
+				bodyText = SourceFileModel.normalizeForHashing(source.substring(start, end + 1));
 				bodyHash = SourceFileModel.sha256(bodyText);
 				compactBody = SourceFileModel.removeCommentsAndEmptyLines(source.substring(start, end + 1));
 			}
@@ -203,7 +205,7 @@ class JavaParserModel {
 			int sigStart = positionToOffset(source, fullRange.begin.line, fullRange.begin.column);
 			int bodyStart = positionToOffset(source, bodyRange.begin.line, bodyRange.begin.column);
 			if (sigStart >= 0 && bodyStart >= 0 && bodyStart > sigStart) {
-				signatureText = source.substring(sigStart, bodyStart);
+				signatureText = SourceFileModel.normalizeForHashing(source.substring(sigStart, bodyStart));
 			}
 		}
 
@@ -211,9 +213,10 @@ class JavaParserModel {
 			var range = cd.getBody().getRange().get();
 			int start = positionToOffset(source, range.begin.line, range.begin.column);
 			int end = positionToOffset(source, range.end.line, range.end.column);
-			if (start >= 0 && end >= 0 && end < stripped.length()) {
-				// include braces in body text (matches island parser convention)
-				bodyText = stripped.substring(start, end + 1);
+			if (start >= 0 && end >= 0 && end < source.length()) {
+				// Use normalizeForHashing on original body text so that comment/whitespace
+				// changes are ignored but string literal changes are detected
+				bodyText = SourceFileModel.normalizeForHashing(source.substring(start, end + 1));
 				bodyHash = SourceFileModel.sha256(bodyText);
 				compactBody = SourceFileModel.removeCommentsAndEmptyLines(source.substring(start, end + 1));
 			}
@@ -223,39 +226,40 @@ class JavaParserModel {
 				signatureText));
 	}
 
-	private static void visitField(FieldDeclaration fd, String fqcn, String stripped,
+	private static void visitField(FieldDeclaration fd, String fqcn, String source,
 			List<SourceFileModel.FieldNode> fields) {
 		// A FieldDeclaration can declare multiple variables (e.g. "int x, y;")
 		for (VariableDeclarator vd : fd.getVariables()) {
 			String name = vd.getNameAsString();
-			// Use the full declaration line from stripped source for hashing
+			// Use the original declaration text so string literal changes are preserved,
+			// while normalizeForHashing still ignores comment-only/whitespace-only edits.
 			String declText = "";
 			if (fd.getRange().isPresent()) {
 				var range = fd.getRange().get();
-				int start = positionToOffset(stripped, range.begin.line, range.begin.column);
-				int end = positionToOffset(stripped, range.end.line, range.end.column);
-				if (start >= 0 && end >= 0 && end < stripped.length()) {
-					declText = stripped.substring(start, end + 1);
+				int start = positionToOffset(source, range.begin.line, range.begin.column);
+				int end = positionToOffset(source, range.end.line, range.end.column);
+				if (start >= 0 && end >= 0 && end < source.length()) {
+					declText = source.substring(start, end + 1);
 				}
 			}
-			String hash = SourceFileModel.sha256(declText);
+			String hash = SourceFileModel.sha256(SourceFileModel.normalizeForHashing(declText));
 			fields.add(new SourceFileModel.FieldNode(name, fqcn, declText, hash));
 		}
 	}
 
-	private static void visitInitializer(InitializerDeclaration id, String fqcn, String stripped,
+	private static void visitInitializer(InitializerDeclaration id, String fqcn, String source,
 			List<SourceFileModel.InitializerNode> initializers) {
 		boolean isStatic = id.isStatic();
 		String bodyText = "";
 		if (id.getBody().getRange().isPresent()) {
 			var range = id.getBody().getRange().get();
-			int start = positionToOffset(stripped, range.begin.line, range.begin.column);
-			int end = positionToOffset(stripped, range.end.line, range.end.column);
-			if (start >= 0 && end >= 0 && end < stripped.length()) {
-				bodyText = stripped.substring(start, end + 1);
+			int start = positionToOffset(source, range.begin.line, range.begin.column);
+			int end = positionToOffset(source, range.end.line, range.end.column);
+			if (start >= 0 && end >= 0 && end < source.length()) {
+				bodyText = source.substring(start, end + 1);
 			}
 		}
-		String hash = SourceFileModel.sha256(bodyText);
+		String hash = SourceFileModel.sha256(SourceFileModel.normalizeForHashing(bodyText));
 		initializers.add(new SourceFileModel.InitializerNode(isStatic, fqcn, bodyText, hash));
 	}
 

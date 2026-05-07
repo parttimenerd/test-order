@@ -45,7 +45,7 @@ public final class DiagnosticOperation {
             Map<String, String> summary) {
 
         public boolean isHealthy() {
-            return healthScore >= 80;
+            return healthScore >= 80 && !hasErrors();
         }
 
         public boolean hasErrors() {
@@ -96,8 +96,13 @@ public final class DiagnosticOperation {
 
         // Check 6: Deps directory
         DiagnosticResult depsCheck = checkDepsDirectory(config);
+        // The agent's tryDirectMerge() writes the index directly without .deps files,
+        // so missing .deps is normal when the index is already valid.
+        if (indexCheck.isSuccess() && depsCheck.isInformational() && !depsCheck.isSuccess()) {
+            depsCheck = DiagnosticResult.success("No .deps files needed (index was written directly by agent)");
+        }
         results.add(depsCheck);
-        if (depsCheck.isInformational() && !depsCheck.isSuccess())
+        if (depsCheck.isInformational() && !depsCheck.isSuccess() && !indexCheck.isSuccess())
             score -= 5;
 
         score = Math.max(0, Math.min(100, score));
@@ -153,8 +158,12 @@ public final class DiagnosticOperation {
                         ErrorCode.INDEX_CORRUPTED,
                         "Index file is corrupted: " + e.getMessage(),
                         List.of(
-                                "Run: mvn test-order:clean (or Gradle: testOrderClean)",
-                                "Then re-run tests in learn mode: -Dtestorder.mode=learn"));
+                                "Recovery steps:",
+                                "  1. Clean up: mvn test-order:clean (or Gradle: testOrderClean)",
+                                "  2. If .deps files exist: mvn test-order:compact (or Gradle: testOrderCompact)",
+                                "  3. Otherwise re-learn: mvn test -Dtestorder.mode=learn",
+                                "  4. Verify fix: mvn test-order:diagnose",
+                                "Possible causes: disk full during write, incompatible version, or file is not LZ4"));
             }
         } catch (IOException e) {
             return DiagnosticResult.error(
@@ -183,8 +192,11 @@ public final class DiagnosticOperation {
                         ErrorCode.STATE_CORRUPTED,
                         "State file is corrupted: " + e.getMessage(),
                         List.of(
-                                "This typically happens from disk full or unexpected termination",
-                                "Safe to delete; will be recreated on next test run"));
+                                "Recovery steps:",
+                                "  1. Delete state file: rm .test-order/state.lz4",
+                                "  2. Run tests normally — state will be recreated with fresh data",
+                                "  3. Scoring weights and duration history will be lost (rebuilt over ~5 runs)",
+                                "Possible causes: disk full, unexpected termination, or concurrent write"));
             }
         } catch (IOException e) {
             return DiagnosticResult.error(
@@ -206,8 +218,10 @@ public final class DiagnosticOperation {
                     ErrorCode.HASH_FILE_STALE,
                     "Hash snapshot files missing: " + String.join(", ", missing),
                     List.of(
-                            "Run testOrderSnapshot to create hash snapshots",
-                            "Or run tests in learn mode which creates snapshots automatically"));
+                            "Hash snapshots track file changes between runs (since-last-run mode)",
+                            "They are created automatically during learn mode runs",
+                            "To create manually: mvn test-order:snapshot (or Gradle: testOrderSnapshot)",
+                            "If using git-based change detection, these files are optional"));
         }
 
         return DiagnosticResult.success("Hash files are present and up-to-date");
@@ -219,7 +233,10 @@ public final class DiagnosticOperation {
             if (!Files.exists(testOrderDir)) {
                 return DiagnosticResult.info(
                         ErrorCode.PERMISSION_DENIED,
-                        ".test-order directory does not exist yet");
+                        ".test-order directory does not exist yet",
+                        List.of(
+                                "This is normal before the first test run",
+                                "The directory will be created automatically on the first learn run"));
             }
 
             if (!Files.isWritable(testOrderDir)) {
@@ -227,8 +244,11 @@ public final class DiagnosticOperation {
                         ErrorCode.PERMISSION_DENIED,
                         "Cannot write to .test-order directory: " + testOrderDir,
                         List.of(
-                                "Check directory permissions: chmod 755 .test-order",
-                                "Verify you own the directory"));
+                                "Recovery steps:",
+                                "  1. Fix permissions: chmod 755 " + testOrderDir,
+                                "  2. Or change ownership: chown $USER " + testOrderDir,
+                                "  3. On CI: ensure the build user owns the workspace checkout",
+                                "  4. In containers: verify the working directory is mounted writable"));
             }
 
             return DiagnosticResult.success(".test-order directory is writable");
@@ -247,12 +267,13 @@ public final class DiagnosticOperation {
 
             // Check if source root exists
             if (!Files.exists(config.testSourceRoot())) {
-                return DiagnosticResult.error(
-                        ErrorCode.SOURCE_ROOT_NOT_FOUND,
+                return DiagnosticResult.info(
+                        ErrorCode.TEST_SOURCE_ROOT_ABSENT,
                         "Test source root not found: " + config.testSourceRoot(),
                         List.of(
                                 "Verify your test source directory structure",
-                                "Default: src/test/java"));
+                                "Default: src/test/java",
+                                "This is expected for POM-only parent modules"));
             }
 
             return DiagnosticResult.success(
@@ -298,6 +319,10 @@ public final class DiagnosticOperation {
     }
 
     private static String determineStatus(int score, List<DiagnosticResult> results) {
+        boolean hasErrors = results.stream().anyMatch(DiagnosticResult::isError);
+        if (hasErrors) {
+            return score >= 70 ? "ISSUES ⚠" : "CRITICAL ✗";
+        }
         if (score >= 90) {
             return "HEALTHY ✓";
         } else if (score >= 70) {

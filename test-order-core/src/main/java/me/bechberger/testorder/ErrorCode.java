@@ -41,6 +41,8 @@ public enum ErrorCode {
     WEIGHT_INVALID(1203, "Invalid scoring weight value"),
     THRESHOLD_INVALID(1204, "Invalid threshold value"),
     CONFIG_MISSING_REQUIRED(1205, "Required configuration is missing"),
+    NO_TEST_FRAMEWORK(1206, "No supported test framework (Surefire/JUnit Platform) found"),
+    INVALID_SELECT_PARAMS(1207, "Invalid test selection parameters"),
 
     // Change detection errors (1300-1399)
     CHANGE_DETECTION_FAILED(1301, "Change detection failed"),
@@ -57,7 +59,8 @@ public enum ErrorCode {
     AUTO_SWITCH_NEW_TESTS(2002, "Auto-switched to learn mode (new test classes detected)"),
     INDEX_NEEDS_REBUILD(2003, "Index contains stale entries (recommend testOrderCompact)"),
     HASH_FILE_STALE(2004, "Hash file is stale (snapshots may be outdated)"),
-    DEPS_NOT_FOUND(2005, "No .deps files found (recommend running in learn mode first)");
+    DEPS_NOT_FOUND(2005, "No .deps files found (recommend running in learn mode first)"),
+    TEST_SOURCE_ROOT_ABSENT(2006, "Test source root not found (expected for POM-only parent modules)");
 
     private final int code;
     private final String message;

@@ -22,7 +22,18 @@ public abstract class TestOrderExtension {
 
     // ---- Mode ----
 
-    /** Operational mode: auto, learn, or order. */
+    /**
+     * Operational mode: auto, learn, order, optimize, or skip.
+     * <p>
+     * Resolution precedence (highest wins):
+     * <ol>
+     *   <li>CLI system property: {@code -Dtestorder.mode=learn}</li>
+     *   <li>Gradle project property: {@code -Ptestorder.mode=learn}</li>
+     *   <li>Per-task override: {@code -Dtestorder.mode.integrationTest=order}</li>
+     *   <li>This DSL property</li>
+     *   <li>Auto-detection (order if index exists, learn otherwise)</li>
+     * </ol>
+     */
     public abstract Property<String> getMode();
 
     /** Instrumentation mode: METHOD_ENTRY, FULL, FULL_METHOD, FULL_MEMBER. */
@@ -50,18 +61,47 @@ public abstract class TestOrderExtension {
 
     // ---- Change Detection ----
 
-    /** Change detection mode: auto, since-last-run, since-last-commit, uncommitted, explicit. */
+    /**
+     * Change detection mode:
+     * <ul>
+     *   <li><b>uncommitted</b> (default) — detects changes via {@code git diff} against HEAD</li>
+     *   <li><b>since-last-run</b> — compares source hashes against the last test-order run</li>
+     *   <li><b>since-last-commit</b> — detects changes since the last git commit</li>
+     *   <li><b>explicit</b> — uses only the classes specified in changedClasses/changedTestClasses</li>
+     *   <li><b>auto</b> — alias for uncommitted (uses git if available, falls back to since-last-run)</li>
+     * </ul>
+     */
     public abstract Property<String> getChangeMode();
 
-    /** Explicit changed class FQCNs (comma-separated). Only used when changeMode=explicit. */
+    /**
+     * Explicit changed production source class FQCNs (comma-separated). Only used when
+     * changeMode=explicit. Used for dependency-overlap scoring: tests whose dependencies
+     * include one of these classes receive a higher priority score.
+     * <p>
+     * <b>Note:</b> Validation of these classes against the dependency index can only happen
+     * at execution time (not configuration time) because the index may not yet exist
+     * during Gradle's configuration phase. Use {@code testOrderValidateConfig} or run
+     * with {@code --info} to see validation warnings.
+     */
     public abstract Property<String> getChangedClasses();
+
+    /**
+     * Explicit changed test class FQCNs (comma-separated). Used for CI integrations that
+     * detect changed test files externally. These receive a "changed test" bonus score.
+     */
+    public abstract Property<String> getChangedTestClasses();
 
     // ---- Instrumentation ----
 
     /** Comma-separated package prefixes to instrument. Auto-detected from src/main/java if empty. */
     public abstract Property<String> getIncludePackages();
 
-    /** Whether to auto-detect packages from project groupId when source scanning finds nothing. */
+    /**
+     * Whether to auto-detect packages from project groupId when source scanning finds nothing.
+     * When true and includePackages is empty, the plugin scans src/main/java for top-level packages.
+     * If no packages are found (e.g. empty source root), it falls back to the project's groupId
+     * as the instrumentation package filter. Set to false to disable this fallback.
+     */
     public abstract Property<Boolean> getFilterByGroupId();
 
     /** Path for verbose agent logging (empty = disabled). */
@@ -75,7 +115,11 @@ public abstract class TestOrderExtension {
     /** Optional weights override file path. */
     public abstract Property<String> getWeightsFile();
 
-    /** Number of top-scored tests to always select. */
+    /**
+     * Number of top-scored tests to always select.
+     * Use -1 (default) to include all change-affected tests.
+     * Use 0 to rely only on selectRandomM for selection.
+     */
     public abstract Property<Integer> getSelectTopN();
 
     /** Number of diverse fast tests to additionally select. */
@@ -89,6 +133,23 @@ public abstract class TestOrderExtension {
 
     /** File containing deferred test classes for run-remaining. */
     public abstract RegularFileProperty getRemainingFile();
+
+    // ---- Tiered CI ----
+
+    /** Fraction of remaining test duration budget allocated to tier 2 (0–1). */
+    public abstract Property<Double> getTieredTier2Fraction();
+
+    /** If true, tier 2 selects by cumulative duration budget; if false, by count fraction. */
+    public abstract Property<Boolean> getTieredWeightByDuration();
+
+    /** Output file for tier-1 test class list. */
+    public abstract RegularFileProperty getTieredTier1File();
+
+    /** Output file for tier-2 test class list. */
+    public abstract RegularFileProperty getTieredTier2File();
+
+    /** Output file for tier-3 test class list. */
+    public abstract RegularFileProperty getTieredTier3File();
 
     // ---- Scoring Weights ----
 
@@ -104,7 +165,11 @@ public abstract class TestOrderExtension {
 
     // ---- Auto-learn thresholds ----
 
-    /** In auto mode, force full learn after this many non-learn runs (0 = disabled). */
+    /**
+     * In auto mode, forces a full re-learn after this many consecutive order-mode
+     * runs (0 = disabled, default: 10). Ensures the dependency index stays fresh
+     * as the codebase evolves.
+     */
     public abstract Property<Integer> getAutoLearnRunThreshold();
 
     /** In auto mode, force learn when changed-class count reaches this threshold (0 = disabled). */
@@ -112,6 +177,9 @@ public abstract class TestOrderExtension {
 
     /** In auto mode, run weight optimisation every N order-mode runs (0 = disabled). */
     public abstract Property<Integer> getAutoOptimizeEvery();
+
+    /** Auto-compact the index every N order-mode runs by rebuilding from .deps files (0 = disabled). */
+    public abstract Property<Integer> getAutoCompactEvery();
 
     // ---- Auto-mode behavior ----
 
@@ -121,7 +189,13 @@ public abstract class TestOrderExtension {
     /** When true, skip all test-order processing. */
     public abstract Property<Boolean> getSkip();
 
-    /** In auto mode, whether to run deferred (remaining) tests after selected tests. */
+    /**
+     * In auto mode, whether to run deferred (remaining) tests after selected tests.
+     * <p>
+     * Default: {@code true} for the regular 'test' task (runs all tests).
+     * The standalone 'testOrderSelect' task defaults to {@code false} (matching Maven's
+     * select goal behavior) — use {@code -Dtestorder.auto.runRemaining=true} to override.
+     */
     public abstract Property<Boolean> getAutoRunRemaining();
 
     // ---- Dump ----
@@ -142,33 +216,20 @@ public abstract class TestOrderExtension {
         getMode().convention("auto");
         getInstrumentationMode().convention("FULL");
 
-        // Multi-project support: the shared dependency index lives at the root
-        // project so that testOrderAggregateAll can merge all subproject deps.
-        // Each subproject keeps its OWN state, hash, and deps files to avoid
-        // path collisions in parallel builds.
-        boolean isSubproject = project.getRootProject() != project;
         var localDir = project.getLayout().getProjectDirectory().dir(".test-order");
-        var rootDir = project.getRootProject().getLayout().getProjectDirectory().dir(".test-order");
-        String moduleId = isSubproject
-                ? project.getGroup() + "-" + project.getName()
-                : null;
 
-        // Index is shared at the root so aggregation works across subprojects.
-        getIndexFile().convention(rootDir.file("test-dependencies.lz4"));
-        // State, hash files, and deps are per-module to prevent collisions.
+        // Keep all files project-local by default so module-scoped tasks
+        // (for example :core:spring-boot:testOrderShowOrder) read the same
+        // artifacts produced by the module's learn run.
+        getIndexFile().convention(localDir.file("test-dependencies.lz4"));
         getStateFile().convention(localDir.file("state.lz4"));
         getDepsDir().convention(project.getLayout().getBuildDirectory().dir("test-order-deps"));
-        if (isSubproject) {
-            getHashFile().convention(rootDir.dir("hashes").file(moduleId + "-hashes.lz4"));
-            getTestHashFile().convention(rootDir.dir("hashes").file(moduleId + "-test-hashes.lz4"));
-            getMethodHashFile().convention(rootDir.dir("hashes").file(moduleId + "-method-hashes.lz4"));
-        } else {
-            getHashFile().convention(localDir.file("hashes.lz4"));
-            getTestHashFile().convention(localDir.file("test-hashes.lz4"));
-            getMethodHashFile().convention(localDir.file("method-hashes.lz4"));
-        }
+        getHashFile().convention(localDir.file("hashes.lz4"));
+        getTestHashFile().convention(localDir.file("test-hashes.lz4"));
+        getMethodHashFile().convention(localDir.file("method-hashes.lz4"));
         getChangeMode().convention("uncommitted");
         getChangedClasses().convention("");
+        getChangedTestClasses().convention("");
         getIncludePackages().convention("");
         getFilterByGroupId().convention(true);
         getVerboseFile().convention("");
@@ -179,9 +240,15 @@ public abstract class TestOrderExtension {
         getSelectSeed().convention((Long) null);
         getSelectedFile().convention(project.getLayout().getBuildDirectory().file("test-order-selected.txt"));
         getRemainingFile().convention(project.getLayout().getBuildDirectory().file("test-order-remaining.txt"));
+        getTieredTier2Fraction().convention(0.5);
+        getTieredWeightByDuration().convention(true);
+        getTieredTier1File().convention(project.getLayout().getBuildDirectory().file("test-order-tier1.txt"));
+        getTieredTier2File().convention(project.getLayout().getBuildDirectory().file("test-order-tier2.txt"));
+        getTieredTier3File().convention(project.getLayout().getBuildDirectory().file("test-order-tier3.txt"));
         getAutoLearnRunThreshold().convention(10);
         getAutoLearnDiffThreshold().convention(0);
         getAutoOptimizeEvery().convention(10);
+        getAutoCompactEvery().convention(50);
         getSpringContextGrouping().convention(false);
         getSkip().convention(false);
         getAutoRunRemaining().convention(true);
@@ -190,6 +257,80 @@ public abstract class TestOrderExtension {
         getCoverageOutputDir().convention(project.getLayout().getBuildDirectory().dir("coverage-reports"));
         // Score weight conventions intentionally omitted — when not explicitly configured,
         // PriorityClassOrderer uses weights from the state file (possibly optimizer-tuned)
-        // or its own defaults.  Setting conventions here would always override those.
+        // or its own built-in defaults (newTest=100, changedTest=80, maxFailure=60, etc.).
+        // Setting conventions here would always override those, preventing the optimizer
+        // from having any effect.
+    }
+
+    /**
+     * Validates user-configured values after project evaluation.
+     * Logs warnings for invalid or suspicious configuration.
+     */
+    void validateConfiguration(org.gradle.api.logging.Logger logger) {
+        // Validate mode
+        java.util.Set<String> validModes = java.util.Set.of("auto", "learn", "order", "optimize", "skip");
+        String mode = getMode().getOrElse("auto");
+        if (!validModes.contains(mode)) {
+            throw new org.gradle.api.GradleException(
+                    "[test-order] Invalid mode '" + mode + "'. Valid values: " + validModes);
+        }
+
+        // Validate instrumentation mode
+        java.util.Set<String> validInstrModes = java.util.Set.of("METHOD_ENTRY", "FULL", "FULL_METHOD", "FULL_MEMBER");
+        String instrMode = getInstrumentationMode().getOrElse("FULL");
+        if (!validInstrModes.contains(instrMode.toUpperCase())) {
+            logger.warn("[test-order] Invalid instrumentationMode '{}'. Valid values: {}.", instrMode, validInstrModes);
+        }
+
+        // Validate change mode
+        java.util.Set<String> validChangeModes = java.util.Set.of("auto", "since-last-run", "since-last-commit", "uncommitted", "explicit");
+        String changeMode = getChangeMode().getOrElse("uncommitted");
+        if (!validChangeModes.contains(changeMode)) {
+            logger.warn("[test-order] Invalid changeMode '{}'. Valid values: {}.", changeMode, validChangeModes);
+        }
+
+        // Validate scoring weights are non-negative
+        validateWeightNonNegative(logger, "scoreNewTest", getScoreNewTest());
+        validateWeightNonNegative(logger, "scoreChangedTest", getScoreChangedTest());
+        validateWeightNonNegative(logger, "scoreMaxFailure", getScoreMaxFailure());
+        validateWeightNonNegative(logger, "scoreSpeed", getScoreSpeed());
+        validateWeightNonNegative(logger, "scoreSpeedPenalty", getScoreSpeedPenalty());
+        validateWeightNonNegative(logger, "scoreDepOverlap", getScoreDepOverlap());
+        validateWeightNonNegative(logger, "scoreChangeComplexity", getScoreChangeComplexity());
+
+        // Validate thresholds are non-negative
+        int autoLearnThreshold = getAutoLearnRunThreshold().getOrElse(10);
+        if (autoLearnThreshold < 0) {
+            logger.warn("[test-order] autoLearnRunThreshold cannot be negative ({}). Use 0 to disable.", autoLearnThreshold);
+        }
+        int autoLearnDiff = getAutoLearnDiffThreshold().getOrElse(0);
+        if (autoLearnDiff < 0) {
+            logger.warn("[test-order] autoLearnDiffThreshold cannot be negative ({}). Use 0 to disable.", autoLearnDiff);
+        }
+
+        // Validate tiered fraction
+        double tier2Fraction = getTieredTier2Fraction().getOrElse(0.5);
+        if (tier2Fraction < 0 || tier2Fraction > 1) {
+            throw new org.gradle.api.GradleException(
+                    "[test-order] tieredTier2Fraction must be in [0, 1], got " + tier2Fraction
+                    + ". This must be a fraction representing the proportion of remaining tests for tier 2.");
+        }
+
+        // Validate auto-optimize and auto-compact thresholds
+        int optimizeEvery = getAutoOptimizeEvery().getOrElse(10);
+        if (optimizeEvery < 0) {
+            logger.warn("[test-order] autoOptimizeEvery cannot be negative ({}). Use 0 to disable.", optimizeEvery);
+        }
+        int compactEvery = getAutoCompactEvery().getOrElse(50);
+        if (compactEvery < 0) {
+            logger.warn("[test-order] autoCompactEvery cannot be negative ({}). Use 0 to disable.", compactEvery);
+        }
+    }
+
+    private void validateWeightNonNegative(org.gradle.api.logging.Logger logger, String name, Property<Integer> prop) {
+        if (prop.isPresent() && prop.get() < 0) {
+            logger.warn("[test-order] Negative scoring weight {} = {} — this inverts scoring for that component.",
+                    name, prop.get());
+        }
     }
 }

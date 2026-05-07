@@ -1,6 +1,7 @@
 package me.bechberger.testorder;
 
 import java.util.Collections;
+import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -94,8 +95,8 @@ final class ScoringOptimizer {
 		}
 
 		if (overfit) {
-			logger.warning("Optimizer detected overfitting: train=" + String.format("%.3f", trainScore) + " validation="
-					+ String.format("%.3f", validationScore) + ". Falling back to default weights.");
+			logger.warning("Optimizer detected overfitting: train=" + String.format(Locale.US, "%.3f", trainScore) + " validation="
+					+ String.format(Locale.US, "%.3f", validationScore) + ". Falling back to default weights.");
 			return new TestOrderState.OptimizeResult(TestOrderState.ScoringWeights.DEFAULT, trainScore, validationScore,
 					true, numFolds);
 		}

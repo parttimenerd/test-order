@@ -35,15 +35,33 @@ public class CiDepDownloadManager {
 	}
 
 	private static OkHttpClient buildHttpClient(CiConfig.ProxyConfig proxyConfig) {
-		OkHttpClient.Builder builder = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS)
-				.readTimeout(60, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS);
-		if (proxyConfig != null) {
-			Proxy.Type proxyType = "socks5".equalsIgnoreCase(proxyConfig.getType())
-					? Proxy.Type.SOCKS
-					: Proxy.Type.HTTP;
-			builder.proxy(new Proxy(proxyType, new InetSocketAddress(proxyConfig.getHost(), proxyConfig.getPort())));
+		if (proxyConfig == null) {
+			return CiHttpClientFactory.buildDefault();
 		}
+		int connectTimeout = getTimeoutProperty("testorder.ci.connect.timeout.seconds", 30);
+		int readTimeout = getTimeoutProperty("testorder.ci.read.timeout.seconds", 60);
+		int writeTimeout = getTimeoutProperty("testorder.ci.write.timeout.seconds", 30);
+		OkHttpClient.Builder builder = new OkHttpClient.Builder()
+				.connectTimeout(connectTimeout, TimeUnit.SECONDS)
+				.readTimeout(readTimeout, TimeUnit.SECONDS)
+				.writeTimeout(writeTimeout, TimeUnit.SECONDS);
+		Proxy.Type proxyType = "socks5".equalsIgnoreCase(proxyConfig.getType())
+				? Proxy.Type.SOCKS
+				: Proxy.Type.HTTP;
+		builder.proxy(new Proxy(proxyType, new InetSocketAddress(proxyConfig.getHost(), proxyConfig.getPort())));
 		return builder.build();
+	}
+
+	private static int getTimeoutProperty(String key, int defaultSeconds) {
+		String prop = System.getProperty(key);
+		if (prop != null) {
+			try {
+				int val = Integer.parseInt(prop);
+				if (val > 0) return val;
+			} catch (NumberFormatException ignored) {
+			}
+		}
+		return defaultSeconds;
 	}
 
 	/**
@@ -120,7 +138,9 @@ public class CiDepDownloadManager {
 			Path downloaded = mgr.download();
 			try {
 				Files.createDirectories(indexTarget.getParent());
-				Files.copy(downloaded, indexTarget, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+				Path tempSibling = me.bechberger.testorder.PersistenceSupport.temporarySibling(indexTarget);
+				Files.copy(downloaded, tempSibling, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+				me.bechberger.testorder.PersistenceSupport.moveIntoPlace(tempSibling, indexTarget);
 			} finally {
 				Files.deleteIfExists(downloaded);
 			}

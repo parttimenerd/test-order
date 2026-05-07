@@ -441,7 +441,8 @@ public class SourceFileModel {
 		// ── 4. optionally find field islands (depth 1) ───────────
 		List<FieldNode> fields;
 		if (detail == Detail.FIELDS) {
-			fields = findFieldIslands(stripped, braceDepth, parenDepth, types, claimedBraces, methodBodyRanges);
+			fields = findFieldIslands(source, stripped, braceDepth, parenDepth, types, claimedBraces,
+					methodBodyRanges);
 		} else {
 			fields = List.of();
 		}
@@ -449,7 +450,7 @@ public class SourceFileModel {
 		// ── 5. optionally find initializer blocks (depth 1) ──────
 		List<InitializerNode> initializers;
 		if (detail == Detail.FIELDS) {
-			initializers = findInitializerBlocks(stripped, braceDepth, types, claimedBraces);
+			initializers = findInitializerBlocks(source, stripped, braceDepth, types, claimedBraces);
 		} else {
 			initializers = List.of();
 		}
@@ -606,20 +607,24 @@ public class SourceFileModel {
 				claimedBraces.add(bodyStart);
 				// Capture annotations + modifiers + return type + name + params from the
 				// ORIGINAL source (not stripped) so that annotation string values like
-				// @CsvSource({"1,2"}) are preserved in the hash.
-				signatureText = source.substring(matcher.start(), bodyStart);
+				// @CsvSource({"1,2"}) are preserved in the hash. Normalize to ignore
+				// comment/whitespace changes in the signature area.
+				signatureText = normalizeForHashing(source.substring(matcher.start(), bodyStart));
 				if (!isAbstract) {
 					int bodyEnd = findMatchingBrace(stripped, bodyStart);
 					if (bodyEnd < 0)
 						continue;
-					bodyText = stripped.substring(bodyStart, bodyEnd + 1);
+					// Use normalizeForHashing on the original body text so that
+					// comment-only and whitespace-only changes are ignored, but
+					// string literal changes are still detected.
+					bodyText = normalizeForHashing(source.substring(bodyStart, bodyEnd + 1));
 					bodyHash = sha256(bodyText);
 					compactBody = removeCommentsAndEmptyLines(source.substring(bodyStart, bodyEnd + 1));
 					methodBodyRanges.add(new int[] { bodyStart, bodyEnd, expectedDepth });
 				}
 			} else {
 				// abstract method ending with ';' — capture signature from original source
-				signatureText = source.substring(matcher.start(), matcher.end());
+				signatureText = normalizeForHashing(source.substring(matcher.start(), matcher.end()));
 			}
 
 			methods.add(new MethodNode(name, enclosing.fqcn, isCtor, isAbstract, bodyText, bodyHash, compactBody,
@@ -863,7 +868,7 @@ public class SourceFileModel {
 
 	// ── Field island extraction ────────────────────────────────────────
 
-	private static List<FieldNode> findFieldIslands(String stripped, int[] braceDepth, int[] parenDepth,
+	private static List<FieldNode> findFieldIslands(String source, String stripped, int[] braceDepth, int[] parenDepth,
 			List<TypeNode> types, Set<Integer> claimedBraces, List<int[]> methodBodyRanges) {
 
 		List<FieldNode> fields = new ArrayList<>();
@@ -931,9 +936,10 @@ public class SourceFileModel {
 					claimedBraces.add(i);
 			}
 
-			// Hash the full declaration text
-			String declText = stripped.substring(pos, declEnd + 1);
-			String declHash = sha256(declText);
+			// Hash the original declaration text so string literal changes are preserved,
+			// while comment-only and whitespace-only edits are ignored.
+			String declText = source.substring(pos, declEnd + 1);
+			String declHash = sha256(normalizeForHashing(declText));
 
 			fields.add(new FieldNode(name, enclosing.fqcn, declText, declHash));
 
@@ -1027,8 +1033,8 @@ public class SourceFileModel {
 
 	// ── Initializer block extraction ─────────────────────────────────
 
-	private static List<InitializerNode> findInitializerBlocks(String stripped, int[] braceDepth, List<TypeNode> types,
-			Set<Integer> claimedBraces) {
+	private static List<InitializerNode> findInitializerBlocks(String source, String stripped, int[] braceDepth,
+			List<TypeNode> types, Set<Integer> claimedBraces) {
 
 		// Also claim braces from compact record constructors:
 		// public Person { ... } — no param list, so METHOD_OR_CTOR_ISLAND misses it
@@ -1074,8 +1080,8 @@ public class SourceFileModel {
 					continue;
 
 				boolean isStatic = isPrecededByStaticKeyword(stripped, i);
-				String bodyText = stripped.substring(i, blockEnd + 1);
-				String bodyHash = sha256(bodyText);
+				String bodyText = source.substring(i, blockEnd + 1);
+				String bodyHash = sha256(normalizeForHashing(bodyText));
 
 				initializers.add(new InitializerNode(isStatic, type.fqcn, bodyText, bodyHash));
 
@@ -1733,6 +1739,237 @@ public class SourceFileModel {
 			i++;
 		}
 		return i;
+	}
+
+	// ── Comment-only stripping (preserves strings) ──────────────────
+
+	/**
+	 * Strips only block comments and line comments from Java/Kotlin source code.
+	 * String literals, char literals, and text blocks are <em>preserved</em>
+	 * (skipped over without modification). Comments are replaced with spaces
+	 * (preserving newlines) so that line positions are maintained.
+	 * <p>
+	 * This method is intended for <strong>hashing</strong> — unlike
+	 * {@link #stripCommentsAndStrings} (which blanks strings for safe structural
+	 * parsing), this method keeps string content because string changes affect
+	 * bytecode.
+	 */
+	public static String stripComments(String source) {
+		StringBuilder sb = new StringBuilder(source.length());
+		int i = 0;
+		int len = source.length();
+		while (i < len) {
+			char c = source.charAt(i);
+			if (c == '/' && i + 1 < len) {
+				char next = source.charAt(i + 1);
+				if (next == '/') {
+					i = skipLineComment(source, sb, i, len);
+				} else if (next == '*') {
+					i = skipBlockComment(source, sb, i, len);
+				} else {
+					sb.append(c);
+					i++;
+				}
+			} else if (c == '"') {
+				// Preserve string literals and text blocks verbatim
+				if (i + 2 < len && source.charAt(i + 1) == '"' && source.charAt(i + 2) == '"') {
+					i = copyTextBlock(source, sb, i, len);
+				} else {
+					i = copyStringLiteral(source, sb, i, len);
+				}
+			} else if (c == '\'') {
+				// Preserve char literals verbatim
+				i = copyCharLiteral(source, sb, i, len);
+			} else {
+				sb.append(c);
+				i++;
+			}
+		}
+		return sb.toString();
+	}
+
+	/** Copies a string literal verbatim into the output. */
+	private static int copyStringLiteral(String source, StringBuilder sb, int i, int len) {
+		sb.append(source.charAt(i)); // opening "
+		i++;
+		while (i < len && source.charAt(i) != '"') {
+			if (source.charAt(i) == '\\' && i + 1 < len) {
+				sb.append(source.charAt(i)).append(source.charAt(i + 1));
+				i += 2;
+			} else {
+				sb.append(source.charAt(i));
+				i++;
+			}
+		}
+		if (i < len) {
+			sb.append(source.charAt(i)); // closing "
+			i++;
+		}
+		return i;
+	}
+
+	/** Copies a text block (triple-quoted string) verbatim into the output. */
+	private static int copyTextBlock(String source, StringBuilder sb, int i, int len) {
+		sb.append('"').append('"').append('"'); // opening """
+		i += 3;
+		while (i < len) {
+			if (source.charAt(i) == '\\' && i + 1 < len) {
+				sb.append(source.charAt(i)).append(source.charAt(i + 1));
+				i += 2;
+				continue;
+			}
+			if (i + 2 < len && source.charAt(i) == '"' && source.charAt(i + 1) == '"'
+					&& source.charAt(i + 2) == '"') {
+				sb.append('"').append('"').append('"'); // closing """
+				i += 3;
+				return i;
+			}
+			sb.append(source.charAt(i));
+			i++;
+		}
+		return i;
+	}
+
+	/** Copies a char literal verbatim into the output. */
+	private static int copyCharLiteral(String source, StringBuilder sb, int i, int len) {
+		sb.append(source.charAt(i)); // opening '
+		i++;
+		while (i < len && source.charAt(i) != '\'') {
+			if (source.charAt(i) == '\\' && i + 1 < len) {
+				sb.append(source.charAt(i)).append(source.charAt(i + 1));
+				i += 2;
+			} else {
+				sb.append(source.charAt(i));
+				i++;
+			}
+		}
+		if (i < len) {
+			sb.append(source.charAt(i)); // closing '
+			i++;
+		}
+		return i;
+	}
+
+	// ── Normalization for hashing ───────────────────────────────────
+
+	/**
+	 * Normalizes Java/Kotlin source for change-detection hashing:
+	 * <ol>
+	 * <li>Strips comments (preserves string/char literals).</li>
+	 * <li>Collapses runs of whitespace (spaces/tabs) to a single space.</li>
+	 * <li>Collapses multiple consecutive blank lines to a single newline.</li>
+	 * <li>Trims leading/trailing whitespace from each line.</li>
+	 * </ol>
+	 * The result is a canonical form where comment-only and whitespace-only edits
+	 * produce an identical normalized output, while any change to code or string
+	 * literals produces a different output.
+	 */
+	public static String normalizeForHashing(String source) {
+		String noComments = stripComments(source);
+		return normalizeWhitespace(noComments);
+	}
+
+	/**
+	 * Collapses whitespace: each run of {@code [ \t]+} becomes a single space,
+	 * each run of consecutive empty/blank lines becomes a single {@code \n}, and
+	 * each line is trimmed. String literal content is preserved exactly (whitespace
+	 * inside strings is NOT collapsed).
+	 */
+	static String normalizeWhitespace(String text) {
+		StringBuilder sb = new StringBuilder(text.length());
+		int len = text.length();
+		int i = 0;
+		int consecutiveNewlines = 0;
+		boolean pendingSpace = false; // whitespace seen since last emitted token
+
+		while (i < len) {
+			char c = text.charAt(i);
+
+			// Preserve string literals verbatim (don't collapse whitespace inside them)
+			if (c == '"') {
+				flushNewlines(sb, consecutiveNewlines);
+				consecutiveNewlines = 0;
+				emitPendingSpace(sb, pendingSpace, c);
+				pendingSpace = false;
+				if (i + 2 < len && text.charAt(i + 1) == '"' && text.charAt(i + 2) == '"') {
+					i = copyTextBlock(text, sb, i, len);
+				} else {
+					i = copyStringLiteral(text, sb, i, len);
+				}
+				continue;
+			}
+			if (c == '\'') {
+				flushNewlines(sb, consecutiveNewlines);
+				consecutiveNewlines = 0;
+				emitPendingSpace(sb, pendingSpace, c);
+				pendingSpace = false;
+				i = copyCharLiteral(text, sb, i, len);
+				continue;
+			}
+
+			if (c == '\n') {
+				consecutiveNewlines++;
+				pendingSpace = false;
+				i++;
+				continue;
+			}
+
+			if (c == ' ' || c == '\t' || c == '\r') {
+				pendingSpace = true;
+				i++;
+				continue;
+			}
+
+			// Non-whitespace character: flush pending newlines
+			flushNewlines(sb, consecutiveNewlines);
+			consecutiveNewlines = 0;
+
+			// Only emit a space if removing it could merge two distinct lexical tokens.
+			// This keeps formatting-only edits ignored, but preserves semantics-changing
+			// cases such as "- -" vs "--" and "+ +" vs "++".
+			emitPendingSpace(sb, pendingSpace, c);
+			pendingSpace = false;
+
+			sb.append(c);
+			i++;
+		}
+
+		// Trailing newline — emit at most one
+		if (consecutiveNewlines > 0) {
+			sb.append('\n');
+		}
+
+		return sb.toString();
+	}
+
+	/**
+	 * Emits a single space only when removing it could merge two lexical tokens.
+	 * This is required for both identifier/number boundaries and operator
+	 * boundaries such as "- -" vs "--".
+	 */
+	private static void emitPendingSpace(StringBuilder sb, boolean pendingSpace, char nextChar) {
+		if (!pendingSpace || sb.length() == 0)
+			return;
+		char last = sb.charAt(sb.length() - 1);
+		if (last == '\n')
+			return;
+		if ((isWordChar(last) && isWordChar(nextChar)) || (isOperatorChar(last) && isOperatorChar(nextChar))) {
+			sb.append(' ');
+		}
+	}
+
+	private static boolean isWordChar(char c) {
+		return Character.isLetterOrDigit(c) || c == '_' || c == '$';
+	}
+
+	private static boolean isOperatorChar(char c) {
+		return "+-*/%&|^!=<>?:~".indexOf(c) >= 0;
+	}
+
+	private static void flushNewlines(StringBuilder sb, int count) {
+		if (count > 0 && sb.length() > 0) {
+			sb.append('\n');
+		}
 	}
 
 	// ── Lombok annotation-processor synthesis ───────────────────────

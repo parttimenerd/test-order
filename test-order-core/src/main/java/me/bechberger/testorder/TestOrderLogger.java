@@ -1,8 +1,6 @@
 package me.bechberger.testorder;
 
 import java.io.PrintStream;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 
 /**
  * Small internal logger used by the runtime-facing test-order components.
@@ -10,8 +8,6 @@ import java.time.format.DateTimeFormatter;
  * classpaths.
  */
 public final class TestOrderLogger {
-
-	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
 	private TestOrderLogger() {
 	}
@@ -52,7 +48,7 @@ public final class TestOrderLogger {
 	}
 
 	private static String prefix(String level) {
-		return "[" + LocalTime.now().format(TIME_FORMAT) + "] [" + level + "] ";
+		return "[" + level + "] [test-order] ";
 	}
 
 	static String format(String template, Object... args) {

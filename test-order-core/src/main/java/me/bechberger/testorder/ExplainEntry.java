@@ -1,6 +1,7 @@
 package me.bechberger.testorder;
 
 import java.util.*;
+import java.util.Locale;
 
 /**
  * Detailed score explanation for a single test class.
@@ -92,16 +93,16 @@ public record ExplainEntry(
 				sb.append(String.format("        - %s%n", dep));
 			}
 		}
-		sb.append(String.format("      %-24s %+d  (complexity: %.2f)%n", "Change complexity:", complexityPoints,
+		sb.append(String.format(Locale.US, "      %-24s %+d  (complexity: %.2f)%n", "Change complexity:", complexityPoints,
 				complexityOverlap));
 		sb.append(String.format("      %-24s %+d%s%n", "Static field overlap:", staticFieldPoints,
 				hasStaticFieldOverlap ? "  (yes)" : ""));
-		sb.append(String.format("      %-24s %+d  (raw: %.2f, cap: %d)%n", "Failure history:", failurePoints, failScore,
+		sb.append(String.format(Locale.US, "      %-24s %+d  (raw: %.2f, cap: %d)%n", "Failure history:", failurePoints, failScore,
 				weights.maxFailure()));
 		sb.append(String.format("      %-24s %+d%s%n", "New test bonus:", newTestPoints, isNew ? "  (yes)" : ""));
 
 		String durationStr = durationMs >= 0
-				? String.format("%dms (median: %dms, ratio: %+.2f)", durationMs, medianDurationMs, speedRatio)
+				? String.format(Locale.US, "%dms (median: %dms, ratio: %+.2f)", durationMs, medianDurationMs, speedRatio)
 				: "unknown";
 		sb.append(String.format("      %-24s %+d  (%s)%n", "Speed:", speedPoints, durationStr));
 		if (setCoverPoints != 0) {

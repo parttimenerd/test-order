@@ -152,8 +152,10 @@ function initGraph() {
     .attr('fill', n => n.type === 'test' || n.type === 'method' ? '#3b82f6' : n.changed ? '#ef4444' : '#64748b')
     .attr('stroke', '#0f172a').attr('stroke-width', 1.5)
 
-  node.append('text').attr('text-anchor', 'middle').attr('dy', n => n.type === 'test' ? 24 : 18)
+  const nodeLabel = node.append('text').attr('text-anchor', 'middle').attr('dy', n => n.type === 'test' ? 24 : 18)
     .attr('font-size', '9px').attr('fill', '#94a3b8').text(n => n.shortLabel)
+
+  nodeLabel.append('title').text(n => n.id)
 
   const tip = d3.select(container).append('div').attr('class', 'dep-graph__tooltip')
   node.on('mouseover', (e, n) => {
@@ -187,6 +189,10 @@ function initGraph() {
       const pad = GRAPH.BUBBLE_PAD
       d3.select(this).attr('x', Math.min(...xs) - pad + 6).attr('y', Math.min(...ys) - pad + 12)
         .text(pkg.split('.').pop()!)
+        .selectAll('title')
+        .data([pkg])
+        .join('title')
+        .text(p => p)
     })
   }
 

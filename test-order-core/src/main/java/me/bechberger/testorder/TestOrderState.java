@@ -209,7 +209,10 @@ public class TestOrderState {
 		/** Build weights from a name→value map; missing keys use resource defaults. */
 		public static ScoringWeights fromMap(Map<String, Integer> map) {
 			Map<String, Integer> merged = new LinkedHashMap<>(DEFAULT.toMap());
-			merged.putAll(map);
+			map.forEach((k, v) -> {
+				if (v != null)
+					merged.put(k, v);
+			});
 			return new ScoringWeights(merged.get("newTest"), merged.get("changedTest"), merged.get("maxFailure"),
 					merged.get("speed"), merged.get("speedPenalty"), merged.get("depOverlap"),
 					merged.get("changeComplexity"), merged.get("staticFieldBonus"), merged.get("coverageBonus"));
@@ -264,6 +267,11 @@ public class TestOrderState {
 			try (var reader = Files.newBufferedReader(file)) {
 				CommentedConfig config = new TomlParser().parse(reader);
 				return mergeWithDefaults(config);
+			} catch (Exception e) {
+				if (e instanceof IOException ioe)
+					throw ioe;
+				throw new IOException("Failed to parse weights file " + file
+						+ " (expected TOML format, see docs/CLI_REFERENCE.md): " + e.getMessage(), e);
 			}
 		}
 
@@ -348,26 +356,27 @@ public class TestOrderState {
 
 		public static MethodScoringWeights fromMap(Map<String, ? extends Number> map) {
 			double fr = 3.0, f = 1.0, s = 1.0, d = 2.0, nm = 5.0, cm = 3.0, cb = 0.0;
-			if (map.containsKey("failureRecency")) {
-				fr = map.get("failureRecency").doubleValue();
+			Number v;
+			if ((v = map.get("failureRecency")) != null) {
+				fr = v.doubleValue();
 			}
-			if (map.containsKey("fast")) {
-				f = map.get("fast").doubleValue();
+			if ((v = map.get("fast")) != null) {
+				f = v.doubleValue();
 			}
-			if (map.containsKey("slow")) {
-				s = map.get("slow").doubleValue();
+			if ((v = map.get("slow")) != null) {
+				s = v.doubleValue();
 			}
-			if (map.containsKey("depOverlap")) {
-				d = map.get("depOverlap").doubleValue();
+			if ((v = map.get("depOverlap")) != null) {
+				d = v.doubleValue();
 			}
-			if (map.containsKey("newMethod")) {
-				nm = map.get("newMethod").doubleValue();
+			if ((v = map.get("newMethod")) != null) {
+				nm = v.doubleValue();
 			}
-			if (map.containsKey("changedMethod")) {
-				cm = map.get("changedMethod").doubleValue();
+			if ((v = map.get("changedMethod")) != null) {
+				cm = v.doubleValue();
 			}
-			if (map.containsKey("coverageBonus")) {
-				cb = map.get("coverageBonus").doubleValue();
+			if ((v = map.get("coverageBonus")) != null) {
+				cb = v.doubleValue();
 			}
 			return new MethodScoringWeights(fr, f, s, d, nm, cm, cb);
 		}
@@ -556,6 +565,11 @@ public class TestOrderState {
 
 	public long getDuration(String testClass, long defaultValue) {
 		return durationTracker.getClassDuration(testClass, defaultValue);
+	}
+
+	/** Returns the class duration, or 0 if not recorded. */
+	public long classDuration(String testClass) {
+		return getDuration(testClass, 0L);
 	}
 
 	/**

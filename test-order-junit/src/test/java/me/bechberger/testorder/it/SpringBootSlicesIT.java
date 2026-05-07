@@ -28,13 +28,13 @@ public class SpringBootSlicesIT extends BaseFixtureIT {
 		assertTestsPassed(baselineOutput);
 
 		// Run with test-order in learn mode
-		String learnOutput = runMaven(fixtureDir, "test-order:learn");
+		String learnOutput = runMaven(fixtureDir, "test-order:learn", "test");
 		assertTestsPassed(learnOutput);
 		assertStateFileExists(fixtureDir);
 		assertIndexFilesExist(fixtureDir);
 
-		// Run with test-order in order mode (should reorder if dependencies exist)
-		String orderOutput = runMaven(fixtureDir, "test-order:order");
+		// Run with test-order in auto mode (orders when index exists)
+		String orderOutput = runMaven(fixtureDir, "test-order:auto", "test");
 		assertTestsPassed(orderOutput);
 		int orderCount = getTestCount(orderOutput);
 		assertEquals(9, orderCount, "Test count should remain 9 after reordering");

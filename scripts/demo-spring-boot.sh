@@ -32,8 +32,25 @@ SPRING_BOOT=$(cd "$(dirname "$0")/.." && pwd)/third-party/spring-boot
 CORE=$SPRING_BOOT/core/spring-boot
 SRC=$CORE/src/main/java/org/springframework/boot
 INIT=$SPRING_BOOT/test-order-init.gradle
-JAVA_HOME=/Users/i560383_1/.sdkman/candidates/java/21-sapmchn
-export JAVA_HOME
+
+# Spring Boot currently requires JDK 25+ for some modules. Prefer JDK 25.
+if [ -z "${JAVA_HOME:-}" ] || [ "${JAVA_HOME}" != "$(/usr/libexec/java_home -v 25 2>/dev/null || echo)" ]; then
+  JAVA_25_HOME="$(/usr/libexec/java_home -v 25 2>/dev/null || true)"
+  if [ -n "$JAVA_25_HOME" ]; then
+    export JAVA_HOME="$JAVA_25_HOME"
+  fi
+fi
+
+cleanup() {
+  if [ -f "$SRC/SpringApplication.java.bak" ]; then
+    mv "$SRC/SpringApplication.java.bak" "$SRC/SpringApplication.java"
+  fi
+  if [ -f "$SRC/ResourceBanner.java.bak" ]; then
+    mv "$SRC/ResourceBanner.java.bak" "$SRC/ResourceBanner.java"
+  fi
+}
+
+trap cleanup EXIT
 
 cd "$SPRING_BOOT"
 

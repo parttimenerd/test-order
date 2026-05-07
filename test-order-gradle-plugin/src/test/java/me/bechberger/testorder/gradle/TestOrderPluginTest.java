@@ -20,12 +20,19 @@ import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ExternalModuleDependency;
 import org.gradle.api.tasks.testing.Test;
 import org.gradle.testfixtures.ProjectBuilder;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 
 class TestOrderPluginTest {
 
     @TempDir
     Path tempDir;
+
+    @BeforeEach
+    void setUp() {
+        // Clean up system properties that may be left from previous tests
+        System.clearProperty("testorder.mode");
+    }
 
     @org.junit.jupiter.api.Test
     void applyRegistersRepositoryConfigurationDependenciesAndTasks() {
@@ -78,11 +85,10 @@ class TestOrderPluginTest {
         for (String argument : (Iterable<String>) asArguments.invoke(provider)) {
             args.add(argument);
         }
-        assertEquals("-Xshare:off", args.get(0));
-        assertTrue(args.get(1).contains("-javaagent:" + tempDir.resolve("agent.jar").toAbsolutePath()));
-        assertTrue(args.get(1).contains("outputDir=" + extension.getDepsDir().get().getAsFile().getAbsolutePath()));
-        assertTrue(args.get(1).contains("includePackages=com.example"));
-        assertTrue(args.get(1).contains("verboseFile=" + tempDir.resolve("verbose.log").toAbsolutePath()));
+        assertTrue(args.get(0).contains("-javaagent:" + tempDir.resolve("agent.jar").toAbsolutePath()));
+        assertTrue(args.get(0).contains("outputDir=" + extension.getDepsDir().get().getAsFile().getAbsolutePath()));
+        assertTrue(args.get(0).contains("includePackages=com.example"));
+        assertTrue(args.get(0).contains("verboseFile=" + tempDir.resolve("verbose.log").toAbsolutePath()));
     }
 
     @org.junit.jupiter.api.Test
@@ -112,7 +118,7 @@ class TestOrderPluginTest {
             }
         }
 
-        assertEquals("me.bechberger.testorder.PriorityClassOrderer",
+        assertEquals("me.bechberger.testorder.junit.PriorityClassOrderer",
                 testTask.getSystemProperties().get("junit.jupiter.testclass.order.default"));
         assertEquals(indexFile.toAbsolutePath().toString(), testTask.getSystemProperties().get("testorder.index.path"));
         assertEquals("explicit", testTask.getSystemProperties().get("testorder.changeMode"));
@@ -130,6 +136,11 @@ class TestOrderPluginTest {
         TestOrderPlugin plugin = new TestOrderPlugin();
         TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
         extension.applyDefaults(project);
+
+        // Create a dummy test source so the "no tests found → skip" guard doesn't fire
+        Path testSrcDir = tempDir.resolve("src/test/java/com/example");
+        Files.createDirectories(testSrcDir);
+        Files.writeString(testSrcDir.resolve("FooTest.java"), "class FooTest {}\n");
 
         assertEquals("learn", plugin.resolveMode(extension, project));
 
@@ -173,13 +184,29 @@ class TestOrderPluginTest {
 
         java.io.File stateA = extA.getStateFile().get().getAsFile();
         java.io.File stateB = extB.getStateFile().get().getAsFile();
+        java.io.File indexA = extA.getIndexFile().get().getAsFile();
+        java.io.File indexB = extB.getIndexFile().get().getAsFile();
+        java.io.File hashA = extA.getHashFile().get().getAsFile();
+        java.io.File hashB = extB.getHashFile().get().getAsFile();
 
         assertNotEquals(stateA.getAbsolutePath(), stateB.getAbsolutePath(),
                 "Subprojects must use separate state file paths to prevent collision in parallel builds");
+        assertNotEquals(indexA.getAbsolutePath(), indexB.getAbsolutePath(),
+            "Subprojects must use separate index file paths to keep learn/order artifacts module-local");
+        assertNotEquals(hashA.getAbsolutePath(), hashB.getAbsolutePath(),
+            "Subprojects must use separate hash files to avoid collisions in parallel builds");
         assertTrue(stateA.getAbsolutePath().contains("iso-module-a"),
                 "Module-A state path should be under module-a directory");
         assertTrue(stateB.getAbsolutePath().contains("iso-module-b"),
                 "Module-B state path should be under module-b directory");
+        assertTrue(indexA.getAbsolutePath().contains("iso-module-a"),
+            "Module-A index path should be under module-a directory");
+        assertTrue(indexB.getAbsolutePath().contains("iso-module-b"),
+            "Module-B index path should be under module-b directory");
+        assertTrue(hashA.getAbsolutePath().contains("iso-module-a"),
+            "Module-A hash path should be under module-a directory");
+        assertTrue(hashB.getAbsolutePath().contains("iso-module-b"),
+            "Module-B hash path should be under module-b directory");
     }
 
     @org.junit.jupiter.api.Test

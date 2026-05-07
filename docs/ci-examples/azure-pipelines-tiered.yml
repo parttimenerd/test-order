@@ -1,0 +1,55 @@
+# Azure Pipelines — Three-tier test pipeline with test-order (Maven)
+#
+# Uses conditions to skip later tiers on failure.
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  MAVEN_CACHE_FOLDER: $(Pipeline.Workspace)/.m2/repository
+  MAVEN_OPTS: '-Dmaven.repo.local=$(MAVEN_CACHE_FOLDER)'
+
+steps:
+  - task: JavaToolInstaller@0
+    inputs:
+      versionSpec: '17'
+      jdkArchitectureOption: x64
+      jdkSourceOption: PreInstalled
+
+  - task: Cache@2
+    inputs:
+      key: 'test-order | "$(Agent.OS)" | **/pom.xml'
+      path: .test-order/
+    displayName: Restore test-order index
+
+  - script: |
+      mvn test-order:tiered-select test \
+        -Dtestorder.changeMode=since-last-commit \
+        -Dtestorder.tiered.tier2Fraction=0.5 \
+        -Dsurefire.failIfNoSpecifiedTests=false
+    displayName: "Tier 1: Change-affected tests"
+    name: tier1
+
+  - script: |
+      mvn test-order:run-tier test \
+        -Dtestorder.tiered.currentTier=2 \
+        -Dsurefire.failIfNoSpecifiedTests=false
+    displayName: "Tier 2: Top-scored remaining"
+    condition: succeeded()
+
+  - script: |
+      mvn test-order:run-tier test \
+        -Dtestorder.tiered.currentTier=3 \
+        -Dsurefire.failIfNoSpecifiedTests=false
+    displayName: "Tier 3: Full coverage"
+    condition: succeeded()
+
+  - script: mvn test-order:aggregate
+    displayName: Aggregate test-order data
+    condition: always()

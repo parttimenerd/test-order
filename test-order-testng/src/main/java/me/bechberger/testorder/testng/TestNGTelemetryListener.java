@@ -214,7 +214,7 @@ public class TestNGTelemetryListener implements ITestListener {
 					}
 					if (record.totalFailures() > 0) {
 						TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
-								String.format("%.1f", record.apfd() * 100), record.firstFailurePosition() + 1,
+								String.format(java.util.Locale.US, "%.1f", record.apfd() * 100), record.firstFailurePosition() + 1,
 								record.totalTests());
 					}
 				}

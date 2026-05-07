@@ -143,14 +143,17 @@ public final class ParameterValidator {
 
 	/**
 	 * Validates select-mode parameters (topN and randomM).
+	 *
+	 * @throws IllegalArgumentException if both topN and randomM are 0 (no tests would be selected)
 	 */
 	public void validateSelectParameters(int topN, int randomM) {
 		validateMinValue(topN, -1, "selectTopN");
 		validateNonNegative(randomM, "selectRandomM");
 
 		if (topN == 0 && randomM == 0) {
-			log.warn("[test-order] Both selectTopN and selectRandomM are 0 — no tests will be selected. "
-					+ "Set selectTopN to at least 1.");
+			throw new IllegalArgumentException(
+					"[test-order] Both selectTopN and selectRandomM are 0 — no tests would be selected. "
+					+ "Set selectTopN to at least 1, or use selectTopN=-1 to include all change-affected tests.");
 		}
 	}
 
@@ -158,12 +161,22 @@ public final class ParameterValidator {
 	 * Validates that explicit mode has required changedClasses parameter.
 	 */
 	public void validateExplicitModeRequirements(String changeMode, String changedClasses) {
+		validateExplicitModeRequirements(changeMode, changedClasses, null);
+	}
+
+	/**
+	 * Validates that explicit mode has required changed classes/tests input.
+	 */
+	public void validateExplicitModeRequirements(String changeMode, String changedClasses, String changedTestClasses) {
 		if ("explicit".equalsIgnoreCase(changeMode)) {
-			if (changedClasses == null || changedClasses.isBlank()) {
+			boolean hasChangedClasses = changedClasses != null && !changedClasses.isBlank();
+			boolean hasChangedTestClasses = changedTestClasses != null && !changedTestClasses.isBlank();
+			if (!hasChangedClasses && !hasChangedTestClasses) {
 				throw new IllegalArgumentException(
-						"[test-order] changeMode is 'explicit' but changedClasses parameter is not specified. "
-								+ "Provide comma-separated fully qualified class names: "
-								+ "-Dtestorder.changed.classes=com.example.A,com.example.B");
+						"[test-order] changeMode is 'explicit' but no changed classes were specified. "
+								+ "Provide at least one of: "
+								+ "-Dtestorder.changed.classes=com.example.A,com.example.B "
+								+ "or -Dtestorder.changed.test.classes=com.example.MyTest");
 			}
 		}
 	}

@@ -58,10 +58,16 @@ public final class ModeResolverOperation {
 			 */
 			Path testClassesDir,
 			/**
+			 * Path to test source root used when test classes are not compiled yet.
+			 */
+			Path testSourceRoot,
+			/**
 			 * Lazy supplier for changed test classes (only evaluated for new-test detection).
 			 * May be {@code null} to skip.
 			 */
 			Supplier<Set<String>> changedTestsSupplier,
+			/** Lazy supplier for dependency fingerprint (may be {@code null}). */
+			Supplier<String> dependencyFingerprintSupplier,
 			/** Logger. */
 			PluginLog log) {
 
@@ -72,7 +78,7 @@ public final class ModeResolverOperation {
 				Runnable ciDownloadCallback, Path depsDir, PluginLog log) {
 			this(requestedMode, indexPath, statePath, autoLearnRunThreshold,
 					autoLearnDiffThreshold, changedClassesSupplier,
-					ciDownloadCallback, depsDir, null, null, log);
+					ciDownloadCallback, depsDir, null, null, null, null, log);
 		}
 	}
 
@@ -135,7 +141,7 @@ public final class ModeResolverOperation {
 			try {
 				AggregateOperation.Result agg = AggregateOperation.aggregate(config.depsDir(), config.indexPath(), log);
 				if (agg.written()) {
-					log.info(StructuredLog.autoAggregation(agg.testClassCount(), agg.testClassCount(), java.util.Map.of(
+					log.debug(StructuredLog.autoAggregation(agg.testClassCount(), agg.testClassCount(), java.util.Map.of(
 							"index_path", config.indexPath().toString(),
 							"deps_dir", config.depsDir().toString())));
 				}
@@ -144,8 +150,15 @@ public final class ModeResolverOperation {
 			}
 		}
 
-		// 4. No index → learn
+		// 4. No index → learn (unless there are no test classes at all)
 		if (!Files.exists(config.indexPath())) {
+			boolean compiledTestsPresent = config.testClassesDir() != null
+					&& Files.isDirectory(config.testClassesDir())
+					&& !TestClassDiscovery.scanTestClasses(config.testClassesDir()).isEmpty();
+			boolean sourceTestsPresent = TestClassDiscovery.hasTestSources(config.testSourceRoot());
+			if (!compiledTestsPresent && !sourceTestsPresent) {
+				return new ModeDecision("skip", "No test classes found — skipping", false);
+			}
 			return new ModeDecision("learn", "No index file found — auto-selecting learn mode", false);
 		}
 
@@ -181,7 +194,39 @@ public final class ModeResolverOperation {
 			}
 		}
 
-		// 6. Threshold-based auto-switching
+		// 6. Dependency fingerprint comparison (detect pom.xml/build.gradle changes)
+		if (config.dependencyFingerprintSupplier() != null) {
+			String currentFingerprint = config.dependencyFingerprintSupplier().get();
+			if (currentFingerprint != null) {
+				TestOrderState fpState = null;
+				if (Files.exists(config.statePath())) {
+					try {
+						fpState = TestOrderState.load(config.statePath());
+					} catch (IOException e) {
+						log.warn("[test-order] Could not load state for fingerprint check: " + e.getMessage());
+					}
+				}
+				if (fpState != null) {
+					String storedFingerprint = fpState.dependencyFingerprint();
+					log.debug("[test-order] Fingerprint check: stored=" + storedFingerprint + " current=" + currentFingerprint);
+					if (storedFingerprint == null) {
+						// First time — record fingerprint without triggering learn
+						fpState.setDependencyFingerprint(currentFingerprint);
+						saveState(fpState, config.statePath(), log);
+					} else if (!storedFingerprint.equals(currentFingerprint)) {
+						// Fingerprint changed — trigger learn
+						log.info("[test-order] Dependency change detected — switching to learn mode automatically.");
+						fpState.setDependencyFingerprint(currentFingerprint);
+						fpState.resetRunsSinceLearn();
+						boolean saved = saveState(fpState, config.statePath(), log);
+						return new ModeDecision("learn",
+								"Dependency change detected (fingerprint changed)", saved);
+					}
+				}
+			}
+		}
+
+		// 7. Threshold-based auto-switching
 		if (config.autoLearnRunThreshold() > 0 || config.autoLearnDiffThreshold() > 0) {
 			TestOrderState state = null;
 			if (Files.exists(config.statePath())) {
@@ -220,7 +265,7 @@ public final class ModeResolverOperation {
 			}
 		}
 
-		log.info(StructuredLog.modeDecision("order", "Index exists", java.util.Map.of(
+		log.debug(StructuredLog.modeDecision("order", "Index exists", java.util.Map.of(
 				"index_path", config.indexPath().toString(),
 				"requested_mode", config.requestedMode() == null ? "" : config.requestedMode())));
 		return new ModeDecision("order", "Index exists — using order mode", false);

@@ -14,6 +14,7 @@ import me.bechberger.testorder.ops.DashboardServerOperation;
 import me.bechberger.testorder.ops.DumpOperation;
 import me.bechberger.testorder.ops.ExportJsonOperation;
 import me.bechberger.testorder.ops.HashSnapshotOperation;
+import me.bechberger.testorder.ops.JUnitPlatformValidator;
 import me.bechberger.testorder.ops.ModeResolverOperation;
 import me.bechberger.testorder.ops.OptimizeOperation;
 import me.bechberger.testorder.ops.ParameterValidator;
@@ -25,6 +26,7 @@ import me.bechberger.testorder.ops.coverage.CoverageOperation;
 import me.bechberger.testorder.ops.workflows.AutoWorkflow;
 import me.bechberger.testorder.ops.workflows.DashboardWorkflow;
 import me.bechberger.testorder.ops.workflows.OrderWorkflow;
+import me.bechberger.testorder.ops.workflows.ShowMethodOrderWorkflow;
 import me.bechberger.testorder.ops.workflows.ShowOrderWorkflow;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -104,8 +106,11 @@ public class TestOrderPlugin implements Plugin<Project> {
         Configuration agentConf = configured.agentConfiguration();
 
         utilityTaskRegistrar.register(project, ext, agentConf);
-        project.afterEvaluate(p -> configureTestTasks(p, ext, agentConf,
-                learnModeConfigurator, orderModeConfigurator));
+        project.afterEvaluate(p -> {
+            ext.validateConfiguration(p.getLogger());
+            configureTestTasks(p, ext, agentConf,
+                    learnModeConfigurator, orderModeConfigurator);
+        });
 
         // Multi-project: register aggregate task that collects deps from all subprojects
         if (!project.getSubprojects().isEmpty()) {
@@ -113,6 +118,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                 task.setGroup("test-order");
                 task.setDescription(
                         "Aggregate .deps files from all subprojects into a shared dependency index");
+                // R7-14: depend on subproject aggregate tasks to ensure evaluation order
+                for (Project sub : project.getSubprojects()) {
+                    sub.getPlugins().withId("me.bechberger.test-order", plugin -> {
+                        task.dependsOn(sub.getTasks().named("testOrderAggregate"));
+                    });
+                }
                 task.doLast(t -> {
                     Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
                     PluginLog plog = wrapLog(project);
@@ -140,8 +151,16 @@ public class TestOrderPlugin implements Plugin<Project> {
                     if (anyWritten) {
                         plog.info("[test-order] Multi-project aggregation complete: " + indexFile);
                     } else {
+                        List<String> checkedProjects = new ArrayList<>();
+                        for (Project sub : project.getSubprojects()) {
+                            TestOrderExtension subExt = sub.getExtensions().findByType(TestOrderExtension.class);
+                            if (subExt != null) {
+                                checkedProjects.add(sub.getName());
+                            }
+                        }
                         plog.warn("[test-order] No .deps files found in any subproject. "
-                                + "Run tests in learn mode first.");
+                                + "Checked: " + (checkedProjects.isEmpty() ? "(none with test-order applied)" : String.join(", ", checkedProjects))
+                                + ". Run tests in learn mode first: ./gradlew test -Dtestorder.mode=learn");
                     }
                 });
             });
@@ -234,99 +253,61 @@ public class TestOrderPlugin implements Plugin<Project> {
     /**
      * M4/M12/M20/L6: Warns about conflicting JUnit Platform configurations that could
      * interfere with test-order's ordering in order mode.
+     * Delegates to the shared {@link JUnitPlatformValidator} in core.
      */
     private void warnConflictingJUnitConfig(Project project, Test testTask) {
-        Map<String, Object> sysProps = testTask.getSystemProperties();
-
-        // M4: Check for listener deactivation that would silence TelemetryListener
-        Object deactivate = sysProps.get("junit.platform.execution.listeners.deactivate");
-        if (deactivate != null) {
-            String val = deactivate.toString();
-            if (val.contains("*") || val.toLowerCase().contains("telemetry")) {
-                project.getLogger().warn("[test-order] junit.platform.execution.listeners.deactivate={} "
-                        + "may disable TelemetryListener — test-order will not record any data.", val);
-            }
-        }
-
-        // M12: Check for competing orderer via auto-detection
-        Object autoDetect = sysProps.get("junit.jupiter.extensions.autodetection.enabled");
-        if ("true".equalsIgnoreCase(String.valueOf(autoDetect))) {
-            project.getLogger().warn("[test-order] junit.jupiter.extensions.autodetection.enabled=true — "
-                    + "a third-party ClassOrderer/MethodOrderer on the classpath could override "
-                    + "test-order's PriorityClassOrderer/PriorityMethodOrderer.");
-        }
-
-        // M20: Check for conflicting global method orderer
-        Object methodOrderer = sysProps.get("junit.jupiter.testmethod.order.default");
-        if (methodOrderer != null && !methodOrderer.toString().contains("PriorityMethodOrderer")) {
-            project.getLogger().warn("[test-order] junit.jupiter.testmethod.order.default={} "
-                    + "overrides test-order's PriorityMethodOrderer for classes without "
-                    + "explicit @TestMethodOrder.", methodOrderer);
-        }
-
-        // L6: Check for user's junit-platform.properties in src/test/resources
-        Path userProps = project.getProjectDir().toPath()
-                .resolve("src/test/resources/junit-platform.properties");
-        if (Files.exists(userProps)) {
-            try {
-                String content = Files.readString(userProps);
-                if (content.contains("junit.jupiter.testclass.order.default")
-                        || content.contains("junit.jupiter.testmethod.order.default")) {
-                    project.getLogger().warn("[test-order] src/test/resources/junit-platform.properties "
-                            + "contains orderer configuration that may conflict with test-order. "
-                            + "System properties set by test-order take precedence.");
-                }
-                if (content.contains("junit.platform.execution.listeners.deactivate")) {
-                    project.getLogger().warn("[test-order] src/test/resources/junit-platform.properties "
-                            + "contains listener deactivation config — this may disable "
-                            + "test-order's TelemetryListener.");
-                }
-            } catch (IOException ignored) {
-                // best-effort check
-            }
-        }
+        Map<String, String> resolvedProps = toStringMap(testTask.getSystemProperties());
+        JUnitPlatformValidator validator = new JUnitPlatformValidator(wrapLog(project));
+        validator.warnListenerDeactivation(resolvedProps, null);
+        validator.warnConflictingOrderers(resolvedProps, null);
+        validator.checkJunitPlatformPropertiesFile(project.getProjectDir().toPath());
     }
 
     /**
      * Warns when class-level parallel execution is configured in learn mode,
      * which would corrupt dependency tracking (C1/M24 equivalent for Gradle).
+     * Delegates to the shared {@link JUnitPlatformValidator} in core.
      */
     private void warnParallelInLearnMode(Project project, Test testTask) {
-        Map<String, Object> sysProps = testTask.getSystemProperties();
+        Map<String, String> resolvedProps = toStringMap(testTask.getSystemProperties());
+        JUnitPlatformValidator validator = new JUnitPlatformValidator(wrapLog(project));
 
-        // Check JUnit Jupiter class-level parallel
-        Object parallelEnabled = sysProps.get("junit.jupiter.execution.parallel.enabled");
-        Object classesDefault = sysProps.get("junit.jupiter.execution.parallel.mode.classes.default");
-        if ("true".equalsIgnoreCase(String.valueOf(parallelEnabled))
-                && "concurrent".equalsIgnoreCase(String.valueOf(classesDefault))) {
+        JUnitPlatformValidator.ParallelCheckResult result =
+                validator.detectParallelExecution(resolvedProps, null);
+
+        if (result.hasClassLevelParallel()) {
             project.getLogger().warn("[test-order] Class-level parallel execution "
                     + "(mode.classes.default=concurrent) is not supported in learn mode — "
                     + "it would corrupt dependency tracking.");
         }
-
-        // Check Vintage parallel
-        Object vintageParallel = sysProps.get("junit.vintage.execution.parallel.enabled");
-        if ("true".equalsIgnoreCase(String.valueOf(vintageParallel))) {
+        if (result.vintageParallel()) {
             project.getLogger().warn("[test-order] JUnit Vintage parallel execution is not "
                     + "supported in learn mode — it would corrupt dependency tracking.");
         }
 
-        // Check for junit-platform.properties in src/test/resources
-        Path userProps = project.getProjectDir().toPath()
-                .resolve("src/test/resources/junit-platform.properties");
-        if (Files.exists(userProps)) {
-            try {
-                String content = Files.readString(userProps);
-                if (content.contains("junit.jupiter.execution.parallel.mode.classes.default=concurrent")
-                        || content.contains("junit.vintage.execution.parallel.enabled=true")) {
-                    project.getLogger().warn("[test-order] src/test/resources/junit-platform.properties "
-                            + "contains parallel configuration that may conflict with learn mode "
-                            + "dependency tracking.");
-                }
-            } catch (IOException ignored) {
-                // best-effort
-            }
+        // G10: Check jvmArgs for parallel settings passed via -D flags
+        String offendingArg = JUnitPlatformValidator.findParallelInJvmArgs(testTask.getJvmArgs());
+        if (offendingArg != null) {
+            project.getLogger().warn("[test-order] jvmArgs contains parallel class execution "
+                    + "config that conflicts with learn mode dependency tracking: " + offendingArg);
         }
+
+        // Check for junit-platform.properties in src/test/resources
+        validator.checkJunitPlatformPropertiesParallel(project.getProjectDir().toPath());
+    }
+
+    // -----------------------------------------------------------------------
+    // Spring detection
+    // -----------------------------------------------------------------------
+
+    private static boolean hasSpringTestDependency(Project project) {
+        return project.getConfigurations().stream()
+                .filter(c -> c.getName().toLowerCase().contains("test"))
+                .flatMap(c -> c.getDependencies().stream())
+                .anyMatch(d -> ("org.springframework.boot".equals(d.getGroup())
+                        && "spring-boot-test".equals(d.getName()))
+                        || ("org.springframework".equals(d.getGroup())
+                        && "spring-test".equals(d.getName())));
     }
 
     // -----------------------------------------------------------------------
@@ -348,6 +329,9 @@ public class TestOrderPlugin implements Plugin<Project> {
             return;
         }
 
+        // Warn about likely typos in testorder.* system/project properties
+        warnUnknownProperties(project);
+
         // Validate parameters early (fail-fast with helpful messages)
         PluginLog plog = wrapLog(project);
         ParameterValidator validator = new ParameterValidator(plog);
@@ -364,22 +348,41 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         warnJUnit4Unsupported(project);
 
+        // Clean up stale temp files from interrupted writes (parity with Maven)
+        Path baseDir = project.getProjectDir().toPath().resolve(".test-order");
+        me.bechberger.testorder.PersistenceSupport.cleanupStaleTemps(baseDir);
+
+        // Validate cache directory is writable (clear message vs cryptic AccessDeniedException)
+        if (Files.exists(baseDir) && !Files.isWritable(baseDir)) {
+            String perms = "";
+            try {
+                perms = java.nio.file.attribute.PosixFilePermissions.toString(
+                        Files.getPosixFilePermissions(baseDir));
+            } catch (UnsupportedOperationException | IOException ignored) {
+            }
+            throw new GradleException("[test-order] Cannot write to cache directory: " + baseDir
+                    + (perms.isEmpty() ? "" : " (permissions: " + perms + ")")
+                    + ". Fix: chmod 755 " + baseDir);
+        }
+
         String resolvedMode = orderModeConfigurator.resolveMode(ext, project);
 
         project.getTasks().withType(Test.class).configureEach(testTask -> {
             if (testTask.getName().startsWith("testOrder")) {
                 return;
             }
-            // Suppress "restricted method" warnings from bundled lz4 native access
-            // (System.loadLibrary, sun.misc.Unsafe). Flag supported on JDK 16+;
-            // the plugin already requires JDK 17+ so this is always safe.
-            testTask.jvmArgs("--enable-native-access=ALL-UNNAMED");
 
-            if ("learn".equals(resolvedMode)) {
+            // Per-task mode override: -Dtestorder.mode.<taskName>=order (e.g.
+            // -Dtestorder.mode.integrationTest=order) allows users to force specific
+            // tasks into a different mode without affecting the default test task.
+            String taskMode = gradleOrSystemProperty(project, "testorder.mode." + testTask.getName());
+            String effectiveMode = (taskMode != null && !taskMode.isBlank()) ? taskMode : resolvedMode;
+
+            if ("learn".equals(effectiveMode)) {
                 learnModeConfigurator.configure(project, ext, testTask, agentConf);
-            } else if ("order".equals(resolvedMode)) {
+            } else if ("order".equals(effectiveMode)) {
                 orderModeConfigurator.configure(project, ext, testTask);
-            } else if ("optimize".equals(resolvedMode)) {
+            } else if ("optimize".equals(effectiveMode)) {
                 // Optimize mode: run tests in priority order, then evolve scoring weights
                 // using a genetic algorithm (Jenetic) over the recorded run history
                 orderModeConfigurator.configure(project, ext, testTask);
@@ -448,7 +451,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     void configureLearnMode(Project project, TestOrderExtension ext,
                             Test testTask, Configuration agentConf) {
-        project.getLogger().lifecycle("[test-order] Configuring learn mode for task :{}",
+        project.getLogger().info("[test-order] Configuring learn mode for task :{}",
                 testTask.getName());
 
         // Warn about parallel config that corrupts dependency tracking in learn mode
@@ -520,14 +523,23 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         @Override
         public Iterable<String> asArguments() {
-            File agentJar = agentClasspath.getSingleFile();
+            File agentJar;
+            try {
+                agentJar = agentClasspath.getSingleFile();
+            } catch (IllegalStateException e) {
+                throw new GradleException(
+                        "[test-order] Agent JAR not found. Ensure the test-order-agent artifact "
+                        + "(me.bechberger:test-order-agent:" + VERSION + ") is available in your repositories. "
+                        + "Check that your repository declarations include the artifact source "
+                        + "(Maven Central, local Maven repo, or custom repository). "
+                        + "Original error: " + e.getMessage(), e);
+            }
 
             String agentArgs = me.bechberger.testorder.AgentArgsBuilder.buildArgs(
                     Path.of(depsDirPath), instrumentationMode,
                     Path.of(indexFilePath), includePackages, verboseFile);
 
             return List.of(
-                    "-Xshare:off",
                     "-javaagent:" + quoteIfNeeded(agentJar.getAbsolutePath()) + "=" + agentArgs);
         }
     }
@@ -539,24 +551,35 @@ public class TestOrderPlugin implements Plugin<Project> {
     void configureOrderMode(Project project, TestOrderExtension ext, Test testTask) {
         File indexFile = ext.getIndexFile().getAsFile().get();
         if (!indexFile.exists()) {
-            // Emit the warning at most once per project regardless of how many test
-            // tasks (test, dockerTest, intTest, …) trigger this method.
+            // Graceful degradation: skip ordering when no index exists yet.
+            // Unlike requireIndex() which throws, order mode during the regular 'test' task
+            // should not fail — it just skips ordering so users can still run tests normally.
             if (!project.getExtensions().getExtraProperties().has("testorder.indexMissingWarned")) {
                 project.getExtensions().getExtraProperties().set("testorder.indexMissingWarned", Boolean.TRUE);
-                project.getLogger().info("[test-order] Index file {} not found — skipping order mode. "
-                        + "Run with -Dtestorder.mode=learn first.", indexFile);
+                project.getLogger().warn("[test-order] Index file {} not found — skipping order mode. "
+                        + "Run with -Dtestorder.mode=learn first, or run: ./gradlew testOrderDiagnose", indexFile);
             }
             return;
         }
-        project.getLogger().lifecycle("[test-order] Configuring order mode for task :{}",
+        project.getLogger().info("[test-order] Configuring order mode for task :{}",
                 testTask.getName());
 
         // M4/M12/M20/L6: Warn about conflicting JUnit Platform configurations
         warnConflictingJUnitConfig(project, testTask);
 
+        // Suggest springContextGrouping for Spring projects (parity with Maven)
+        if (!ext.getSpringContextGrouping().get() && hasSpringTestDependency(project)) {
+            if (!project.getExtensions().getExtraProperties().has("testorder.springHintShown")) {
+                project.getExtensions().getExtraProperties().set("testorder.springHintShown", Boolean.TRUE);
+                project.getLogger().lifecycle("[test-order] Spring test dependency detected. "
+                        + "Consider enabling testOrder { springContextGrouping = true } "
+                        + "to reduce Spring context reloads.");
+            }
+        }
+
         // Inject PriorityClassOrderer as the JUnit 5 global class orderer
         testTask.systemProperty("junit.jupiter.testclass.order.default",
-                "me.bechberger.testorder.PriorityClassOrderer");
+                "me.bechberger.testorder.junit.PriorityClassOrderer");
 
         // Forward debug flag so PriorityClassOrderer can emit verbose scoring output
         String debugFlag = gradleOrSystemProperty(project, "testorder.debug");
@@ -607,6 +630,14 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         // All config (including change detection) runs at execution time
         testTask.doFirst("configureOrderViaWorkflow", t -> {
+            // Warn if topN is set in pure order mode — it only applies to select tasks
+            String topNProp = gradleOrSystemProperty(project, "testorder.select.topN");
+            if (topNProp != null) {
+                project.getLogger().warn("[test-order] testorder.select.topN is ignored in order mode "
+                        + "(all tests run, just re-ordered). "
+                        + "Did you mean: ./gradlew testOrderSelect -Dtestorder.select.topN=" + topNProp + "?");
+            }
+
             PluginContext pctx = buildPluginContext(project, ext);
 
             // Validate explicit changed classes against the index
@@ -630,13 +661,49 @@ public class TestOrderPlugin implements Plugin<Project> {
                 Path statePath = ext.getStateFile().get().getAsFile().toPath();
                 state = Files.exists(statePath) ? TestOrderState.load(statePath) : new TestOrderState();
             } catch (IOException e) {
-                throw new GradleException("Failed to load test-order state", e);
+                Path statePath = ext.getStateFile().get().getAsFile().toPath();
+                throw new GradleException("[test-order] Failed to load state file at " + statePath
+                        + ": " + e.getMessage()
+                        + ". If the file is corrupt, delete it and re-run tests: rm " + statePath, e);
             }
+
+            // Auto-compact: rebuild index from .deps periodically to remove stale entries
+            int autoCompactEvery = ext.getAutoCompactEvery().get();
+            if (autoCompactEvery > 0 && state.runsSinceLearn() > 0
+                    && state.runsSinceLearn() % autoCompactEvery == 0) {
+                Path depsDir = ext.getDepsDir().get().getAsFile().toPath();
+                if (Files.isDirectory(depsDir)) {
+                    try {
+                        long depsCount;
+                        try (var stream = Files.list(depsDir)) {
+                            depsCount = stream.filter(p -> p.toString().endsWith(".deps")).count();
+                        }
+                        if (depsCount > 0) {
+                            project.getLogger().lifecycle(
+                                    "[test-order] Auto-compacting index (every {} runs)", autoCompactEvery);
+                            me.bechberger.testorder.ops.IndexCompactionOperation.compact(
+                                    depsDir, ext.getIndexFile().get().getAsFile().toPath(),
+                                    wrapLog(project));
+                        }
+                    } catch (IOException e) {
+                        project.getLogger().warn("[test-order] Auto-compact failed: {}", e.getMessage());
+                    }
+                }
+            }
+
             OrderWorkflow.OrderSetupResult result;
             try {
                 result = OrderWorkflow.setup(pctx, state);
             } catch (IOException e) {
                 throw new GradleException("Failed to set up test ordering", e);
+            }
+
+            // Save state if it was modified (e.g., runsSinceLearn reset by fingerprint change) (R7-8)
+            try {
+                Path statePath = ext.getStateFile().get().getAsFile().toPath();
+                state.save(statePath);
+            } catch (IOException e) {
+                project.getLogger().warn("[test-order] Could not save state: {}", e.getMessage());
             }
 
             // Apply config map as system properties on the test task
@@ -666,6 +733,13 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.doLast(t -> {
                 Path projectDir = project.getProjectDir().toPath();
                 Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
+                Path configPath = projectDir.resolve(".test-order/download-config.yml");
+                if (!Files.exists(configPath)) {
+                    throw new GradleException(
+                            "[test-order] CI download config not found at " + configPath
+                            + ". Create .test-order/download-config.yml with your CI provider settings. "
+                            + "See docs/CI_REFERENCE.md for configuration examples.");
+                }
                 java.util.Optional<Path> result =
                         me.bechberger.testorder.ci.CiDepDownloadManager
                                 .downloadIfConfigured(projectDir, indexFile);
@@ -673,8 +747,10 @@ public class TestOrderPlugin implements Plugin<Project> {
                     project.getLogger().lifecycle("[test-order] CI index written to {}", result.get());
                 } else {
                     throw new GradleException(
-                            "[test-order] CI download failed. Ensure .test-order/download-config.yml exists "
-                            + "and required tokens are set.");
+                            "[test-order] CI download failed. Config exists at " + configPath
+                            + " but download did not produce a result. "
+                            + "Check that required tokens/credentials are set as environment variables "
+                            + "and that the source URL is accessible.");
                 }
             });
         });
@@ -762,6 +838,25 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.doLast(t -> runShowOrderReport(project, ext, true, false));
         });
 
+        project.getTasks().register("testOrderShowMethodOrder", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Display the predicted test method execution order within test classes"
+                            + " (set -Dtestorder.showMethodOrder.explain=true for detailed breakdown)");
+            task.doLast(t -> {
+                boolean explain = Boolean.parseBoolean(Optional
+                        .ofNullable(gradleOrSystemProperty(project, "testorder.showMethodOrder.explain"))
+                        .orElse("false"));
+                runShowMethodOrderReport(project, ext, explain);
+            });
+        });
+
+        project.getTasks().register("testOrderExplainMethodOrder", task -> {
+            task.setGroup("test-order");
+            task.setDescription("Display detailed per-test-method score explanations");
+            task.doLast(t -> runShowMethodOrderReport(project, ext, true));
+        });
+
         project.getTasks().register("testOrderOptimize", task -> {
             task.setGroup("test-order");
             task.setDescription("Optimise scoring weights from the recorded run history");
@@ -771,8 +866,22 @@ public class TestOrderPlugin implements Plugin<Project> {
                     throw new GradleException("[test-order] State file not found: " + statePath
                             + ". Run some test-order test runs first.");
                 }
+                // Validate state file is readable before attempting optimization
                 try {
-                    OptimizeOperation.run(statePath, msg -> project.getLogger().lifecycle(msg));
+                    TestOrderState.load(statePath);
+                } catch (IOException e) {
+                    throw new GradleException("[test-order] State file at " + statePath
+                            + " is corrupt or unreadable: " + e.getMessage()
+                            + ". Delete it and re-run tests to regenerate.", e);
+                }
+                try {
+                    OptimizeOperation.Result result = OptimizeOperation.run(
+                            statePath, msg -> project.getLogger().lifecycle(msg));
+                    if (result != null && result.overfit()) {
+                        project.getLogger().warn(
+                                "[test-order] Overfitting detected — default weights used instead."
+                                + " Collect more test runs before re-optimizing.");
+                    }
                 } catch (IOException e) {
                     throw new GradleException("Failed to optimise: " + e.getMessage(), e);
                 }
@@ -784,19 +893,25 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setGroup("test-order");
             task.setDescription("Run the prioritized selected subset of tests and write remaining tests to disk");
 
-            // When autoRunRemaining is true (default), automatically run remaining tests after
-            boolean runRemaining = ext.getAutoRunRemaining().get();
+            // For the standalone select task, default to NOT auto-running remaining (parity
+            // with Maven's select goal). Users can opt in via -Dtestorder.auto.runRemaining=true.
+            // The implicit auto mode in the 'test' task still uses the extension default (true).
+            boolean runRemaining = false;
             String propRunRemaining = gradleOrSystemProperty(project, "testorder.auto.runRemaining");
             if (propRunRemaining != null) {
                 runRemaining = Boolean.parseBoolean(propRunRemaining);
+            } else {
+                // Only use extension default if explicitly set by user (not the convention)
+                runRemaining = false;
             }
+            final boolean effectiveRunRemaining = runRemaining;
             if (runRemaining) {
                 task.finalizedBy("testOrderRunRemaining");
             }
 
             // Inject PriorityClassOrderer so ordering works within the subset
             task.systemProperty("junit.jupiter.testclass.order.default",
-                    "me.bechberger.testorder.PriorityClassOrderer");
+                    "me.bechberger.testorder.junit.PriorityClassOrderer");
             String debugFlag = gradleOrSystemProperty(project, "testorder.debug");
             if ("true".equalsIgnoreCase(debugFlag)) {
                 task.systemProperty("testorder.debug", "true");
@@ -804,26 +919,62 @@ public class TestOrderPlugin implements Plugin<Project> {
 
             task.doFirst("testOrderSelectAndOrder", t -> {
                 PluginContext pctx = buildPluginContext(project, ext);
+                // Provide CI download callback and depsDir for auto-aggregation (R7-7/R7-15)
+                Path projectDir = project.getProjectDir().toPath();
+                File indexFileObj = ext.getIndexFile().getAsFile().get();
+                Runnable ciDownloadCb = () -> {
+                    if (me.bechberger.testorder.ci.CiConfigParser.configExistsIn(projectDir)) {
+                        me.bechberger.testorder.ci.CiDepDownloadManager
+                                .downloadIfConfigured(projectDir, indexFileObj.toPath())
+                                .ifPresent(p -> project.getLogger().lifecycle(
+                                        "[test-order] CI index downloaded to {}", p));
+                    }
+                };
+                Path depsDir = ext.getDepsDir().get().getAsFile().toPath();
+                Path effectiveDepsDir = Files.isDirectory(depsDir) ? depsDir : null;
                 try {
                     AutoWorkflow.Result result = new AutoWorkflow(
-                            pctx, "order", null, null).execute();
+                            pctx, "order", ciDownloadCb, effectiveDepsDir).execute();
 
                     if (result instanceof AutoWorkflow.Result.OrderSelect os) {
                         TestSelector.Selection selection = os.selection();
                         applySelectedTests((Test) t, selection.selected());
+                        if (selection.selected().isEmpty()) {
+                            project.getLogger().warn(
+                                    "[test-order] 0 tests selected in auto mode. "
+                                    + "This may indicate no code changes were detected, or topN/randomM are misconfigured.");
+                        }
                         project.getLogger().lifecycle(
                                 "[test-order] Selected {} tests, deferred {}",
                                 selection.selected().size(),
                                 selection.remaining().size());
+
+                        if (!effectiveRunRemaining && !selection.remaining().isEmpty()) {
+                            project.getLogger().warn(
+                                    "[test-order] {} tests were NOT selected and will NOT run.",
+                                    selection.remaining().size());
+                            project.getLogger().warn(
+                                    "[test-order] To run them: ./gradlew testOrderRunRemaining");
+                            project.getLogger().warn(
+                                    "[test-order] To always run remaining, set testOrder '{ autoRunRemaining = true }'"
+                                    + " or -Dtestorder.auto.runRemaining=true");
+                        }
 
                         // Apply orderer config as system properties
                         for (var entry : os.ordererConfigMap().entrySet()) {
                             ((Test) t).systemProperty(
                                     entry.getKey(), entry.getValue());
                         }
+                    } else if (result instanceof AutoWorkflow.Result.Skip skipResult) {
+                        throw new GradleException("[test-order] Select requires an index/dependency baseline before it can"
+                                + " prioritize tests. " + skipResult.reason()
+                                + " Run testOrderLearn first (or run tests with -Dtestorder.mode=learn).");
+                    } else if (result instanceof AutoWorkflow.Result.Learn learnResult) {
+                        throw new GradleException("[test-order] Select cannot proceed in learn mode. "
+                                + learnResult.reason()
+                                + " Run testOrderLearn first, then rerun testOrderSelect.");
                     } else {
-                        throw new GradleException(
-                                "[test-order] Expected order mode but got: "
+                        throw new GradleException("[test-order] Select expected order mode but got: "
                                 + result.getClass().getSimpleName());
                     }
                 } catch (IOException e) {
@@ -837,6 +988,10 @@ public class TestOrderPlugin implements Plugin<Project> {
             configureDerivedTestTask(project, ext, task);
             task.setGroup("test-order");
             task.setDescription("Run only the deferred tests written by testOrderSelect");
+            task.onlyIf("skip auto-finalized run-remaining when select failed", t -> {
+                Task selectTask = project.getTasks().findByName("testOrderSelect");
+                return selectTask == null || selectTask.getState().getFailure() == null;
+            });
             task.doFirst("testOrderRunRemainingPrepare", t -> {
                 Path remainingFile = ext.getRemainingFile().get().getAsFile().toPath();
                 if (!Files.exists(remainingFile)) {
@@ -853,8 +1008,173 @@ public class TestOrderPlugin implements Plugin<Project> {
                         project.getLogger().lifecycle("[test-order] Running {} remaining test classes", tests.size());
                     }
                     applySelectedTests((Test) t, tests);
+                    // Delete remaining file after consumption to prevent stale re-runs (parity with Maven)
+                    Files.deleteIfExists(remainingFile);
                 } catch (IOException e) {
                     throw new GradleException("Failed to read remaining tests file", e);
+                }
+            });
+        });
+
+        project.getTasks().register("testOrderTieredSelect", Test.class, task -> {
+            configureDerivedTestTask(project, ext, task);
+            task.setGroup("test-order");
+            task.setDescription("Run tier-1 (change-affected) tests and write tier-2/tier-3 files for progressive CI");
+
+            task.systemProperty("junit.jupiter.testclass.order.default",
+                    "me.bechberger.testorder.junit.PriorityClassOrderer");
+            String debugFlag = gradleOrSystemProperty(project, "testorder.debug");
+            if ("true".equalsIgnoreCase(debugFlag)) {
+                task.systemProperty("testorder.debug", "true");
+            }
+
+            task.doFirst("testOrderTieredSelectPrepare", t -> {
+                PluginContext pctx = buildPluginContext(project, ext);
+
+                double tier2Fraction = ext.getTieredTier2Fraction().get();
+                String propFraction = gradleOrSystemProperty(project, "testorder.tiered.tier2Fraction");
+                if (propFraction != null && !propFraction.isBlank()) {
+                    try {
+                        tier2Fraction = Double.parseDouble(propFraction);
+                    } catch (NumberFormatException e) {
+                        throw new GradleException(
+                                "[test-order] Invalid testorder.tiered.tier2Fraction value '" + propFraction
+                                + "'. Must be a number in [0, 1].");
+                    }
+                }
+                if (tier2Fraction < 0 || tier2Fraction > 1) {
+                    throw new GradleException(
+                            "[test-order] testorder.tiered.tier2Fraction must be in [0, 1], got " + tier2Fraction);
+                }
+                boolean weightByDuration = ext.getTieredWeightByDuration().get();
+                String propWeight = gradleOrSystemProperty(project, "testorder.tiered.weightByDuration");
+                if (propWeight != null) {
+                    weightByDuration = Boolean.parseBoolean(propWeight);
+                }
+
+                Path tier1File = ext.getTieredTier1File().get().getAsFile().toPath();
+                Path tier2File = ext.getTieredTier2File().get().getAsFile().toPath();
+                Path tier3File = ext.getTieredTier3File().get().getAsFile().toPath();
+
+                try {
+                    me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result analysis =
+                            me.bechberger.testorder.ops.workflows.ChangeAnalysis.analyze(
+                                    pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.FOR_SELECTION);
+
+                    Path testClassesDir = resolveTestClassesDir(project);
+                    Set<String> alwaysRun = me.bechberger.testorder.ops.AlwaysRunScanner.scan(testClassesDir);
+
+                    me.bechberger.testorder.ops.TieredSelectOperation.TieredSelectResult result =
+                            me.bechberger.testorder.ops.TieredSelectOperation.select(
+                                    new me.bechberger.testorder.ops.TieredSelectOperation.TieredSelectConfig(
+                                            analysis.depMap(), analysis.state(), analysis.changedClasses(),
+                                            analysis.changedTests(), analysis.weights(), tier2Fraction,
+                                            weightByDuration, alwaysRun, tier1File, tier2File, tier3File,
+                                            wrapLog(project)));
+
+                    me.bechberger.testorder.TieredTestSelector.TieredSelection selection = result.selection();
+
+                    if (!selection.tier1().isEmpty()) {
+                        applySelectedTests((Test) t, selection.tier1());
+                        project.getLogger().lifecycle("[test-order] Tier 1: running {} change-affected tests",
+                                selection.tier1().size());
+                    } else if (!selection.tier2().isEmpty()) {
+                        applySelectedTests((Test) t, selection.tier2());
+                        project.getLogger().lifecycle("[test-order] Tier 1 empty — running {} tier-2 tests directly",
+                                selection.tier2().size());
+                    } else if (!selection.tier3().isEmpty()) {
+                        applySelectedTests((Test) t, selection.tier3());
+                        project.getLogger().lifecycle("[test-order] Tiers 1+2 empty — running {} tier-3 tests directly",
+                                selection.tier3().size());
+                    } else {
+                        applySelectedTests((Test) t, List.of());
+                        project.getLogger().warn("[test-order] No tests to run (all tiers empty). Run in learn mode first: ./gradlew test -Dtestorder.mode=learn");
+                    }
+
+                    // Apply orderer config as system properties (R7-1: inject ordering config)
+                    Map<String, String> configMap = me.bechberger.testorder.ops.OrdererConfigOperation.buildConfig(
+                            new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
+                                    pctx.indexFile().toAbsolutePath().toString(),
+                                    pctx.stateFile().toAbsolutePath().toString(),
+                                    pctx.weightsFile() != null ? pctx.weightsFile().toAbsolutePath().toString() : null,
+                                    analysis.changedClasses(), analysis.changedTests(), Set.of(),
+                                    pctx.scoreOverrides(), pctx.methodOrderingEnabled(), pctx.springContextGrouping(),
+                                    pctx.projectRoot().toAbsolutePath().toString(),
+                                    pctx.sourceRoot() != null ? pctx.sourceRoot().toAbsolutePath().toString() : null,
+                                    pctx.changeMode()));
+                    for (var entry : configMap.entrySet()) {
+                        ((Test) t).systemProperty(entry.getKey(), entry.getValue());
+                    }
+
+                    project.getLogger().lifecycle("[test-order] Tier files written:");
+                    project.getLogger().lifecycle("[test-order]   Tier 1 ({} tests): {}",
+                            selection.tier1().size(), tier1File);
+                    project.getLogger().lifecycle("[test-order]   Tier 2 ({} tests): {}",
+                            selection.tier2().size(), tier2File);
+                    project.getLogger().lifecycle("[test-order]   Tier 3 ({} tests): {}",
+                            selection.tier3().size(), tier3File);
+
+                } catch (IOException e) {
+                    throw new GradleException("Failed to run tiered test selection", e);
+                }
+            });
+        });
+
+        project.getTasks().register("testOrderRunTier", Test.class, task -> {
+            configureDerivedTestTask(project, ext, task);
+            task.setGroup("test-order");
+            task.setDescription("Run tier 2 or tier 3 from a previous testOrderTieredSelect invocation");
+
+            task.systemProperty("junit.jupiter.testclass.order.default",
+                    "me.bechberger.testorder.junit.PriorityClassOrderer");
+
+            task.doFirst("testOrderRunTierPrepare", t -> {
+                String tierProp = gradleOrSystemProperty(project, "testorder.tiered.currentTier");
+                if (tierProp == null || tierProp.isBlank()) {
+                    throw new GradleException("[test-order] testorder.tiered.currentTier must be set to 2 or 3. "
+                            + "Use: ./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=2");
+                }
+                int currentTier;
+                try {
+                    currentTier = Integer.parseInt(tierProp.trim());
+                } catch (NumberFormatException e) {
+                    throw new GradleException("[test-order] testorder.tiered.currentTier must be 2 or 3, got: " + tierProp);
+                }
+                if (currentTier != 2 && currentTier != 3) {
+                    throw new GradleException("[test-order] testorder.tiered.currentTier must be 2 or 3, got: " + currentTier);
+                }
+
+                Path tierFile = currentTier == 2
+                        ? ext.getTieredTier2File().get().getAsFile().toPath()
+                        : ext.getTieredTier3File().get().getAsFile().toPath();
+
+                if (!Files.exists(tierFile)) {
+                    project.getLogger().warn("[test-order] No tests to run (tier-{} file not found at {}). Re-run: ./gradlew testOrderTieredSelect test",
+                            currentTier, tierFile);
+                    applySelectedTests((Test) t, List.of());
+                    return;
+                }
+
+                try {
+                    List<String> tests = TestSelector.readTestList(tierFile);
+                    if (tests.isEmpty()) {
+                        project.getLogger().warn("[test-order] No tests to run (tier-{} list is empty). Re-run: ./gradlew testOrderTieredSelect test", currentTier);
+                        applySelectedTests((Test) t, List.of());
+                    } else {
+                        project.getLogger().lifecycle("[test-order] Running {} tier-{} test classes",
+                                tests.size(), currentTier);
+                        applySelectedTests((Test) t, tests);
+                    }
+                } catch (IOException e) {
+                    throw new GradleException("Failed to read tier-" + currentTier + " tests file", e);
+                }
+
+                // Inject orderer config so tests are prioritized within the tier (R7-4)
+                Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
+                if (Files.exists(indexPath)) {
+                    ((Test) t).systemProperty("testorder.index.path", indexPath.toAbsolutePath().toString());
+                    ((Test) t).systemProperty("testorder.state.path",
+                            ext.getStateFile().get().getAsFile().getAbsolutePath());
                 }
             });
         });
@@ -898,9 +1218,30 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.mustRunAfter("test");
             task.doLast(t -> {
                 autoAggregateIfNeeded(project, ext);
-                int port = Integer.parseInt(Optional
-                        .ofNullable(gradleOrSystemProperty(project, "testorder.dashboard.port"))
-                        .orElse("0"));
+                int port;
+                try {
+                    port = Integer.parseInt(Optional
+                            .ofNullable(gradleOrSystemProperty(project, "testorder.dashboard.port"))
+                            .orElse("0"));
+                } catch (NumberFormatException e) {
+                    throw new GradleException("[test-order] Invalid testorder.dashboard.port value '"
+                            + gradleOrSystemProperty(project, "testorder.dashboard.port")
+                            + "' — must be a number");
+                }
+                int serveSeconds;
+                try {
+                    serveSeconds = Integer.parseInt(Optional
+                            .ofNullable(gradleOrSystemProperty(project, "testorder.dashboard.serveSeconds"))
+                            .orElse("0"));
+                } catch (NumberFormatException e) {
+                    throw new GradleException("[test-order] Invalid testorder.dashboard.serveSeconds value '"
+                            + gradleOrSystemProperty(project, "testorder.dashboard.serveSeconds")
+                            + "' — must be a number");
+                }
+            if (serveSeconds < 0) {
+                throw new GradleException(
+                    "[test-order] testorder.dashboard.serveSeconds must be >= 0");
+            }
                 String regenerate = Optional
                         .ofNullable(gradleOrSystemProperty(project, "testorder.dashboard.regenerate"))
                         .orElse("auto");
@@ -919,7 +1260,10 @@ public class TestOrderPlugin implements Plugin<Project> {
                             + ". Run testOrderDashboard first, or set -Dtestorder.dashboard.regenerate=auto");
                 }
                 Path statePath = ext.getStateFile().get().getAsFile().toPath();
-                serveDashboard(project, outDir, statePath, port);
+                boolean openBrowser = Boolean.parseBoolean(Optional
+                    .ofNullable(gradleOrSystemProperty(project, "testorder.dashboard.open"))
+                    .orElse("false"));
+                serveDashboard(project, outDir, statePath, port, serveSeconds, openBrowser);
             });
         });
 
@@ -942,9 +1286,17 @@ public class TestOrderPlugin implements Plugin<Project> {
                             + " — run tests in learn mode first.");
                 }
                 int threshold = ext.getCoverageThreshold().get();
-                String propThreshold = gradleOrSystemProperty(project, "coverage.threshold");
+                String propThreshold = gradleOrSystemProperty(project, "testorder.coverage.threshold");
+                if (propThreshold == null || propThreshold.isBlank()) {
+                    propThreshold = gradleOrSystemProperty(project, "coverage.threshold");
+                }
                 if (propThreshold != null && !propThreshold.isBlank()) {
-                    threshold = Integer.parseInt(propThreshold);
+                    try {
+                        threshold = Integer.parseInt(propThreshold);
+                    } catch (NumberFormatException e) {
+                        throw new GradleException("[test-order] Invalid coverage.threshold value '"
+                                + propThreshold + "' — must be a positive integer");
+                    }
                 }
                 Path outputDir = ext.getCoverageOutputDir().get().getAsFile().toPath();
                 String propOutputDir = gradleOrSystemProperty(project, "coverage.outputDir");
@@ -972,13 +1324,115 @@ public class TestOrderPlugin implements Plugin<Project> {
         project.getTasks().register("testOrderDiagnose", task -> {
             task.setGroup("test-order");
             task.setDescription("Run diagnostics to detect setup issues");
-            task.doLast(t -> runDiagnostics(project, ext));
+            task.doLast(t -> {
+                boolean failOnError = Boolean.parseBoolean(Optional
+                        .ofNullable(gradleOrSystemProperty(project, "testorder.failOnError"))
+                        .orElse("false"));
+                runDiagnostics(project, ext, failOnError);
+            });
         });
 
         project.getTasks().register("testOrderCompact", task -> {
             task.setGroup("test-order");
             task.setDescription("Rebuild index by compacting .deps files (removes stale entries)");
             task.doLast(t -> runCompact(project, ext));
+        });
+
+        project.getTasks().register("testOrderMetrics", task -> {
+            task.setGroup("test-order");
+            task.setDescription("Export test-order metrics as JSON for CI/CD dashboards and reporting");
+            task.doLast(t -> {
+                Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
+                Path statePath = ext.getStateFile().get().getAsFile().toPath();
+                Path testClassesDir = resolveTestClassesDir(project);
+                PluginLog plog = wrapLog(project);
+                PluginContext pctx = buildPluginContext(project, ext);
+
+                me.bechberger.testorder.ops.TestMetricsExport metrics =
+                        me.bechberger.testorder.ops.MetricsWorkflow.generate(
+                                project.getName(), indexFile, statePath, testClassesDir,
+                                pctx,
+                                "Run ./gradlew test -Dtestorder.mode=learn",
+                                plog);
+
+                String propOutput = gradleOrSystemProperty(project, "testorder.metrics.output");
+                Path output = propOutput != null && !propOutput.isBlank()
+                        ? Path.of(propOutput)
+                        : project.getLayout().getBuildDirectory()
+                                .file("test-order-metrics.json").get().getAsFile().toPath();
+                try {
+                    me.bechberger.testorder.ops.MetricsWorkflow.writeToFile(metrics, output, plog);
+                } catch (IOException e) {
+                    throw new GradleException("Failed to write metrics: " + e.getMessage(), e);
+                }
+            });
+        });
+
+        project.getTasks().register("testOrderHelp", task -> {
+            task.setGroup("test-order");
+            task.setDescription("Display available test-order tasks and configuration options");
+            task.doLast(t -> {
+                var log = project.getLogger();
+                log.lifecycle("");
+                log.lifecycle("═══════════════════════════════════════════════════════════");
+                log.lifecycle("  test-order — Intelligent Test Prioritization Plugin");
+                log.lifecycle("═══════════════════════════════════════════════════════════");
+                log.lifecycle("");
+                log.lifecycle("TASKS:");
+                log.lifecycle("  test                         Run tests with auto mode (learn or order)");
+                log.lifecycle("  testOrderLearn               Force learn mode (collect dependencies)");
+                log.lifecycle("  testOrderSelect              Run prioritized test subset");
+                log.lifecycle("  testOrderRunRemaining        Run deferred tests from testOrderSelect");
+                log.lifecycle("  testOrderTieredSelect        Three-tier CI test selection");
+                log.lifecycle("  testOrderRunTier             Run tier 2 or 3 from tiered-select");
+                log.lifecycle("  testOrderShowOrder           Display predicted test order");
+                log.lifecycle("  testOrderExplainOrder        Detailed per-test score breakdown");
+                log.lifecycle("  testOrderShowMethodOrder     Display predicted method order");
+                log.lifecycle("  testOrderExplainMethodOrder  Detailed per-method score breakdown");
+                log.lifecycle("  testOrderOptimize            Tune scoring weights from history");
+                log.lifecycle("  testOrderDashboard           Generate interactive HTML report");
+                log.lifecycle("  testOrderServe               Serve dashboard on local HTTP server");
+                log.lifecycle("  testOrderDiagnose            Validate setup and detect issues");
+                log.lifecycle("  testOrderCompact             Rebuild index (remove stale entries)");
+                log.lifecycle("  testOrderMetrics             Export metrics JSON for CI/CD");
+                log.lifecycle("  testOrderAggregate           Aggregate .deps files into index");
+                log.lifecycle("  testOrderAggregateAll        Aggregate from all subprojects");
+                log.lifecycle("  testOrderDump                Dump index as text");
+                log.lifecycle("  testOrderExportJson          Export index + history as JSON");
+                log.lifecycle("  testOrderCoverage            Analyze test coverage gaps");
+                log.lifecycle("  testOrderSnapshot            Save hash snapshots");
+                log.lifecycle("  testOrderDownload            Download index from CI");
+                log.lifecycle("  testOrderClean               Remove all generated files");
+                log.lifecycle("");
+                log.lifecycle("CONFIGURATION (build.gradle testOrder { ... }):");
+                log.lifecycle("  mode                    auto | learn | order | optimize | skip");
+                log.lifecycle("  instrumentationMode     FULL | METHOD_ENTRY | FULL_METHOD | FULL_MEMBER");
+                log.lifecycle("  changeMode              auto | since-last-run | since-last-commit | uncommitted | explicit");
+                log.lifecycle("  includePackages         Additional package prefixes to instrument");
+                log.lifecycle("  methodOrderingEnabled   Enable method-level reordering (default: false)");
+                log.lifecycle("  selectTopN              Top-scored tests to always select (default: -1 = all)");
+                log.lifecycle("  selectRandomM           Random diverse fast tests to add (default: 10)");
+                log.lifecycle("  autoLearnRunThreshold   Re-learn after N order runs (default: 10)");
+                log.lifecycle("  autoOptimizeEvery       Run weight optimization every N runs (default: 10)");
+                log.lifecycle("  autoCompactEvery        Auto-compact every N runs (default: 50)");
+                log.lifecycle("  tieredTier2Fraction     Tier-2 duration/count fraction 0–1 (default: 0.5)");
+                log.lifecycle("  springContextGrouping   Group tests by Spring context (default: false)");
+                log.lifecycle("");
+                log.lifecycle("SYSTEM PROPERTIES:");
+                log.lifecycle("  -Dtestorder.mode=<mode>           Override mode for this run");
+                log.lifecycle("  -Dtestorder.mode.<task>=<mode>    Override mode for a specific test task");
+                log.lifecycle("  -Dtestorder.skip=true             Disable plugin entirely");
+                log.lifecycle("  -Dtestorder.debug=true            Verbose scoring output");
+                log.lifecycle("  -Dtestorder.changeMode=<mode>     Override change detection");
+                log.lifecycle("  -Dtestorder.failOnError=true      Fail build on diagnostic errors");
+                log.lifecycle("");
+                log.lifecycle("SCORE TUNING (-Dtestorder.score.<name>=<weight>):");
+                log.lifecycle("  newTest, changedTest, maxFailure, speed, depOverlap, changeComplexity");
+                log.lifecycle("");
+                log.lifecycle("DOCS: See docs/CLI_REFERENCE.md for full reference");
+                log.lifecycle("═══════════════════════════════════════════════════════════");
+                log.lifecycle("");
+            });
         });
     }
 
@@ -995,15 +1449,17 @@ public class TestOrderPlugin implements Plugin<Project> {
             String template = DashboardResources.assembleTemplate();
             return new DashboardWorkflow(pctx, template, outDir).generate();
         } catch (IOException e) {
-            throw new GradleException("Failed to generate test-order dashboard", e);
+            String detail = e.getMessage() != null ? e.getMessage() : "unknown error";
+            throw new GradleException("[test-order] Dashboard generation failed: " + detail
+                    + ". Run ./gradlew test first to learn dependencies.", e);
         }
     }
 
     /** Starts a local HTTP server serving the self-contained dashboard HTML. */
-    private void serveDashboard(Project project, Path dashboardDir, Path statePath, int port) {
+        private void serveDashboard(Project project, Path dashboardDir, Path statePath, int port, int serveSeconds, boolean openBrowser) {
         Path htmlPath = dashboardDir.resolve("index.html");
         try {
-            DashboardServerOperation.start(htmlPath, statePath, port, wrapLog(project));
+            DashboardServerOperation.start(htmlPath, statePath, port, wrapLog(project), null, serveSeconds, openBrowser);
         } catch (IOException e) {
             throw new GradleException("Failed to start dashboard HTTP server", e);
         }
@@ -1026,6 +1482,21 @@ public class TestOrderPlugin implements Plugin<Project> {
             additionalSourceRoots.add(ktRoot);
         }
 
+        // Add source roots from sibling subprojects for cross-module changeComplexity scoring
+        if (project.getRootProject() != project) {
+            for (Project sub : project.getRootProject().getSubprojects()) {
+                if (sub == project) continue;
+                Path subSrc = sub.getProjectDir().toPath().resolve("src/main/java");
+                if (Files.isDirectory(subSrc)) {
+                    additionalSourceRoots.add(subSrc);
+                }
+                Path subKt = sub.getProjectDir().toPath().resolve("src/main/kotlin");
+                if (Files.isDirectory(subKt)) {
+                    additionalSourceRoots.add(subKt);
+                }
+            }
+        }
+
         String weightsFile = ext.getWeightsFile().get();
         Map<String, Integer> scoreOverrides = WeightResolverOperation.buildScoreOverrides(
                 orNull(ext.getScoreNewTest()), orNull(ext.getScoreChangedTest()),
@@ -1043,6 +1514,16 @@ public class TestOrderPlugin implements Plugin<Project> {
             changedClasses = explicitChanged;
         }
 
+        // Resolve changed test classes (parity with Maven's -Dtestorder.changed.test.classes)
+        String explicitChangedTests = ext.getChangedTestClasses().get();
+        String propChangedTests = gradleOrSystemProperty(project, "testorder.changed.test.classes");
+        String changedTestClasses = null;
+        if (propChangedTests != null && !propChangedTests.isBlank()) {
+            changedTestClasses = propChangedTests;
+        } else if (explicitChangedTests != null && !explicitChangedTests.isBlank()) {
+            changedTestClasses = explicitChangedTests;
+        }
+
         return PluginContext.builder()
                 .projectRoot(project.getProjectDir().toPath().toAbsolutePath())
                 .sourceRoot(sourceRoot)
@@ -1057,6 +1538,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .methodHashFile(ext.getMethodHashFile().get().getAsFile().toPath())
                 .changeMode(ext.getChangeMode().get())
                 .changedClasses(changedClasses)
+                .changedTestClasses(changedTestClasses)
                 .weightsFile(weightsFile != null && !weightsFile.isBlank() ? Path.of(weightsFile) : null)
                 .scoreOverrides(scoreOverrides)
                 .methodOrderingEnabled(ext.getMethodOrderingEnabled().get())
@@ -1076,7 +1558,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .verboseFile(ext.getVerboseFile().get() != null && !ext.getVerboseFile().get().isBlank()
                         ? Path.of(ext.getVerboseFile().get()) : null)
                 .projectName(project.getName())
-                .pluginVersion("gradle")
+                .pluginVersion(VERSION)
                 .log(wrapLog(project));
     }
 
@@ -1168,15 +1650,78 @@ public class TestOrderPlugin implements Plugin<Project> {
         return "true".equalsIgnoreCase(propSkip);
     }
 
+    /** Converts a {@code Map<String, Object>} to {@code Map<String, String>} (null-safe). */
+    private static Map<String, String> toStringMap(Map<String, Object> objectMap) {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        if (objectMap != null) {
+            for (var entry : objectMap.entrySet()) {
+                if (entry.getValue() != null) {
+                    result.put(entry.getKey(), entry.getValue().toString());
+                }
+            }
+        }
+        return result;
+    }
+
     /**
      * Auto-aggregates .deps files into the index if it doesn't exist yet.
+     * If the index exists but is unreadable/corrupt, tries to rebuild it from .deps.
      * Silently does nothing if there are no .deps files.
      */
     private static void autoAggregateIfNeeded(Project project, TestOrderExtension ext) {
         Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
         if (!Files.exists(indexFile)) {
             aggregateDependencyFiles(project, ext, false);
+            return;
         }
+
+        try {
+            DependencyMap.load(indexFile);
+        } catch (IOException e) {
+            project.getLogger().warn("[test-order] Existing index appears invalid at {} ({}). "
+                    + "Attempting to rebuild from .deps files.", indexFile, e.getMessage());
+            boolean rebuilt = aggregateDependencyFiles(project, ext, false);
+            if (rebuilt) {
+                project.getLogger().lifecycle("[test-order] Rebuilt dependency index from .deps files: {}", indexFile);
+                return;
+            }
+
+            if (recoverIndexFromBackup(project, ext, indexFile)) {
+                return;
+            }
+        }
+    }
+
+    private static boolean recoverIndexFromBackup(Project project, TestOrderExtension ext, Path indexFile) {
+        Path projectDir = project.getProjectDir().toPath();
+        List<Path> candidates = List.of(
+                indexFile.resolveSibling(indexFile.getFileName() + ".bak"),
+                projectDir.resolve(".test-order/test-dependencies.lz4.bak"),
+                projectDir.resolve("test-dependencies.lz4.bak")
+        );
+
+        for (Path candidate : candidates) {
+            if (!Files.exists(candidate)) {
+                continue;
+            }
+            try {
+                Files.createDirectories(indexFile.getParent());
+                Files.copy(candidate, indexFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                DependencyMap.load(indexFile);
+                project.getLogger().lifecycle(
+                        "[test-order] Recovered dependency index from backup: {} -> {}",
+                        candidate, indexFile);
+                return true;
+            } catch (IOException copyOrLoadError) {
+                project.getLogger().warn(
+                        "[test-order] Backup index candidate is unusable ({}): {}",
+                        candidate, copyOrLoadError.getMessage());
+            }
+        }
+
+        project.getLogger().warn("[test-order] Could not recover dependency index from backups. "
+                + "Run tests in learn mode to regenerate {}.", indexFile);
+        return false;
     }
 
     /** Attempts to open the given URI in the default browser. */
@@ -1231,7 +1776,7 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
     }
 
-    private static void runDiagnostics(Project project, TestOrderExtension ext) {
+    private static void runDiagnostics(Project project, TestOrderExtension ext, boolean failOnError) {
         me.bechberger.testorder.ops.DiagnosticOperation.DiagnosticConfig config =
                 new me.bechberger.testorder.ops.DiagnosticOperation.DiagnosticConfig(
                         project.getProjectDir().toPath().toAbsolutePath(),
@@ -1248,65 +1793,23 @@ public class TestOrderPlugin implements Plugin<Project> {
         me.bechberger.testorder.ops.DiagnosticOperation.DiagnosticReport report =
                 me.bechberger.testorder.ops.DiagnosticOperation.diagnose(config);
 
-        // Print report
-        System.out.println("");
-        System.out.println("═══════════════════════════════════════════════════════════");
-        System.out.println("[test-order] Diagnostic Report");
-        System.out.println("═══════════════════════════════════════════════════════════");
-        System.out.println("");
-        System.out.println("Health Score: " + report.healthScore() + "%  " + report.overallStatus());
-        System.out.println("");
-        System.out.println("Checks Performed: " + report.results().size());
-        System.out.println("  Errors: " + report.results().stream()
-                .filter(r -> r.isError()).count());
-        System.out.println("  Warnings: " + report.results().stream()
-                .filter(r -> r.isInformational() && !r.isSuccess()).count());
-        System.out.println("");
+        me.bechberger.testorder.ops.DiagnosticReportPrinter.print(report, wrapLog(project));
 
-        // Print individual results
-        for (var result : report.results()) {
-            if (result.isError()) {
-                System.out.println("❌ " + result.code() + ": " + result.message());
-                for (String suggestion : result.suggestions()) {
-                    System.out.println("   → " + suggestion);
-                }
-            } else if (result.isInformational()) {
-                System.out.println("⚠️  " + result.code() + ": " + result.message());
-                if (!result.suggestions().isEmpty()) {
-                    for (String suggestion : result.suggestions()) {
-                        System.out.println("   → " + suggestion);
-                    }
-                }
-            } else {
-                System.out.println("✓ " + result.code().getMessage());
-            }
-            System.out.println("");
-        }
-
-        System.out.println("═══════════════════════════════════════════════════════════");
-        System.out.println("");
-
-        // Print summary
-        System.out.println("Summary:");
-        for (var entry : report.summary().entrySet()) {
-            System.out.println("  " + entry.getKey() + ": " + entry.getValue());
-        }
-        System.out.println("");
-
-        if (!report.isHealthy()) {
-            project.getLogger().warn("[test-order] Diagnostic detected issues. Review above and take action if needed.");
-        } else {
-            project.getLogger().info("[test-order] Setup looks good! ✓");
+        if (failOnError && report.hasErrors()) {
+            long errorCount = report.results().stream().filter(r -> r.isError()).count();
+            throw new GradleException("[test-order] Diagnostic found " + errorCount
+                    + " error(s). Fix issues or run with -Dtestorder.failOnError=false.");
         }
     }
 
     private static void runCompact(Project project, TestOrderExtension ext) {
+        org.gradle.api.logging.Logger log = project.getLogger();
         try {
-            System.out.println("");
-            System.out.println("═══════════════════════════════════════════════════════════");
-            System.out.println("[test-order] Compacting Index from .deps Files");
-            System.out.println("═══════════════════════════════════════════════════════════");
-            System.out.println("");
+            log.lifecycle("");
+            log.lifecycle("═══════════════════════════════════════════════════════════");
+            log.lifecycle("[test-order] Compacting Index from .deps Files");
+            log.lifecycle("═══════════════════════════════════════════════════════════");
+            log.lifecycle("");
 
             me.bechberger.testorder.ops.IndexCompactionOperation.CompactionResult result =
                     me.bechberger.testorder.ops.IndexCompactionOperation.compact(
@@ -1314,15 +1817,15 @@ public class TestOrderPlugin implements Plugin<Project> {
                             ext.getIndexFile().get().getAsFile().toPath(),
                             wrapLog(project));
 
-            System.out.println("");
-            System.out.println("Status: " + result.description());
+            log.lifecycle("");
+            log.lifecycle("Status: {}", result.description());
             if (result.hasChanges()) {
-                System.out.println("  Added:   " + result.addedTests() + " test classes");
-                System.out.println("  Removed: " + result.removedTests() + " test classes");
+                log.lifecycle("  Added:   {} test classes", result.addedTests());
+                log.lifecycle("  Removed: {} test classes", result.removedTests());
             }
-            System.out.println("  Index Size: " + result.newIndexSize() + " bytes");
-            System.out.println("");
-            System.out.println("═══════════════════════════════════════════════════════════");
+            log.lifecycle("  Index Size: {} bytes", result.newIndexSize());
+            log.lifecycle("");
+            log.lifecycle("═══════════════════════════════════════════════════════════");
         } catch (Exception e) {
             throw new GradleException("[test-order] Failed to compact index: " + e.getMessage(), e);
         }
@@ -1353,7 +1856,19 @@ public class TestOrderPlugin implements Plugin<Project> {
             ShowOrderWorkflow.printReportWithSelectionPreview(
                     pctx, System.out, explain, fullNames, false, false);
         } catch (IOException e) {
-            throw new GradleException("Failed to show test order", e);
+            throw new GradleException("Failed to show test order: " + e.getMessage(), e);
+        }
+    }
+
+    private static void runShowMethodOrderReport(Project project, TestOrderExtension ext, boolean explain) {
+        autoAggregateIfNeeded(project, ext);
+        PluginContext pctx = buildPluginContextBuilder(project, ext)
+                .methodOrderingEnabled(true)
+                .build();
+        try {
+            ShowMethodOrderWorkflow.printReport(pctx, System.out, explain);
+        } catch (IOException e) {
+            throw new GradleException("Failed to show test method order", e);
         }
     }
 
@@ -1367,7 +1882,6 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
         }
         task.useJUnitPlatform();
-        task.jvmArgs("--enable-native-access=ALL-UNNAMED");
         task.shouldRunAfter(project.getTasks().named("test"));
         task.dependsOn(project.getTasks().named("testClasses"));
         task.systemProperty("testorder.state.path",
@@ -1376,7 +1890,12 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     private static void applySelectedTests(Test task, List<String> tests) {
         if (tests.isEmpty()) {
-            task.onlyIf("no tests selected by test-order", t -> false);
+            task.filter(filter -> {
+                filter.setFailOnNoMatchingTests(false);
+                // Use a guaranteed non-matching pattern to produce a no-op test run
+                // without mutating task execution conditions during doFirst.
+                filter.includeTestsMatching("__testorder__no_selected_tests__");
+            });
             return;
         }
         task.filter(filter -> {
@@ -1471,6 +1990,28 @@ public class TestOrderPlugin implements Plugin<Project> {
             });
         } catch (IOException e) {
             project.getLogger().warn("[test-order] Failed to save {} hash snapshot: {}", label, e.getMessage());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Property typo detection
+    // -----------------------------------------------------------------------
+
+    /**
+     * Warn about testorder.* properties set via -D or -P that don't match any known key.
+     */
+    private static void warnUnknownProperties(Project project) {
+        // Check system properties
+        java.util.List<String> sysWarnings = me.bechberger.testorder.ops.PropertySuggestion
+                .findUnknownKeys(System.getProperties().stringPropertyNames());
+        for (String w : sysWarnings) {
+            project.getLogger().warn("[test-order] " + w);
+        }
+        // Check Gradle project properties (-P)
+        java.util.List<String> projWarnings = me.bechberger.testorder.ops.PropertySuggestion
+                .findUnknownKeys(project.getProperties().keySet());
+        for (String w : projWarnings) {
+            project.getLogger().warn("[test-order] " + w);
         }
     }
 }

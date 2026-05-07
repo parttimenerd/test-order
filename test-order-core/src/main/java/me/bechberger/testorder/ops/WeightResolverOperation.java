@@ -25,7 +25,16 @@ public final class WeightResolverOperation {
 			PluginLog log) {
 		if (weightsFile != null && Files.exists(weightsFile)) {
 			try {
-				return TestOrderState.ScoringWeights.loadFromFile(weightsFile);
+				TestOrderState.LoadedWeights loaded = TestOrderState.ScoringWeights.loadFromFile(weightsFile);
+				// Validate that file contained at least some recognized weight keys
+				if (loaded.weights().newTest() == TestOrderState.WEIGHT_DEFS.get(0).defaultValue()
+						&& loaded.weights().changedTest() == TestOrderState.WEIGHT_DEFS.get(1).defaultValue()
+						&& loaded.weights().maxFailure() == TestOrderState.WEIGHT_DEFS.get(2).defaultValue()) {
+					// All weights are at defaults, likely means TOML file had no recognized keys
+					log.warn("[test-order] Weights file " + weightsFile + " contains no recognized weight keys. "
+							+ "Ensure TOML file uses bare key names (e.g. 'speed = 200', not 'testorder.score.speed = 200').");
+				}
+				return loaded;
 			} catch (IOException e) {
 				log.warn("[test-order] Failed to load weights file: " + e.getMessage());
 			}

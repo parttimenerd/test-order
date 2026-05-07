@@ -193,6 +193,7 @@ public class Agent implements Callable<Integer> {
 		}
 
 		// configure UsageStore via reflection (now on bootstrap classpath)
+		ClassTransformer transformer = new ClassTransformer(options);
 		try {
 			Class<?> usageStoreClass = Class.forName("me.bechberger.testorder.agent.runtime.UsageStore", true, null);
 			Object instance = usageStoreClass.getMethod("getInstance").invoke(null);
@@ -203,11 +204,14 @@ public class Agent implements Callable<Integer> {
 			boolean methodLevel = options.getMode() == InstrumentationMode.FULL_METHOD
 					|| options.getMode() == InstrumentationMode.FULL_MEMBER;
 			usageStoreClass.getMethod("setMethodLevelRecordingEnabled", boolean.class).invoke(instance, methodLevel);
+			// Register callback to release transformation caches when first test starts
+			usageStoreClass.getMethod("setOnFirstTestClassCallback", Runnable.class).invoke(instance,
+					(Runnable) transformer::releaseTransformationCaches);
 		} catch (ReflectiveOperationException e) {
 			throw new RuntimeException("Failed to configure UsageStore", e);
 		}
 
-		inst.addTransformer(new ClassTransformer(options), true);
+		inst.addTransformer(transformer, true);
 	}
 
 	static void configureAgentLogger(Path verboseFile, ClassLoader classLoader) throws ReflectiveOperationException {

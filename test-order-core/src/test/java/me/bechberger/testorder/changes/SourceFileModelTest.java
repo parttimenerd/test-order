@@ -832,9 +832,9 @@ class SourceFileModelTest {
 		}
 
 		@Test
-		void stringLiteralChangeDoesNotAffectHash() {
-			// String literals are stripped → changing the literal value does not change the
-			// hash
+		void stringLiteralChangeAffectsHash() {
+			// String literals are now preserved in method hashes — changing the literal
+			// value changes the hash (string changes affect bytecode)
 			String src1 = """
 					package com.x;
 					public class T { void m() { String s = "hello"; } }
@@ -843,8 +843,36 @@ class SourceFileModelTest {
 					package com.x;
 					public class T { void m() { String s = "world"; } }
 					""";
-			assertEquals(parse(src1, "com.x").methodHashes().get("com.x.T#m"),
+			assertNotEquals(parse(src1, "com.x").methodHashes().get("com.x.T#m"),
 					parse(src2, "com.x").methodHashes().get("com.x.T#m"));
+		}
+
+		@Test
+		void fieldStringLiteralChangeAffectsHash() {
+			String src1 = """
+					package com.x;
+					public class T { static final String NAME = "hello"; }
+					""";
+			String src2 = """
+					package com.x;
+					public class T { static final String NAME = "world"; }
+					""";
+			assertNotEquals(parseAll(src1, "com.x").fieldHashes().get("com.x.T#NAME"),
+					parseAll(src2, "com.x").fieldHashes().get("com.x.T#NAME"));
+		}
+
+		@Test
+		void initializerStringLiteralChangeAffectsHash() {
+			String src1 = """
+					package com.x;
+					public class T { static { String s = "hello"; } }
+					""";
+			String src2 = """
+					package com.x;
+					public class T { static { String s = "world"; } }
+					""";
+			assertNotEquals(parseAll(src1, "com.x").initializers().get(0).bodyHash(),
+					parseAll(src2, "com.x").initializers().get(0).bodyHash());
 		}
 	}
 

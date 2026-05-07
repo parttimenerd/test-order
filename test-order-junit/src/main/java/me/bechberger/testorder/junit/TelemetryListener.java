@@ -1,0 +1,430 @@
+package me.bechberger.testorder.junit;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+
+import me.bechberger.testorder.PersistenceSupport;
+import me.bechberger.testorder.TelemetryPersistence;
+import me.bechberger.testorder.TestOrderConfig;
+import me.bechberger.testorder.TestOrderConfigResolver;
+import me.bechberger.testorder.TestOrderLogger;
+import me.bechberger.testorder.TestOrderState;
+import me.bechberger.testorder.UsageStoreReflectionBridge;
+
+import org.junit.platform.engine.TestExecutionResult;
+import org.junit.platform.engine.TestSource;
+import org.junit.platform.engine.support.descriptor.ClassSource;
+import org.junit.platform.engine.support.descriptor.MethodSource;
+import org.junit.platform.launcher.TestExecutionListener;
+import org.junit.platform.launcher.TestIdentifier;
+import org.junit.platform.launcher.TestPlan;
+
+/**
+ * JUnit Platform TestExecutionListener that:
+ * <ul>
+ * <li>In <b>learn mode</b>: tracks test class boundaries and communicates them
+ * to the agent's UsageStore.</li>
+ * <li>In <b>order mode</b>: records test failures to
+ * {@code .test-order-failures} for future prioritization.</li>
+ * </ul>
+ * <p>
+ * In learn mode, calls {@code UsageStore.startTestClass/endTestClass} via
+ * reflection to support per-test-class dependency tracking. Only activates
+ * learn-mode tracking when system property {@code testorder.learn} is set to
+ * {@code "true"}. Auto-discovered via
+ * {@code META-INF/services/org.junit.platform.launcher.TestExecutionListener}.
+ */
+public class TelemetryListener implements TestExecutionListener {
+
+	private boolean learnMode;
+	private boolean fullMethodMode;
+	private boolean dryRunMode;
+	private boolean debugMode;
+	private UsageStoreReflectionBridge bridge;
+
+	// state tracking (active when state path is set)
+	private TestOrderState state;
+	private String statePath;
+	private final Map<String, Long> classStartTimes = new ConcurrentHashMap<>();
+	private final Map<String, Long> methodStartTimes = new ConcurrentHashMap<>();
+
+	// run quality tracking — use thread-safe collections because JUnit Platform
+	// delivers listener callbacks from the executing thread when
+	// @Execution(CONCURRENT) is active (method-level or class-level parallelism).
+	private final Set<String> executionOrderSet = ConcurrentHashMap.newKeySet();
+	private final List<String> executionOrder = Collections.synchronizedList(new ArrayList<>());
+	private final Set<String> failedClassNames = ConcurrentHashMap.newKeySet();
+	private final Map<String, List<Long>> pendingDurations = new ConcurrentHashMap<>();
+	private final Map<String, List<Long>> pendingMethodDurations = new ConcurrentHashMap<>();
+	private final Set<String> failedMethodNames = ConcurrentHashMap.newKeySet();
+	private final Set<String> warnedConcurrentClasses = ConcurrentHashMap.newKeySet();
+
+	// Tracks method keys (className#methodName) that are currently being tracked
+	// via a container node (e.g., @ParameterizedTest template). Child invocations
+	// of these containers should NOT start/end their own method tracking.
+	private final Set<String> containerTrackedMethods = ConcurrentHashMap.newKeySet();
+
+	/**
+	 * Tracks whether testPlanExecutionFinished ran; used by the shutdown hook to
+	 * avoid double-save.
+	 */
+	private volatile boolean finishedNormally;
+	private Thread shutdownHook;
+
+	@Override
+	public void testPlanExecutionStarted(TestPlan testPlan) {
+		learnMode = "true".equals(System.getProperty(TestOrderConfig.LEARN));
+		String instrumentationMode = System.getProperty(TestOrderConfig.INSTRUMENTATION_MODE);
+		fullMethodMode = "FULL_METHOD".equals(instrumentationMode) || "FULL_MEMBER".equals(instrumentationMode);
+
+		// M3: Detect dry-run mode — skip all recording
+		dryRunMode = "true".equalsIgnoreCase(System.getProperty("junit.platform.execution.dryRun.enabled"));
+		if (dryRunMode) {
+			TestOrderLogger.info("[telemetry] Dry-run mode detected — skipping all telemetry recording.");
+			return;
+		}
+
+		// L17: Detect debug mode — skip duration recording to avoid inflated EMA values
+		debugMode = isDebugMode();
+		if (debugMode) {
+			TestOrderLogger.info("[telemetry] Debug mode detected — duration recording disabled to avoid EMA inflation.");
+		}
+
+		if (learnMode) {
+			bridge = new UsageStoreReflectionBridge(fullMethodMode);
+			bridge.init();
+		}
+
+		// load state file path for failure + duration tracking
+		// Use TestOrderConfigResolver to check both system properties and classpath
+		// config file — in order mode the path is written to testorder-config.properties
+		// on the classpath, not passed as a system property.
+		TestOrderConfigResolver configResolver = new TestOrderConfigResolver(
+				Thread.currentThread().getContextClassLoader());
+		statePath = configResolver.getConfig(TestOrderConfig.STATE_PATH);
+
+		// Register a JVM shutdown hook so accumulated durations/failures are not
+		// lost when the JVM terminates abnormally (e.g. OOM, kill signal) before
+		// testPlanExecutionFinished() runs.
+		finishedNormally = false;
+		shutdownHook = new Thread(this::emergencySave, "test-order-emergency-save");
+		Runtime.getRuntime().addShutdownHook(shutdownHook);
+	}
+
+	/**
+	 * Detects whether the JVM is running in debug mode (-agentlib:jdwp or -Xrunjdwp).
+	 */
+	private static boolean isDebugMode() {
+		for (String arg : java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments()) {
+			if (arg.startsWith("-agentlib:jdwp") || arg.startsWith("-Xrunjdwp")) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
+	public void executionStarted(TestIdentifier testIdentifier) {
+		if (dryRunMode || isSuiteEngineNode(testIdentifier)) {
+			return;
+		}
+		testIdentifier.getSource().ifPresent(source -> {
+			if (source instanceof ClassSource classSource) {
+				String name = classSource.getClassName();
+				if (name == null) return; // guard against pathological custom engines
+				maybeWarnConcurrentExecution(name);
+
+				// track start time for duration (local map operation, very fast)
+				if (!debugMode) {
+					classStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
+				}
+
+				// track execution order for run quality (O(1) dedup with HashSet)
+				// Normalize to top-level class so inner/nested classes are attributed
+				// to the same class used by failedClassNames (also normalized).
+				String topLevel = TestOrderConfigResolver.toTopLevelClassName(name);
+				if (executionOrderSet.add(topLevel)) {
+					executionOrder.add(topLevel);
+				}
+
+				// In learn mode: call agent to record per-test-class boundary
+				// Do this AFTER timing starts so agent overhead isn't counted
+				if (learnMode && bridge.isAvailable()) {
+					bridge.callStartTestClass(name);
+				}
+			} else if (source instanceof MethodSource methodSource) {
+				if (methodSource.getClassName() == null || methodSource.getMethodName() == null) return;
+				// track method-level start time
+				String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
+				if (!debugMode) {
+					methodStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
+				}
+
+				// In FULL_METHOD and FULL_MEMBER modes: start per-method dependency recording.
+				// For @ParameterizedTest and @TestTemplate (type=CONTAINER), start tracking
+				// on the container node so we capture @MethodSource provider calls and
+				// argument resolution which happen BEFORE individual invocations fire.
+				// For regular @Test (type=TEST), start as before.
+				// Skip child invocations of a container (they share the parent's tracker).
+				if (fullMethodMode && learnMode && bridge.isAvailable()) {
+					if (!testIdentifier.getType().isTest()) {
+						// Container node (e.g., @ParameterizedTest template) — start tracking early
+						containerTrackedMethods.add(methodKey);
+						bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
+					} else if (!containerTrackedMethods.contains(methodKey)) {
+						// Regular @Test (not a child of a container) — start tracking normally
+						bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
+					}
+					// else: child invocation of a container — skip, parent already tracks
+				}
+			}
+		});
+	}
+
+	@Override
+	public void executionFinished(TestIdentifier testIdentifier, TestExecutionResult result) {
+		if (dryRunMode || isSuiteEngineNode(testIdentifier)) {
+			return;
+		}
+		if (learnMode && bridge.isAvailable()) {
+			testIdentifier.getSource().ifPresent(source -> {
+				if (source instanceof ClassSource) {
+					bridge.callEndTestClass(((ClassSource) source).getClassName());
+				}
+			});
+		}
+		// M9: Only record FAILED status as failures — ABORTED (assumptions) are not test failures
+		// record failures (both class-level and method-level)
+		if (result.getStatus() == TestExecutionResult.Status.FAILED) {
+			testIdentifier.getSource().ifPresent(source -> {
+				String className = null;
+				String methodName = null;
+				if (source instanceof ClassSource classSource) {
+					className = classSource.getClassName();
+				} else if (source instanceof MethodSource methodSource) {
+					className = methodSource.getClassName();
+					methodName = methodSource.getMethodName();
+				}
+				if (className != null) {
+					// Record class-level failure under the top-level enclosing class
+					// so that @Nested class failures are attributed to the outer class
+					// (PriorityClassOrderer looks up scores by top-level class name)
+					failedClassNames.add(TestOrderConfigResolver.toTopLevelClassName(className));
+					// Record method-level failure (preserves nested class for method scoring)
+					if (methodName != null) {
+						String methodKey = className + "#" + methodName;
+						failedMethodNames.add(methodKey);
+					}
+				}
+			});
+		}
+		// record duration (both class-level and method-level)
+		testIdentifier.getSource().ifPresent(source -> {
+			if (source instanceof ClassSource classSource) {
+				Long start = classStartTimes.remove(testIdentifier.getUniqueId());
+				if (start != null) {
+					long duration = elapsedMillis(start);
+					pendingDurations
+							.computeIfAbsent(classSource.getClassName(),
+									ignored -> Collections.synchronizedList(new ArrayList<>()))
+							.add(duration);
+				}
+			} else if (source instanceof MethodSource methodSource) {
+				// In FULL_METHOD and FULL_MEMBER modes: end per-method dependency recording.
+				// Only end tracking for the same node that started it: either the container
+				// node (@ParameterizedTest/@TestTemplate) or a leaf @Test method.
+				// Skip end for child invocations since they didn't start their own tracker.
+				if (fullMethodMode && learnMode && bridge.isAvailable()) {
+					String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
+					if (!testIdentifier.getType().isTest()) {
+						// Container node finishing — end tracking and remove from tracked set
+						containerTrackedMethods.remove(methodKey);
+						bridge.callEndTestMethod();
+					} else if (!containerTrackedMethods.contains(methodKey)) {
+						// Regular @Test finishing — end tracking normally
+						bridge.callEndTestMethod();
+					}
+					// else: child invocation finishing — skip, container will end tracking
+				}
+
+				String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
+				Long start = methodStartTimes.remove(testIdentifier.getUniqueId());
+				if (start != null) {
+					long duration = elapsedMillis(start);
+					pendingMethodDurations
+							.computeIfAbsent(methodKey,
+									ignored -> Collections.synchronizedList(new ArrayList<>()))
+							.add(duration);
+				}
+			}
+		});
+	}
+
+	@Override
+	public void executionSkipped(TestIdentifier testIdentifier, String reason) {
+		// L18: Track skipped tests for execution order visibility (they were discovered but not run)
+		// We don't record durations or failures for skipped tests, but we note them
+		// in the execution order so the run record reflects the full test set.
+		if (dryRunMode) {
+			return;
+		}
+		testIdentifier.getSource().ifPresent(source -> {
+			if (source instanceof ClassSource classSource) {
+				String topLevel = TestOrderConfigResolver.toTopLevelClassName(classSource.getClassName());
+				if (executionOrderSet.add(topLevel)) {
+					executionOrder.add(topLevel);
+				}
+			}
+		});
+	}
+
+	@Override
+	public void testPlanExecutionFinished(TestPlan testPlan) {
+		if (dryRunMode) {
+			// Remove shutdown hook and return — nothing to save
+			finishedNormally = true;
+			if (shutdownHook != null) {
+				try {
+					Runtime.getRuntime().removeShutdownHook(shutdownHook);
+				} catch (IllegalStateException ignored) { }
+			}
+			return;
+		}
+
+		// resolve state path: prefer system property, fall back to pending (set by
+		// PriorityClassOrderer)
+		String effectiveStatePath = statePath;
+		if (effectiveStatePath == null || effectiveStatePath.isEmpty()) {
+			effectiveStatePath = TestOrderState.getPendingStatePath();
+		}
+
+		// L26: Warn when the test plan had classes but none actually executed
+		if (executionOrder.isEmpty() && pendingDurations.isEmpty()) {
+			TestOrderLogger.warn("[telemetry] No tests were executed — state will not be updated. "
+					+ "This may indicate all tests were filtered, disabled, or a DiscoveryIssue prevented execution.");
+		}
+
+		boolean resetPending = false;
+		if (effectiveStatePath != null && !effectiveStatePath.isEmpty()) {
+			Path stateFile = Path.of(effectiveStatePath);
+			try {
+				state = PersistenceSupport.withFileLock(stateFile, () -> {
+					TestOrderState lockedState = TelemetryPersistence.loadStateOrEmpty(stateFile);
+					TelemetryPersistence.applyHistoryMaxRuns(lockedState);
+					TelemetryPersistence.applyPendingTelemetry(lockedState, pendingDurations, failedClassNames,
+							pendingMethodDurations, failedMethodNames);
+					if (!executionOrder.isEmpty()) {
+						TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder,
+								failedClassNames);
+						lockedState.addRunRecord(record);
+						boolean isLearnRun = Boolean.parseBoolean(System.getProperty(TestOrderConfig.LEARN, "false"));
+						if (!isLearnRun) {
+							lockedState.incrementRunsSinceLearn();
+						}
+						if (record.totalFailures() > 0) {
+							TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
+									String.format(java.util.Locale.US, "%.1f", record.apfd() * 100), record.firstFailurePosition() + 1,
+									record.totalTests());
+						} else if (!isLearnRun && record.totalTests() > 1) {
+							TestOrderLogger.info("{} tests ran in priority order — all passed",
+									record.totalTests());
+						}
+					}
+					lockedState.save(stateFile);
+					return lockedState;
+				});
+				resetPending = TestOrderState.hasPendingData();
+			} catch (IOException e) {
+				TestOrderLogger.error("Failed to save state: {}", e.getMessage());
+			}
+		}
+		if (resetPending) {
+			TestOrderState.resetPending();
+		}
+		PriorityMethodOrderer.clearPendingState();
+
+		// Mark normal completion and remove the shutdown hook — the state was already
+		// saved.
+		finishedNormally = true;
+		if (shutdownHook != null) {
+			try {
+				Runtime.getRuntime().removeShutdownHook(shutdownHook);
+			} catch (IllegalStateException ignored) {
+				/* JVM already shutting down */ }
+		}
+	}
+
+	/**
+	 * Emergency save invoked from the JVM shutdown hook when
+	 * {@code testPlanExecutionFinished()} was never called (e.g. OOM, SIGTERM).
+	 * Saves whatever durations and failures have been accumulated so far.
+	 */
+	private void emergencySave() {
+		if (finishedNormally)
+			return;
+		TelemetryPersistence.emergencySave(statePath, pendingDurations, failedClassNames, pendingMethodDurations,
+				failedMethodNames);
+	}
+
+	private Set<String> extractTestClassNames(TestPlan testPlan) {
+		java.util.Set<String> names = new java.util.LinkedHashSet<>();
+		for (TestIdentifier root : testPlan.getRoots()) {
+			for (TestIdentifier child : testPlan.getChildren(root)) {
+				child.getSource().ifPresent(source -> {
+					if (source instanceof ClassSource classSource) {
+						names.add(classSource.getClassName());
+					}
+				});
+			}
+		}
+		return names;
+	}
+
+	/**
+	 * Returns true if this test identifier originates from the JUnit Platform Suite engine.
+	 * Suite-engine tests are duplicates of directly-discovered tests — recording them
+	 * would double-count failures and inflate duration EMA (C6).
+	 */
+	private static boolean isSuiteEngineNode(TestIdentifier testIdentifier) {
+		String uniqueId = testIdentifier.getUniqueId();
+		return uniqueId.contains("[engine:junit-platform-suite]");
+	}
+
+	private static long elapsedMillis(long startNanos) {
+		long elapsedNanos = System.nanoTime() - startNanos;
+		return TimeUnit.NANOSECONDS.toMillis(Math.max(0L, elapsedNanos));
+	}
+
+	private void maybeWarnConcurrentExecution(String className) {
+		if (!warnedConcurrentClasses.add(className)) {
+			return;
+		}
+		try {
+			Class<?> testClass = Class.forName(className);
+			// Use reflection to avoid hard dependency on jupiter-api parallel classes
+			// (which may not be on the classpath for Vintage-only projects)
+			Class<?> executionClass = Class.forName("org.junit.jupiter.api.parallel.Execution");
+			Object execution = testClass
+					.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
+			if (execution != null) {
+				Object mode = executionClass.getMethod("value").invoke(execution);
+				if ("CONCURRENT".equals(mode.toString())) {
+					TestOrderLogger.warn(
+							"Test class {} uses @Execution(CONCURRENT); learn-mode dependency tracking may be inaccurate",
+							className);
+				}
+			}
+		} catch (ClassNotFoundException ignored) {
+			warnedConcurrentClasses.remove(className);
+		} catch (ReflectiveOperationException ignored) {
+			// Jupiter parallel API not available or annotation not present
+		}
+	}
+}

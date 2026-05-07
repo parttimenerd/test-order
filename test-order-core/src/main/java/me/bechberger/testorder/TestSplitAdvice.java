@@ -1,6 +1,7 @@
 package me.bechberger.testorder;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Advice that a test class should be considered for splitting into smaller,
@@ -53,7 +54,7 @@ public record TestSplitAdvice(String className, int methodsWithDeps, double avgP
 
 	/** Returns a one-line summary for quick display. */
 	public String summary() {
-		return String.format("%s  sim=%.2f  methods=%d  groups=%d", className, avgPairwiseSimilarity, methodsWithDeps,
+		return String.format(Locale.US, "%s  sim=%.2f  methods=%d  groups=%d", className, avgPairwiseSimilarity, methodsWithDeps,
 				suggestedGroups.size());
 	}
 }

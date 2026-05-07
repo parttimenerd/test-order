@@ -781,6 +781,55 @@ class StructuralChangeAnalyzerTest {
 	}
 
 	@Nested
+	@DisplayName("Non-structural change overlap (comment-only changes)")
+	class NonStructuralChangeOverlap {
+
+		@Test
+		@DisplayName("Comment-only change still counts as overlap when untracked structural file exists")
+		void commentOnlyChangeWithUntrackedStructuralFile() {
+			// Scenario: UserService has a comment-only change (no structural diff),
+			// Greeter is a new untracked file (HAS structural diff).
+			// UserServiceTest depends on UserService.
+			// Before fix: overlap was 0 because structural analysis narrowed to only
+			// Greeter.
+			Set<String> testDeps = Set.of("com.myapp.service.UserService", "com.myapp.model.User");
+			Set<String> testMemberDeps = Set.of(); // No member deps
+
+			// Structural analysis only sees Greeter (the new file) as changed
+			StructuralChangeAnalyzer.ChangedMembers changedMembers = new StructuralChangeAnalyzer.ChangedMembers(
+					Set.of("com.myapp.Greeter"), // Only structurally-changed class
+					Set.of(), Map.of(), Set.of("com.myapp.Greeter"));
+
+			// Git detects BOTH Greeter (untracked) and UserService (comment edit)
+			Set<String> changedClasses = Set.of("com.myapp.Greeter", "com.myapp.service.UserService");
+
+			Set<String> result = StructuralChangeAnalyzer.computeOverlapClasses(testDeps, testMemberDeps,
+					changedMembers, changedClasses);
+
+			// UserService should be in the overlap set
+			assertTrue(result.contains("com.myapp.service.UserService"),
+					"Comment-only changed class should still count as dependency overlap");
+			assertEquals(1, result.size());
+		}
+
+		@Test
+		@DisplayName("Structural-only changed classes still work when changedClasses is empty")
+		void structuralOnlyWhenChangedClassesEmpty() {
+			Set<String> testDeps = Set.of("com.example.Foo");
+			Set<String> testMemberDeps = Set.of();
+
+			StructuralChangeAnalyzer.ChangedMembers changedMembers = new StructuralChangeAnalyzer.ChangedMembers(
+					Set.of("com.example.Foo"), Set.of(), Map.of(), Set.of("com.example.Foo"));
+
+			Set<String> result = StructuralChangeAnalyzer.computeOverlapClasses(testDeps, testMemberDeps,
+					changedMembers, Set.of());
+
+			assertTrue(result.contains("com.example.Foo"));
+			assertEquals(1, result.size());
+		}
+	}
+
+	@Nested
 	@DisplayName("ChangedMembers Record")
 	class ChangedMembersRecord {
 

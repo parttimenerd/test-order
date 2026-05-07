@@ -4,7 +4,6 @@ import java.io.*;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,8 +26,7 @@ public class GitHubActionsDownloader implements DepDownloader {
 	private final OkHttpClient httpClient;
 
 	public GitHubActionsDownloader(CiConfig.GithubConfig config, String token) {
-		this(config, token, new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS)
-				.readTimeout(60, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS).build());
+		this(config, token, CiHttpClientFactory.buildDefault());
 	}
 
 	/**

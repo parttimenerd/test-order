@@ -1,0 +1,71 @@
+# GitHub Actions — Three-tier CI with test-order (Maven)
+#
+# Tier 1: Run tests affected by changes (+ @AlwaysRun + new tests)
+# Tier 2: Run top-scored remaining tests (by duration budget)
+# Tier 3: Run everything else
+#
+# Failures in any tier abort the pipeline immediately.
+name: Tiered Tests (Maven)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  tiered-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for change detection
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Restore test-order index
+        uses: actions/cache@v4
+        with:
+          path: |
+            .test-order/
+            **/target/test-order-deps/
+          key: test-order-${{ runner.os }}-${{ hashFiles('**/src/**/*.java') }}
+          restore-keys: |
+            test-order-${{ runner.os }}-
+
+      - name: "Tier 1: Change-affected tests"
+        run: |
+          mvn test-order:tiered-select test \
+            -Dtestorder.changeMode=since-last-commit \
+            -Dtestorder.tiered.tier2Fraction=0.5 \
+            -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: "Tier 2: Top-scored remaining"
+        if: success()
+        run: |
+          mvn test-order:run-tier test \
+            -Dtestorder.tiered.currentTier=2 \
+            -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: "Tier 3: Full coverage"
+        if: success()
+        run: |
+          mvn test-order:run-tier test \
+            -Dtestorder.tiered.currentTier=3 \
+            -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: Aggregate results
+        if: always()
+        run: mvn test-order:aggregate
+
+      - name: Upload test-order data
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .test-order/
+            **/target/test-order-deps/
+          key: test-order-${{ runner.os }}-${{ hashFiles('**/src/**/*.java') }}

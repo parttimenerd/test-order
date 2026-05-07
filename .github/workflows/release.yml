@@ -38,7 +38,14 @@ jobs:
           gpg-passphrase: GPG_PASSPHRASE
 
       - name: Run release deploy
-        run: mvn -B -ntp -Prelease deploy
+        run: |
+          # Safety: refuse to publish SNAPSHOT versions
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          if echo "$VERSION" | grep -q SNAPSHOT; then
+            echo "ERROR: Cannot publish SNAPSHOT version ($VERSION). Tag a release first."
+            exit 1
+          fi
+          mvn -B -ntp -Prelease deploy -DskipTests
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

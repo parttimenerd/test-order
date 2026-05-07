@@ -7,6 +7,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
+import me.bechberger.testorder.annotations.AlwaysRun;
+import me.bechberger.testorder.annotations.TestOrder;
+import me.bechberger.testorder.junit.PriorityClassOrderer;
+import me.bechberger.testorder.junit.PriorityMethodOrderer;
+
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 

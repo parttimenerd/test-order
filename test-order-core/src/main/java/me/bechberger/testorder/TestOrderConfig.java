@@ -68,6 +68,14 @@ public final class TestOrderConfig {
 	public static final String AUTO_LEARN_DIFF_THRESHOLD = "testorder.autoLearnDiffThreshold";
 	public static final String DUMP_OUTPUT = "testorder.dump.output";
 
+	// Tiered CI selection keys
+	public static final String TIERED_TIER2_FRACTION = "testorder.tiered.tier2Fraction";
+	public static final String TIERED_WEIGHT_BY_DURATION = "testorder.tiered.weightByDuration";
+	public static final String TIERED_TIER1_FILE = "testorder.tiered.tier1File";
+	public static final String TIERED_TIER2_FILE = "testorder.tiered.tier2File";
+	public static final String TIERED_TIER3_FILE = "testorder.tiered.tier3File";
+	public static final String TIERED_CURRENT_TIER = "testorder.tiered.currentTier";
+
 	// Legacy aliases kept for backward compatibility in Maven user properties
 	public static final String LEGACY_INDEX = "testorder.index";
 	public static final String LEGACY_STATE_FILE = "testorder.stateFile";

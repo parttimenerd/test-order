@@ -45,13 +45,15 @@ public final class OrderWorkflow {
 				ctx.springContextGrouping(), ctx.projectRoot().toAbsolutePath().toString(),
 				ctx.sourceRoot() != null ? ctx.sourceRoot().toAbsolutePath().toString() : null, ctx.changeMode()));
 
-		if (a.changedClasses().isEmpty()) {
-			ctx.log().info("[test-order] No changed classes detected" + " — running tests in default order.");
+		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {
+			ctx.log().info("[test-order] No changed classes detected — running tests in default order.");
 		} else {
-			ctx.log().info("[test-order] Detected " + a.changedClasses().size() + " changed classes");
-		}
-		if (!a.changedTests().isEmpty()) {
-			ctx.log().info("[test-order] Detected " + a.changedTests().size() + " changed test classes");
+			if (!a.changedClasses().isEmpty()) {
+				ctx.log().info("[test-order] Detected " + a.changedClasses().size() + " changed source classes");
+			}
+			if (!a.changedTests().isEmpty()) {
+				ctx.log().info("[test-order] Detected " + a.changedTests().size() + " changed test classes");
+			}
 		}
 
 		return new OrderSetupResult(configMap, a.changedClasses(), a.changedTests(), a.changedMethods(), a.weights());

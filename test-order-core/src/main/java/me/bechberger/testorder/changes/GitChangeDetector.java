@@ -14,9 +14,6 @@ import me.bechberger.testorder.TestOrderLogger;
  */
 public class GitChangeDetector {
 
-	/** Timeout for git commands (seconds). */
-	private static final int GIT_TIMEOUT_SECONDS = 30;
-
 	/**
 	 * Set of git roots for which the HEAD~1-unavailable warning has already been
 	 * emitted. Guards against duplicate warnings when both main and test sources
@@ -110,14 +107,14 @@ public class GitChangeDetector {
 		List<String> command = List.of("git", "show", commitRef + ":" + filePath);
 		ProcessBuilder pb = new ProcessBuilder(command);
 		pb.directory(projectRoot.toFile());
-		pb.redirectErrorStream(false);
+		pb.redirectErrorStream(true); // merge stderr into stdout to prevent pipe buffer deadlock
 		Process process = pb.start();
 		String content;
 		try (var is = process.getInputStream()) {
 			content = new String(is.readAllBytes());
 		}
 		try {
-			if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
 				process.destroyForcibly();
 				throw new IOException("git show timed out for " + filePath);
 			}
@@ -162,14 +159,14 @@ public class GitChangeDetector {
 		}
 
 		try {
-			if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
 				process.destroyForcibly();
 				TestOrderLogger.warn("git command timed out: {}", command);
 				return Collections.emptyList();
 			}
 			if (process.exitValue() != 0) {
 				throw new IOException("git command failed: " + String.join(" ", command)
-						+ (lines.isEmpty() ? "" : " — " + String.join(" | ", lines)));
+						+ summarizeGitError(lines));
 			}
 		} catch (InterruptedException e) {
 			process.destroyForcibly();
@@ -177,5 +174,22 @@ public class GitChangeDetector {
 			throw new IOException("git command interrupted: " + String.join(" ", command), e);
 		}
 		return lines;
+	}
+
+	private static String summarizeGitError(List<String> lines) {
+		if (lines.isEmpty()) {
+			return "";
+		}
+		String primary = lines.stream().filter(line -> !line.toLowerCase(Locale.ROOT).startsWith("usage:"))
+				.findFirst().orElse(lines.get(0));
+		if (primary.length() > 300) {
+			primary = primary.substring(0, 300) + "...";
+		}
+		int additionalLines = lines.size() - 1;
+		if (additionalLines <= 0) {
+			return " — " + primary;
+		}
+		return " — " + primary + " (" + additionalLines + " more line"
+				+ (additionalLines == 1 ? "" : "s") + ")";
 	}
 }

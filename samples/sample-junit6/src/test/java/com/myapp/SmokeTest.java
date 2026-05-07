@@ -1,6 +1,6 @@
 package com.myapp;
 
-import me.bechberger.testorder.AlwaysRun;
+import me.bechberger.testorder.annotations.AlwaysRun;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

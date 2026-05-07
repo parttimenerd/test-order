@@ -39,14 +39,19 @@ public final class UsageStoreReflectionBridge {
 	public void init() {
 		try {
 			Class<?> usageStoreClass = Class.forName("me.bechberger.testorder.agent.runtime.UsageStore", true, null);
-			usageStoreInstance = usageStoreClass.getMethod("getInstance").invoke(null);
-			startTestClassMethod = usageStoreClass.getMethod("startTestClass", String.class);
-			endTestClassMethod = usageStoreClass.getMethod("endTestClass", String.class);
+			Object instance = usageStoreClass.getMethod("getInstance").invoke(null);
+			Method startClass = usageStoreClass.getMethod("startTestClass", String.class);
+			Method endClass = usageStoreClass.getMethod("endTestClass", String.class);
+			// Only assign fields once all required methods resolved successfully
+			usageStoreInstance = instance;
+			startTestClassMethod = startClass;
+			endTestClassMethod = endClass;
 			if (fullMethodMode) {
 				startTestMethodMethod = usageStoreClass.getMethod("startTestMethod", String.class, String.class);
 				endTestMethodMethod = usageStoreClass.getMethod("endTestMethod");
 			}
 		} catch (Exception e) {
+			usageStoreInstance = null; // ensure bridge reports as unavailable on partial failure
 			TestOrderLogger.error("Failed to initialize UsageStore reflection: {}", e.getMessage());
 		}
 	}

@@ -42,6 +42,8 @@ The test-order plugin brings **intelligent test reordering** to multi-module pro
 project-root/
 ├── .test-order/                    ← Shared (root level)
 │   ├── test-dependencies.lz4       ← Index (ALL modules' dependencies)
+│   ├── state.lz4                   ← Shared state (run history, weights, failures)
+│   ├── deps/                       ← Shared deps directory
 │   ├── hashes/
 │   │   ├── com.app-module-a-hashes.lz4
 │   │   ├── com.app-module-a-test-hashes.lz4
@@ -50,31 +52,19 @@ project-root/
 │   └── (other files...)
 │
 ├── module-a/
-│   ├── .test-order/                ← Per-module (NOT shared)
-│   │   └── state.lz4               ← Module A state (run history, weights, failures)
-│   ├── build/
-│   │   └── test-order-deps/        ← Module A deps (aggregated to index)
 │   └── pom.xml (or build.gradle)
 │
 ├── module-b/
-│   ├── .test-order/
-│   │   └── state.lz4               ← Module B state (separate)
-│   ├── build/
-│   │   └── test-order-deps/
 │   └── pom.xml (or build.gradle)
 │
 ├── module-c/                       ← Sub-module
-│   ├── .test-order/
-│   │   └── state.lz4
-│   ├── build/
-│   │   └── test-order-deps/
 │   └── pom.xml (or build.gradle)
 │
 └── pom.xml (root) or settings.gradle
 
 Legend:
   🔴 RED   = Shared (one copy for all modules)
-  🟡 YELLOW = Per-module (each module has its own)
+  🟡 YELLOW = Per-module (each module has its own, stored in hashes/)
 ```
 
 ### Why This Design?
@@ -84,10 +74,9 @@ Legend:
 - Detecting inter-module dependencies
 - Global test prioritization
 
-**Per-Module State**: Each module maintains its own `state.lz4` file because:
-- **Run history** is module-specific (different test suites)
-- **Scoring weights** may need per-module tuning
-- **Parallel builds** don't collide (each process locks only its own state)
+**Shared State**: The `state.lz4` file is shared at the reactor root level, providing a unified view of run history, scoring weights, and failure data across all modules.
+
+**Per-Module Hashes**: Source/test file hashes are stored per-module (using `<groupId>-<artifactId>` prefixes) to enable module-specific change detection without interference between modules.
 
 ---
 
@@ -160,7 +149,7 @@ Legend:
     <dependencies>
         <!-- ... your dependencies ... -->
         <dependency>
-            <groupId>junit</groupId>
+            <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>

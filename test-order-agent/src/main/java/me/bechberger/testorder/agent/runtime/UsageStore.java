@@ -132,10 +132,30 @@ public class UsageStore {
 		this.methodLevelRecordingEnabled = enabled;
 	}
 
+	/**
+	 * Callback invoked once when the first test class starts, to release
+	 * transformation-phase caches and reclaim memory.
+	 */
+	private volatile Runnable onFirstTestClassCallback;
+	private volatile boolean firstTestClassSeen;
+
+	/** Register a callback to be invoked when the first test class starts. */
+	public void setOnFirstTestClassCallback(Runnable callback) {
+		this.onFirstTestClassCallback = callback;
+	}
+
 	// ── Test class lifecycle (called by TelemetryListener via reflection) ──
 
 	/** Called when a test class starts execution. */
 	public void startTestClass(String testClass) {
+		if (!firstTestClassSeen) {
+			firstTestClassSeen = true;
+			Runnable cb = onFirstTestClassCallback;
+			if (cb != null) {
+				cb.run();
+				onFirstTestClassCallback = null;
+			}
+		}
 		BitsetTracker tracker = perTestTrackers.computeIfAbsent(testClass, k -> new BitsetTracker());
 		activeTrackers = new ActiveTrackers(testClass, tracker, null);
 	}
@@ -282,6 +302,8 @@ public class UsageStore {
 			if (indexFile != null && !indexFile.isEmpty()) {
 				if (tryDirectMerge(allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps)) {
 					AgentLogger.log("[flush] Also merged directly into " + indexFile);
+					AgentLogger.info("Written dependency index with " + allDeps.size()
+							+ " entries to " + indexFile);
 				}
 			}
 			return;
@@ -289,7 +311,10 @@ public class UsageStore {
 
 		// Fallback: only use direct merge when no outputDir is configured (edge case)
 		if (indexFile != null && !indexFile.isEmpty()) {
-			tryDirectMerge(allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps);
+			if (tryDirectMerge(allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps)) {
+				AgentLogger.info("Written dependency index with " + allDeps.size()
+						+ " entries to " + indexFile);
+			}
 		}
 	}
 

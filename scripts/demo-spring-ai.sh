@@ -80,6 +80,18 @@ pause 3
 DOC="$MODULE/src/main/java/org/springframework/ai/document/Document.java"
 SPLITTER="$MODULE/src/main/java/org/springframework/ai/transformer/splitter/TextSplitter.java"
 
+cleanup() {
+  if [ -f "$DOC.bak" ]; then
+    mv "$DOC.bak" "$DOC"
+  fi
+  if [ -f "$SPLITTER.bak" ]; then
+    mv "$SPLITTER.bak" "$SPLITTER"
+  fi
+  rm -f "$DOC.sed" "$SPLITTER.sed"
+}
+
+trap cleanup EXIT
+
 # ── Step 0: Clean slate ─────────────────────────────────────────────────────
 banner "Step 0 · Clean slate"
 typecmd "rm -rf .test-order"

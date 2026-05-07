@@ -112,7 +112,7 @@ public final class ChangeAnalysis {
 				ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log());
 
 		Set<String> changedTests = ChangeDetectionOps.detectChangedTestClasses(ctx.changeMode(), ctx.projectRoot(),
-				ctx.testSourceRoot(), ctx.testHashFile(), true, ctx.log());
+				ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log());
 
 		Set<String> changedMethods = Set.of();
 		if (opts.includeMethodChanges() && ctx.methodOrderingEnabled() && ctx.methodHashFile() != null) {
@@ -138,7 +138,7 @@ public final class ChangeAnalysis {
 			}
 		}
 
-		Map<String, Double> changeComplexityMap = (opts.includeStructuralAnalysis() && !changed.isEmpty())
+		Map<String, Double> changeComplexityMap = !changed.isEmpty()
 				? ShowOrderOperation.computeChangeComplexity(changed, ctx.allSourceRoots(), changedMembers,
 						structuralDiffs)
 				: Map.of();

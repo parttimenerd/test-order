@@ -1,0 +1,58 @@
+# GitHub Actions — Three-tier CI with test-order (Gradle)
+#
+# Tier 1: Run tests affected by changes (+ @AlwaysRun + new tests)
+# Tier 2: Run top-scored remaining tests (by duration budget)
+# Tier 3: Run everything else
+name: Tiered Tests (Gradle)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  tiered-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore test-order index
+        uses: actions/cache@v4
+        with:
+          path: .test-order/
+          key: test-order-${{ runner.os }}-${{ hashFiles('**/*.java') }}
+          restore-keys: test-order-${{ runner.os }}-
+
+      - name: "Tier 1: Change-affected tests"
+        run: |
+          ./gradlew testOrderTieredSelect \
+            -Dtestorder.changeMode=since-last-commit \
+            -Dtestorder.tiered.tier2Fraction=0.5
+
+      - name: "Tier 2: Top-scored remaining"
+        if: success()
+        run: ./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=2
+
+      - name: "Tier 3: Full coverage"
+        if: success()
+        run: ./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=3
+
+      - name: Aggregate results
+        if: always()
+        run: ./gradlew testOrderAggregate
+
+      - name: Save test-order data
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .test-order/
+          key: test-order-${{ runner.os }}-${{ hashFiles('**/*.java') }}

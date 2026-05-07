@@ -31,8 +31,10 @@ public class ChangeDetectionEdgeCasesIT extends BaseFixtureIT {
 		assertTestsPassed(output);
 
 		// Hash files should be created (not git-based files)
-		Path hashes = fixtureDir.resolve(".test-order-hashes.lz4");
-		assertTrue(Files.exists(hashes), "Hash-based change detection failed: .test-order-hashes.lz4 not created");
+		Path legacyHashes = fixtureDir.resolve(".test-order-hashes.lz4");
+		Path modernHashes = fixtureDir.resolve(".test-order").resolve("hashes.lz4");
+		assertTrue(Files.exists(legacyHashes) || Files.exists(modernHashes),
+				"Hash-based change detection failed: no hash snapshot file was created");
 	}
 
 	@Test

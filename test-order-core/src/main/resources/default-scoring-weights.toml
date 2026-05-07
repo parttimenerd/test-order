@@ -54,7 +54,7 @@ range = [0, 10]
 value = 1
 range = [0, 10]
 
-# Max score from dependency overlap (ratio-based: overlap/totalDeps × weight)
+# Max score from dependency overlap (sqrt-normalized: overlap/√totalDeps × weight)
 [depOverlap]
 value = 5
 range = [0, 10]

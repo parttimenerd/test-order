@@ -42,15 +42,15 @@ class ReleaseManager:
         self.root_pom = project_root / "pom.xml"
         self.readme = project_root / "README.md"
         self.changelog = project_root / "CHANGELOG.md"
-        self.spring_petclinic_pom = project_root / "spring-petclinic" / "pom.xml"
 
         self.module_poms = self._discover_module_poms()
+        self.sample_poms = self._discover_sample_poms()
         self._release_files: List[Path] = [
             self.root_pom,
             self.readme,
             self.changelog,
-            self.spring_petclinic_pom,
             *self.module_poms,
+            *self.sample_poms,
         ]
 
     def _discover_module_poms(self) -> List[Path]:
@@ -61,6 +61,17 @@ class ReleaseManager:
             pom = self.project_root / module / "pom.xml"
             if pom.exists():
                 poms.append(pom)
+        return poms
+
+    def _discover_sample_poms(self) -> List[Path]:
+        """Find sample and fixture POMs that reference test-order artifacts."""
+        poms: List[Path] = []
+        for search_dir in (self.project_root / "samples", self.project_root / "test-fixtures"):
+            if search_dir.is_dir():
+                for pom in search_dir.rglob("pom.xml"):
+                    content = pom.read_text(encoding="utf-8")
+                    if "me.bechberger" in content:
+                        poms.append(pom)
         return poms
 
     def get_current_version(self) -> str:
@@ -100,9 +111,9 @@ class ReleaseManager:
 
     def update_module_parent_versions(self, old: str, new: str) -> None:
         pattern = (
-            r"(<parent>\\s*"
-            r"<groupId>me\\.bechberger</groupId>\\s*"
-            r"<artifactId>test-order-parent</artifactId>\\s*"
+            r"(<parent>\s*"
+            r"<groupId>me\.bechberger</groupId>\s*"
+            r"<artifactId>test-order-parent</artifactId>\s*"
             r"<version>)" + re.escape(old) + r"(</version>)"
         )
         for pom in self.module_poms:
@@ -120,15 +131,31 @@ class ReleaseManager:
             content = content.replace(f"<version>{base_old}</version>", f"<version>{new}</version>")
         self.readme.write_text(content, encoding="utf-8")
 
-    def update_spring_petclinic_version(self, old: str, new: str) -> None:
-        if not self.spring_petclinic_pom.exists():
-            return
-        content = self.spring_petclinic_pom.read_text(encoding="utf-8")
-        content = content.replace("<test-order.version>" + old + "</test-order.version>",
-                                  "<test-order.version>" + new + "</test-order.version>")
-        # Fallback for repositories that still have hardcoded versions.
-        content = content.replace("<version>" + old + "</version>", "<version>" + new + "</version>")
-        self.spring_petclinic_pom.write_text(content, encoding="utf-8")
+    def update_sample_versions(self, old: str, new: str) -> None:
+        """Update test-order version references in sample/fixture POMs (scoped to me.bechberger)."""
+        base_old = self.to_base_version(old)
+        versions_to_replace = [old]
+        if base_old != old:
+            versions_to_replace.append(base_old)
+        for pom in self.sample_poms:
+            content = pom.read_text(encoding="utf-8")
+            for ver in versions_to_replace:
+                # Replace version in dependency/plugin blocks with me.bechberger groupId
+                pattern = (
+                    r"(<groupId>me\.bechberger</groupId>\s*"
+                    r"<artifactId>[^<]+</artifactId>\s*"
+                    r"<version>)" + re.escape(ver) + r"(</version>)"
+                )
+                content = re.sub(pattern, r"\g<1>" + new + r"\g<2>", content, flags=re.DOTALL)
+                # Also replace parent version referencing test-order-parent
+                parent_pattern = (
+                    r"(<parent>\s*"
+                    r"<groupId>me\.bechberger</groupId>\s*"
+                    r"<artifactId>test-order-parent</artifactId>\s*"
+                    r"<version>)" + re.escape(ver) + r"(</version>)"
+                )
+                content = re.sub(parent_pattern, r"\g<1>" + new + r"\g<2>", content, flags=re.DOTALL)
+            pom.write_text(content, encoding="utf-8")
 
     def update_changelog_for_release(self, new_version: str) -> None:
         if not self.changelog.exists():
@@ -249,28 +276,79 @@ class ReleaseManager:
         self.run_command(["mvn", "test"], "Running unit tests")
         if include_its:
             self.run_command(
-                ["mvn", "-Prun-its", "verify", "-pl", "test-order-maven-plugin"],
+                ["mvn", "verify", "-pl", "test-order-maven-plugin",
+                 "-Dtestorder.it=true"],
                 "Running integration tests",
             )
-        self.run_command(["mvn", "package", "-DskipTests"], "Building artifacts")
+        self.run_command(["mvn", "-P", "release", "package", "-DskipTests"], "Building release artifacts")
 
-    def deploy(self, use_release_profile: bool) -> None:
-        cmd = ["mvn", "clean", "deploy"]
-        if use_release_profile:
-            cmd.extend(["-Prelease"])
-        self.run_command(cmd, "Deploying release")
+    def deploy(self) -> None:
+        self.run_command(["mvn", "clean", "deploy", "-P", "release"], "Deploying release")
+
+    def deploy_snapshot(self) -> None:
+        self.run_command(["mvn", "clean", "deploy", "-DskipTests"], "Deploying SNAPSHOT")
+
+    def update_gradle_plugin_version(self, old: str, new: str) -> None:
+        """Update version in the Gradle plugin build file and init script."""
+        gradle_build = self.project_root / "test-order-gradle-plugin" / "build.gradle.kts"
+        if gradle_build.exists():
+            content = gradle_build.read_text(encoding="utf-8")
+            updated = re.sub(
+                r'(version\s*=\s*")' + re.escape(old) + r'(")',
+                r'\g<1>' + new + r'\g<2>',
+                content,
+            )
+            gradle_build.write_text(updated, encoding="utf-8")
+
+        init_gradle = self.project_root / "test-order-gradle-plugin" / "test-order-init.gradle"
+        if init_gradle.exists():
+            content = init_gradle.read_text(encoding="utf-8")
+            updated = content.replace(
+                f"test-order-gradle-plugin:{old}",
+                f"test-order-gradle-plugin:{new}",
+            )
+            init_gradle.write_text(updated, encoding="utf-8")
+
+    def _gradle_plugin_files(self) -> List[str]:
+        """Return relative paths of Gradle plugin files managed by release."""
+        files: List[str] = []
+        for name in ("build.gradle.kts", "test-order-init.gradle"):
+            path = self.project_root / "test-order-gradle-plugin" / name
+            if path.exists():
+                files.append(str(path.relative_to(self.project_root)))
+        return files
 
     def git_commit_tag(self, version: str) -> None:
         files = [
             "pom.xml",
             "README.md",
             "CHANGELOG.md",
-            "spring-petclinic/pom.xml",
             *[str(p.relative_to(self.project_root)) for p in self.module_poms],
+            *[str(p.relative_to(self.project_root)) for p in self.sample_poms],
+            *self._gradle_plugin_files(),
         ]
         self.run_command(["git", "add", *files], "Staging release files")
         self.run_command(["git", "commit", "-m", f"Release {version}"], "Creating release commit")
         self.run_command(["git", "tag", "-a", f"v{version}", "-m", f"Release {version}"], "Tagging release")
+
+    def bump_to_next_snapshot(self, release_version: str) -> None:
+        """Bump version to next SNAPSHOT after release."""
+        major, minor, patch = self.parse_version(release_version)
+        next_snapshot = f"{major}.{minor}.{patch + 1}-SNAPSHOT"
+        print(f"\n-> Bumping to next development version: {next_snapshot}")
+        self.update_root_pom_version(release_version, next_snapshot)
+        self.update_module_parent_versions(release_version, next_snapshot)
+        self.update_sample_versions(release_version, next_snapshot)
+        self.update_gradle_plugin_version(release_version, next_snapshot)
+        files = [
+            "pom.xml",
+            *[str(p.relative_to(self.project_root)) for p in self.module_poms],
+            *[str(p.relative_to(self.project_root)) for p in self.sample_poms],
+            *self._gradle_plugin_files(),
+        ]
+        self.run_command(["git", "add", *files], "Staging SNAPSHOT bump")
+        self.run_command(["git", "commit", "-m", f"Prepare next development iteration {next_snapshot}"],
+                        "Committing SNAPSHOT bump")
 
     def git_push(self) -> None:
         self.run_command(["git", "push"], "Pushing commits")
@@ -281,19 +359,21 @@ class ReleaseManager:
         print("\n-> Cleaning up local git release state")
         subprocess.run(["git", "tag", "-d", tag], cwd=self.project_root,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        head = subprocess.run(
-            ["git", "log", "-1", "--pretty=%s"],
-            cwd=self.project_root,
-            capture_output=True,
-            text=True,
-        )
-        if head.returncode == 0 and head.stdout.strip() == f"Release {version}":
-            subprocess.run(
-                ["git", "reset", "--mixed", "HEAD~1"],
+        # Undo up to 2 commits: snapshot bump + release commit
+        for expected_msg in (f"Prepare next development iteration", f"Release {version}"):
+            head = subprocess.run(
+                ["git", "log", "-1", "--pretty=%s"],
                 cwd=self.project_root,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
             )
+            if head.returncode == 0 and head.stdout.strip().startswith(expected_msg):
+                subprocess.run(
+                    ["git", "reset", "--mixed", "HEAD~1"],
+                    cwd=self.project_root,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
 
     def get_version_changelog_entry(self, version: str) -> str:
         if not self.changelog.exists():
@@ -365,9 +445,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-push", action="store_true", help="Skip git push")
     parser.add_argument("--no-github-release", action="store_true", help="Skip GitHub release creation")
     parser.add_argument("--no-deploy", action="store_true", help="Skip deploy")
-    parser.add_argument("--no-release-profile", action="store_true", help="Deploy without -Prelease")
     parser.add_argument("--github-release-only", action="store_true",
                         help="Create GitHub release for current version only")
+    parser.add_argument("--snapshot", action="store_true",
+                        help="Deploy current SNAPSHOT version without bumping or releasing")
     parser.add_argument("--dry-run", action="store_true", help="Show planned changes only")
     return parser.parse_args()
 
@@ -386,6 +467,15 @@ def main() -> None:
         print(f"GitHub release created for version {current_base}")
         return
 
+    if args.snapshot:
+        if not current.endswith("-SNAPSHOT"):
+            print(f"Error: current version '{current}' is not a SNAPSHOT version.")
+            sys.exit(1)
+        print(f"Deploying SNAPSHOT: {current}")
+        manager.deploy_snapshot()
+        print(f"\nSNAPSHOT {current} deployed successfully.")
+        return
+
     bump = "minor"
     if args.major:
         bump = "major"
@@ -402,7 +492,6 @@ def main() -> None:
         print("- pom.xml")
         for pom in manager.module_poms:
             print(f"- {pom.relative_to(root)}")
-        print("- spring-petclinic/pom.xml")
         print("- README.md")
         print("- CHANGELOG.md")
         print(manager.preview_changelog_release(new))
@@ -414,7 +503,8 @@ def main() -> None:
         manager.update_changelog_for_release(new)
         manager.update_root_pom_version(current, new)
         manager.update_module_parent_versions(current, new)
-        manager.update_spring_petclinic_version(current, new)
+        manager.update_sample_versions(current, new)
+        manager.update_gradle_plugin_version(current, new)
         manager.update_readme_versions(current, new)
 
         manager.run_checks(include_its=not args.no_its)
@@ -422,10 +512,13 @@ def main() -> None:
         manager.git_commit_tag(new)
         created_git_release_state = True
 
+        if not args.no_deploy:
+            manager.deploy()
+
+        manager.bump_to_next_snapshot(new)
+
         if not args.no_push:
             manager.git_push()
-        if not args.no_deploy:
-            manager.deploy(use_release_profile=not args.no_release_profile)
         if not args.no_github_release:
             manager.create_github_release(new)
 

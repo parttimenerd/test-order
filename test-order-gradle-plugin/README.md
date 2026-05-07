@@ -5,6 +5,8 @@ Runs the tests most likely affected by your latest code changes **first**, so fa
 
 **Requires Java 17+** and **Gradle 7.6+**. Compatible with JUnit 5 (Jupiter 5.x) and JUnit 6 (Jupiter 6.x).
 
+On Java 24+ (JEP 472), test JVMs need native-access enablement for some runtime paths used by transitive dependencies. The plugin adds `--enable-native-access=ALL-UNNAMED` to Gradle `Test` tasks automatically.
+
 ## Quick start
 
 ### 1. Apply the plugin
@@ -83,7 +85,7 @@ projectsLoaded {
 This attaches a Java agent that records which application classes each test exercises,
 producing a `test-dependencies.lz4` index file. Commit it to version control.
 
-A `.test-order-state` file is also created to track test durations and failure history.
+A `.test-order/state.lz4` file is also created to track test durations and failure history.
 
 ### 3. Order — run tests with priority ordering
 
@@ -112,7 +114,7 @@ All settings are optional. The plugin works out of the box with sensible default
 
 ```groovy
 testOrder {
-    // Mode: "auto" (default) | "learn" | "order" | "skip"
+    // Mode: "auto" (default) | "learn" | "order" | "optimize" | "skip"
     mode = "auto"
 
     // Agent instrumentation depth:
@@ -133,12 +135,9 @@ testOrder {
     changedClasses = ""
 
     // Paths (all relative to project dir by default)
-    indexFile = file("test-dependencies.lz4")
-    stateFile = file(".test-order-state")
+    indexFile = file(".test-order/test-dependencies.lz4")
+    stateFile = file(".test-order/state.lz4")
     depsDir   = layout.buildDirectory.dir("test-order-deps")
-
-    // Failure history window (days)
-    failureWindowDays = 14
 
     // Scoring weights — see "Scoring system" below
     scoreNewTest          = 15
@@ -154,7 +153,8 @@ testOrder {
 
 ### Property overrides
 
-Every setting can be overridden on the command line via `-D` (system property) or `-P` (Gradle project property):
+Most settings can be overridden on the command line via `-D` (system property) or `-P` (Gradle project property).
+Score weights (`scoreNewTest`, `scoreChangedTest`, etc.) must be set in the `testOrder { }` DSL block.
 
 ```bash
 # System property
@@ -168,7 +168,13 @@ Every setting can be overridden on the command line via `-D` (system property) o
 
 | Task | Description |
 |---|---|
+| `testOrderDashboard` | Generate an interactive HTML dashboard from current index/state |
+| `testOrderServe` | Serve dashboard over local HTTP (supports timed shutdown) |
 | `testOrderShowOrder` | Display the predicted test execution order without running tests |
+| `testOrderTieredSelect` | Run tier-1 tests and write tier-2/tier-3 files for three-phase CI |
+| `testOrderRunTier` | Run tier 2 or tier 3 from a previous `testOrderTieredSelect` |
+| `testOrderSelect` | Run the prioritized subset and write remaining tests to disk |
+| `testOrderRunRemaining` | Run deferred tests written by `testOrderSelect` |
 | `testOrderDump` | Dump the binary dependency index as human-readable text |
 | `testOrderAggregate` | Re-aggregate `.deps` files into `test-dependencies.lz4` |
 | `testOrderClean` | Remove all test-order generated files (index, state, hashes, deps) |
@@ -179,16 +185,57 @@ All tasks are in the `test-order` group:
 ./gradlew tasks --group test-order
 ```
 
+Serve options:
+
+```bash
+./gradlew testOrderServe -Dtestorder.dashboard.port=8080
+./gradlew testOrderServe -Dtestorder.dashboard.regenerate=true
+./gradlew testOrderServe -Dtestorder.dashboard.serveSeconds=30
+```
+
+### Tiered CI workflow (three-phase)
+
+Split tests into three tiers for progressive fail-fast CI:
+
+```bash
+# Step 1: Run change-affected tests (tier 1)
+./gradlew testOrderTieredSelect
+
+# Step 2: Run top-scored remaining (tier 2) — only if step 1 passed
+./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=2
+
+# Step 3: Run the rest (tier 3) — only if step 2 passed
+./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=3
+```
+
+Tiered properties:
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.tiered.tier2Fraction` | `0.5` | Fraction of remaining duration budget for tier 2 |
+| `testorder.tiered.weightByDuration` | `true` | Select tier 2 by duration budget (vs. count) |
+| `testorder.tiered.currentTier` | — | Required for `testOrderRunTier`: `2` or `3` |
+
+DSL equivalents:
+
+```groovy
+testOrder {
+    tieredTier2Fraction = 0.5
+    tieredWeightByDuration = true
+}
+```
+
+Tier files are written to `build/test-order-tier1.txt`, `build/test-order-tier2.txt`, `build/test-order-tier3.txt`.
+
 ## How it works
 
 ### Learn mode
 
-1. The plugin sets `forkEvery = 1` so each test class runs in a fresh JVM.
-2. A Java agent (`-javaagent:test-order-agent.jar`) instruments application classes
+1. A Java agent (`-javaagent:test-order-agent.jar`) instruments application classes
    at load time, recording which ones each test class exercises.
-3. The agent writes a binary dependency index (`test-dependencies.lz4`) directly.
-4. A `TelemetryListener` (JUnit `TestExecutionListener`, auto-discovered via ServiceLoader)
-   records test durations and failures into `.test-order-state`.
+2. The agent writes a binary dependency index (`.test-order/test-dependencies.lz4`) directly.
+3. A `TelemetryListener` (JUnit `TestExecutionListener`, auto-discovered via ServiceLoader)
+   records test durations and failures into `.test-order/state.lz4`.
 
 ### Order mode (auto)
 
@@ -212,9 +259,9 @@ Each test class receives a score. Tests are sorted by descending score (highest 
 | New test bonus | 15 | Bonus for test classes not in the dependency index |
 | Changed test bonus | 9 | Bonus for test classes whose source was modified |
 | Failure bonus | 1–5 | Capped bonus based on recent failure history (exponential decay) |
-| Speed bonus | 1 | Bonus for fast tests (duration < 50% of median) |
-| Speed penalty | 1 | Penalty for slow tests (duration > 150% of median) |
-| Dependency overlap | 0–5 | Proportional to how many dependencies overlap with changed classes |
+| Speed bonus | 1 | Continuous log₂ bonus for fast tests (scaled by `duration/median` ratio) |
+| Speed penalty | 1 | Continuous log₂ penalty for slow tests (scaled by `duration/median` ratio) |
+| Dependency overlap | 0–5 | `overlap / √totalDeps × weight` — proportional to changed-code coverage |
 | Change complexity | 0–2 | Weighted by information density of changed files (Deflate size) |
 
 Ties are broken by Jaccard diversity (maximising coverage breadth),
@@ -224,9 +271,9 @@ then by shorter duration, then alphabetically.
 
 | File | Commit? | Description |
 |---|---|---|
-| `test-dependencies.lz4` | **Yes** | Binary dependency index (compact, ~KB) |
-| `.test-order-state` | Optional | Test durations, failure history, run records |
-| `.test-order-hashes.lz4` | No | Source hash snapshot for since-last-run change detection |
+| `.test-order/test-dependencies.lz4` | **Yes** | Binary dependency index (compact, ~KB) |
+| `.test-order/state.lz4` | Optional | Test durations, failure history, run records |
+| `.test-order/hashes.lz4` | No | Source hash snapshot for since-last-run change detection |
 | `build/test-order-deps/` | No | Intermediate `.deps` files (cleaned by `testOrderClean`) |
 
 ## Workflow recommendations

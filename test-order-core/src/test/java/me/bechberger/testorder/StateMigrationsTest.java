@@ -28,7 +28,7 @@ class StateMigrationsTest {
 	@Test
 	void migrateDowngradeThrows() {
 		Map<String, Object> root = Map.of("schemaVersion", 1);
-		assertThrows(IllegalArgumentException.class,
+		assertThrows(StateDowngradeException.class,
 				() -> StateMigrations.migrate(root, 1, 0));
 	}
 

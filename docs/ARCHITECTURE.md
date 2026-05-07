@@ -35,7 +35,7 @@ based on code changes and historical run data.
 
 - Assigns each test a priority score.
 - Combines signals like overlap with changed code, failure recency, and runtime characteristics.
-- `combined` mode typically runs a top-ranked subset plus optional diversity sampling.
+- `auto` mode typically runs a top-ranked subset plus optional diversity sampling.
 
 ### Runtime Integrations
 

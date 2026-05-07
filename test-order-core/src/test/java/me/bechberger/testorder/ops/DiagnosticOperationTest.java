@@ -38,7 +38,7 @@ class DiagnosticOperationTest {
         assertEquals(6, report.results().size());
         assertTrue(report.results().stream().anyMatch(r -> r.code() == ErrorCode.INDEX_NOT_FOUND));
         assertTrue(report.results().stream().anyMatch(r -> r.code() == ErrorCode.DEPS_NOT_FOUND));
-        assertTrue(report.results().stream().anyMatch(r -> r.code() == ErrorCode.SOURCE_ROOT_NOT_FOUND));
+        assertTrue(report.results().stream().anyMatch(r -> r.code() == ErrorCode.TEST_SOURCE_ROOT_ABSENT));
     }
 
     @Test

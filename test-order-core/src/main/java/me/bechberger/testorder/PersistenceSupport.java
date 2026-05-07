@@ -33,8 +33,8 @@ public final class PersistenceSupport {
 	 */
 	private static final ThreadLocal<Set<Path>> HELD_LOCKS = ThreadLocal.withInitial(HashSet::new);
 
-	/** Stale lock files older than this are automatically deleted. */
-	private static final Duration STALE_LOCK_THRESHOLD = Duration.ofMinutes(30);
+	/** Stale lock files older than this are automatically deleted. Configurable via {@code testorder.lock.stale.minutes}. */
+	private static final Duration STALE_LOCK_THRESHOLD = staleLockThreshold();
 
 	/** Leftover temp files older than this are cleaned up. */
 	private static final Duration STALE_TEMP_THRESHOLD = Duration.ofMinutes(10);
@@ -42,6 +42,20 @@ public final class PersistenceSupport {
 	private static final Set<PosixFilePermission> OWNER_ONLY_PERMS = PosixFilePermissions.fromString("rw-------");
 
 	private PersistenceSupport() {
+	}
+
+	private static Duration staleLockThreshold() {
+		String prop = System.getProperty("testorder.lock.stale.minutes");
+		if (prop != null) {
+			try {
+				int minutes = Integer.parseInt(prop);
+				if (minutes > 0) {
+					return Duration.ofMinutes(minutes);
+				}
+			} catch (NumberFormatException ignored) {
+			}
+		}
+		return Duration.ofMinutes(120);
 	}
 
 	@FunctionalInterface

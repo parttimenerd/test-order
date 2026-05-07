@@ -9,10 +9,6 @@ import java.util.Map;
 
 import me.bechberger.util.json.JSONParser;
 import me.bechberger.util.json.PrettyPrinter;
-import net.jpountz.lz4.LZ4BlockInputStream;
-import net.jpountz.lz4.LZ4BlockOutputStream;
-import net.jpountz.lz4.LZ4Compressor;
-import net.jpountz.lz4.LZ4Factory;
 
 final class StateSerializer {
 
@@ -26,9 +22,9 @@ final class StateSerializer {
 				Files.createDirectories(parent);
 			}
 			byte[] jsonBytes = PrettyPrinter.compactPrint(state.toPersistedRoot()).getBytes(StandardCharsets.UTF_8);
-			LZ4Compressor compressor = LZ4Factory.fastestInstance().highCompressor(17);
 			Path tempFile = PersistenceSupport.temporarySibling(file);
-			try (var out = new LZ4BlockOutputStream(Files.newOutputStream(tempFile), 1 << 16, compressor)) {
+			try (var out = LZ4Support.blockOutputStream(Files.newOutputStream(tempFile), 1 << 16,
+					LZ4Support.highCompressor(17))) {
 				out.write(jsonBytes);
 			}
 			PersistenceSupport.moveIntoPlace(tempFile, file);
@@ -87,7 +83,7 @@ final class StateSerializer {
 		if (raw[0] == '{' || raw[0] == ' ' || raw[0] == '\n' || raw[0] == '\r' || raw[0] == '\t') {
 			return new String(raw, StandardCharsets.UTF_8).strip();
 		}
-		try (var in = new LZ4BlockInputStream(new ByteArrayInputStream(raw))) {
+		try (var in = LZ4Support.blockInputStream(new ByteArrayInputStream(raw))) {
 			return new String(in.readAllBytes(), StandardCharsets.UTF_8).strip();
 		}
 	}

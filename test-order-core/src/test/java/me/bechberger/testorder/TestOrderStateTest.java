@@ -526,7 +526,7 @@ class TestOrderStateTest {
 	}
 
 	@Test
-	void loadWithoutSchemaVersionStartsFresh() throws IOException {
+	void loadWithoutSchemaVersionMigratesV0Data() throws IOException {
 		String plainJson = """
 				{
 				  "weights": {"newTest": 15, "changedTest": 8, "maxFailure": 4, "speed": 2, "speedPenalty": 1, "depOverlap": 3},
@@ -539,8 +539,9 @@ class TestOrderStateTest {
 		Files.writeString(file, plainJson);
 
 		TestOrderState loaded = TestOrderState.load(file);
-		assertEquals(TestOrderState.ScoringWeights.DEFAULT, loaded.weights());
-		assertEquals(-1, loaded.getDuration("com.A", -1));
+		// v0 data is migrated (identity transform) and preserved, not discarded
+		assertEquals(new TestOrderState.ScoringWeights(15, 8, 4, 2, 1, 3, 2, 0, 0), loaded.weights());
+		assertEquals(100, loaded.getDuration("com.A", -1));
 	}
 
 	@Test

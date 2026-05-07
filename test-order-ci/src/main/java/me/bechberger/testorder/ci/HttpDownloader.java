@@ -9,7 +9,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,9 +61,7 @@ public class HttpDownloader implements DepDownloader {
 	 *            SHA-256 hex digest to verify after download, or null to skip
 	 */
 	HttpDownloader(CiConfig.HttpConfig config, String token, boolean skipUrlSafetyChecks, String expectedChecksum) {
-		this(config, token, skipUrlSafetyChecks, expectedChecksum,
-				new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS)
-						.writeTimeout(30, TimeUnit.SECONDS).build());
+		this(config, token, skipUrlSafetyChecks, expectedChecksum, CiHttpClientFactory.buildDefault());
 	}
 
 	/**

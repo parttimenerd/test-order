@@ -129,7 +129,9 @@ public class BitsetTracker {
 	}
 
 	private final WordArray classWords = new WordArray(INITIAL_CLASS_WORDS);
-	private final WordArray memberWords = new WordArray(INITIAL_MEMBER_WORDS);
+	// Lazy: only allocated on first recordMember() call to save 4KB per tracker in
+	// non-FULL_MEMBER modes.
+	private volatile WordArray memberWords;
 
 	// ── Recording ────────────────────────────────────────────────────
 
@@ -142,8 +144,18 @@ public class BitsetTracker {
 	public void recordMember(int memberId) {
 		if (memberId < 0)
 			return;
+		WordArray mw = memberWords;
+		if (mw == null) {
+			synchronized (this) {
+				mw = memberWords;
+				if (mw == null) {
+					mw = new WordArray(INITIAL_MEMBER_WORDS);
+					memberWords = mw;
+				}
+			}
+		}
 		int adjusted = memberId - MEMBER_ID_OFFSET;
-		memberWords.record(adjusted >>> 6, 1L << adjusted);
+		mw.record(adjusted >>> 6, 1L << adjusted);
 	}
 
 	// ── Flush-time helpers ────────────────────────────────────────────
@@ -184,11 +196,14 @@ public class BitsetTracker {
 	 * the high-water mark and skips zero words.
 	 */
 	public java.util.Set<String> toMemberNames() {
-		int hw = memberWords.highWater;
+		WordArray mw = memberWords;
+		if (mw == null)
+			return java.util.Collections.emptySet();
+		int hw = mw.highWater;
 		if (hw < 0)
 			return java.util.Collections.emptySet();
 		ClassIdMap classIdMap = ClassIdMap.getInstance();
-		long[] w = memberWords.words;
+		long[] w = mw.words;
 		int limit = Math.min(hw + 1, w.length);
 		int estimated = 0;
 		for (int wi = 0; wi < limit; wi++)
@@ -211,12 +226,15 @@ public class BitsetTracker {
 
 	/** Population count of all recorded class and member IDs. */
 	public int count() {
-		return classWords.count() + memberWords.count();
+		WordArray mw = memberWords;
+		return classWords.count() + (mw != null ? mw.count() : 0);
 	}
 
 	/** Clear all recorded IDs (for reuse). */
 	public void clear() {
 		classWords.clear();
-		memberWords.clear();
+		WordArray mw = memberWords;
+		if (mw != null)
+			mw.clear();
 	}
 }

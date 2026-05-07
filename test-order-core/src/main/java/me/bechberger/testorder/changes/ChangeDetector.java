@@ -128,12 +128,16 @@ public class ChangeDetector {
 			try (var is = process.getInputStream()) {
 				output = new String(is.readAllBytes()).trim();
 			}
-			if (process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0
+			if (process.waitFor(GitTimeout.seconds(), java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0
 					&& !output.isEmpty()) {
 				return Path.of(output).toAbsolutePath().normalize();
 			}
-		} catch (IOException | InterruptedException e) {
+		} catch (IOException e) {
 			// fall through to default
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			// Thread was interrupted — exit early
+			return projectRoot.toAbsolutePath().normalize();
 		}
 		return projectRoot.toAbsolutePath().normalize();
 	}

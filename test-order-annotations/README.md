@@ -46,8 +46,9 @@ class PaymentServiceTest { … }
 ### `@AlwaysRun`
 
 Guarantees a test class or method is **always included in select-mode subsets**
-(`test-order:select` / `test-order:auto`), regardless of score. Ordering within the run
-is still score-driven — the test runs wherever its computed score places it.
+(`test-order:select` / `test-order:auto`), regardless of score. In order mode,
+`@AlwaysRun` classes are pinned to the front of the execution order (before all
+score-driven tests). Among multiple `@AlwaysRun` classes, alphabetical order is used.
 
 ```java
 @AlwaysRun
@@ -55,7 +56,7 @@ class CriticalSmokeTest { … }
 ```
 
 `@AlwaysRun` can be combined with `@TestOrder`: `scoreBonus` / `changeBonus` still apply
-for score-based positioning.
+for score-based positioning when not pinned first.
 
 ## Notes
 

@@ -54,9 +54,17 @@ class ModeResolverOperationTest {
 
 	@Test
 	void autoWithNoIndexReturnsLearn() {
+		Path testSourceRoot = tempDir.resolve("src/test/java");
+		try {
+			Files.createDirectories(testSourceRoot.resolve("com/example"));
+			Files.writeString(testSourceRoot.resolve("com/example/FooTest.java"), "class FooTest {}\n");
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
 		var config = new ModeResolverOperation.ModeConfig("auto",
 				tempDir.resolve("nonexistent.lz4"), stateFile,
-				10, 0, null, null, null, PluginLog.NOOP);
+				10, 0, null, null, null, null, testSourceRoot, null, null, PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 		assertEquals("learn", decision.effectiveMode());
 	}
@@ -78,7 +86,7 @@ class ModeResolverOperationTest {
 		state.save(stateFile);
 
 		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, () -> "abc123", PluginLog.NOOP);
+				10, 0, null, null, null, null, null, null, () -> "abc123", PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		// Should NOT trigger learn — just records fingerprint
@@ -97,7 +105,7 @@ class ModeResolverOperationTest {
 		state.save(stateFile);
 
 		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, () -> "same-hash", PluginLog.NOOP);
+				10, 0, null, null, null, null, null, null, () -> "same-hash", PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("order", decision.effectiveMode());
@@ -111,7 +119,7 @@ class ModeResolverOperationTest {
 		state.save(stateFile);
 
 		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, () -> "new-hash", PluginLog.NOOP);
+				10, 0, null, null, null, null, null, null, () -> "new-hash", PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("learn", decision.effectiveMode());
@@ -132,7 +140,7 @@ class ModeResolverOperationTest {
 		state.save(stateFile);
 
 		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, PluginLog.NOOP);
+				10, 0, null, null, null, null, null, null, null, PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("order", decision.effectiveMode());
@@ -146,7 +154,7 @@ class ModeResolverOperationTest {
 		state.save(stateFile);
 
 		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, () -> null, PluginLog.NOOP);
+				10, 0, null, null, null, null, null, null, () -> null, PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("order", decision.effectiveMode());
@@ -156,7 +164,7 @@ class ModeResolverOperationTest {
 	void dependencyChangeDetectionWorksWithoutPriorState() {
 		// No state file at all — fingerprint check should be skipped gracefully
 		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, () -> "some-hash", PluginLog.NOOP);
+				10, 0, null, null, null, null, null, null, () -> "some-hash", PluginLog.NOOP);
 		// Note: stateFile doesn't exist here because we didn't save any state
 		// The fingerprint check should be a no-op
 		var decision = ModeResolverOperation.resolve(config);
@@ -177,7 +185,7 @@ class ModeResolverOperationTest {
 		state.save(stateFile);
 
 		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, PluginLog.NOOP);
+				10, 0, null, null, null, null, null, null, null, PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("learn", decision.effectiveMode());
@@ -195,7 +203,7 @@ class ModeResolverOperationTest {
 		state.save(stateFile);
 
 		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, () -> "new-deps", PluginLog.NOOP);
+				10, 0, null, null, null, null, null, null, () -> "new-deps", PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("learn", decision.effectiveMode());

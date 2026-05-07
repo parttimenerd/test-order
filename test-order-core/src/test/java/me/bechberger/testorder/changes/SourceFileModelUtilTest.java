@@ -498,6 +498,192 @@ class SourceFileModelUtilTest {
 	}
 
 	// =====================================================================
+	// STRIP COMMENTS (preserves strings)
+	// =====================================================================
+
+	@Nested
+	class StripComments {
+
+		@Test
+		void lineCommentStrippedStringPreserved() {
+			String src = "String s = \"hello\"; // comment\nint y;";
+			String result = SourceFileModel.stripComments(src);
+			assertFalse(result.contains("comment"));
+			assertTrue(result.contains("\"hello\""));
+			assertTrue(result.contains("int y;"));
+		}
+
+		@Test
+		void blockCommentStrippedStringPreserved() {
+			String src = "String s = \"world\"; /* block\ncomment */ int y;";
+			String result = SourceFileModel.stripComments(src);
+			assertFalse(result.contains("block"));
+			assertFalse(result.contains("comment"));
+			assertTrue(result.contains("\"world\""));
+			assertTrue(result.contains("int y;"));
+		}
+
+		@Test
+		void stringLiteralsPreserved() {
+			String src = "String s = \"hello world\";";
+			String result = SourceFileModel.stripComments(src);
+			assertTrue(result.contains("\"hello world\""));
+		}
+
+		@Test
+		void charLiteralsPreserved() {
+			String src = "char c = 'x';";
+			String result = SourceFileModel.stripComments(src);
+			assertTrue(result.contains("'x'"));
+		}
+
+		@Test
+		void textBlockPreserved() {
+			String src = "String s = \"\"\"\n    line1\n    line2\n    \"\"\"; int x;";
+			String result = SourceFileModel.stripComments(src);
+			assertTrue(result.contains("line1"));
+			assertTrue(result.contains("line2"));
+			assertTrue(result.contains("int x;"));
+		}
+
+		@Test
+		void escapedQuoteInStringPreserved() {
+			String src = "String s = \"he said \\\"hi\\\"\"; int x;";
+			String result = SourceFileModel.stripComments(src);
+			assertTrue(result.contains("he said \\\"hi\\\""));
+			assertTrue(result.contains("int x;"));
+		}
+
+		@Test
+		void annotationStringValuesPreserved() {
+			String src = "@CsvSource({\"1,2\", \"3,4\"})\nvoid test() {}";
+			String result = SourceFileModel.stripComments(src);
+			assertTrue(result.contains("\"1,2\""));
+			assertTrue(result.contains("\"3,4\""));
+		}
+
+		@Test
+		void methodSourceAnnotationPreserved() {
+			String src = "@MethodSource(\"providerMethod\")\nvoid test() {}";
+			String result = SourceFileModel.stripComments(src);
+			assertTrue(result.contains("\"providerMethod\""));
+		}
+
+		@Test
+		void commentInsideStringNotStripped() {
+			String src = "String s = \"// not a comment\"; int x;";
+			String result = SourceFileModel.stripComments(src);
+			assertTrue(result.contains("// not a comment"));
+			assertTrue(result.contains("int x;"));
+		}
+
+		@Test
+		void newlinesPreservedInBlockComment() {
+			String src = "a\n/* comment\nwith\nnewlines */\nb";
+			String result = SourceFileModel.stripComments(src);
+			assertEquals(src.chars().filter(c -> c == '\n').count(), result.chars().filter(c -> c == '\n').count());
+		}
+
+		@Test
+		void lengthPreserved() {
+			String src = "package com.x;\n// line\n/* block */ class Foo { String s = \"hi\"; }";
+			assertEquals(src.length(), SourceFileModel.stripComments(src).length());
+		}
+	}
+
+	// =====================================================================
+	// NORMALIZE FOR HASHING
+	// =====================================================================
+
+	@Nested
+	class NormalizeForHashing {
+
+		@Test
+		void commentOnlyChangeProducesSameResult() {
+			String v1 = "package com.x;\npublic class Foo {\n    int x = 1;\n}";
+			String v2 = "package com.x;\n// added comment\npublic class Foo {\n    int x = 1; // inline\n}";
+			assertEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void whitespaceOnlyChangeProducesSameResult() {
+			String v1 = "package com.x;\npublic class Foo {\n    int x = 1;\n}";
+			String v2 = "package com.x;\n\npublic class Foo {\n        int x = 1;\n\n}";
+			assertEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void stringLiteralChangeProducesDifferentResult() {
+			String v1 = "String s = \"hello\";";
+			String v2 = "String s = \"world\";";
+			assertNotEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void codeChangeProducesDifferentResult() {
+			String v1 = "int x = 1;";
+			String v2 = "int x = 2;";
+			assertNotEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void annotationStringValueChangeDetected() {
+			String v1 = "@CsvSource({\"1,2\"})\nvoid test() {}";
+			String v2 = "@CsvSource({\"1,3\"})\nvoid test() {}";
+			assertNotEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void annotationWhitespaceChangeIgnored() {
+			String v1 = "@CsvSource({\"1,2\", \"3,4\"})\nvoid test() {}";
+			String v2 = "@CsvSource({ \"1,2\" , \"3,4\" })\nvoid test() {}";
+			assertEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void methodSourceAnnotationPreserved() {
+			String v1 = "@MethodSource(\"provider\")\nvoid test() {}";
+			String v2 = "@MethodSource(\"otherProvider\")\nvoid test() {}";
+			assertNotEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void blockCommentChangeIgnored() {
+			String v1 = "int x = 1; /* old comment */";
+			String v2 = "int x = 1; /* new comment */";
+			assertEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void javadocChangeIgnored() {
+			String v1 = "/** Old doc */\npublic void foo() {}";
+			String v2 = "/** New doc with more detail */\npublic void foo() {}";
+			assertEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void whitespaceInsideStringLiteralPreserved() {
+			String v1 = "String s = \"hello   world\";";
+			String v2 = "String s = \"hello world\";";
+			assertNotEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void indentationChangeIgnored() {
+			String v1 = "    if (true) {\n        return 1;\n    }";
+			String v2 = "if (true) {\n  return 1;\n}";
+			assertEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+
+		@Test
+		void operatorWhitespaceThatChangesMeaningIsPreserved() {
+			String v1 = "int x = a - -b;";
+			String v2 = "int x = a--b;";
+			assertNotEquals(SourceFileModel.normalizeForHashing(v1), SourceFileModel.normalizeForHashing(v2));
+		}
+	}
+
+	// =====================================================================
 	// DELEGATION TO SOURCE FILE MODEL
 	// =====================================================================
 

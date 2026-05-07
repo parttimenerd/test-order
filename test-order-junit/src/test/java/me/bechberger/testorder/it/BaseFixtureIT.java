@@ -18,6 +18,9 @@ import org.junit.jupiter.api.io.TempDir;
  */
 public abstract class BaseFixtureIT {
 
+	private static final String TEST_ORDER_PLUGIN_VERSION = System.getProperty("testorder.plugin.version",
+			"0.1.0-SNAPSHOT");
+
 	/**
 	 * Copy a fixture project from test-fixtures to a temporary directory. Ensures
 	 * each fixture has the necessary compiler configuration for independent
@@ -67,10 +70,35 @@ public abstract class BaseFixtureIT {
 	private void ensureCompilerPluginConfiguration(Path fixtureDir) throws Exception {
 		Path pomFile = fixtureDir.resolve("pom.xml");
 		String pomContent = Files.readString(pomFile);
+		if (pomContent.contains("<arg>-parameters</arg>")) {
+			return;
+		}
 
 		// Check if maven-compiler-plugin is already configured
 		if (pomContent.contains("maven-compiler-plugin")) {
-			return; // Already has configuration
+			String configuredPlugin = """
+			            <plugin>
+			                <groupId>org.apache.maven.plugins</groupId>
+			                <artifactId>maven-compiler-plugin</artifactId>
+			                <version>3.13.0</version>
+			                <configuration>
+			                    <source>17</source>
+			                    <target>17</target>
+			                    <compilerArgs>
+			                        <arg>-parameters</arg>
+			                    </compilerArgs>
+			                </configuration>
+			            </plugin>
+			""";
+
+			String updatedExisting = pomContent.replaceFirst(
+					"(?s)<plugin>\\s*<groupId>org\\.apache\\.maven\\.plugins</groupId>\\s*<artifactId>maven-compiler-plugin</artifactId>\\s*(?:<version>[^<]+</version>\\s*)?</plugin>",
+					configuredPlugin);
+
+			if (!updatedExisting.equals(pomContent)) {
+				Files.writeString(pomFile, updatedExisting);
+				return;
+			}
 		}
 
 		// If not present, add it to the build/plugins section
@@ -110,7 +138,7 @@ public abstract class BaseFixtureIT {
 		ProcessBuilder pb = new ProcessBuilder();
 		pb.command("mvn");
 		for (String goal : goals) {
-			pb.command().add(goal);
+			pb.command().add(resolveGoal(goal));
 		}
 		pb.directory(projectDir.toFile());
 		pb.redirectErrorStream(true);
@@ -126,6 +154,14 @@ public abstract class BaseFixtureIT {
 		return output;
 	}
 
+	private static String resolveGoal(String goal) {
+		if (goal == null || !goal.startsWith("test-order:")) {
+			return goal;
+		}
+		String mojo = goal.substring("test-order:".length());
+		return "me.bechberger:test-order-maven-plugin:" + TEST_ORDER_PLUGIN_VERSION + ":" + mojo;
+	}
+
 	/**
 	 * Extract test class names from Maven output to validate reordering. Parses
 	 * output like: "Tests run: 3, Failures: 0, Errors: 0, Skipped: 0"
@@ -134,8 +170,12 @@ public abstract class BaseFixtureIT {
 		// Pattern: "Tests run: \d+"
 		java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("Tests run: (\\d+)");
 		java.util.regex.Matcher matcher = pattern.matcher(output);
-		if (matcher.find()) {
-			return Integer.parseInt(matcher.group(1));
+		int lastCount = -1;
+		while (matcher.find()) {
+			lastCount = Integer.parseInt(matcher.group(1));
+		}
+		if (lastCount >= 0) {
+			return lastCount;
 		}
 		fail("Could not extract test count from Maven output: " + output);
 		return -1;

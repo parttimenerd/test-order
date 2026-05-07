@@ -50,6 +50,10 @@ test-order-dashboard/src/main/dashboard/node/
 
 # External repos cloned for demos and benchmarks
 third-party/
+femtojar/
+
+# Release script temp files
+.release-notes.md
 
 # System and cache files
 .DS_Store
@@ -60,6 +64,7 @@ node_modules
 
 # Root-level debug / build-output artefacts
 *.exit
+*.pwd
 build_status.txt
 cast-lines.txt
 debug.txt
@@ -74,3 +79,23 @@ pw-dom.json
 terminal_check.txt
 testng-compile.out
 README\ improvements
+
+# Planning / audit docs (local-only)
+AUDIT_FINDINGS.md
+FIX.md
+IMPROVEMENT_PLAN.md
+PHASE_1_3_COMPLETE.md
+plan-*.prompt.md
+
+# Asciinema demo recordings (large binary)
+demo-spring-ai.cast
+
+# Root package.json (leftover from MCP testing)
+/package.json
+/package-lock.json
+
+# Playwright MCP tooling
+.playwright-cli/
+
+# Claude Code config
+.claude/

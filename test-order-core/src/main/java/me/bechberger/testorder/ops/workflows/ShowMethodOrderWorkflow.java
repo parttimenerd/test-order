@@ -3,6 +3,7 @@ package me.bechberger.testorder.ops.workflows;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import me.bechberger.testorder.DependencyMap;
@@ -84,7 +85,7 @@ public final class ShowMethodOrderWorkflow {
 				if (explain) {
 					printExplainLine(out, i + 1, m, result);
 				} else {
-					out.printf("    %3d. %-40s  score=%.2f%n", i + 1, m.methodName(), m.score());
+					out.printf(Locale.US, "    %3d. %-40s  score=%.2f%n", i + 1, m.methodName(), m.score());
 				}
 			}
 			out.println();
@@ -95,7 +96,7 @@ public final class ShowMethodOrderWorkflow {
 
 	private static void printExplainLine(PrintStream out, int rank, OrderedMethod m, ShowMethodOrderResult result) {
 		MethodScoreResult d = m.details();
-		out.printf("    %3d. %-40s  score=%.2f%n", rank, m.methodName(), m.score());
+		out.printf(Locale.US, "    %3d. %-40s  score=%.2f%n", rank, m.methodName(), m.score());
 
 		StringBuilder flags = new StringBuilder("         ");
 		if (d.isNew())

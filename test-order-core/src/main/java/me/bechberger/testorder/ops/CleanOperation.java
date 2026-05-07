@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Removes all test-order generated files (index, state, hashes, deps
@@ -29,11 +30,15 @@ public final class CleanOperation {
 	 */
 	public static int clean(List<Path> files, List<Path> dirs, PluginLog log) {
 		int deleted = 0;
+		Set<Path> parentDirs = new java.util.LinkedHashSet<>();
 		for (Path file : files) {
 			try {
 				if (Files.deleteIfExists(file)) {
 					log.info("[test-order] Deleted " + file);
 					deleted++;
+					if (file.getParent() != null) {
+						parentDirs.add(file.getParent());
+					}
 				}
 			} catch (IOException e) {
 				log.warn("[test-order] Failed to delete " + file + ": " + e.getMessage());
@@ -56,9 +61,27 @@ public final class CleanOperation {
 				}
 			}
 		}
+		// Remove parent directories (e.g. .test-order/) if they are now empty
+		for (Path parent : parentDirs) {
+			try {
+				if (Files.isDirectory(parent) && isEmptyDirectory(parent)) {
+					Files.delete(parent);
+					log.info("[test-order] Deleted empty directory " + parent);
+					deleted++;
+				}
+			} catch (IOException e) {
+				// best-effort — not critical
+			}
+		}
 		if (deleted == 0) {
 			log.info("[test-order] Nothing to clean");
 		}
 		return deleted;
+	}
+
+	private static boolean isEmptyDirectory(Path dir) throws IOException {
+		try (var entries = Files.newDirectoryStream(dir)) {
+			return !entries.iterator().hasNext();
+		}
 	}
 }

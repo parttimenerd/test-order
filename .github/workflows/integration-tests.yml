@@ -51,6 +51,9 @@ jobs:
           java-version: ${{ matrix.java-version }}
           cache: maven
 
+      - name: Install project artifacts
+        run: mvn -B -ntp -DskipTests install
+
       - name: Build test fixtures
         run: |
           cd test-fixtures
@@ -59,7 +62,7 @@ jobs:
       - name: Run integration tests
         run: |
           cd test-order-junit
-          mvn -B -ntp test -Dtest=*IT
+          mvn -B -ntp test -Dtest="*IT"
 
       - name: Run Kotlin & Kotest specific tests
         run: |

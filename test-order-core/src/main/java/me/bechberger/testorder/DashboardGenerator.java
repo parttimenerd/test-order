@@ -241,7 +241,9 @@ public class DashboardGenerator {
 	 * @return complete HTML string ready to write to disk
 	 */
 	public String injectIntoTemplate(String template, Map<String, Object> data) {
-		return template.replace(DATA_PLACEHOLDER, PrettyPrinter.compactPrint(data));
+		// Escape </script> sequences to prevent XSS when JSON is inlined in HTML <script> block
+		String json = PrettyPrinter.compactPrint(data).replace("</", "<\\/");
+		return template.replace(DATA_PLACEHOLDER, json);
 	}
 
 	/**

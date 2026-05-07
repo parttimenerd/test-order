@@ -512,10 +512,13 @@ public class TestScorer {
 		if (count == 0)
 			return 0;
 		java.util.Arrays.sort(buf, 0, count);
-		return buf[count / 2];
+		if (count % 2 == 1) {
+			return buf[count / 2];
+		}
+		return (buf[count / 2 - 1] + buf[count / 2]) / 2;
 	}
 
-	static String springContextKey(Class<?> testClass) {
+	public static String springContextKey(Class<?> testClass) {
 		for (Annotation annotation : testClass.getAnnotations()) {
 			String annotationName = annotation.annotationType().getName();
 			if (SPRING_BOOT_TEST.equals(annotationName) || CONTEXT_CONFIGURATION.equals(annotationName)) {

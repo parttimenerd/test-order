@@ -7,6 +7,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
+import me.bechberger.testorder.junit.PriorityMethodOrderer;
+import me.bechberger.testorder.junit.TelemetryListener;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

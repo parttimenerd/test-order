@@ -26,7 +26,7 @@ class MathServiceAdvancedTest {
      * M6: Each repetition fires a separate MethodSource event.
      * failureThreshold=2 means after 2 failures the remaining repetitions are skipped.
      */
-    @RepeatedTest(value = 5, failureThreshold = 5)
+    @RepeatedTest(value = 5, failureThreshold = 2)
     void additionIsRepeatable() {
         assertEquals(4, new MathService().add(2, 2));
     }

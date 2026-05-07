@@ -1,12 +1,14 @@
 package me.bechberger.testorder.changes;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.stream.Stream;
 
+import me.bechberger.testorder.LZ4Support;
 import me.bechberger.testorder.PersistenceSupport;
 import net.jpountz.lz4.LZ4FrameInputStream;
 import net.jpountz.lz4.LZ4FrameOutputStream;
@@ -57,7 +59,7 @@ public class FileHashStore {
 			Files.createDirectories(parent);
 		}
 		Path tempFile = PersistenceSupport.temporarySibling(hashFile);
-		try (LZ4FrameOutputStream lz4os = new LZ4FrameOutputStream(Files.newOutputStream(tempFile));
+		try (LZ4FrameOutputStream lz4os = LZ4Support.frameOutputStream(Files.newOutputStream(tempFile));
 				PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os))) {
 			for (var entry : hashes.entrySet()) {
 				pw.print(entry.getKey());
@@ -74,7 +76,7 @@ public class FileHashStore {
 	public static FileHashStore load(Path hashFile) throws IOException {
 		Map<String, String> hashes = new TreeMap<>();
 		Path loadPath = PersistenceSupport.resolveLoadPath(hashFile);
-		try (LZ4FrameInputStream lz4is = new LZ4FrameInputStream(Files.newInputStream(loadPath));
+		try (LZ4FrameInputStream lz4is = LZ4Support.frameInputStream(Files.newInputStream(loadPath));
 				BufferedReader br = new BufferedReader(new InputStreamReader(lz4is))) {
 			String line;
 			while ((line = br.readLine()) != null) {
@@ -120,15 +122,13 @@ public class FileHashStore {
 	});
 
 	private static String sha256(Path file) throws IOException {
+		// Normalize source content so that comment-only and whitespace-only changes
+		// do not produce different hashes. String literal changes are still detected.
+		String source = Files.readString(file, StandardCharsets.UTF_8);
+		String normalized = SourceFileModel.normalizeForHashing(source);
 		MessageDigest md = SHA256.get();
 		md.reset();
-		byte[] buf = new byte[8192];
-		try (InputStream in = Files.newInputStream(file)) {
-			int n;
-			while ((n = in.read(buf)) >= 0) {
-				md.update(buf, 0, n);
-			}
-		}
+		md.update(normalized.getBytes(StandardCharsets.UTF_8));
 		return HEX_FORMAT.formatHex(md.digest());
 	}
 

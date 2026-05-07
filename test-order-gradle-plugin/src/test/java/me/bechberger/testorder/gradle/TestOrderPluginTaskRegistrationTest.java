@@ -23,7 +23,11 @@ class TestOrderPluginTaskRegistrationTest {
         assertNotNull(project.getTasks().findByName("testOrderOptimize"));
         assertNotNull(project.getTasks().findByName("testOrderSelect"));
         assertNotNull(project.getTasks().findByName("testOrderRunRemaining"));
+        assertNotNull(project.getTasks().findByName("testOrderTieredSelect"));
+        assertNotNull(project.getTasks().findByName("testOrderRunTier"));
         assertNotNull(project.getTasks().findByName("testOrderClean"));
+        assertNotNull(project.getTasks().findByName("testOrderDashboard"));
+        assertNotNull(project.getTasks().findByName("testOrderServe"));
     }
 
     @Test

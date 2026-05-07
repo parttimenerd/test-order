@@ -27,11 +27,11 @@ const d = inject<DashboardState>('dashboard')!
   <!-- Changed classes expandable panel -->
   <div v-if="d.showChangedPanel.value && d.dd.changedClasses.length" style="background:var(--bg-card);border-bottom:1px solid var(--border);padding:5px 16px;max-height:120px;overflow-y:auto">
     <div style="display:flex;flex-wrap:wrap;gap:4px">
-      <span v-for="c in d.dd.changedClasses" :key="c" class="changed-panel__tag">{{ sn(c) }}</span>
+      <span v-for="c in d.dd.changedClasses" :key="c" class="changed-panel__tag" :title="c">{{ sn(c) }}</span>
     </div>
     <div v-if="d.dd.changedTestClasses.length" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
       <span style="font-size:.6rem;color:var(--text-dim);margin-right:4px">Test classes:</span>
-      <span v-for="c in d.dd.changedTestClasses" :key="c" class="changed-panel__tag changed-panel__tag--test">{{ sn(c) }}</span>
+      <span v-for="c in d.dd.changedTestClasses" :key="c" class="changed-panel__tag changed-panel__tag--test" :title="c">{{ sn(c) }}</span>
     </div>
   </div>
 </template>

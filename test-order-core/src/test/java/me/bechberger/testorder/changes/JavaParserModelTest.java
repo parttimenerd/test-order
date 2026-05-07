@@ -207,6 +207,32 @@ class JavaParserModelTest {
 		assertFalse(m.initializers().get(0).isStatic());
 	}
 
+	@Test
+	void fieldStringLiteralChangeAffectsHash() {
+		var m1 = SourceFileModel.parse("""
+				package p;
+				public class Foo { static final String NAME = "hello"; }
+				""", "p", SourceFileModel.Detail.FIELDS);
+		var m2 = SourceFileModel.parse("""
+				package p;
+				public class Foo { static final String NAME = "world"; }
+				""", "p", SourceFileModel.Detail.FIELDS);
+		assertNotEquals(m1.fieldHashes().get("p.Foo#NAME"), m2.fieldHashes().get("p.Foo#NAME"));
+	}
+
+	@Test
+	void initializerStringLiteralChangeAffectsHash() {
+		var m1 = SourceFileModel.parse("""
+				package p;
+				public class Foo { static { String s = "hello"; } }
+				""", "p", SourceFileModel.Detail.FIELDS);
+		var m2 = SourceFileModel.parse("""
+				package p;
+				public class Foo { static { String s = "world"; } }
+				""", "p", SourceFileModel.Detail.FIELDS);
+		assertNotEquals(m1.initializers().get(0).bodyHash(), m2.initializers().get(0).bodyHash());
+	}
+
 	// ── structural diff integration ──────────────────────────────────
 
 	@Test

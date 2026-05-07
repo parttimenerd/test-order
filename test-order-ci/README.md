@@ -128,7 +128,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-order-deps
-          path: test-dependencies.lz4
+          path: .test-order/test-dependencies.lz4
           retention-days: 30
 
       # ── PR branches: download index, then order ─────────────

@@ -31,7 +31,7 @@ public class DependencyMap {
 	private static final byte[] FORMAT_MAGIC = { 'T', 'O', 'R', 'D' };
 
 	/** Current binary format version. */
-	static final short FORMAT_VERSION = 1;
+	public static final short FORMAT_VERSION = 1;
 
 	// ── Section type constants ────────────────────────────────────────
 
@@ -246,7 +246,7 @@ public class DependencyMap {
 		}
 		Path tempFile = PersistenceSupport.temporarySibling(indexFile);
 		try (OutputStream fos = Files.newOutputStream(tempFile);
-				LZ4FrameOutputStream lz4 = new LZ4FrameOutputStream(fos);
+				LZ4FrameOutputStream lz4 = LZ4Support.frameOutputStream(fos);
 				DataOutputStream out = new DataOutputStream(lz4)) {
 
 			// ── Header: magic + version ──────────────────────────────
@@ -452,6 +452,17 @@ public class DependencyMap {
 		return loadBinary(loadPath);
 	}
 
+	/** Helper to load index or create fresh if corrupt */
+	private static DependencyMap loadOrCreateFresh(Path indexFile) throws IOException {
+		try {
+			return load(indexFile);
+		} catch (IOException e) {
+			// Index is corrupt — start fresh instead of failing
+			System.err.println("[test-order] Index file corrupt, creating fresh index: " + e.getMessage());
+			return new DependencyMap();
+		}
+	}
+
 	/** Maximum allowed size for a single serialized block (64 MB). */
 	private static final int MAX_BLOCK_SIZE = 64 * 1024 * 1024;
 
@@ -481,7 +492,7 @@ public class DependencyMap {
 
 	private static DependencyMap loadBinary(Path indexFile) throws IOException {
 		try (InputStream fis = Files.newInputStream(indexFile);
-				LZ4FrameInputStream lz4 = new LZ4FrameInputStream(fis);
+				LZ4FrameInputStream lz4 = LZ4Support.frameInputStream(fis);
 				DataInputStream in = new DataInputStream(lz4)) {
 
 			// ── Verify header: magic + version ───────────────────────
@@ -561,7 +572,8 @@ public class DependencyMap {
 						s.readFully(memberBytes);
 						RoaringBitmap memberBitmap = new RoaringBitmap();
 						memberBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(memberBytes)));
-						memberBitmap.forEach((int ti) -> depSets[ti] = sharedDeps);
+						Set<String>[] finalDepSets = ds;
+						memberBitmap.forEach((int ti) -> finalDepSets[ti] = sharedDeps);
 					}
 					// build map preserving test insertion order
 					for (int i = 0; i < testNames.length; i++) {
@@ -700,16 +712,12 @@ public class DependencyMap {
 	public static synchronized void mergeFromAgent(Path indexFile, Map<String, Set<String>> deps,
 			Map<String, Set<String>> methodDeps, Map<String, Set<String>> memberDeps,
 			Map<String, Set<String>> methodMemberDeps) throws IOException {
-		if (deps.isEmpty() && methodDeps.isEmpty() && memberDeps.isEmpty()) {
+		if (deps.isEmpty() && methodDeps.isEmpty() && memberDeps.isEmpty() && methodMemberDeps.isEmpty()) {
 			return; // nothing to merge
 		}
 
-		DependencyMap map;
-		if (Files.exists(indexFile)) {
-			map = load(indexFile);
-		} else {
-			map = new DependencyMap();
-		}
+		final DependencyMap map = Files.exists(indexFile) ? 
+				loadOrCreateFresh(indexFile) : new DependencyMap();
 
 		// Merge incrementally, deduplicating to save space
 		for (var entry : deps.entrySet()) {
@@ -838,9 +846,15 @@ public class DependencyMap {
 			try {
 				var entry = task.get();
 				if (entry != null) {
-					Set<String> existing = map.dependencies.getOrDefault(entry.getKey(), new TreeSet<>());
-					existing.addAll(entry.getValue());
-					map.dependencies.put(entry.getKey(), existing);
+					Set<String> existing = map.dependencies.get(entry.getKey());
+					if (existing == null) {
+						map.dependencies.put(entry.getKey(), entry.getValue());
+					} else {
+						// existing may be an unmodifiable set from loadBinary — copy into mutable set
+						Set<String> merged = new TreeSet<>(existing);
+						merged.addAll(entry.getValue());
+						map.dependencies.put(entry.getKey(), merged);
+					}
 					depCount++;
 				}
 			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {

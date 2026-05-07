@@ -70,12 +70,12 @@ public class ClassIdMap {
 	// Medium project: ~2 000 instrumented application classes; 4 096 avoids any
 	// rehash below that.
 	private static final int INITIAL_CLASS_MAP_CAPACITY = 4_096 * 2;
-	// Methods + fields per class ~8 on average → 4 096 classes × 8 = ~32 768; 32
-	// 768 avoids resize.
-	private static final int INITIAL_MEMBER_MAP_CAPACITY = 32_768 * 4;
+	// Lazy member map: only allocated on first member registration to save ~8MB in
+	// non-FULL_MEMBER modes.
+	private static final int INITIAL_MEMBER_MAP_CAPACITY = 4_096;
 
 	private final ConcurrentHashMap<String, Integer> classToId;
-	private final ConcurrentHashMap<String, Integer> memberToId;
+	private volatile ConcurrentHashMap<String, Integer> memberToId;
 	private final VarHandleIntCounter nextClassId;
 	private final VarHandleIntCounter nextMemberId;
 
@@ -87,7 +87,8 @@ public class ClassIdMap {
 
 	private ClassIdMap() {
 		this.classToId = new ConcurrentHashMap<>(INITIAL_CLASS_MAP_CAPACITY);
-		this.memberToId = new ConcurrentHashMap<>(INITIAL_MEMBER_MAP_CAPACITY);
+		// memberToId allocated lazily on first getOrRegisterMember() call
+		this.memberToId = null;
 		this.nextClassId = createCounter(0);
 		this.nextMemberId = createCounter(MEMBER_ID_OFFSET);
 	}
@@ -128,7 +129,17 @@ public class ClassIdMap {
 	 * {@link ConcurrentHashMap#computeIfAbsent}.
 	 */
 	public int getOrRegisterMember(String memberKey) {
-		Integer id = memberToId.computeIfAbsent(memberKey, k -> {
+		ConcurrentHashMap<String, Integer> map = memberToId;
+		if (map == null) {
+			synchronized (this) {
+				map = memberToId;
+				if (map == null) {
+					map = new ConcurrentHashMap<>(INITIAL_MEMBER_MAP_CAPACITY);
+					memberToId = map;
+				}
+			}
+		}
+		Integer id = map.computeIfAbsent(memberKey, k -> {
 			int newId = nextMemberId.getAndIncrement();
 			if (newId >= CAPACITY_LIMIT) {
 				nextMemberId.decrementAndGet();
@@ -182,6 +193,10 @@ public class ClassIdMap {
 		if (id < MEMBER_ID_OFFSET) {
 			return null;
 		}
+		ConcurrentHashMap<String, Integer> map = memberToId;
+		if (map == null) {
+			return null;
+		}
 		int adjusted = id - MEMBER_ID_OFFSET;
 		String[] rm = reverseMemberNames;
 		if (rm == null || adjusted >= rm.length) {
@@ -200,8 +215,11 @@ public class ClassIdMap {
 		int size = currentCount + 64; // safety margin for concurrent registrations
 		if (size <= 0)
 			return new String[0];
+		ConcurrentHashMap<String, Integer> map = memberToId;
+		if (map == null)
+			return new String[0];
 		String[] arr = new String[size];
-		for (var e : memberToId.entrySet()) {
+		for (var e : map.entrySet()) {
 			int idx = e.getValue() - MEMBER_ID_OFFSET;
 			if (idx >= 0 && idx < size)
 				arr[idx] = e.getKey();

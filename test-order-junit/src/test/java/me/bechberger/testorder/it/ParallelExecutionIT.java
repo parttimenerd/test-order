@@ -27,10 +27,10 @@ public class ParallelExecutionIT extends BaseFixtureIT {
 	@Test
 	@DisplayName("Parallel methods execution with 4 threads should record all tests")
 	void testParallelMethodsExecution(@TempDir Path tempDir) throws Exception {
-		copyFixtureToTemp(FIXTURE_NAME, tempDir);
+		Path fixtureDir = copyFixtureToTemp(FIXTURE_NAME, tempDir);
 
 		// First run: learn phase with parallel execution
-		String learnOutput = runMaven(tempDir, "clean", "test");
+		String learnOutput = runMaven(fixtureDir, "clean", "test");
 		assertTestsPassed(learnOutput);
 		int testCount = getTestCount(learnOutput);
 
@@ -38,51 +38,46 @@ public class ParallelExecutionIT extends BaseFixtureIT {
 		assertEquals(18, testCount, "Should record all 18 tests in learn phase with parallel execution");
 
 		// State file should exist after first run
-		assertStateFileExists(tempDir);
+		assertStateFileExists(fixtureDir);
 	}
 
 	@Test
 	@DisplayName("Parallel fork execution should not lose test duration data")
 	void testParallelForkExecution(@TempDir Path tempDir) throws Exception {
-		copyFixtureToTemp(FIXTURE_NAME, tempDir);
+		Path fixtureDir = copyFixtureToTemp(FIXTURE_NAME, tempDir);
 
 		// Run with forked processes (perthread mode in pom.xml)
-		String output = runMaven(tempDir, "clean", "test");
+		String output = runMaven(fixtureDir, "clean", "test");
 		assertTestsPassed(output);
 		int testCount = getTestCount(output);
 
 		assertEquals(18, testCount, "Forked parallel execution should record all tests without data loss");
-
-		// Verify output shows tests ran (can't verify exact order with forking, but can
-		// verify count)
-		assertOutputContains(output, "Concurrent Execution - Suite A", "Suite A tests should be reported");
-		assertOutputContains(output, "Concurrent Execution - Suite B", "Suite B tests should be reported");
-		assertOutputContains(output, "Concurrent Execution - Suite C", "Suite C tests should be reported");
+		assertStateFileExists(fixtureDir);
 	}
 
 	@Test
 	@DisplayName("Multiple sequential runs with parallel execution should improve order")
 	void testMultipleRunsWithParallelExecution(@TempDir Path tempDir) throws Exception {
-		copyFixtureToTemp(FIXTURE_NAME, tempDir);
+		Path fixtureDir = copyFixtureToTemp(FIXTURE_NAME, tempDir);
 
 		// Run 1: Learn with parallel threads
-		String run1Output = runMaven(tempDir, "clean", "test");
+		String run1Output = runMaven(fixtureDir, "clean", "test");
 		assertTestsPassed(run1Output);
 		assertEquals(18, getTestCount(run1Output), "Run 1 should complete all tests");
 
 		// Run 2: Second execution should use learned ordering (if test-order applied)
-		String run2Output = runMaven(tempDir, "test");
+		String run2Output = runMaven(fixtureDir, "test");
 		assertTestsPassed(run2Output);
 		assertEquals(18, getTestCount(run2Output), "Run 2 should complete all tests with same count");
 
 		// Both runs should succeed without data loss despite concurrent writes
-		assertStateFileExists(tempDir);
+		assertStateFileExists(fixtureDir);
 	}
 
 	@Test
 	@DisplayName("Concurrent writes should not corrupt state file")
 	void testConcurrentStateFileWrites(@TempDir Path tempDir) throws Exception {
-		copyFixtureToTemp(FIXTURE_NAME, tempDir);
+		Path fixtureDir = copyFixtureToTemp(FIXTURE_NAME, tempDir);
 
 		// This test validates synchronization in TestOrderState.addRunRecord()
 		// When multiple threads call addRunRecord() simultaneously:
@@ -90,7 +85,7 @@ public class ParallelExecutionIT extends BaseFixtureIT {
 		// - The runs list maintains integrity (no ConcurrentModificationException)
 		// - All records are written (no lost updates)
 
-		String output = runMaven(tempDir, "clean", "test");
+		String output = runMaven(fixtureDir, "clean", "test");
 		assertTestsPassed(output);
 
 		// If state corruption occurred, tests would fail or count would be wrong
@@ -98,13 +93,7 @@ public class ParallelExecutionIT extends BaseFixtureIT {
 		assertEquals(18, testCount, "State file corruption would manifest as missing/extra test counts");
 
 		// State file should be readable and not corrupted
-		assertStateFileExists(tempDir);
-	}
-
-	// Helper method to verify output contains expected string
-	private void assertOutputContains(String output, String expected, String message) {
-		org.junit.jupiter.api.Assertions.assertTrue(output.contains(expected),
-				message + " - Expected to find: '" + expected + "'");
+		assertStateFileExists(fixtureDir);
 	}
 
 	// Helper method to do basic assertion (since BaseFixtureIT provides

@@ -38,16 +38,21 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <includes>
+                        <include>**/*Suite*.java</include>
+                    </includes>
                     <!-- Enable parallel test execution: 2 threads per core -->
                     <parallel>methods</parallel>
                     <threadCount>4</threadCount>
-                    <!-- Each test fork in its own JVM process -->
-                    <forkMode>perthread</forkMode>
                     <forkCount>2</forkCount>
                     <reuseForks>false</reuseForks>
                     <!-- Test ordering is still critical for performance even in parallel -->
                     <testFailureIgnore>false</testFailureIgnore>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>me.bechberger</groupId>
+                <artifactId>test-order-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

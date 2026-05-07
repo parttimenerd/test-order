@@ -40,6 +40,24 @@ public final class TestClassDiscovery {
 	}
 
 	/**
+	 * Returns true if the test source root contains at least one Java/Kotlin/Groovy
+	 * source file. Used as a fallback before test classes are compiled.
+	 */
+	public static boolean hasTestSources(Path testSourceRoot) {
+		if (testSourceRoot == null || !Files.isDirectory(testSourceRoot)) {
+			return false;
+		}
+		try (Stream<Path> walk = Files.walk(testSourceRoot)) {
+			return walk.anyMatch(path -> {
+				String s = path.toString();
+				return s.endsWith(".java") || s.endsWith(".kt") || s.endsWith(".groovy");
+			});
+		} catch (IOException e) {
+			return false;
+		}
+	}
+
+	/**
 	 * Filters a dependency map to only include test classes found in the given
 	 * test-classes directory. Preserves method and member dependency data.
 	 */
@@ -83,7 +101,7 @@ public final class TestClassDiscovery {
 			}
 		}
 		if (!newTests.isEmpty()) {
-			log.info("[test-order] Found " + newTests.size() + " new test classes not in index");
+			log.debug("[test-order] Found " + newTests.size() + " new test classes not in index");
 		}
 		return newTests;
 	}

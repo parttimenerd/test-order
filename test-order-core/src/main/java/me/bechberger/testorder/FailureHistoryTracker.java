@@ -13,9 +13,9 @@ import java.util.logging.Logger;
  */
 final class FailureHistoryTracker {
 
-	private final Map<String, Double> failureScores = new LinkedHashMap<>();
+	private final Map<String, Double> failureScores = new ConcurrentHashMap<>();
 	private final Map<String, Double> pendingFailureScores = new ConcurrentHashMap<>();
-	private final Map<String, Double> methodFailureScores = new LinkedHashMap<>();
+	private final Map<String, Double> methodFailureScores = new ConcurrentHashMap<>();
 	private final Map<String, Double> pendingMethodFailureScores = new ConcurrentHashMap<>();
 
 	void recordFailure(String testClass) {

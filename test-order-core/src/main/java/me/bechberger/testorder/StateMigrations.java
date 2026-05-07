@@ -59,8 +59,11 @@ final class StateMigrations {
 			return root;
 		}
 		if (fromVersion > toVersion) {
-			throw new IllegalArgumentException(
-					"Cannot downgrade state from version " + fromVersion + " to " + toVersion);
+			throw new StateDowngradeException(
+					"State file was written by a newer plugin version (schema v" + fromVersion
+							+ ", current plugin expects v" + toVersion + "). "
+							+ "Run 'test-order:clean' (Maven) or 'testOrderClean' (Gradle) to reset, "
+							+ "or upgrade the plugin back to match the state file.");
 		}
 		Map<String, Object> current = root;
 		for (int v = fromVersion; v < toVersion; v++) {
@@ -71,9 +74,14 @@ final class StateMigrations {
 			}
 			LOG.info("Migrating state from schema v" + v + " to v" + (v + 1));
 			Map<String, Object> migrated = migration.transform().apply(current);
-			Map<String, Object> normalized = new java.util.LinkedHashMap<>(migrated);
-			normalized.put("schemaVersion", v + 1);
-			current = normalized;
+			if (migrated == current) {
+				// Identity transform — just update schema version in-place
+				current.put("schemaVersion", v + 1);
+			} else {
+				Map<String, Object> normalized = new java.util.LinkedHashMap<>(migrated);
+				normalized.put("schemaVersion", v + 1);
+				current = normalized;
+			}
 		}
 		return current;
 	}

@@ -63,7 +63,7 @@ mvn test -Dtestorder.mode=learn \
 ### Fast local loop
 
 ```bash
-mvn test-order:combined test \
+mvn test-order:auto test \
   -Dtestorder.changeMode=uncommitted \
   -Dtestorder.select.topN=5 \
   -Dtestorder.select.randomM=0
@@ -72,7 +72,7 @@ mvn test-order:combined test \
 ### Normal branch validation
 
 ```bash
-mvn test-order:combined test \
+mvn test-order:auto test \
   -Dtestorder.changeMode=since-last-commit \
   -Dtestorder.select.topN=20 \
   -Dtestorder.select.randomM=5
@@ -81,7 +81,7 @@ mvn test-order:combined test \
 ### Conservative CI subset
 
 ```bash
-mvn test-order:combined test \
+mvn test-order:auto test \
   -Dtestorder.changeMode=since-last-commit \
   -Dtestorder.select.topN=50 \
   -Dtestorder.select.randomM=20

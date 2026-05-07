@@ -35,7 +35,7 @@ final class PackageDetector {
         String result = PackageDetectorSupport.resolveIncludePackages(sourceRoot, includePackages,
                 filterByGroupId, groupId);
         if (result != null) {
-            logger.lifecycle("[test-order] Instrumentation packages: {}", result);
+            logger.info("[test-order] Instrumentation packages: {}", result);
         }
         return result;
     }

@@ -2,6 +2,7 @@ package me.bechberger.testorder.ops;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Set;
 
 import me.bechberger.testorder.DependencyMap;
@@ -20,7 +21,8 @@ public final class SelectOperation {
 	/** Input configuration for test selection. */
 	public record SelectConfig(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTests, TestOrderState.ScoringWeights weights, int topN, int randomM, Long seed,
-			Set<String> alwaysRunClasses, Path selectedFile, Path remainingFile, PluginLog log) {
+			Set<String> alwaysRunClasses, Path selectedFile, Path remainingFile, PluginLog log,
+			Map<String, Double> changeComplexity) {
 	}
 
 	/** Result of test selection. */
@@ -36,7 +38,8 @@ public final class SelectOperation {
 	public static SelectResult select(SelectConfig config) throws IOException {
 		TestSelector.Selection selection = new TestSelector(config.depMap(), config.state(), config.changedClasses(),
 				config.changedTests(), config.weights(),
-				new TestSelector.Config(config.topN(), config.randomM(), config.seed()), config.alwaysRunClasses())
+				new TestSelector.Config(config.topN(), config.randomM(), config.seed()), config.alwaysRunClasses(),
+				config.changeComplexity())
 				.select();
 
 		if (config.selectedFile() != null) {
@@ -48,8 +51,7 @@ public final class SelectOperation {
 
 		boolean allSelected = selection.remaining().isEmpty();
 		if (allSelected) {
-			config.log().info("[test-order] Running all " + selection.selected().size()
-					+ " tests (no changes detected or all tests selected)");
+			config.log().info("[test-order] Running full test suite (selection covered all tests)");
 		} else {
 			config.log().info("[test-order] Selected " + selection.selected().size() + " tests, deferred "
 					+ selection.remaining().size());

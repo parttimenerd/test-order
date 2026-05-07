@@ -66,7 +66,7 @@ final class GradlePluginSupport {
      */
     static void configureOrderer(Test task, Project project) {
         task.systemProperty("junit.jupiter.testclass.order.default",
-                "me.bechberger.testorder.PriorityClassOrderer");
+                "me.bechberger.testorder.junit.PriorityClassOrderer");
         String debugFlag = TestOrderPlugin.gradleOrSystemProperty(project, "testorder.debug");
         if ("true".equalsIgnoreCase(debugFlag)) {
             task.systemProperty("testorder.debug", "true");

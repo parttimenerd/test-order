@@ -90,7 +90,7 @@ public final class GenerateDashboardOperation {
 		Files.writeString(outputPath, html, StandardCharsets.UTF_8);
 
 		log.info("[test-order] Dashboard written to: " + outputPath);
-		log.info("[test-order] Open in browser: file://" + outputPath.toAbsolutePath());
+		log.info("[test-order] To open automatically, set testorder.dashboard.open=true");
 
 		return outputPath;
 	}

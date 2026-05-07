@@ -61,7 +61,7 @@ class SpringBootCoreModulesIT {
     @BeforeAll
     static void setup() throws IOException {
         repoRoot = locateRepoRoot();
-        springBootDir = repoRoot.resolve("spring-boot");
+        springBootDir = locateSpringBoot(repoRoot);
         Assumptions.assumeTrue(Files.isDirectory(springBootDir), "spring-boot checkout is required");
 
         coreModuleDir = springBootDir.resolve("core/spring-boot");
@@ -543,6 +543,16 @@ class SpringBootCoreModulesIT {
             return current.getParent();
         }
         return current;
+    }
+
+    private static Path locateSpringBoot(Path repoRoot) {
+        // Prefer third-party/spring-boot (setup-example-repos.sh layout)
+        Path thirdParty = repoRoot.resolve("third-party/spring-boot");
+        if (Files.isDirectory(thirdParty)) {
+            return thirdParty;
+        }
+        // Fallback: legacy root-level checkout
+        return repoRoot.resolve("spring-boot");
     }
 
     private static Optional<String> findSpringJavaHome() {

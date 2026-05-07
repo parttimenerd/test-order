@@ -47,7 +47,7 @@ public final class AggregateOperation {
 			return new Result(0, false);
 		}
 		if (Files.exists(indexPath)) {
-			log.info("[test-order] Overwriting existing index at " + indexPath);
+			log.debug("[test-order] Overwriting existing index at " + indexPath);
 		}
 		PersistenceSupport.withFileLock(indexPath, () -> {
 			map.save(indexPath);

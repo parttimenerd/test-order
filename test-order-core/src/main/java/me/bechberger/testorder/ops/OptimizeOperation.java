@@ -1,6 +1,7 @@
 package me.bechberger.testorder.ops;
 
 import java.io.IOException;
+import java.util.Locale;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.Consumer;
@@ -82,7 +83,7 @@ public final class OptimizeOperation {
 			state.save(statePath);
 
 			if (log != null) {
-				log.accept(String.format("[test-order] Optimised weights:  %s  (%.1fs)", optimized.weights().format(),
+				log.accept(String.format(Locale.US, "[test-order] Optimised weights:  %s  (%.1fs)", optimized.weights().format(),
 						elapsedMs / 1000.0));
 				if (optimized.overfit()) {
 					log.accept("[test-order] Overfitting detected — default weights used instead.");

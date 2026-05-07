@@ -3,18 +3,23 @@ package me.bechberger.testorder.ops;
 import java.awt.Desktop;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import me.bechberger.testorder.PersistenceSupport;
 import me.bechberger.testorder.TestOrderState;
 
 /**
@@ -52,7 +57,7 @@ public final class DashboardServerOperation {
 	 *             if the server cannot bind
 	 */
 	public static int start(Path htmlPath, Path statePath, int port, PluginLog log) throws IOException {
-		return start(htmlPath, statePath, port, log, null);
+		return start(htmlPath, statePath, port, log, null, 0, false);
 	}
 
 	/**
@@ -62,10 +67,34 @@ public final class DashboardServerOperation {
 	 */
 	public static int start(Path htmlPath, Path statePath, int port, PluginLog log,
 			java.util.function.IntConsumer portCallback) throws IOException {
+		return start(htmlPath, statePath, port, log, portCallback, 0, false);
+	}
+
+	/**
+	 * Starts the dashboard HTTP server. When {@code serveSeconds > 0}, the
+	 * server stops automatically after the configured duration; otherwise it runs
+	 * until interrupted (Ctrl+C).
+	 */
+	public static int start(Path htmlPath, Path statePath, int port, PluginLog log,
+			java.util.function.IntConsumer portCallback, long serveSeconds) throws IOException {
+		return start(htmlPath, statePath, port, log, portCallback, serveSeconds, false);
+	}
+
+	/**
+	 * Starts the dashboard HTTP server. When {@code serveSeconds > 0}, the
+	 * server stops automatically after the configured duration; otherwise it runs
+	 * until interrupted (Ctrl+C).
+	 *
+	 * @param openBrowser
+	 *            if {@code true}, attempt to open the served URL in the default
+	 *            browser after the server starts
+	 */
+	public static int start(Path htmlPath, Path statePath, int port, PluginLog log,
+			java.util.function.IntConsumer portCallback, long serveSeconds, boolean openBrowser) throws IOException {
 		ExecutorService executor = Executors.newCachedThreadPool();
 		HttpServer server;
 		try {
-			server = HttpServer.create(new InetSocketAddress(port), /* backlog */ 10);
+			server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), /* backlog */ 10);
 		} catch (IOException e) {
 			executor.shutdownNow();
 			throw e;
@@ -81,27 +110,51 @@ public final class DashboardServerOperation {
 		String url = "http://localhost:" + boundPort;
 
 		log.info("[test-order] Dashboard served at: " + url);
-		log.info("[test-order] Press Ctrl+C to stop.");
+		if (serveSeconds > 0) {
+			log.info("[test-order] Server will stop automatically after " + serveSeconds + " s.");
+		} else {
+			log.info("[test-order] Press Ctrl+C to stop.");
+		}
 
 		if (portCallback != null) {
 			portCallback.accept(boundPort);
 		}
 
-		tryOpenBrowser(URI.create(url));
+		if (openBrowser) {
+			tryOpenBrowser(URI.create(url));
+		}
 
 		CountDownLatch latch = new CountDownLatch(1);
-		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-			server.stop(0);
-			executor.shutdownNow();
-			latch.countDown();
-		}));
+		AtomicBoolean stopped = new AtomicBoolean();
+		Runnable stopServer = () -> {
+			if (stopped.compareAndSet(false, true)) {
+				server.stop(0);
+				executor.shutdownNow();
+				latch.countDown();
+			}
+		};
+		Thread shutdownHook = new Thread(stopServer, "test-order-dashboard-shutdown");
+		Runtime.getRuntime().addShutdownHook(shutdownHook);
+		ScheduledExecutorService timeoutExecutor = null;
+		if (serveSeconds > 0) {
+			timeoutExecutor = Executors.newSingleThreadScheduledExecutor();
+			timeoutExecutor.schedule(stopServer, serveSeconds, TimeUnit.SECONDS);
+		}
 
 		try {
 			latch.await();
 		} catch (InterruptedException e) {
-			server.stop(0);
-			executor.shutdownNow();
+			stopServer.run();
 			Thread.currentThread().interrupt();
+		} finally {
+			if (timeoutExecutor != null) {
+				timeoutExecutor.shutdownNow();
+			}
+			try {
+				Runtime.getRuntime().removeShutdownHook(shutdownHook);
+			} catch (IllegalStateException ignored) {
+				// JVM is already shutting down.
+			}
 		}
 
 		return boundPort;
@@ -125,17 +178,17 @@ public final class DashboardServerOperation {
 			return;
 		}
 		try {
-			TestOrderState state = Files.exists(statePath) ? TestOrderState.load(statePath) : new TestOrderState();
-			TestOrderState.OptimizeResult result = state.optimize();
+			TestOrderState.OptimizeResult result = PersistenceSupport.withFileLock(statePath, () -> {
+				TestOrderState s = Files.exists(statePath) ? TestOrderState.load(statePath) : new TestOrderState();
+				TestOrderState.OptimizeResult r = s.optimize();
+				if (r == null) return null;
+				s.setWeights(r.weights());
+				s.save(statePath);
+				return r;
+			});
 			if (result == null) {
 				sendJson(exchange, "{\"error\":\"Not enough failure runs for optimization (need at least 3)\"}");
 				return;
-			}
-			state.setWeights(result.weights());
-			try {
-				state.save(statePath);
-			} catch (IOException saveEx) {
-				log.warn("[test-order] Could not save optimized weights: " + saveEx.getMessage());
 			}
 			TestOrderState.ScoringWeights w = result.weights();
 			String json = String.format(
@@ -148,7 +201,11 @@ public final class DashboardServerOperation {
 					result.validationScore(), result.overfit(), result.folds());
 			sendJson(exchange, json);
 		} catch (Exception e) {
-			sendJson(exchange, "{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}");
+			String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+			// Escape for JSON: backslashes, quotes, and control characters
+			msg = msg.replace("\\", "\\\\").replace("\"", "\\\"")
+					.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+			sendJson(exchange, "{\"error\":\"" + msg + "\"}");
 		}
 	}
 

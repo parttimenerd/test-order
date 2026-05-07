@@ -43,7 +43,7 @@ public final class OrderReportPrinter {
 	 * Prints a compact table view of the ranked tests.
 	 */
 	public static void printShowOrderTable(PrintStream out, List<RankedTest> ranked, Set<String> changed,
-			Set<String> changedTests, boolean includeTags, boolean showDepTotals) {
+			Set<String> changedTests, boolean includeTags, boolean showDepTotals, boolean fullNames) {
 		out.println();
 		if (!changed.isEmpty()) {
 			out.println("Changed classes: " + String.join(", ", new TreeSet<>(changed)));
@@ -55,9 +55,9 @@ public final class OrderReportPrinter {
 
 		int maxName = "Test Class".length();
 		for (RankedTest entry : ranked) {
-			String shortName = shortenClassName(entry.name());
-			if (shortName.length() > maxName) {
-				maxName = shortName.length();
+			String displayName = fullNames ? entry.name() : shortenClassName(entry.name());
+			if (displayName.length() > maxName) {
+				maxName = displayName.length();
 			}
 		}
 
@@ -77,6 +77,7 @@ public final class OrderReportPrinter {
 		for (int i = 0; i < ranked.size(); i++) {
 			RankedTest entry = ranked.get(i);
 			TestScorer.ScoreResult score = entry.score();
+			String displayName = fullNames ? entry.name() : shortenClassName(entry.name());
 			String deps = formatDeps(score.depOverlap(), score.depTotal(), showDepTotals);
 			if (includeTags) {
 				var tags = new StringJoiner(" ");
@@ -89,13 +90,13 @@ public final class OrderReportPrinter {
 				if (score.isSlow()) {
 					tags.add("[SLOW]");
 				}
-				out.printf(fmt, (i + 1) + ".", shortenClassName(entry.name()), score.score(), deps,
-						score.failScore() > 0 ? String.format("%.1f", score.failScore()) : "",
+				out.printf(fmt, (i + 1) + ".", displayName, score.score(), deps,
+						score.failScore() > 0 ? String.format(java.util.Locale.US, "%.1f", score.failScore()) : "",
 						score.isChanged() ? "yes" : "", entry.durationMs() >= 0 ? entry.durationMs() + "ms" : "",
 						tags.toString());
 			} else {
-				out.printf(fmt, (i + 1) + ".", shortenClassName(entry.name()), score.score(), deps,
-						score.failScore() > 0 ? String.format("%.1f", score.failScore()) : "",
+				out.printf(fmt, (i + 1) + ".", displayName, score.score(), deps,
+						score.failScore() > 0 ? String.format(java.util.Locale.US, "%.1f", score.failScore()) : "",
 						score.isChanged() ? "yes" : "", entry.durationMs() >= 0 ? entry.durationMs() + "ms" : "");
 			}
 		}

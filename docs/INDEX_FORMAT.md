@@ -171,4 +171,4 @@ On validation failure, loading fails with `IOException`.
 ## Notes
 
 - This specification is the authoritative reference for dependency index persistence.
-- The state/history file (`.test-order-state`) is a separate format with its own schema versioning.
+- The state/history file (`.test-order/state.lz4`) is a separate format with its own schema versioning.

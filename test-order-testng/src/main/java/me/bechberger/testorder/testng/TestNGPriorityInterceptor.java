@@ -85,7 +85,7 @@ public class TestNGPriorityInterceptor implements IMethodInterceptor {
 			List<IMethodInstance> group = byClass.get(className);
 			if (group != null && !group.isEmpty()) {
 				Class<?> realClass = group.get(0).getMethod().getRealClass();
-				if (realClass.isAnnotationPresent(me.bechberger.testorder.AlwaysRun.class)) {
+				if (realClass.isAnnotationPresent(me.bechberger.testorder.annotations.AlwaysRun.class)) {
 					alwaysRunClasses.add(className);
 				}
 			}

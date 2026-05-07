@@ -134,11 +134,11 @@ public final class ShowOrderOperation {
 	 */
 	public static void printReport(PrintStream out, List<OrderReportPrinter.RankedTest> scored, TestScorer scorer,
 			Set<String> changed, Set<String> changedTests, TestOrderState.ScoringWeights weights, boolean explain,
-			boolean includeTags, boolean showDepTotals) {
+			boolean includeTags, boolean showDepTotals, boolean fullNames) {
 		if (explain) {
 			OrderReportPrinter.printExplainReport(out, scored, scorer, changed, changedTests, weights);
 		} else {
-			OrderReportPrinter.printShowOrderTable(out, scored, changed, changedTests, includeTags, showDepTotals);
+			OrderReportPrinter.printShowOrderTable(out, scored, changed, changedTests, includeTags, showDepTotals, fullNames);
 		}
 	}
 }

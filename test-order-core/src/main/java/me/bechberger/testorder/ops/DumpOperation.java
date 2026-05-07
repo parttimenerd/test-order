@@ -58,6 +58,7 @@ public final class DumpOperation {
 			return;
 		}
 		log.info("[test-order] Dependency index: " + indexPath + " (" + map.size() + " test classes)");
+		out.println("# Test Class\tDependencies");
 		for (String tc : map.testClasses()) {
 			out.println(tc + "\t" + String.join(",", map.get(tc)));
 		}

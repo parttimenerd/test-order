@@ -1,6 +1,7 @@
 package me.bechberger.testorder.ops.workflows;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Locale;
@@ -132,12 +133,16 @@ public final class AutoWorkflow {
 			var allTests = new ArrayList<>(a.depMap().testClasses());
 			selectResult = new SelectOperation.SelectResult(new TestSelector.Selection(allTests, java.util.List.of()),
 					true);
-			ctx.log().info(
-					"[test-order] Running all " + allTests.size() + " tests (no changed classes or tests detected)");
+			ctx.log().info("[test-order] No changed classes detected — running tests in default order.");
 		} else {
 			selectResult = SelectOperation.select(new SelectOperation.SelectConfig(a.depMap(), a.state(),
 					a.changedClasses(), a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(), alwaysRun,
-					ctx.selectedFile(), ctx.remainingFile(), ctx.log()));
+					ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
+			// G3: Warn if selection yields no tests in auto mode
+			if (selectResult.selection().selected().isEmpty()) {
+				ctx.log().warn("[test-order] Selection yielded 0 tests despite detected changes. "
+						+ "Check scoring weights or selectTopN/selectRandomM configuration.");
+			}
 		}
 
 		Map<String, String> configMap = OrdererConfigOperation.buildConfig(new OrdererConfigOperation.OrdererInput(
@@ -147,9 +152,7 @@ public final class AutoWorkflow {
 				ctx.springContextGrouping(), ctx.projectRoot().toAbsolutePath().toString(),
 				ctx.sourceRoot() != null ? ctx.sourceRoot().toAbsolutePath().toString() : null, ctx.changeMode()));
 
-		if (a.changedClasses().isEmpty()) {
-			ctx.log().info("[test-order] No changed classes detected" + " — running tests in default order.");
-		} else {
+		if (!a.changedClasses().isEmpty()) {
 			ctx.log().info("[test-order] Detected " + a.changedClasses().size() + " changed classes");
 		}
 		if (!a.changedTests().isEmpty()) {
@@ -183,12 +186,17 @@ public final class AutoWorkflow {
 		Supplier<Set<String>> changedClassesSupplier = () -> ChangeDetectionOps.detectChangedClasses(ctx.changeMode(),
 				ctx.projectRoot(), ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log());
 
-		Supplier<Set<String>> changedTestsSupplier = () -> ChangeDetectionOps.detectChangedTestClassesWithKotlin(
-				ctx.changeMode(), ctx.projectRoot(), ctx.testSourceRoot(), ctx.testHashFile(), true, ctx.log());
+		// Only filter new tests by change-detection if this module has been learned before
+		// (test hash file exists). On first run in multi-module builds, the hash file won't
+		// exist yet, so all test classes not in the index are genuinely new.
+		Supplier<Set<String>> changedTestsSupplier = Files.exists(ctx.testHashFile())
+				? () -> ChangeDetectionOps.detectChangedTestClasses(ctx.changeMode(), ctx.projectRoot(),
+						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log())
+				: null;
 
 		ModeResolverOperation.ModeConfig modeConfig = new ModeResolverOperation.ModeConfig(mode, ctx.indexFile(),
 				ctx.stateFile(), ctx.autoLearnRunThreshold(), ctx.autoLearnDiffThreshold(), changedClassesSupplier,
-				ciDownloadCallback, depsDir, ctx.testClassesDir(), changedTestsSupplier,
+				ciDownloadCallback, depsDir, ctx.testClassesDir(), ctx.testSourceRoot(), changedTestsSupplier,
 				ctx.dependencyFingerprintSupplier(), ctx.log());
 
 		ModeResolverOperation.ModeDecision decision = ModeResolverOperation.resolve(modeConfig);

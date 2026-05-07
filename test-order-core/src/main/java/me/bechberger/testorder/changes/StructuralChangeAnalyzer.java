@@ -189,10 +189,17 @@ public class StructuralChangeAnalyzer {
 			return memberLevelOverlapClasses(testClassDeps, testMemberDeps, changedMembers);
 		}
 
-		// No member deps: use structural analysis to refine class-level overlap.
-		// Only count classes that have actual structural changes (not just
-		// comments/whitespace).
-		return classLevelOverlapClasses(testClassDeps, changedMembers.changedClasses());
+		// No member deps: use the union of structurally-changed classes and
+		// git-detected changed classes. Using only changedMembers.changedClasses()
+		// would drop classes that have non-structural changes (e.g. comment edits)
+		// when other files DO have structural changes, which is surprising to users
+		// who see the class listed as "Changed" but get no dependency overlap score.
+		if (changedClasses.isEmpty()) {
+			return classLevelOverlapClasses(testClassDeps, changedMembers.changedClasses());
+		}
+		Set<String> effective = new java.util.LinkedHashSet<>(changedMembers.changedClasses());
+		effective.addAll(changedClasses);
+		return classLevelOverlapClasses(testClassDeps, effective);
 	}
 
 	/**

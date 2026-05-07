@@ -28,6 +28,7 @@ public final class PluginContext {
 	// ── Change detection config ──────────────────────────────────────
 	private final String changeMode;
 	private final String changedClasses;
+	private final String changedTestClasses;
 
 	// ── Scoring config ───────────────────────────────────────────────
 	private final Path weightsFile;
@@ -78,6 +79,7 @@ public final class PluginContext {
 		this.methodHashFile = b.methodHashFile;
 		this.changeMode = b.changeMode;
 		this.changedClasses = b.changedClasses;
+		this.changedTestClasses = b.changedTestClasses;
 		this.weightsFile = b.weightsFile;
 		this.scoreOverrides = b.scoreOverrides;
 		this.methodOrderingEnabled = b.methodOrderingEnabled;
@@ -141,6 +143,9 @@ public final class PluginContext {
 	}
 	public String changedClasses() {
 		return changedClasses;
+	}
+	public String changedTestClasses() {
+		return changedTestClasses;
 	}
 	public Path weightsFile() {
 		return weightsFile;
@@ -238,6 +243,7 @@ public final class PluginContext {
 		private Path methodHashFile;
 		private String changeMode;
 		private String changedClasses;
+		private String changedTestClasses;
 		private Path weightsFile;
 		private Map<String, Integer> scoreOverrides;
 		private boolean methodOrderingEnabled;
@@ -313,6 +319,10 @@ public final class PluginContext {
 		}
 		public Builder changedClasses(String v) {
 			this.changedClasses = v;
+			return this;
+		}
+		public Builder changedTestClasses(String v) {
+			this.changedTestClasses = v;
 			return this;
 		}
 		public Builder weightsFile(Path v) {

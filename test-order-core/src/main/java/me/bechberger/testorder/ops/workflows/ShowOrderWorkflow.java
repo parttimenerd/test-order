@@ -3,6 +3,7 @@ package me.bechberger.testorder.ops.workflows;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import me.bechberger.testorder.DependencyMap;
@@ -29,7 +30,7 @@ public final class ShowOrderWorkflow {
 	 */
 	public record ShowOrderResult(List<OrderReportPrinter.RankedTest> ranked, TestScorer scorer,
 			Set<String> changedClasses, Set<String> changedTests, TestOrderState.ScoringWeights weights,
-			TestOrderState state, DependencyMap depMap) {
+			TestOrderState state, DependencyMap depMap, Map<String, Double> changeComplexity) {
 	}
 
 	/**
@@ -42,7 +43,7 @@ public final class ShowOrderWorkflow {
 		List<OrderReportPrinter.RankedTest> ranked = OrderReportPrinter.rankTests(a.allTests(), scorer, a.state());
 
 		return new ShowOrderResult(ranked, scorer, a.changedClasses(), a.changedTests(), a.weights(), a.state(),
-				a.depMap());
+				a.depMap(), a.changeComplexity());
 	}
 
 	/**
@@ -50,6 +51,14 @@ public final class ShowOrderWorkflow {
 	 */
 	public static ShowOrderResult printReport(PluginContext ctx, PrintStream out, boolean explain, boolean includeTags,
 			boolean showDepTotals) throws IOException {
+		return printReport(ctx, out, explain, false, includeTags, showDepTotals);
+	}
+
+	/**
+	 * Computes and prints the predicted test order report.
+	 */
+	public static ShowOrderResult printReport(PluginContext ctx, PrintStream out, boolean explain, boolean fullNames,
+			boolean includeTags, boolean showDepTotals) throws IOException {
 		ShowOrderResult result = compute(ctx);
 
 		if (result.ranked().isEmpty()) {
@@ -58,7 +67,7 @@ public final class ShowOrderWorkflow {
 		}
 
 		ShowOrderOperation.printReport(out, result.ranked(), result.scorer(), result.changedClasses(),
-				result.changedTests(), result.weights(), explain, includeTags, showDepTotals);
+				result.changedTests(), result.weights(), explain, includeTags, showDepTotals, fullNames);
 
 		return result;
 	}
@@ -74,7 +83,7 @@ public final class ShowOrderWorkflow {
 	 */
 	public static ShowOrderResult printReportWithSelectionPreview(PluginContext ctx, PrintStream out, boolean explain,
 			boolean fullNames, boolean includeTags, boolean showDepTotals) throws IOException {
-		ShowOrderResult result = printReport(ctx, out, explain, includeTags, showDepTotals);
+		ShowOrderResult result = printReport(ctx, out, explain, fullNames, includeTags, showDepTotals);
 		if (result.ranked().isEmpty()) {
 			return result;
 		}
@@ -83,7 +92,7 @@ public final class ShowOrderWorkflow {
 
 		TestSelector.Selection selection = new TestSelector(result.depMap(), result.state(), result.changedClasses(),
 				result.changedTests(), result.weights(), new TestSelector.Config(ctx.topN(), ctx.randomM(), ctx.seed()),
-				alwaysRun).select();
+				alwaysRun, result.changeComplexity()).select();
 
 		printSelectionPreview(out, selection, fullNames, ctx.topN(), ctx.randomM());
 		return result;

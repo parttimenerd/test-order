@@ -33,6 +33,6 @@ public final class SelectWorkflow {
 
 		return SelectOperation.select(new SelectOperation.SelectConfig(a.depMap(), a.state(), a.changedClasses(),
 				a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(), alwaysRun, ctx.selectedFile(),
-				ctx.remainingFile(), ctx.log()));
+				ctx.remainingFile(), ctx.log(), a.changeComplexity()));
 	}
 }

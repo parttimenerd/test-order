@@ -20,7 +20,7 @@ import org.apache.maven.project.MavenProject;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
-import me.bechberger.testorder.plugin.ServeDashboardMojo;
+import me.bechberger.testorder.maven.ServeDashboardMojo;
 
 /**
  * Test fixture that starts a {@link ServeDashboardMojo} with realistic

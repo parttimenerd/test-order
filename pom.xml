@@ -29,8 +29,8 @@
     </developers>
 
     <scm>
-        <connection>scm:git:git@github.com:parttimenerd/test-order.git</connection>
-        <developerConnection>scm:git:https://github.com/parttimenerd/test-order.git</developerConnection>
+        <connection>scm:git:https://github.com/parttimenerd/test-order.git</connection>
+        <developerConnection>scm:git:git@github.com:parttimenerd/test-order.git</developerConnection>
         <url>https://github.com/parttimenerd/test-order</url>
     </scm>
 
@@ -39,15 +39,12 @@
             <id>ossrh</id>
             <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
         </snapshotRepository>
-        <repository>
-            <id>ossrh</id>
-            <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </repository>
     </distributionManagement>
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <jacoco.version>0.8.14</jacoco.version>
         <maven.checkstyle.version>3.4.0</maven.checkstyle.version>
         <spotbugs.maven.plugin.version>4.9.8.1</spotbugs.maven.plugin.version>
@@ -59,13 +56,14 @@
         <testorder.coverage.minimum>0.0</testorder.coverage.minimum>
         <javassist.version>3.29.2-GA</javassist.version>
         <femtocli.version>0.4.0</femtocli.version>
-        <lz4.version>1.10.4</lz4.version>
+        <lz4.version>1.11.0</lz4.version>
         <roaringbitmap.version>1.3.0</roaringbitmap.version>
         <junit.version>6.0.3</junit.version>
         <junit.platform.version>6.0.3</junit.platform.version>
         <maven.api.version>3.9.6</maven.api.version>
         <maven.plugin.tools.version>3.11.0</maven.plugin.tools.version>
         <testng.version>7.10.2</testng.version>
+        <mockito.version>5.17.0</mockito.version>
     </properties>
 
     <modules>
@@ -108,6 +106,16 @@
                 <artifactId>testng</artifactId>
                 <version>${testng.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${mockito.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-junit-jupiter</artifactId>
+                <version>${mockito.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -122,6 +130,11 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
                     <version>${maven.surefire.plugin.version}</version>
                 </plugin>
             </plugins>

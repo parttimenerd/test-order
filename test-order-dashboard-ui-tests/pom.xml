@@ -12,6 +12,16 @@
 
     <artifactId>test-order-dashboard-ui-tests</artifactId>
     <name>Test Order Dashboard UI Tests</name>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <playwright.version>1.52.0</playwright.version>
+        <!-- Set to true on CI without display or Chromium; browser install step below handles it -->
+        <playwright.skip>false</playwright.skip>
+        <!-- Browser-based UI tests are skipped unless explicitly enabled with -Dtestorder.ui=true -->
+        <skipITs>true</skipITs>
+    </properties>
+
     <description>
         Playwright-based end-to-end tests for the test-order HTML dashboard.
         These are integration tests (IT suffix) that run a real headless browser.
@@ -20,14 +30,6 @@
                                                   -Dexec.args="install chromium"
                                                   -pl test-order-dashboard-ui-tests
     </description>
-
-    <properties>
-        <playwright.version>1.52.0</playwright.version>
-        <!-- Set to true on CI without display or Chromium; browser install step below handles it -->
-        <playwright.skip>false</playwright.skip>
-        <!-- Browser-based UI tests are skipped unless explicitly enabled with -Dtestorder.ui=true -->
-        <skipITs>true</skipITs>
-    </properties>
 
     <dependencies>
         <!-- Plugin under test -->
@@ -80,7 +82,6 @@
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <version>5.17.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -103,7 +104,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
                 <configuration>
                     <skipTests>true</skipTests>
                 </configuration>
@@ -113,7 +113,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <version>3.2.5</version>
                 <executions>
                     <execution>
                         <goals>

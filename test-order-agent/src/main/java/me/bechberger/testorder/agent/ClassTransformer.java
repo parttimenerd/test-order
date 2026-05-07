@@ -40,14 +40,20 @@ public class ClassTransformer implements ClassFileTransformer {
 	private final Agent.InstrumentationMode mode;
 	private final FieldTrackingMode fieldTrackingMode;
 	private final ClassIdMap classIdMap = ClassIdMap.getInstance();
-	private final ConcurrentHashMap<ClassLoader, ClassPool> loaderPools = new ConcurrentHashMap<>();
-	private final ConcurrentHashMap<String, String> classCallCache = new ConcurrentHashMap<>();
-	private final ConcurrentHashMap<String, String> memberCallCache = new ConcurrentHashMap<>();
+	private volatile ConcurrentHashMap<ClassLoader, ClassPool> loaderPools = new ConcurrentHashMap<>();
+	private volatile ConcurrentHashMap<String, String> classCallCache = new ConcurrentHashMap<>();
+	private volatile ConcurrentHashMap<String, String> memberCallCache = new ConcurrentHashMap<>();
 
 	/**
 	 * Maximum entries per string cache to prevent unbounded growth in large builds.
 	 */
-	private static final int MAX_CACHE_ENTRIES = 50_000;
+	private static final int MAX_CACHE_ENTRIES = 10_000;
+
+	/**
+	 * Whether transformation caches have been released. Once tests start running,
+	 * class loading is essentially done and these caches are dead weight.
+	 */
+	private volatile boolean cachesReleased;
 
 	public ClassTransformer(Agent options) {
 		this.mode = options.getMode();
@@ -110,42 +116,73 @@ public class ClassTransformer implements ClassFileTransformer {
 			cp.appendSystemPath();
 			return cp;
 		}
-		ClassPool existing = loaderPools.get(loader);
+		ConcurrentHashMap<ClassLoader, ClassPool> pools = loaderPools;
+		if (pools == null) {
+			// Caches released; create a one-off pool (rare: late class loading)
+			ClassPool cp = new ClassPool(null);
+			cp.appendSystemPath();
+			cp.appendClassPath(new LoaderClassPath(loader));
+			return cp;
+		}
+		ClassPool existing = pools.get(loader);
 		if (existing != null) {
 			return existing;
 		}
 		ClassPool cp = new ClassPool(null);
 		cp.appendSystemPath();
 		cp.appendClassPath(new LoaderClassPath(loader));
-		ClassPool prev = loaderPools.putIfAbsent(loader, cp);
+		ClassPool prev = pools.putIfAbsent(loader, cp);
 		return prev != null ? prev : cp;
 	}
 
+	/**
+	 * Release transformation-phase caches to reclaim memory once tests start
+	 * running. After this call, late class transformations still work but without
+	 * caching (rare case).
+	 */
+	public void releaseTransformationCaches() {
+		if (cachesReleased)
+			return;
+		cachesReleased = true;
+		loaderPools = null;
+		classCallCache = null;
+		memberCallCache = null;
+		slashToDotCache = null;
+		filter.clearCache();
+		AgentLogger.log("[ClassTransformer] Released transformation caches to reclaim memory");
+	}
+
 	private String recordClassCall(String fqcn) {
-		String cached = classCallCache.get(fqcn);
-		if (cached != null)
-			return cached;
+		ConcurrentHashMap<String, String> cache = classCallCache;
+		if (cache != null) {
+			String cached = cache.get(fqcn);
+			if (cached != null)
+				return cached;
+		}
 		int classId = classIdMap.getOrRegisterClass(fqcn);
 		String result = (classId < 0)
 				? ""
 				: "me.bechberger.testorder.agent.runtime.UsageStore.recordUsageIdFast(" + classId + ");";
-		if (classCallCache.size() < MAX_CACHE_ENTRIES) {
-			String prev = classCallCache.putIfAbsent(fqcn, result);
+		if (cache != null && cache.size() < MAX_CACHE_ENTRIES) {
+			String prev = cache.putIfAbsent(fqcn, result);
 			return prev != null ? prev : result;
 		}
 		return result;
 	}
 
 	private String recordMemberCall(String memberKey) {
-		String cached = memberCallCache.get(memberKey);
-		if (cached != null)
-			return cached;
+		ConcurrentHashMap<String, String> cache = memberCallCache;
+		if (cache != null) {
+			String cached = cache.get(memberKey);
+			if (cached != null)
+				return cached;
+		}
 		int memberId = classIdMap.getOrRegisterMember(memberKey);
 		String result = (memberId < 0)
 				? ""
 				: "me.bechberger.testorder.agent.runtime.UsageStore.recordMemberUsageIdFast(" + memberId + ");";
-		if (memberCallCache.size() < MAX_CACHE_ENTRIES) {
-			String prev = memberCallCache.putIfAbsent(memberKey, result);
+		if (cache != null && cache.size() < MAX_CACHE_ENTRIES) {
+			String prev = cache.putIfAbsent(memberKey, result);
 			return prev != null ? prev : result;
 		}
 		return result;
@@ -203,14 +240,15 @@ public class ClassTransformer implements ClassFileTransformer {
 		return filter.shouldInstrument(className);
 	}
 
-	private final ConcurrentHashMap<String, String> slashToDotCache = new ConcurrentHashMap<>();
+	private volatile ConcurrentHashMap<String, String> slashToDotCache = new ConcurrentHashMap<>();
 
 	private void instrument(String className, CtClass cc) throws CannotCompileException {
-		String fqcn = slashToDotCache.get(className);
+		ConcurrentHashMap<String, String> dotCache = slashToDotCache;
+		String fqcn = dotCache != null ? dotCache.get(className) : null;
 		if (fqcn == null) {
 			fqcn = className.replace('/', '.');
-			if (slashToDotCache.size() < MAX_CACHE_ENTRIES) {
-				String prev = slashToDotCache.putIfAbsent(className, fqcn);
+			if (dotCache != null && dotCache.size() < MAX_CACHE_ENTRIES) {
+				String prev = dotCache.putIfAbsent(className, fqcn);
 				if (prev != null)
 					fqcn = prev;
 			}

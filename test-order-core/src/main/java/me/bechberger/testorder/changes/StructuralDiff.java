@@ -435,7 +435,7 @@ public class StructuralDiff {
 		}
 
 		try {
-			if (!process.waitFor(30, TimeUnit.SECONDS)) {
+			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
 				process.destroyForcibly();
 				throw new IOException("git cat-file timed out");
 			}
@@ -533,7 +533,7 @@ public class StructuralDiff {
 			}
 		}
 		try {
-			if (!process.waitFor(30, TimeUnit.SECONDS)) {
+			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
 				process.destroyForcibly();
 				return Collections.emptyList();
 			}

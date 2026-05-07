@@ -3,10 +3,10 @@ package me.bechberger.testorder;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 
 final class PendingRunCoordinator {
 
+	private static final Object LOCK = new Object();
 	private static final ConcurrentHashMap<String, TestOrderState.ScoreBreakdown> PENDING_BREAKDOWNS = new ConcurrentHashMap<>();
 	private static volatile String PENDING_STATE_PATH = null;
 
@@ -18,11 +18,15 @@ final class PendingRunCoordinator {
 	}
 
 	static void setStatePath(String path) {
-		PENDING_STATE_PATH = path;
+		synchronized (LOCK) {
+			PENDING_STATE_PATH = path;
+		}
 	}
 
 	static boolean hasPendingData() {
-		return !PENDING_BREAKDOWNS.isEmpty() && PENDING_STATE_PATH != null;
+		synchronized (LOCK) {
+			return !PENDING_BREAKDOWNS.isEmpty() && PENDING_STATE_PATH != null;
+		}
 	}
 
 	static Map<String, TestOrderState.ScoreBreakdown> getPendingBreakdowns() {
@@ -30,11 +34,15 @@ final class PendingRunCoordinator {
 	}
 
 	static String getPendingStatePath() {
-		return PENDING_STATE_PATH;
+		synchronized (LOCK) {
+			return PENDING_STATE_PATH;
+		}
 	}
 
 	static void resetPending() {
-		PENDING_BREAKDOWNS.clear();
-		PENDING_STATE_PATH = null;
+		synchronized (LOCK) {
+			PENDING_BREAKDOWNS.clear();
+			PENDING_STATE_PATH = null;
+		}
 	}
 }

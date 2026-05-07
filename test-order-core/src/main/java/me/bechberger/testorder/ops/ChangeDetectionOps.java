@@ -56,13 +56,46 @@ public final class ChangeDetectionOps {
 	 */
 	public static Set<String> detectChangedTestClasses(String changeMode, Path projectRoot, Path testSourceRoot,
 			Path testHashPath, boolean readOnly, PluginLog log) {
+		return detectChangedTestClasses(changeMode, projectRoot, testSourceRoot, testHashPath, null, readOnly, log);
+	}
+
+	/**
+	 * Detects changed test classes and optionally merges explicit test-class input
+	 * (CSV of FQCNs from {@code testorder.changed.test.classes}).
+	 */
+	public static Set<String> detectChangedTestClasses(String changeMode, Path projectRoot, Path testSourceRoot,
+			Path testHashPath, String explicitChangedTestClasses, boolean readOnly, PluginLog log) {
+		Set<String> explicit = parseCsv(explicitChangedTestClasses);
+		if ("explicit".equalsIgnoreCase(changeMode)) {
+			return explicit;
+		}
 		try {
-			return ChangeDetectionSupport.detectChangedTestClasses(changeMode, projectRoot, testSourceRoot,
-					testHashPath, readOnly);
+			Set<String> detected = ChangeDetectionSupport.detectChangedTestClasses(changeMode, projectRoot,
+					testSourceRoot, testHashPath, readOnly);
+			if (explicit.isEmpty()) {
+				return detected;
+			}
+			Set<String> merged = new LinkedHashSet<>(detected);
+			merged.addAll(explicit);
+			return merged;
 		} catch (IOException e) {
 			log.warn("[test-order] Test change detection failed: " + e.getMessage() + " — falling back to no changes");
+			return explicit;
+		}
+	}
+
+	private static Set<String> parseCsv(String csv) {
+		if (csv == null || csv.isBlank()) {
 			return Set.of();
 		}
+		Set<String> out = new LinkedHashSet<>();
+		for (String token : csv.split(",")) {
+			String trimmed = token.trim();
+			if (!trimmed.isEmpty()) {
+				out.add(trimmed);
+			}
+		}
+		return out;
 	}
 
 	/**
