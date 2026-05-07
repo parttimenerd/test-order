@@ -658,9 +658,32 @@ public class DependencyMap {
 	 * is {@code # className#methodName}, remaining lines are dependency FQCNs.
 	 */
 	public static DependencyMap aggregate(Path depsDir) throws IOException {
+		return aggregate(depsDir, null);
+	}
+
+	/**
+	 * Aggregates all .deps, .mdeps, .members, and .mmembers files from the given
+	 * directory into a single DependencyMap.
+	 *
+	 * @param depsDir
+	 *            directory to scan for .deps files
+	 * @param log
+	 *            optional logger for progress reporting (null = no logging)
+	 * @return aggregated dependency map
+	 * @throws IOException
+	 *             if reading files fails
+	 */
+	public static DependencyMap aggregate(Path depsDir, me.bechberger.testorder.ops.PluginLog log) throws IOException {
 		DependencyMap map = new DependencyMap();
 		try (Stream<Path> files = Files.list(depsDir)) {
-			for (Path file : files.toList()) {
+			java.util.List<Path> fileList = files.toList();
+			int totalFiles = fileList.size();
+			for (int i = 0; i < totalFiles; i++) {
+				Path file = fileList.get(i);
+				// Log progress every 100 files on large projects
+				if (log != null && i > 0 && i % 100 == 0) {
+					log.info("[test-order] Aggregating... (" + i + "/" + totalFiles + " files)");
+				}
 				String fileName = file.getFileName().toString();
 				if (fileName.endsWith(".deps")) {
 					String testClass = fileName.substring(0, fileName.length() - 5); // strip .deps

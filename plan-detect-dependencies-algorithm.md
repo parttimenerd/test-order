@@ -183,30 +183,34 @@ record OrderConstraint(TestId before, TestId after, ConstraintType type, double 
 
 ## Algorithm Architecture: Multi-Strategy Design
 
-The system supports **five detection algorithms**, each with different trade-offs. The user selects one (or the orchestrator auto-selects based on available data and time budget):
+The system supports **eight detection algorithms**, each with different trade-offs. Algorithm 8 ("Combined Adaptive") is the default — it internally incorporates techniques from all others. Individual algorithms remain available for explicit selection:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  DetectDependenciesOperation             │
-│  (orchestrator: time budget, algorithm selection, I/O)  │
-└────────────────────────┬────────────────────────────────┘
-                         │ delegates to
-         ┌───────────────┼───────────────────┐
-         ▼               ▼                   ▼
-┌─────────────┐ ┌─────────────────┐ ┌────────────────┐
-│  Algorithm  │ │    Algorithm    │ │   Algorithm    │
-│  interface  │ │    interface    │ │   interface    │
-└─────────────┘ └─────────────────┘ └────────────────┘
-         │               │                   │
-    ┌────┴────┐    ┌─────┴─────┐    ┌───────┴───────┐
-    │PRADET   │    │Random     │    │Tuscan         │
-    │Iterative│    │Reordering │    │Systematic     │
-    │Refine   │    │(iDFlakies)│    │Coverage       │
-    └─────────┘    └───────────┘    └───────────────┘
-    ┌────┴────┐    ┌─────┴─────┐
-    │Reverse  │    │History    │
-    │Order    │    │Mining     │
-    └─────────┘    └───────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    DetectDependenciesOperation                    │
+│  (orchestrator: time budget, algorithm selection, I/O)           │
+└───────────────────────────────┬──────────────────────────────────┘
+                                │ delegates to
+            ┌───────────────────┼───────────────────────┐
+            ▼                   ▼                       ▼
+   ┌─────────────────┐ ┌─────────────────┐ ┌───────────────────────┐
+   │  DetectionAlgo   │ │  DetectionAlgo   │ │  DetectionAlgorithm   │
+   │  interface       │ │  interface       │ │  interface            │
+   └─────────────────┘ └─────────────────┘ └───────────────────────┘
+            │                   │                       │
+   ┌────────┴────────┐  ┌──────┴──────┐  ┌────────────┴────────────┐
+   │1. Iterative     │  │3. Reverse   │  │ 8. Combined Adaptive    │
+   │   Refinement    │  │   Order     │  │    (DEFAULT)            │
+   │                 │  ├─────────────┤  │                         │
+   │2. Random        │  │4. Dep-Aware │  │ Incorporates techniques │
+   │   Reordering    │  │   Bounded   │  │ from all 7 algorithms   │
+   │                 │  ├─────────────┤  │ with adaptive priority  │
+   │5. Tuscan        │  │6. History   │  │ selection               │
+   │   Systematic    │  │   Mining    │  └─────────────────────────┘
+   │                 │  ├─────────────┤
+   │                 │  │7. PFAST     │
+   │                 │  │   Exclusion │
+   └─────────────────┘  └─────────────┘
 ```
 
 ### Algorithm Interface
@@ -1676,7 +1680,7 @@ List<ODResult> detect(DetectionContext ctx) {
                     List<String> predecessors = outcome.predecessorsOf(victim);
                     
                     // Step 1: First confirm this test passes alone (if unknown)
-                    if (vk.passesAlone() == null) {
+                    if (vk.passesAlone == null) {
                         queue.add(new Action(0.96, ActionType.ISOLATE_VICTIM, victim,
                             "isolate:" + victim));
                     }
@@ -1724,7 +1728,7 @@ List<ODResult> detect(DetectionContext ctx) {
                 } else if (action.type == ActionType.ISOLATE_VICTIM) {
                     // This action RAN victim alone and it FAILED
                     // → victim is broken/NOD, not OD. Record and suppress future actions.
-                    knowledge.put(victim, vk.withPassesAlone(false));
+                    vk.withPassesAlone(false);
                     // Remove queued actions targeting this victim
                     queue.removeIf(a -> targetTest(a).equals(victim));
                     
@@ -1743,6 +1747,13 @@ List<ODResult> detect(DetectionContext ctx) {
                             new TestPair(excluded, bf.failedTest()),
                             "brittle:" + excluded + "→" + bf.failedTest()));
                     }
+                    
+                } else if (action.type == ActionType.CONFIRM_BRITTLE) {
+                    // [setter, brittle] was run and brittle STILL failed.
+                    // This means: (a) multiple setters are needed, or (b) test is NOD.
+                    // Either way, this specific setter is not sufficient alone.
+                    // No action needed — the EXCLUDE_TEST result that triggered this
+                    // may have been a NOD false alarm.
                     
                 } else if (action.type == ActionType.METHOD_REVERSE ||
                            action.type == ActionType.METHOD_EXCLUDE) {
@@ -1868,7 +1879,7 @@ List<String> rankPolluters(List<String> predecessors, String victim,
     
     return predecessors.stream()
         // Filter out already-eliminated candidates
-        .filter(p -> vk == null || !vk.eliminatedPolluters().contains(p))
+        .filter(p -> vk == null || !vk.eliminatedPolluters.contains(p))
         // Filter out tests already confirmed as polluters of other victims (less likely to be dual-polluter)
         .sorted(Comparator.<String>comparingDouble(p -> {
             double score = 0.0;
@@ -1897,6 +1908,52 @@ List<String> rankPolluters(List<String> predecessors, String victim,
 ### Action Execution Details
 
 ```java
+/**
+ * DdminState: state for one step of delta debugging.
+ * Delta debugging bisects a candidate set to find the minimal failure-inducing subset.
+ *
+ * @param candidates  The current set of suspected polluters/edges to test
+ * @param failureInfo The original failure that triggered this search
+ * @param partitions  Number of partitions for this iteration (starts at 2, doubles on failure)
+ * @param currentPartition  Which partition to test next (0-indexed)
+ * @param victim      The failing test we're isolating polluters for
+ */
+record DdminState(List<ConflictEdge> candidates, FailureInfo failureInfo, 
+                  int partitions, int currentPartition, String victim) {
+    
+    /** Construct initial state: start with 2 partitions */
+    DdminState(List<ConflictEdge> candidates, FailureInfo fi, int partitions) {
+        this(candidates, fi, partitions, 0, fi.failedTest());
+    }
+    
+    /** Are we down to a single candidate? */
+    boolean isMinimal() { return candidates.size() <= 1; }
+    
+    /** Get the subset to test in this iteration */
+    List<ConflictEdge> currentSubset() {
+        int size = candidates.size() / partitions;
+        int start = currentPartition * size;
+        int end = Math.min(start + size, candidates.size());
+        return candidates.subList(start, end);
+    }
+    
+    /** Advance: the current subset caused failure → recurse into it */
+    DdminState narrowTo(List<ConflictEdge> failingSubset) {
+        return new DdminState(failingSubset, failureInfo, 2, 0, victim);
+    }
+    
+    /** Advance: current subset did NOT fail → try next partition */
+    DdminState nextPartition() {
+        if (currentPartition + 1 < partitions) {
+            return new DdminState(candidates, failureInfo, partitions, 
+                                  currentPartition + 1, victim);
+        }
+        // All partitions tried, none failed alone → increase granularity
+        return new DdminState(candidates, failureInfo, 
+                              Math.min(partitions * 2, candidates.size()), 0, victim);
+    }
+}
+
 ActionOutcome executeAction(Action action, DetectionContext ctx) {
     switch (action.type) {
         case REVERSE_FULL -> {
@@ -1906,10 +1963,16 @@ ActionOutcome executeAction(Action action, DetectionContext ctx) {
         }
         case CONFIRM_SUSPECT -> {
             // Confirmation = run polluter immediately before victim (rest of suite in reference order)
-            // If victim fails → dependency confirmed
+            // If victim fails → VICTIM dependency confirmed
             Suspect s = (Suspect) action.payload;
             List<String> order = buildConfirmationOrder(s.polluter(), s.victim(), ctx);
             return runAndCompare(order, ctx);
+        }
+        case CONFIRM_BRITTLE -> {
+            // Run [setter, brittle] — if brittle PASSES → BRITTLE dependency confirmed
+            // (The brittle test needs the setter to establish required state)
+            TestPair pair = (TestPair) action.payload;
+            return runAndCompare(List.of(pair.polluter(), pair.victim()), ctx);
         }
         case CLUSTER_VIOLATE -> {
             List<ConflictEdge> edges = (List<ConflictEdge>) action.payload;
@@ -1935,14 +1998,26 @@ ActionOutcome executeAction(Action action, DetectionContext ctx) {
             return runAndCompare(List.of(victim), ctx);
         }
         case ISOLATE_PAIR -> {
-            // Run [polluter, victim] — if victim fails, dependency confirmed
-            // (Only valid AFTER we know victim passes alone)
+            // Run [polluter, victim] — if victim fails, VICTIM dependency confirmed
+            // (Only valid AFTER we know victim passes alone via ISOLATE_VICTIM)
             TestPair pair = (TestPair) action.payload;
             return runAndCompare(List.of(pair.polluter(), pair.victim()), ctx);
         }
         case DDMIN_STEP -> {
+            // Execute one iteration of delta debugging:
+            // Run the current subset of candidates before the victim.
+            // If victim fails → narrow to this subset. If passes → try next partition.
             DdminState state = (DdminState) action.payload;
-            return executeDdminStep(state, ctx);
+            List<String> subset = state.currentSubset().stream()
+                .map(ConflictEdge::testA)  // the candidate polluters
+                .collect(toList());
+            subset.add(state.victim());    // append victim at end
+            ActionOutcome outcome = runAndCompare(subset, ctx);
+            outcome.setDdminResult(
+                outcome.failed(state.victim()) 
+                    ? state.narrowTo(state.currentSubset())
+                    : state.nextPartition());
+            return outcome;
         }
         case METHOD_REVERSE -> {
             String testClass = (String) action.payload;
@@ -2051,6 +2126,44 @@ void boostType(TreeSet<Action> queue, ActionType type, double delta) {
 }
 ```
 
+### Parallel Execution Model
+
+The priority queue loop is inherently sequential (each outcome informs the next action). However, certain action types are **independent** and can safely execute in parallel:
+
+```java
+/**
+ * When parallelExecutors > 1, batch independent actions together.
+ * Independent = actions whose outcomes don't influence each other's scheduling.
+ * 
+ * Safe to parallelize:
+ *   - EXCLUDE_TEST (PFAST): each exclusion is independent
+ *   - ISOLATE_VICTIM: each isolation test is independent
+ *   - RANDOM_SHUFFLE: each shuffle is independent
+ * 
+ * NOT safe to parallelize:
+ *   - DDMIN_STEP: each step depends on the previous outcome
+ *   - ISOLATE_PAIR: depends on ISOLATE_VICTIM completing first
+ *   - CLUSTER_VIOLATE: outcome may overlap with other clusters
+ */
+List<Action> batchIndependentActions(TreeSet<Action> queue, int maxBatch) {
+    List<Action> batch = new ArrayList<>();
+    Set<ActionType> parallelizable = Set.of(
+        ActionType.EXCLUDE_TEST, ActionType.ISOLATE_VICTIM, ActionType.RANDOM_SHUFFLE);
+    
+    Iterator<Action> it = queue.iterator();
+    while (it.hasNext() && batch.size() < maxBatch) {
+        Action a = it.next();
+        if (parallelizable.contains(a.type)) {
+            batch.add(a);
+            it.remove();
+        }
+    }
+    return batch;
+}
+```
+
+When `parallelExecutors > 1`, the main loop checks if the top-priority action is parallelizable. If so, it pulls up to N independent actions from the queue and executes them concurrently via a thread pool (each action spawns a separate Surefire fork). Results are processed sequentially after all complete.
+
 ### Information Flow
 
 ```
@@ -2061,6 +2174,7 @@ void boostType(TreeSet<Action> queue, ActionType type, double delta) {
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │ passesAlone: true/false/null                                  │  │
 │  │ confirmedPolluters: {X, Y}                                    │  │
+│  │ confirmedSetters: {S}           (BRITTLE dependencies)        │  │
 │  │ eliminatedPolluters: {A, B, C}  (proven NOT polluters)        │  │
 │  │ failureCount: 2                                               │  │
 │  └──────────────────────────────────────────────────────────────┘  │
@@ -2100,13 +2214,15 @@ void boostType(TreeSet<Action> queue, ActionType type, double delta) {
 | Decision | Rationale |
 |----------|-----------|
 | **Isolate-first protocol** | Prevents cascading false positives from NOD flaky tests. Costs 1 extra run per victim but saves many wasted runs chasing ghosts. |
+| **Separate ISOLATE_PAIR vs CONFIRM_BRITTLE** | VICTIM and BRITTLE have opposite confirmation semantics: ISOLATE_PAIR confirms on *failure*, CONFIRM_BRITTLE confirms on *pass*. Sharing one action type would require conditional logic that's error-prone. |
 | **TreeSet instead of PriorityQueue** | Supports removal and priority adjustment. Java `PriorityQueue` doesn't support efficient `removeIf` or re-prioritization. |
 | **`dedupKey` on Actions** | Generic deduplication — works for pairs, singles, clusters, methods. Avoids separate dedup logic per action type. |
-| **TestKnowledge accumulation** | Eliminates redundant work: once we know test X passes alone, we never re-test that. Once polluter Y is eliminated for victim Z, we skip that pair. |
+| **TestKnowledge as mutable class** | Accumulates multiple pieces of evidence per test. Using immutable records would require rebuilding the knowledge map on every observation — wasteful for a design where we incrementally learn about each test. |
 | **Proximity as a polluter signal** | State pollution is typically local — if test at position i pollutes, the effect is most likely seen at i+1, not i+100 (state may be cleaned by intervening tests). |
 | **Early termination (10 bugs)** | Diminishing returns: finding the 11th bug adds less value than fixing the first 10. Shift to Phase D (Cleaners). |
 | **PFAST seeded upfront (not contingent)** | BRITTLE bugs are invisible to reverse-order. Waiting for reverse to fail before trying PFAST misses an entire bug category. |
 | **ddmin for predecessor narrowing** | When a test fails after a long sequence, there may be 50+ predecessors. Testing them one-by-one costs 50 runs. ddmin finds the minimal set in ~log₂(50) ≈ 6 runs. |
+| **Parallel batching only for independent actions** | PFAST exclusions and victim isolations don't influence each other. Ddmin and pair confirmation depend on prior results. Safe parallelism requires strict categorization. |
 
 ### Complexity (Revised)
 
@@ -2200,12 +2316,16 @@ Two important tools from the literature are **not directly implementable** as de
 
 ### Phase C: Orchestrator (Multi-Algorithm Time-Budgeted Execution)
 
+> **Note**: When `algorithm=auto` (the default), Phase C delegates directly to Algorithm 8 (Combined Adaptive).
+> The sequential orchestrator below is only used when specific algorithms are explicitly requested via
+> `algorithm=iterative-refinement,reverse-order,random-reordering` etc.
+
 ```java
 class DetectDependenciesOperation {
 
     record Config(
         int timeBudgetSeconds,       // default 1800 (30 min)
-        String algorithm,            // "auto" | algorithm name | comma-separated list
+        String algorithm,            // "auto" | "combined" | algorithm name | comma-separated list
         boolean stopOnFirst,         // default false
         int clusterSize,             // for iterative-refinement: default sqrt(edges)
         int randomRounds,            // for random-reordering: default 100
@@ -2216,12 +2336,14 @@ class DetectDependenciesOperation {
 
     // All registered algorithms
     static final List<DetectionAlgorithm> ALGORITHMS = List.of(
+        new CombinedAdaptiveAlgorithm(),        // Algorithm 8 (DEFAULT)
         new HistoryMiningAlgorithm(),           // Algorithm 6 (free)
         new ReverseOrderAlgorithm(),            // Algorithm 3 (1 run)
         new IterativeRefinementAlgorithm(),     // Algorithm 1 (targeted)
         new DependenceAwareBoundedAlgorithm(2), // Algorithm 4 (exhaustive k=2)
         new RandomReorderingAlgorithm(),        // Algorithm 2 (probabilistic)
-        new TuscanSystematicAlgorithm()         // Algorithm 5 (systematic)
+        new TuscanSystematicAlgorithm(),        // Algorithm 5 (systematic)
+        new PFASTAlgorithm()                    // Algorithm 7 (BRITTLE detection)
     );
 
     List<ODResult> run(Path testOrderDir, Config config) {
@@ -2297,13 +2419,14 @@ class DetectDependenciesOperation {
     
     /**
      * Algorithm selection strategy:
-     * - "auto": choose based on available data + time budget
+     * - "auto" or "combined": run CombinedAdaptiveAlgorithm (Algorithm 8)
      * - specific name: run only that algorithm
-     * - comma-separated: run those in order
+     * - comma-separated: run those in sequence (legacy orchestrator mode)
      */
     List<DetectionAlgorithm> selectAlgorithms(String spec, Set<Prerequisite> available) {
-        if (spec.equals("auto")) {
-            return autoSelect(available);
+        if (spec.equals("auto") || spec.equals("combined")) {
+            // Default: Combined Adaptive handles everything internally
+            return List.of(findAlgo("combined"));
         }
         
         List<String> names = Arrays.asList(spec.split(","));
@@ -2314,17 +2437,10 @@ class DetectDependenciesOperation {
     }
     
     /**
-     * Auto-selection logic (recommended default):
-     * 
-     * Always: history-mining (free) → reverse-order (1 run)
-     * 
-     * Then based on data:
-     *   MEMBER_DEPS available → iterative-refinement (most precise)
-     *   DEPENDENCY_MAP only  → dependence-aware-bounded (exhaustive k=2)
-     *   Nothing available    → random-reordering (always works)
-     * 
-     * If time remains and < 100 tests: tuscan-systematic (guaranteed coverage)
-     * If parallel executors available: pfast-exclusion (BRITTLE detection)
+     * Legacy sequential auto-selection (used only when algorithm=legacy-auto).
+     * Superseded by Algorithm 8 (Combined Adaptive) which performs the same
+     * selection logic internally with information sharing between techniques.
+     * Retained for comparison testing and explicit algorithm chaining.
      */
     List<DetectionAlgorithm> autoSelect(Set<Prerequisite> available, 
                                          DetectionConfig config) {
@@ -2682,14 +2798,15 @@ The Combined Adaptive algorithm (8) is the **new default**. Run counts are sligh
 | `TuscanSystematicAlgorithm` | test-order-core | ~100 |
 | `HistoryMiningAlgorithm` (with RankFO) | test-order-core | ~150 |
 | `PFASTAlgorithm` | test-order-core | ~100 |
-| `CombinedAdaptiveAlgorithm` (default) | test-order-core | ~350 |
-| `DeltaDebugging` (ddmin utility) | test-order-core | ~80 |
+| `CombinedAdaptiveAlgorithm` (default) | test-order-core | ~600 |
+| `DeltaDebugging` (ddmin utility) | test-order-core | ~120 |
+| `TestKnowledge` + action infrastructure | test-order-core | ~80 |
 | `CleanerSearch` | test-order-core | ~120 |
 | `OrderConstraintManager` | test-order-core | ~100 |
-| `DetectDependenciesOperation` (orchestrator) | test-order-core/ops | ~250 |
+| `DetectDependenciesOperation` (orchestrator) | test-order-core/ops | ~200 |
 | `DetectDependenciesMojo` | test-order-maven-plugin | ~100 |
 | Report generator (JSON + MD) | test-order-core | ~120 |
-| **Total** | | **~2,170 lines** |
+| **Total** | | **~2,490 lines** |
 
 ### Maven Plugin Invocation
 
@@ -2765,6 +2882,8 @@ mvn test-order:detect-dependencies \
 | 4. Dep-Aware Bounded | O(E) pairs | DEPENDENCY_MAP + PASSING_REF | Complete for k=2 pairs | High | Small suites, minimal witnesses |
 | 5. Tuscan Systematic | n permutations | None | Guaranteed all adjacent pairs | High | Thorough, medium suites |
 | 6. History Mining | **0** | MULTIPLE_RUNS | Low (correlational) | Medium | Free pre-pass, monitoring |
+| 7. PFAST Exclusion | n exclusions | PASSING_REF | BRITTLE-complete | High | Detecting setter dependencies |
+| **8. Combined Adaptive** | **15–25** (adaptive) | PASSING_REF (degrades gracefully) | **Highest** (multi-technique) | **Highest** (isolate-first) | **Default for all projects** |
 
 **Net**: By combining algorithms, we achieve better coverage than any single prior tool. History Mining + Reverse Order costs only 1 run. Adding Iterative Refinement brings precision comparable to PRADET at zero Phase A cost. The auto-selector adapts to available data, from bare-minimum (random only) to full-precision (PRADET-style with member deps).
 

@@ -37,7 +37,8 @@ public final class AggregateOperation {
 	 *             on I/O failure
 	 */
 	public static Result aggregate(Path depsDir, Path indexPath, PluginLog log) throws IOException {
-		DependencyMap map = DependencyMap.aggregate(depsDir);
+		log.info("[test-order] Aggregating test dependencies...");
+		DependencyMap map = DependencyMap.aggregate(depsDir, log);
 		if (map.size() == 0) {
 			if (Files.exists(indexPath)) {
 				log.warn("[test-order] No .deps files found — refusing to overwrite existing index at " + indexPath);
