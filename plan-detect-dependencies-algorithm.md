@@ -1506,19 +1506,29 @@ class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
         RANDOM_SHUFFLE,         // Full random reorder
         EXCLUDE_TEST,           // PFAST: run without one specific test
         ISOLATE_VICTIM,         // Run victim alone to distinguish OD from NOD
-        ISOLATE_PAIR,           // Run [polluter, victim] to confirm causation
+        ISOLATE_PAIR,           // Run [polluter, victim] — expect FAILURE to confirm VICTIM
+        CONFIRM_BRITTLE,        // Run [setter, brittle] — expect PASS to confirm BRITTLE
         DDMIN_STEP,             // One step of delta debugging to narrow polluter set
         METHOD_REVERSE,         // Reverse method order within one class
         METHOD_EXCLUDE          // Exclude one method within a class
     }
     
-    /** Tracks what we know about each test during the run */
-    record TestKnowledge(
-        Set<String> confirmedPolluters,     // tests proven to pollute this one
-        Set<String> eliminatedPolluters,    // tests proven NOT to pollute
-        Boolean passesAlone,                // null = untested, true = OD candidate, false = broken/NOD
-        int failureCount                    // how many times this test has failed in this session
-    ) {}
+    /**
+     * Tracks what we know about each test during the run.
+     * Mutable state holder (not a true record — Sets are mutated in place).
+     * Using a class with accessor-style methods would be more idiomatic,
+     * but we use record syntax here for brevity in the design doc.
+     */
+    static class TestKnowledge {
+        final Set<String> confirmedPolluters = new HashSet<>();   // tests proven to pollute this one
+        final Set<String> confirmedSetters = new HashSet<>();     // tests that this one NEEDS (BRITTLE)
+        final Set<String> eliminatedPolluters = new HashSet<>();  // tests proven NOT to pollute
+        Boolean passesAlone = null;       // null = untested, true = OD candidate, false = broken/NOD
+        int failureCount = 0;             // how many times this test has failed in this session
+        
+        TestKnowledge withFailureCount(int n) { this.failureCount = n; return this; }
+        TestKnowledge withPassesAlone(Boolean v) { this.passesAlone = v; return this; }
+    }
 }
 ```
 
@@ -1630,18 +1640,17 @@ List<ODResult> detect(DetectionContext ctx) {
                 
                 // ─── NOD filter: skip tests that fail too often (likely flaky) ───
                 TestKnowledge vk = knowledge.computeIfAbsent(victim, 
-                    k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
-                vk = vk.withFailureCount(vk.failureCount() + 1);
-                knowledge.put(victim, vk);
+                    k -> new TestKnowledge());
+                vk.withFailureCount(vk.failureCount + 1);
                 
-                if (vk.failureCount() > 3 && vk.passesAlone() == null) {
+                if (vk.failureCount > 3 && vk.passesAlone == null) {
                     // Failed 3+ times but never tested alone → likely NOD/flaky
                     // Demote: test alone at medium priority to confirm
                     queue.add(new Action(0.6, ActionType.ISOLATE_VICTIM, victim,
                         "isolate:" + victim));
                     continue;
                 }
-                if (Boolean.FALSE.equals(vk.passesAlone())) {
+                if (Boolean.FALSE.equals(vk.passesAlone)) {
                     // Already known to fail in isolation → NOT OD, skip
                     continue;
                 }
@@ -1696,13 +1705,13 @@ List<ODResult> detect(DetectionContext ctx) {
                 } else if (action.type == ActionType.ISOLATE_PAIR) {
                     TestPair pair = (TestPair) action.payload;
                     // [polluter, victim] failed — but does victim fail alone too?
-                    if (Boolean.TRUE.equals(knowledge.get(victim).passesAlone())) {
+                    if (Boolean.TRUE.equals(knowledge.get(victim).passesAlone)) {
                         // Passes alone, fails after polluter → CONFIRMED VICTIM
                         newFinds++;
                         confirmed.add(new ODResult(victim, ODType.VICTIM,
                             List.of(pair.polluter(), victim),
                             "Isolated pair confirmed: " + pair.polluter() + " → " + victim));
-                        knowledge.get(victim).confirmedPolluters().add(pair.polluter());
+                        knowledge.get(victim).confirmedPolluters.add(pair.polluter());
                         
                         // Boost: look for other victims of same polluter
                         boostRelatedEdges(pair.polluter(), graph, queue, knowledge);
@@ -1726,13 +1735,13 @@ List<ODResult> detect(DetectionContext ctx) {
                         s.dependencyChain(), "Confirmed history-mined suspect"));
                         
                 } else if (action.type == ActionType.EXCLUDE_TEST) {
-                    // PFAST: removing test X caused test Y to fail → Y is BRITTLE
+                    // PFAST: removing test X caused test Y to fail → Y is BRITTLE candidate
+                    // Confirm: does [X, Y] make Y pass again? If yes → X is setter for Y
                     String excluded = (String) action.payload;
                     for (FailureInfo bf : outcome.newFailures()) {
-                        // Verify: does [excluded, failedTest] make it pass?
-                        queue.add(new Action(0.93, ActionType.ISOLATE_PAIR,
+                        queue.add(new Action(0.93, ActionType.CONFIRM_BRITTLE,
                             new TestPair(excluded, bf.failedTest()),
-                            "pair:" + excluded + "→" + bf.failedTest()));
+                            "brittle:" + excluded + "→" + bf.failedTest()));
                     }
                     
                 } else if (action.type == ActionType.METHOD_REVERSE ||
@@ -1772,11 +1781,11 @@ List<ODResult> detect(DetectionContext ctx) {
                 List<ConflictEdge> cluster = (List<ConflictEdge>) action.payload;
                 for (ConflictEdge e : cluster) {
                     TestKnowledge ka = knowledge.computeIfAbsent(e.testA(), 
-                        k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
-                    ka.eliminatedPolluters().add(e.testB());
+                        k -> new TestKnowledge());
+                    ka.eliminatedPolluters.add(e.testB());
                     TestKnowledge kb = knowledge.computeIfAbsent(e.testB(), 
-                        k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
-                    kb.eliminatedPolluters().add(e.testA());
+                        k -> new TestKnowledge());
+                    kb.eliminatedPolluters.add(e.testA());
                 }
             }
             
@@ -1784,8 +1793,8 @@ List<ODResult> detect(DetectionContext ctx) {
                 // Victim passes alone → OD confirmed (it needs some predecessor to fail)
                 String victim = (String) action.payload;
                 TestKnowledge vk = knowledge.computeIfAbsent(victim, 
-                    k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
-                knowledge.put(victim, vk.withPassesAlone(true));
+                    k -> new TestKnowledge());
+                vk.withPassesAlone(true);
                 
                 // Now promote any pending CONFIRM_SUSPECT / ISOLATE_PAIR for this victim
                 // (The test is genuinely OD — confirming the polluter is valuable)
@@ -1800,8 +1809,20 @@ List<ODResult> detect(DetectionContext ctx) {
                 // [polluter, victim] passed → this polluter does NOT pollute this victim
                 TestPair pair = (TestPair) action.payload;
                 TestKnowledge vk = knowledge.computeIfAbsent(pair.victim(), 
-                    k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
-                vk.eliminatedPolluters().add(pair.polluter());
+                    k -> new TestKnowledge());
+                vk.eliminatedPolluters.add(pair.polluter());
+            }
+            
+            if (action.type == ActionType.CONFIRM_BRITTLE) {
+                // [setter, brittle] passed → CONFIRMED BRITTLE dependency!
+                // The brittle test needs the setter to pass.
+                TestPair pair = (TestPair) action.payload;
+                TestKnowledge vk = knowledge.computeIfAbsent(pair.victim(), 
+                    k -> new TestKnowledge());
+                vk.confirmedSetters.add(pair.polluter());
+                confirmed.add(new ODResult(pair.victim(), ODType.BRITTLE,
+                    List.of(pair.polluter(), pair.victim()),
+                    "Brittle confirmed: " + pair.victim() + " needs " + pair.polluter()));
             }
             
             if (action.type == ActionType.REVERSE_FULL && outcome.allPassed()) {

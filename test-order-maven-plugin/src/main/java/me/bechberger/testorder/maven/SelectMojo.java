@@ -67,6 +67,12 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		new me.bechberger.testorder.ops.ParameterValidator(MavenPluginLog.wrap(getLog()))
 				.validateSelectParameters(topN, randomM);
 
+		// Warn if topN=-1 (default) will select all tests
+		if (topN == -1) {
+			getLog().info("[test-order] topN=-1 (default) selects all change-affected tests. "
+					+ "For a true subset, set -Dtestorder.select.topN=N (e.g., topN=10).");
+		}
+
 		// Warn if 'test' phase is likely not going to run
 		if (session != null && session.getGoals() != null
 				&& session.getGoals().stream().noneMatch(g -> g.equals("test") || g.equals("verify")
