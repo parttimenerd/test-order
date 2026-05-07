@@ -44,9 +44,8 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 		}
 
 		if (statePaths.isEmpty()) {
-			throw new MojoExecutionException(
-					"No state file found (checked " + primaryState + " and reactor submodules)."
-					+ " Run some test-order test runs first.");
+			throw new MojoExecutionException("No state file found (checked " + primaryState
+					+ " and reactor submodules)." + " Run some test-order test runs first.");
 		}
 
 		int optimized = 0;
@@ -61,7 +60,9 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 				} else if (result.overfit()) {
 					getLog().warn("[test-order] Overfitting detected for " + statePath + " — default weights used.");
 					optimized++;
-				} else {				getLog().info("[test-order] Weights optimised successfully.");					optimized++;
+				} else {
+					getLog().info("[test-order] Weights optimised successfully.");
+					optimized++;
 				}
 			} catch (IOException e) {
 				getLog().warn("[test-order] Failed to optimise " + statePath + ": " + e.getMessage());
@@ -69,7 +70,8 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 		}
 
 		if (optimized == 0) {
-			throw new MojoExecutionException("Failed to optimise any state files.");
+			getLog().warn("[test-order] No state files were optimised — insufficient failure data in all state files.");
+			return;
 		}
 		getLog().info("[test-order] Optimised " + optimized + " state file(s).");
 	}

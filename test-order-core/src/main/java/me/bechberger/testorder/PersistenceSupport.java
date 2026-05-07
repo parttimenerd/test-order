@@ -33,7 +33,10 @@ public final class PersistenceSupport {
 	 */
 	private static final ThreadLocal<Set<Path>> HELD_LOCKS = ThreadLocal.withInitial(HashSet::new);
 
-	/** Stale lock files older than this are automatically deleted. Configurable via {@code testorder.lock.stale.minutes}. */
+	/**
+	 * Stale lock files older than this are automatically deleted. Configurable via
+	 * {@code testorder.lock.stale.minutes}.
+	 */
 	private static final Duration STALE_LOCK_THRESHOLD = staleLockThreshold();
 
 	/** Leftover temp files older than this are cleaned up. */
@@ -143,8 +146,8 @@ public final class PersistenceSupport {
 					LinkOption.NOFOLLOW_LINKS);
 			Instant lastModified = attrs.lastModifiedTime().toInstant();
 			if (Duration.between(lastModified, Instant.now()).compareTo(STALE_LOCK_THRESHOLD) > 0) {
-				LOG.warning("Deleting stale lock file (older than " + STALE_LOCK_THRESHOLD.toMinutes() + " minutes): "
-						+ lockFile);
+				LOG.warning("[test-order] Deleting stale lock file (older than " + STALE_LOCK_THRESHOLD.toMinutes()
+						+ " minutes): " + lockFile);
 				Files.deleteIfExists(lockFile);
 			}
 		} catch (IOException e) {

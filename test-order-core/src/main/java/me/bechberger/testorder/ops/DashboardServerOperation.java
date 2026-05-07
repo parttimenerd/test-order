@@ -9,12 +9,12 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -61,9 +61,9 @@ public final class DashboardServerOperation {
 	}
 
 	/**
-	 * Starts the dashboard HTTP server and blocks until interrupted (Ctrl+C).
-	 * The optional {@code portCallback} is invoked with the bound port before
-	 * blocking, allowing callers to observe the port while the server is running.
+	 * Starts the dashboard HTTP server and blocks until interrupted (Ctrl+C). The
+	 * optional {@code portCallback} is invoked with the bound port before blocking,
+	 * allowing callers to observe the port while the server is running.
 	 */
 	public static int start(Path htmlPath, Path statePath, int port, PluginLog log,
 			java.util.function.IntConsumer portCallback) throws IOException {
@@ -71,9 +71,9 @@ public final class DashboardServerOperation {
 	}
 
 	/**
-	 * Starts the dashboard HTTP server. When {@code serveSeconds > 0}, the
-	 * server stops automatically after the configured duration; otherwise it runs
-	 * until interrupted (Ctrl+C).
+	 * Starts the dashboard HTTP server. When {@code serveSeconds > 0}, the server
+	 * stops automatically after the configured duration; otherwise it runs until
+	 * interrupted (Ctrl+C).
 	 */
 	public static int start(Path htmlPath, Path statePath, int port, PluginLog log,
 			java.util.function.IntConsumer portCallback, long serveSeconds) throws IOException {
@@ -81,9 +81,9 @@ public final class DashboardServerOperation {
 	}
 
 	/**
-	 * Starts the dashboard HTTP server. When {@code serveSeconds > 0}, the
-	 * server stops automatically after the configured duration; otherwise it runs
-	 * until interrupted (Ctrl+C).
+	 * Starts the dashboard HTTP server. When {@code serveSeconds > 0}, the server
+	 * stops automatically after the configured duration; otherwise it runs until
+	 * interrupted (Ctrl+C).
 	 *
 	 * @param openBrowser
 	 *            if {@code true}, attempt to open the served URL in the default
@@ -104,12 +104,12 @@ public final class DashboardServerOperation {
 		server.createContext("/api/optimize", exchange -> handleOptimize(exchange, statePath, log));
 		server.createContext("/", exchange -> handleHtml(exchange, htmlPath));
 		server.setExecutor(executor);
-		
+
 		// Register shutdown hook to ensure port is released on Ctrl+C
 		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
 			server.stop(0);
 		}));
-		
+
 		server.start();
 
 		int boundPort = server.getAddress().getPort();
@@ -119,7 +119,7 @@ public final class DashboardServerOperation {
 		if (serveSeconds > 0) {
 			log.info("[test-order] Server will stop automatically after " + serveSeconds + " s.");
 		} else {
-			log.info("[test-order] Press Ctrl+C to stop.");
+			// Note: no message here — callers (ServeDashboardMojo, Gradle) print their own
 		}
 
 		if (portCallback != null) {
@@ -187,7 +187,8 @@ public final class DashboardServerOperation {
 			TestOrderState.OptimizeResult result = PersistenceSupport.withFileLock(statePath, () -> {
 				TestOrderState s = Files.exists(statePath) ? TestOrderState.load(statePath) : new TestOrderState();
 				TestOrderState.OptimizeResult r = s.optimize();
-				if (r == null) return null;
+				if (r == null)
+					return null;
 				s.setWeights(r.weights());
 				s.save(statePath);
 				return r;
@@ -209,8 +210,8 @@ public final class DashboardServerOperation {
 		} catch (Exception e) {
 			String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
 			// Escape for JSON: backslashes, quotes, and control characters
-			msg = msg.replace("\\", "\\\\").replace("\"", "\\\"")
-					.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+			msg = msg.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+					.replace("\t", "\\t");
 			sendJson(exchange, "{\"error\":\"" + msg + "\"}");
 		}
 	}
@@ -245,7 +246,8 @@ public final class DashboardServerOperation {
 	private static void sendJson(HttpExchange exchange, String json) throws IOException {
 		byte[] body = json.getBytes(StandardCharsets.UTF_8);
 		exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-		// Only allow same-origin requests for security (CORS origin check not needed for loopback-only binding)
+		// Only allow same-origin requests for security (CORS origin check not needed
+		// for loopback-only binding)
 		exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "http://localhost:*");
 		exchange.sendResponseHeaders(200, body.length);
 		try (OutputStream os = exchange.getResponseBody()) {

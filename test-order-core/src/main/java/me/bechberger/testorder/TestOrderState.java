@@ -528,7 +528,9 @@ public class TestOrderState {
 		config.incrementRunsSinceLearn();
 	}
 
-	/** Get the stored dependency fingerprint, or {@code null} if not yet recorded. */
+	/**
+	 * Get the stored dependency fingerprint, or {@code null} if not yet recorded.
+	 */
 	public String dependencyFingerprint() {
 		return config.dependencyFingerprint();
 	}
@@ -864,15 +866,17 @@ public class TestOrderState {
 		}
 		int schemaVersion = safeInt(root.get("schemaVersion"), 0, "schemaVersion");
 		if (schemaVersion > CURRENT_SCHEMA_VERSION) {
-			throw new IOException(
-					"Unsupported state schemaVersion " + schemaVersion + " (current " + CURRENT_SCHEMA_VERSION + ")");
+			throw new StateDowngradeException("State file was written by a newer plugin version (schema v"
+					+ schemaVersion + ", current plugin expects v" + CURRENT_SCHEMA_VERSION + "). "
+					+ "Run 'test-order:clean' (Maven) or 'testOrderClean' (Gradle) to reset, "
+					+ "or upgrade the plugin back to match the state file.");
 		}
 		if (schemaVersion < CURRENT_SCHEMA_VERSION) {
 			try {
 				root = StateMigrations.migrate(root, schemaVersion, CURRENT_SCHEMA_VERSION);
 			} catch (IllegalArgumentException e) {
-				LOG.warning("No migration path from schema v" + schemaVersion
-						+ " to v" + CURRENT_SCHEMA_VERSION + "; starting fresh");
+				LOG.warning("No migration path from schema v" + schemaVersion + " to v" + CURRENT_SCHEMA_VERSION
+						+ "; starting fresh");
 				return state;
 			}
 		}

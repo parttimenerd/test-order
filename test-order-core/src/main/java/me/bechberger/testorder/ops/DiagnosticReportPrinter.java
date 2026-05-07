@@ -3,9 +3,9 @@ package me.bechberger.testorder.ops;
 import me.bechberger.testorder.ops.DiagnosticOperation.DiagnosticReport;
 
 /**
- * Shared formatter for diagnostic report output.
- * Both Maven and Gradle plugins delegate to this instead of duplicating
- * the box-drawing header, emoji, and indentation logic.
+ * Shared formatter for diagnostic report output. Both Maven and Gradle plugins
+ * delegate to this instead of duplicating the box-drawing header, emoji, and
+ * indentation logic.
  */
 public final class DiagnosticReportPrinter {
 
@@ -15,8 +15,10 @@ public final class DiagnosticReportPrinter {
 	/**
 	 * Prints a formatted diagnostic report to the given logger.
 	 *
-	 * @param report the diagnostic report
-	 * @param log    plugin logger
+	 * @param report
+	 *            the diagnostic report
+	 * @param log
+	 *            plugin logger
 	 */
 	public static void print(DiagnosticReport report, PluginLog log) {
 		log.info("");
@@ -28,8 +30,7 @@ public final class DiagnosticReportPrinter {
 		log.info("");
 		log.info("Checks Performed: " + report.results().size());
 		log.info("  Errors: " + report.results().stream().filter(r -> r.isError()).count());
-		log.info("  Warnings: " + report.results().stream()
-				.filter(r -> r.isInformational() && !r.isSuccess()).count());
+		log.info("  Warnings: " + report.results().stream().filter(r -> r.isInformational() && !r.isSuccess()).count());
 		log.info("");
 
 		for (var result : report.results()) {

@@ -99,8 +99,8 @@ public final class ChangeAnalysis {
 			try {
 				state = TestOrderState.load(ctx.stateFile());
 			} catch (IOException e) {
-				ctx.log().warn("[test-order] Failed to load state: " + e.getMessage()
-						+ " — starting with fresh state.");
+				ctx.log()
+						.warn("[test-order] Failed to load state: " + e.getMessage() + " — starting with fresh state.");
 				state = new TestOrderState();
 			}
 		} else {

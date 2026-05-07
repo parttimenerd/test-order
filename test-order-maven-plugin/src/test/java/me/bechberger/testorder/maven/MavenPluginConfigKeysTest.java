@@ -9,13 +9,13 @@ import org.junit.jupiter.api.Test;
 
 class MavenPluginConfigKeysTest {
 
-    @Test
-    void showMethodOrderExplainIsRecognizedAsKnownProperty() {
-        Properties props = new Properties();
-        props.setProperty("testorder.showMethodOrder.explain", "true");
+	@Test
+	void showMethodOrderExplainIsRecognizedAsKnownProperty() {
+		Properties props = new Properties();
+		props.setProperty("testorder.showMethodOrder.explain", "true");
 
-        List<String> warnings = MavenPluginConfigKeys.findUnknownProperties(props);
+		List<String> warnings = MavenPluginConfigKeys.findUnknownProperties(props);
 
-        assertThat(warnings).isEmpty();
-    }
+		assertThat(warnings).isEmpty();
+	}
 }

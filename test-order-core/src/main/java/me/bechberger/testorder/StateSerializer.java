@@ -5,12 +5,18 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.logging.Logger;
 
 import me.bechberger.util.json.JSONParser;
 import me.bechberger.util.json.PrettyPrinter;
 
 final class StateSerializer {
+
+	private static final Logger LOG = Logger.getLogger(StateSerializer.class.getName());
 
 	private StateSerializer() {
 	}
@@ -52,6 +58,12 @@ final class StateSerializer {
 		}
 		try {
 			return TestOrderState.fromPersistedRoot(TestOrderState.safeMap(JSONParser.parse(json), "root"));
+		} catch (StateDowngradeException downgrade) {
+			// R10-4: Create a timestamped backup so the user can recover by upgrading back
+			Path backup = createTimestampedBackup(loadPath);
+			LOG.warning("State file was written by a newer plugin version. " + "Created backup at " + backup
+					+ ". Starting fresh. " + "To recover, upgrade the plugin or restore the backup.");
+			return new TestOrderState();
 		} catch (IOException | RuntimeException primaryFailure) {
 			Path tempFile = PersistenceSupport.temporarySibling(file);
 			if (!loadPath.equals(tempFile) && Files.exists(tempFile)) {
@@ -86,5 +98,17 @@ final class StateSerializer {
 		try (var in = LZ4Support.blockInputStream(new ByteArrayInputStream(raw))) {
 			return new String(in.readAllBytes(), StandardCharsets.UTF_8).strip();
 		}
+	}
+
+	/**
+	 * Creates a timestamped backup of the state file so users can recover after a
+	 * plugin downgrade (R10-4).
+	 */
+	private static Path createTimestampedBackup(Path stateFile) throws IOException {
+		String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+		String fileName = stateFile.getFileName().toString();
+		Path backup = stateFile.resolveSibling(fileName + ".backup-" + timestamp);
+		Files.copy(stateFile, backup, StandardCopyOption.REPLACE_EXISTING);
+		return backup;
 	}
 }

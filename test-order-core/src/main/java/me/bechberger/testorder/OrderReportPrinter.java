@@ -100,6 +100,25 @@ public final class OrderReportPrinter {
 						score.isChanged() ? "yes" : "", entry.durationMs() >= 0 ? entry.durationMs() + "ms" : "");
 			}
 		}
+
+		// R12-4: Print summary line for quick overview on large projects
+		if (ranked.size() > 5) {
+			int minScore = ranked.stream().mapToInt(r -> r.score().score()).min().orElse(0);
+			int maxScore = ranked.stream().mapToInt(r -> r.score().score()).max().orElse(0);
+			long newCount = ranked.stream().filter(r -> r.score().isNew()).count();
+			long slowCount = ranked.stream().filter(r -> r.score().isSlow()).count();
+			long changedCount = ranked.stream().filter(r -> r.score().isChanged()).count();
+			StringBuilder summary = new StringBuilder();
+			summary.append("Total: ").append(ranked.size()).append(" tests | Score range: ").append(minScore)
+					.append("–").append(maxScore);
+			if (newCount > 0)
+				summary.append(" | ").append(newCount).append(" NEW");
+			if (slowCount > 0)
+				summary.append(" | ").append(slowCount).append(" SLOW");
+			if (changedCount > 0)
+				summary.append(" | ").append(changedCount).append(" CHANGED");
+			out.println(summary);
+		}
 		out.println();
 	}
 

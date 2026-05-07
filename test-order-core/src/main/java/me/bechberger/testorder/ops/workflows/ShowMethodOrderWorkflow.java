@@ -113,7 +113,8 @@ public final class ShowMethodOrderWorkflow {
 			out.println(flags);
 		}
 
-		out.printf("         failRecency=%.2f  speed=%.2f  depOverlap=%.2f  coverage=%.2f  new=%.2f  changed=%.2f%n",
+		out.printf(Locale.US,
+				"         failRecency=%.2f  speed=%.2f  depOverlap=%.2f  coverage=%.2f  new=%.2f  changed=%.2f%n",
 				d.failureRecencyBonus(), d.speedBonus(), d.depOverlapBonus(), d.coverageBonus(), d.newMethodBonus(),
 				d.changedMethodBonus());
 	}

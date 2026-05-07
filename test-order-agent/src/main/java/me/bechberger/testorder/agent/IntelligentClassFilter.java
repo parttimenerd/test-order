@@ -339,8 +339,8 @@ public class IntelligentClassFilter {
 
 		@Override
 		public String toString() {
-return String.format(Locale.US, "CacheStats{hits=%d, misses=%d, hitRate=%.1f%%, size=%d/%d}", hits, misses, hitRate(),
-					currentSize, maxSize);
+			return String.format(Locale.US, "CacheStats{hits=%d, misses=%d, hitRate=%.1f%%, size=%d/%d}", hits, misses,
+					hitRate(), currentSize, maxSize);
 		}
 	}
 }

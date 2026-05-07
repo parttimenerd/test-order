@@ -7,9 +7,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-import me.bechberger.testorder.junit.PriorityMethodOrderer;
-import me.bechberger.testorder.junit.TelemetryListener;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +18,9 @@ import org.junit.platform.engine.support.descriptor.ClassSource;
 import org.junit.platform.engine.support.descriptor.MethodSource;
 import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.TestPlan;
+
+import me.bechberger.testorder.junit.PriorityMethodOrderer;
+import me.bechberger.testorder.junit.TelemetryListener;
 
 class TelemetryListenerTest {
 
@@ -1178,11 +1178,11 @@ class TelemetryListenerTest {
 		listener.testPlanExecutionFinished(StubTestPlan.EMPTY);
 
 		TestOrderState state = TestOrderState.load(stateFile);
-		// Only the direct execution should be recorded — the suite failure should be ignored
+		// Only the direct execution should be recorded — the suite failure should be
+		// ignored
 		List<TestOrderState.RunRecord> runs = state.runs();
 		assertFalse(runs.isEmpty());
-		assertEquals(0, runs.get(runs.size() - 1).totalFailures(),
-				"Suite engine failure should not be recorded");
+		assertEquals(0, runs.get(runs.size() - 1).totalFailures(), "Suite engine failure should not be recorded");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -1219,16 +1219,15 @@ class TelemetryListenerTest {
 
 		TestIdentifier id = createClassSourceTestIdentifier("com.example.AbortedTest");
 		listener.executionStarted(id);
-		listener.executionFinished(id, TestExecutionResult.aborted(
-				new org.opentest4j.TestAbortedException("assumption failed")));
+		listener.executionFinished(id,
+				TestExecutionResult.aborted(new org.opentest4j.TestAbortedException("assumption failed")));
 
 		listener.testPlanExecutionFinished(StubTestPlan.EMPTY);
 
 		TestOrderState state = TestOrderState.load(stateFile);
 		List<TestOrderState.RunRecord> runs = state.runs();
 		assertFalse(runs.isEmpty());
-		assertEquals(0, runs.get(runs.size() - 1).totalFailures(),
-				"ABORTED tests should not count as failures");
+		assertEquals(0, runs.get(runs.size() - 1).totalFailures(), "ABORTED tests should not count as failures");
 	}
 
 	private static TestIdentifier createClassSourceTestIdentifier(String className) {
@@ -1256,21 +1255,22 @@ class TelemetryListenerTest {
 	 * "[engine:junit-platform-suite]" in the unique ID string.
 	 */
 	private static TestIdentifier createSuiteEngineTestIdentifier(String className, String uniqueSuffix) {
-		TestDescriptor stub = new StubTestDescriptor(
-				UniqueId.parse("[engine:junit-platform-suite]/[suite:" + className + "]/[engine:junit-jupiter]/[class:"
-						+ className + "]/[dynamic:" + uniqueSuffix + "]"),
-				className, ClassSource.from(className));
+		TestDescriptor stub = new StubTestDescriptor(UniqueId.parse("[engine:junit-platform-suite]/[suite:" + className
+				+ "]/[engine:junit-jupiter]/[class:" + className + "]/[dynamic:" + uniqueSuffix + "]"), className,
+				ClassSource.from(className));
 		return TestIdentifier.from(stub);
 	}
 
 	/**
 	 * Creates a TestIdentifier with MethodSource and type=CONTAINER, simulating a
+	 *
 	 * @ParameterizedTest or @TestTemplate container node.
 	 */
 	private static TestIdentifier createContainerMethodSourceTestIdentifier(String className, String methodName,
 			String uniqueSuffix) {
-		TestDescriptor stub = new ContainerStubTestDescriptor(UniqueId.parse("[engine:junit-jupiter]/[class:"
-				+ className + "]/[test-template:" + methodName + "]/[dynamic:" + uniqueSuffix + "]"),
+		TestDescriptor stub = new ContainerStubTestDescriptor(
+				UniqueId.parse("[engine:junit-jupiter]/[class:" + className + "]/[test-template:" + methodName
+						+ "]/[dynamic:" + uniqueSuffix + "]"),
 				className + "#" + methodName, MethodSource.from(className, methodName));
 		return TestIdentifier.from(stub);
 	}
@@ -1424,6 +1424,7 @@ class TelemetryListenerTest {
 
 	/**
 	 * TestDescriptor stub with type=CONTAINER — simulates @ParameterizedTest and
+	 *
 	 * @TestTemplate container nodes.
 	 */
 	private static class ContainerStubTestDescriptor implements TestDescriptor {

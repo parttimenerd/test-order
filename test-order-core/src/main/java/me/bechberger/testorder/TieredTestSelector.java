@@ -186,8 +186,11 @@ public class TieredTestSelector {
 		long budget = (long) (totalDuration * config.tier2Fraction());
 		long spent = 0;
 		List<String> tier2 = new ArrayList<>();
+		// Estimate unknown durations as the average of known ones (R12-5)
+		long knownCount = remaining.stream().filter(s -> s.duration() != Long.MAX_VALUE).count();
+		long avgDuration = knownCount > 0 ? totalDuration / knownCount : 0;
 		for (ScoredTest s : remaining) {
-			long dur = s.duration() != Long.MAX_VALUE ? s.duration() : 0;
+			long dur = s.duration() != Long.MAX_VALUE ? s.duration() : avgDuration;
 			if (spent + dur > budget && !tier2.isEmpty()) {
 				break;
 			}

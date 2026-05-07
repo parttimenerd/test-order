@@ -6,11 +6,11 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.*;
 
+import org.junit.jupiter.api.*;
+
 import me.bechberger.testorder.annotations.AlwaysRun;
 import me.bechberger.testorder.annotations.TestOrder;
 import me.bechberger.testorder.junit.PriorityMethodOrderer;
-
-import org.junit.jupiter.api.*;
 
 /**
  * Tests for {@link PriorityMethodOrderer}: ordering, graceful degradation,

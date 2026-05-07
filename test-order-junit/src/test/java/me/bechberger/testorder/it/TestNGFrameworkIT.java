@@ -13,8 +13,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Integration test for TestNG projects. Validates that test-order workflows
- * (learn, order, auto) run successfully on a project using TestNG instead
- * of JUnit Jupiter.
+ * (learn, order, auto) run successfully on a project using TestNG instead of
+ * JUnit Jupiter.
  */
 public class TestNGFrameworkIT extends BaseFixtureIT {
 

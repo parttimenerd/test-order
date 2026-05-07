@@ -87,8 +87,8 @@ public class ParameterValidator {
 		validateExplicitModeRequirements(changeMode, changedClasses, null);
 	}
 
-	public void validateExplicitModeRequirements(String changeMode, String changedClasses,
-			String changedTestClasses) throws MojoExecutionException {
+	public void validateExplicitModeRequirements(String changeMode, String changedClasses, String changedTestClasses)
+			throws MojoExecutionException {
 		try {
 			delegate.validateExplicitModeRequirements(changeMode, changedClasses, changedTestClasses);
 		} catch (IllegalArgumentException e) {

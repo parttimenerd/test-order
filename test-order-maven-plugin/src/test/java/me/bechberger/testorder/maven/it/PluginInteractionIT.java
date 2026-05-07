@@ -52,10 +52,14 @@ class PluginInteractionIT {
 
 	@AfterAll
 	void tearDown() {
-		if (jacocoFixture != null) jacocoFixture.restoreAll();
-		if (parallelFixture != null) parallelFixture.restoreAll();
-		if (parameterizedFixture != null) parameterizedFixture.restoreAll();
-		if (shopProject != null) shopProject.restoreAll();
+		if (jacocoFixture != null)
+			jacocoFixture.restoreAll();
+		if (parallelFixture != null)
+			parallelFixture.restoreAll();
+		if (parameterizedFixture != null)
+			parameterizedFixture.restoreAll();
+		if (shopProject != null)
+			shopProject.restoreAll();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -77,24 +81,19 @@ class PluginInteractionIT {
 
 		// JaCoCo report should also be generated
 		assertThat(jacocoFixture.exists("target/site/jacoco/index.html"))
-				.as("JaCoCo report should be generated alongside test-order agent")
-				.isTrue();
+				.as("JaCoCo report should be generated alongside test-order agent").isTrue();
 	}
 
 	@Test
 	@Order(2)
 	@DisplayName("Order mode with JaCoCo works without agent conflicts")
 	void orderModeWithJacocoAgentCoexistence() {
-		MavenResult result = jacocoFixture.maven().run("clean", "test",
-				"-Dtestorder.mode=order",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=com.example.coverage.StringProcessor");
+		MavenResult result = jacocoFixture.maven().run("clean", "test", "-Dtestorder.mode=order",
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=com.example.coverage.StringProcessor");
 		assertThat(result).succeeded();
 
 		// Both agents should produce output without classloading conflicts
-		assertThat(result.output())
-				.doesNotContain("ClassNotFoundException")
-				.doesNotContain("LinkageError")
+		assertThat(result.output()).doesNotContain("ClassNotFoundException").doesNotContain("LinkageError")
 				.doesNotContain("IncompatibleClassChangeError");
 	}
 
@@ -122,8 +121,7 @@ class PluginInteractionIT {
 	@Order(11)
 	@DisplayName("Order mode with method-level parallel still passes tests")
 	void orderModeWithMethodLevelParallelExecution() {
-		MavenResult result = parallelFixture.maven().run("clean", "test",
-				"-Dtestorder.mode=order",
+		MavenResult result = parallelFixture.maven().run("clean", "test", "-Dtestorder.mode=order",
 				"-Dtestorder.changeMode=explicit",
 				"-Dtestorder.changed.classes=me.bechberger.testorder.ConcurrentTestSuiteA");
 		assertThat(result).succeeded();
@@ -136,8 +134,7 @@ class PluginInteractionIT {
 	@Order(12)
 	@DisplayName("Order mode with forkCount=2 produces surefire reports from both forks")
 	void orderModeWithForkCountProducesAllReports() {
-		MavenResult result = parallelFixture.maven().run("clean", "test",
-				"-Dtestorder.mode=order",
+		MavenResult result = parallelFixture.maven().run("clean", "test", "-Dtestorder.mode=order",
 				"-Dtestorder.changeMode=explicit",
 				"-Dtestorder.changed.classes=me.bechberger.testorder.ConcurrentTestSuiteA");
 		assertThat(result).succeeded();
@@ -157,8 +154,7 @@ class PluginInteractionIT {
 		shopProject.cleanAll();
 
 		// Run learn mode with class-level parallel configured at the command line
-		MavenResult result = shopProject.maven().run("clean", "test",
-				"-Dtestorder.mode=learn",
+		MavenResult result = shopProject.maven().run("clean", "test", "-Dtestorder.mode=learn",
 				"-DargLine=-Djunit.jupiter.execution.parallel.enabled=true -Djunit.jupiter.execution.parallel.mode.classes.default=concurrent");
 
 		// The build should either:
@@ -184,11 +180,8 @@ class PluginInteractionIT {
 		// Run select with a surefire include filter (only ProductTest).
 		// Bound prepare should now skip automatically when select is present.
 		MavenResult result = shopProject.maven().run("clean", "test-order:select", "test",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=com.example.shop.Product",
-				"-Dtest=com.example.shop.ProductTest",
-				"-Dtestorder.select.topN=10",
-				"-Dtestorder.select.randomM=0");
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=com.example.shop.Product",
+				"-Dtest=com.example.shop.ProductTest", "-Dtestorder.select.topN=10", "-Dtestorder.select.randomM=0");
 		// Build should succeed — selection respects surefire's -Dtest filter
 		assertThat(result).succeeded();
 	}
@@ -197,10 +190,8 @@ class PluginInteractionIT {
 	@Order(31)
 	@DisplayName("Order mode with surefire -Dtest filter respects exclusions")
 	void orderModeWithSurefireTestFilter() {
-		MavenResult result = shopProject.maven().run("clean", "test",
-				"-Dtestorder.mode=order",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=com.example.shop.Product",
+		MavenResult result = shopProject.maven().run("clean", "test", "-Dtestorder.mode=order",
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=com.example.shop.Product",
 				"-Dtest=com.example.shop.ProductTest");
 		assertThat(result).succeeded();
 
@@ -217,8 +208,7 @@ class PluginInteractionIT {
 	@DisplayName("Learn mode chains with existing argLine (e.g. -Xmx512m)")
 	void learnModeWithCustomArgLine() throws InterruptedException {
 		shopProject.cleanAll();
-		MavenResult result = shopProject.maven().run("clean", "test",
-				"-Dtestorder.mode=learn",
+		MavenResult result = shopProject.maven().run("clean", "test", "-Dtestorder.mode=learn",
 				"-DargLine=-Xmx512m -Duser.timezone=UTC");
 		assertThat(result).succeeded().outputContains("[test-order] Learn mode").outputContains("Tests run:");
 		// Service file may not be immediately visible on APFS after Maven exits
@@ -227,8 +217,7 @@ class PluginInteractionIT {
 			Thread.sleep(1000);
 		}
 		assertThat(shopProject.exists(svcFile))
-				.as("test-order runtime listener wiring should remain present when argLine is overridden")
-				.isTrue();
+				.as("test-order runtime listener wiring should remain present when argLine is overridden").isTrue();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -250,10 +239,8 @@ class PluginInteractionIT {
 	@DisplayName("Order mode with parameterized tests runs successfully")
 	void orderModeWithParameterizedTests() {
 		parameterizedFixture.maven().learn();
-		MavenResult result = parameterizedFixture.maven().run("clean", "test",
-				"-Dtestorder.mode=order",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=com.example.math.Calculator");
+		MavenResult result = parameterizedFixture.maven().run("clean", "test", "-Dtestorder.mode=order",
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=com.example.math.Calculator");
 		assertThat(result).succeeded().outputContains("Tests run:");
 		assertThat(result.output()).contains("CalculatorParameterizedTest");
 	}
@@ -294,8 +281,7 @@ class PluginInteractionIT {
 		shopProject.cleanAll();
 
 		// Learn with only ProductTest running (using -Dtest filter)
-		MavenResult partialLearn = shopProject.maven().run("clean", "test",
-				"-Dtestorder.mode=learn",
+		MavenResult partialLearn = shopProject.maven().run("clean", "test", "-Dtestorder.mode=learn",
 				"-Dtest=com.example.shop.ProductTest");
 		assertThat(partialLearn).succeeded();
 
@@ -305,16 +291,12 @@ class PluginInteractionIT {
 
 		// Now run order mode — should work with partial index
 		// Tests not in index are treated as "new"
-		MavenResult orderResult = shopProject.maven().run("clean", "test",
-				"-Dtestorder.mode=order",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=com.example.shop.Product");
+		MavenResult orderResult = shopProject.maven().run("clean", "test", "-Dtestorder.mode=order",
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=com.example.shop.Product");
 		assertThat(orderResult).succeeded();
 
 		// All 3 test classes should still execute (ordering uses partial info)
-		assertThat(orderResult.output()).contains("ProductTest")
-				.contains("CartTest")
-				.contains("InvoiceTest");
+		assertThat(orderResult.output()).contains("ProductTest").contains("CartTest").contains("InvoiceTest");
 
 		// Clean up — full re-learn for subsequent tests
 		shopProject.cleanAll();
@@ -364,9 +346,6 @@ class PluginInteractionIT {
 		assertThat(result).succeeded();
 
 		// Output should reference the test classes
-		assertThat(result.output())
-				.contains("ProductTest")
-				.contains("CartTest")
-				.contains("InvoiceTest");
+		assertThat(result.output()).contains("ProductTest").contains("CartTest").contains("InvoiceTest");
 	}
 }

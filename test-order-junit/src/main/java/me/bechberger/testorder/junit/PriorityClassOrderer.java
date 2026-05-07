@@ -1,14 +1,15 @@
 package me.bechberger.testorder.junit;
 
 import java.util.*;
-import me.bechberger.testorder.*;
-import me.bechberger.testorder.annotations.AlwaysRun;
-import me.bechberger.testorder.annotations.TestOrder;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.ClassDescriptor;
 import org.junit.jupiter.api.ClassOrderer;
 import org.junit.jupiter.api.ClassOrdererContext;
+
+import me.bechberger.testorder.*;
+import me.bechberger.testorder.annotations.AlwaysRun;
+import me.bechberger.testorder.annotations.TestOrder;
 
 /**
  * JUnit ClassOrderer that prioritizes test classes based on a weighted score.
@@ -49,7 +50,10 @@ public class PriorityClassOrderer implements ClassOrderer {
 	/** Shared config resolver (system props + classpath properties). */
 	private TestOrderConfigResolver config;
 
-	/** Cached setup result — avoids repeated load attempts (and error logs) on every orderClasses() call. */
+	/**
+	 * Cached setup result — avoids repeated load attempts (and error logs) on every
+	 * orderClasses() call.
+	 */
 	private ClassOrderingEngine.SetupResult cachedSetup;
 	private boolean setupAttempted;
 
@@ -93,9 +97,15 @@ public class PriorityClassOrderer implements ClassOrderer {
 		List<String> testClassNames = descriptors.stream().map(this::getTopLevelClassName).toList();
 
 		if (changeDetectionLogged.compareAndSet(false, true)) {
-			TestOrderLogger.info("change detection mode={} changedClasses={} changedTests={}",
-					config.getConfig(TestOrderConfig.CHANGE_MODE), s.changedClasses().size(),
-					s.changedTestClasses().size());
+			// R17-1: With forkCount>1, each fork JVM logs independently. Suppress logging
+			// if the mojo already printed change-detection info (indicated by config
+			// property).
+			boolean suppressedByMojo = "true".equals(config.getConfig("testorder.changeDetection.logged"));
+			if (!suppressedByMojo) {
+				TestOrderLogger.info("change detection mode={} changedClasses={} changedTests={}",
+						config.getConfig(TestOrderConfig.CHANGE_MODE), s.changedClasses().size(),
+						s.changedTestClasses().size());
+			}
 			if (s.debug()) {
 				TestOrderLogger.debug("changed classes: {}", s.changedClasses());
 				TestOrderLogger.debug("changed test classes: {}", s.changedTestClasses());
@@ -136,8 +146,8 @@ public class PriorityClassOrderer implements ClassOrderer {
 			if (orderAnn != null) {
 				junitOrdered.add(desc);
 				if (s.debug()) {
-				TestOrderLogger.debug("@Order({}) on {} — excluding from score-based sort",
-							orderAnn.value(), getTopLevelClassName(desc));
+					TestOrderLogger.debug("@Order({}) on {} — excluding from score-based sort", orderAnn.value(),
+							getTopLevelClassName(desc));
 				}
 				continue;
 			}
@@ -165,8 +175,7 @@ public class PriorityClassOrderer implements ClassOrderer {
 					scores.merge(desc, delta, Integer::sum);
 			}
 			if (s.debug() && (bonus != 0 || changeBonus != 0 || prio != TestOrder.Priority.NORMAL)) {
-				TestOrderLogger.debug(
-						"@TestOrder on {}: priority={}, scoreBonus={}, changeBonus={} (applied={})",
+				TestOrderLogger.debug("@TestOrder on {}: priority={}, scoreBonus={}, changeBonus={} (applied={})",
 						testClassName, prio, bonus, ann.changeBonus(), changeBonus);
 			}
 		}

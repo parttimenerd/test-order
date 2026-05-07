@@ -12,7 +12,8 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 /**
- * Integration test for the three-tier CI workflow: tiered-select → run-tier 2 → run-tier 3.
+ * Integration test for the three-tier CI workflow: tiered-select → run-tier 2 →
+ * run-tier 3.
  * <p>
  * Uses the sample-shop project (Product → Cart → Invoice, 3 test classes).
  * <p>
@@ -78,7 +79,9 @@ class TieredWorkflowIT {
 	@DisplayName("tiered-select partitions tests into 3 tiers based on Cart change")
 	void tieredSelectPartitionsTests() throws IOException {
 		MavenResult result = project.maven().tieredSelect(CART);
-		assertThat(result.isSuccess()).as("tiered-select: %s", result.output().substring(Math.max(0, result.output().length() - 500))).isTrue();
+		assertThat(result.isSuccess())
+				.as("tiered-select: %s", result.output().substring(Math.max(0, result.output().length() - 500)))
+				.isTrue();
 
 		// Verify tier files were created
 		Path tier1 = project.path("target/test-order-tier1.txt");
@@ -91,8 +94,7 @@ class TieredWorkflowIT {
 
 		// Tier 1 should contain Cart-dependent tests
 		List<String> tier1Tests = Files.readAllLines(tier1);
-		assertThat(tier1Tests).as("Tier 1 should contain tests affected by Cart change")
-				.contains(CART_TEST);
+		assertThat(tier1Tests).as("Tier 1 should contain tests affected by Cart change").contains(CART_TEST);
 
 		// All 3 tiers combined should cover all test classes
 		List<String> tier2Tests = Files.readAllLines(tier2);
@@ -122,7 +124,8 @@ class TieredWorkflowIT {
 		}
 
 		MavenResult result = project.maven().runTier(2);
-		assertThat(result.isSuccess()).as("run-tier 2: %s", result.output().substring(Math.max(0, result.output().length() - 500))).isTrue();
+		assertThat(result.isSuccess())
+				.as("run-tier 2: %s", result.output().substring(Math.max(0, result.output().length() - 500))).isTrue();
 		assertThat(result.output()).contains("tier-2");
 	}
 
@@ -138,12 +141,14 @@ class TieredWorkflowIT {
 		if (!Files.exists(tier3) || Files.readAllLines(tier3).isEmpty()) {
 			// Tier 3 is empty, run-tier should still succeed gracefully
 			MavenResult result = project.maven().runTier(3);
-			assertThat(result.isSuccess()).as("run-tier 3 (empty): %s", result.output().substring(Math.max(0, result.output().length() - 500))).isTrue();
+			assertThat(result.isSuccess()).as("run-tier 3 (empty): %s",
+					result.output().substring(Math.max(0, result.output().length() - 500))).isTrue();
 			return;
 		}
 
 		MavenResult result = project.maven().runTier(3);
-		assertThat(result.isSuccess()).as("run-tier 3: %s", result.output().substring(Math.max(0, result.output().length() - 500))).isTrue();
+		assertThat(result.isSuccess())
+				.as("run-tier 3: %s", result.output().substring(Math.max(0, result.output().length() - 500))).isTrue();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -161,7 +166,7 @@ class TieredWorkflowIT {
 
 	// ═══════════════════════════════════════════════════════════════════
 	// Step 5: Tiered select with broader change (Product) tests
-	//         that InvoiceTest gets tier-1 (it depends on Product via Cart)
+	// that InvoiceTest gets tier-1 (it depends on Product via Cart)
 	// ═══════════════════════════════════════════════════════════════════
 
 	@Test
@@ -169,7 +174,9 @@ class TieredWorkflowIT {
 	@DisplayName("tiered-select with Product change includes transitive dependents in tier 1")
 	void tieredSelectWithProductChangeIncludesTransitiveDeps() throws IOException {
 		MavenResult result = project.maven().tieredSelect(PRODUCT);
-		assertThat(result.isSuccess()).as("tiered-select: %s", result.output().substring(Math.max(0, result.output().length() - 500))).isTrue();
+		assertThat(result.isSuccess())
+				.as("tiered-select: %s", result.output().substring(Math.max(0, result.output().length() - 500)))
+				.isTrue();
 
 		Path tier1 = project.path("target/test-order-tier1.txt");
 		List<String> tier1Tests = Files.readAllLines(tier1);

@@ -66,6 +66,14 @@ public final class ShowOrderWorkflow {
 			return result;
 		}
 
+		// Detect all-zero scores with no changes and provide guidance
+		if (result.changedClasses().isEmpty() && result.changedTests().isEmpty()
+				&& result.ranked().stream().allMatch(r -> r.score().score() == 0)) {
+			ctx.log().info("[test-order] No changed classes detected (changeMode="
+					+ (ctx.changeMode() != null ? ctx.changeMode() : "uncommitted")
+					+ "). All scores are 0. Modify a source file or try -Dtestorder.changeMode=since-last-commit.");
+		}
+
 		ShowOrderOperation.printReport(out, result.ranked(), result.scorer(), result.changedClasses(),
 				result.changedTests(), result.weights(), explain, includeTags, showDepTotals, fullNames);
 

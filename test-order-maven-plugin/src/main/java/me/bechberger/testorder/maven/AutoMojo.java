@@ -81,9 +81,8 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		}
 
 		if (isPrepareGoalBound()) {
-			getLog().info(
-					"[test-order] The 'prepare' goal is bound in your POM."
-							+ " The CLI goal takes precedence; 'prepare' will detect this and skip.");
+			getLog().info("[test-order] The 'prepare' goal is bound in your POM."
+					+ " The CLI goal takes precedence; 'prepare' will detect this and skip.");
 		}
 
 		validateAutoMojoParameters();
@@ -139,6 +138,12 @@ public class AutoMojo extends AbstractTestOrderMojo {
 
 			if (os.selectResult().allSelected()) {
 				// SelectOperation already logged "Running full test suite"
+			} else if (runRemaining && !selection.remaining().isEmpty()) {
+				// R18-13: autoRunRemaining=true means run ALL tests (selected + remaining)
+				// in priority order, rather than deferring remaining to a separate step.
+				getLog().info("[test-order] autoRunRemaining=true — running all "
+						+ (selection.selected().size() + selection.remaining().size()) + " tests in priority order.");
+				// Don't filter Surefire — let all tests run, but in scored order via orderer
 			} else if (!selection.selected().isEmpty()) {
 				SurefireHelper.configureIncludes(project, selection.selected(), true);
 			} else {
@@ -153,7 +158,7 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			project.getProperties().setProperty("testorder.remaining.file", remainingPath);
 			project.getProperties().setProperty("testorder.auto.active", "true");
 
-			if (runRemaining && !selection.remaining().isEmpty()) {
+			if (!runRemaining && !selection.remaining().isEmpty()) {
 				getLog().info("[test-order] Remaining tests written to " + remainingFile + ". Run deferred tests with:"
 						+ " mvn test-order:run-remaining test");
 			}

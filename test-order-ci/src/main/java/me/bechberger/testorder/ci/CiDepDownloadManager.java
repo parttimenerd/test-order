@@ -41,13 +41,9 @@ public class CiDepDownloadManager {
 		int connectTimeout = getTimeoutProperty("testorder.ci.connect.timeout.seconds", 30);
 		int readTimeout = getTimeoutProperty("testorder.ci.read.timeout.seconds", 60);
 		int writeTimeout = getTimeoutProperty("testorder.ci.write.timeout.seconds", 30);
-		OkHttpClient.Builder builder = new OkHttpClient.Builder()
-				.connectTimeout(connectTimeout, TimeUnit.SECONDS)
-				.readTimeout(readTimeout, TimeUnit.SECONDS)
-				.writeTimeout(writeTimeout, TimeUnit.SECONDS);
-		Proxy.Type proxyType = "socks5".equalsIgnoreCase(proxyConfig.getType())
-				? Proxy.Type.SOCKS
-				: Proxy.Type.HTTP;
+		OkHttpClient.Builder builder = new OkHttpClient.Builder().connectTimeout(connectTimeout, TimeUnit.SECONDS)
+				.readTimeout(readTimeout, TimeUnit.SECONDS).writeTimeout(writeTimeout, TimeUnit.SECONDS);
+		Proxy.Type proxyType = "socks5".equalsIgnoreCase(proxyConfig.getType()) ? Proxy.Type.SOCKS : Proxy.Type.HTTP;
 		builder.proxy(new Proxy(proxyType, new InetSocketAddress(proxyConfig.getHost(), proxyConfig.getPort())));
 		return builder.build();
 	}
@@ -57,7 +53,8 @@ public class CiDepDownloadManager {
 		if (prop != null) {
 			try {
 				int val = Integer.parseInt(prop);
-				if (val > 0) return val;
+				if (val > 0)
+					return val;
 			} catch (NumberFormatException ignored) {
 			}
 		}
@@ -147,7 +144,7 @@ public class CiDepDownloadManager {
 			logger.info("CI index written to {}", indexTarget);
 			return Optional.of(indexTarget);
 		} catch (Exception e) {
-			logger.warn("CI download failed (falling back to local): {}", e.getMessage());
+			logger.warn("CI download failed: {}", e.getMessage());
 			return Optional.empty();
 		}
 	}

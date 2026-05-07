@@ -161,6 +161,16 @@ public class TestNGTelemetryListener implements ITestListener {
 
 		persistState();
 
+		// Print summary (R18-2: parity with JUnit5 TelemetryListener summary)
+		if (!executionOrder.isEmpty()) {
+			if (failedClassNames.isEmpty()) {
+				TestOrderLogger.info("{} tests ran in priority order — all passed", executionOrder.size());
+			} else {
+				TestOrderLogger.info("{} tests ran in priority order — {} failed", executionOrder.size(),
+						failedClassNames.size());
+			}
+		}
+
 		finishedNormally = true;
 		if (shutdownHook != null) {
 			try {
@@ -214,8 +224,8 @@ public class TestNGTelemetryListener implements ITestListener {
 					}
 					if (record.totalFailures() > 0) {
 						TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
-								String.format(java.util.Locale.US, "%.1f", record.apfd() * 100), record.firstFailurePosition() + 1,
-								record.totalTests());
+								String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
+								record.firstFailurePosition() + 1, record.totalTests());
 					}
 				}
 				state.save(stateFile);

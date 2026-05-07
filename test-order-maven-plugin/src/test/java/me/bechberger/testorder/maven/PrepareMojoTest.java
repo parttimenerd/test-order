@@ -232,7 +232,8 @@ class PrepareMojoTest {
 
 	@Test
 	void orderModeSupportsJunitClassConcurrentExecution() throws Exception {
-		// JUnit jupiter parallel mode.classes.default=concurrent is allowed in order mode.
+		// JUnit jupiter parallel mode.classes.default=concurrent is allowed in order
+		// mode.
 		inject(mojo, "mode", "order");
 
 		Path idxPath = tempDir.resolve("test-dependencies.lz4");
@@ -271,7 +272,8 @@ class PrepareMojoTest {
 
 	@Test
 	void learnModeRejectsClassLevelParallelExecution() throws Exception {
-		// Class-level parallelism must be rejected in learn mode to protect dependency tracking.
+		// Class-level parallelism must be rejected in learn mode to protect dependency
+		// tracking.
 		inject(mojo, "mode", "learn");
 
 		org.codehaus.plexus.util.xml.Xpp3Dom config = new org.codehaus.plexus.util.xml.Xpp3Dom("configuration");

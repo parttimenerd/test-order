@@ -73,8 +73,8 @@ class DepsAndScoringTest {
 
 	@Test
 	void testScorerDepOverlapScoreRatioBased() {
-		// 1 out of 1 dep changed → full weight
-		assertEquals(5, TestScorer.depOverlapScore(1, 1, 5));
+		// 1 out of 1 dep changed → 1/sqrt(max(1,5))*5 = 2.236, ceil = 3
+		assertEquals(3, TestScorer.depOverlapScore(1, 1, 5));
 		// 1 out of 100 → ceil(1/sqrt(100) * 5) = ceil(0.5) = 1
 		assertEquals(1, TestScorer.depOverlapScore(1, 100, 5));
 		// 50 out of 100 → ceil(50/sqrt(100) * 5) = ceil(25) = 5 (capped)
@@ -227,8 +227,8 @@ class DepsAndScoringTest {
 		var r1 = scorer.score("com.Test1");
 		assertEquals(1, r1.depOverlap());
 		assertEquals(3, r1.depTotal());
-		// 1/sqrt(3) * 6 = 3.46, ceil = 4
-		assertEquals(4, r1.score());
+		// 1/sqrt(max(3,5)) * 6 = 1/sqrt(5)*6 = 2.683, ceil = 3
+		assertEquals(3, r1.score());
 
 		var r2 = scorer.score("com.Test2");
 		assertEquals(0, r2.depOverlap());
@@ -1238,10 +1238,13 @@ class DepsAndScoringTest {
 	}
 
 	@Test
-	void jaccardDistanceEmptySetIsOne() {
-		assertEquals(1.0, TestSelector.jaccardDistance(Set.of(), Set.of("a")), 0.001);
+	void jaccardDistanceEmptySetIsNeutralOrOne() {
+		// R15-10: empty 'a' (unindexed test) returns neutral 0.5
+		assertEquals(0.5, TestSelector.jaccardDistance(Set.of(), Set.of("a")), 0.001);
+		// non-empty 'a' with empty 'b' (empty covered set) returns 1.0
 		assertEquals(1.0, TestSelector.jaccardDistance(Set.of("a"), Set.of()), 0.001);
-		assertEquals(1.0, TestSelector.jaccardDistance(Set.of(), Set.of()), 0.001);
+		// both empty: a.isEmpty() triggers first → 0.5
+		assertEquals(0.5, TestSelector.jaccardDistance(Set.of(), Set.of()), 0.001);
 	}
 
 	@Test
@@ -1528,9 +1531,9 @@ class DepsAndScoringTest {
 		assertEquals(0, TestScorer.complexityScore(0.0, 5, 2));
 		assertEquals(0, TestScorer.complexityScore(1.0, 5, 0));
 		assertEquals(0, TestScorer.complexityScore(0.0, 0, 2));
-		// 1.0 / sqrt(2) * 2 = 1.414, ceil = 2
-		assertEquals(2, TestScorer.complexityScore(1.0, 2, 2));
-		// 2.0 / sqrt(2) * 2 = 2.83, ceil = 3, min(3, 2) = 2 (capped)
+		// 1.0 / sqrt(max(2,5)) * 2 = 1.0/sqrt(5)*2 = 0.894, ceil = 1
+		assertEquals(1, TestScorer.complexityScore(1.0, 2, 2));
+		// 2.0 / sqrt(max(2,5)) * 2 = 2.0/sqrt(5)*2 = 1.789, ceil = 2
 		assertEquals(2, TestScorer.complexityScore(2.0, 2, 2));
 		// 0.5 / sqrt(5) * 4 = 0.894, ceil = 1
 		assertEquals(1, TestScorer.complexityScore(0.5, 5, 4));
@@ -1568,8 +1571,8 @@ class DepsAndScoringTest {
 		TestScorer.ScoreResult result = scorer.score("com.test.FooTest");
 
 		assertEquals(1.0, result.complexityOverlap(), 0.001);
-		// 1.0 / sqrt(2) * 2 = 1.414, ceil = 2
-		assertEquals(2, result.score());
+		// 1.0 / sqrt(max(2,5)) * 2 = 1.0/sqrt(5)*2 = 0.894, ceil = 1
+		assertEquals(1, result.score());
 	}
 
 	@Test
@@ -2134,8 +2137,9 @@ class DepsAndScoringTest {
 		List<String> tests = List.of("com.test.TestA");
 		TestScorer scorer = new TestScorer(weights, depMap, state, changed, Set.of(), tests);
 
-		// depOverlapScore(1, 2, 5) = min(ceil(1/sqrt(2) * 5), 5) = min(4, 5) = 4
-		assertEquals(4, scorer.score("com.test.TestA").score());
+		// depOverlapScore(1, 2, 5) = min(ceil(1/sqrt(max(2,5)) * 5), 5) =
+		// min(ceil(2.236), 5) = 3
+		assertEquals(3, scorer.score("com.test.TestA").score());
 	}
 
 	// ─── LineDiff tests ─────────────────────────────────────────────

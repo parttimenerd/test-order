@@ -52,8 +52,8 @@ public final class DashboardWorkflow {
 
 		GenerateDashboardOperation.generate(a.allTests(), scorer, a.state(), a.weights(), a.changedClasses(),
 				a.changedTests(), a.depMap(), ctx.projectName(),
-				ctx.stateFile() != null ? ctx.stateFile().toString() : "",
-				ctx.indexFile() != null ? ctx.indexFile().toString() : "", ctx.pluginVersion(),
+				ctx.stateFile() != null ? relativize(ctx.projectRoot(), ctx.stateFile()) : "",
+				ctx.indexFile() != null ? relativize(ctx.projectRoot(), ctx.indexFile()) : "", ctx.pluginVersion(),
 				a.loadedWeights().defs(), htmlTemplate, outputFile, ctx.log());
 
 		return outputFile;
@@ -70,5 +70,17 @@ public final class DashboardWorkflow {
 	public int serve(int port) throws IOException {
 		Path htmlPath = generate();
 		return DashboardServerOperation.start(htmlPath, ctx.stateFile(), port, ctx.log());
+	}
+
+	/**
+	 * Relativize a path against the project root, falling back to file name if not
+	 * relative.
+	 */
+	private static String relativize(Path projectRoot, Path target) {
+		try {
+			return projectRoot.toAbsolutePath().relativize(target.toAbsolutePath()).toString();
+		} catch (IllegalArgumentException e) {
+			return target.getFileName().toString();
+		}
 	}
 }

@@ -36,11 +36,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * what the test method itself touches.</li>
  * </ul>
  * <p>
- * <b>Known limitation (C5/M23):</b> Dependency tracking uses a plain field (not ThreadLocal)
- * and assumes tests run sequentially on the test runner's thread. Code that executes on
- * a different thread — such as {@code InvocationInterceptor} thread switching (e.g. Swing EDT),
- * {@code @Timeout(threadMode = SEPARATE_THREAD)}, or {@code assertTimeoutPreemptively()} —
- * will NOT have its class accesses recorded. This is an inherent architectural constraint.
+ * <b>Known limitation (C5/M23):</b> Dependency tracking uses a plain field (not
+ * ThreadLocal) and assumes tests run sequentially on the test runner's thread.
+ * Code that executes on a different thread — such as
+ * {@code InvocationInterceptor} thread switching (e.g. Swing EDT),
+ * {@code @Timeout(threadMode = SEPARATE_THREAD)}, or
+ * {@code assertTimeoutPreemptively()} — will NOT have its class accesses
+ * recorded. This is an inherent architectural constraint.
  * <p>
  * On JVM shutdown, merges recorded dependencies directly into the binary index
  * file (via reflection into DependencyMap on the system classpath). Falls back
@@ -302,8 +304,7 @@ public class UsageStore {
 			if (indexFile != null && !indexFile.isEmpty()) {
 				if (tryDirectMerge(allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps)) {
 					AgentLogger.log("[flush] Also merged directly into " + indexFile);
-					AgentLogger.info("Written dependency index with " + allDeps.size()
-							+ " entries to " + indexFile);
+					AgentLogger.info("Written dependency index with " + allDeps.size() + " entries to " + indexFile);
 				}
 			}
 			return;
@@ -312,8 +313,7 @@ public class UsageStore {
 		// Fallback: only use direct merge when no outputDir is configured (edge case)
 		if (indexFile != null && !indexFile.isEmpty()) {
 			if (tryDirectMerge(allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps)) {
-				AgentLogger.info("Written dependency index with " + allDeps.size()
-						+ " entries to " + indexFile);
+				AgentLogger.info("Written dependency index with " + allDeps.size() + " entries to " + indexFile);
 			}
 		}
 	}

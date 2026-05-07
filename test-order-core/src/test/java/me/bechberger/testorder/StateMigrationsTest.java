@@ -28,16 +28,14 @@ class StateMigrationsTest {
 	@Test
 	void migrateDowngradeThrows() {
 		Map<String, Object> root = Map.of("schemaVersion", 1);
-		assertThrows(StateDowngradeException.class,
-				() -> StateMigrations.migrate(root, 1, 0));
+		assertThrows(StateDowngradeException.class, () -> StateMigrations.migrate(root, 1, 0));
 	}
 
 	@Test
 	void migrateMissingStepThrows() {
 		// There's no migration registered for v1→v2 yet
 		Map<String, Object> root = Map.of("schemaVersion", 1);
-		assertThrows(IllegalArgumentException.class,
-				() -> StateMigrations.migrate(root, 1, 2));
+		assertThrows(IllegalArgumentException.class, () -> StateMigrations.migrate(root, 1, 2));
 	}
 
 	@Test
@@ -45,10 +43,8 @@ class StateMigrationsTest {
 		// Verify the migration list has no gaps
 		for (int i = 0; i < StateMigrations.MIGRATIONS.size(); i++) {
 			var m = StateMigrations.MIGRATIONS.get(i);
-			assertEquals(i, m.fromVersion(),
-					"Migration at index " + i + " should have fromVersion=" + i);
-			assertEquals(i + 1, m.toVersion(),
-					"Migration at index " + i + " should have toVersion=" + (i + 1));
+			assertEquals(i, m.fromVersion(), "Migration at index " + i + " should have fromVersion=" + i);
+			assertEquals(i + 1, m.toVersion(), "Migration at index " + i + " should have toVersion=" + (i + 1));
 		}
 	}
 }

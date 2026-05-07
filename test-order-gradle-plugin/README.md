@@ -3,7 +3,7 @@
 Gradle plugin for JUnit test class priority ordering based on runtime dependency telemetry.
 Runs the tests most likely affected by your latest code changes **first**, so failures surface faster.
 
-**Requires Java 17+** and **Gradle 7.6+**. Compatible with JUnit 5 (Jupiter 5.x) and JUnit 6 (Jupiter 6.x).
+**Requires Java 17+** and **Gradle 7.6+**. Compatible with JUnit 5 (Jupiter 5.x), JUnit 6 (Jupiter 6.x), and TestNG (7.x+).
 
 On Java 24+ (JEP 472), test JVMs need native-access enablement for some runtime paths used by transitive dependencies. The plugin adds `--enable-native-access=ALL-UNNAMED` to Gradle `Test` tasks automatically.
 
@@ -178,6 +178,14 @@ Score weights (`scoreNewTest`, `scoreChangedTest`, etc.) must be set in the `tes
 | `testOrderDump` | Dump the binary dependency index as human-readable text |
 | `testOrderAggregate` | Re-aggregate `.deps` files into `test-dependencies.lz4` |
 | `testOrderClean` | Remove all test-order generated files (index, state, hashes, deps) |
+| `testOrderDiagnose` | Run diagnostic checks on the test-order setup |
+| `testOrderOptimize` | Tune scoring weights based on failure history |
+| `testOrderExportJson` | Export test-order data as JSON for scripting |
+| `testOrderCoverage` | Analyze dependency coverage and identify gaps |
+| `testOrderMetrics` | Export test-order metrics as JSON for CI/CD dashboards |
+| `testOrderDownload` | Download dependency index from CI artifacts |
+| `testOrderSnapshot` | Create hash snapshot for since-last-run change detection |
+| `testOrderHelp` | List all available test-order tasks and properties |
 
 All tasks are in the `test-order` group:
 

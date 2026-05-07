@@ -15,12 +15,11 @@ import me.bechberger.testorder.TestOrderState;
 
 /**
  * Multi-module workflow integration tests — verifies test-order handles Maven
- * reactor builds with shared indexes, cross-module dependencies, and
- * per-module state files correctly.
+ * reactor builds with shared indexes, cross-module dependencies, and per-module
+ * state files correctly.
  * <p>
- * Uses samples/sample-multi (core + web modules) where:
- * - core: UserService → UserServiceTest
- * - web: UserController (depends on core) → UserControllerTest
+ * Uses samples/sample-multi (core + web modules) where: - core: UserService →
+ * UserServiceTest - web: UserController (depends on core) → UserControllerTest
  * <p>
  * Enable with: {@code -Dtestorder.it=true}
  */
@@ -67,8 +66,7 @@ class MultiModuleWorkflowIT {
 		// Shared index at reactor root should contain tests from both modules
 		DependencyMap depMap = multiProject.loadIndex();
 		assertThat(depMap).isLoaded();
-		assertThat(depMap.size()).as("Index should contain tests from both modules")
-				.isGreaterThanOrEqualTo(2);
+		assertThat(depMap.size()).as("Index should contain tests from both modules").isGreaterThanOrEqualTo(2);
 	}
 
 	@Test
@@ -149,8 +147,7 @@ class MultiModuleWorkflowIT {
 		assertThat(result).succeeded();
 		assertThat(result.output())
 				.as("show-order should print ranking output even when reactor root is not selected explicitly")
-				.contains("UserControllerTest")
-				.contains("Changed classes:");
+				.contains("UserControllerTest").contains("Changed classes:");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -165,9 +162,7 @@ class MultiModuleWorkflowIT {
 		assertThat(result).succeeded();
 
 		// Both modules' tests should execute
-		assertThat(result.output())
-				.contains("UserServiceTest")
-				.contains("UserControllerTest");
+		assertThat(result.output()).contains("UserServiceTest").contains("UserControllerTest");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -190,27 +185,24 @@ class MultiModuleWorkflowIT {
 		assertThat(learn).succeeded();
 
 		// Modify core module's UserService (uncommitted change)
-		multiProject.replaceInFile("core/src/main/java/com/myapp/core/UserService.java",
-				"return \"User-\" + userId;", "return \"User-\" + userId; // modified");
+		multiProject.replaceInFile("core/src/main/java/com/myapp/core/UserService.java", "return \"User-\" + userId;",
+				"return \"User-\" + userId; // modified");
 
 		try {
 			// Run in order mode with uncommitted change detection (the default)
-			MavenResult result = multiProject.maven().run("clean", "test",
-					"-Dtestorder.mode=order", "-Dtestorder.changeMode=uncommitted");
+			MavenResult result = multiProject.maven().run("clean", "test", "-Dtestorder.mode=order",
+					"-Dtestorder.changeMode=uncommitted");
 			assertThat(result).succeeded();
 
 			// The web module should detect the upstream change and report it
-			assertThat(result.output())
-					.as("Web module should detect core's UserService change via reactor propagation")
+			assertThat(result.output()).as("Web module should detect core's UserService change via reactor propagation")
 					.contains("Detected 1 changed source classes");
 
 			// Count how many times "Detected 1 changed source classes" appears —
 			// it should appear for BOTH the core module AND the web module
-			long detectedCount = result.output().lines()
-					.filter(l -> l.contains("Detected 1 changed source classes"))
+			long detectedCount = result.output().lines().filter(l -> l.contains("Detected 1 changed source classes"))
 					.count();
-			assertThat(detectedCount)
-					.as("Both core and web modules should detect the UserService change")
+			assertThat(detectedCount).as("Both core and web modules should detect the UserService change")
 					.isGreaterThanOrEqualTo(2);
 		} finally {
 			multiProject.restoreAll();
@@ -230,9 +222,7 @@ class MultiModuleWorkflowIT {
 		boolean reactorState = multiProject.exists(".test-order/state.lz4");
 
 		// At least one module should have a state file
-		assertThat(reactorState)
-				.as("At least one module should have created a state file after order run")
-				.isTrue();
+		assertThat(reactorState).as("At least one module should have created a state file after order run").isTrue();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -244,13 +234,11 @@ class MultiModuleWorkflowIT {
 	@DisplayName("Reactor select mode with cross-module deps selects correctly")
 	void reactorSelectWithCrossModuleDeps() {
 		MavenResult result = multiProject.maven().run("clean", "test-order:select", "test",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + USER_SERVICE,
-				"-Dtestorder.select.topN=10",
-				"-Dtestorder.select.randomM=0",
-				"-Dtestorder.mode=skip");
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + USER_SERVICE,
+				"-Dtestorder.select.topN=10", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(result).succeeded();
-		// Build should pass regardless of whether selection is per-module or reactor-wide
+		// Build should pass regardless of whether selection is per-module or
+		// reactor-wide
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -265,9 +253,7 @@ class MultiModuleWorkflowIT {
 		assertThat(result).succeeded();
 
 		// Both modules' tests should execute
-		assertThat(result.output())
-				.contains("UserServiceTest")
-				.contains("UserControllerTest");
+		assertThat(result.output()).contains("UserServiceTest").contains("UserControllerTest");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -284,8 +270,7 @@ class MultiModuleWorkflowIT {
 
 		MavenResult aggResult = multiProject.maven().aggregate();
 		// Aggregate may succeed or be a no-op if binary index already exists
-		assertThat(aggResult.output())
-				.doesNotContain("NullPointerException")
+		assertThat(aggResult.output()).doesNotContain("NullPointerException")
 				.doesNotContain("ArrayIndexOutOfBoundsException");
 
 		// Index should still be valid after aggregate
@@ -312,8 +297,7 @@ class MultiModuleWorkflowIT {
 			boolean dashExists = multiProject.exists("target/test-order-dashboard.html")
 					|| multiProject.exists("target/test-order/dashboard.html");
 			// Dashboard may use a different output path — just verify no crash
-			assertThat(result.output())
-					.doesNotContain("NullPointerException");
+			assertThat(result.output()).doesNotContain("NullPointerException");
 		}
 		// Dashboard may not be configured — that's OK, just shouldn't crash
 	}
@@ -329,18 +313,15 @@ class MultiModuleWorkflowIT {
 		multiProject.cleanAll();
 
 		// Run with Maven parallel threads (-T 2)
-		MavenResult result = multiProject.maven().run("clean", "test",
-				"-Dtestorder.mode=learn", "-T", "2");
+		MavenResult result = multiProject.maven().run("clean", "test", "-Dtestorder.mode=learn", "-T", "2");
 		// May succeed or fail — but should NOT corrupt the index
-		assertThat(result.output())
-				.doesNotContain("NegativeArraySizeException")
+		assertThat(result.output()).doesNotContain("NegativeArraySizeException")
 				.doesNotContain("ConcurrentModificationException");
 
 		if (result.isSuccess()) {
 			DependencyMap depMap = multiProject.loadIndex();
 			if (depMap != null) {
-				assertThat(depMap.size())
-						.as("Parallel learn should capture tests from both modules")
+				assertThat(depMap.size()).as("Parallel learn should capture tests from both modules")
 						.isGreaterThanOrEqualTo(2);
 			}
 		}
@@ -360,9 +341,7 @@ class MultiModuleWorkflowIT {
 	void dumpGoalShowsAllModuleTests() {
 		MavenResult result = multiProject.maven().dump();
 		assertThat(result).succeeded();
-		assertThat(result.output())
-				.contains("UserServiceTest")
-				.contains("UserControllerTest");
+		assertThat(result.output()).contains("UserServiceTest").contains("UserControllerTest");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -381,9 +360,7 @@ class MultiModuleWorkflowIT {
 				|| multiProject.exists("core/.test-order/hashes.lz4")
 				|| multiProject.exists("web/.test-order/hashes.lz4");
 		// Snapshot may use different file names — just shouldn't crash
-		assertThat(result.output())
-				.doesNotContain("NullPointerException")
-				.doesNotContain("IOException");
+		assertThat(result.output()).doesNotContain("NullPointerException").doesNotContain("IOException");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -413,8 +390,7 @@ class MultiModuleWorkflowIT {
 	@DisplayName("Relearn after core module source change updates index")
 	void relearnAfterCoreModuleSourceChange() {
 		// Modify UserService to add a new method inside the class body
-		multiProject.replaceInFile(
-				"core/src/main/java/com/myapp/core/UserService.java",
+		multiProject.replaceInFile("core/src/main/java/com/myapp/core/UserService.java",
 				"    public String lookupName(int userId) {",
 				"    public String newMethod() { return \"new\"; }\n\n    public String lookupName(int userId) {");
 

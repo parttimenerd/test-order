@@ -36,16 +36,26 @@ public final class SelectOperation {
 	 *             if writing test lists fails
 	 */
 	public static SelectResult select(SelectConfig config) throws IOException {
+		// R14-6: Warn if randomM is set but topN=-1 makes it a no-op
+		if (config.topN() == -1 && config.randomM() > 0) {
+			config.log().warn("[test-order] randomM=" + config.randomM()
+					+ " has no effect when topN=-1 (all tests selected). Set topN to a positive number to use random sampling.");
+		}
+		// R15-5: Warn if randomM is used without a seed (non-deterministic)
+		if (config.randomM() > 0 && config.seed() == null) {
+			config.log().warn("[test-order] Selection is non-deterministic (no seed set). "
+					+ "Set testorder.select.seed for reproducible CI runs.");
+		}
+
 		TestSelector.Selection selection = new TestSelector(config.depMap(), config.state(), config.changedClasses(),
 				config.changedTests(), config.weights(),
 				new TestSelector.Config(config.topN(), config.randomM(), config.seed()), config.alwaysRunClasses(),
-				config.changeComplexity())
-				.select();
+				config.changeComplexity()).select();
 
 		if (config.selectedFile() != null) {
 			TestSelector.writeTestList(selection.selected(), config.selectedFile());
 		}
-		if (config.remainingFile() != null) {
+		if (config.remainingFile() != null && !selection.remaining().isEmpty()) {
 			TestSelector.writeTestList(selection.remaining(), config.remainingFile());
 		}
 

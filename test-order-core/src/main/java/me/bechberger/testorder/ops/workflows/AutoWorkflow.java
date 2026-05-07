@@ -129,12 +129,15 @@ public final class AutoWorkflow {
 		var alwaysRun = ctx.testClassesDir() != null ? AlwaysRunScanner.scan(ctx.testClassesDir()) : Set.<String>of();
 
 		SelectOperation.SelectResult selectResult;
-		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {
+		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0 && ctx.randomM() < 0) {
 			var allTests = new ArrayList<>(a.depMap().testClasses());
 			selectResult = new SelectOperation.SelectResult(new TestSelector.Selection(allTests, java.util.List.of()),
 					true);
 			ctx.log().info("[test-order] No changed classes detected — running tests in default order.");
 		} else {
+			if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {
+				ctx.log().info("[test-order] No changed classes detected — applying topN/randomM selection only.");
+			}
 			selectResult = SelectOperation.select(new SelectOperation.SelectConfig(a.depMap(), a.state(),
 					a.changedClasses(), a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(), alwaysRun,
 					ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
@@ -186,8 +189,10 @@ public final class AutoWorkflow {
 		Supplier<Set<String>> changedClassesSupplier = () -> ChangeDetectionOps.detectChangedClasses(ctx.changeMode(),
 				ctx.projectRoot(), ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log());
 
-		// Only filter new tests by change-detection if this module has been learned before
-		// (test hash file exists). On first run in multi-module builds, the hash file won't
+		// Only filter new tests by change-detection if this module has been learned
+		// before
+		// (test hash file exists). On first run in multi-module builds, the hash file
+		// won't
 		// exist yet, so all test classes not in the index are genuinely new.
 		Supplier<Set<String>> changedTestsSupplier = Files.exists(ctx.testHashFile())
 				? () -> ChangeDetectionOps.detectChangedTestClasses(ctx.changeMode(), ctx.projectRoot(),

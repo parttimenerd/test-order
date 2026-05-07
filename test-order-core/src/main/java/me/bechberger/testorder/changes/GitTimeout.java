@@ -1,8 +1,8 @@
 package me.bechberger.testorder.changes;
 
 /**
- * Unified git subprocess timeout configuration.
- * All git operations use this single timeout value to avoid inconsistencies.
+ * Unified git subprocess timeout configuration. All git operations use this
+ * single timeout value to avoid inconsistencies.
  */
 public final class GitTimeout {
 
@@ -10,14 +10,14 @@ public final class GitTimeout {
 	}
 
 	/**
-	 * Default timeout (seconds) for git subprocess operations.
-	 * Configurable via system property {@code testorder.git.timeout.seconds}.
+	 * Default timeout (seconds) for git subprocess operations. Configurable via
+	 * system property {@code testorder.git.timeout.seconds}.
 	 */
 	public static final int DEFAULT_SECONDS = 30;
 
 	/**
-	 * Returns the configured git timeout in seconds.
-	 * Reads from {@code testorder.git.timeout.seconds} system property, falling back to
+	 * Returns the configured git timeout in seconds. Reads from
+	 * {@code testorder.git.timeout.seconds} system property, falling back to
 	 * {@link #DEFAULT_SECONDS}.
 	 */
 	public static int seconds() {

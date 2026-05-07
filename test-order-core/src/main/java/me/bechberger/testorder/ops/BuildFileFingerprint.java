@@ -14,12 +14,12 @@ import java.util.List;
  * <p>
  * Supports two strategies:
  * <ul>
- *   <li><b>Classpath fingerprint</b> (preferred) — hashes the resolved classpath
- *       JARs by name + size + last-modified time. This catches SNAPSHOT updates,
- *       transitive dependency changes, and version bumps even when build files
- *       don't change textually.</li>
- *   <li><b>Build-file fingerprint</b> (fallback) — hashes pom.xml / build.gradle
- *       content. Used when the resolved classpath is not available.</li>
+ * <li><b>Classpath fingerprint</b> (preferred) — hashes the resolved classpath
+ * JARs by name + size + last-modified time. This catches SNAPSHOT updates,
+ * transitive dependency changes, and version bumps even when build files don't
+ * change textually.</li>
+ * <li><b>Build-file fingerprint</b> (fallback) — hashes pom.xml / build.gradle
+ * content. Used when the resolved classpath is not available.</li>
  * </ul>
  * When dependencies change, the test-order dependency index may become stale
  * because tests might now exercise new library classes or different code paths.
@@ -27,28 +27,25 @@ import java.util.List;
  */
 public final class BuildFileFingerprint {
 
-	private static final List<String> BUILD_FILE_NAMES = List.of(
-			"pom.xml",
-			"build.gradle",
-			"build.gradle.kts",
-			"gradle.lockfile",
-			"gradle/libs.versions.toml");
+	private static final List<String> BUILD_FILE_NAMES = List.of("pom.xml", "build.gradle", "build.gradle.kts",
+			"gradle.lockfile", "gradle/libs.versions.toml");
 
 	private BuildFileFingerprint() {
 	}
 
 	/**
-	 * Computes a fingerprint from the resolved test classpath entries.
-	 * Uses file name + size + last-modified time for JARs, which catches:
+	 * Computes a fingerprint from the resolved test classpath entries. Uses file
+	 * name + size + last-modified time for JARs, which catches:
 	 * <ul>
-	 *   <li>SNAPSHOT dependency rebuilds (timestamp/size changes)</li>
-	 *   <li>Version bumps (file name changes)</li>
-	 *   <li>Added/removed transitive dependencies</li>
+	 * <li>SNAPSHOT dependency rebuilds (timestamp/size changes)</li>
+	 * <li>Version bumps (file name changes)</li>
+	 * <li>Added/removed transitive dependencies</li>
 	 * </ul>
 	 * Project output directories (non-JAR classpath entries) are excluded since
 	 * source-code changes are tracked separately.
 	 *
-	 * @param classpathEntries resolved classpath entries (JAR files and/or directories)
+	 * @param classpathEntries
+	 *            resolved classpath entries (JAR files and/or directories)
 	 * @return hex-encoded SHA-256 fingerprint, or {@code null} if no JARs found
 	 */
 	public static String computeFromClasspath(Collection<Path> classpathEntries) {
@@ -57,15 +54,14 @@ public final class BuildFileFingerprint {
 		}
 
 		MessageDigest digest = sha256();
-		if (digest == null) return null;
+		if (digest == null)
+			return null;
 
 		boolean anyJar = false;
 		// Sort for deterministic ordering regardless of classpath order
 		List<Path> sorted = classpathEntries.stream()
-				.filter(p -> p != null && Files.isRegularFile(p)
-						&& p.getFileName().toString().endsWith(".jar"))
-				.sorted()
-				.toList();
+				.filter(p -> p != null && Files.isRegularFile(p) && p.getFileName().toString().endsWith(".jar"))
+				.sorted().toList();
 
 		for (Path jar : sorted) {
 			try {
@@ -86,9 +82,9 @@ public final class BuildFileFingerprint {
 	}
 
 	/**
-	 * Fallback: computes a SHA-256 fingerprint of build declaration files
-	 * (pom.xml, build.gradle, etc.) found under the given project root.
-	 * Returns {@code null} if no build files exist or all are unreadable.
+	 * Fallback: computes a SHA-256 fingerprint of build declaration files (pom.xml,
+	 * build.gradle, etc.) found under the given project root. Returns {@code null}
+	 * if no build files exist or all are unreadable.
 	 */
 	public static String computeFromBuildFiles(Path projectRoot) {
 		if (projectRoot == null || !Files.isDirectory(projectRoot)) {
@@ -96,7 +92,8 @@ public final class BuildFileFingerprint {
 		}
 
 		MessageDigest digest = sha256();
-		if (digest == null) return null;
+		if (digest == null)
+			return null;
 
 		boolean anyFile = false;
 		for (String name : BUILD_FILE_NAMES) {
@@ -133,11 +130,7 @@ public final class BuildFileFingerprint {
 	}
 
 	private static byte[] longToBytes(long value) {
-		return new byte[]{
-				(byte) (value >>> 56), (byte) (value >>> 48),
-				(byte) (value >>> 40), (byte) (value >>> 32),
-				(byte) (value >>> 24), (byte) (value >>> 16),
-				(byte) (value >>> 8), (byte) value
-		};
+		return new byte[] { (byte) (value >>> 56), (byte) (value >>> 48), (byte) (value >>> 40), (byte) (value >>> 32),
+				(byte) (value >>> 24), (byte) (value >>> 16), (byte) (value >>> 8), (byte) value };
 	}
 }

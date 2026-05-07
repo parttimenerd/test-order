@@ -10,14 +10,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
-import me.bechberger.testorder.PersistenceSupport;
-import me.bechberger.testorder.TelemetryPersistence;
-import me.bechberger.testorder.TestOrderConfig;
-import me.bechberger.testorder.TestOrderConfigResolver;
-import me.bechberger.testorder.TestOrderLogger;
-import me.bechberger.testorder.TestOrderState;
-import me.bechberger.testorder.UsageStoreReflectionBridge;
-
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.engine.TestSource;
 import org.junit.platform.engine.support.descriptor.ClassSource;
@@ -25,6 +17,14 @@ import org.junit.platform.engine.support.descriptor.MethodSource;
 import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.TestPlan;
+
+import me.bechberger.testorder.PersistenceSupport;
+import me.bechberger.testorder.TelemetryPersistence;
+import me.bechberger.testorder.TestOrderConfig;
+import me.bechberger.testorder.TestOrderConfigResolver;
+import me.bechberger.testorder.TestOrderLogger;
+import me.bechberger.testorder.TestOrderState;
+import me.bechberger.testorder.UsageStoreReflectionBridge;
 
 /**
  * JUnit Platform TestExecutionListener that:
@@ -94,7 +94,8 @@ public class TelemetryListener implements TestExecutionListener {
 		// L17: Detect debug mode — skip duration recording to avoid inflated EMA values
 		debugMode = isDebugMode();
 		if (debugMode) {
-			TestOrderLogger.info("[telemetry] Debug mode detected — duration recording disabled to avoid EMA inflation.");
+			TestOrderLogger
+					.info("[telemetry] Debug mode detected — duration recording disabled to avoid EMA inflation.");
 		}
 
 		if (learnMode) {
@@ -104,7 +105,8 @@ public class TelemetryListener implements TestExecutionListener {
 
 		// load state file path for failure + duration tracking
 		// Use TestOrderConfigResolver to check both system properties and classpath
-		// config file — in order mode the path is written to testorder-config.properties
+		// config file — in order mode the path is written to
+		// testorder-config.properties
 		// on the classpath, not passed as a system property.
 		TestOrderConfigResolver configResolver = new TestOrderConfigResolver(
 				Thread.currentThread().getContextClassLoader());
@@ -119,7 +121,8 @@ public class TelemetryListener implements TestExecutionListener {
 	}
 
 	/**
-	 * Detects whether the JVM is running in debug mode (-agentlib:jdwp or -Xrunjdwp).
+	 * Detects whether the JVM is running in debug mode (-agentlib:jdwp or
+	 * -Xrunjdwp).
 	 */
 	private static boolean isDebugMode() {
 		for (String arg : java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments()) {
@@ -138,7 +141,8 @@ public class TelemetryListener implements TestExecutionListener {
 		testIdentifier.getSource().ifPresent(source -> {
 			if (source instanceof ClassSource classSource) {
 				String name = classSource.getClassName();
-				if (name == null) return; // guard against pathological custom engines
+				if (name == null)
+					return; // guard against pathological custom engines
 				maybeWarnConcurrentExecution(name);
 
 				// track start time for duration (local map operation, very fast)
@@ -160,7 +164,8 @@ public class TelemetryListener implements TestExecutionListener {
 					bridge.callStartTestClass(name);
 				}
 			} else if (source instanceof MethodSource methodSource) {
-				if (methodSource.getClassName() == null || methodSource.getMethodName() == null) return;
+				if (methodSource.getClassName() == null || methodSource.getMethodName() == null)
+					return;
 				// track method-level start time
 				String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
 				if (!debugMode) {
@@ -200,7 +205,8 @@ public class TelemetryListener implements TestExecutionListener {
 				}
 			});
 		}
-		// M9: Only record FAILED status as failures — ABORTED (assumptions) are not test failures
+		// M9: Only record FAILED status as failures — ABORTED (assumptions) are not
+		// test failures
 		// record failures (both class-level and method-level)
 		if (result.getStatus() == TestExecutionResult.Status.FAILED) {
 			testIdentifier.getSource().ifPresent(source -> {
@@ -231,10 +237,8 @@ public class TelemetryListener implements TestExecutionListener {
 				Long start = classStartTimes.remove(testIdentifier.getUniqueId());
 				if (start != null) {
 					long duration = elapsedMillis(start);
-					pendingDurations
-							.computeIfAbsent(classSource.getClassName(),
-									ignored -> Collections.synchronizedList(new ArrayList<>()))
-							.add(duration);
+					pendingDurations.computeIfAbsent(classSource.getClassName(),
+							ignored -> Collections.synchronizedList(new ArrayList<>())).add(duration);
 				}
 			} else if (source instanceof MethodSource methodSource) {
 				// In FULL_METHOD and FULL_MEMBER modes: end per-method dependency recording.
@@ -259,8 +263,7 @@ public class TelemetryListener implements TestExecutionListener {
 				if (start != null) {
 					long duration = elapsedMillis(start);
 					pendingMethodDurations
-							.computeIfAbsent(methodKey,
-									ignored -> Collections.synchronizedList(new ArrayList<>()))
+							.computeIfAbsent(methodKey, ignored -> Collections.synchronizedList(new ArrayList<>()))
 							.add(duration);
 				}
 			}
@@ -269,7 +272,8 @@ public class TelemetryListener implements TestExecutionListener {
 
 	@Override
 	public void executionSkipped(TestIdentifier testIdentifier, String reason) {
-		// L18: Track skipped tests for execution order visibility (they were discovered but not run)
+		// L18: Track skipped tests for execution order visibility (they were discovered
+		// but not run)
 		// We don't record durations or failures for skipped tests, but we note them
 		// in the execution order so the run record reflects the full test set.
 		if (dryRunMode) {
@@ -293,7 +297,8 @@ public class TelemetryListener implements TestExecutionListener {
 			if (shutdownHook != null) {
 				try {
 					Runtime.getRuntime().removeShutdownHook(shutdownHook);
-				} catch (IllegalStateException ignored) { }
+				} catch (IllegalStateException ignored) {
+				}
 			}
 			return;
 		}
@@ -330,11 +335,10 @@ public class TelemetryListener implements TestExecutionListener {
 						}
 						if (record.totalFailures() > 0) {
 							TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
-									String.format(java.util.Locale.US, "%.1f", record.apfd() * 100), record.firstFailurePosition() + 1,
-									record.totalTests());
+									String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
+									record.firstFailurePosition() + 1, record.totalTests());
 						} else if (!isLearnRun && record.totalTests() > 1) {
-							TestOrderLogger.info("{} tests ran in priority order — all passed",
-									record.totalTests());
+							TestOrderLogger.info("{} tests ran in priority order — all passed", record.totalTests());
 						}
 					}
 					lockedState.save(stateFile);
@@ -388,9 +392,9 @@ public class TelemetryListener implements TestExecutionListener {
 	}
 
 	/**
-	 * Returns true if this test identifier originates from the JUnit Platform Suite engine.
-	 * Suite-engine tests are duplicates of directly-discovered tests — recording them
-	 * would double-count failures and inflate duration EMA (C6).
+	 * Returns true if this test identifier originates from the JUnit Platform Suite
+	 * engine. Suite-engine tests are duplicates of directly-discovered tests —
+	 * recording them would double-count failures and inflate duration EMA (C6).
 	 */
 	private static boolean isSuiteEngineNode(TestIdentifier testIdentifier) {
 		String uniqueId = testIdentifier.getUniqueId();

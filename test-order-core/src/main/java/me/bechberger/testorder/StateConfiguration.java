@@ -316,8 +316,8 @@ public class StateConfiguration {
 	}
 
 	/**
-	 * Sets the dependency fingerprint. Called after a learn run completes to
-	 * record the current state of build files.
+	 * Sets the dependency fingerprint. Called after a learn run completes to record
+	 * the current state of build files.
 	 */
 	public void setDependencyFingerprint(String fingerprint) {
 		this.dependencyFingerprint = fingerprint;

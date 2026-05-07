@@ -1,11 +1,12 @@
 package me.bechberger.testorder.maven;
 
-import me.bechberger.testorder.ErrorCode;
 import org.apache.maven.plugin.MojoExecutionException;
 
+import me.bechberger.testorder.ErrorCode;
+
 /**
- * Structured exception for test-order Maven plugin operations.
- * Wraps an {@link ErrorCode} for programmatic error handling in CI/CD.
+ * Structured exception for test-order Maven plugin operations. Wraps an
+ * {@link ErrorCode} for programmatic error handling in CI/CD.
  * <p>
  * CI systems can parse the error code from the message prefix:
  * {@code [test-order] [ERROR 1002] Index file is corrupted}
@@ -33,9 +34,6 @@ public class TestOrderMojoException extends MojoExecutionException {
 
 	private static String formatMessage(ErrorCode code, String detail) {
 		return String.format("[test-order] [%s %d] %s: %s\n  For more details: mvn test-order:diagnose",
-				code.isError() ? "ERROR" : "WARN",
-				code.getCode(),
-				code.getMessage(),
-				detail);
+				code.isError() ? "ERROR" : "WARN", code.getCode(), code.getMessage(), detail);
 	}
 }

@@ -30,120 +30,120 @@ import me.bechberger.testorder.TestOrderState;
 
 class TieredSelectMojoTest {
 
-    @TempDir
-    Path tempDir;
+	@TempDir
+	Path tempDir;
 
-    private TestableTieredSelectMojo mojo;
-    private MavenProject project;
+	private TestableTieredSelectMojo mojo;
+	private MavenProject project;
 
-    @BeforeEach
-    void setUp() throws Exception {
-        mojo = new TestableTieredSelectMojo();
-        project = projectWithSurefire(tempDir);
+	@BeforeEach
+	void setUp() throws Exception {
+		mojo = new TestableTieredSelectMojo();
+		project = projectWithSurefire(tempDir);
 
-        MavenSession session = mock(MavenSession.class);
-        when(session.getProjects()).thenReturn(List.of(project));
-        when(session.getTopLevelProject()).thenReturn(project);
+		MavenSession session = mock(MavenSession.class);
+		when(session.getProjects()).thenReturn(List.of(project));
+		when(session.getTopLevelProject()).thenReturn(project);
 
-        inject(mojo, "project", project);
-        inject(mojo, "session", session);
-        inject(mojo, "indexFile", tempDir.resolve("test-dependencies.lz4").toString());
-        inject(mojo, "stateFile", tempDir.resolve(".test-order/state.lz4").toString());
-        inject(mojo, "depsDir", tempDir.resolve("test-order-deps").toString());
-        inject(mojo, "hashFile", tempDir.resolve(".test-order/hashes.lz4").toString());
-        inject(mojo, "testHashFile", tempDir.resolve(".test-order/test-hashes.lz4").toString());
-        inject(mojo, "methodHashFile", tempDir.resolve(".test-order/method-hashes.lz4").toString());
-        inject(mojo, "changeMode", "explicit");
-        inject(mojo, "changedClasses", "com.example.ServiceA");
-        inject(mojo, "changedTestClasses", "");
-        inject(mojo, "tier2Fraction", 0.5d);
-        inject(mojo, "weightByDuration", true);
-        inject(mojo, "tier1File", tempDir.resolve("tier1.txt").toString());
-        inject(mojo, "tier2File", tempDir.resolve("tier2.txt").toString());
-        inject(mojo, "tier3File", tempDir.resolve("tier3.txt").toString());
-    }
+		inject(mojo, "project", project);
+		inject(mojo, "session", session);
+		inject(mojo, "indexFile", tempDir.resolve("test-dependencies.lz4").toString());
+		inject(mojo, "stateFile", tempDir.resolve(".test-order/state.lz4").toString());
+		inject(mojo, "depsDir", tempDir.resolve("test-order-deps").toString());
+		inject(mojo, "hashFile", tempDir.resolve(".test-order/hashes.lz4").toString());
+		inject(mojo, "testHashFile", tempDir.resolve(".test-order/test-hashes.lz4").toString());
+		inject(mojo, "methodHashFile", tempDir.resolve(".test-order/method-hashes.lz4").toString());
+		inject(mojo, "changeMode", "explicit");
+		inject(mojo, "changedClasses", "com.example.ServiceA");
+		inject(mojo, "changedTestClasses", "");
+		inject(mojo, "tier2Fraction", 0.5d);
+		inject(mojo, "weightByDuration", true);
+		inject(mojo, "tier1File", tempDir.resolve("tier1.txt").toString());
+		inject(mojo, "tier2File", tempDir.resolve("tier2.txt").toString());
+		inject(mojo, "tier3File", tempDir.resolve("tier3.txt").toString());
+	}
 
-    @Test
-    void writesThreeTierFilesAndConfiguresTierOneExecution() throws Exception {
-        DependencyMap map = new DependencyMap();
-        map.put("com.example.AffectedTest", Set.of("com.example.ServiceA"));
-        map.put("com.example.FastTest", Set.of("com.example.ServiceB"));
-        map.put("com.example.SlowTest", Set.of("com.example.ServiceC"));
-        map.save(tempDir.resolve("test-dependencies.lz4"));
+	@Test
+	void writesThreeTierFilesAndConfiguresTierOneExecution() throws Exception {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.AffectedTest", Set.of("com.example.ServiceA"));
+		map.put("com.example.FastTest", Set.of("com.example.ServiceB"));
+		map.put("com.example.SlowTest", Set.of("com.example.ServiceC"));
+		map.save(tempDir.resolve("test-dependencies.lz4"));
 
-        assertDoesNotThrow(mojo::execute);
+		assertDoesNotThrow(mojo::execute);
 
-        Path tier1 = tempDir.resolve("tier1.txt");
-        Path tier2 = tempDir.resolve("tier2.txt");
-        Path tier3 = tempDir.resolve("tier3.txt");
+		Path tier1 = tempDir.resolve("tier1.txt");
+		Path tier2 = tempDir.resolve("tier2.txt");
+		Path tier3 = tempDir.resolve("tier3.txt");
 
-        assertTrue(Files.exists(tier1));
-        assertTrue(Files.exists(tier2));
-        assertTrue(Files.exists(tier3));
+		assertTrue(Files.exists(tier1));
+		assertTrue(Files.exists(tier2));
+		assertTrue(Files.exists(tier3));
 
-        assertTrue(Files.readAllLines(tier1).contains("com.example.AffectedTest"));
-        String testProp = project.getProperties().getProperty("test");
-        assertNotNull(testProp, "Surefire includes should be configured for tier 1");
-        assertTrue(testProp.contains("com.example.AffectedTest"));
+		assertTrue(Files.readAllLines(tier1).contains("com.example.AffectedTest"));
+		String testProp = project.getProperties().getProperty("test");
+		assertNotNull(testProp, "Surefire includes should be configured for tier 1");
+		assertTrue(testProp.contains("com.example.AffectedTest"));
 
-        assertEquals(tempDir.resolve("tier2.txt").toAbsolutePath().toString(),
-                project.getProperties().getProperty("testorder.tiered.tier2File"));
-    }
+		assertEquals(tempDir.resolve("tier2.txt").toAbsolutePath().toString(),
+				project.getProperties().getProperty("testorder.tiered.tier2File"));
+	}
 
-    private static MavenProject projectWithSurefire(Path baseDir) {
-        MavenProject project = mock(MavenProject.class);
-        when(project.getBasedir()).thenReturn(baseDir.toFile());
-        when(project.getProperties()).thenReturn(new Properties());
-        when(project.getArtifactId()).thenReturn("test-artifact");
+	private static MavenProject projectWithSurefire(Path baseDir) {
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBasedir()).thenReturn(baseDir.toFile());
+		when(project.getProperties()).thenReturn(new Properties());
+		when(project.getArtifactId()).thenReturn("test-artifact");
 
-        Build build = new Build();
-        build.setDirectory(baseDir.resolve("target").toString());
-        build.setTestOutputDirectory(baseDir.resolve("test-classes").toString());
-        when(project.getBuild()).thenReturn(build);
+		Build build = new Build();
+		build.setDirectory(baseDir.resolve("target").toString());
+		build.setTestOutputDirectory(baseDir.resolve("test-classes").toString());
+		when(project.getBuild()).thenReturn(build);
 
-        Plugin surefire = new Plugin();
-        surefire.setGroupId("org.apache.maven.plugins");
-        surefire.setArtifactId("maven-surefire-plugin");
-        surefire.setConfiguration(new Xpp3Dom("configuration"));
-        when(project.getBuildPlugins()).thenReturn(List.of(surefire));
-        when(project.getCompileSourceRoots()).thenReturn(List.of(baseDir.resolve("src/main/java").toString()));
-        when(project.getTestCompileSourceRoots()).thenReturn(List.of(baseDir.resolve("src/test/java").toString()));
-        return project;
-    }
+		Plugin surefire = new Plugin();
+		surefire.setGroupId("org.apache.maven.plugins");
+		surefire.setArtifactId("maven-surefire-plugin");
+		surefire.setConfiguration(new Xpp3Dom("configuration"));
+		when(project.getBuildPlugins()).thenReturn(List.of(surefire));
+		when(project.getCompileSourceRoots()).thenReturn(List.of(baseDir.resolve("src/main/java").toString()));
+		when(project.getTestCompileSourceRoots()).thenReturn(List.of(baseDir.resolve("src/test/java").toString()));
+		return project;
+	}
 
-    private static void inject(Object target, String fieldName, Object value) throws Exception {
-        Class<?> clazz = target.getClass();
-        while (clazz != null) {
-            try {
-                Field field = clazz.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                field.set(target, value);
-                return;
-            } catch (NoSuchFieldException e) {
-                clazz = clazz.getSuperclass();
-            }
-        }
-        throw new NoSuchFieldException("Field not found in class hierarchy: " + fieldName);
-    }
+	private static void inject(Object target, String fieldName, Object value) throws Exception {
+		Class<?> clazz = target.getClass();
+		while (clazz != null) {
+			try {
+				Field field = clazz.getDeclaredField(fieldName);
+				field.setAccessible(true);
+				field.set(target, value);
+				return;
+			} catch (NoSuchFieldException e) {
+				clazz = clazz.getSuperclass();
+			}
+		}
+		throw new NoSuchFieldException("Field not found in class hierarchy: " + fieldName);
+	}
 
-    private static final class TestableTieredSelectMojo extends TieredSelectMojo {
-        @Override
-        protected TestOrderState loadState() {
-            TestOrderState state = new TestOrderState();
-            state.recordDuration("com.example.FastTest", 10);
-            state.recordDuration("com.example.SlowTest", 100);
-            return state;
-        }
+	private static final class TestableTieredSelectMojo extends TieredSelectMojo {
+		@Override
+		protected TestOrderState loadState() {
+			TestOrderState state = new TestOrderState();
+			state.recordDuration("com.example.FastTest", 10);
+			state.recordDuration("com.example.SlowTest", 100);
+			return state;
+		}
 
-        @Override
-        protected Set<String> discoverAlwaysRunClasses() {
-            return Set.of();
-        }
+		@Override
+		protected Set<String> discoverAlwaysRunClasses() {
+			return Set.of();
+		}
 
-        @Override
-        protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests, Set<String> changedMethods,
-                Map<String, Integer> scoreOverrides) throws MojoExecutionException {
-            // no-op in this focused unit test
-        }
-    }
+		@Override
+		protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests, Set<String> changedMethods,
+				Map<String, Integer> scoreOverrides) throws MojoExecutionException {
+			// no-op in this focused unit test
+		}
+	}
 }

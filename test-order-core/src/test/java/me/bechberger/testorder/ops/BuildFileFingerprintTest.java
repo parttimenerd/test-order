@@ -41,8 +41,8 @@ class BuildFileFingerprintTest {
 	void classpathFingerprintProducesDeterministicHash() throws IOException {
 		Path jar1 = tempDir.resolve("a-lib-1.0.jar");
 		Path jar2 = tempDir.resolve("b-lib-2.0.jar");
-		Files.write(jar1, new byte[]{1, 2, 3});
-		Files.write(jar2, new byte[]{4, 5, 6});
+		Files.write(jar1, new byte[] { 1, 2, 3 });
+		Files.write(jar2, new byte[] { 4, 5, 6 });
 
 		String fp1 = BuildFileFingerprint.computeFromClasspath(List.of(jar1, jar2));
 		String fp2 = BuildFileFingerprint.computeFromClasspath(List.of(jar2, jar1));
@@ -55,12 +55,12 @@ class BuildFileFingerprintTest {
 	@Test
 	void classpathFingerprintChangesWhenJarSizeChanges() throws IOException {
 		Path jar = tempDir.resolve("lib-1.0-SNAPSHOT.jar");
-		Files.write(jar, new byte[]{1, 2, 3});
+		Files.write(jar, new byte[] { 1, 2, 3 });
 
 		String fp1 = BuildFileFingerprint.computeFromClasspath(List.of(jar));
 
 		// Simulate SNAPSHOT rebuild: same name, different content/size
-		Files.write(jar, new byte[]{1, 2, 3, 4, 5});
+		Files.write(jar, new byte[] { 1, 2, 3, 4, 5 });
 
 		String fp2 = BuildFileFingerprint.computeFromClasspath(List.of(jar));
 
@@ -72,12 +72,12 @@ class BuildFileFingerprintTest {
 	@Test
 	void classpathFingerprintChangesWhenJarAdded() throws IOException {
 		Path jar1 = tempDir.resolve("a-lib.jar");
-		Files.write(jar1, new byte[]{1, 2, 3});
+		Files.write(jar1, new byte[] { 1, 2, 3 });
 
 		String fpBefore = BuildFileFingerprint.computeFromClasspath(List.of(jar1));
 
 		Path jar2 = tempDir.resolve("b-new-dep.jar");
-		Files.write(jar2, new byte[]{7, 8, 9});
+		Files.write(jar2, new byte[] { 7, 8, 9 });
 
 		String fpAfter = BuildFileFingerprint.computeFromClasspath(List.of(jar1, jar2));
 
@@ -89,13 +89,13 @@ class BuildFileFingerprintTest {
 	@Test
 	void classpathFingerprintChangesWhenVersionBumped() throws IOException {
 		Path jar1 = tempDir.resolve("spring-boot-3.1.0.jar");
-		Files.write(jar1, new byte[]{1, 2, 3});
+		Files.write(jar1, new byte[] { 1, 2, 3 });
 
 		String fpBefore = BuildFileFingerprint.computeFromClasspath(List.of(jar1));
 
 		// Version bump: different filename
 		Path jar2 = tempDir.resolve("spring-boot-3.2.0.jar");
-		Files.write(jar2, new byte[]{1, 2, 3}); // same content, different name
+		Files.write(jar2, new byte[] { 1, 2, 3 }); // same content, different name
 
 		String fpAfter = BuildFileFingerprint.computeFromClasspath(List.of(jar2));
 
@@ -164,7 +164,7 @@ class BuildFileFingerprintTest {
 		// Set up both: a pom.xml and a JAR
 		Files.writeString(tempDir.resolve("pom.xml"), "<project/>");
 		Path jar = tempDir.resolve("lib.jar");
-		Files.write(jar, new byte[]{1, 2, 3});
+		Files.write(jar, new byte[] { 1, 2, 3 });
 
 		String fpCombined = BuildFileFingerprint.compute(List.of(jar), tempDir);
 		String fpClasspath = BuildFileFingerprint.computeFromClasspath(List.of(jar));

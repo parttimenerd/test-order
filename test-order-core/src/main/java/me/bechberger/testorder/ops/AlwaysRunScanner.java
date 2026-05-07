@@ -39,7 +39,8 @@ public final class AlwaysRunScanner {
 						result.add(fqcn);
 					});
 		} catch (IOException e) {
-			// best-effort scan
+			System.err.println("[test-order] WARNING: Failed to scan test classes for @AlwaysRun annotations: "
+					+ e.getMessage() + ". AlwaysRun guarantees may not apply.");
 		}
 		return result;
 	}
@@ -52,7 +53,7 @@ public final class AlwaysRunScanner {
 		try {
 			byte[] bytes = Files.readAllBytes(classFile);
 			String content = new String(bytes, StandardCharsets.ISO_8859_1);
-			return content.contains("Lme/bechberger/testorder/AlwaysRun;");
+			return content.contains("Lme/bechberger/testorder/annotations/AlwaysRun;");
 		} catch (IOException e) {
 			return false;
 		}

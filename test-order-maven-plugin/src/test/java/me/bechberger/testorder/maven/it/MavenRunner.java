@@ -86,7 +86,9 @@ public class MavenRunner {
 		return run("test-order:export-json");
 	}
 
-	/** Run {@code mvn test-order:export-json -Dtestorder.exportJson.output=<path>} */
+	/**
+	 * Run {@code mvn test-order:export-json -Dtestorder.exportJson.output=<path>}
+	 */
 	public MavenResult exportJsonTo(String outputPath) {
 		return run("test-order:export-json", "-Dtestorder.exportJson.output=" + outputPath);
 	}
@@ -134,11 +136,12 @@ public class MavenRunner {
 		return run(args.toArray(String[]::new));
 	}
 
-	/** Run {@code mvn test-order:tiered-select test} with explicit changed classes */
+	/**
+	 * Run {@code mvn test-order:tiered-select test} with explicit changed classes
+	 */
 	public MavenResult tieredSelect(String... changedClasses) {
-		List<String> args = new ArrayList<>(
-				List.of("test-order:tiered-select", "test", "-Dtestorder.changeMode=explicit",
-						"-Dsurefire.failIfNoSpecifiedTests=false"));
+		List<String> args = new ArrayList<>(List.of("test-order:tiered-select", "test",
+				"-Dtestorder.changeMode=explicit", "-Dsurefire.failIfNoSpecifiedTests=false"));
 		if (changedClasses.length > 0) {
 			args.add("-Dtestorder.changed.classes=" + String.join(",", changedClasses));
 		}
@@ -147,8 +150,7 @@ public class MavenRunner {
 
 	/** Run {@code mvn test-order:run-tier test -Dtestorder.tiered.currentTier=N} */
 	public MavenResult runTier(int tier) {
-		return run("test-order:run-tier", "test",
-				"-Dtestorder.tiered.currentTier=" + tier,
+		return run("test-order:run-tier", "test", "-Dtestorder.tiered.currentTier=" + tier,
 				"-Dsurefire.failIfNoSpecifiedTests=false");
 	}
 
@@ -183,14 +185,12 @@ public class MavenRunner {
 		return output.contains("forked VM terminated without properly saying goodbye")
 				|| output.contains("There was an error in the forked process")
 				|| output.contains("unexpected error occurred while trying to open file")
-				|| output.contains("Failed to clean project")
-				|| output.contains("Error occurred in starting fork")
+				|| output.contains("Failed to clean project") || output.contains("Error occurred in starting fork")
 				|| output.contains("unable to access file: java.nio.file.NoSuchFileException")
 				// Compilation failures due to stale file locks preventing clean from working
 				|| (output.contains("cannot find symbol") && output.contains("COMPILATION ERROR"))
 				// Class loading failures in forked surefire JVM after clean (APFS race)
-				|| output.contains("NoClassDefFoundError")
-				|| output.contains("No tests matching pattern");
+				|| output.contains("NoClassDefFoundError") || output.contains("No tests matching pattern");
 	}
 
 	private MavenResult runOnce(String... args) {

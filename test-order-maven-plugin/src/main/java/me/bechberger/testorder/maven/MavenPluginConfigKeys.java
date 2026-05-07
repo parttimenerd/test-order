@@ -94,35 +94,34 @@ final class MavenPluginConfigKeys {
 			SCORE_SPEED, SCORE_SPEED_PENALTY, SCORE_DEP_OVERLAP, SCORE_CHANGE_COMPLEXITY, SCORE_STATIC_FIELD_BONUS,
 			SCORE_COVERAGE_BONUS, MODE, INCLUDE_PACKAGES, FILTER_BY_GROUP_ID, SELECT_TOP_N, SELECT_RANDOM_M,
 			SELECT_SEED, SELECT_REMAINING_FILE, SELECTED_FILE, AUTO_RUN_REMAINING, AUTO_OPTIMIZE_EVERY,
-			AUTO_LEARN_RUN_THRESHOLD, AUTO_LEARN_DIFF_THRESHOLD,
-			DUMP_OUTPUT, EXPORT_JSON_OUTPUT, SHOW_ORDER_EXPLAIN, SHOW_METHOD_ORDER_EXPLAIN, SHOW_ORDER_FULL_NAMES, DASHBOARD_OUTPUT, DASHBOARD_COVERAGE_DIR,
-			DASHBOARD_OPEN, DASHBOARD_SEPARATE_ASSETS, DASHBOARD_PORT, DASHBOARD_REGENERATE,
-			DASHBOARD_SERVE_SECONDS, TIERED_TIER2_FRACTION, TIERED_WEIGHT_BY_DURATION,
-			TIERED_TIER1_FILE, TIERED_TIER2_FILE, TIERED_TIER3_FILE, TIERED_CURRENT_TIER,
-			LEGACY_INDEX,
-			LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE, LEGACY_TEST_HASH_FILE, LEGACY_METHOD_HASH_FILE,
-			LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT, LEGACY_VERBOSE_FILE, LEGACY_METHOD_ORDERING_ENABLED,
-			AUTO_COMPACT_EVERY,
-			"testorder.skip", "testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file",
-			"testorder.methodOrder", "testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold",
-			"testorder.auto.active", "testorder.remaining.file",
-			"testorder.metrics.output");
+			AUTO_LEARN_RUN_THRESHOLD, AUTO_LEARN_DIFF_THRESHOLD, DUMP_OUTPUT, EXPORT_JSON_OUTPUT, SHOW_ORDER_EXPLAIN,
+			SHOW_METHOD_ORDER_EXPLAIN, SHOW_ORDER_FULL_NAMES, DASHBOARD_OUTPUT, DASHBOARD_COVERAGE_DIR, DASHBOARD_OPEN,
+			DASHBOARD_SEPARATE_ASSETS, DASHBOARD_PORT, DASHBOARD_REGENERATE, DASHBOARD_SERVE_SECONDS,
+			TIERED_TIER2_FRACTION, TIERED_WEIGHT_BY_DURATION, TIERED_TIER1_FILE, TIERED_TIER2_FILE, TIERED_TIER3_FILE,
+			TIERED_CURRENT_TIER, LEGACY_INDEX, LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE,
+			LEGACY_TEST_HASH_FILE, LEGACY_METHOD_HASH_FILE, LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT,
+			LEGACY_VERBOSE_FILE, LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip",
+			"testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file", "testorder.methodOrder",
+			"testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold", "testorder.auto.active",
+			"testorder.remaining.file", "testorder.metrics.output");
 
 	/**
-	 * Find the closest known key to the given unknown key.
-	 * Delegates to {@link me.bechberger.testorder.ops.PropertySuggestion} with a
-	 * fallback to Maven-specific legacy keys.
+	 * Find the closest known key to the given unknown key. Delegates to
+	 * {@link me.bechberger.testorder.ops.PropertySuggestion} with a fallback to
+	 * Maven-specific legacy keys.
 	 */
 	static String findClosestKey(String unknown) {
 		// Check shared core keys first
 		String coreMatch = me.bechberger.testorder.ops.PropertySuggestion.findClosest(unknown);
-		if (coreMatch != null) return coreMatch;
+		if (coreMatch != null)
+			return coreMatch;
 		// Fall back to Maven-specific legacy keys via Levenshtein
 		String unknownLower = unknown.toLowerCase();
 		int bestDist = Integer.MAX_VALUE;
 		String bestKey = null;
 		for (String known : ALL_KNOWN_KEYS) {
-			if (me.bechberger.testorder.ops.PropertySuggestion.KNOWN_KEYS.contains(known)) continue;
+			if (me.bechberger.testorder.ops.PropertySuggestion.KNOWN_KEYS.contains(known))
+				continue;
 			int dist = me.bechberger.testorder.ops.PropertySuggestion.levenshtein(unknownLower, known.toLowerCase());
 			if (dist < bestDist) {
 				bestDist = dist;

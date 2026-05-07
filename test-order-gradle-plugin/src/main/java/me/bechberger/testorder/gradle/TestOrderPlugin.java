@@ -944,10 +944,6 @@ public class TestOrderPlugin implements Plugin<Project> {
                                     "[test-order] 0 tests selected in auto mode. "
                                     + "This may indicate no code changes were detected, or topN/randomM are misconfigured.");
                         }
-                        project.getLogger().lifecycle(
-                                "[test-order] Selected {} tests, deferred {}",
-                                selection.selected().size(),
-                                selection.remaining().size());
 
                         if (!effectiveRunRemaining && !selection.remaining().isEmpty()) {
                             project.getLogger().warn(

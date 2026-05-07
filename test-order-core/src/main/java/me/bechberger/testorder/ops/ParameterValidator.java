@@ -144,7 +144,8 @@ public final class ParameterValidator {
 	/**
 	 * Validates select-mode parameters (topN and randomM).
 	 *
-	 * @throws IllegalArgumentException if both topN and randomM are 0 (no tests would be selected)
+	 * @throws IllegalArgumentException
+	 *             if both topN and randomM are 0 (no tests would be selected)
 	 */
 	public void validateSelectParameters(int topN, int randomM) {
 		validateMinValue(topN, -1, "selectTopN");
@@ -153,7 +154,7 @@ public final class ParameterValidator {
 		if (topN == 0 && randomM == 0) {
 			throw new IllegalArgumentException(
 					"[test-order] Both selectTopN and selectRandomM are 0 — no tests would be selected. "
-					+ "Set selectTopN to at least 1, or use selectTopN=-1 to include all change-affected tests.");
+							+ "Set selectTopN to at least 1, or use selectTopN=-1 to include all change-affected tests.");
 		}
 	}
 

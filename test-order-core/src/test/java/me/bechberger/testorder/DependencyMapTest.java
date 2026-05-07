@@ -61,7 +61,8 @@ class DependencyMapTest {
 
 		long textSize = Files.size(textIdx);
 		long binSize = Files.size(binIdx);
-		assertTrue(binSize < textSize, "Binary (" + binSize + " bytes) should be smaller than text (" + textSize + " bytes)");
+		assertTrue(binSize < textSize,
+				"Binary (" + binSize + " bytes) should be smaller than text (" + textSize + " bytes)");
 	}
 
 	@Test
@@ -478,7 +479,7 @@ class DependencyMapTest {
 				var out = new java.io.DataOutputStream(lz4)) {
 
 			out.write(new byte[] { 'T', 'O', 'R', 'D' }); // magic
-			out.writeShort(1);                              // version
+			out.writeShort(1); // version
 
 			out.writeInt(4); // sectionCount: trie + test_classes + dep_groups + unknown
 

@@ -152,7 +152,8 @@ class JavaParserModel {
 		String compactBody = null;
 		String signatureText = null;
 
-		// Capture signature text (annotations + modifiers + return type + name + params)
+		// Capture signature text (annotations + modifiers + return type + name +
+		// params)
 		// from original source, normalized for hashing (comments/whitespace ignored,
 		// strings preserved for annotation-aware hashing)
 		if (md.getRange().isPresent()) {

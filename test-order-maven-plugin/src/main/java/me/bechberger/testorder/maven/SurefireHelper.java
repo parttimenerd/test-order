@@ -44,16 +44,16 @@ final class SurefireHelper {
 		if (surefire == null) {
 			throw new MojoExecutionException(
 					"[test-order] maven-surefire-plugin or maven-failsafe-plugin not found in project '"
-					+ project.getArtifactId() + "'. "
-					+ "test-order requires Surefire (or Failsafe) to configure test execution. "
-					+ "Add maven-surefire-plugin to your <build><plugins> section.");
+							+ project.getArtifactId() + "'. "
+							+ "test-order requires Surefire (or Failsafe) to configure test execution. "
+							+ "Add maven-surefire-plugin to your <build><plugins> section.");
 		}
 		return surefire;
 	}
 
 	/**
-	 * Warns if the Surefire/Failsafe version is older than 3.0, which lacks
-	 * JUnit Platform support required by test-order.
+	 * Warns if the Surefire/Failsafe version is older than 3.0, which lacks JUnit
+	 * Platform support required by test-order.
 	 */
 	static void warnOldSurefireVersion(Plugin surefire, Log log) {
 		String version = surefire.getVersion();
@@ -108,9 +108,9 @@ final class SurefireHelper {
 	/**
 	 * Warns when parallel execution is enabled in order mode. Parallel execution
 	 * undermines test ordering guarantees: JUnit Platform sorts but does not
-	 * guarantee start order when parallelism is active.
-	 * Delegates common checks to {@link JUnitPlatformValidator}, adds Surefire-specific
-	 * {@code <parallel>} element check.
+	 * guarantee start order when parallelism is active. Delegates common checks to
+	 * {@link JUnitPlatformValidator}, adds Surefire-specific {@code <parallel>}
+	 * element check.
 	 */
 	static void validateNoClassLevelParallel(MavenProject project, Log log) throws MojoExecutionException {
 		Plugin surefire = findSurefirePlugin(project);
@@ -121,7 +121,8 @@ final class SurefireHelper {
 		Xpp3Dom config = getOrCreateConfiguration(surefire);
 		List<String> parallelSources = new ArrayList<>();
 
-		// Check Surefire's <parallel> (only applies to JUnit 4.7 and TestNG providers, but warn anyway)
+		// Check Surefire's <parallel> (only applies to JUnit 4.7 and TestNG providers,
+		// but warn anyway)
 		String surefireParallel = childValue(config, "parallel");
 		if (isClassLevelSurefireParallel(surefireParallel)) {
 			parallelSources.add("<parallel>" + surefireParallel + "</parallel>");
@@ -131,15 +132,14 @@ final class SurefireHelper {
 		Map<String, String> resolvedProps = extractSystemPropertyVariables(config);
 		String configurationParameters = childValue(child(child(config, "properties"), "configurationParameters"));
 		JUnitPlatformValidator validator = new JUnitPlatformValidator(MavenPluginLog.wrap(log));
-		JUnitPlatformValidator.ParallelCheckResult result =
-				validator.detectParallelExecution(resolvedProps, configurationParameters);
+		JUnitPlatformValidator.ParallelCheckResult result = validator.detectParallelExecution(resolvedProps,
+				configurationParameters);
 
 		parallelSources.addAll(result.classLevelParallelSources());
 
 		// Emit a single consolidated warning for class-level parallel
 		if (!parallelSources.isEmpty()) {
-			log.warn("[test-order] Class-level parallel execution detected ("
-					+ String.join(", ", parallelSources)
+			log.warn("[test-order] Class-level parallel execution detected (" + String.join(", ", parallelSources)
 					+ ") — test ordering guarantees are weakened. "
 					+ "Tests will be sorted but may not start in priority order.");
 		}
@@ -155,8 +155,8 @@ final class SurefireHelper {
 
 	/**
 	 * Fails when class-level parallel execution is enabled and we're in learn mode.
-	 * Parallel class execution during learn mode corrupts dependency tracking because
-	 * concurrent class loading blurs which test triggered which dependency.
+	 * Parallel class execution during learn mode corrupts dependency tracking
+	 * because concurrent class loading blurs which test triggered which dependency.
 	 * Uses {@link JUnitPlatformValidator} for configurationParameters parsing.
 	 */
 	static void rejectClassLevelParallelForLearn(MavenProject project, Log log) throws MojoExecutionException {
@@ -167,28 +167,24 @@ final class SurefireHelper {
 
 		String surefireParallel = childValue(config, "parallel");
 		if (isClassLevelSurefireParallel(surefireParallel)) {
-			throw new MojoExecutionException(
-					"Class-level parallel execution (<parallel>" + surefireParallel
-							+ "</parallel>) is not supported in learn mode — "
-							+ "it would corrupt dependency tracking. "
-							+ "Remove or change to <parallel>methods</parallel> during learn runs.");
+			throw new MojoExecutionException("Class-level parallel execution (<parallel>" + surefireParallel
+					+ "</parallel>) is not supported in learn mode — " + "it would corrupt dependency tracking. "
+					+ "Remove or change to <parallel>methods</parallel> during learn runs.");
 		}
 
 		String classesDefaultFromSysProps = childValue(child(config, "systemPropertyVariables"),
 				"junit.jupiter.execution.parallel.mode.classes.default");
 		if (isConcurrent(classesDefaultFromSysProps)) {
-			throw new MojoExecutionException(
-					"JUnit class-level parallel mode (mode.classes.default=concurrent) "
-							+ "is not supported in learn mode — it would corrupt dependency tracking. "
-							+ "Use same_thread or remove it during learn runs.");
+			throw new MojoExecutionException("JUnit class-level parallel mode (mode.classes.default=concurrent) "
+					+ "is not supported in learn mode — it would corrupt dependency tracking. "
+					+ "Use same_thread or remove it during learn runs.");
 		}
 
 		String configurationParameters = childValue(child(child(config, "properties"), "configurationParameters"));
 		if (JUnitPlatformValidator.isClassLevelConcurrentInConfigurationParameters(configurationParameters)) {
-			throw new MojoExecutionException(
-					"JUnit class-level parallel mode in <configurationParameters> "
-							+ "is not supported in learn mode — it would corrupt dependency tracking. "
-							+ "Use same_thread or remove mode.classes.default=concurrent during learn runs.");
+			throw new MojoExecutionException("JUnit class-level parallel mode in <configurationParameters> "
+					+ "is not supported in learn mode — it would corrupt dependency tracking. "
+					+ "Use same_thread or remove mode.classes.default=concurrent during learn runs.");
 		}
 
 		// Also reject Vintage parallel in learn mode (M24)
@@ -200,9 +196,8 @@ final class SurefireHelper {
 							+ "is not supported in learn mode — it would corrupt dependency tracking.");
 		}
 		if (JUnitPlatformValidator.isVintageParallelInConfigurationParameters(configurationParameters)) {
-			throw new MojoExecutionException(
-					"JUnit Vintage parallel execution in <configurationParameters> "
-							+ "is not supported in learn mode — it would corrupt dependency tracking.");
+			throw new MojoExecutionException("JUnit Vintage parallel execution in <configurationParameters> "
+					+ "is not supported in learn mode — it would corrupt dependency tracking.");
 		}
 
 		log.debug("[test-order] Learn-mode parallel check passed.");
@@ -221,8 +216,8 @@ final class SurefireHelper {
 	}
 
 	/**
-	 * Warns when {@code junit.platform.execution.listeners.deactivate} is configured
-	 * in a way that could disable test-order's TelemetryListener (M4).
+	 * Warns when {@code junit.platform.execution.listeners.deactivate} is
+	 * configured in a way that could disable test-order's TelemetryListener (M4).
 	 * Delegates to {@link JUnitPlatformValidator}.
 	 */
 	static void warnListenerDeactivation(MavenProject project, Log log) {
@@ -238,8 +233,8 @@ final class SurefireHelper {
 
 	/**
 	 * Warns when a conflicting ClassOrderer or MethodOrderer is configured globally
-	 * via JUnit Platform config, which would override test-order's orderers (M12, M20).
-	 * Delegates to {@link JUnitPlatformValidator}.
+	 * via JUnit Platform config, which would override test-order's orderers (M12,
+	 * M20). Delegates to {@link JUnitPlatformValidator}.
 	 */
 	static void warnConflictingOrderers(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);

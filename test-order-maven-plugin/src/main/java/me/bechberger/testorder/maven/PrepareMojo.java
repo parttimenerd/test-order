@@ -62,8 +62,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 	/**
 	 * In auto mode, forces a full re-learn after this many consecutive order-mode
-	 * runs (0 = disabled, default: 10). Ensures the dependency index stays fresh
-	 * as the codebase evolves.
+	 * runs (0 = disabled, default: 10). Ensures the dependency index stays fresh as
+	 * the codebase evolves.
 	 */
 	@Parameter(property = MavenPluginConfigKeys.AUTO_LEARN_RUN_THRESHOLD, defaultValue = "10")
 	private int autoLearnRunThreshold;
@@ -96,7 +96,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		}
 
 		// Allow CLI system property to override POM-level <configuration><mode>
-		// (Maven parameter injection gives POM config precedence over system properties,
+		// (Maven parameter injection gives POM config precedence over system
+		// properties,
 		// but users expect -Dtestorder.mode=order to always win)
 		if (session != null && session.getUserProperties() != null) {
 			String cliMode = session.getUserProperties().getProperty(MavenPluginConfigKeys.MODE);
@@ -111,10 +112,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			return;
 		}
 
+		mode = mode.toLowerCase(java.util.Locale.ROOT);
 		if (!VALID_MODES.contains(mode)) {
-			throw new TestOrderMojoException(ErrorCode.CHANGE_MODE_INVALID,
-					"Invalid mode '" + mode + "'. Valid values: " + VALID_MODES
-					+ ". Use -Dtestorder.mode=skip to disable test-order.");
+			throw new TestOrderMojoException(ErrorCode.PLUGIN_MODE_INVALID, "Invalid mode '" + mode
+					+ "'. Valid values: " + VALID_MODES + ". Use -Dtestorder.mode=skip to disable test-order.");
 		}
 		if ("skip".equals(mode)) {
 			getLog().info("[test-order] Mode is 'skip' — no Surefire configuration changes.");
@@ -166,7 +167,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				getLog().info("[test-order] No dependency index found — switching to learn mode automatically.");
 				switchToLearnMode();
 			} else {
-				getLog().info("[test-order] No index found and mode is 'order' — skipping.");
+				getLog().warn(
+						"[test-order] No dependency index found but mode is 'order' — tests will run in default order. "
+								+ "Run in learn mode first to build the dependency index: mvn test -Dtestorder.mode=learn");
 			}
 			return;
 		}
@@ -201,8 +204,15 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			if (newTests.size() > 5)
 				names += " (... " + (newTests.size() - 5) + " more)";
 			if ("auto".equals(mode)) {
-				getLog().info("[test-order] New test class(es) detected: " + names
-						+ " — switching to learn mode automatically.");
+				// R9-10: If this module has never been learned (no test hash),
+				// suppress the alarming message — it's just a first-run scenario.
+				if (!Files.exists(testHash)) {
+					getLog().debug("[test-order] First learn for this module — " + newTests.size()
+							+ " test class(es) not yet in index.");
+				} else {
+					getLog().info("[test-order] New test class(es) detected: " + names
+							+ " — switching to learn mode automatically.");
+				}
 				return true;
 			}
 			getLog().warn("[test-order] New test class(es) not yet in the dependency index: " + names);
@@ -252,15 +262,28 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	}
 
 	private void executeOrderMode() throws MojoExecutionException {
+		// R16-4: When user filters to specific tests via -Dtest, skip full ordering
+		// as Surefire will only run the filtered set anyway.
+		String testFilter = session != null && session.getUserProperties() != null
+				? session.getUserProperties().getProperty("test")
+				: null;
+		if (testFilter != null && !testFilter.isBlank()) {
+			getLog().info("[test-order] Skipping ordering overhead — -Dtest=" + testFilter + " filter active.");
+			project.getProperties().setProperty("testorder.auto.active", "true");
+			return;
+		}
+
 		// Detect which test framework is on the classpath to print correct class name
 		String frameworkName = isTestNGOnTestClasspath() ? "TestNGPriorityInterceptor" : "PriorityClassOrderer";
 		getLog().info("[test-order] Order mode: injecting " + frameworkName);
 
-		// Warn if topN was explicitly set — it only applies to select/auto-select, not pure order mode
+		// Warn if topN was explicitly set — it only applies to select/auto-select, not
+		// pure order mode
 		String topNProp = System.getProperty(MavenPluginConfigKeys.SELECT_TOP_N);
 		if (topNProp != null) {
-			getLog().warn("[test-order] -Dtestorder.select.topN is ignored in 'order' mode (all tests run, just re-ordered). "
-					+ "Did you mean: mvn test-order:select test -Dtestorder.select.topN=" + topNProp + "?");
+			getLog().warn(
+					"[test-order] -Dtestorder.select.topN is ignored in 'order' mode (all tests run, just re-ordered). "
+							+ "Did you mean: mvn test-order:select test -Dtestorder.select.topN=" + topNProp + "?");
 		}
 
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
@@ -271,7 +294,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			SurefireHelper.warnOldSurefireVersion(surefire, getLog());
 		}
 
-		// Auto-compact: rebuild index from .deps files periodically to remove stale entries
+		// Auto-compact: rebuild index from .deps files periodically to remove stale
+		// entries
 		if (autoCompactEvery > 0) {
 			TestOrderState compactState = loadState();
 			int runsSince = compactState.runsSinceLearn();
@@ -304,10 +328,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		TestOrderState state = loadState();
 		OrderWorkflow.OrderSetupResult result;
 		try {
-			result = OrderWorkflow.setup(
-					buildPluginContextBuilder().changedClasses(mergedChangedCsv)
-							.changedTestClasses(mergedChangedTestsCsv).build(),
-					state);
+			result = OrderWorkflow.setup(buildPluginContextBuilder().changedClasses(mergedChangedCsv)
+					.changedTestClasses(mergedChangedTestsCsv).build(), state);
 		} catch (IOException e) {
 			if ("auto".equals(mode) && isRecoverableIndexLoadFailure(e)) {
 				getLog().warn("[test-order] " + e.getMessage());
@@ -322,12 +344,11 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 							Path idxPath = resolveIndexPath();
 							Files.createDirectories(idxPath.getParent());
 							map.save(idxPath);
-							getLog().info("[test-order] Rebuilt index from .deps (" + map.size() + " classes) → " + idxPath);
+							getLog().info(
+									"[test-order] Rebuilt index from .deps (" + map.size() + " classes) → " + idxPath);
 							// Retry ordering with the rebuilt index
-							result = OrderWorkflow.setup(
-									buildPluginContextBuilder().changedClasses(mergedChangedCsv)
-											.changedTestClasses(mergedChangedTestsCsv).build(),
-									state);
+							result = OrderWorkflow.setup(buildPluginContextBuilder().changedClasses(mergedChangedCsv)
+									.changedTestClasses(mergedChangedTestsCsv).build(), state);
 							writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 									buildScoreOverrides());
 							return;
@@ -340,10 +361,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				// Try .bak recovery
 				if (recoverIndexFromBackup()) {
 					try {
-						result = OrderWorkflow.setup(
-								buildPluginContextBuilder().changedClasses(mergedChangedCsv)
-										.changedTestClasses(mergedChangedTestsCsv).build(),
-								state);
+						result = OrderWorkflow.setup(buildPluginContextBuilder().changedClasses(mergedChangedCsv)
+								.changedTestClasses(mergedChangedTestsCsv).build(), state);
 						writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 								buildScoreOverrides());
 						return;
@@ -368,6 +387,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 		writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 				buildScoreOverrides());
+
+		// R17-12: Mark that prepare already ran to prevent duplicate execution
+		// when 'mvn test-order:prepare test' triggers both CLI and lifecycle invocation
+		project.getProperties().setProperty("testorder.auto.active", "true");
 	}
 
 	private boolean isRecoverableIndexLoadFailure(IOException e) {
@@ -387,21 +410,20 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		if (session == null || session.getGoals() == null) {
 			return false;
 		}
-		return session.getGoals().stream().anyMatch(goal -> "test-order:select".equals(goal)
-				|| "test-order:auto".equals(goal) || "test-order:learn".equals(goal)
-				|| "test-order:run-remaining".equals(goal) || "test-order:run-tier".equals(goal)
-				|| "test-order:tiered-select".equals(goal));
+		return session.getGoals().stream()
+				.anyMatch(goal -> "test-order:select".equals(goal) || "test-order:auto".equals(goal)
+						|| "test-order:learn".equals(goal) || "test-order:run-remaining".equals(goal)
+						|| "test-order:run-tier".equals(goal) || "test-order:tiered-select".equals(goal));
 	}
 
 	/**
-	 * Attempts to recover the dependency index from a .bak backup file.
-	 * Checks standard backup locations relative to the project root.
+	 * Attempts to recover the dependency index from a .bak backup file. Checks
+	 * standard backup locations relative to the project root.
 	 */
 	private boolean recoverIndexFromBackup() {
 		Path idxPath = resolveIndexPath();
 		Path projectRoot = project.getBasedir().toPath().toAbsolutePath();
-		List<Path> candidates = List.of(
-				idxPath.resolveSibling(idxPath.getFileName() + ".bak"),
+		List<Path> candidates = List.of(idxPath.resolveSibling(idxPath.getFileName() + ".bak"),
 				projectRoot.resolve(".test-order/test-dependencies.lz4.bak"),
 				projectRoot.resolve("test-dependencies.lz4.bak"));
 

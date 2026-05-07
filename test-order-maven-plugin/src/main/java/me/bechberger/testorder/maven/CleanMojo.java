@@ -30,13 +30,13 @@ public class CleanMojo extends AbstractTestOrderMojo {
 
 		Path stateFilePath = ctx.resolveStateFile(stateFile);
 		List<Path> files = List.of(ctx.resolveIndexFile(indexFile), stateFilePath,
-				me.bechberger.testorder.PersistenceSupport.lockSibling(stateFilePath),
-				ctx.resolveHashFile(hashFile), ctx.resolveTestHashFile(testHashFile),
-				ctx.resolveMethodHashFile(methodHashFile));
+				me.bechberger.testorder.PersistenceSupport.lockSibling(stateFilePath), ctx.resolveHashFile(hashFile),
+				ctx.resolveTestHashFile(testHashFile), ctx.resolveMethodHashFile(methodHashFile));
 
 		List<Path> dirs = new ArrayList<>(List.of(ctx.resolveDepsDir(depsDir)));
 
-		// Also clean .test-order-precheck-* directories left behind by assessment/precheck
+		// Also clean .test-order-precheck-* directories left behind by
+		// assessment/precheck
 		Path baseDir = project.getBasedir().toPath();
 		try (DirectoryStream<Path> stream = Files.newDirectoryStream(baseDir, ".test-order-precheck-*")) {
 			for (Path precheckDir : stream) {
@@ -46,7 +46,19 @@ public class CleanMojo extends AbstractTestOrderMojo {
 			// Directory listing failed — skip precheck cleanup
 		}
 
-		int deleted = CleanOperation.clean(files, dirs, pluginLog());
+		// Clean any remaining .lock files in .test-order/ directory
+		List<Path> allFiles = new ArrayList<>(files);
+		Path testOrderDir = ctx.resolveBaseDir();
+		if (Files.isDirectory(testOrderDir)) {
+			try (DirectoryStream<Path> lockStream = Files.newDirectoryStream(testOrderDir, "*.lock")) {
+				for (Path lockFile : lockStream) {
+					allFiles.add(lockFile);
+				}
+			} catch (IOException ignored) {
+			}
+		}
+
+		int deleted = CleanOperation.clean(allFiles, dirs, pluginLog());
 		if (deleted > 0) {
 			getLog().info("[test-order] Cleaned " + deleted + " item(s)");
 		}

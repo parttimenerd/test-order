@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
@@ -22,8 +23,8 @@ import me.bechberger.testorder.ops.PluginLog;
  */
 @Command(name = "test-order", mixinStandardHelpOptions = true, version = "0.1.0", description = "Manage JUnit test ordering based on dependency telemetry", subcommands = {
 		Tool.Aggregate.class, Tool.Affected.class, Tool.Stats.class, Tool.HashSnapshot.class, Tool.Changed.class,
-		Tool.Run.class, Tool.Dump.class, Tool.ExportJson.class, Tool.Optimize.class, Tool.Select.class, Tool.StructDiff.class,
-		Tool.Advise.class })
+		Tool.Run.class, Tool.Dump.class, Tool.ExportJson.class, Tool.Optimize.class, Tool.Select.class,
+		Tool.StructDiff.class, Tool.Advise.class })
 public class Tool implements Runnable {
 
 	@Override
@@ -107,7 +108,7 @@ public class Tool implements Runnable {
 				DependencyMap map = DependencyMap.load(indexFile);
 				System.out.printf("Test classes:          %d%n", map.size());
 				System.out.printf("Unique app classes:    %d%n", map.totalUniqueClasses());
-				System.out.printf("Avg deps per test:     %.1f%n", map.averageDeps());
+				System.out.printf(Locale.US, "Avg deps per test:     %.1f%n", map.averageDeps());
 				return 0;
 			} catch (IOException e) {
 				System.err.println("Error: " + e.getMessage());
@@ -275,7 +276,8 @@ public class Tool implements Runnable {
 		@Option(names = { "-o", "--output" }, description = "Output JSON file (default: stdout)")
 		Path output;
 
-		@Option(names = { "-s", "--state" }, description = "State file for history data (default: .test-order/state.lz4)")
+		@Option(names = { "-s",
+				"--state" }, description = "State file for history data (default: .test-order/state.lz4)")
 		Path stateFile;
 
 		@Override
@@ -345,7 +347,7 @@ public class Tool implements Runnable {
 					String date = java.time.Instant.ofEpochMilli(r.timestamp()).atZone(java.time.ZoneId.systemDefault())
 							.toLocalDateTime().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
 					if (r.totalFailures() > 0) {
-						System.out.printf("  %s  tests=%d  failures=%d  first-fail@%d  APFD=%.1f%%%n", date,
+						System.out.printf(Locale.US, "  %s  tests=%d  failures=%d  first-fail@%d  APFD=%.1f%%%n", date,
 								r.totalTests(), r.totalFailures(), r.firstFailurePosition() + 1, r.apfd() * 100);
 					} else {
 						System.out.printf("  %s  tests=%d  all passed%n", date, r.totalTests());
@@ -368,8 +370,8 @@ public class Tool implements Runnable {
 				state.save(stateFile);
 
 				System.out.printf("Optimised weights saved:  %s%n", opt.weights().format());
-				System.out.printf("  Training APFDc:    %.1f%%%n", opt.trainScore() * 100);
-				System.out.printf("  Validation APFDc:  %.1f%%%n", opt.validationScore() * 100);
+				System.out.printf(Locale.US, "  Training APFDc:    %.1f%%%n", opt.trainScore() * 100);
+				System.out.printf(Locale.US, "  Validation APFDc:  %.1f%%%n", opt.validationScore() * 100);
 				System.out.printf("  Folds:             %d%n", opt.folds());
 				if (opt.overfit()) {
 					System.out.println("  WARNING: Overfitting detected — default weights used instead.");
@@ -530,13 +532,13 @@ public class Tool implements Runnable {
 				List<TestSplitAdvice> advice = TestSplitAdvisor.analyze(depMap, threshold);
 
 				if (advice.isEmpty()) {
-					System.out.printf(
+					System.out.printf(Locale.US,
 							"No split candidates found (threshold=%.2f). All classes have sufficiently cohesive methods.%n",
 							threshold);
 					return 0;
 				}
 
-				System.out.printf("Found %d split candidate%s (threshold=%.2f):%n%n", advice.size(),
+				System.out.printf(Locale.US, "Found %d split candidate%s (threshold=%.2f):%n%n", advice.size(),
 						advice.size() == 1 ? "" : "s", threshold);
 
 				for (TestSplitAdvice a : advice) {

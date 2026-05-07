@@ -37,17 +37,16 @@ class ModeResolverOperationTest {
 
 	@Test
 	void explicitLearnReturnsLearn() {
-		var config = new ModeResolverOperation.ModeConfig("learn", indexFile, stateFile,
-				10, 0, null, null, null, PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("learn", indexFile, stateFile, 10, 0, null, null, null,
+				PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 		assertEquals("learn", decision.effectiveMode());
 	}
 
 	@Test
 	void explicitOrderWithNoIndexReturnsSkip() {
-		var config = new ModeResolverOperation.ModeConfig("order",
-				tempDir.resolve("nonexistent.lz4"), stateFile,
-				10, 0, null, null, null, PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("order", tempDir.resolve("nonexistent.lz4"), stateFile, 10, 0,
+				null, null, null, PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 		assertEquals("skip", decision.effectiveMode());
 	}
@@ -62,17 +61,16 @@ class ModeResolverOperationTest {
 			throw new RuntimeException(e);
 		}
 
-		var config = new ModeResolverOperation.ModeConfig("auto",
-				tempDir.resolve("nonexistent.lz4"), stateFile,
-				10, 0, null, null, null, null, testSourceRoot, null, null, PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", tempDir.resolve("nonexistent.lz4"), stateFile, 10, 0,
+				null, null, null, null, testSourceRoot, null, null, PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 		assertEquals("learn", decision.effectiveMode());
 	}
 
 	@Test
 	void autoWithIndexReturnsOrder() {
-		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile, 10, 0, null, null, null,
+				PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 		assertEquals("order", decision.effectiveMode());
 	}
@@ -85,8 +83,8 @@ class ModeResolverOperationTest {
 		TestOrderState state = new TestOrderState();
 		state.save(stateFile);
 
-		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, () -> "abc123", PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile, 10, 0, null, null, null, null,
+				null, null, () -> "abc123", PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		// Should NOT trigger learn — just records fingerprint
@@ -104,8 +102,8 @@ class ModeResolverOperationTest {
 		state.setDependencyFingerprint("same-hash");
 		state.save(stateFile);
 
-		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, () -> "same-hash", PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile, 10, 0, null, null, null, null,
+				null, null, () -> "same-hash", PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("order", decision.effectiveMode());
@@ -118,8 +116,8 @@ class ModeResolverOperationTest {
 		state.setDependencyFingerprint("old-hash");
 		state.save(stateFile);
 
-		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, () -> "new-hash", PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile, 10, 0, null, null, null, null,
+				null, null, () -> "new-hash", PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("learn", decision.effectiveMode());
@@ -139,8 +137,8 @@ class ModeResolverOperationTest {
 		state.setDependencyFingerprint("some-hash");
 		state.save(stateFile);
 
-		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, null, PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile, 10, 0, null, null, null, null,
+				null, null, null, PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("order", decision.effectiveMode());
@@ -153,8 +151,8 @@ class ModeResolverOperationTest {
 		state.setDependencyFingerprint("some-hash");
 		state.save(stateFile);
 
-		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, () -> null, PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile, 10, 0, null, null, null, null,
+				null, null, () -> null, PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("order", decision.effectiveMode());
@@ -163,8 +161,8 @@ class ModeResolverOperationTest {
 	@Test
 	void dependencyChangeDetectionWorksWithoutPriorState() {
 		// No state file at all — fingerprint check should be skipped gracefully
-		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, () -> "some-hash", PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile, 10, 0, null, null, null, null,
+				null, null, () -> "some-hash", PluginLog.NOOP);
 		// Note: stateFile doesn't exist here because we didn't save any state
 		// The fingerprint check should be a no-op
 		var decision = ModeResolverOperation.resolve(config);
@@ -184,8 +182,8 @@ class ModeResolverOperationTest {
 		}
 		state.save(stateFile);
 
-		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, null, PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile, 10, 0, null, null, null, null,
+				null, null, null, PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("learn", decision.effectiveMode());
@@ -194,7 +192,8 @@ class ModeResolverOperationTest {
 
 	@Test
 	void dependencyChangeHasPriorityOverRunThreshold() throws IOException {
-		// Both dep change AND threshold are met — dep change triggers first (step 6 before step 7)
+		// Both dep change AND threshold are met — dep change triggers first (step 6
+		// before step 7)
 		TestOrderState state = new TestOrderState();
 		state.setDependencyFingerprint("old-deps");
 		for (int i = 0; i < 10; i++) {
@@ -202,8 +201,8 @@ class ModeResolverOperationTest {
 		}
 		state.save(stateFile);
 
-		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile,
-				10, 0, null, null, null, null, null, null, () -> "new-deps", PluginLog.NOOP);
+		var config = new ModeResolverOperation.ModeConfig("auto", indexFile, stateFile, 10, 0, null, null, null, null,
+				null, null, () -> "new-deps", PluginLog.NOOP);
 		var decision = ModeResolverOperation.resolve(config);
 
 		assertEquals("learn", decision.effectiveMode());

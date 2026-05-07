@@ -22,6 +22,12 @@ import me.bechberger.testorder.changes.StructuralDiff;
  */
 public final class ClassOrderingEngine {
 
+	/**
+	 * Tracks already-logged state load failures to avoid 12x duplication across
+	 * forks.
+	 */
+	private static final Set<String> LOGGED_STATE_ERRORS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
 	/** Result of the setup phase — everything needed to score and sort classes. */
 	public record SetupResult(DependencyMap depMap, TestOrderState state,
 			TestOrderState.ScoringWeights effectiveWeights, Set<String> changedClasses, Set<String> changedTestClasses,
@@ -63,7 +69,9 @@ public final class ClassOrderingEngine {
 					? TestOrderState.load(Path.of(statePath))
 					: new TestOrderState();
 		} catch (IOException e) {
-			TestOrderLogger.error("Failed to load state: {} — falling back to defaults.", e.getMessage());
+			if (LOGGED_STATE_ERRORS.add(e.getMessage())) {
+				TestOrderLogger.error("Failed to load state: {} — falling back to defaults.", e.getMessage());
+			}
 			state = new TestOrderState();
 		}
 

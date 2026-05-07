@@ -18,7 +18,8 @@ import java.util.logging.Logger;
  * <ol>
  * <li>Add a new entry to the {@link #MIGRATIONS} list in the static block.</li>
  * <li>Increment {@code CURRENT_SCHEMA_VERSION} in {@link TestOrderState}.</li>
- * <li>Add a test in {@code TestOrderStateTest} that verifies the migration.</li>
+ * <li>Add a test in {@code TestOrderStateTest} that verifies the
+ * migration.</li>
  * </ol>
  */
 final class StateMigrations {
@@ -31,8 +32,7 @@ final class StateMigrations {
 	record Migration(int fromVersion, int toVersion, UnaryOperator<Map<String, Object>> transform) {
 		Migration {
 			if (toVersion != fromVersion + 1) {
-				throw new IllegalArgumentException(
-						"Migration must be sequential: " + fromVersion + " → " + toVersion);
+				throw new IllegalArgumentException("Migration must be sequential: " + fromVersion + " → " + toVersion);
 			}
 		}
 	}
@@ -59,18 +59,16 @@ final class StateMigrations {
 			return root;
 		}
 		if (fromVersion > toVersion) {
-			throw new StateDowngradeException(
-					"State file was written by a newer plugin version (schema v" + fromVersion
-							+ ", current plugin expects v" + toVersion + "). "
-							+ "Run 'test-order:clean' (Maven) or 'testOrderClean' (Gradle) to reset, "
-							+ "or upgrade the plugin back to match the state file.");
+			throw new StateDowngradeException("State file was written by a newer plugin version (schema v" + fromVersion
+					+ ", current plugin expects v" + toVersion + "). "
+					+ "Run 'test-order:clean' (Maven) or 'testOrderClean' (Gradle) to reset, "
+					+ "or upgrade the plugin back to match the state file.");
 		}
 		Map<String, Object> current = root;
 		for (int v = fromVersion; v < toVersion; v++) {
 			Migration migration = findMigration(v);
 			if (migration == null) {
-				throw new IllegalArgumentException(
-						"No migration registered for version " + v + " → " + (v + 1));
+				throw new IllegalArgumentException("No migration registered for version " + v + " → " + (v + 1));
 			}
 			LOG.info("Migrating state from schema v" + v + " to v" + (v + 1));
 			Map<String, Object> migrated = migration.transform().apply(current);

@@ -138,7 +138,8 @@ public final class ShowOrderOperation {
 		if (explain) {
 			OrderReportPrinter.printExplainReport(out, scored, scorer, changed, changedTests, weights);
 		} else {
-			OrderReportPrinter.printShowOrderTable(out, scored, changed, changedTests, includeTags, showDepTotals, fullNames);
+			OrderReportPrinter.printShowOrderTable(out, scored, changed, changedTests, includeTags, showDepTotals,
+					fullNames);
 		}
 	}
 }

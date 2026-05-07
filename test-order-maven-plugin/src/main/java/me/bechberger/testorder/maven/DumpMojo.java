@@ -35,7 +35,8 @@ public class DumpMojo extends AbstractTestOrderMojo {
 			if (outputFile != null && !outputFile.isBlank()) {
 				DumpOperation.dump(idxPath, Path.of(outputFile), pluginLog());
 			} else {
-				getLog().info("[test-order] Tip: use -Dtestorder.dump.output=<file> to write to a file instead of stdout");
+				getLog().info(
+						"[test-order] Tip: use -Dtestorder.dump.output=<file> to write to a file instead of stdout");
 				DumpOperation.dump(idxPath, System.out, pluginLog());
 			}
 		} catch (IOException e) {

@@ -95,7 +95,7 @@ public final class PackageDetectorSupport {
 		}
 
 		// 3. Add groupId when it is a prefix of an existing package (helps minimize)
-		//    or as a fallback when nothing else was detected
+		// or as a fallback when nothing else was detected
 		if (filterByGroupId && groupId != null && !groupId.isBlank()) {
 			if (prefixes.isEmpty()) {
 				prefixes.add(groupId);

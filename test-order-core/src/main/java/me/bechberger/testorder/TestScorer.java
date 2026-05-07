@@ -65,18 +65,19 @@ public class TestScorer {
 	 * Computes the depOverlap score contribution from raw overlap count, total
 	 * deps, and weight.
 	 * <p>
-	 * Uses {@code overlap / sqrt(totalDeps)} — a geometric mean that balances
-	 * absolute overlap count (how many changed deps does this test touch?) against
-	 * test breadth (how many total deps does it have?). This avoids the problem of
-	 * pure-ratio scoring where 10 changed deps out of 100 total scores the same as
-	 * 1 out of 100.
+	 * Uses {@code overlap / sqrt(max(totalDeps, MIN_DEPS))} — a geometric mean that
+	 * balances absolute overlap count against test breadth. The minimum denominator
+	 * prevents tests with trivially small dep sets (1-3 deps) from getting the same
+	 * maximum score as broad integration tests.
 	 * <p>
 	 * The weight acts as the maximum contribution (like {@code maxFailure}).
 	 */
+	private static final int MIN_DEPS_DENOMINATOR = 5;
+
 	public static int depOverlapScore(int depOverlap, int depTotal, int weight) {
 		if (depOverlap == 0 || depTotal == 0 || weight == 0)
 			return 0;
-		double normalized = depOverlap / Math.sqrt(depTotal);
+		double normalized = depOverlap / Math.sqrt(Math.max(depTotal, MIN_DEPS_DENOMINATOR));
 		return Math.min((int) Math.ceil(normalized * weight), weight);
 	}
 
@@ -92,7 +93,7 @@ public class TestScorer {
 	public static int complexityScore(double complexityOverlap, int depTotal, int weight) {
 		if (complexityOverlap <= 0 || depTotal <= 0 || weight == 0)
 			return 0;
-		double normalized = complexityOverlap / Math.sqrt(depTotal);
+		double normalized = complexityOverlap / Math.sqrt(Math.max(depTotal, MIN_DEPS_DENOMINATOR));
 		return Math.min((int) Math.ceil(normalized * weight), weight);
 	}
 

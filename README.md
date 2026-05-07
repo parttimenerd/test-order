@@ -242,7 +242,11 @@ If you bound `prepare` in your POM (see [Quick Start](#quick-start)), **no separ
 
 | Path | Purpose | Commit? |
 |---|---|---|
-| `.test-order/` | Dependency index, hash snapshots, state | **Yes** |
+| `.test-order/test-dependencies.lz4` | Dependency index | **Yes** |
+| `.test-order/state.lz4` | Test durations, failure history | Optional |
+| `.test-order/hashes.lz4` | Source hash snapshot (machine-local) | No |
+| `.test-order/method-hashes.lz4` | Method-level hash snapshot | No |
+| `.test-order/test-hashes.lz4` | Test source hash snapshot | No |
 | `target/test-order-dashboard/` | Static dashboard HTML | No (regenerated) |
 | `target/test-order-selected.txt` | Selected test classes | No |
 | `target/test-order-remaining.txt` | Deferred test classes | No |

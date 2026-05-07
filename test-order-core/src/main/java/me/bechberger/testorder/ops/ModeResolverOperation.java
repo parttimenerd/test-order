@@ -54,7 +54,8 @@ public final class ModeResolverOperation {
 			 */
 			Path depsDir,
 			/**
-			 * Path to compiled test classes directory for new-test detection (null to skip).
+			 * Path to compiled test classes directory for new-test detection (null to
+			 * skip).
 			 */
 			Path testClassesDir,
 			/**
@@ -62,8 +63,8 @@ public final class ModeResolverOperation {
 			 */
 			Path testSourceRoot,
 			/**
-			 * Lazy supplier for changed test classes (only evaluated for new-test detection).
-			 * May be {@code null} to skip.
+			 * Lazy supplier for changed test classes (only evaluated for new-test
+			 * detection). May be {@code null} to skip.
 			 */
 			Supplier<Set<String>> changedTestsSupplier,
 			/** Lazy supplier for dependency fingerprint (may be {@code null}). */
@@ -72,13 +73,11 @@ public final class ModeResolverOperation {
 			PluginLog log) {
 
 		/** Convenience constructor without new-test detection fields. */
-		public ModeConfig(String requestedMode, Path indexPath, Path statePath,
-				int autoLearnRunThreshold, int autoLearnDiffThreshold,
-				Supplier<Set<String>> changedClassesSupplier,
-				Runnable ciDownloadCallback, Path depsDir, PluginLog log) {
-			this(requestedMode, indexPath, statePath, autoLearnRunThreshold,
-					autoLearnDiffThreshold, changedClassesSupplier,
-					ciDownloadCallback, depsDir, null, null, null, null, log);
+		public ModeConfig(String requestedMode, Path indexPath, Path statePath, int autoLearnRunThreshold,
+				int autoLearnDiffThreshold, Supplier<Set<String>> changedClassesSupplier, Runnable ciDownloadCallback,
+				Path depsDir, PluginLog log) {
+			this(requestedMode, indexPath, statePath, autoLearnRunThreshold, autoLearnDiffThreshold,
+					changedClassesSupplier, ciDownloadCallback, depsDir, null, null, null, null, log);
 		}
 	}
 
@@ -141,9 +140,8 @@ public final class ModeResolverOperation {
 			try {
 				AggregateOperation.Result agg = AggregateOperation.aggregate(config.depsDir(), config.indexPath(), log);
 				if (agg.written()) {
-					log.debug(StructuredLog.autoAggregation(agg.testClassCount(), agg.testClassCount(), java.util.Map.of(
-							"index_path", config.indexPath().toString(),
-							"deps_dir", config.depsDir().toString())));
+					log.debug(StructuredLog.autoAggregation(agg.testClassCount(), agg.testClassCount(), java.util.Map
+							.of("index_path", config.indexPath().toString(), "deps_dir", config.depsDir().toString())));
 				}
 			} catch (IOException e) {
 				log.warn("[test-order] Auto-aggregation failed: " + e.getMessage());
@@ -152,8 +150,7 @@ public final class ModeResolverOperation {
 
 		// 4. No index → learn (unless there are no test classes at all)
 		if (!Files.exists(config.indexPath())) {
-			boolean compiledTestsPresent = config.testClassesDir() != null
-					&& Files.isDirectory(config.testClassesDir())
+			boolean compiledTestsPresent = config.testClassesDir() != null && Files.isDirectory(config.testClassesDir())
 					&& !TestClassDiscovery.scanTestClasses(config.testClassesDir()).isEmpty();
 			boolean sourceTestsPresent = TestClassDiscovery.hasTestSources(config.testSourceRoot());
 			if (!compiledTestsPresent && !sourceTestsPresent) {
@@ -184,13 +181,12 @@ public final class ModeResolverOperation {
 				newTests.retainAll(changedTests);
 			}
 			if (!newTests.isEmpty()) {
-				String names = newTests.stream().sorted().limit(5)
-						.reduce((a, b) -> a + ", " + b).orElse("");
-				if (newTests.size() > 5) names += " (... " + (newTests.size() - 5) + " more)";
+				String names = newTests.stream().sorted().limit(5).reduce((a, b) -> a + ", " + b).orElse("");
+				if (newTests.size() > 5)
+					names += " (... " + (newTests.size() - 5) + " more)";
 				log.info("[test-order] New test class(es) detected: " + names
 						+ " — switching to learn mode automatically.");
-				return new ModeDecision("learn",
-						"New test classes detected: " + names, false);
+				return new ModeDecision("learn", "New test classes detected: " + names, false);
 			}
 		}
 
@@ -208,7 +204,8 @@ public final class ModeResolverOperation {
 				}
 				if (fpState != null) {
 					String storedFingerprint = fpState.dependencyFingerprint();
-					log.debug("[test-order] Fingerprint check: stored=" + storedFingerprint + " current=" + currentFingerprint);
+					log.debug("[test-order] Fingerprint check: stored=" + storedFingerprint + " current="
+							+ currentFingerprint);
 					if (storedFingerprint == null) {
 						// First time — record fingerprint without triggering learn
 						fpState.setDependencyFingerprint(currentFingerprint);
@@ -219,8 +216,7 @@ public final class ModeResolverOperation {
 						fpState.setDependencyFingerprint(currentFingerprint);
 						fpState.resetRunsSinceLearn();
 						boolean saved = saveState(fpState, config.statePath(), log);
-						return new ModeDecision("learn",
-								"Dependency change detected (fingerprint changed)", saved);
+						return new ModeDecision("learn", "Dependency change detected (fingerprint changed)", saved);
 					}
 				}
 			}
@@ -265,9 +261,9 @@ public final class ModeResolverOperation {
 			}
 		}
 
-		log.debug(StructuredLog.modeDecision("order", "Index exists", java.util.Map.of(
-				"index_path", config.indexPath().toString(),
-				"requested_mode", config.requestedMode() == null ? "" : config.requestedMode())));
+		log.debug(StructuredLog.modeDecision("order", "Index exists",
+				java.util.Map.of("index_path", config.indexPath().toString(), "requested_mode",
+						config.requestedMode() == null ? "" : config.requestedMode())));
 		return new ModeDecision("order", "Index exists — using order mode", false);
 	}
 

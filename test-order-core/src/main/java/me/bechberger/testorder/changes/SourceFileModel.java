@@ -197,13 +197,14 @@ public class SourceFileModel {
 			String bodyText, // stripped body text (null if abstract)
 			String bodyHash, // SHA-256 hex of bodyText (null if abstract)
 			String compactBody, // original body with comments and empty lines removed (null if abstract)
-			String signatureText // original source text from match start to '{' (includes annotations, modifiers,
-								// params); null for synthesized methods
+			String signatureText // original source text from match start to '{' (includes annotations,
+									// modifiers,
+									// params); null for synthesized methods
 	) {
 		/**
 		 * Returns a hash that includes both the method signature (with annotations) and
-		 * the body. This detects changes to annotation values (e.g. @CsvSource,
-		 * @MethodSource) that would not be caught by bodyHash alone.
+		 * the body. This detects changes to annotation values
+		 * (e.g. @CsvSource, @MethodSource) that would not be caught by bodyHash alone.
 		 */
 		public String effectiveHash() {
 			if (bodyHash == null)
@@ -441,8 +442,7 @@ public class SourceFileModel {
 		// ── 4. optionally find field islands (depth 1) ───────────
 		List<FieldNode> fields;
 		if (detail == Detail.FIELDS) {
-			fields = findFieldIslands(source, stripped, braceDepth, parenDepth, types, claimedBraces,
-					methodBodyRanges);
+			fields = findFieldIslands(source, stripped, braceDepth, parenDepth, types, claimedBraces, methodBodyRanges);
 		} else {
 			fields = List.of();
 		}
@@ -1359,7 +1359,8 @@ public class SourceFileModel {
 	// ── @MethodSource resolution ─────────────────────────────────────
 
 	/**
-	 * Pattern matching {@code @MethodSource} annotation with optional value. Handles:
+	 * Pattern matching {@code @MethodSource} annotation with optional value.
+	 * Handles:
 	 * <ul>
 	 * <li>{@code @MethodSource("providerName")}</li>
 	 * <li>{@code @MethodSource({"p1", "p2"})}</li>
@@ -1368,8 +1369,8 @@ public class SourceFileModel {
 	 * <li>{@code @MethodSource} (no args — defaults to test method name)</li>
 	 * </ul>
 	 */
-	private static final Pattern METHOD_SOURCE_PATTERN = Pattern
-			.compile("@MethodSource\\s*(?:\\(([^)]*?)\\))?", Pattern.DOTALL);
+	private static final Pattern METHOD_SOURCE_PATTERN = Pattern.compile("@MethodSource\\s*(?:\\(([^)]*?)\\))?",
+			Pattern.DOTALL);
 
 	/** Extracts individual string values from annotation argument text. */
 	private static final Pattern STRING_VALUE_PATTERN = Pattern.compile("\"([^\"]*?)\"");
@@ -1378,10 +1379,12 @@ public class SourceFileModel {
 	 * Extracts the provider method references from a {@code @MethodSource}
 	 * annotation in the given signature text.
 	 *
-	 * @param signatureText the original source text of the method signature
-	 *                      (including annotations)
-	 * @param methodName    the test method name (used as default if @MethodSource
-	 *                      has no explicit value)
+	 * @param signatureText
+	 *            the original source text of the method signature (including
+	 *            annotations)
+	 * @param methodName
+	 *            the test method name (used as default if @MethodSource has no
+	 *            explicit value)
 	 * @return list of provider method references (may include "Class#method" for
 	 *         cross-class refs), empty if no @MethodSource found
 	 */
@@ -1818,8 +1821,7 @@ public class SourceFileModel {
 				i += 2;
 				continue;
 			}
-			if (i + 2 < len && source.charAt(i) == '"' && source.charAt(i + 1) == '"'
-					&& source.charAt(i + 2) == '"') {
+			if (i + 2 < len && source.charAt(i) == '"' && source.charAt(i + 1) == '"' && source.charAt(i + 2) == '"') {
 				sb.append('"').append('"').append('"'); // closing """
 				i += 3;
 				return i;
@@ -1870,9 +1872,9 @@ public class SourceFileModel {
 	}
 
 	/**
-	 * Collapses whitespace: each run of {@code [ \t]+} becomes a single space,
-	 * each run of consecutive empty/blank lines becomes a single {@code \n}, and
-	 * each line is trimmed. String literal content is preserved exactly (whitespace
+	 * Collapses whitespace: each run of {@code [ \t]+} becomes a single space, each
+	 * run of consecutive empty/blank lines becomes a single {@code \n}, and each
+	 * line is trimmed. String literal content is preserved exactly (whitespace
 	 * inside strings is NOT collapsed).
 	 */
 	static String normalizeWhitespace(String text) {

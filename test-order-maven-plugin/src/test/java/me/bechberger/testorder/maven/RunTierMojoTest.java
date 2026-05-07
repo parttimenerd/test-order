@@ -25,112 +25,112 @@ import org.junit.jupiter.api.io.TempDir;
 
 class RunTierMojoTest {
 
-    @TempDir
-    Path tempDir;
+	@TempDir
+	Path tempDir;
 
-    private TestableRunTierMojo mojo;
-    private MavenProject project;
+	private TestableRunTierMojo mojo;
+	private MavenProject project;
 
-    @BeforeEach
-    void setUp() throws Exception {
-        mojo = new TestableRunTierMojo();
-        project = projectWithSurefire(tempDir);
+	@BeforeEach
+	void setUp() throws Exception {
+		mojo = new TestableRunTierMojo();
+		project = projectWithSurefire(tempDir);
 
-        MavenSession session = mock(MavenSession.class);
-        when(session.getProjects()).thenReturn(List.of(project));
-        when(session.getTopLevelProject()).thenReturn(project);
+		MavenSession session = mock(MavenSession.class);
+		when(session.getProjects()).thenReturn(List.of(project));
+		when(session.getTopLevelProject()).thenReturn(project);
 
-        inject(mojo, "project", project);
-        inject(mojo, "session", session);
-        inject(mojo, "skip", false);
-        inject(mojo, "currentTier", 2);
-        inject(mojo, "tier2File", tempDir.resolve("tier2.txt").toString());
-        inject(mojo, "tier3File", tempDir.resolve("tier3.txt").toString());
-    }
+		inject(mojo, "project", project);
+		inject(mojo, "session", session);
+		inject(mojo, "skip", false);
+		inject(mojo, "currentTier", 2);
+		inject(mojo, "tier2File", tempDir.resolve("tier2.txt").toString());
+		inject(mojo, "tier3File", tempDir.resolve("tier3.txt").toString());
+	}
 
-    @Test
-    void missingTierFileSkipsTests() {
-        assertDoesNotThrow(mojo::execute);
-        assertEquals("true", project.getProperties().getProperty("skipTests"));
-    }
+	@Test
+	void missingTierFileSkipsTests() {
+		assertDoesNotThrow(mojo::execute);
+		assertEquals("true", project.getProperties().getProperty("skipTests"));
+	}
 
-    @Test
-    void tierFileConfiguresSurefireIncludes() throws Exception {
-        Files.writeString(tempDir.resolve("tier2.txt"), "com.example.FastTest\ncom.example.OtherTest\n");
+	@Test
+	void tierFileConfiguresSurefireIncludes() throws Exception {
+		Files.writeString(tempDir.resolve("tier2.txt"), "com.example.FastTest\ncom.example.OtherTest\n");
 
-        assertDoesNotThrow(mojo::execute);
+		assertDoesNotThrow(mojo::execute);
 
-        String testProp = project.getProperties().getProperty("test");
-        assertTrue(testProp.contains("com.example.FastTest"));
-        assertTrue(testProp.contains("com.example.OtherTest"));
-        assertEquals("true", project.getProperties().getProperty("testorder.auto.active"));
-    }
+		String testProp = project.getProperties().getProperty("test");
+		assertTrue(testProp.contains("com.example.FastTest"));
+		assertTrue(testProp.contains("com.example.OtherTest"));
+		assertEquals("true", project.getProperties().getProperty("testorder.auto.active"));
+	}
 
-    @Test
-    void invalidTierFailsFast() throws Exception {
-        inject(mojo, "currentTier", 1);
-        MojoExecutionException ex = assertThrows(MojoExecutionException.class, mojo::execute);
-        assertTrue(ex.getMessage().contains("must be 2 or 3"));
-    }
+	@Test
+	void invalidTierFailsFast() throws Exception {
+		inject(mojo, "currentTier", 1);
+		MojoExecutionException ex = assertThrows(MojoExecutionException.class, mojo::execute);
+		assertTrue(ex.getMessage().contains("must be 2 or 3"));
+	}
 
-    private static MavenProject projectWithSurefire(Path baseDir) {
-        MavenProject project = mock(MavenProject.class);
-        when(project.getBasedir()).thenReturn(baseDir.toFile());
-        when(project.getProperties()).thenReturn(new Properties());
+	private static MavenProject projectWithSurefire(Path baseDir) {
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBasedir()).thenReturn(baseDir.toFile());
+		when(project.getProperties()).thenReturn(new Properties());
 
-        Build build = new Build();
-        build.setDirectory(baseDir.resolve("target").toString());
-        build.setTestOutputDirectory(baseDir.resolve("test-classes").toString());
-        when(project.getBuild()).thenReturn(build);
+		Build build = new Build();
+		build.setDirectory(baseDir.resolve("target").toString());
+		build.setTestOutputDirectory(baseDir.resolve("test-classes").toString());
+		when(project.getBuild()).thenReturn(build);
 
-        Plugin surefire = new Plugin();
-        surefire.setGroupId("org.apache.maven.plugins");
-        surefire.setArtifactId("maven-surefire-plugin");
-        surefire.setConfiguration(new Xpp3Dom("configuration"));
-        when(project.getBuildPlugins()).thenReturn(List.of(surefire));
+		Plugin surefire = new Plugin();
+		surefire.setGroupId("org.apache.maven.plugins");
+		surefire.setArtifactId("maven-surefire-plugin");
+		surefire.setConfiguration(new Xpp3Dom("configuration"));
+		when(project.getBuildPlugins()).thenReturn(List.of(surefire));
 
-        return project;
-    }
+		return project;
+	}
 
-    private static void inject(Object target, String fieldName, Object value) throws Exception {
-        Class<?> clazz = target.getClass();
-        while (clazz != null) {
-            try {
-                Field field = clazz.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                field.set(target, value);
-                return;
-            } catch (NoSuchFieldException e) {
-                clazz = clazz.getSuperclass();
-            }
-        }
-        throw new NoSuchFieldException("Field not found in class hierarchy: " + fieldName);
-    }
+	private static void inject(Object target, String fieldName, Object value) throws Exception {
+		Class<?> clazz = target.getClass();
+		while (clazz != null) {
+			try {
+				Field field = clazz.getDeclaredField(fieldName);
+				field.setAccessible(true);
+				field.set(target, value);
+				return;
+			} catch (NoSuchFieldException e) {
+				clazz = clazz.getSuperclass();
+			}
+		}
+		throw new NoSuchFieldException("Field not found in class hierarchy: " + fieldName);
+	}
 
-    private static final class TestableRunTierMojo extends RunTierMojo {
-        @Override
-        protected Path[] resolveOrdererClasspath() {
-            return new Path[0];
-        }
+	private static final class TestableRunTierMojo extends RunTierMojo {
+		@Override
+		protected Path[] resolveOrdererClasspath() {
+			return new Path[0];
+		}
 
-        @Override
-        protected void injectTestClasspath(Path... jars) {
-            // no-op
-        }
+		@Override
+		protected void injectTestClasspath(Path... jars) {
+			// no-op
+		}
 
-        @Override
-        protected void ensureListenerServiceFile(Path classpathRoot) {
-            // no-op
-        }
+		@Override
+		protected void ensureListenerServiceFile(Path classpathRoot) {
+			// no-op
+		}
 
-        @Override
-        protected boolean isTestNGOnTestClasspath() {
-            return false;
-        }
+		@Override
+		protected boolean isTestNGOnTestClasspath() {
+			return false;
+		}
 
-        @Override
-        protected void ensureTestNGListenerServiceFile(Path classpathRoot) {
-            // no-op
-        }
-    }
+		@Override
+		protected void ensureTestNGListenerServiceFile(Path classpathRoot) {
+			// no-op
+		}
+	}
 }

@@ -118,11 +118,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	/**
 	 * Change detection mode:
 	 * <ul>
-	 *   <li><b>uncommitted</b> (default) — detects staged, unstaged, and untracked changes in working tree</li>
-	 *   <li><b>since-last-run</b> — compares source hashes against the last test-order run</li>
-	 *   <li><b>since-last-commit</b> — detects changes since the last git commit (HEAD~1..HEAD + uncommitted)</li>
-	 *   <li><b>explicit</b> — uses only the classes specified in changedClasses/changedTestClasses</li>
-	 *   <li><b>auto</b> — uses since-last-run if hash snapshot exists, otherwise since-last-commit</li>
+	 * <li><b>uncommitted</b> (default) — detects staged, unstaged, and untracked
+	 * changes in working tree</li>
+	 * <li><b>since-last-run</b> — compares source hashes against the last
+	 * test-order run</li>
+	 * <li><b>since-last-commit</b> — detects changes since the last git commit
+	 * (HEAD~1..HEAD + uncommitted)</li>
+	 * <li><b>explicit</b> — uses only the classes specified in
+	 * changedClasses/changedTestClasses</li>
+	 * <li><b>auto</b> — uses since-last-run if hash snapshot exists, otherwise
+	 * since-last-commit</li>
 	 * </ul>
 	 */
 	@Parameter(property = MavenPluginConfigKeys.CHANGE_MODE, defaultValue = "uncommitted")
@@ -134,15 +139,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * dependency-overlap scoring: tests whose dependencies include one of these
 	 * classes receive a higher priority score.
 	 * <p>
-	 * Example: {@code -Dtestorder.changed.classes=com.example.service.UserService,com.example.repo.UserRepo}
+	 * Example:
+	 * {@code -Dtestorder.changed.classes=com.example.service.UserService,com.example.repo.UserRepo}
 	 */
 	@Parameter(property = MavenPluginConfigKeys.CHANGED_CLASSES)
 	protected String changedClasses;
 
 	/**
-	 * Comma-separated fully-qualified class names of <b>test source</b> files
-	 * that changed (for explicit change mode). These receive a "changed test"
-	 * bonus score and are always included in selection results.
+	 * Comma-separated fully-qualified class names of <b>test source</b> files that
+	 * changed (for explicit change mode). These receive a "changed test" bonus
+	 * score and are always included in selection results.
 	 * <p>
 	 * Example: {@code -Dtestorder.changed.test.classes=com.example.UserServiceTest}
 	 */
@@ -216,11 +222,19 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	// ── Lifecycle helpers ─────────────────────────────────────────────
 
 	protected void initContext() throws MojoExecutionException {
-		removeLegacyGeneratedOrdererFiles();
 		if (skip) {
-			getLog().info("[test-order] Skipping — testorder.skip=true");
-			return;
+			// R16-5: If this goal was explicitly invoked on the CLI (not lifecycle-bound),
+			// ignore testorder.skip so that diagnostic/info goals still work.
+			if (isExplicitlyInvokedOnCli()) {
+				getLog().info(
+						"[test-order] testorder.skip=true is set, but this goal was explicitly invoked on CLI — proceeding.");
+				skip = false;
+			} else {
+				getLog().info("[test-order] Skipping — testorder.skip=true");
+				return;
+			}
 		}
+		removeLegacyGeneratedOrdererFiles();
 		warnUnknownProperties();
 		warnJUnit4Unsupported();
 		applyCanonicalUserPropertyOverrides();
@@ -264,23 +278,30 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	/**
 	 * Warn about unknown testorder.* properties (likely typos) with Levenshtein
 	 * suggestions. Checks both user properties (-D on CLI) and system properties.
+	 * Deduplicates per session to avoid repeating warnings across mojo invocations.
 	 */
+	private static final Set<String> WARNED_PROPERTIES = java.util.Collections
+			.synchronizedSet(new java.util.HashSet<>());
+
 	private void warnUnknownProperties() {
 		if (session == null) {
 			return;
 		}
 		if (session.getUserProperties() != null) {
 			for (String warning : MavenPluginConfigKeys.findUnknownProperties(session.getUserProperties())) {
-				getLog().warn("[test-order] " + warning);
+				if (WARNED_PROPERTIES.add(warning)) {
+					getLog().warn("[test-order] " + warning);
+				}
 			}
 		}
 		if (session.getSystemProperties() != null) {
 			for (String warning : MavenPluginConfigKeys.findUnknownProperties(session.getSystemProperties())) {
 				// Only warn if not already covered by user properties
-				if (session.getUserProperties() == null
-						|| !session.getUserProperties().stringPropertyNames().stream()
-								.anyMatch(k -> warning.contains("'" + k + "'"))) {
-					getLog().warn("[test-order] " + warning);
+				if (session.getUserProperties() == null || !session.getUserProperties().stringPropertyNames().stream()
+						.anyMatch(k -> warning.contains("'" + k + "'"))) {
+					if (WARNED_PROPERTIES.add(warning)) {
+						getLog().warn("[test-order] " + warning);
+					}
 				}
 			}
 		}
@@ -338,14 +359,30 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		return ctx.resolveIndexFile(indexFile);
 	}
 
+	/**
+	 * Returns true if the currently executing goal was explicitly invoked on the
+	 * Maven CLI (e.g., {@code mvn test-order:diagnose}). Lifecycle-bound goals
+	 * triggered by a phase (e.g., {@code mvn test}) return false. (R16-5)
+	 */
+	private boolean isExplicitlyInvokedOnCli() {
+		if (session == null || session.getGoals() == null) {
+			return false;
+		}
+		for (String goal : session.getGoals()) {
+			if (goal.contains("test-order:")) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	protected boolean skipIfNotExplicitlySelectedReactorProject(String goalName) {
 		if (session == null || project == null || session.getProjects() == null || session.getProjects().size() <= 1
 				|| session.getRequest() == null || session.getRequest().getSelectedProjects() == null) {
 			return false;
 		}
 		List<String> selectors = session.getRequest().getSelectedProjects().stream()
-				.filter(s -> s != null && !s.isBlank() && !s.startsWith("!"))
-				.toList();
+				.filter(s -> s != null && !s.isBlank() && !s.startsWith("!")).toList();
 		if (selectors.isEmpty()) {
 			return false;
 		}
@@ -355,8 +392,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (matchesSelectedProject(selectors, project, reactorRoot)) {
 			return false;
 		}
-		getLog().info("[test-order] Skipping " + goalName + " for reactor dependency module "
-				+ project.getArtifactId() + " — it was included by -am but not selected explicitly.");
+		getLog().info("[test-order] Skipping " + goalName + " for reactor dependency module " + project.getArtifactId()
+				+ " — it was included by -am but not selected explicitly.");
 		return true;
 	}
 
@@ -375,12 +412,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		String absolute = moduleDir.toString().replace('\\', '/');
 		String normalizedSelector = trimmed.replace('\\', '/');
 
-		return normalizedSelector.equals(artifactId)
-				|| normalizedSelector.equals(":" + artifactId)
-				|| normalizedSelector.equals(ga)
-				|| normalizedSelector.equals(relative)
-				|| normalizedSelector.equals("./" + relative)
-				|| normalizedSelector.equals(absolute)
+		return normalizedSelector.equals(artifactId) || normalizedSelector.equals(":" + artifactId)
+				|| normalizedSelector.equals(ga) || normalizedSelector.equals(relative)
+				|| normalizedSelector.equals("./" + relative) || normalizedSelector.equals(absolute)
 				|| (relative.isEmpty() && (normalizedSelector.equals(".") || normalizedSelector.equals("")));
 	}
 
@@ -404,20 +438,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				try {
 					Files.deleteIfExists(idxPath);
 				} catch (IOException deleteError) {
-					throw new MojoExecutionException(
-							"[test-order] Dependency index is unreadable at " + idxPath
-									+ " and could not be deleted for recovery.",
-							deleteError);
+					throw new MojoExecutionException("[test-order] Dependency index is unreadable at " + idxPath
+							+ " and could not be deleted for recovery.", deleteError);
 				}
 				getLog().warn("[test-order] Dependency index is unreadable at " + idxPath
 						+ " — deleting it and falling back to learn mode.");
 				return true;
 			}
-			throw new MojoExecutionException(
-					"[test-order] Dependency index is unreadable at " + idxPath
-							+ ". Run 'mvn test-order:clean' or 'mvn test -Dtestorder.mode=learn' to regenerate it."
-							+ "\n  For more details: mvn test-order:diagnose",
-					e);
+			throw new MojoExecutionException("[test-order] Dependency index is unreadable at " + idxPath
+					+ ". Run 'mvn test-order:clean' or 'mvn test -Dtestorder.mode=learn' to regenerate it."
+					+ "\n  For more details: mvn test-order:diagnose", e);
 		}
 	}
 
@@ -475,8 +505,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 	/**
 	 * Computes a dependency fingerprint from the project's resolved artifacts.
-	 * Detects SNAPSHOT rebuilds, version bumps, and transitive changes.
-	 * In multi-module mode, uses build-file (pom.xml) content hashing across all
+	 * Detects SNAPSHOT rebuilds, version bumps, and transitive changes. In
+	 * multi-module mode, uses build-file (pom.xml) content hashing across all
 	 * reactor modules to produce a stable fingerprint.
 	 */
 	private String computeMavenDependencyFingerprint() {
@@ -493,8 +523,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				if (pomFile != null && java.nio.file.Files.isRegularFile(pomFile)) {
 					try {
 						byte[] content = java.nio.file.Files.readAllBytes(pomFile);
-						digest.update(pomFile.getFileName().toString()
-								.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+						digest.update(
+								pomFile.getFileName().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 						digest.update(content);
 						anyFile = true;
 					} catch (java.io.IOException ignored) {
@@ -506,12 +536,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		var artifacts = project.getArtifacts();
 		if (artifacts == null || artifacts.isEmpty()) {
 			// Fallback to build-file fingerprinting
-			return me.bechberger.testorder.ops.BuildFileFingerprint.computeFromBuildFiles(
-					project.getBasedir().toPath());
+			return me.bechberger.testorder.ops.BuildFileFingerprint
+					.computeFromBuildFiles(project.getBasedir().toPath());
 		}
-		var classpathEntries = artifacts.stream()
-				.filter(a -> a.getFile() != null)
-				.map(a -> a.getFile().toPath())
+		var classpathEntries = artifacts.stream().filter(a -> a.getFile() != null).map(a -> a.getFile().toPath())
 				.toList();
 		return me.bechberger.testorder.ops.BuildFileFingerprint.compute(classpathEntries,
 				project.getBasedir().toPath());
@@ -549,7 +577,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	private void validateDirectoryWritable(Path dir, String label) throws MojoExecutionException {
-		if (dir == null) return;
+		if (dir == null)
+			return;
 		if (Files.exists(dir) && !Files.isWritable(dir)) {
 			String perms = "";
 			try {
@@ -573,7 +602,12 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		List<String> roots = project.getCompileSourceRoots();
 		if (roots != null && !roots.isEmpty())
 			return Path.of(roots.get(0));
-		return project.getBasedir().toPath().resolve("src/main/java");
+		Path fallback = project.getBasedir().toPath().resolve("src/main/java");
+		if (!Files.isDirectory(fallback)) {
+			getLog().info("[test-order] Source root '" + fallback
+					+ "' does not exist — depOverlap scoring will be disabled for this module.");
+		}
+		return fallback;
 	}
 
 	/**
@@ -870,7 +904,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			ensureTestNGListenerServiceFile(runtimeDir);
 		}
 
-		// L6: Warn if user's junit-platform.properties contains orderer config that we'll overwrite
+		// L6: Warn if user's junit-platform.properties contains orderer config that
+		// we'll overwrite
 		warnConflictingJUnitPlatformProperties();
 
 		Path resolvedSourceRoot = resolveSourceRoot();
@@ -979,7 +1014,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		getLog().info("[test-order] Learn mode (" + instrumentationMode.toUpperCase()
 				+ "): attaching agent, default fork mode");
-		getLog().info("[test-order] Instrumentation packages: " + (includePackages != null && !includePackages.isBlank() ? includePackages : "(all)"));
+		getLog().info("[test-order] Instrumentation packages: "
+				+ (includePackages != null && !includePackages.isBlank() ? includePackages : "(all)"));
 
 		Path agentJar = resolveArtifact("test-order-agent");
 
@@ -1003,28 +1039,38 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			// MojoExecution configuration before this goal ran. Instead, use the
 			// maven.surefire.debug user property: Surefire reads this at fork-JVM time and
 			// appends the value verbatim to the JVM command line — exactly what we need.
+			boolean isFailsafe = "maven-failsafe-plugin".equals(surefire.getArtifactId());
+			String debugProperty = isFailsafe ? "maven.failsafe.debug" : "maven.surefire.debug";
 			if (hasHardcodedSurefireArgLine) {
-				getLog().warn(
-						"[test-order] Surefire <argLine> is hardcoded (no @{argLine} or ${argLine} placeholder). "
-								+ "Injecting agent via maven.surefire.debug user property. "
-								+ "Consider using @{argLine} in your POM to chain agents safely.");
+				getLog().warn("[test-order] Surefire <argLine> is hardcoded (no @{argLine} or ${argLine} placeholder). "
+						+ "Injecting agent via " + debugProperty + " user property. "
+						+ "Consider using @{argLine} in your POM to chain agents safely.");
 			} else {
-				getLog().info(
-						"[test-order] Detected CLI -DargLine override. Injecting agent via maven.surefire.debug to preserve existing argLine.");
+				getLog().info("[test-order] Detected CLI -DargLine override. Injecting agent via " + debugProperty
+						+ " to preserve existing argLine.");
 			}
 			String existingDebugValue = project.getProperties() != null
-					? project.getProperties().getProperty("maven.surefire.debug")
+					? project.getProperties().getProperty(debugProperty)
 					: null;
-			String debugValue = ((existingDebugValue == null ? "" : existingDebugValue + " ") + agentString + sysProps).trim();
-			project.getProperties().setProperty("maven.surefire.debug", debugValue);
+			String debugValue = ((existingDebugValue == null ? "" : existingDebugValue + " ") + agentString + sysProps)
+					.trim();
+			project.getProperties().setProperty(debugProperty, debugValue);
 		} else {
+			// R10-9: Detect if Failsafe uses a custom argLine property (e.g.
+			// ${failsafe.argLine})
+			boolean isFailsafe = "maven-failsafe-plugin".equals(surefire.getArtifactId());
+			String argLineProperty = detectArgLinePropertyName(surefireArgLine, isFailsafe);
 			String mergedProjectArgLine = (projectArgLine + " " + agentString + sysProps).trim();
-			String mergedSurefireArgLine = (surefireArgLine + " @{argLine}").trim();
-			project.getProperties().setProperty("argLine", mergedProjectArgLine);
+			String mergedSurefireArgLine = (surefireArgLine + " @{" + argLineProperty + "}").trim();
+			project.getProperties().setProperty(argLineProperty, mergedProjectArgLine);
 			if (session != null && session.getUserProperties() != null) {
-				session.getUserProperties().setProperty("argLine", mergedProjectArgLine);
+				session.getUserProperties().setProperty(argLineProperty, mergedProjectArgLine);
 			}
 			SurefireHelper.setChild(config, "argLine", mergedSurefireArgLine);
+			if (isFailsafe && !"argLine".equals(argLineProperty)) {
+				getLog().info("[test-order] Failsafe detected with custom argLine property '" + argLineProperty
+						+ "'. Injecting agent via that property.");
+			}
 		}
 
 		injectTestClasspath(resolveOrdererClasspath());
@@ -1036,6 +1082,27 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 
 		snapshotHashes();
+	}
+
+	/**
+	 * Detects which Maven property the Surefire/Failsafe argLine configuration
+	 * references. For example, if argLine is {@code ${failsafe.argLine}}, returns
+	 * "failsafe.argLine". Falls back to "argLine" if no custom property is found.
+	 * (R10-9)
+	 */
+	private static String detectArgLinePropertyName(String surefireArgLine, boolean isFailsafe) {
+		if (surefireArgLine != null && !surefireArgLine.isBlank()) {
+			// Check for ${propertyName} or @{propertyName} patterns
+			java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[$@]\\{([^}]+)}")
+					.matcher(surefireArgLine);
+			while (matcher.find()) {
+				String prop = matcher.group(1);
+				if (!prop.equals("argLine") && !prop.contains(":")) {
+					return prop;
+				}
+			}
+		}
+		return "argLine";
 	}
 
 	/**
@@ -1179,8 +1246,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		try {
 			List<String> lines = Files.readAllLines(propsFile);
 			List<String> kept = lines.stream()
-					.filter(l -> !l.contains("me.bechberger.testorder.junit.PriorityClassOrderer"))
-					.toList();
+					.filter(l -> !l.contains("me.bechberger.testorder.junit.PriorityClassOrderer")).toList();
 			if (kept.isEmpty() || kept.stream().allMatch(String::isBlank)) {
 				Files.delete(propsFile);
 			} else if (kept.size() < lines.size()) {
@@ -1263,13 +1329,12 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * Returns {@code true} when the project declares a JUnit Jupiter dependency.
 	 */
 	protected boolean isJUnit5OnTestClasspath() {
-		return project.getDependencies().stream()
-				.anyMatch(d -> "org.junit.jupiter".equals(d.getGroupId()));
+		return project.getDependencies().stream().anyMatch(d -> "org.junit.jupiter".equals(d.getGroupId()));
 	}
 
 	/**
-	 * Warns when JUnit 4 tests are detected on the classpath, since test-order
-	 * only supports JUnit 5 (Jupiter) and TestNG.
+	 * Warns when JUnit 4 tests are detected on the classpath, since test-order only
+	 * supports JUnit 5 (Jupiter) and TestNG.
 	 */
 	protected void warnJUnit4Unsupported() {
 		if (isJUnit4OnTestClasspath()) {

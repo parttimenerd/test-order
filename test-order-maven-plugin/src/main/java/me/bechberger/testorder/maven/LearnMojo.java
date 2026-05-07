@@ -21,10 +21,10 @@ public class LearnMojo extends AutoMojo {
 		if (session != null && session.getUserProperties() != null) {
 			session.getUserProperties().setProperty(MavenPluginConfigKeys.MODE, "learn");
 		}
-		// Warn if 'test' phase is likely not going to run (standalone CLI goal invocation)
-		if (session != null && session.getGoals() != null
-				&& session.getGoals().stream().noneMatch(g -> g.equals("test") || g.equals("verify")
-						|| g.equals("install") || g.equals("package") || g.equals("deploy"))) {
+		// Warn if 'test' phase is likely not going to run (standalone CLI goal
+		// invocation)
+		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
+				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'learn' goal configures the agent but does not execute tests."
 					+ " Include the test phase: mvn test-order:learn test");
 		}

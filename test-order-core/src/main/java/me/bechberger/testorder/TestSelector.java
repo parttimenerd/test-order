@@ -77,7 +77,14 @@ public class TestSelector {
 		selectAlwaysRun(scored, selected);
 		selectNewTests(scored, selected);
 		selectTopN(scored, selected);
+		int beforeRandom = selected.size();
 		selectDiverseFast(scored, selected);
+		int randomActual = selected.size() - beforeRandom;
+		// R14-5: Warn if randomM requested more tests than were available
+		if (config.randomM() > 0 && randomActual < config.randomM()) {
+			System.err.println("[test-order] WARNING: Requested randomM=" + config.randomM() + " but only "
+					+ randomActual + " candidate tests available — selecting all.");
+		}
 
 		List<String> remaining = new ArrayList<>();
 		for (ScoredTest s : scored) {
@@ -127,7 +134,9 @@ public class TestSelector {
 		}
 	}
 
-	/** Phase 2: include the top-N highest-scored tests. topN=-1 means select all. */
+	/**
+	 * Phase 2: include the top-N highest-scored tests. topN=-1 means select all.
+	 */
 	private void selectTopN(List<ScoredTest> scored, Set<String> selected) {
 		if (config.topN() < 0) {
 			// topN=-1 means "select all affected tests"
@@ -154,7 +163,14 @@ public class TestSelector {
 			}
 		}
 
-		Random rng = config.seed() != null ? new Random(config.seed()) : new Random();
+		Random rng;
+		if (config.seed() != null) {
+			rng = new Random(config.seed());
+		} else {
+			System.err.println("[test-order] WARNING: randomM selection is non-deterministic (no seed set)."
+					+ " Set -Dtestorder.select.seed=<number> for reproducible CI runs.");
+			rng = new Random();
+		}
 		// shuffle once up front for random tie-breaking (iteration order)
 		Collections.shuffle(fastCandidates, rng);
 
@@ -217,10 +233,14 @@ public class TestSelector {
 	}
 
 	/**
-	 * Jaccard distance: 1 − |A∩B| / |A∪B|. Returns 1.0 when either set is empty.
+	 * Jaccard distance: 1 − |A∩B| / |A∪B|. Returns 0.5 (neutral) when the test's
+	 * dependency set (a) is empty (unindexed test), to avoid over-selecting unknown
+	 * tests in the diversity phase. Returns 1.0 when the covered set (b) is empty.
 	 */
 	public static double jaccardDistance(Set<String> a, Set<String> b) {
-		if (a.isEmpty() || b.isEmpty())
+		if (a.isEmpty())
+			return 0.5; // neutral distance for unindexed tests (R15-10)
+		if (b.isEmpty())
 			return 1.0;
 		// iterate the smaller set for O(min(|A|,|B|))
 		Set<String> smaller = a.size() <= b.size() ? a : b;

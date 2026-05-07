@@ -15,8 +15,10 @@ import me.bechberger.testorder.TieredTestSelector;
  * <p>
  * Three-tiered CI execution:
  * <ol>
- * <li>Tier 1: change-affected tests (dep overlap, new, changed, @AlwaysRun)</li>
- * <li>Tier 2: top-scored remaining tests (configurable fraction by duration)</li>
+ * <li>Tier 1: change-affected tests (dep overlap, new,
+ * changed, @AlwaysRun)</li>
+ * <li>Tier 2: top-scored remaining tests (configurable fraction by
+ * duration)</li>
  * <li>Tier 3: everything else</li>
  * </ol>
  */

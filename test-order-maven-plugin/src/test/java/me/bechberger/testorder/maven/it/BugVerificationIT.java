@@ -49,12 +49,14 @@ class BugVerificationIT {
 
 	@BeforeEach
 	void waitForResourceRelease() throws InterruptedException {
-		// Give macOS time to release file handles from the previous test's Maven processes.
+		// Give macOS time to release file handles from the previous test's Maven
+		// processes.
 		// Without this, rapid sequential Maven invocations sharing the same sample-shop
 		// directory cause sporadic NoClassDefFoundError or missing output files.
 		Thread.sleep(1000);
 		// Ensure source files are always in committed state at the start of each test.
-		// This prevents cascading contamination if a previous test's restoreAll() failed.
+		// This prevents cascading contamination if a previous test's restoreAll()
+		// failed.
 		if (project != null) {
 			project.gitRestore();
 		}
@@ -424,9 +426,8 @@ class BugVerificationIT {
 		}
 		project.deleteIfExists(".test-order/state.lz4");
 
-		MavenResult result = project.maven().run("clean", "test-order:auto", "test",
-				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0");
+		MavenResult result = project.maven().run("clean", "test-order:auto", "test", "-Dtestorder.changeMode=explicit",
+				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0");
 		assertThat(result).succeeded();
 
 		// Remaining file should exist with 2 deferred test classes
@@ -891,8 +892,8 @@ class BugVerificationIT {
 		}
 		project.deleteIfExists(".test-order/state.lz4");
 
-		MavenResult result = project.maven().run("clean", "test-order:auto", "test",
-				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT);
+		MavenResult result = project.maven().run("clean", "test-order:auto", "test", "-Dtestorder.changeMode=explicit",
+				"-Dtestorder.changed.classes=" + PRODUCT);
 		assertThat(result).succeeded();
 
 		// All 3 tests should have run
@@ -920,16 +921,13 @@ class BugVerificationIT {
 		}
 
 		// Add POM-level <mode>learn</mode> configuration
-		project.replaceInFile("pom.xml",
-				"</executions>",
+		project.replaceInFile("pom.xml", "</executions>",
 				"</executions>\n                <configuration><mode>learn</mode></configuration>");
 
 		try {
 			// Run with CLI override to order mode
-			MavenResult result = project.maven().run("test",
-					"-Dtestorder.mode=order",
-					"-Dtestorder.changeMode=explicit",
-					"-Dtestorder.changed.classes=" + PRODUCT);
+			MavenResult result = project.maven().run("test", "-Dtestorder.mode=order",
+					"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT);
 			assertThat(result).succeeded();
 
 			// Should be in order mode, not learn mode

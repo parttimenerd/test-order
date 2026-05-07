@@ -558,8 +558,13 @@ class TestOrderStateTest {
 		Path file = tempDir.resolve("future-state");
 		Files.writeString(file, plainJson);
 
-		IOException error = assertThrows(IOException.class, () -> TestOrderState.load(file));
-		assertTrue(error.getMessage().contains("schemaVersion"));
+		// R10-4: Downgrade no longer throws — creates backup and returns fresh state
+		TestOrderState state = TestOrderState.load(file);
+		assertNotNull(state);
+		// Verify backup was created
+		try (var files = Files.list(tempDir)) {
+			assertTrue(files.anyMatch(p -> p.getFileName().toString().contains(".backup-")));
+		}
 	}
 
 	// --- Optimizer ---
@@ -887,7 +892,8 @@ class TestOrderStateTest {
 	void loadStateWithMissingSchemaVersionMigratesToCurrent(@TempDir Path tmp) throws IOException {
 		Path stateFile = tmp.resolve("state.json");
 		// v0 state with actual data — migration should preserve it
-		Files.writeString(stateFile, "{\"durations\":{\"com.example.FooTest\":1500},\"weights\":{\"newTest\":20,\"changedTest\":15,\"maxFailure\":10,\"speed\":5,\"speedPenalty\":-3,\"depOverlap\":8,\"changeComplexity\":4,\"staticFieldBonus\":2,\"coverageBonus\":0},\"failureScores\":{},\"runs\":[]}");
+		Files.writeString(stateFile,
+				"{\"durations\":{\"com.example.FooTest\":1500},\"weights\":{\"newTest\":20,\"changedTest\":15,\"maxFailure\":10,\"speed\":5,\"speedPenalty\":-3,\"depOverlap\":8,\"changeComplexity\":4,\"staticFieldBonus\":2,\"coverageBonus\":0},\"failureScores\":{},\"runs\":[]}");
 		TestOrderState state = TestOrderState.load(stateFile);
 		assertNotNull(state);
 		// Data should be preserved through migration, not discarded
@@ -897,7 +903,8 @@ class TestOrderStateTest {
 	@Test
 	void loadStateWithOldSchemaVersionMigrates(@TempDir Path tmp) throws IOException {
 		Path stateFile = tmp.resolve("state.json");
-		Files.writeString(stateFile, "{\"schemaVersion\":0,\"durations\":{\"com.example.BarTest\":800},\"weights\":{\"newTest\":20,\"changedTest\":15,\"maxFailure\":10,\"speed\":5,\"speedPenalty\":-3,\"depOverlap\":8,\"changeComplexity\":4,\"staticFieldBonus\":2,\"coverageBonus\":0},\"failureScores\":{},\"runs\":[]}");
+		Files.writeString(stateFile,
+				"{\"schemaVersion\":0,\"durations\":{\"com.example.BarTest\":800},\"weights\":{\"newTest\":20,\"changedTest\":15,\"maxFailure\":10,\"speed\":5,\"speedPenalty\":-3,\"depOverlap\":8,\"changeComplexity\":4,\"staticFieldBonus\":2,\"coverageBonus\":0},\"failureScores\":{},\"runs\":[]}");
 		TestOrderState state = TestOrderState.load(stateFile);
 		assertNotNull(state);
 		// v0 → v1 migration should preserve data
@@ -905,10 +912,16 @@ class TestOrderStateTest {
 	}
 
 	@Test
-	void loadStateWithFutureSchemaVersionThrows(@TempDir Path tmp) throws IOException {
+	void loadStateWithFutureSchemaVersionCreatesBackupAndReturnsFresh(@TempDir Path tmp) throws IOException {
 		Path stateFile = tmp.resolve("state.json");
 		Files.writeString(stateFile, "{\"schemaVersion\":9999,\"runs\":[]}");
-		assertThrows(IOException.class, () -> TestOrderState.load(stateFile));
+		// R10-4: No longer throws — gracefully creates backup and returns fresh state
+		TestOrderState state = TestOrderState.load(stateFile);
+		assertNotNull(state);
+		// Backup should have been created
+		try (var files = Files.list(tmp)) {
+			assertTrue(files.anyMatch(p -> p.getFileName().toString().contains(".backup-")));
+		}
 	}
 
 	@Test

@@ -16,6 +16,7 @@ import me.bechberger.testorder.TestSelector;
  *
  * <p>
  * Usage:
+ *
  * <pre>
  * # Run tier 2 (top-scored remaining — only if tier 1 passed)
  * mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2
@@ -26,8 +27,8 @@ import me.bechberger.testorder.TestSelector;
  *
  * <p>
  * CI pipelines should only invoke each successive tier if the previous one
- * passed. This goal does <em>not</em> enforce that — the CI workflow
- * (GitHub Actions, Jenkins, etc.) controls the fail-fast logic.
+ * passed. This goal does <em>not</em> enforce that — the CI workflow (GitHub
+ * Actions, Jenkins, etc.) controls the fail-fast logic.
  */
 @Mojo(name = "run-tier", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES)
 public class RunTierMojo extends AbstractTestOrderMojo {
@@ -55,11 +56,10 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 			return;
 		}
 		// Warn if 'test' phase is likely not going to run
-		if (session != null && session.getGoals() != null
-				&& session.getGoals().stream().noneMatch(g -> g.equals("test") || g.equals("verify")
-						|| g.equals("install") || g.equals("package") || g.equals("deploy"))) {
+		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
+				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'run-tier' goal configures Surefire but does not execute tests."
-				+ " Include the test phase: mvn test-order:run-tier test");
+					+ " Include the test phase: mvn test-order:run-tier test");
 		}
 		// Prevent a POM-bound auto goal from overriding the test selection
 		project.getProperties().setProperty("testorder.auto.active", "true");
@@ -95,8 +95,7 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 		Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
 		if (java.nio.file.Files.isDirectory(testClassesDir)) {
 			List<String> unresolvable = tests.stream()
-					.filter(t -> !java.nio.file.Files.exists(
-							testClassesDir.resolve(t.replace('.', '/') + ".class")))
+					.filter(t -> !java.nio.file.Files.exists(testClassesDir.resolve(t.replace('.', '/') + ".class")))
 					.toList();
 			if (!unresolvable.isEmpty()) {
 				if (unresolvable.size() == tests.size()) {
@@ -107,12 +106,10 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 					project.getProperties().setProperty("skipTests", "true");
 					return;
 				}
-				getLog().warn("[test-order] " + unresolvable.size() + " of " + tests.size()
-						+ " tier-" + currentTier + " test classes not found in target/test-classes "
+				getLog().warn("[test-order] " + unresolvable.size() + " of " + tests.size() + " tier-" + currentTier
+						+ " test classes not found in target/test-classes "
 						+ "(classes may have been renamed/deleted since tiered-select).");
-				tests = tests.stream()
-						.filter(t -> !unresolvable.contains(t))
-						.toList();
+				tests = tests.stream().filter(t -> !unresolvable.contains(t)).toList();
 			}
 		}
 

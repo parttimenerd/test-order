@@ -2,12 +2,13 @@ package me.bechberger.testorder.junit;
 
 import java.lang.reflect.Method;
 import java.util.*;
-import me.bechberger.testorder.*;
-import me.bechberger.testorder.annotations.AlwaysRun;
-import me.bechberger.testorder.annotations.TestOrder;
 
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.MethodOrdererContext;
+
+import me.bechberger.testorder.*;
+import me.bechberger.testorder.annotations.AlwaysRun;
+import me.bechberger.testorder.annotations.TestOrder;
 
 /**
  * JUnit MethodOrderer that reorders test methods within a class based on
@@ -89,7 +90,8 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			return;
 		}
 
-// C7: Skip reordering entirely when @Execution(CONCURRENT) is detected — method ordering is ineffective
+		// C7: Skip reordering entirely when @Execution(CONCURRENT) is detected — method
+		// ordering is ineffective
 		if (hasConcurrentExecution(context.getTestClass())) {
 			TestOrderLogger.debug(
 					"[method-order] {}: @Execution(CONCURRENT) detected — skipping method reordering (ordering is ineffective in parallel).",
@@ -97,12 +99,11 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			return;
 		}
 
-		// C4/C9: Warn and skip reordering when PER_CLASS lifecycle is active — reordering may break stateful tests
+		// C4/C9: Warn and skip reordering when PER_CLASS lifecycle is active —
+		// reordering may break stateful tests
 		if (isPerClassLifecycle(context.getTestClass())) {
-			TestOrderLogger.warn(
-					"[method-order] {}: @TestInstance(PER_CLASS) detected — skipping method reordering "
-							+ "to avoid breaking stateful tests that depend on execution order.",
-					className);
+			TestOrderLogger.warn("[method-order] {}: @TestInstance(PER_CLASS) detected — skipping method reordering "
+					+ "to avoid breaking stateful tests that depend on execution order.", className);
 			return;
 		}
 
@@ -140,7 +141,8 @@ public class PriorityMethodOrderer implements MethodOrderer {
 		}
 
 		// Score methods
-		MethodScorer scorer = new MethodScorer(localWeights, localState, localDepMap, localChangedClasses, localChangedMethods);
+		MethodScorer scorer = new MethodScorer(localWeights, localState, localDepMap, localChangedClasses,
+				localChangedMethods);
 		List<MethodScorer.MethodScoreResult> scores = scorer.score(methodMetadata);
 
 		// Log class-level stats
@@ -153,10 +155,12 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			TestOrderLogger.debug(
 					"[method-order] → {}: score={} (recency={}, speed={}, depOverlap={}, coverage={}, new={}, changed={}, classMedian={}ms)",
 					score.methodName(), String.format(java.util.Locale.US, "%.1f", score.score()),
-					String.format(java.util.Locale.US, "%.1f", score.failureRecencyBonus()), String.format(java.util.Locale.US, "%.1f", score.speedBonus()),
-					String.format(java.util.Locale.US, "%.1f", score.depOverlapBonus()), String.format(java.util.Locale.US, "%.1f", score.coverageBonus()),
-					String.format(java.util.Locale.US, "%.1f", score.newMethodBonus()), String.format(java.util.Locale.US, "%.1f", score.changedMethodBonus()),
-					score.classMedianMs());
+					String.format(java.util.Locale.US, "%.1f", score.failureRecencyBonus()),
+					String.format(java.util.Locale.US, "%.1f", score.speedBonus()),
+					String.format(java.util.Locale.US, "%.1f", score.depOverlapBonus()),
+					String.format(java.util.Locale.US, "%.1f", score.coverageBonus()),
+					String.format(java.util.Locale.US, "%.1f", score.newMethodBonus()),
+					String.format(java.util.Locale.US, "%.1f", score.changedMethodBonus()), score.classMedianMs());
 		}
 
 		// Pre-build lookup map for O(1) score access (instead of O(N) linear search per
@@ -241,13 +245,14 @@ public class PriorityMethodOrderer implements MethodOrderer {
 	}
 
 	/**
-	 * Detects @Execution(CONCURRENT) on the test class via reflection to avoid
-	 * a hard compile-time dependency on jupiter-api parallel classes.
+	 * Detects @Execution(CONCURRENT) on the test class via reflection to avoid a
+	 * hard compile-time dependency on jupiter-api parallel classes.
 	 */
 	private boolean hasConcurrentExecution(Class<?> testClass) {
 		try {
 			Class<?> executionClass = Class.forName("org.junit.jupiter.api.parallel.Execution");
-			Object execution = testClass.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
+			Object execution = testClass
+					.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
 			if (execution != null) {
 				Object mode = executionClass.getMethod("value").invoke(execution);
 				return "CONCURRENT".equals(mode.toString());
@@ -265,7 +270,8 @@ public class PriorityMethodOrderer implements MethodOrderer {
 	private boolean isPerClassLifecycle(Class<?> testClass) {
 		try {
 			Class<?> testInstanceClass = Class.forName("org.junit.jupiter.api.TestInstance");
-			Object annotation = testClass.getAnnotation(testInstanceClass.asSubclass(java.lang.annotation.Annotation.class));
+			Object annotation = testClass
+					.getAnnotation(testInstanceClass.asSubclass(java.lang.annotation.Annotation.class));
 			if (annotation != null) {
 				Object lifecycle = testInstanceClass.getMethod("value").invoke(annotation);
 				return "PER_CLASS".equals(lifecycle.toString());

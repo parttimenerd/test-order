@@ -31,6 +31,10 @@ public class CoverageMojo extends AbstractTestOrderMojo {
 	@Parameter(property = "testorder.coverage.outputDir", defaultValue = "${project.build.directory}/coverage-reports")
 	private String outputDir;
 
+	/** Fail the build if any classes are below the coverage threshold. */
+	@Parameter(property = "testorder.coverage.failOnViolation", defaultValue = "false")
+	private boolean failOnViolation;
+
 	@Override
 	public void execute() throws MojoExecutionException {
 		initContext();
@@ -78,6 +82,14 @@ public class CoverageMojo extends AbstractTestOrderMojo {
 
 			CoverageOperation.writeReports(analysis, Path.of(outputDir), threshold, log);
 			CoverageOperation.printSummary(analysis, threshold, System.out);
+
+			if (failOnViolation) {
+				int violations = analysis.belowThreshold(threshold).size();
+				if (violations > 0) {
+					throw new MojoExecutionException("[test-order] Coverage check failed: " + violations
+							+ " class(es) below threshold of " + threshold + " exercising tests.");
+				}
+			}
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to analyze coverage", e);
 		}

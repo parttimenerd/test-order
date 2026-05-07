@@ -16,11 +16,11 @@ import org.apache.maven.project.MavenProject;
  * {@code <reactor-root>/.test-order/} directory and provides cross-module
  * change propagation via the Maven project dependency graph.
  * <p>
- * <b>Important:</b> In multi-module mode, the dependency index, state file,
- * and hash files are stored at the reactor root level (e.g.
- * {@code my-project/.test-order/test-dependencies.lz4}), NOT per-module.
- * This means all modules share a single index and state file. Changes detected
- * in upstream modules are automatically propagated to downstream modules.
+ * <b>Important:</b> In multi-module mode, the dependency index, state file, and
+ * hash files are stored at the reactor root level (e.g.
+ * {@code my-project/.test-order/test-dependencies.lz4}), NOT per-module. This
+ * means all modules share a single index and state file. Changes detected in
+ * upstream modules are automatically propagated to downstream modules.
  * <p>
  * In a single-module build, all paths are resolved under
  * {@code <project-root>/.test-order/}.

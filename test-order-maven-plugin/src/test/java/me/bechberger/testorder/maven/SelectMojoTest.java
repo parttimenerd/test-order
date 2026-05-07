@@ -60,7 +60,8 @@ class SelectMojoTest {
 	}
 
 	@Test
-	void noIndexAndNoDepsFailsWithHelpfulMessage() {
+	void noIndexAndNoDepsFailsWithHelpfulMessage() throws Exception {
+		inject(mojo, "topN", -1);
 		MojoExecutionException ex = assertThrows(MojoExecutionException.class, mojo::execute);
 		assertTrue(ex.getMessage().contains("No dependency index"));
 		assertTrue(ex.getMessage().contains("Run learn mode first"));
@@ -68,6 +69,7 @@ class SelectMojoTest {
 
 	@Test
 	void emptySelectionWritesListsAndSkipsTests() throws Exception {
+		inject(mojo, "topN", -1);
 		Path index = tempDir.resolve("test-dependencies.lz4");
 		new me.bechberger.testorder.DependencyMap().save(index);
 
@@ -79,13 +81,13 @@ class SelectMojoTest {
 		Path selected = tempDir.resolve("selected.txt");
 		Path remaining = tempDir.resolve("remaining.txt");
 		assertTrue(Files.exists(selected));
-		assertTrue(Files.exists(remaining));
+		// remaining file is only written when there are deferred tests
 		assertEquals(List.of(), Files.readAllLines(selected));
-		assertEquals(List.of(), Files.readAllLines(remaining));
 	}
 
 	@Test
 	void corruptIndexFailsWithRecoveryGuidance() throws Exception {
+		inject(mojo, "topN", -1);
 		Files.writeString(tempDir.resolve("test-dependencies.lz4"), "XXXXXXXXXXXXXXXX");
 
 		MojoExecutionException ex = assertThrows(MojoExecutionException.class, mojo::execute);
@@ -126,8 +128,10 @@ class SelectMojoTest {
 		inject(dependencyMojo, "remainingFile", tempDir.resolve("remaining.txt").toString());
 
 		assertDoesNotThrow(dependencyMojo::execute);
-		assertFalse(dependencyMojo.writeOrdererConfigCalled, "Skipped reactor dependency module should not configure Surefire");
-		assertFalse(Files.exists(tempDir.resolve("selected.txt")), "Skipped reactor dependency module should not write selection files");
+		assertFalse(dependencyMojo.writeOrdererConfigCalled,
+				"Skipped reactor dependency module should not configure Surefire");
+		assertFalse(Files.exists(tempDir.resolve("selected.txt")),
+				"Skipped reactor dependency module should not write selection files");
 	}
 
 	@Test
@@ -148,7 +152,8 @@ class SelectMojoTest {
 		assertNotNull(remainingPath, "remaining file property should be published when deferred tests exist");
 		assertEquals(remainingPath, project.getProperties().getProperty("testorder.remaining.file"));
 		assertTrue(Files.exists(Path.of(remainingPath)), "remaining file should exist on disk");
-		assertFalse(Files.readAllLines(Path.of(remainingPath)).isEmpty(), "remaining file should contain deferred tests");
+		assertFalse(Files.readAllLines(Path.of(remainingPath)).isEmpty(),
+				"remaining file should contain deferred tests");
 	}
 
 	private static MavenProject projectWithSurefire(Path baseDir) {
@@ -208,6 +213,11 @@ class SelectMojoTest {
 		@Override
 		protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests, Set<String> changedMethods,
 				Map<String, Integer> scoreOverrides) throws MojoExecutionException {
+			writeOrdererConfigCalled = true;
+		}
+
+		@Override
+		protected void writeOrdererConfigFromMap(Map<String, String> configMap) throws MojoExecutionException {
 			writeOrdererConfigCalled = true;
 		}
 	}

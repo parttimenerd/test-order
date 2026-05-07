@@ -22,11 +22,8 @@ final class CiHttpClientFactory {
 		int connectTimeout = getTimeoutProperty("testorder.ci.connect.timeout.seconds", 30);
 		int readTimeout = getTimeoutProperty("testorder.ci.read.timeout.seconds", 60);
 		int writeTimeout = getTimeoutProperty("testorder.ci.write.timeout.seconds", 30);
-		return new OkHttpClient.Builder()
-				.connectTimeout(connectTimeout, TimeUnit.SECONDS)
-				.readTimeout(readTimeout, TimeUnit.SECONDS)
-				.writeTimeout(writeTimeout, TimeUnit.SECONDS)
-				.build();
+		return new OkHttpClient.Builder().connectTimeout(connectTimeout, TimeUnit.SECONDS)
+				.readTimeout(readTimeout, TimeUnit.SECONDS).writeTimeout(writeTimeout, TimeUnit.SECONDS).build();
 	}
 
 	private static int getTimeoutProperty(String key, int defaultSeconds) {
@@ -34,7 +31,8 @@ final class CiHttpClientFactory {
 		if (prop != null) {
 			try {
 				int val = Integer.parseInt(prop);
-				if (val > 0) return val;
+				if (val > 0)
+					return val;
 			} catch (NumberFormatException ignored) {
 			}
 		}

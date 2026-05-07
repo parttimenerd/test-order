@@ -13,8 +13,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
 
-import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.artifact.repository.ArtifactRepository;
+import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
@@ -215,8 +215,8 @@ class AbstractTestOrderMojoTest {
 
 		mojo.initContext();
 
-		assertThat(mojo.detectChangedTestClasses()).containsExactlyInAnyOrder(
-				"com.example.FirstTest", "com.example.SecondTest");
+		assertThat(mojo.detectChangedTestClasses()).containsExactlyInAnyOrder("com.example.FirstTest",
+				"com.example.SecondTest");
 	}
 
 	@Test

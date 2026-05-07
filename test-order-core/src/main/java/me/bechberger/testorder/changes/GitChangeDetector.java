@@ -165,8 +165,7 @@ public class GitChangeDetector {
 				return Collections.emptyList();
 			}
 			if (process.exitValue() != 0) {
-				throw new IOException("git command failed: " + String.join(" ", command)
-						+ summarizeGitError(lines));
+				throw new IOException("git command failed: " + String.join(" ", command) + summarizeGitError(lines));
 			}
 		} catch (InterruptedException e) {
 			process.destroyForcibly();
@@ -180,8 +179,8 @@ public class GitChangeDetector {
 		if (lines.isEmpty()) {
 			return "";
 		}
-		String primary = lines.stream().filter(line -> !line.toLowerCase(Locale.ROOT).startsWith("usage:"))
-				.findFirst().orElse(lines.get(0));
+		String primary = lines.stream().filter(line -> !line.toLowerCase(Locale.ROOT).startsWith("usage:")).findFirst()
+				.orElse(lines.get(0));
 		if (primary.length() > 300) {
 			primary = primary.substring(0, 300) + "...";
 		}
@@ -189,7 +188,6 @@ public class GitChangeDetector {
 		if (additionalLines <= 0) {
 			return " — " + primary;
 		}
-		return " — " + primary + " (" + additionalLines + " more line"
-				+ (additionalLines == 1 ? "" : "s") + ")";
+		return " — " + primary + " (" + additionalLines + " more line" + (additionalLines == 1 ? "" : "s") + ")";
 	}
 }

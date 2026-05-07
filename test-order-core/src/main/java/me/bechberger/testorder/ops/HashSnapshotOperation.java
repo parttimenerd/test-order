@@ -65,7 +65,12 @@ public final class HashSnapshotOperation {
 			BiConsumer<String, String> warn) {
 		try {
 			if (HashSnapshotSupport.snapshotDirectory(root, hashFile)) {
-				if (log != null) {
+				// R10-14: Warn if hash file is trivially small (empty snapshot → since-last-run
+				// won't detect changes)
+				if (Files.exists(hashFile) && Files.size(hashFile) <= 8 && warn != null) {
+					warn.accept(label, "Hash snapshot is empty — change detection (since-last-run) will not work. "
+							+ "Ensure " + label + " root (" + root + ") contains .java or .kt files.");
+				} else if (log != null) {
 					log.accept(label, hashFile);
 				}
 			}

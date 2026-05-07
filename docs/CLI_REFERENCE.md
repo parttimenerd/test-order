@@ -44,6 +44,7 @@ mvn test-order:show-order
 | `clean` | Removes all test-order state, indexes, and hash files | Start fresh |
 | `download` | Downloads dependency index from CI artifact store | CI warm-start |
 | `coverage` | Generates least-tested / coverage reports | Coverage gap analysis |
+| `metrics` | Exports test-order metrics as JSON | CI/CD reporting, dashboards |
 | `help` | Displays all goals and common properties | Quick reference |
 
 ## Operation Modes (`testorder.mode`)

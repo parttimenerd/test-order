@@ -34,11 +34,10 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 			return;
 		}
 		// Warn if 'test' phase is likely not going to run
-		if (session != null && session.getGoals() != null
-				&& session.getGoals().stream().noneMatch(g -> g.equals("test") || g.equals("verify")
-						|| g.equals("install") || g.equals("package") || g.equals("deploy"))) {
+		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
+				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'run-remaining' goal configures Surefire but does not execute tests."
-				+ " Include the test phase: mvn test-order:run-remaining test");
+					+ " Include the test phase: mvn test-order:run-remaining test");
 		}
 		// Prevent a POM-bound auto goal from overriding the test selection
 		project.getProperties().setProperty("testorder.auto.active", "true");
@@ -65,6 +64,25 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 		}
 
 		getLog().info("[test-order] Running " + tests.size() + " remaining test classes");
+
+		// R16-8: Validate that test classes exist before passing to Surefire
+		Path testOutputDir = Path.of(project.getBuild().getTestOutputDirectory());
+		if (Files.isDirectory(testOutputDir)) {
+			List<String> missing = tests.stream()
+					.filter(t -> !Files.exists(testOutputDir.resolve(t.replace('.', '/') + ".class"))).toList();
+			if (!missing.isEmpty()) {
+				getLog().warn("[test-order] " + missing.size() + " test class(es) in remaining file not found on disk"
+						+ " (renamed/deleted?): "
+						+ missing.stream().limit(5).reduce((a, b) -> a + ", " + b).orElse(""));
+				tests = tests.stream().filter(t -> Files.exists(testOutputDir.resolve(t.replace('.', '/') + ".class")))
+						.toList();
+				if (tests.isEmpty()) {
+					getLog().info("[test-order] No valid remaining test classes — skipping.");
+					project.getProperties().setProperty("skipTests", "true");
+					return;
+				}
+			}
+		}
 
 		// Write orderer config so remaining tests are still prioritized by
 		// failure history, duration, and dependency coverage (no change-based scoring).

@@ -94,20 +94,18 @@ public class TestProject {
 	}
 
 	/**
-	 * Restore all tracked source files to their git-committed state.
-	 * This ensures no cross-test contamination from previous IT classes
-	 * that may have modified source files in the same project directory.
+	 * Restore all tracked source files to their git-committed state. This ensures
+	 * no cross-test contamination from previous IT classes that may have modified
+	 * source files in the same project directory.
 	 */
 	public void gitRestore() {
 		try {
-			ProcessBuilder pb = new ProcessBuilder("git", "checkout", "--", ".")
-					.directory(projectDir.toFile())
+			ProcessBuilder pb = new ProcessBuilder("git", "checkout", "--", ".").directory(projectDir.toFile())
 					.redirectErrorStream(true);
 			Process p = pb.start();
 			p.waitFor();
 			// Also remove untracked files in src/ that might have been created
-			ProcessBuilder pb2 = new ProcessBuilder("git", "clean", "-fd", "src/")
-					.directory(projectDir.toFile())
+			ProcessBuilder pb2 = new ProcessBuilder("git", "clean", "-fd", "src/").directory(projectDir.toFile())
 					.redirectErrorStream(true);
 			Process p2 = pb2.start();
 			p2.waitFor();
@@ -125,7 +123,11 @@ public class TestProject {
 		// Verify critical directories are actually gone — if not, a previous Maven
 		// process is still holding file locks. Wait and retry once more.
 		if (Files.exists(path(".test-order")) || Files.exists(path("target"))) {
-			try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+			try {
+				Thread.sleep(2000);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
 			deleteTree(".test-order");
 			deleteTree("target");
 		}
@@ -166,7 +168,11 @@ public class TestProject {
 				return; // success
 			} catch (IOException e) {
 				if (attempt < 7) {
-					try { Thread.sleep(300 * (attempt + 1)); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+					try {
+						Thread.sleep(300 * (attempt + 1));
+					} catch (InterruptedException ie) {
+						Thread.currentThread().interrupt();
+					}
 				} else {
 					System.err.println("WARNING: Could not fully delete " + dir + " after " + (attempt + 1)
 							+ " attempts: " + e.getMessage());
@@ -192,7 +198,11 @@ public class TestProject {
 		// On macOS APFS, the file may not be visible immediately after Maven exits.
 		// Poll for up to 3 seconds (same approach as loadState).
 		for (int i = 0; i < 6 && !Files.exists(idx); i++) {
-			try { Thread.sleep(500); } catch (InterruptedException e) { break; }
+			try {
+				Thread.sleep(500);
+			} catch (InterruptedException e) {
+				break;
+			}
 		}
 		if (!Files.exists(idx))
 			return null;
@@ -208,14 +218,20 @@ public class TestProject {
 		return loadState(".test-order/state.lz4");
 	}
 
-	/** Load a state file from a custom path. Polls briefly for the file to appear. */
+	/**
+	 * Load a state file from a custom path. Polls briefly for the file to appear.
+	 */
 	public TestOrderState loadState(String relativePath) {
 		Path file = path(relativePath);
 		// The TelemetryListener writes state.lz4 from within the forked JVM's
 		// testPlanExecutionFinished callback. On macOS, the file may not be visible
 		// for a brief moment after Maven exits. Poll for up to 3 seconds.
 		for (int i = 0; i < 6 && !Files.exists(file); i++) {
-			try { Thread.sleep(500); } catch (InterruptedException e) { break; }
+			try {
+				Thread.sleep(500);
+			} catch (InterruptedException e) {
+				break;
+			}
 		}
 		if (!Files.exists(file))
 			return null;

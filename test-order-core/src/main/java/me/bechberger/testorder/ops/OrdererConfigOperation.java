@@ -33,6 +33,7 @@ public final class OrdererConfigOperation {
 	public static final String KEY_PROJECT_ROOT = "testorder.project.root";
 	public static final String KEY_SOURCE_ROOT = "testorder.source.root";
 	public static final String KEY_CHANGE_MODE = "testorder.changeMode";
+	public static final String KEY_CHANGE_DETECTION_LOGGED = "testorder.changeDetection.logged";
 
 	/**
 	 * Builds the complete config map from the input. The returned map contains only
@@ -40,6 +41,10 @@ public final class OrdererConfigOperation {
 	 * (system properties) can consume this directly.
 	 */
 	public static Map<String, String> buildConfig(OrdererInput input) {
+		if (input.indexPath() == null || input.indexPath().isBlank()) {
+			throw new IllegalStateException("[test-order] Cannot build orderer config: indexPath is null. "
+					+ "Was the dependency index created? Run in learn mode first.");
+		}
 		Map<String, String> config = new LinkedHashMap<>();
 
 		putIfPresent(config, KEY_INDEX_PATH, input.indexPath());
@@ -72,6 +77,9 @@ public final class OrdererConfigOperation {
 		putIfPresent(config, KEY_PROJECT_ROOT, input.projectRoot());
 		putIfPresent(config, KEY_SOURCE_ROOT, input.sourceRoot());
 		putIfPresent(config, KEY_CHANGE_MODE, input.changeMode());
+		// R17-1: Signal to PriorityClassOrderer that the mojo already logged
+		// change-detection info, preventing duplicate output with forkCount>1.
+		config.put(KEY_CHANGE_DETECTION_LOGGED, "true");
 
 		return config;
 	}

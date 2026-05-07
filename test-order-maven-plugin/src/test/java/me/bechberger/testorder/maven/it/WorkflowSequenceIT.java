@@ -18,8 +18,8 @@ import me.bechberger.testorder.TestOrderState;
  * sequences, state accumulation across multiple runs, auto-mode transitions,
  * failure tracking decay, and duration smoothing.
  * <p>
- * Exercises complete workflows as described in the README:
- * learn → order → select → run-remaining → combined.
+ * Exercises complete workflows as described in the README: learn → order →
+ * select → run-remaining → combined.
  * <p>
  * Uses sample-shop (Product → Cart → Invoice) and test-order-example
  * (Calculator + StringUtils).
@@ -63,8 +63,10 @@ class WorkflowSequenceIT {
 
 	@AfterAll
 	void tearDown() {
-		if (shopProject != null) shopProject.restoreAll();
-		if (exampleProject != null) exampleProject.restoreAll();
+		if (shopProject != null)
+			shopProject.restoreAll();
+		if (exampleProject != null)
+			exampleProject.restoreAll();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -122,11 +124,8 @@ class WorkflowSequenceIT {
 	@DisplayName("Full CI pipeline: select after multiple order runs uses history")
 	void fullPipelineSelect() {
 		MavenResult result = shopProject.maven().run("clean", "test-order:select", "test",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=2",
-				"-Dtestorder.select.randomM=1",
-				"-Dtestorder.mode=skip");
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
+				"-Dtestorder.select.topN=2", "-Dtestorder.select.randomM=1", "-Dtestorder.mode=skip");
 		assertThat(result).succeeded();
 
 		// Selected file should exist
@@ -144,8 +143,7 @@ class WorkflowSequenceIT {
 	void fullPipelineRunRemaining() {
 		MavenResult result = shopProject.maven().runRemaining();
 		// run-remaining should succeed or skip gracefully
-		assertThat(result.output())
-				.doesNotContain("NullPointerException")
+		assertThat(result.output()).doesNotContain("NullPointerException")
 				.doesNotContain("ConcurrentModificationException");
 	}
 
@@ -159,8 +157,7 @@ class WorkflowSequenceIT {
 	void autoModeWithoutIndexSwitchesToLearn() {
 		exampleProject.cleanAll();
 
-		MavenResult result = exampleProject.maven().run("clean", "test",
-				"-Dtestorder.changeMode=explicit",
+		MavenResult result = exampleProject.maven().run("clean", "test", "-Dtestorder.changeMode=explicit",
 				"-Dtestorder.changed.classes=" + CALCULATOR);
 		assertThat(result).succeeded();
 
@@ -177,14 +174,12 @@ class WorkflowSequenceIT {
 	@DisplayName("Auto mode with existing index uses order mode")
 	void autoModeWithExistingIndexUsesOrder() {
 		// Index exists from previous test
-		MavenResult result = exampleProject.maven().run("clean", "test",
-				"-Dtestorder.changeMode=explicit",
+		MavenResult result = exampleProject.maven().run("clean", "test", "-Dtestorder.changeMode=explicit",
 				"-Dtestorder.changed.classes=" + CALCULATOR);
 		assertThat(result).succeeded();
 
 		// Should use order mode (inject PriorityClassOrderer)
-		assertThat(result.output()).contains("Order mode")
-				.doesNotContain("switching to learn mode automatically");
+		assertThat(result.output()).contains("Order mode").doesNotContain("switching to learn mode automatically");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -204,10 +199,8 @@ class WorkflowSequenceIT {
 		}
 
 		// Now run auto mode with threshold=3 — should trigger re-learn
-		MavenResult result = exampleProject.maven().run("clean", "test",
-				"-Dtestorder.autoLearnRunThreshold=3",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + CALCULATOR);
+		MavenResult result = exampleProject.maven().run("clean", "test", "-Dtestorder.autoLearnRunThreshold=3",
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + CALCULATOR);
 		assertThat(result).succeeded();
 
 		// Should have triggered re-learn due to threshold
@@ -226,10 +219,7 @@ class WorkflowSequenceIT {
 		shopProject.maven().learn();
 
 		// Introduce a test failure (temporarily)
-		shopProject.replaceInFile(
-				"src/test/java/com/example/shop/CartTest.java",
-				"assertEquals",
-				"assertNotEquals");
+		shopProject.replaceInFile("src/test/java/com/example/shop/CartTest.java", "assertEquals", "assertNotEquals");
 
 		// This run should fail but record the failure
 		MavenResult failRun = shopProject.maven().order(CART);
@@ -304,8 +294,7 @@ class WorkflowSequenceIT {
 		assertThat(result).succeeded();
 
 		// Should have run tests (either learned or ordered)
-		assertThat(result.output()).containsAnyOf(
-				"Tests run:", "CalculatorTest", "StringUtilsTest");
+		assertThat(result.output()).containsAnyOf("Tests run:", "CalculatorTest", "StringUtilsTest");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -324,13 +313,10 @@ class WorkflowSequenceIT {
 		assertThat(snapResult).succeeded();
 
 		// Now run order with since-last-run change detection
-		MavenResult orderResult = exampleProject.maven().run("clean", "test",
-				"-Dtestorder.mode=order",
+		MavenResult orderResult = exampleProject.maven().run("clean", "test", "-Dtestorder.mode=order",
 				"-Dtestorder.changeMode=since-last-run");
 		// May or may not detect changes — just shouldn't crash
-		assertThat(orderResult.output())
-				.doesNotContain("NullPointerException")
-				.doesNotContain("IllegalStateException");
+		assertThat(orderResult.output()).doesNotContain("NullPointerException").doesNotContain("IllegalStateException");
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -352,9 +338,7 @@ class WorkflowSequenceIT {
 		// Optimize should analyze history and adjust weights
 		MavenResult result = exampleProject.maven().optimize();
 		// May require more runs — just should not crash
-		assertThat(result.output())
-				.doesNotContain("ArithmeticException")
-				.doesNotContain("NullPointerException")
+		assertThat(result.output()).doesNotContain("ArithmeticException").doesNotContain("NullPointerException")
 				.doesNotContain("/ by zero");
 	}
 
@@ -370,8 +354,7 @@ class WorkflowSequenceIT {
 
 		MavenResult result = shopProject.maven().autoWithMode("order", PRODUCT);
 		// Without an index, combined mode=order should warn/skip or auto-learn
-		assertThat(result.output())
-				.doesNotContain("NullPointerException");
+		assertThat(result.output()).doesNotContain("NullPointerException");
 	}
 
 	@Test
@@ -414,11 +397,8 @@ class WorkflowSequenceIT {
 
 		// Select with topN=1 — should pick the highest scored test
 		MavenResult selectResult = shopProject.maven().run("clean", "test-order:select", "test",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=1",
-				"-Dtestorder.select.randomM=0",
-				"-Dtestorder.mode=skip");
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
+				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(selectResult).succeeded();
 
 		String selected = shopProject.readFile("target/test-order-selected.txt");
@@ -443,21 +423,15 @@ class WorkflowSequenceIT {
 
 		// Cycle 1
 		MavenResult select1 = shopProject.maven().run("clean", "test-order:select", "test",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=1",
-				"-Dtestorder.select.randomM=0",
-				"-Dtestorder.mode=skip");
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
+				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(select1).succeeded();
 		MavenResult remaining1 = shopProject.maven().runRemaining();
 
 		// Cycle 2 (different change)
 		MavenResult select2 = shopProject.maven().run("clean", "test-order:select", "test",
-				"-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + INVOICE,
-				"-Dtestorder.select.topN=1",
-				"-Dtestorder.select.randomM=0",
-				"-Dtestorder.mode=skip");
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + INVOICE,
+				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(select2).succeeded();
 		MavenResult remaining2 = shopProject.maven().runRemaining();
 

@@ -26,13 +26,13 @@ public final class JUnitPlatformValidator {
 	 * Warns when {@code junit.platform.execution.listeners.deactivate} is
 	 * configured in a way that could disable test-order's TelemetryListener.
 	 *
-	 * @param systemProperties resolved system properties (from Surefire XML or
-	 *                         Gradle Test task)
-	 * @param configurationParameters text content of JUnit Platform
-	 *                                configurationParameters (may be null)
+	 * @param systemProperties
+	 *            resolved system properties (from Surefire XML or Gradle Test task)
+	 * @param configurationParameters
+	 *            text content of JUnit Platform configurationParameters (may be
+	 *            null)
 	 */
-	public void warnListenerDeactivation(Map<String, String> systemProperties,
-			String configurationParameters) {
+	public void warnListenerDeactivation(Map<String, String> systemProperties, String configurationParameters) {
 		String deactivate = systemProperties.get("junit.platform.execution.listeners.deactivate");
 		if (deactivate != null && !deactivate.isBlank()) {
 			String pattern = deactivate.trim();
@@ -62,21 +62,20 @@ public final class JUnitPlatformValidator {
 	 * Warns when a conflicting ClassOrderer or MethodOrderer is configured that
 	 * would override test-order's orderers.
 	 *
-	 * @param systemProperties resolved system properties
-	 * @param configurationParameters text content (may be null)
+	 * @param systemProperties
+	 *            resolved system properties
+	 * @param configurationParameters
+	 *            text content (may be null)
 	 */
-	public void warnConflictingOrderers(Map<String, String> systemProperties,
-			String configurationParameters) {
+	public void warnConflictingOrderers(Map<String, String> systemProperties, String configurationParameters) {
 		// Check system properties
 		String classOrderer = systemProperties.get("junit.jupiter.testclass.order.default");
-		if (classOrderer != null && !classOrderer.isBlank()
-				&& !classOrderer.contains("PriorityClassOrderer")) {
+		if (classOrderer != null && !classOrderer.isBlank() && !classOrderer.contains("PriorityClassOrderer")) {
 			log.warn("[test-order] A competing ClassOrderer is configured: " + classOrderer
 					+ " — this will override test-order's PriorityClassOrderer.");
 		}
 		String methodOrderer = systemProperties.get("junit.jupiter.testmethod.order.default");
-		if (methodOrderer != null && !methodOrderer.isBlank()
-				&& !methodOrderer.contains("PriorityMethodOrderer")) {
+		if (methodOrderer != null && !methodOrderer.isBlank() && !methodOrderer.contains("PriorityMethodOrderer")) {
 			log.warn("[test-order] A global MethodOrderer is configured: " + methodOrderer
 					+ " — this may conflict with test-order's PriorityMethodOrderer on classes "
 					+ "without an explicit @TestMethodOrder annotation.");
@@ -95,14 +94,12 @@ public final class JUnitPlatformValidator {
 			for (ConfigEntry entry : parseConfigurationParameters(configurationParameters)) {
 				if ("junit.jupiter.testclass.order.default".equals(entry.key)
 						&& !entry.value.contains("PriorityClassOrderer")) {
-					log.warn("[test-order] A competing ClassOrderer in configurationParameters: "
-							+ entry.value
+					log.warn("[test-order] A competing ClassOrderer in configurationParameters: " + entry.value
 							+ " — this will override test-order's PriorityClassOrderer.");
 				}
 				if ("junit.jupiter.testmethod.order.default".equals(entry.key)
 						&& !entry.value.contains("PriorityMethodOrderer")) {
-					log.warn("[test-order] A global MethodOrderer in configurationParameters: "
-							+ entry.value
+					log.warn("[test-order] A global MethodOrderer in configurationParameters: " + entry.value
 							+ " — this may conflict with test-order's PriorityMethodOrderer.");
 				}
 			}
@@ -114,8 +111,10 @@ public final class JUnitPlatformValidator {
 	/**
 	 * Result of parallel execution analysis.
 	 *
-	 * @param classLevelParallelSources descriptions of detected parallel config
-	 * @param vintageParallel whether JUnit Vintage parallel is enabled
+	 * @param classLevelParallelSources
+	 *            descriptions of detected parallel config
+	 * @param vintageParallel
+	 *            whether JUnit Vintage parallel is enabled
 	 */
 	public record ParallelCheckResult(List<String> classLevelParallelSources, boolean vintageParallel) {
 		public boolean hasClassLevelParallel() {
@@ -129,8 +128,10 @@ public final class JUnitPlatformValidator {
 	 * configuration (e.g. Maven's {@code <parallel>} XML element) — callers must
 	 * add those separately.
 	 *
-	 * @param systemProperties resolved system properties
-	 * @param configurationParameters text content (may be null)
+	 * @param systemProperties
+	 *            resolved system properties
+	 * @param configurationParameters
+	 *            text content (may be null)
 	 * @return analysis result with detected parallel sources
 	 */
 	public ParallelCheckResult detectParallelExecution(Map<String, String> systemProperties,
@@ -140,16 +141,13 @@ public final class JUnitPlatformValidator {
 
 		// Check system properties for JUnit Jupiter parallel
 		String parallelEnabled = systemProperties.get("junit.jupiter.execution.parallel.enabled");
-		String classesDefault = systemProperties.get(
-				"junit.jupiter.execution.parallel.mode.classes.default");
-		if ("true".equalsIgnoreCase(nullSafeTrim(parallelEnabled))
-				&& isConcurrent(classesDefault)) {
+		String classesDefault = systemProperties.get("junit.jupiter.execution.parallel.mode.classes.default");
+		if ("true".equalsIgnoreCase(nullSafeTrim(parallelEnabled)) && isConcurrent(classesDefault)) {
 			sources.add("junit.jupiter.execution.parallel.mode.classes.default=concurrent");
 		}
 
 		// Check Vintage parallel via system properties
-		String vintageParallelProp = systemProperties.get(
-				"junit.vintage.execution.parallel.enabled");
+		String vintageParallelProp = systemProperties.get("junit.vintage.execution.parallel.enabled");
 		if ("true".equalsIgnoreCase(nullSafeTrim(vintageParallelProp))) {
 			vintageParallel = true;
 		}
@@ -171,7 +169,8 @@ public final class JUnitPlatformValidator {
 	 * Checks JVM args (e.g. from Gradle's {@code jvmArgs}) for parallel execution
 	 * settings passed as {@code -D} flags.
 	 *
-	 * @param jvmArgs list of JVM arguments (may be null)
+	 * @param jvmArgs
+	 *            list of JVM arguments (may be null)
 	 * @return the offending arg, or null if no parallel config found
 	 */
 	public static String findParallelInJvmArgs(List<String> jvmArgs) {
@@ -192,7 +191,8 @@ public final class JUnitPlatformValidator {
 	 * Checks {@code src/test/resources/junit-platform.properties} for conflicting
 	 * orderer or listener configuration.
 	 *
-	 * @param projectDir project root directory
+	 * @param projectDir
+	 *            project root directory
 	 */
 	public void checkJunitPlatformPropertiesFile(Path projectDir) {
 		Path userProps = projectDir.resolve("src/test/resources/junit-platform.properties");
@@ -221,7 +221,8 @@ public final class JUnitPlatformValidator {
 	 * Checks {@code src/test/resources/junit-platform.properties} for parallel
 	 * execution configuration that conflicts with learn mode.
 	 *
-	 * @param projectDir project root directory
+	 * @param projectDir
+	 *            project root directory
 	 */
 	public void checkJunitPlatformPropertiesParallel(Path projectDir) {
 		Path userProps = projectDir.resolve("src/test/resources/junit-platform.properties");
@@ -244,10 +245,11 @@ public final class JUnitPlatformValidator {
 	// ── Configuration parameter text parsing ─────────────────────────
 
 	/**
-	 * Parses JUnit Platform configurationParameters text (key=value lines,
-	 * comments with #). This is a shared utility for both Maven and Gradle plugins.
+	 * Parses JUnit Platform configurationParameters text (key=value lines, comments
+	 * with #). This is a shared utility for both Maven and Gradle plugins.
 	 *
-	 * @param text configurationParameters content
+	 * @param text
+	 *            configurationParameters content
 	 * @return list of parsed key-value entries
 	 */
 	public static List<ConfigEntry> parseConfigurationParameters(String text) {
@@ -281,8 +283,7 @@ public final class JUnitPlatformValidator {
 		boolean parallelEnabled = false;
 		boolean classesConcurrent = false;
 		for (ConfigEntry entry : parseConfigurationParameters(text)) {
-			if ("junit.jupiter.execution.parallel.enabled".equals(entry.key)
-					&& "true".equalsIgnoreCase(entry.value)) {
+			if ("junit.jupiter.execution.parallel.enabled".equals(entry.key) && "true".equalsIgnoreCase(entry.value)) {
 				parallelEnabled = true;
 			}
 			if ("junit.jupiter.execution.parallel.mode.classes.default".equals(entry.key)
@@ -320,8 +321,7 @@ public final class JUnitPlatformValidator {
 			return false;
 		}
 		for (ConfigEntry entry : parseConfigurationParameters(text)) {
-			if ("junit.vintage.execution.parallel.enabled".equals(entry.key)
-					&& "true".equalsIgnoreCase(entry.value)) {
+			if ("junit.vintage.execution.parallel.enabled".equals(entry.key) && "true".equalsIgnoreCase(entry.value)) {
 				return true;
 			}
 		}

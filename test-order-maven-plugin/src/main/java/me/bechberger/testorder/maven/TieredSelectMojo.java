@@ -26,11 +26,12 @@ import me.bechberger.testorder.ops.workflows.ChangeAnalysis;
  *
  * <p>
  * Configures Surefire to run only tier 1 tests. Subsequent tiers can be
- * executed via {@code test-order:run-tier -Dtestorder.tiered.currentTier=2}
- * and {@code test-order:run-tier -Dtestorder.tiered.currentTier=3}.
+ * executed via {@code test-order:run-tier -Dtestorder.tiered.currentTier=2} and
+ * {@code test-order:run-tier -Dtestorder.tiered.currentTier=3}.
  *
  * <p>
  * CI pipeline usage:
+ *
  * <pre>
  * # Step 1: Run change-affected tests
  * mvn test-order:tiered-select test
@@ -46,9 +47,9 @@ import me.bechberger.testorder.ops.workflows.ChangeAnalysis;
 public class TieredSelectMojo extends AbstractTestOrderMojo {
 
 	/**
-	 * Fraction of remaining test duration budget allocated to tier 2. Value in
-	 * [0, 1]. Default 0.5 means tier 2 gets about half the expected execution
-	 * time of remaining tests.
+	 * Fraction of remaining test duration budget allocated to tier 2. Value in [0,
+	 * 1]. Default 0.5 means tier 2 gets about half the expected execution time of
+	 * remaining tests.
 	 */
 	@Parameter(property = MavenPluginConfigKeys.TIERED_TIER2_FRACTION, defaultValue = "0.5")
 	private double tier2Fraction;
@@ -79,17 +80,15 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 			return;
 		if (skipIfNotExplicitlySelectedReactorProject("tiered-select"))
 			return;
-		if (session != null && session.getGoals() != null
-				&& session.getGoals().stream().noneMatch(g -> g.equals("test") || g.equals("verify")
-						|| g.equals("install") || g.equals("package") || g.equals("deploy"))) {
+		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
+				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'tiered-select' goal configures Surefire but does not execute tests."
 					+ " Include the test phase: mvn test-order:tiered-select test");
 		}
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
 
 		if (tier2Fraction < 0 || tier2Fraction > 1) {
-			throw new MojoExecutionException(
-					"[test-order] tiered.tier2Fraction must be in [0, 1]: " + tier2Fraction);
+			throw new MojoExecutionException("[test-order] tiered.tier2Fraction must be in [0, 1]: " + tier2Fraction);
 		}
 
 		Path idxPath = resolveIndexPath();
@@ -151,14 +150,14 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 		}
 
 		// Write orderer config for test ordering within the selected tier
-		// Use already-computed analysis results instead of re-running change detection (R7-3)
-		Map<String, String> configMap = me.bechberger.testorder.ops.OrdererConfigOperation.buildConfig(
-				new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
-						pctx.indexFile().toAbsolutePath().toString(),
-						pctx.stateFile().toAbsolutePath().toString(),
+		// Use already-computed analysis results instead of re-running change detection
+		// (R7-3)
+		Map<String, String> configMap = me.bechberger.testorder.ops.OrdererConfigOperation
+				.buildConfig(new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
+						pctx.indexFile().toAbsolutePath().toString(), pctx.stateFile().toAbsolutePath().toString(),
 						pctx.weightsFile() != null ? pctx.weightsFile().toAbsolutePath().toString() : null,
-						analysis.changedClasses(), analysis.changedTests(), Set.of(),
-						pctx.scoreOverrides(), pctx.methodOrderingEnabled(), pctx.springContextGrouping(),
+						analysis.changedClasses(), analysis.changedTests(), Set.of(), pctx.scoreOverrides(),
+						pctx.methodOrderingEnabled(), pctx.springContextGrouping(),
 						pctx.projectRoot().toAbsolutePath().toString(),
 						pctx.sourceRoot() != null ? pctx.sourceRoot().toAbsolutePath().toString() : null,
 						pctx.changeMode()));
@@ -179,7 +178,8 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 		getLog().info("[test-order]   Tier 1 (" + selection.tier1().size() + " tests): " + tier1File);
 		getLog().info("[test-order]   Tier 2 (" + selection.tier2().size() + " tests): " + tier2File);
 		getLog().info("[test-order]   Tier 3 (" + selection.tier3().size() + " tests): " + tier3File);
-		// Only suggest tier 2 hint if tier 1 is not empty (meaning tier 2 hasn't already run inline)
+		// Only suggest tier 2 hint if tier 1 is not empty (meaning tier 2 hasn't
+		// already run inline)
 		if (!selection.tier1().isEmpty() && (!selection.tier2().isEmpty() || !selection.tier3().isEmpty())) {
 			getLog().info("[test-order] Next steps:");
 			if (!selection.tier2().isEmpty()) {

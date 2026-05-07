@@ -25,7 +25,10 @@ public final class CoverageOperation {
 	private CoverageOperation() { // utility
 	}
 
-	/** Returns true if {@code className} is a test class or an inner class of a test class. */
+	/**
+	 * Returns true if {@code className} is a test class or an inner class of a test
+	 * class.
+	 */
 	private static boolean isTestClass(String className, Set<String> testClassNames) {
 		if (testClassNames.contains(className))
 			return true;
@@ -49,7 +52,8 @@ public final class CoverageOperation {
 		boolean hasMemberData = depMap.hasMemberDeps();
 
 		// 1. Build inverse map: production class → set of exercising test classes
-		//    Exclude test classes (and their inner classes) — they are not production code.
+		// Exclude test classes (and their inner classes) — they are not production
+		// code.
 		Set<String> testClassNames = new TreeSet<>(depMap.testClasses());
 		Map<String, Set<String>> prodToTests = new TreeMap<>();
 		for (String testClass : depMap.testClasses()) {
@@ -128,7 +132,8 @@ public final class CoverageOperation {
 		sb.append("| Production classes | ").append(stats.totalClasses()).append(" |\n");
 		sb.append("| Test classes | ").append(stats.totalTestClasses()).append(" |\n");
 		sb.append("| Untested classes | ").append(stats.untestedClasses()).append(" |\n");
-		sb.append("| Avg tests/class | ").append(String.format(java.util.Locale.US, "%.1f", stats.avgTestsPerClass())).append(" |\n");
+		sb.append("| Avg tests/class | ").append(String.format(java.util.Locale.US, "%.1f", stats.avgTestsPerClass()))
+				.append(" |\n");
 		sb.append("| Max tests/class | ").append(stats.maxTestsPerClass()).append(" |\n");
 		sb.append("| Below threshold (<").append(threshold).append(" tests) | ")
 				.append(analysis.belowThreshold(threshold).size()).append(" |\n");
@@ -182,8 +187,8 @@ public final class CoverageOperation {
 				int exercisedM = pkgClasses.stream().mapToInt(c -> c.exercisedMembers().size()).sum();
 				String memberPct = totalM > 0 ? ((int) (100.0 * exercisedM / totalM)) + "%" : "n/a";
 				sb.append("| `").append(pe.getKey()).append("` | ").append(pkgClasses.size()).append(" | ")
-						.append(String.format(java.util.Locale.US, "%.1f", avg)).append(" | ").append(totalM).append(" | ").append(memberPct)
-						.append(" |\n");
+						.append(String.format(java.util.Locale.US, "%.1f", avg)).append(" | ").append(totalM)
+						.append(" | ").append(memberPct).append(" |\n");
 			} else {
 				sb.append("| `").append(pe.getKey()).append("` | ").append(pkgClasses.size()).append(" | ")
 						.append(String.format(java.util.Locale.US, "%.1f", avg)).append(" |\n");
@@ -208,7 +213,8 @@ public final class CoverageOperation {
 		summary.put("totalProductionClasses", stats.totalClasses());
 		summary.put("totalTestClasses", stats.totalTestClasses());
 		summary.put("untestedClasses", stats.untestedClasses());
-		summary.put("avgTestsPerClass", Double.parseDouble(String.format(java.util.Locale.US, "%.2f", stats.avgTestsPerClass())));
+		summary.put("avgTestsPerClass",
+				Double.parseDouble(String.format(java.util.Locale.US, "%.2f", stats.avgTestsPerClass())));
 		summary.put("maxTestsPerClass", stats.maxTestsPerClass());
 		summary.put("threshold", threshold);
 		summary.put("belowThreshold", analysis.belowThreshold(threshold).size());

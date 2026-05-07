@@ -51,8 +51,8 @@ public class AgentLogger {
 
 	/**
 	 * Always prints to stderr regardless of verbose mode; also writes to the
-	 * verbose log file when active. Use for key lifecycle events that a user
-	 * should always see (e.g. index written confirmation).
+	 * verbose log file when active. Use for key lifecycle events that a user should
+	 * always see (e.g. index written confirmation).
 	 */
 	public static void info(String message) {
 		System.err.println("[test-order] " + message);

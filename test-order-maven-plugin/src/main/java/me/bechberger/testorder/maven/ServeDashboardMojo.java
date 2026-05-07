@@ -76,7 +76,8 @@ public class ServeDashboardMojo extends DashboardMojo {
 
 		if (shouldGenerate) {
 			getLog().info("[test-order] Generating dashboard before serving…");
-			// Suppress the file:// browser open from the parent — we open the http:// URL instead.
+			// Suppress the file:// browser open from the parent — we open the http:// URL
+			// instead.
 			boolean savedOpenBrowser = openBrowser;
 			openBrowser = false;
 			try {

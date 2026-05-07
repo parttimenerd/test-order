@@ -25,9 +25,9 @@ import me.bechberger.testorder.ops.workflows.SelectWorkflow;
 public class SelectMojo extends AbstractTestOrderMojo {
 
 	/**
-	 * Number of top-scored test classes to always include.
-	 * Use -1 (default) to include all change-affected tests.
-	 * Use 0 to rely only on randomM for selection.
+	 * Number of top-scored test classes to always include. Use -1 (default) to
+	 * include all change-affected tests. Use 0 to rely only on randomM for
+	 * selection.
 	 */
 	@Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "-1")
 	private int topN;
@@ -63,9 +63,21 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		if (skipIfNotExplicitlySelectedReactorProject("select"))
 			return;
 
-		// Validate select parameters early (issue: topN=0 + randomM=0 → no tests selected)
-		new me.bechberger.testorder.ops.ParameterValidator(MavenPluginLog.wrap(getLog()))
-				.validateSelectParameters(topN, randomM);
+		// R15-2: Skip POM-packaging modules — they have no tests and their selection
+		// decisions don't propagate to sub-modules, confusing users.
+		if ("pom".equals(project.getPackaging())) {
+			getLog().debug("[test-order] Skipping select goal — POM module: " + project.getArtifactId());
+			return;
+		}
+
+		// Validate select parameters early (issue: topN=0 + randomM=0 → no tests
+		// selected)
+		try {
+			new me.bechberger.testorder.ops.ParameterValidator(MavenPluginLog.wrap(getLog()))
+					.validateSelectParameters(topN, randomM);
+		} catch (IllegalArgumentException e) {
+			throw new MojoExecutionException(e.getMessage(), e);
+		}
 
 		// Warn if topN=-1 (default) will select all tests
 		if (topN == -1) {
@@ -74,9 +86,8 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		}
 
 		// Warn if 'test' phase is likely not going to run
-		if (session != null && session.getGoals() != null
-				&& session.getGoals().stream().noneMatch(g -> g.equals("test") || g.equals("verify")
-						|| g.equals("install") || g.equals("package") || g.equals("deploy"))) {
+		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
+				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'select' goal configures Surefire but does not execute tests."
 					+ " Include the test phase: mvn test-order:select test");
 		}
@@ -102,8 +113,11 @@ public class SelectMojo extends AbstractTestOrderMojo {
 				.selectedFile(Path.of(selectedFile)).remainingFile(Path.of(remainingFile)).build();
 
 		SelectOperation.SelectResult result;
+		me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result analysis;
 		try {
-			result = SelectWorkflow.select(pctx);
+			SelectWorkflow.SelectWithAnalysis combined = SelectWorkflow.selectWithAnalysis(pctx);
+			result = combined.result();
+			analysis = combined.analysis();
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to select tests", e);
 		}
@@ -123,18 +137,11 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		}
 
 		// Write PriorityClassOrderer config for ordering within the subset
-		// Use dedicated change analysis to avoid double computation (R7-13)
-		me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result analysis;
-		try {
-			analysis = me.bechberger.testorder.ops.workflows.ChangeAnalysis.analyze(
-					pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.CHANGES_ONLY);
-		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to detect changes for ordering", e);
-		}
-		java.util.Map<String, String> configMap = me.bechberger.testorder.ops.OrdererConfigOperation.buildConfig(
-				new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
-						pctx.indexFile().toAbsolutePath().toString(),
-						pctx.stateFile().toAbsolutePath().toString(),
+		// R7-13: Reuse analysis from SelectWorkflow instead of re-running change
+		// detection
+		java.util.Map<String, String> configMap = me.bechberger.testorder.ops.OrdererConfigOperation
+				.buildConfig(new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
+						pctx.indexFile().toAbsolutePath().toString(), pctx.stateFile().toAbsolutePath().toString(),
 						pctx.weightsFile() != null ? pctx.weightsFile().toAbsolutePath().toString() : null,
 						analysis.changedClasses(), analysis.changedTests(), analysis.changedMethods(),
 						pctx.scoreOverrides(), pctx.methodOrderingEnabled(), pctx.springContextGrouping(),
@@ -150,11 +157,20 @@ public class SelectMojo extends AbstractTestOrderMojo {
 			getLog().info("[test-order] Remaining tests written to " + remainingFile + ". Run deferred tests with:"
 					+ " mvn test-order:run-remaining test");
 		} else if (!runRemaining && !selection.remaining().isEmpty()) {
-			getLog().warn("[test-order] " + selection.remaining().size() + " tests were NOT selected and will NOT run.");
-			getLog().warn("[test-order] To run them: mvn test-order:run-remaining test"
-					+ " -Dtestorder.select.remainingFile=" + remainingFile);
-			getLog().warn("[test-order] To always run remaining automatically, add"
-					+ " -Dtestorder.auto.runRemaining=true or set <runRemaining>true</runRemaining> in plugin config.");
+			// R15-6: Suppress alarming warning when run-remaining is also in the goal list
+			boolean runRemainingInGoals = session != null && session.getGoals() != null
+					&& session.getGoals().stream().anyMatch(g -> g.contains("run-remaining"));
+			if (runRemainingInGoals) {
+				getLog().info(
+						"[test-order] " + selection.remaining().size() + " tests deferred to run-remaining phase.");
+			} else {
+				getLog().warn(
+						"[test-order] " + selection.remaining().size() + " tests were NOT selected and will NOT run.");
+				getLog().warn("[test-order] To run them: mvn test-order:run-remaining test"
+						+ " -Dtestorder.select.remainingFile=target/test-order-remaining.txt");
+				getLog().warn("[test-order] To always run remaining automatically, add"
+						+ " -Dtestorder.auto.runRemaining=true or set <runRemaining>true</runRemaining> in plugin config.");
+			}
 		}
 
 		// Prevent a POM-bound auto goal from overriding the test selection

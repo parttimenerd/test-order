@@ -77,19 +77,19 @@ public abstract class BaseFixtureIT {
 		// Check if maven-compiler-plugin is already configured
 		if (pomContent.contains("maven-compiler-plugin")) {
 			String configuredPlugin = """
-			            <plugin>
-			                <groupId>org.apache.maven.plugins</groupId>
-			                <artifactId>maven-compiler-plugin</artifactId>
-			                <version>3.13.0</version>
-			                <configuration>
-			                    <source>17</source>
-			                    <target>17</target>
-			                    <compilerArgs>
-			                        <arg>-parameters</arg>
-			                    </compilerArgs>
-			                </configuration>
-			            </plugin>
-			""";
+					            <plugin>
+					                <groupId>org.apache.maven.plugins</groupId>
+					                <artifactId>maven-compiler-plugin</artifactId>
+					                <version>3.13.0</version>
+					                <configuration>
+					                    <source>17</source>
+					                    <target>17</target>
+					                    <compilerArgs>
+					                        <arg>-parameters</arg>
+					                    </compilerArgs>
+					                </configuration>
+					            </plugin>
+					""";
 
 			String updatedExisting = pomContent.replaceFirst(
 					"(?s)<plugin>\\s*<groupId>org\\.apache\\.maven\\.plugins</groupId>\\s*<artifactId>maven-compiler-plugin</artifactId>\\s*(?:<version>[^<]+</version>\\s*)?</plugin>",

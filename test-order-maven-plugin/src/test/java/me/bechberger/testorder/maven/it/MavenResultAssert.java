@@ -34,8 +34,7 @@ public class MavenResultAssert extends AbstractAssert<MavenResultAssert, MavenRe
 	public MavenResultAssert failed() {
 		isNotNull();
 		if (actual.isSuccess()) {
-			failWithMessage(
-					"Expected Maven to fail but it succeeded.%nCommand: %s%nOutput (last 60 lines):%n%s",
+			failWithMessage("Expected Maven to fail but it succeeded.%nCommand: %s%nOutput (last 60 lines):%n%s",
 					actual.args(), lastLines(actual.output(), 60));
 		}
 		return this;

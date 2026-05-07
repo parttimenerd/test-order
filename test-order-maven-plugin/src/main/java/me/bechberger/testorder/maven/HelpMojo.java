@@ -2,11 +2,12 @@ package me.bechberger.testorder.maven;
 
 import java.util.Map;
 
-import me.bechberger.testorder.TestOrderState;
-import me.bechberger.testorder.TestOrderState.WeightDef;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
+
+import me.bechberger.testorder.TestOrderState;
+import me.bechberger.testorder.TestOrderState.WeightDef;
 
 /**
  * Displays help information about the test-order plugin goals and common
@@ -18,16 +19,12 @@ import org.apache.maven.plugins.annotations.Mojo;
 public class HelpMojo extends AbstractMojo {
 
 	/** Property name mapping for score weights (weight name → description). */
-	private static final Map<String, String> SCORE_DESCRIPTIONS = Map.of(
-			"newTest", "Weight for new/unseen tests",
-			"changedTest", "Weight for changed test classes",
-			"maxFailure", "Weight for recently failed tests",
-			"speed", "Weight favouring fast tests",
-			"speedPenalty", "Weight penalising slow tests",
-			"depOverlap", "Weight for dependency overlap with changes",
-			"changeComplexity", "Weight for source-change complexity",
-			"staticFieldBonus", "Weight for changed static field overlap",
-			"coverageBonus", "Weight for greedy set-cover bonus");
+	private static final Map<String, String> SCORE_DESCRIPTIONS = Map.of("newTest", "Weight for new/unseen tests",
+			"changedTest", "Weight for changed test classes", "maxFailure", "Weight for recently failed tests", "speed",
+			"Weight favouring fast tests", "speedPenalty", "Weight penalising slow tests", "depOverlap",
+			"Weight for dependency overlap with changes", "changeComplexity", "Weight for source-change complexity",
+			"staticFieldBonus", "Weight for changed static field overlap", "coverageBonus",
+			"Weight for greedy set-cover bonus");
 
 	@Override
 	public void execute() throws MojoExecutionException {
@@ -59,25 +56,23 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  help             Display this help information\n");
 		sb.append("\nCommon properties:\n");
 		sb.append("  -Dtestorder.mode=<mode>          auto (default), learn, order, skip\n");
-		sb.append("  -Dtestorder.changeMode=<mode>    uncommitted (default), since-last-run, since-last-commit, explicit\n");
+		sb.append(
+				"  -Dtestorder.changeMode=<mode>    uncommitted (default), since-last-run, since-last-commit, explicit\n");
 		sb.append("  -Dtestorder.instrumentation.mode=<m>  FULL (default), METHOD_ENTRY, FULL_METHOD, FULL_MEMBER\n");
 		sb.append(
 				"  -Dtestorder.select.topN=<n>      Number of top-scored tests to select (default: -1, all affected)\n");
 		sb.append("  -Dtestorder.select.randomM=<m>   Random fast tests for coverage diversity (default: 10)\n");
 		sb.append(
 				"  -Dtestorder.autoLearnRunThreshold=<n>  Force full learn every N runs in auto mode (default: 10)\n");
-		sb.append(
-				"  -Dtestorder.auto.optimizeEvery=<n>     Auto-optimise weights every N runs (default: 10)\n");
-		sb.append(
-				"  -Dtestorder.autoCompactEvery=<n>       Auto-compact index every N runs (default: 50)\n");
-		sb.append(
-				"  -Dtestorder.tiered.tier2Fraction=<f>  Tier-2 duration/count fraction in [0,1] (default: 0.5)\n");
-		sb.append(
-				"  -Dtestorder.tiered.weightByDuration=<b>  Tier-2 by duration budget (default: true)\n");
-		sb.append(
-				"  -Dtestorder.tiered.currentTier=<n>   Tier to run with run-tier (2 or 3)\n");
+		sb.append("  -Dtestorder.auto.optimizeEvery=<n>     Auto-optimise weights every N runs (default: 10)\n");
+		sb.append("  -Dtestorder.autoCompactEvery=<n>       Auto-compact index every N runs (default: 50)\n");
+		sb.append("  -Dtestorder.tiered.tier2Fraction=<f>  Tier-2 duration/count fraction in [0,1] (default: 0.5)\n");
+		sb.append("  -Dtestorder.tiered.weightByDuration=<b>  Tier-2 by duration budget (default: true)\n");
+		sb.append("  -Dtestorder.tiered.currentTier=<n>   Tier to run with run-tier (2 or 3)\n");
 		sb.append(
 				"  -Dtestorder.dashboard.serveSeconds=<n>  Stop 'serve' automatically after N seconds (default: 0)\n");
+		sb.append(
+				"  -Dtestorder.dashboard.port=<n>       Port for 'serve'/'dashboard' goals (default: 0 = auto-select)\n");
 		sb.append("  -Dtestorder.includePackages=<p>   Additional package prefixes to instrument\n");
 		sb.append("  -Dtestorder.skip=true             Skip the plugin entirely\n");
 		sb.append("  -Dtestorder.debug=true            Verbose scoring output\n");
@@ -105,6 +100,8 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  Dashboard:   mvn test-order:dashboard          (generate HTML report)\n");
 		sb.append("  View order:  mvn test-order:show-order         (print priority table)\n");
 		sb.append("  Diagnose:    mvn test-order:diagnose           (check setup health)\n");
+		sb.append("  Coverage:    mvn test-order:coverage           (writes to target/coverage-reports/)\n");
+		sb.append("  Metrics:     mvn test-order:metrics            (writes to target/test-order-metrics.json)\n");
 
 		getLog().info(sb.toString());
 	}

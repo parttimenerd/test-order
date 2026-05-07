@@ -21,17 +21,27 @@ public final class MetricsWorkflow {
 	/**
 	 * Generates a metrics export from the given context.
 	 *
-	 * @param projectName   display name (e.g., artifactId or project.name)
-	 * @param indexPath     path to the dependency index file
-	 * @param statePath     path to the state file
-	 * @param testClassesDir path to compiled test classes (for stale-entry detection), may be null
-	 * @param ctx           plugin context (for change detection); may be null to skip change detection
-	 * @param noIndexHint   message to show when no index found (e.g., "Run mvn test -Dtestorder.mode=learn")
-	 * @param log           plugin logger
+	 * @param projectName
+	 *            display name (e.g., artifactId or project.name)
+	 * @param indexPath
+	 *            path to the dependency index file
+	 * @param statePath
+	 *            path to the state file
+	 * @param testClassesDir
+	 *            path to compiled test classes (for stale-entry detection), may be
+	 *            null
+	 * @param ctx
+	 *            plugin context (for change detection); may be null to skip change
+	 *            detection
+	 * @param noIndexHint
+	 *            message to show when no index found (e.g., "Run mvn test
+	 *            -Dtestorder.mode=learn")
+	 * @param log
+	 *            plugin logger
 	 * @return the generated metrics export
 	 */
-	public static TestMetricsExport generate(String projectName, Path indexPath, Path statePath,
-			Path testClassesDir, PluginContext ctx, String noIndexHint, PluginLog log) {
+	public static TestMetricsExport generate(String projectName, Path indexPath, Path statePath, Path testClassesDir,
+			PluginContext ctx, String noIndexHint, PluginLog log) {
 
 		TestMetricsExport.Builder builder = new TestMetricsExport.Builder(projectName, "report");
 
@@ -39,8 +49,7 @@ public final class MetricsWorkflow {
 		if (Files.exists(indexPath)) {
 			try {
 				DependencyMap map = DependencyMap.load(indexPath);
-				long indexAge = (System.currentTimeMillis()
-						- Files.getLastModifiedTime(indexPath).toMillis()) / 1000;
+				long indexAge = (System.currentTimeMillis() - Files.getLastModifiedTime(indexPath).toMillis()) / 1000;
 				builder.indexAge(indexAge);
 
 				long totalEntries = map.size();
@@ -55,8 +64,7 @@ public final class MetricsWorkflow {
 				}
 				builder.indexHealth(totalEntries, staleEntries);
 			} catch (IOException e) {
-				builder.addRecommendation("Index is unreadable: " + e.getMessage()
-						+ ". Clean up and re-learn.");
+				builder.addRecommendation("Index is unreadable: " + e.getMessage() + ". Clean up and re-learn.");
 			}
 		} else {
 			builder.addRecommendation("No dependency index found. " + noIndexHint);
@@ -76,12 +84,10 @@ public final class MetricsWorkflow {
 		// Change detection metrics
 		if (ctx != null) {
 			try {
-				Set<String> changedClasses = ChangeDetectionOps.detectChangedClasses(
-						ctx.changeMode(), ctx.projectRoot(), ctx.sourceRoot(),
-						ctx.hashFile(), ctx.changedClasses(), true, log);
-				Set<String> changedTests = ChangeDetectionOps.detectChangedTestClasses(
-						ctx.changeMode(), ctx.projectRoot(), ctx.testSourceRoot(),
-						ctx.testHashFile(), true, log);
+				Set<String> changedClasses = ChangeDetectionOps.detectChangedClasses(ctx.changeMode(),
+						ctx.projectRoot(), ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, log);
+				Set<String> changedTests = ChangeDetectionOps.detectChangedTestClasses(ctx.changeMode(),
+						ctx.projectRoot(), ctx.testSourceRoot(), ctx.testHashFile(), true, log);
 				builder.changesDetected(changedClasses.size(), changedTests.size(), 0);
 			} catch (Exception e) {
 				log.debug("[test-order] Change detection unavailable for metrics: " + e.getMessage());
@@ -92,10 +98,10 @@ public final class MetricsWorkflow {
 	}
 
 	/**
-	 * Writes metrics JSON to the specified output file, creating parent directories as needed.
+	 * Writes metrics JSON to the specified output file, creating parent directories
+	 * as needed.
 	 */
-	public static void writeToFile(TestMetricsExport metrics, Path outputFile, PluginLog log)
-			throws IOException {
+	public static void writeToFile(TestMetricsExport metrics, Path outputFile, PluginLog log) throws IOException {
 		Files.createDirectories(outputFile.getParent());
 		Files.writeString(outputFile, metrics.toJson());
 		log.info("[test-order] Metrics written to " + outputFile);

@@ -3,9 +3,10 @@ package me.bechberger.testorder.ops;
 import java.util.*;
 
 /**
- * Shared utility for detecting typos in testorder.* property keys and suggesting corrections.
- * Used by both the Maven and Gradle plugins to avoid maintaining duplicate Levenshtein
- * implementations and separate known-property sets.
+ * Shared utility for detecting typos in testorder.* property keys and
+ * suggesting corrections. Used by both the Maven and Gradle plugins to avoid
+ * maintaining duplicate Levenshtein implementations and separate known-property
+ * sets.
  */
 public final class PropertySuggestion {
 
@@ -13,42 +14,33 @@ public final class PropertySuggestion {
 	}
 
 	/** All canonical testorder.* property keys accepted by the plugins. */
-	public static final Set<String> KNOWN_KEYS = Set.of(
-			"testorder.mode", "testorder.skip", "testorder.debug", "testorder.learn", "testorder.verbose",
-			"testorder.instrumentation.mode", "testorder.changeMode",
-			"testorder.includePackages", "testorder.filterByGroupId",
-			"testorder.methodOrder.enabled", "testorder.methodOrder",
-			"testorder.weightsFile", "testorder.changed.classes", "testorder.changed.test.classes",
-			"testorder.changed.methods", "testorder.changed.classes.file",
-			"testorder.index.path", "testorder.state.path",
-			"testorder.source.root", "testorder.project.root",
-			"testorder.autoLearnRunThreshold", "testorder.autoLearnDiffThreshold",
-			"testorder.auto.optimizeEvery", "testorder.autoCompactEvery",
-			"testorder.auto.runRemaining", "testorder.auto.active",
+	public static final Set<String> KNOWN_KEYS = Set.of("testorder.mode", "testorder.skip", "testorder.debug",
+			"testorder.learn", "testorder.verbose", "testorder.instrumentation.mode", "testorder.changeMode",
+			"testorder.includePackages", "testorder.filterByGroupId", "testorder.methodOrder.enabled",
+			"testorder.methodOrder", "testorder.weightsFile", "testorder.changed.classes",
+			"testorder.changed.test.classes", "testorder.changed.methods", "testorder.changed.classes.file",
+			"testorder.index.path", "testorder.state.path", "testorder.source.root", "testorder.project.root",
+			"testorder.autoLearnRunThreshold", "testorder.autoLearnDiffThreshold", "testorder.auto.optimizeEvery",
+			"testorder.autoCompactEvery", "testorder.auto.runRemaining", "testorder.auto.active",
 			"testorder.select.topN", "testorder.select.randomM", "testorder.select.seed",
-			"testorder.select.remainingFile", "testorder.select.selectedFile",
-			"testorder.tiered.tier2Fraction", "testorder.tiered.weightByDuration",
-			"testorder.tiered.tier1File", "testorder.tiered.tier2File", "testorder.tiered.tier3File",
-			"testorder.tiered.currentTier",
-			"testorder.showOrder.explain", "testorder.showOrder.fullNames",
-			"testorder.showMethodOrder.explain",
-			"testorder.score.newTest", "testorder.score.changedTest",
-			"testorder.score.maxFailure", "testorder.score.speed",
-			"testorder.score.speedPenalty", "testorder.score.depOverlap",
-			"testorder.score.changeComplexity", "testorder.score.staticFieldBonus",
-			"testorder.score.coverageBonus", "testorder.score.springContextGrouping",
-			"testorder.score.ema.varianceThreshold",
-			"testorder.dump.output", "testorder.exportJson.output",
-			"testorder.dashboard.output", "testorder.dashboard.open",
-			"testorder.dashboard.port", "testorder.dashboard.serveSeconds",
-			"testorder.dashboard.regenerate", "testorder.dashboard.separateAssets",
-			"testorder.metrics.output", "testorder.history.maxRuns",
-			"testorder.remaining.file", "testorder.failOnError",
-			"testorder.coverage.threshold", "coverage.threshold");
+			"testorder.select.remainingFile", "testorder.select.selectedFile", "testorder.tiered.tier2Fraction",
+			"testorder.tiered.weightByDuration", "testorder.tiered.tier1File", "testorder.tiered.tier2File",
+			"testorder.tiered.tier3File", "testorder.tiered.currentTier", "testorder.showOrder.explain",
+			"testorder.showOrder.fullNames", "testorder.showMethodOrder.explain", "testorder.score.newTest",
+			"testorder.score.changedTest", "testorder.score.maxFailure", "testorder.score.speed",
+			"testorder.score.speedPenalty", "testorder.score.depOverlap", "testorder.score.changeComplexity",
+			"testorder.score.staticFieldBonus", "testorder.score.coverageBonus",
+			"testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold", "testorder.dump.output",
+			"testorder.exportJson.output", "testorder.dashboard.output", "testorder.dashboard.open",
+			"testorder.dashboard.port", "testorder.dashboard.serveSeconds", "testorder.dashboard.regenerate",
+			"testorder.dashboard.separateAssets", "testorder.metrics.output", "testorder.history.maxRuns",
+			"testorder.remaining.file", "testorder.failOnError", "testorder.coverage.threshold",
+			"testorder.coverage.outputDir", "testorder.coverage.failOnViolation", "coverage.threshold",
+			"coverage.outputDir", "testorder.git.timeout.seconds", "testorder.lock.stale.minutes");
 
 	/**
-	 * Find the closest known key to the given unknown key using case-insensitive matching,
-	 * suffix matching, and Levenshtein distance (threshold &le; 3).
+	 * Find the closest known key to the given unknown key using case-insensitive
+	 * matching, suffix matching, and Levenshtein distance (threshold &le; 3).
 	 *
 	 * @return the closest key, or {@code null} if no good match
 	 */
@@ -82,20 +74,33 @@ public final class PropertySuggestion {
 				return suffixMatch;
 			}
 
-			// Prefix match (e.g. testorder.indx → testorder.index.path)
-			String prefixMatch = null;
+			// Prefix match: find keys whose suffix (after testorder.) has
+			// a low Levenshtein distance to the unknown's suffix. This catches
+			// typos like testorder.indx → testorder.index.path (R8-5)
+			String bestPrefixMatch = null;
+			int bestPrefixDist = Integer.MAX_VALUE;
 			for (String known : KNOWN_KEYS) {
-				if (known.toLowerCase().startsWith(unknownLower) || unknownLower.startsWith(known.toLowerCase().substring(0, Math.min(known.length(), unknownLower.length())))) {
-					// Check if the unknown looks like a truncation/typo of this key
-					if (known.toLowerCase().startsWith(unknownLower.substring(0, Math.min(unknownLower.length() - 1, known.length())))) {
-						if (prefixMatch == null || known.length() < prefixMatch.length()) {
-							prefixMatch = known;
-						}
-					}
+				if (!known.startsWith("testorder."))
+					continue;
+				String knownSuffix = known.substring("testorder.".length());
+				// Check if the unknown suffix is a prefix of the known suffix (truncation)
+				if (knownSuffix.startsWith(suffix)
+						|| knownSuffix.replace(".", "").startsWith(suffix.replace(".", ""))) {
+					return known;
+				}
+				// Check per-segment: first segment match
+				String unknownFirstSeg = suffix.contains(".") ? suffix.substring(0, suffix.indexOf('.')) : suffix;
+				String knownFirstSeg = knownSuffix.contains(".")
+						? knownSuffix.substring(0, knownSuffix.indexOf('.'))
+						: knownSuffix;
+				int segDist = levenshtein(unknownFirstSeg, knownFirstSeg);
+				if (segDist <= 2 && segDist < bestPrefixDist) {
+					bestPrefixDist = segDist;
+					bestPrefixMatch = known;
 				}
 			}
-			if (prefixMatch != null) {
-				return prefixMatch;
+			if (bestPrefixMatch != null) {
+				return bestPrefixMatch;
 			}
 		}
 
@@ -116,14 +121,17 @@ public final class PropertySuggestion {
 	 * Checks a set of property keys for unknown testorder.* entries and returns
 	 * user-friendly warning messages with suggestions.
 	 *
-	 * @param keys the property key names to check
+	 * @param keys
+	 *            the property key names to check
 	 * @return list of warning messages (empty if all known)
 	 */
 	public static List<String> findUnknownKeys(Collection<String> keys) {
 		List<String> warnings = new ArrayList<>();
-		if (keys == null) return warnings;
+		if (keys == null)
+			return warnings;
 		for (String key : keys) {
-			// Detect common prefix mistakes: test-order.* or test_order.* instead of testorder.*
+			// Detect common prefix mistakes: test-order.* or test_order.* instead of
+			// testorder.*
 			if (key.startsWith("test-order.") || key.startsWith("test_order.")) {
 				String corrected = "testorder." + key.substring(key.indexOf('.') + 1);
 				String suggestion = KNOWN_KEYS.contains(corrected) ? corrected : findClosest(corrected);
@@ -131,12 +139,15 @@ public final class PropertySuggestion {
 					warnings.add("Unknown property '" + key + "' — did you mean '" + suggestion
 							+ "'? (Note: the prefix is 'testorder.' with no hyphen or underscore)");
 				} else {
-					warnings.add("Unknown property '" + key + "' — the correct prefix is 'testorder.' (no hyphen or underscore).");
+					warnings.add("Unknown property '" + key
+							+ "' — the correct prefix is 'testorder.' (no hyphen or underscore).");
 				}
 				continue;
 			}
-			if (!key.startsWith("testorder.")) continue;
-			if (KNOWN_KEYS.contains(key)) continue;
+			if (!key.startsWith("testorder."))
+				continue;
+			if (KNOWN_KEYS.contains(key))
+				continue;
 			// Skip internal reactor-style keys
 			if (key.startsWith("testorder.changed.classes.") || key.startsWith("testorder.changed.test.classes."))
 				continue;

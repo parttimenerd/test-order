@@ -7,13 +7,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
+
 import me.bechberger.testorder.annotations.AlwaysRun;
 import me.bechberger.testorder.annotations.TestOrder;
 import me.bechberger.testorder.junit.PriorityClassOrderer;
 import me.bechberger.testorder.junit.PriorityMethodOrderer;
-
-import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Tests for PriorityClassOrderer using system properties and mock
@@ -837,7 +837,8 @@ class PriorityClassOrdererTest {
 
 	@Test
 	void jaccardDistanceBothEmpty() {
-		assertEquals(1.0, TestSelector.jaccardDistance(Set.of(), Set.of()));
+		// Both empty → a.isEmpty() returns neutral 0.5 (R15-10: unindexed tests)
+		assertEquals(0.5, TestSelector.jaccardDistance(Set.of(), Set.of()));
 	}
 
 	@Test
