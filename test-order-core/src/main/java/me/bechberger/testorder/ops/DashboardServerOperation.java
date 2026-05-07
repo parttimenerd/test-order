@@ -104,6 +104,12 @@ public final class DashboardServerOperation {
 		server.createContext("/api/optimize", exchange -> handleOptimize(exchange, statePath, log));
 		server.createContext("/", exchange -> handleHtml(exchange, htmlPath));
 		server.setExecutor(executor);
+		
+		// Register shutdown hook to ensure port is released on Ctrl+C
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			server.stop(0);
+		}));
+		
 		server.start();
 
 		int boundPort = server.getAddress().getPort();
@@ -239,7 +245,8 @@ public final class DashboardServerOperation {
 	private static void sendJson(HttpExchange exchange, String json) throws IOException {
 		byte[] body = json.getBytes(StandardCharsets.UTF_8);
 		exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-		exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+		// Only allow same-origin requests for security (CORS origin check not needed for loopback-only binding)
+		exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "http://localhost:*");
 		exchange.sendResponseHeaders(200, body.length);
 		try (OutputStream os = exchange.getResponseBody()) {
 			os.write(body);

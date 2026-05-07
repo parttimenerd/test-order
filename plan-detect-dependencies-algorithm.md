@@ -1487,26 +1487,38 @@ class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
     /**
      * Central data structure: a priority queue of "next actions" scored by 
      * expected information gain. Each action costs 1 test run.
+     * 
+     * Implemented as a TreeMap<Action> (not PriorityQueue) because we need
+     * to iterate and remove/re-insert elements for priority adjustment.
      */
-    record Action(double priority, ActionType type, Object payload) 
+    record Action(double priority, ActionType type, Object payload, String dedupKey) 
         implements Comparable<Action> {
         public int compareTo(Action o) { 
-            return Double.compare(o.priority, this.priority); // max-heap
+            int c = Double.compare(o.priority, this.priority); // max-first
+            return c != 0 ? c : dedupKey.compareTo(o.dedupKey); // stable tie-break
         }
     }
     
     enum ActionType {
         REVERSE_FULL,           // Run full suite in reverse (one-shot)
-        REVERSE_SHUFFLED,       // Reverse class order, shuffle within classes
-        CONFIRM_SUSPECT,        // Run violating order for a specific suspect pair
+        CONFIRM_SUSPECT,        // Run [suspect_polluter, victim] and [victim alone]
         CLUSTER_VIOLATE,        // Violate a batch of conflict edges
         RANDOM_SHUFFLE,         // Full random reorder
         EXCLUDE_TEST,           // PFAST: run without one specific test
-        ISOLATE_PAIR,           // Run only [A, B] to confirm minimal dependency
-        DDMIN_STEP,             // One step of delta debugging
+        ISOLATE_VICTIM,         // Run victim alone to distinguish OD from NOD
+        ISOLATE_PAIR,           // Run [polluter, victim] to confirm causation
+        DDMIN_STEP,             // One step of delta debugging to narrow polluter set
         METHOD_REVERSE,         // Reverse method order within one class
         METHOD_EXCLUDE          // Exclude one method within a class
     }
+    
+    /** Tracks what we know about each test during the run */
+    record TestKnowledge(
+        Set<String> confirmedPolluters,     // tests proven to pollute this one
+        Set<String> eliminatedPolluters,    // tests proven NOT to pollute
+        Boolean passesAlone,                // null = untested, true = OD candidate, false = broken/NOD
+        int failureCount                    // how many times this test has failed in this session
+    ) {}
 }
 ```
 
@@ -1515,8 +1527,9 @@ class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 ```java
 List<ODResult> detect(DetectionContext ctx) {
     List<ODResult> confirmed = new ArrayList<>();
-    PriorityQueue<Action> queue = new PriorityQueue<>();
-    Set<String> testedPairs = new HashSet<>();  // avoid retesting
+    TreeSet<Action> queue = new TreeSet<>();
+    Set<String> completedDedupKeys = new HashSet<>();
+    Map<String, TestKnowledge> knowledge = new HashMap<>();
     
     // ══════════════════════════════════════════════════════════
     // PHASE 0: Zero-cost initialization (no test runs)
@@ -1525,9 +1538,12 @@ List<ODResult> detect(DetectionContext ctx) {
     // 0a. History mining — extract suspects from existing run data
     List<Suspect> historyMinedSuspects = mineHistory(ctx);
     for (Suspect s : historyMinedSuspects) {
+        // First action for a suspect: isolate victim alone (to confirm it's OD, not NOD)
         queue.add(new Action(
-            0.8 + s.rankFOScore() * 0.2,  // priority: 0.8–1.0 based on RankFO
-            ActionType.CONFIRM_SUSPECT, s));
+            0.85 + s.rankFOScore() * 0.15,  // priority: 0.85–1.0 based on RankFO
+            ActionType.ISOLATE_VICTIM, 
+            s.victim(),
+            "isolate:" + s.victim()));
     }
     
     // 0b. Build conflict graph (if dep data available)
@@ -1541,23 +1557,43 @@ List<ODResult> detect(DetectionContext ctx) {
         for (int i = 0; i < clusters.size(); i++) {
             queue.add(new Action(
                 0.6 - i * 0.01,  // decreasing priority by rank
-                ActionType.CLUSTER_VIOLATE, clusters.get(i)));
+                ActionType.CLUSTER_VIOLATE, clusters.get(i),
+                "cluster:" + i));
         }
     }
     
     // 0c. Always seed: reverse order (cheap, high detection rate per DTDetector)
-    queue.add(new Action(0.9, ActionType.REVERSE_FULL, null));
+    queue.add(new Action(0.9, ActionType.REVERSE_FULL, null, "reverse"));
     
     // 0d. Seed random shuffles as low-priority fallback
     for (int i = 0; i < 5; i++) {
         queue.add(new Action(0.3 - i * 0.02, ActionType.RANDOM_SHUFFLE, 
-            ctx.randomSeed() + i));
+            ctx.randomSeed() + i, "random:" + i));
     }
     
-    // 0e. If method-level data available, seed intra-class reverse actions
+    // 0e. Seed PFAST exclusions upfront (not contingent on reverse failing)
+    // Prioritize excluding tests with most shared state (most likely to be state-setters)
+    if (ctx.depMap() != null) {
+        List<String> bySharedState = ctx.referenceOrder().stream()
+            .sorted(Comparator.comparingInt(t -> 
+                -sharedFieldCountTotal(t, ctx.depMap())))
+            .limit(config.maxPfastExclusions)
+            .toList();
+        for (int i = 0; i < bySharedState.size(); i++) {
+            queue.add(new Action(0.45 - i * 0.005, ActionType.EXCLUDE_TEST, 
+                bySharedState.get(i), "exclude:" + bySharedState.get(i)));
+        }
+    }
+    
+    // 0f. If method-level data available, seed intra-class reverse actions
+    // Priority weighted by: method count × historical failure rate
     if (ctx.depMap() != null && ctx.depMap().hasMethodDeps()) {
         for (String testClass : classesWithMultipleMethods(ctx)) {
-            queue.add(new Action(0.75, ActionType.METHOD_REVERSE, testClass));
+            int methodCount = ctx.state().methodsOf(testClass).size();
+            double classFail = ctx.state().getFailureScore(testClass);
+            double priority = 0.7 + Math.min(0.15, classFail * 0.1 + methodCount * 0.01);
+            queue.add(new Action(priority, ActionType.METHOD_REVERSE, testClass,
+                "method-rev:" + testClass));
         }
     }
     
@@ -1566,109 +1602,274 @@ List<ODResult> detect(DetectionContext ctx) {
     // ══════════════════════════════════════════════════════════
     
     int runCount = 0;
+    int runsWithoutNewFind = 0;    // for exploration/exploitation tuning
+    int confirmedAtLastCheck = 0;
     
     while (!queue.isEmpty() && !ctx.timeBudgetExhausted()) {
-        Action action = queue.poll();
+        Action action = queue.pollFirst();
         
-        // Skip if this pair was already tested
-        if (alreadyTested(action, testedPairs)) continue;
+        // Skip already-executed dedup keys
+        if (completedDedupKeys.contains(action.dedupKey)) continue;
         
-        // Execute action → produces a test run result + possibly new findings
+        // Skip actions targeting tests already fully characterized
+        if (isRedundant(action, knowledge, confirmed)) continue;
+        
+        // Execute action → produces a test run result
         ActionOutcome outcome = executeAction(action, ctx);
         runCount++;
-        markTested(action, testedPairs);
+        completedDedupKeys.add(action.dedupKey);
+        
+        // Track yield for exploration/exploitation balance
+        int newFinds = 0;
         
         // ── React to outcome: generate follow-up actions ──
         
         if (outcome.hasNewFailures()) {
-            // Something failed that passed in reference → OD found!
             for (FailureInfo fi : outcome.newFailures()) {
+                String victim = fi.failedTest();
+                
+                // ─── NOD filter: skip tests that fail too often (likely flaky) ───
+                TestKnowledge vk = knowledge.computeIfAbsent(victim, 
+                    k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
+                vk = vk.withFailureCount(vk.failureCount() + 1);
+                knowledge.put(victim, vk);
+                
+                if (vk.failureCount() > 3 && vk.passesAlone() == null) {
+                    // Failed 3+ times but never tested alone → likely NOD/flaky
+                    // Demote: test alone at medium priority to confirm
+                    queue.add(new Action(0.6, ActionType.ISOLATE_VICTIM, victim,
+                        "isolate:" + victim));
+                    continue;
+                }
+                if (Boolean.FALSE.equals(vk.passesAlone())) {
+                    // Already known to fail in isolation → NOT OD, skip
+                    continue;
+                }
+                
+                // ─── Route based on action type ───
                 
                 if (action.type == ActionType.CLUSTER_VIOLATE) {
-                    // Multiple edges violated — need to isolate
                     List<ConflictEdge> cluster = (List<ConflictEdge>) action.payload;
                     if (cluster.size() == 1) {
-                        // Already isolated
-                        confirmed.add(classify(cluster.get(0), fi, ctx));
+                        // Single edge isolated — classify it
+                        newFinds++;
+                        confirmed.add(classifyWithKnowledge(cluster.get(0), fi, ctx, knowledge));
                     } else {
-                        // Spawn ddmin actions at highest priority
-                        queue.add(new Action(1.0, ActionType.DDMIN_STEP, 
-                            new DdminState(cluster, fi)));
+                        // Multiple edges violated — use ddmin to isolate
+                        queue.add(new Action(0.98, ActionType.DDMIN_STEP, 
+                            new DdminState(cluster, fi, 2),
+                            "ddmin:" + victim + ":" + runCount));
                     }
                     
                 } else if (action.type == ActionType.REVERSE_FULL || 
                            action.type == ActionType.RANDOM_SHUFFLE) {
-                    // Found victim — need to find polluter
-                    // Narrow: who ran just before the victim in this order?
-                    String victim = fi.failedTest();
+                    // Found failure — need to identify polluter among predecessors
                     List<String> predecessors = outcome.predecessorsOf(victim);
                     
-                    // Use dep-map to score predecessors (if available)
-                    List<String> ranked = rankBySharedState(predecessors, victim, ctx);
+                    // Step 1: First confirm this test passes alone (if unknown)
+                    if (vk.passesAlone() == null) {
+                        queue.add(new Action(0.96, ActionType.ISOLATE_VICTIM, victim,
+                            "isolate:" + victim));
+                    }
                     
-                    // Spawn isolation actions for top candidates
-                    for (int i = 0; i < Math.min(3, ranked.size()); i++) {
-                        queue.add(new Action(0.95 - i * 0.05, 
-                            ActionType.ISOLATE_PAIR,
-                            new TestPair(ranked.get(i), victim)));
+                    // Step 2: Rank predecessors by shared state + proximity
+                    List<String> ranked = rankPolluters(predecessors, victim, ctx, knowledge);
+                    
+                    // Step 3: Use ddmin to find minimal polluter set among top candidates
+                    // (not just top-3 — use conflict graph to pick the right candidates)
+                    int candidateCount = Math.min(ranked.size(), 10);
+                    List<ConflictEdge> candidateEdges = ranked.subList(0, candidateCount).stream()
+                        .map(p -> new ConflictEdge(p, victim, 
+                            sharedMembers(p, victim, ctx.depMap()), 0.0))
+                        .toList();
+                    
+                    if (candidateEdges.size() == 1) {
+                        queue.add(new Action(0.95, ActionType.ISOLATE_PAIR,
+                            new TestPair(ranked.get(0), victim),
+                            "pair:" + ranked.get(0) + "→" + victim));
+                    } else {
+                        queue.add(new Action(0.95, ActionType.DDMIN_STEP,
+                            new DdminState(candidateEdges, fi, 2),
+                            "ddmin:" + victim + ":" + runCount));
                     }
                     
                 } else if (action.type == ActionType.ISOLATE_PAIR) {
-                    // Pair [polluter, victim] confirmed!
                     TestPair pair = (TestPair) action.payload;
-                    confirmed.add(classify(pair, fi, ctx));
+                    // [polluter, victim] failed — but does victim fail alone too?
+                    if (Boolean.TRUE.equals(knowledge.get(victim).passesAlone())) {
+                        // Passes alone, fails after polluter → CONFIRMED VICTIM
+                        newFinds++;
+                        confirmed.add(new ODResult(victim, ODType.VICTIM,
+                            List.of(pair.polluter(), victim),
+                            "Isolated pair confirmed: " + pair.polluter() + " → " + victim));
+                        knowledge.get(victim).confirmedPolluters().add(pair.polluter());
+                        
+                        // Boost: look for other victims of same polluter
+                        boostRelatedEdges(pair.polluter(), graph, queue, knowledge);
+                    } else {
+                        // Don't know yet if victim passes alone → schedule isolation
+                        queue.add(new Action(0.97, ActionType.ISOLATE_VICTIM, victim,
+                            "isolate:" + victim));
+                    }
                     
-                    // Boost: check if same polluter affects other tests
-                    boostRelatedEdges(pair.polluter(), graph, queue);
+                } else if (action.type == ActionType.ISOLATE_VICTIM) {
+                    // This action RAN victim alone and it FAILED
+                    // → victim is broken/NOD, not OD. Record and suppress future actions.
+                    knowledge.put(victim, vk.withPassesAlone(false));
+                    // Remove queued actions targeting this victim
+                    queue.removeIf(a -> targetTest(a).equals(victim));
                     
                 } else if (action.type == ActionType.CONFIRM_SUSPECT) {
-                    // History-mined suspect confirmed
                     Suspect s = (Suspect) action.payload;
+                    newFinds++;
                     confirmed.add(new ODResult(s.victim(), s.type(), 
                         s.dependencyChain(), "Confirmed history-mined suspect"));
                         
                 } else if (action.type == ActionType.EXCLUDE_TEST) {
-                    // PFAST: removing test X caused test Y to fail → BRITTLE
+                    // PFAST: removing test X caused test Y to fail → Y is BRITTLE
                     String excluded = (String) action.payload;
                     for (FailureInfo bf : outcome.newFailures()) {
-                        // Spawn verification pair
-                        queue.add(new Action(0.95, ActionType.ISOLATE_PAIR,
-                            new TestPair(excluded, bf.failedTest())));
+                        // Verify: does [excluded, failedTest] make it pass?
+                        queue.add(new Action(0.93, ActionType.ISOLATE_PAIR,
+                            new TestPair(excluded, bf.failedTest()),
+                            "pair:" + excluded + "→" + bf.failedTest()));
                     }
                     
                 } else if (action.type == ActionType.METHOD_REVERSE ||
                            action.type == ActionType.METHOD_EXCLUDE) {
-                    // Intra-class method-level OD found
                     String testClass = methodActionClass(action);
+                    newFinds++;
                     confirmed.add(classifyMethodLevel(action, fi, testClass, ctx));
+                    
+                    // Spawn method-exclude actions for this class to isolate which method
+                    if (action.type == ActionType.METHOD_REVERSE) {
+                        for (String method : ctx.state().methodsOf(testClass)) {
+                            queue.add(new Action(0.85, ActionType.METHOD_EXCLUDE,
+                                new MethodExclude(testClass, method),
+                                "method-excl:" + testClass + "#" + method));
+                        }
+                    }
+                    
+                } else if (action.type == ActionType.DDMIN_STEP) {
+                    DdminState dds = (DdminState) action.payload;
+                    // ddmin found failure in a subset — result is in outcome.ddminResult
+                    if (outcome.ddminResult().isMinimal()) {
+                        newFinds++;
+                        confirmed.add(classifyFromDdmin(outcome.ddminResult(), ctx, knowledge));
+                    } else {
+                        // Need more ddmin iterations — re-enqueue
+                        queue.add(new Action(0.98, ActionType.DDMIN_STEP,
+                            outcome.ddminResult().nextState(),
+                            "ddmin:" + victim + ":" + runCount));
+                    }
                 }
             }
         } else {
-            // No failure from this action — learn from it
+            // ── No failure — learn from negative result ──
             
             if (action.type == ActionType.CLUSTER_VIOLATE) {
-                // Entire cluster is benign → remove these edges from consideration
-                removeEdges((List<ConflictEdge>) action.payload, graph);
+                // Entire cluster is benign → mark edges as eliminated
+                List<ConflictEdge> cluster = (List<ConflictEdge>) action.payload;
+                for (ConflictEdge e : cluster) {
+                    TestKnowledge ka = knowledge.computeIfAbsent(e.testA(), 
+                        k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
+                    ka.eliminatedPolluters().add(e.testB());
+                    TestKnowledge kb = knowledge.computeIfAbsent(e.testB(), 
+                        k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
+                    kb.eliminatedPolluters().add(e.testA());
+                }
             }
             
-            if (action.type == ActionType.REVERSE_FULL) {
-                // Reverse didn't find anything — seed PFAST exclusions 
-                // (tests that may need predecessors = BRITTLE)
-                List<String> order = ctx.referenceOrder();
-                for (int i = 1; i < Math.min(order.size(), 20); i++) {
-                    queue.add(new Action(0.5 - i * 0.01, 
-                        ActionType.EXCLUDE_TEST, order.get(i)));
+            if (action.type == ActionType.ISOLATE_VICTIM) {
+                // Victim passes alone → OD confirmed (it needs some predecessor to fail)
+                String victim = (String) action.payload;
+                TestKnowledge vk = knowledge.computeIfAbsent(victim, 
+                    k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
+                knowledge.put(victim, vk.withPassesAlone(true));
+                
+                // Now promote any pending CONFIRM_SUSPECT / ISOLATE_PAIR for this victim
+                // (The test is genuinely OD — confirming the polluter is valuable)
+                Suspect suspect = findSuspect(victim, historyMinedSuspects);
+                if (suspect != null) {
+                    queue.add(new Action(0.94, ActionType.CONFIRM_SUSPECT, suspect,
+                        "confirm:" + victim));
                 }
+            }
+            
+            if (action.type == ActionType.ISOLATE_PAIR) {
+                // [polluter, victim] passed → this polluter does NOT pollute this victim
+                TestPair pair = (TestPair) action.payload;
+                TestKnowledge vk = knowledge.computeIfAbsent(pair.victim(), 
+                    k -> new TestKnowledge(new HashSet<>(), new HashSet<>(), null, 0));
+                vk.eliminatedPolluters().add(pair.polluter());
+            }
+            
+            if (action.type == ActionType.REVERSE_FULL && outcome.allPassed()) {
+                // No OD detectable by full reverse — this is a strong negative signal.
+                // Boost PFAST exclusions (may find BRITTLE patterns instead)
+                boostType(queue, ActionType.EXCLUDE_TEST, +0.15);
             }
         }
         
-        // Dynamic priority adjustment based on yield
+        // ── Exploration/exploitation tuning ──
+        if (newFinds > 0) {
+            runsWithoutNewFind = 0;
+        } else {
+            runsWithoutNewFind++;
+        }
+        
         if (runCount % 5 == 0) {
-            adjustPriorities(queue, confirmed.size(), runCount);
+            adjustStrategy(queue, confirmed.size(), runCount, runsWithoutNewFind);
+        }
+        
+        // Early transition: if we've found enough, shift to Cleaner search
+        if (confirmed.size() >= 10 && runCount > 15) {
+            break;  // Phase D (Cleaner search) is more valuable now
         }
     }
     
     return confirmed;
+}
+```
+
+### Polluter Ranking (Improved)
+
+A critical step: when a failure is observed, rank the predecessors to find the likely polluter:
+
+```java
+/**
+ * Rank candidate polluters for a victim using multiple signals.
+ * Combines: shared state overlap, proximity, historical correlation, elimination history.
+ */
+List<String> rankPolluters(List<String> predecessors, String victim, 
+                           DetectionContext ctx, Map<String, TestKnowledge> knowledge) {
+    TestKnowledge vk = knowledge.get(victim);
+    
+    return predecessors.stream()
+        // Filter out already-eliminated candidates
+        .filter(p -> vk == null || !vk.eliminatedPolluters().contains(p))
+        // Filter out tests already confirmed as polluters of other victims (less likely to be dual-polluter)
+        .sorted(Comparator.<String>comparingDouble(p -> {
+            double score = 0.0;
+            
+            // Signal 1: Shared member count (0–0.35)
+            int shared = sharedFieldCount(p, victim, ctx.depMap());
+            score += 0.35 * (1.0 - 1.0 / (1.0 + shared));
+            
+            // Signal 2: Proximity — closer predecessor more likely (state decays)
+            int distance = predecessors.indexOf(p);  // 0 = immediately before
+            score += 0.25 * (1.0 / (1.0 + distance));
+            
+            // Signal 3: Historical correlation (RankFO if available)
+            Suspect hist = findHistorySuspect(p, victim);
+            if (hist != null) score += 0.25 * hist.rankFOScore();
+            
+            // Signal 4: Mutable static field presence
+            if (accessesMutableStaticField(p, ctx.depMap())) score += 0.15;
+            
+            return score;
+        }).reversed())
+        .toList();
 }
 ```
 
@@ -1682,17 +1883,11 @@ ActionOutcome executeAction(Action action, DetectionContext ctx) {
             Collections.reverse(reversed);
             return runAndCompare(reversed, ctx);
         }
-        case REVERSE_SHUFFLED -> {
-            List<String> order = new ArrayList<>(ctx.referenceOrder());
-            Collections.reverse(order);
-            // Shuffle methods within each class (if method-level)
-            return runAndCompare(order, ctx);
-        }
         case CONFIRM_SUSPECT -> {
+            // Confirmation = run polluter immediately before victim (rest of suite in reference order)
+            // If victim fails → dependency confirmed
             Suspect s = (Suspect) action.payload;
-            // Generate order where suspected polluter runs just before victim
-            List<String> order = placeBeforeVictim(s.polluter(), s.victim(), 
-                                                    ctx.referenceOrder());
+            List<String> order = buildConfirmationOrder(s.polluter(), s.victim(), ctx);
             return runAndCompare(order, ctx);
         }
         case CLUSTER_VIOLATE -> {
@@ -1712,9 +1907,16 @@ ActionOutcome executeAction(Action action, DetectionContext ctx) {
             order.remove(excluded);
             return runAndCompare(order, ctx);
         }
+        case ISOLATE_VICTIM -> {
+            // Run victim alone — if it passes, it's genuinely OD
+            // If it fails, it's broken/NOD
+            String victim = (String) action.payload;
+            return runAndCompare(List.of(victim), ctx);
+        }
         case ISOLATE_PAIR -> {
+            // Run [polluter, victim] — if victim fails, dependency confirmed
+            // (Only valid AFTER we know victim passes alone)
             TestPair pair = (TestPair) action.payload;
-            // Minimal: just run these two tests in order [polluter, victim]
             return runAndCompare(List.of(pair.polluter(), pair.victim()), ctx);
         }
         case DDMIN_STEP -> {
@@ -1736,106 +1938,167 @@ ActionOutcome executeAction(Action action, DetectionContext ctx) {
         }
     }
 }
+
+/**
+ * Build order that places polluter immediately before victim while keeping
+ * the rest of the suite in reference order (to avoid introducing other OD effects).
+ */
+List<String> buildConfirmationOrder(String polluter, String victim, DetectionContext ctx) {
+    List<String> order = new ArrayList<>(ctx.referenceOrder());
+    order.remove(polluter);
+    order.remove(victim);
+    // Place polluter→victim at the end (minimal interference from other tests)
+    order.add(polluter);
+    order.add(victim);
+    return order;
+}
 ```
 
-### Priority Scoring Rationale
+### NOD (Non-Order-Dependent) Flaky Test Handling
 
-The priority values encode the **expected information gain per run**:
+A major practical concern: truly flaky tests (concurrency bugs, timing-dependent, resource leaks) produce false positives. The Combined algorithm handles this via the **isolate-first protocol**:
 
-| Priority Range | Action Category | Rationale |
-|---------------|-----------------|-----------|
-| **0.95–1.0** | ddmin / confirmed isolation | Already know a failure exists; just isolating. Near-guaranteed yield. |
-| **0.85–0.95** | History-mined suspects (high RankFO) | Strong statistical evidence; ~60% confirmation rate per literature |
-| **0.9** | Reverse-order (one-shot) | DTDetector: "reverse detects 66% of OD bugs in one run" |
-| **0.75–0.85** | Method-reverse / Intra-class | Intra-class OD is common and cheap to detect (few methods per class) |
-| **0.55–0.65** | Cluster-violate (top edges) | Conflict graph targets likely pairs; ~30% yield per cluster |
-| **0.45–0.55** | PFAST exclusions | Linear cost but finds BRITTLE patterns others miss |
-| **0.25–0.35** | Random shuffles | Low per-run yield (~5%) but no data requirements; fills remaining time |
+```
+Discovery: victim fails in reordered run
+     │
+     ▼
+ISOLATE_VICTIM: run victim alone
+     │
+     ├─ Fails alone → NOT OD. Mark as NOD. Suppress all future actions for this test.
+     │
+     └─ Passes alone → Confirmed OD candidate. Proceed to polluter isolation.
+          │
+          ▼
+     ISOLATE_PAIR: run [suspect_polluter, victim]
+          │
+          ├─ Victim fails → CONFIRMED: polluter → victim dependency.
+          │
+          └─ Victim passes → This suspect is innocent. Try next candidate.
+```
 
-### Dynamic Priority Adjustment
+**Repeated-failure heuristic**: If a test fails in 3+ different orderings without being tested alone, it's likely NOD. The algorithm automatically schedules an isolation run and suppresses further action until confirmed.
+
+### Strategy Adaptation
 
 ```java
 /**
- * Every 5 runs, adjust priorities based on what's working.
- * If a category has high yield → boost remaining actions of that type.
- * If a category has zero yield → demote remaining actions.
+ * Adjust the exploration/exploitation balance based on recent yield.
+ * Uses a "multi-armed bandit" intuition: actions that have been productive
+ * for their category get boosted; unproductive categories get demoted.
  */
-void adjustPriorities(PriorityQueue<Action> queue, int totalFound, int runCount) {
-    double yieldRate = (double) totalFound / runCount;
+void adjustStrategy(TreeSet<Action> queue, int totalFound, int runCount, 
+                    int runsWithoutFind) {
+    // Stagnation detection: if 8+ runs without finding anything, pivot hard
+    if (runsWithoutFind >= 8) {
+        // Current approach isn't working — boost unexplored categories
+        boostType(queue, ActionType.RANDOM_SHUFFLE, +0.25);
+        boostType(queue, ActionType.EXCLUDE_TEST, +0.2);
+        boostType(queue, ActionType.METHOD_REVERSE, +0.15);
+        demoteType(queue, ActionType.CLUSTER_VIOLATE, -0.15);
+    }
     
-    // If we're finding bugs fast (> 1 per 3 runs), be more aggressive:
-    // promote targeted actions over broad sweeps
+    // High-yield mode: if finding 1+ bug per 3 runs, double down on targeted actions
+    double yieldRate = runCount > 0 ? (double) totalFound / runCount : 0;
     if (yieldRate > 0.33) {
         boostType(queue, ActionType.CONFIRM_SUSPECT, +0.1);
         boostType(queue, ActionType.ISOLATE_PAIR, +0.1);
-        demoteType(queue, ActionType.RANDOM_SHUFFLE, -0.1);
     }
     
-    // If we're NOT finding bugs (< 1 per 10 runs), switch strategy:
-    // promote exploration over exploitation
-    if (yieldRate < 0.1 && runCount > 5) {
-        boostType(queue, ActionType.RANDOM_SHUFFLE, +0.2);
-        boostType(queue, ActionType.EXCLUDE_TEST, +0.15);
-        demoteType(queue, ActionType.CLUSTER_VIOLATE, -0.1);
+    // Late-stage: if we have many confirmed bugs but lots of time, add more random seeds
+    if (totalFound > 5 && queue.stream().noneMatch(a -> a.type == ActionType.RANDOM_SHUFFLE)) {
+        for (int i = 0; i < 3; i++) {
+            queue.add(new Action(0.35, ActionType.RANDOM_SHUFFLE, 
+                System.nanoTime() + i, "random:late:" + i));
+        }
+    }
+}
+
+/**
+ * Boost/demote by rebuilding actions of a given type with adjusted priority.
+ * TreeSet requires remove + re-add (not in-place mutation).
+ */
+void boostType(TreeSet<Action> queue, ActionType type, double delta) {
+    List<Action> toAdjust = queue.stream()
+        .filter(a -> a.type == type)
+        .toList();
+    queue.removeAll(toAdjust);
+    for (Action a : toAdjust) {
+        queue.add(new Action(
+            Math.max(0.01, Math.min(0.99, a.priority + delta)),
+            a.type, a.payload, a.dedupKey));
     }
 }
 ```
 
-### Information Flow Between Techniques
-
-Unlike the sequential orchestrator, the Combined algorithm shares state **continuously**:
+### Information Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Shared Knowledge Base                          │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────────┐  │
-│  │ Confirmed   │  │ Eliminated   │  │ Active Suspects       │  │
-│  │ OD pairs    │  │ benign edges │  │ (scored, queued)      │  │
-│  └──────┬──────┘  └──────┬───────┘  └──────────┬────────────┘  │
-│         │                │                      │               │
-│         ▼                ▼                      ▼               │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │              Priority Queue (next actions)                │   │
-│  │  Reverse → Cluster(top5) → Suspect_1 → Random → ...     │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-         │
-         │ executes one action per iteration
-         ▼
-┌─────────────────────┐      ┌────────────────────────────────┐
-│    TestRunner        │─────▶│  Outcome: pass / new failure    │
-│ (Surefire fork)      │      └────────────────┬───────────────┘
-└─────────────────────┘                        │
-                                               │ feeds back
-                                               ▼
-                                    ┌──────────────────────┐
-                                    │  Generate follow-up  │
-                                    │  actions (ddmin,     │
-                                    │  isolate, boost)     │
-                                    └──────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Shared Knowledge Base                           │
+│                                                                     │
+│  TestKnowledge per test:                                            │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │ passesAlone: true/false/null                                  │  │
+│  │ confirmedPolluters: {X, Y}                                    │  │
+│  │ eliminatedPolluters: {A, B, C}  (proven NOT polluters)        │  │
+│  │ failureCount: 2                                               │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  Global state:                                                      │
+│  ┌─────────────────┐  ┌───────────────┐  ┌───────────────────┐    │
+│  │ confirmed: []   │  │ completedKeys │  │ runsWithoutFind   │    │
+│  └─────────────────┘  └───────────────┘  └───────────────────┘    │
+└─────────────────────────────────┬───────────────────────────────────┘
+                                  │
+                  ┌───────────────┼────────────────┐
+                  ▼                                ▼
+       ┌────────────────────┐          ┌────────────────────────┐
+       │  Priority Queue     │          │ Redundancy Filter:     │
+       │  (TreeSet<Action>)  │          │ skip if target test is │
+       │                     │          │ NOD, or pair is        │
+       │  Sorted by expected │          │ already eliminated     │
+       │  information gain   │          └────────────────────────┘
+       └──────────┬──────────┘
+                  │ poll highest
+                  ▼
+       ┌────────────────────┐     ┌───────────────────────────────┐
+       │   TestRunner        │────▶│ Outcome + compare to baseline │
+       └────────────────────┘     └──────────────┬────────────────┘
+                                                 │
+                            ┌────────────────────┼───────────────────┐
+                            ▼                    ▼                   ▼
+                     New failure          No failure           ddmin result
+                            │                    │                   │
+                            ▼                    ▼                   ▼
+                     Spawn follow-up      Update knowledge     Recurse or
+                     (isolate/ddmin)      (eliminate edges)    confirm
 ```
 
-### Key Advantages Over Sequential Orchestrator
+### Key Design Decisions and Their Rationale
 
-| Aspect | Sequential (Phase C) | Combined Adaptive |
-|--------|---------------------|-------------------|
-| Information sharing | None between algorithms | Continuous — each run informs the next |
-| Time allocation | Fixed proportional splits | Dynamic — more time to productive actions |
-| Redundant work | Possible (same pair tested by multiple algos) | Eliminated via `testedPairs` set |
-| Reaction speed | Must wait for algo to finish | Immediately spawns follow-ups on discovery |
-| Dual-granularity | Two separate passes | Unified — class and method actions in same queue |
-| Exploration/exploitation | Fixed strategy per algo | Adaptive — adjusts based on yield rate |
-| Worst case | Wastes budget on unproductive algo | Always picks highest-value next action |
+| Decision | Rationale |
+|----------|-----------|
+| **Isolate-first protocol** | Prevents cascading false positives from NOD flaky tests. Costs 1 extra run per victim but saves many wasted runs chasing ghosts. |
+| **TreeSet instead of PriorityQueue** | Supports removal and priority adjustment. Java `PriorityQueue` doesn't support efficient `removeIf` or re-prioritization. |
+| **`dedupKey` on Actions** | Generic deduplication — works for pairs, singles, clusters, methods. Avoids separate dedup logic per action type. |
+| **TestKnowledge accumulation** | Eliminates redundant work: once we know test X passes alone, we never re-test that. Once polluter Y is eliminated for victim Z, we skip that pair. |
+| **Proximity as a polluter signal** | State pollution is typically local — if test at position i pollutes, the effect is most likely seen at i+1, not i+100 (state may be cleaned by intervening tests). |
+| **Early termination (10 bugs)** | Diminishing returns: finding the 11th bug adds less value than fixing the first 10. Shift to Phase D (Cleaners). |
+| **PFAST seeded upfront (not contingent)** | BRITTLE bugs are invisible to reverse-order. Waiting for reverse to fail before trying PFAST misses an entire bug category. |
+| **ddmin for predecessor narrowing** | When a test fails after a long sequence, there may be 50+ predecessors. Testing them one-by-one costs 50 runs. ddmin finds the minimal set in ~log₂(50) ≈ 6 runs. |
 
-### Complexity
+### Complexity (Revised)
 
 | Metric | Value |
 |--------|-------|
-| Best case (50 tests, rich data) | 3–8 runs (reverse + confirm suspects) |
-| Typical case (50 tests, 30 edges) | 8–12 runs |
-| Typical case (200 tests, 200 edges) | 12–20 runs |
-| Worst case (no data, no findings) | Budget-limited random exploration |
-| Overhead per action selection | O(log n) (priority queue) — negligible vs test execution |
+| Best case (history + conflict graph, OD exists) | 3–5 runs: reverse finds victim → isolate confirms → pair confirms |
+| Typical (50 tests, 30 edges, 2 OD bugs) | 10–15 runs: reverse + 2 isolations + 2 pair confirms + clusters |
+| Typical (200 tests, 200 edges) | 15–25 runs (includes ddmin chains) |
+| Worst case (200 tests, no dep data, no OD) | 30+ random/PFAST runs until timeout |
+| Overhead per action selection | O(log n) — negligible |
+| Space | O(T²) worst case for knowledge map, typically O(T × avg_candidates) |
+
+**Note**: Run counts are higher than previously claimed because each confirmed bug requires a minimum of 2 verification runs (isolate victim + isolate pair). This is the cost of avoiding false positives — a worthwhile trade-off for production reliability.
 
 ### Default Configuration
 
@@ -1845,13 +2108,14 @@ record CombinedConfig(
     int maxRuns,                 // unlimited (time-bounded)
     int initialRandomSeeds,      // 5 random shuffles seeded
     int maxPfastExclusions,      // 20 (top tests by shared-state count)
-    int clusterSize,             // sqrt(edges)
-    double confirmThreshold,     // 0.7 — min RankFO score to auto-confirm suspect
+    int clusterSize,             // sqrt(edges), min 3
     boolean includeMethodLevel,  // true
-    int parallelExecutors        // 1 (set >1 for PFAST parallelization)
+    int parallelExecutors,       // 1 (set >1 for PFAST parallelization)
+    int maxNodFailures,          // 3 — failures before treating as NOD
+    int earlyTerminationBugs     // 10 — shift to Phase D after this many
 ) {
     static CombinedConfig DEFAULT = new CombinedConfig(
-        1800, Integer.MAX_VALUE, 5, 20, -1, 0.7, true, 1);
+        1800, Integer.MAX_VALUE, 5, 20, -1, true, 1, 3, 10);
 }
 ```
 
@@ -1866,22 +2130,26 @@ mvn test-order:detect-dependencies -Dtestorder.od.algorithm=combined
 
 # Tuning:
 mvn test-order:detect-dependencies \
-    -Dtestorder.od.timeBudget=60 \          # 60 min for large suites
-    -Dtestorder.od.combined.maxPfast=50 \   # more PFAST coverage
-    -Dtestorder.od.combined.parallel=4      # parallel PFAST exclusions
+    -Dtestorder.od.timeBudget=60 \
+    -Dtestorder.od.combined.maxPfast=50 \
+    -Dtestorder.od.combined.parallel=4 \
+    -Dtestorder.od.combined.earlyTermination=20
+
+# For extremely flaky suites (high NOD rate):
+mvn test-order:detect-dependencies \
+    -Dtestorder.od.combined.nodThreshold=2 \    # stricter NOD filtering
+    -Dtestorder.od.combined.requireIsolation=true  # always verify victim alone before confirming
 ```
 
 ### Graceful Degradation
 
-The Combined algorithm adapts to available data:
-
 | Available Data | Behavior |
 |---------------|----------|
-| FULL_MEMBER + history (ideal) | History suspects (high priority) + conflict graph clusters + reverse + method-level |
-| FULL + history | Conflict graph (class-level) + history suspects + reverse |
-| FULL only (no history) | Conflict graph + reverse + random + method-level |
-| No dep map, has history | History suspects + reverse + PFAST + random |
-| Nothing (fresh project) | Reverse + random shuffles only (still finds ~66% of OD per DTDetector) |
+| FULL_MEMBER + history (ideal) | History suspects + conflict graph clusters + reverse + PFAST + method-level. Fastest convergence. |
+| FULL + history | Class-level conflict graph + history suspects + reverse + PFAST. |
+| FULL only (no history) | Conflict graph + reverse + random + PFAST + method-level. Slightly slower (no priors). |
+| No dep map, has history | History suspects + reverse + PFAST + random. No graph-guided exploration. |
+| Nothing (fresh project) | Reverse + random shuffles + PFAST. Still effective per DTDetector (~66% detection in one reverse run). |
 
 ---
 
@@ -2359,10 +2627,10 @@ Recommendation: For OD detection, **recommend FULL_MEMBER mode** in the Maven/Gr
 | 5. Tuscan Systematic | **50** | **200** | ~6.7 hours |
 | 6. History Mining | **0** | **0** | instant |
 | 7. PFAST Single-Exclusion | **50** | **200** | ~6.7 hours (parallelizable to ~1.7h @ 4x) |
-| **8. Combined Adaptive (default)** | **8–12** | **12–20** | **~24–40 min** |
+| **8. Combined Adaptive (default)** | **10–15** | **15–25** | **~30–50 min** |
 | ~~Auto (sequential)~~ | 0+1+7 = ~8 | 0+1+15 = ~16 | ~32 min |
 
-The Combined Adaptive algorithm (8) is the **new default**. It achieves similar or better run counts as the sequential "Auto" strategy but with higher detection rates due to information sharing and dynamic prioritization. The sequential orchestrator remains available for explicit algorithm chaining.
+The Combined Adaptive algorithm (8) is the **new default**. Run counts are slightly higher than the sequential strategy because of the **isolate-first verification protocol** (2 runs per confirmed bug to eliminate NOD false positives), but detection confidence is significantly higher. The sequential orchestrator remains available for explicit algorithm chaining.
 
 ---
 

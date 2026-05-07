@@ -65,7 +65,7 @@ public final class LearnWorkflow {
 		sysProps.put("testorder.instrumentation.mode", ctx.instrumentationMode().toUpperCase());
 		sysProps.put("testorder.state.path", ctx.stateFile().toAbsolutePath().toString());
 
-		List<String> jvmArgs = List.of("-Xshare:off", "--enable-native-access=ALL-UNNAMED");
+		List<String> jvmArgs = List.of("--enable-native-access=ALL-UNNAMED");
 
 		if (effectiveInclude != null) {
 			ctx.log().info("[test-order] Instrumentation packages: " + effectiveInclude);
