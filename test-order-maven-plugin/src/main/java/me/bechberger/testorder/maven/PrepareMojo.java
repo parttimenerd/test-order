@@ -90,6 +90,11 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
+		// POM-packaging modules (reactor parents) have no tests — skip silently
+		if ("pom".equals(project.getPackaging())) {
+			getLog().debug("[test-order] Skipping prepare — POM module.");
+			return;
+		}
 		if (hasCliWorkflowGoal()) {
 			getLog().debug("[test-order] Skipping prepare — CLI test-order workflow already configured Surefire.");
 			return;
@@ -144,8 +149,13 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		if (!Files.exists(idxPath)) {
 			Path depsDirPath = ctx.resolveDepsDir(depsDir);
 			if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
-				getLog().info("[test-order] No index found but .deps files exist — auto-aggregating.");
-				autoAggregate(depsDirPath, idxPath);
+				try {
+					getLog().info("[test-order] No index found but .deps files exist — auto-aggregating.");
+					autoAggregate(depsDirPath, idxPath);
+				} catch (MojoExecutionException e) {
+					getLog().warn("[test-order] Auto-aggregation failed: " + e.getMessage()
+							+ " — will attempt other recovery options.");
+				}
 			}
 		}
 
@@ -250,6 +260,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 	private void switchToLearnMode() throws MojoExecutionException {
 		SurefireHelper.rejectClassLevelParallelForLearn(project, getLog());
+		SurefireHelper.warnForkCountInLearnMode(project, getLog());
+		SurefireHelper.warnReuseForksFalseInLearnMode(project, getLog());
+		SurefireHelper.warnRerunFailingTestsInLearnMode(project, getLog());
+		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
 		String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
 		configureLearnMode(instrumentationMode, effectiveInclude, true);
 		TestOrderState state = loadState();
@@ -279,7 +293,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 		// Warn if topN was explicitly set — it only applies to select/auto-select, not
 		// pure order mode
-		String topNProp = System.getProperty(MavenPluginConfigKeys.SELECT_TOP_N);
+		String topNProp = session != null && session.getUserProperties() != null
+				? session.getUserProperties().getProperty(MavenPluginConfigKeys.SELECT_TOP_N)
+				: null;
 		if (topNProp != null) {
 			getLog().warn(
 					"[test-order] -Dtestorder.select.topN is ignored in 'order' mode (all tests run, just re-ordered). "
@@ -289,6 +305,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
 		SurefireHelper.warnListenerDeactivation(project, getLog());
 		SurefireHelper.warnConflictingOrderers(project, getLog());
+		SurefireHelper.warnConflictingRunOrder(project, getLog());
+		SurefireHelper.warnForkCountInOrderMode(project, getLog());
+		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
 		Plugin surefire = SurefireHelper.findSurefirePlugin(project);
 		if (surefire != null) {
 			SurefireHelper.warnOldSurefireVersion(surefire, getLog());
@@ -298,18 +317,14 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		// entries
 		if (autoCompactEvery > 0) {
 			TestOrderState compactState = loadState();
-			int runsSince = compactState.runsSinceLearn();
-			if (runsSince > 0 && runsSince % autoCompactEvery == 0) {
+			int runsSinceLearn = compactState.runsSinceLearn();
+			if (runsSinceLearn > 0 && runsSinceLearn % autoCompactEvery == 0) {
 				Path depsDirPath = ctx.resolveDepsDir(depsDir);
 				if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
 					getLog().info("[test-order] Auto-compacting index (every " + autoCompactEvery + " runs)");
 					try {
 						IndexCompactionOperation.compact(depsDirPath, resolveIndexPath(),
 								MavenPluginLog.wrap(getLog()));
-						// Increment runsSinceLearn by 1 so subsequent runs don't re-trigger
-						// until autoCompactEvery more runs pass (R7-11)
-						compactState.incrementRunsSinceLearn();
-						compactState.save(ctx.resolveStateFile(stateFile));
 					} catch (IOException e) {
 						getLog().warn("[test-order] Auto-compact failed: " + e.getMessage());
 					}
@@ -411,9 +426,15 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			return false;
 		}
 		return session.getGoals().stream()
-				.anyMatch(goal -> "test-order:select".equals(goal) || "test-order:auto".equals(goal)
-						|| "test-order:learn".equals(goal) || "test-order:run-remaining".equals(goal)
-						|| "test-order:run-tier".equals(goal) || "test-order:tiered-select".equals(goal));
+				.anyMatch(goal -> isGoal(goal, "select") || isGoal(goal, "auto")
+						|| isGoal(goal, "learn") || isGoal(goal, "run-remaining")
+						|| isGoal(goal, "run-tier") || isGoal(goal, "tiered-select"));
+	}
+
+	/** Matches both shorthand (test-order:auto) and fully-qualified (me.bechberger:test-order-maven-plugin:auto) goal forms. */
+	private static boolean isGoal(String cliGoal, String goalName) {
+		return cliGoal.equals("test-order:" + goalName)
+				|| cliGoal.endsWith("test-order-maven-plugin:" + goalName);
 	}
 
 	/**

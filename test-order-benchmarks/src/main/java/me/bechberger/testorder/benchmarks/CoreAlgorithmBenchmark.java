@@ -21,6 +21,7 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
@@ -109,6 +110,17 @@ public class CoreAlgorithmBenchmark {
 			stateFile = tempDir.resolve("state.lz4");
 			depMap.save(indexFile);
 			state.save(stateFile);
+		}
+
+		@TearDown(Level.Trial)
+		public void tearDown() throws IOException {
+			if (tempDir != null) {
+				try (var stream = Files.walk(tempDir)) {
+					stream.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+						try { Files.deleteIfExists(p); } catch (IOException ignored) { }
+					});
+				}
+			}
 		}
 	}
 

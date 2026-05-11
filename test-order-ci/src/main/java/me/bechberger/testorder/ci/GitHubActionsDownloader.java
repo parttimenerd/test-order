@@ -1,6 +1,8 @@
 package me.bechberger.testorder.ci;
 
 import java.io.*;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -60,9 +62,11 @@ public class GitHubActionsDownloader implements DepDownloader {
 
 		try {
 			// Step 1: Get latest workflow run
+			String encodedWorkflow = URLEncoder.encode(config.getWorkflow(), StandardCharsets.UTF_8);
+			String encodedBranch = URLEncoder.encode(config.getBranch(), StandardCharsets.UTF_8);
 			String workflowRunUrl = String.format(
 					"%s/repos/%s/%s/actions/workflows/%s/runs?status=success&branch=%s&per_page=1", GH_API_BASE,
-					config.getOwner(), config.getRepo(), config.getWorkflow(), config.getBranch());
+					config.getOwner(), config.getRepo(), encodedWorkflow, encodedBranch);
 
 			Map<String, Object> runResponse = fetchJson(workflowRunUrl);
 			@SuppressWarnings("unchecked")

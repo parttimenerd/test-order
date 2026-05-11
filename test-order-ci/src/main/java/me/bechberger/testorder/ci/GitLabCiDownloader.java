@@ -69,9 +69,10 @@ public class GitLabCiDownloader implements DepDownloader {
 		logger.info("Downloading from GitLab CI: {}/{}", config.getBaseUrl(), config.getProjectId());
 
 		// Step 1: find the latest successful pipeline on the configured branch
+		String encodedBranch = URLEncoder.encode(config.getBranch(), StandardCharsets.UTF_8);
 		String pipelinesUrl = String.format(
 				"%s/api/v4/projects/%s/pipelines?ref=%s&status=success&order_by=id&sort=desc&per_page=1",
-				config.getBaseUrl(), projectId, config.getBranch());
+				config.getBaseUrl(), projectId, encodedBranch);
 
 		List<Object> pipelines = fetchJsonArray(pipelinesUrl);
 		if (pipelines.isEmpty()) {

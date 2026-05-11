@@ -37,7 +37,8 @@ class HttpErrorHandlingTests {
 	 * checks disabled.
 	 */
 	private HttpDownloader localDownloader(CiConfig.HttpConfig httpConfig, String token) {
-		return new HttpDownloader(httpConfig, token, true);
+		// Use a plain OkHttpClient without the SSRF DNS interceptor for local testing
+		return new HttpDownloader(httpConfig, token, true, null, new okhttp3.OkHttpClient());
 	}
 
 	@Test

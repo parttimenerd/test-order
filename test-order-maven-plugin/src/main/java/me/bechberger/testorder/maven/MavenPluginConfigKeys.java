@@ -75,6 +75,16 @@ final class MavenPluginConfigKeys {
 	static final String DASHBOARD_REGENERATE = "testorder.dashboard.regenerate";
 	static final String DASHBOARD_SERVE_SECONDS = "testorder.dashboard.serveSeconds";
 
+	/** Alias for {@link #DASHBOARD_PORT} — users often try {@code testorder.serve.port}. */
+	static final String SERVE_PORT_ALIAS = "testorder.serve.port";
+
+	// Detect-dependencies goal keys
+	static final String DETECT_ALGORITHM = "testorder.detect.algorithm";
+	static final String DETECT_TIME_BUDGET = "testorder.detect.timeBudget";
+	static final String DETECT_STOP_ON_FIRST = "testorder.detect.stopOnFirst";
+	static final String DETECT_SEED = "testorder.detect.seed";
+	static final String DETECT_FAIL_ON_DETECTION = "testorder.detect.failOnDetection";
+
 	// Legacy aliases kept for backward compatibility in Maven user properties
 	static final String LEGACY_INDEX = "testorder.index";
 	static final String LEGACY_STATE_FILE = "testorder.stateFile";
@@ -97,13 +107,14 @@ final class MavenPluginConfigKeys {
 			AUTO_LEARN_RUN_THRESHOLD, AUTO_LEARN_DIFF_THRESHOLD, DUMP_OUTPUT, EXPORT_JSON_OUTPUT, SHOW_ORDER_EXPLAIN,
 			SHOW_METHOD_ORDER_EXPLAIN, SHOW_ORDER_FULL_NAMES, DASHBOARD_OUTPUT, DASHBOARD_COVERAGE_DIR, DASHBOARD_OPEN,
 			DASHBOARD_SEPARATE_ASSETS, DASHBOARD_PORT, DASHBOARD_REGENERATE, DASHBOARD_SERVE_SECONDS,
+			DETECT_ALGORITHM, DETECT_TIME_BUDGET, DETECT_STOP_ON_FIRST, DETECT_SEED, DETECT_FAIL_ON_DETECTION,
 			TIERED_TIER2_FRACTION, TIERED_WEIGHT_BY_DURATION, TIERED_TIER1_FILE, TIERED_TIER2_FILE, TIERED_TIER3_FILE,
 			TIERED_CURRENT_TIER, LEGACY_INDEX, LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE,
 			LEGACY_TEST_HASH_FILE, LEGACY_METHOD_HASH_FILE, LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT,
 			LEGACY_VERBOSE_FILE, LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip",
 			"testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file", "testorder.methodOrder",
 			"testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold", "testorder.auto.active",
-			"testorder.remaining.file", "testorder.metrics.output");
+			"testorder.remaining.file", "testorder.metrics.output", SERVE_PORT_ALIAS);
 
 	/**
 	 * Find the closest known key to the given unknown key. Delegates to

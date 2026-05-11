@@ -48,12 +48,28 @@ final class FailureHistoryTracker {
 		return !pendingFailureScores.isEmpty() || !pendingMethodFailureScores.isEmpty();
 	}
 
+	/** Returns all class names known to the failure history (loaded + pending). */
+	Set<String> knownClasses() {
+		Set<String> classes = new java.util.HashSet<>(failureScores.keySet());
+		classes.addAll(pendingFailureScores.keySet());
+		return classes;
+	}
+
 	void pruneToActiveClasses(Set<String> activeClasses) {
-		failureScores.keySet().retainAll(activeClasses);
+		failureScores.keySet().removeIf(key -> !isActive(key, activeClasses));
 		methodFailureScores.keySet().removeIf(k -> {
 			int hash = k.indexOf('#');
-			return hash > 0 && !activeClasses.contains(k.substring(0, hash));
+			return hash > 0 && !isActive(k.substring(0, hash), activeClasses);
 		});
+	}
+
+	/** Returns true if the class is active, or its top-level enclosing class is. */
+	private static boolean isActive(String className, Set<String> activeClasses) {
+		if (activeClasses.contains(className)) {
+			return true;
+		}
+		int dollar = className.indexOf('$');
+		return dollar > 0 && activeClasses.contains(className.substring(0, dollar));
 	}
 
 	PersistedScores mergeForSave(boolean hasRunData, double failureDecay, double methodFailureDecay,

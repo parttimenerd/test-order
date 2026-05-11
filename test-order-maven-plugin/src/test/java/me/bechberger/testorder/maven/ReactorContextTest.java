@@ -239,6 +239,50 @@ class ReactorContextTest {
 		assertThat(Files.exists(tempDir.resolve("my-app/.test-order/deps"))).isFalse();
 	}
 
+	// --- Inferred multi-module tests (-pl without -am) ---
+
+	@Test
+	void inferredMultiModule_detectsSubmoduleFromExistingSharedDir() throws IOException {
+		// Simulate: `mvn test-order:dashboard -pl module-a` (without -am)
+		// The reactor only has 1 project, but the execution root has .test-order/
+		Path rootDir = tempDir.resolve("root");
+		Path sharedDir = rootDir.resolve(".test-order");
+		Files.createDirectories(sharedDir);
+
+		MavenProject moduleA = mockProject("module-a", rootDir.resolve("module-a"));
+		when(session.getProjects()).thenReturn(List.of(moduleA));
+		when(session.getTopLevelProject()).thenReturn(moduleA);
+
+		// Mock getRequest().getMultiModuleProjectDirectory() → rootDir
+		var request = mock(org.apache.maven.execution.MavenExecutionRequest.class);
+		when(session.getRequest()).thenReturn(request);
+		when(request.getMultiModuleProjectDirectory()).thenReturn(rootDir.toFile());
+
+		ReactorContext ctx = new ReactorContext(session, moduleA);
+		assertThat(ctx.isMultiModule()).isTrue();
+		assertThat(ctx.resolveStateFile(null)).isEqualTo(sharedDir.resolve("state.lz4"));
+		assertThat(ctx.resolveIndexFile(null)).isEqualTo(sharedDir.resolve("test-dependencies.lz4"));
+	}
+
+	@Test
+	void inferredMultiModule_fallsBackToSingleWhenNoSharedDir() {
+		// Same as above but .test-order/ does NOT exist at the root
+		Path rootDir = tempDir.resolve("root2");
+		MavenProject moduleA = mockProject("module-a", rootDir.resolve("module-a"));
+		when(session.getProjects()).thenReturn(List.of(moduleA));
+		when(session.getTopLevelProject()).thenReturn(moduleA);
+
+		var request = mock(org.apache.maven.execution.MavenExecutionRequest.class);
+		when(session.getRequest()).thenReturn(request);
+		when(request.getMultiModuleProjectDirectory()).thenReturn(rootDir.toFile());
+
+		ReactorContext ctx = new ReactorContext(session, moduleA);
+		assertThat(ctx.isMultiModule()).isFalse();
+		// Falls back to module-local paths
+		assertThat(ctx.resolveStateFile(null))
+				.isEqualTo(rootDir.resolve("module-a/.test-order/state.lz4"));
+	}
+
 	// --- helper ---
 
 	private MavenProject mockProject(String artifactId, Path basedir) {

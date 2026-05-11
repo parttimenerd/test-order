@@ -19,12 +19,10 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.logging.Logger;
 
 /** Shared helpers for atomic writes and temp-file recovery. */
 public final class PersistenceSupport {
 
-	private static final Logger LOG = Logger.getLogger(PersistenceSupport.class.getName());
 	private static final String TEMP_SUFFIX = ".tmp";
 	private static final String LOCK_SUFFIX = ".lock";
 	private static final ConcurrentMap<Path, Object> JVM_LOCKS = new ConcurrentHashMap<>();
@@ -134,6 +132,9 @@ public final class PersistenceSupport {
 		}
 	}
 
+	private static final java.util.logging.Logger LOGGER = java.util.logging.Logger
+			.getLogger(PersistenceSupport.class.getName());
+
 	/**
 	 * Removes a stale lock file left by a crashed JVM if it is older than the
 	 * threshold.
@@ -146,8 +147,8 @@ public final class PersistenceSupport {
 					LinkOption.NOFOLLOW_LINKS);
 			Instant lastModified = attrs.lastModifiedTime().toInstant();
 			if (Duration.between(lastModified, Instant.now()).compareTo(STALE_LOCK_THRESHOLD) > 0) {
-				LOG.warning("[test-order] Deleting stale lock file (older than " + STALE_LOCK_THRESHOLD.toMinutes()
-						+ " minutes): " + lockFile);
+				LOGGER.warning("[test-order] Deleting stale lock file (older than "
+						+ STALE_LOCK_THRESHOLD.toMinutes() + " minutes): " + lockFile);
 				Files.deleteIfExists(lockFile);
 			}
 		} catch (IOException e) {
@@ -182,7 +183,7 @@ public final class PersistenceSupport {
 				try {
 					Instant modified = Files.getLastModifiedTime(tmp, LinkOption.NOFOLLOW_LINKS).toInstant();
 					if (modified.isBefore(cutoff)) {
-						LOG.info("Cleaning up stale temp file: " + tmp);
+						LOGGER.info("[test-order] Cleaning up stale temp file: " + tmp);
 						Files.deleteIfExists(tmp);
 					}
 				} catch (IOException e) {

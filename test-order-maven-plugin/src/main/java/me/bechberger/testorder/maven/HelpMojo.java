@@ -50,6 +50,7 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  diagnose         Run diagnostic checks on plugin configuration and state\n");
 		sb.append("  compact          Rebuild dependency index from .deps files (remove stale entries)\n");
 		sb.append("  clean            Remove all test-order state, indexes, and hashes\n");
+		sb.append("  detect-dependencies  Detect order-dependent tests via reordering strategies\n");
 		sb.append("  download         Download dependency index from CI artifact store\n");
 		sb.append("  coverage         Analyse dependency index and identify least-tested classes\n");
 		sb.append("  metrics          Export test-order metrics as JSON for CI/CD dashboards\n");
@@ -77,15 +78,36 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  -Dtestorder.skip=true             Skip the plugin entirely\n");
 		sb.append("  -Dtestorder.debug=true            Verbose scoring output\n");
 		sb.append("  -Dtestorder.failOnError=true      Fail build on diagnostic errors\n");
+		sb.append("\nDetection properties (detect-dependencies goal):\n");
+		sb.append("  -Dtestorder.detect.algorithm=<a>    combined (default), reverse, random, history,\n");
+		sb.append("                                      pfast, iterative, bounded, tuscan\n");
+		sb.append("  -Dtestorder.detect.timeBudget=<s>   Time budget in seconds (default: 300, 0=unlimited)\n");
+		sb.append("  -Dtestorder.detect.stopOnFirst=<b>  Stop after first finding (default: false)\n");
+		sb.append("  -Dtestorder.detect.seed=<n>         Random seed for reproducibility (default: 42)\n");
+		sb.append("  -Dtestorder.detect.failOnDetection=<b>  Fail build if ODs found (default: false)\n");
 		sb.append("\nScore tuning (integer weights, override via -D):\n");
 		for (WeightDef wd : TestOrderState.WEIGHT_DEFS) {
 			String desc = SCORE_DESCRIPTIONS.getOrDefault(wd.name(), "Scoring weight");
 			String prop = "testorder.score." + wd.name();
 			sb.append(String.format("  %-38s %s (default: %d)\n", prop, desc, wd.defaultValue()));
 		}
-		sb.append("\nInvocation fallback:\n");
-		sb.append("  If Maven cannot resolve the 'test-order' prefix in this project, use:\n");
-		sb.append("  mvn me.bechberger:test-order-maven-plugin:<version>:auto test\n");
+		sb.append("\nPlugin prefix resolution (#1):\n");
+		sb.append("  If Maven cannot resolve the 'test-order' prefix, either:\n");
+		sb.append("  a) Add to ~/.m2/settings.xml:\n");
+		sb.append("       <pluginGroups><pluginGroup>me.bechberger</pluginGroup></pluginGroups>\n");
+		sb.append("  b) Or use fully-qualified invocation:\n");
+		sb.append("       mvn me.bechberger:test-order-maven-plugin:<version>:<goal> test\n");
+		sb.append("  c) Or declare the plugin in <build><plugins> section of your POM.\n");
+		sb.append("\nAlgorithm recommendation (#25):\n");
+		sb.append("  combined (default) — Best general-purpose: tries reverse, random, and history\n");
+		sb.append("                       strategies adaptively. Use this unless you have a reason not to.\n");
+		sb.append("  reverse            — Cheapest (1 run). Good for quick smoke-checks.\n");
+		sb.append("  random             — Random permutations. Good with generous time budgets.\n");
+		sb.append("  history            — Uses prior run data to target suspicious tests.\n");
+		sb.append("  pfast              — Probabilistic approach (Pradet-style). Good for large suites.\n");
+		sb.append("  iterative          — Exhaustive pairwise iteration. Thorough but slow.\n");
+		sb.append("  bounded            — Random with bounded number of runs.\n");
+		sb.append("  tuscan             — Covering-array based. Good for systematic coverage.\n");
 		sb.append("\nProperty precedence:\n");
 		sb.append("  CLI system properties (-D) always override POM <configuration> values.\n");
 		sb.append("  Example: -Dtestorder.mode=learn overrides <mode>order</mode> in your POM.\n");
@@ -100,6 +122,7 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  Dashboard:   mvn test-order:dashboard          (generate HTML report)\n");
 		sb.append("  View order:  mvn test-order:show-order         (print priority table)\n");
 		sb.append("  Diagnose:    mvn test-order:diagnose           (check setup health)\n");
+		sb.append("  Detect OD:  mvn test-order:detect-dependencies  (find order-dependent tests)\n");
 		sb.append("  Coverage:    mvn test-order:coverage           (writes to target/coverage-reports/)\n");
 		sb.append("  Metrics:     mvn test-order:metrics            (writes to target/test-order-metrics.json)\n");
 

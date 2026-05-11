@@ -427,7 +427,8 @@ class BugVerificationIT {
 		project.deleteIfExists(".test-order/state.lz4");
 
 		MavenResult result = project.maven().run("clean", "test-order:auto", "test", "-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0");
+				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0",
+				"-Dtestorder.auto.runRemaining=false");
 		assertThat(result).succeeded();
 
 		// Remaining file should exist with 2 deferred test classes

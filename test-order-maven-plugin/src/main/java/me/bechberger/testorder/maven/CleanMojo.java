@@ -27,6 +27,10 @@ public class CleanMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
+		if ("pom".equals(project.getPackaging())) {
+			getLog().debug("[test-order] Skipping clean — POM module.");
+			return;
+		}
 
 		Path stateFilePath = ctx.resolveStateFile(stateFile);
 		List<Path> files = List.of(ctx.resolveIndexFile(indexFile), stateFilePath,

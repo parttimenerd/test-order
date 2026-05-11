@@ -1,6 +1,7 @@
 package me.bechberger.testorder.maven;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.apache.maven.plugin.MojoExecutionException;
@@ -32,7 +33,9 @@ public class MetricsMojo extends AbstractTestOrderMojo {
 
 		Path idxPath = resolveIndexPath();
 		Path statePath = ctx.resolveStateFile(stateFile);
-		Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
+		// For aggregator mojos, the POM parent's testOutputDirectory is empty.
+		// Find the first real test-classes directory from reactor child modules.
+		Path testClassesDir = resolveTestClassesDir();
 
 		TestMetricsExport metrics = MetricsWorkflow.generate(project.getArtifactId(), idxPath, statePath,
 				testClassesDir, buildPluginContext(), "Run mvn test -Dtestorder.mode=learn",
@@ -44,5 +47,31 @@ public class MetricsMojo extends AbstractTestOrderMojo {
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to write metrics: " + e.getMessage(), e);
 		}
+	}
+
+	/**
+	 * Resolves the test-classes directory: prefers child modules' real directories
+	 * over the POM parent's empty testOutputDirectory.
+	 */
+	private Path resolveTestClassesDir() {
+		Path own = Path.of(project.getBuild().getTestOutputDirectory());
+		if (Files.isDirectory(own)) {
+			return own;
+		}
+		if (session != null && session.getProjects() != null) {
+			for (org.apache.maven.project.MavenProject p : session.getProjects()) {
+				if ("pom".equals(p.getPackaging())) {
+					continue;
+				}
+				String dir = p.getBuild().getTestOutputDirectory();
+				if (dir != null) {
+					Path candidate = Path.of(dir);
+					if (Files.isDirectory(candidate)) {
+						return candidate;
+					}
+				}
+			}
+		}
+		return null;
 	}
 }

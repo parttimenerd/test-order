@@ -98,6 +98,12 @@ public final class ShowOrderWorkflow {
 
 		Set<String> alwaysRun = ctx.testClassesDir() != null ? AlwaysRunScanner.scan(ctx.testClassesDir()) : Set.of();
 
+		// Warn about non-deterministic selection (same checks as SelectOperation)
+		if (ctx.randomM() > 0 && ctx.seed() == null) {
+			ctx.log().warn("[test-order] Selection preview is non-deterministic (no seed set). "
+					+ "Set testorder.select.seed for reproducible results.");
+		}
+
 		TestSelector.Selection selection = new TestSelector(result.depMap(), result.state(), result.changedClasses(),
 				result.changedTests(), result.weights(), new TestSelector.Config(ctx.topN(), ctx.randomM(), ctx.seed()),
 				alwaysRun, result.changeComplexity()).select();

@@ -22,6 +22,10 @@ public class SnapshotMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
+		if ("pom".equals(project.getPackaging())) {
+			getLog().debug("[test-order] Skipping snapshot — POM module.");
+			return;
+		}
 		snapshot(resolveSourceRoot(), ctx.resolveHashFile(hashFile));
 		snapshot(resolveTestSourceRoot(), ctx.resolveTestHashFile(testHashFile));
 

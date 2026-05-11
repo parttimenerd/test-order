@@ -26,7 +26,7 @@ import me.bechberger.testorder.ops.DashboardServerOperation;
  * <p>
  * Custom port: {@code mvn test-order:serve -Dtestorder.dashboard.port=8080}
  */
-@Mojo(name = "serve", requiresProject = true)
+@Mojo(name = "serve", requiresProject = true, aggregator = true)
 public class ServeDashboardMojo extends DashboardMojo {
 
 	/**
@@ -60,6 +60,20 @@ public class ServeDashboardMojo extends DashboardMojo {
 		initContext();
 		if (skip)
 			return;
+		// Support testorder.serve.port alias for testorder.dashboard.port (R13-4)
+		if (port == 0 && session != null && session.getUserProperties() != null) {
+			String servePort = session.getUserProperties().getProperty(MavenPluginConfigKeys.SERVE_PORT_ALIAS);
+			if (servePort != null && !servePort.isBlank()) {
+				try {
+					port = Integer.parseInt(servePort.trim());
+					getLog().info("[test-order] Using " + MavenPluginConfigKeys.SERVE_PORT_ALIAS + "=" + port
+							+ " (alias for " + MavenPluginConfigKeys.DASHBOARD_PORT + ")");
+				} catch (NumberFormatException e) {
+					throw new MojoExecutionException("[test-order] Invalid " + MavenPluginConfigKeys.SERVE_PORT_ALIAS
+							+ " value '" + servePort + "' — must be a number");
+				}
+			}
+		}
 		if (serveSeconds < 0) {
 			throw new MojoExecutionException(
 					"[test-order] " + MavenPluginConfigKeys.DASHBOARD_SERVE_SECONDS + " must be >= 0");

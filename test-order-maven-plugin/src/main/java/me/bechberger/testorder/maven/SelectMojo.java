@@ -129,6 +129,7 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		}
 
 		// configure Surefire to run only selected tests
+		SurefireHelper.warnSelectModeFilters(project, getLog());
 		if (!selection.selected().isEmpty()) {
 			SurefireHelper.configureIncludes(project, selection.selected(), true);
 		} else {

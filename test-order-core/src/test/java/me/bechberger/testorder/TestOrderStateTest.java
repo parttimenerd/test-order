@@ -1068,4 +1068,33 @@ class TestOrderStateTest {
 		TestOrderState.TestOutcome outcome = StateRecordCodec.compactToOutcome(malformed, LOG);
 		assertNull(outcome, "Should return null for malformed compact entry, not throw");
 	}
+
+	// ── Bug: loadResourceConfig null InputStream gives clear error ──
+
+	@Test
+	void defaultScoringWeightsResourceExists() {
+		// Verify the bundled resource actually exists — if this fails, BUG 1
+		// (NPE in loadResourceConfig) would hit users at static init time.
+		var is = TestOrderState.class.getResourceAsStream("/default-scoring-weights.toml");
+		assertNotNull(is, "default-scoring-weights.toml must be bundled in test-order-core resources");
+		try {
+			is.close();
+		} catch (IOException ignored) {
+		}
+	}
+
+	// ── Bug: readConfigInt/readConfigDouble NPE with missing key ──
+
+	@Test
+	void staticDefaultsAreNotZero() {
+		// readConfigInt/readConfigDouble used to NPE on missing keys during static
+		// init. If they silently returned 0 that would also be wrong. Verify the
+		// defaults loaded successfully.
+		assertTrue(TestOrderState.DEFAULT_HISTORY_MAX_RUNS > 0,
+				"DEFAULT_HISTORY_MAX_RUNS should be positive from TOML config");
+		assertTrue(TestOrderState.DEFAULT_DURATION_ALPHA > 0,
+				"DEFAULT_DURATION_ALPHA should be positive from TOML config");
+		assertTrue(TestOrderState.DEFAULT_FAILURE_DECAY > 0,
+				"DEFAULT_FAILURE_DECAY should be positive from TOML config");
+	}
 }

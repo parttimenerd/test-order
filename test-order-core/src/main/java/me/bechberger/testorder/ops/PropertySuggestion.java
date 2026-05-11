@@ -32,7 +32,7 @@ public final class PropertySuggestion {
 			"testorder.score.staticFieldBonus", "testorder.score.coverageBonus",
 			"testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold", "testorder.dump.output",
 			"testorder.exportJson.output", "testorder.dashboard.output", "testorder.dashboard.open",
-			"testorder.dashboard.port", "testorder.dashboard.serveSeconds", "testorder.dashboard.regenerate",
+			"testorder.dashboard.port", "testorder.serve.port", "testorder.dashboard.serveSeconds", "testorder.dashboard.regenerate",
 			"testorder.dashboard.separateAssets", "testorder.metrics.output", "testorder.history.maxRuns",
 			"testorder.remaining.file", "testorder.failOnError", "testorder.coverage.threshold",
 			"testorder.coverage.outputDir", "testorder.coverage.failOnViolation", "coverage.threshold",
@@ -50,6 +50,14 @@ public final class PropertySuggestion {
 		// Common alias typo: testorder.changed.tests
 		if ("testorder.changed.tests".equals(unknownLower)) {
 			return "testorder.changed.test.classes";
+		}
+
+		// Common alias: testorder.serve.* → testorder.dashboard.*
+		if ("testorder.serve.port".equals(unknownLower)) {
+			return "testorder.dashboard.port";
+		}
+		if ("testorder.serve.serveseconds".equals(unknownLower)) {
+			return "testorder.dashboard.serveSeconds";
 		}
 
 		// Zero-distance pass: case-only mismatch

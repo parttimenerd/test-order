@@ -24,6 +24,11 @@ final class MavenPluginLog {
 			}
 
 			@Override
+			public void error(String message) {
+				log.error(message);
+			}
+
+			@Override
 			public void debug(String message) {
 				log.debug(message);
 			}

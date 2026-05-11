@@ -146,6 +146,11 @@ public class TestNGPriorityInterceptor implements IMethodInterceptor {
 	/**
 	 * Reorders methods within a single class group using
 	 * {@link MethodOrderingEngine}.
+	 * <p>
+	 * Preserves {@code @Test(dependsOnMethods=...)} and
+	 * {@code @Test(dependsOnGroups=...)} constraints: if the reordered list
+	 * would place a method before one of its dependencies, the dependent method
+	 * is moved after all of its dependencies.
 	 */
 	private List<IMethodInstance> reorderMethods(List<IMethodInstance> classMethods, String className,
 			TestOrderState state, DependencyMap depMap, Set<String> changedClasses, Set<String> changedMethods) {
@@ -164,18 +169,105 @@ public class TestNGPriorityInterceptor implements IMethodInterceptor {
 			dataProviderGroups.computeIfAbsent(key, k -> new ArrayList<>()).add(mi);
 		}
 
+		// Collect TestNG dependency constraints (dependsOnMethods/dependsOnGroups)
+		// Map: methodName → set of method names it depends on
+		Map<String, Set<String>> methodDeps = new HashMap<>();
+		// Map: groupName → set of method names in that group
+		Map<String, Set<String>> groupMembers = new HashMap<>();
+		for (IMethodInstance mi : classMethods) {
+			String methodName = mi.getMethod().getMethodName();
+			String[] groups = mi.getMethod().getGroups();
+			if (groups != null) {
+				for (String g : groups) {
+					groupMembers.computeIfAbsent(g, k -> new HashSet<>()).add(methodName);
+				}
+			}
+		}
+		for (IMethodInstance mi : classMethods) {
+			String methodName = mi.getMethod().getMethodName();
+			String[] depMethods = mi.getMethod().getMethodsDependedUpon();
+			String[] depGroups = mi.getMethod().getGroupsDependedUpon();
+			Set<String> deps = new HashSet<>();
+			if (depMethods != null) {
+				for (String dm : depMethods) {
+					// TestNG returns FQN "pkg.Class.method" — extract simple method name
+					int dot = dm.lastIndexOf('.');
+					deps.add(dot >= 0 ? dm.substring(dot + 1) : dm);
+				}
+			}
+			if (depGroups != null) {
+				for (String dg : depGroups) {
+					Set<String> members = groupMembers.get(dg);
+					if (members != null) {
+						deps.addAll(members);
+					}
+				}
+			}
+			deps.remove(methodName); // remove self
+			if (!deps.isEmpty()) {
+				methodDeps.put(methodName, deps);
+			}
+		}
+
 		MethodOrderingEngine.ClassMethodOrder order = MethodOrderingEngine.orderMethods(className, uniqueMethodNames,
 				state, depMap, changedClasses, changedMethods, weights);
 
+		// Build scored method list, then enforce dependency constraints
+		List<String> scoredNames = new ArrayList<>();
+		for (MethodOrderingEngine.OrderedMethod om : order.methods()) {
+			scoredNames.add(om.methodName());
+		}
+		if (!methodDeps.isEmpty()) {
+			enforceDependencyOrder(scoredNames, methodDeps);
+		}
+
 		// Build reordered list, expanding DataProvider groups
 		List<IMethodInstance> reordered = new ArrayList<>(classMethods.size());
-		for (MethodOrderingEngine.OrderedMethod om : order.methods()) {
-			String key = om.className() + "#" + om.methodName();
+		for (String methodName : scoredNames) {
+			String key = className + "#" + methodName;
 			List<IMethodInstance> group = dataProviderGroups.get(key);
 			if (group != null) {
 				reordered.addAll(group);
 			}
 		}
 		return reordered;
+	}
+
+	/**
+	 * Enforces dependency ordering: if method B depends on method A, ensure A
+	 * appears before B in the list. Modifies {@code order} in-place.
+	 */
+	private static void enforceDependencyOrder(List<String> order, Map<String, Set<String>> methodDeps) {
+		// Simple iterative fixup: scan left-to-right, if a method appears before
+		// one of its dependencies, move it after the latest dependency.
+		// Repeat until stable (max N passes for N methods).
+		boolean changed = true;
+		int maxPasses = order.size();
+		while (changed && maxPasses-- > 0) {
+			changed = false;
+			Map<String, Integer> posMap = new HashMap<>();
+			for (int i = 0; i < order.size(); i++) {
+				posMap.put(order.get(i), i);
+			}
+			for (int i = 0; i < order.size(); i++) {
+				String method = order.get(i);
+				Set<String> deps = methodDeps.get(method);
+				if (deps == null) continue;
+				int latestDepPos = -1;
+				for (String dep : deps) {
+					Integer depPos = posMap.get(dep);
+					if (depPos != null && depPos > i) {
+						latestDepPos = Math.max(latestDepPos, depPos);
+					}
+				}
+				if (latestDepPos > i) {
+					// Move method to just after its latest dependency
+					order.remove(i);
+					order.add(latestDepPos, method);
+					changed = true;
+					break; // restart scan
+				}
+			}
+		}
 	}
 }

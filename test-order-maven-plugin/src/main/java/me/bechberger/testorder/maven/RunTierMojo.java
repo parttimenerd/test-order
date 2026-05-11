@@ -52,6 +52,10 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 			getLog().info("[test-order] Skipping — testorder.skip=true");
 			return;
 		}
+		if ("pom".equals(project.getPackaging())) {
+			getLog().debug("[test-order] Skipping run-tier — POM module.");
+			return;
+		}
 		if (skipIfNotExplicitlySelectedReactorProject("run-tier")) {
 			return;
 		}
@@ -131,6 +135,7 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 			}
 		}
 
+		SurefireHelper.warnSelectModeFilters(project, getLog());
 		SurefireHelper.configureIncludes(project, tests, true);
 	}
 }

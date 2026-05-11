@@ -27,26 +27,13 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 		if (skip)
 			return;
 
-		// In a multi-module reactor, iterate over all projects' state files
-		java.util.List<Path> statePaths = new java.util.ArrayList<>();
-		if (session != null && session.getProjects() != null && session.getProjects().size() > 1) {
-			for (org.apache.maven.project.MavenProject p : session.getProjects()) {
-				Path candidate = p.getBasedir().toPath().resolve(".test-order/state.lz4");
-				if (Files.exists(candidate)) {
-					statePaths.add(candidate);
-				}
-			}
-		}
-		// Always include the directly-resolved state path
+		// Use the shared state file at the reactor root (not per-module paths).
 		Path primaryState = ctx.resolveStateFile(stateFile);
-		if (Files.exists(primaryState) && !statePaths.contains(primaryState)) {
-			statePaths.add(0, primaryState);
+		if (!Files.exists(primaryState)) {
+			throw new MojoExecutionException("No state file found at " + primaryState
+					+ ". Run some test-order test runs first.");
 		}
-
-		if (statePaths.isEmpty()) {
-			throw new MojoExecutionException("No state file found (checked " + primaryState
-					+ " and reactor submodules)." + " Run some test-order test runs first.");
-		}
+		java.util.List<Path> statePaths = java.util.List.of(primaryState);
 
 		int optimized = 0;
 		for (Path statePath : statePaths) {
@@ -59,7 +46,6 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 							+ " — insufficient failure history for meaningful optimization (need >= 3 failure runs).");
 				} else if (result.overfit()) {
 					getLog().warn("[test-order] Overfitting detected for " + statePath + " — default weights used.");
-					optimized++;
 				} else {
 					getLog().info("[test-order] Weights optimised successfully.");
 					optimized++;

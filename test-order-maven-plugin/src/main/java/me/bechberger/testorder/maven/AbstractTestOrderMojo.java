@@ -369,7 +369,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			return false;
 		}
 		for (String goal : session.getGoals()) {
-			if (goal.contains("test-order:")) {
+			if (goal.contains("test-order:") || goal.contains("test-order-maven-plugin:")) {
 				return true;
 			}
 		}
@@ -735,7 +735,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			getLog().info("[test-order] Auto-aggregated " + map.size() + " test classes → " + idxPath);
 			warnIfNoDeps(map);
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to auto-aggregate deps", e);
+			throw new MojoExecutionException("Failed to auto-aggregate deps"
+					+ "\n  For more details: mvn test-order:diagnose", e);
 		}
 	}
 
@@ -787,6 +788,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		Path depsDirPath = ctx.resolveDepsDir(depsDir);
 		if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
 			autoAggregate(depsDirPath, idxPath);
+			if (!Files.exists(idxPath)) {
+				throw new MojoExecutionException(
+						"Dependency .deps files exist in " + depsDirPath
+								+ " but contain no test dependencies — the index could not be created. "
+								+ "Check your instrumentation filter: -D"
+								+ MavenPluginConfigKeys.INCLUDE_PACKAGES + "=<package>"
+								+ "\n  For more details: mvn test-order:diagnose");
+			}
 		} else {
 			throw new MojoExecutionException("No dependency index at " + idxPath + " and no .deps files found in "
 					+ depsDirPath + ". Run learn mode first: mvn test -Dtestorder.mode=learn"
@@ -1061,12 +1070,19 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			boolean isFailsafe = "maven-failsafe-plugin".equals(surefire.getArtifactId());
 			String argLineProperty = detectArgLinePropertyName(surefireArgLine, isFailsafe);
 			String mergedProjectArgLine = (projectArgLine + " " + agentString + sysProps).trim();
-			String mergedSurefireArgLine = (surefireArgLine + " @{" + argLineProperty + "}").trim();
 			project.getProperties().setProperty(argLineProperty, mergedProjectArgLine);
 			if (session != null && session.getUserProperties() != null) {
 				session.getUserProperties().setProperty(argLineProperty, mergedProjectArgLine);
 			}
-			SurefireHelper.setChild(config, "argLine", mergedSurefireArgLine);
+			// Only append the @{property} placeholder if the Surefire argLine doesn't
+			// already reference it — avoids double-expansion when users have
+			// <argLine>@{argLine} ...</argLine> (e.g. for JaCoCo compatibility)
+			String placeholder = "@{" + argLineProperty + "}";
+			String dollarPlaceholder = "${" + argLineProperty + "}";
+			if (!surefireArgLine.contains(placeholder) && !surefireArgLine.contains(dollarPlaceholder)) {
+				String mergedSurefireArgLine = (surefireArgLine + " " + placeholder).trim();
+				SurefireHelper.setChild(config, "argLine", mergedSurefireArgLine);
+			}
 			if (isFailsafe && !"argLine".equals(argLineProperty)) {
 				getLog().info("[test-order] Failsafe detected with custom argLine property '" + argLineProperty
 						+ "'. Injecting agent via that property.");
@@ -1095,11 +1111,24 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			// Check for ${propertyName} or @{propertyName} patterns
 			java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[$@]\\{([^}]+)}")
 					.matcher(surefireArgLine);
+			boolean hasArgLine = false;
+			String customProp = null;
 			while (matcher.find()) {
 				String prop = matcher.group(1);
-				if (!prop.equals("argLine") && !prop.contains(":")) {
-					return prop;
+				if (prop.contains(":")) continue;
+				if (prop.equals("argLine")) {
+					hasArgLine = true;
+				} else if (customProp == null) {
+					customProp = prop;
 				}
+			}
+			// If both argLine and a custom prop appear (e.g. "${jacoco.argLine} @{argLine}"),
+			// prefer argLine to avoid overwriting the custom property set by other plugins
+			if (hasArgLine) {
+				return "argLine";
+			}
+			if (customProp != null) {
+				return customProp;
 			}
 		}
 		return "argLine";
@@ -1148,6 +1177,15 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				if (!trimmed.isEmpty()) {
 					entries.add(trimmed);
 				}
+			}
+		}
+		// Preserve any <additionalClasspathElements> from Surefire/Failsafe XML
+		// config. Setting the maven.test.additionalClasspath property overrides
+		// the XML value, so we must merge them to avoid breaking projects that
+		// rely on XML-configured classpath entries (e.g., multi-release JARs).
+		if (entries.isEmpty()) {
+			for (String xmlEntry : SurefireHelper.extractAdditionalClasspathElements(project)) {
+				entries.add(xmlEntry);
 			}
 		}
 		for (Path jar : jars) {
@@ -1286,8 +1324,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		try {
 			Files.createDirectories(serviceDir);
 			String listenerFqcn = "me.bechberger.testorder.junit.TelemetryListener";
-			// Use a single atomic read-check-write to avoid TOCTOU races in
-			// parallel reactor builds (CWE-367)
+			// Read-check-write: not fully atomic under parallel reactor builds,
+			// but duplicate SPI entries are harmless (ServiceLoader deduplicates)
 			String existing = "";
 			try {
 				existing = Files.readString(serviceFile);
@@ -1497,7 +1535,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					try {
 						return Files.getLastModifiedTime(a).compareTo(Files.getLastModifiedTime(b));
 					} catch (IOException e) {
-						return 0;
+						getLog().debug("[test-order] Could not compare modification times: " + e.getMessage());
+						// Prefer whichever file we can actually read
+						boolean aReadable = Files.isReadable(a);
+						boolean bReadable = Files.isReadable(b);
+						return Boolean.compare(aReadable, bReadable);
 					}
 				}).orElse(null);
 				if (newest != null) {

@@ -12,6 +12,11 @@ public interface PluginLog {
 
 	void debug(String message);
 
+	/** Log an error-level message. Defaults to warn() if not overridden. */
+	default void error(String message) {
+		warn(message);
+	}
+
 	/** A no-op logger that discards all messages. */
 	PluginLog NOOP = new PluginLog() {
 		@Override

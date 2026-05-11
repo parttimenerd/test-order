@@ -30,6 +30,10 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 			getLog().info("[test-order] Skipping — testorder.skip=true");
 			return;
 		}
+		if ("pom".equals(project.getPackaging())) {
+			getLog().debug("[test-order] Skipping run-remaining — POM module.");
+			return;
+		}
 		if (skipIfNotExplicitlySelectedReactorProject("run-remaining")) {
 			return;
 		}
@@ -52,7 +56,10 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 		List<String> tests;
 		try {
 			tests = TestSelector.readTestList(remaining);
-			Files.deleteIfExists(remaining);
+			// Rename to .consumed instead of deleting — allows manual recovery if
+			// infrastructure failure prevents test execution (the file is gone otherwise)
+			Path consumed = remaining.resolveSibling(remaining.getFileName() + ".consumed");
+			Files.move(remaining, consumed, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to read remaining tests file", e);
 		}
@@ -100,6 +107,7 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 			}
 		}
 
+		SurefireHelper.warnSelectModeFilters(project, getLog());
 		SurefireHelper.configureIncludes(project, tests, true);
 	}
 }

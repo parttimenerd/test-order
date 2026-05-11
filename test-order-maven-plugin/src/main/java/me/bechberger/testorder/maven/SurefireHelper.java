@@ -39,6 +39,22 @@ final class SurefireHelper {
 		return null;
 	}
 
+	/**
+	 * Returns all test-execution plugins (Surefire and Failsafe) so validation
+	 * can be applied to both when they coexist.
+	 */
+	static List<Plugin> findAllTestPlugins(MavenProject project) {
+		List<Plugin> result = new ArrayList<>();
+		for (Plugin plugin : project.getBuildPlugins()) {
+			String aid = plugin.getArtifactId();
+			if (("maven-surefire-plugin".equals(aid) || "maven-failsafe-plugin".equals(aid))
+					&& "org.apache.maven.plugins".equals(plugin.getGroupId())) {
+				result.add(plugin);
+			}
+		}
+		return result;
+	}
+
 	static Plugin requireSurefirePlugin(MavenProject project) throws MojoExecutionException {
 		Plugin surefire = findSurefirePlugin(project);
 		if (surefire == null) {
@@ -58,7 +74,9 @@ final class SurefireHelper {
 	static void warnOldSurefireVersion(Plugin surefire, Log log) {
 		String version = surefire.getVersion();
 		if (version == null || version.isEmpty()) {
-			return; // managed version, can't check
+			log.debug("[test-order] " + surefire.getArtifactId()
+					+ " version is managed (not explicitly set) — skipping version check.");
+			return;
 		}
 		try {
 			int major = Integer.parseInt(version.split("[^0-9]")[0]);
@@ -113,11 +131,17 @@ final class SurefireHelper {
 	 * element check.
 	 */
 	static void validateNoClassLevelParallel(MavenProject project, Log log) throws MojoExecutionException {
-		Plugin surefire = findSurefirePlugin(project);
-		if (surefire == null) {
+		List<Plugin> testPlugins = findAllTestPlugins(project);
+		if (testPlugins.isEmpty()) {
 			log.debug("[test-order] Surefire class-level parallel mode check passed.");
 			return;
 		}
+		for (Plugin surefire : testPlugins) {
+			validateNoClassLevelParallelForPlugin(surefire, log);
+		}
+	}
+
+	private static void validateNoClassLevelParallelForPlugin(Plugin surefire, Log log) {
 		Xpp3Dom config = getOrCreateConfiguration(surefire);
 		List<String> parallelSources = new ArrayList<>();
 
@@ -291,6 +315,231 @@ final class SurefireHelper {
 			return false;
 		return !argLine.contains("${argLine}") && !argLine.contains("@{argLine}")
 				&& !argLine.contains("test-order-agent");
+	}
+
+	/**
+	 * Extracts existing {@code <additionalClasspathElements>} from the Surefire
+	 * (or Failsafe) XML configuration. These need to be preserved when the
+	 * {@code maven.test.additionalClasspath} property is set, because the
+	 * property overrides the XML value.
+	 */
+	static List<String> extractAdditionalClasspathElements(MavenProject project) {
+		List<String> result = new ArrayList<>();
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire == null) {
+			return result;
+		}
+		Xpp3Dom config = (Xpp3Dom) surefire.getConfiguration();
+		if (config == null) {
+			return result;
+		}
+		Xpp3Dom elements = config.getChild("additionalClasspathElements");
+		if (elements == null) {
+			return result;
+		}
+		for (Xpp3Dom child : elements.getChildren()) {
+			String value = child.getValue();
+			if (value != null && !value.isBlank()) {
+				result.add(value.trim());
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Warns when Surefire's {@code <runOrder>} conflicts with test-order's
+	 * {@code PriorityClassOrderer}. Surefire applies {@code runOrder} before
+	 * JUnit Platform's ClassOrderer, so a non-default value like {@code random}
+	 * or {@code failedfirst} partially overrides test-order's ordering.
+	 */
+	static void warnConflictingRunOrder(MavenProject project, Log log) {
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire == null)
+			return;
+		Xpp3Dom config = (Xpp3Dom) surefire.getConfiguration();
+		if (config == null)
+			return;
+		String runOrder = childValue(config, "runOrder");
+		if (runOrder != null && !runOrder.isBlank() && !"filesystem".equalsIgnoreCase(runOrder.trim())) {
+			log.warn("[test-order] Surefire <runOrder>" + runOrder
+					+ "</runOrder> conflicts with test-order's PriorityClassOrderer. "
+					+ "Surefire applies runOrder before JUnit Platform ordering — test-order's priority "
+					+ "ordering may be partially overridden. Remove <runOrder> or set it to 'filesystem'.");
+		}
+	}
+
+	/**
+	 * Warns when {@code forkCount > 1} in learn mode. Multiple parallel forks
+	 * write to the same {@code .deps/} directory concurrently, which can corrupt
+	 * dependency data. In order mode, each fork gets its own ClassOrderer
+	 * instance, so global ordering is weakened but not broken.
+	 */
+	static void warnForkCountInLearnMode(MavenProject project, Log log) {
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire == null)
+			return;
+		Xpp3Dom config = (Xpp3Dom) surefire.getConfiguration();
+		if (config == null)
+			return;
+		String forkCount = childValue(config, "forkCount");
+		if (forkCount == null || forkCount.isBlank())
+			return;
+		// Parse numeric value (may end with "C" for core-multiplied)
+		String numPart = forkCount.trim().replaceAll("[Cc]$", "");
+		try {
+			double value = Double.parseDouble(numPart);
+			if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
+				log.warn("[test-order] Surefire <forkCount>" + forkCount
+						+ "</forkCount> — multiple forks may write .deps files concurrently in learn mode. "
+						+ "This can corrupt the dependency index. Consider using forkCount=1 for learn runs.");
+			}
+		} catch (NumberFormatException ignored) {
+			// Non-standard forkCount, skip
+		}
+	}
+
+	/**
+	 * Warns when {@code forkCount > 1} in order mode. Each fork gets a separate
+	 * ClassOrderer instance, so class-level ordering within each fork is correct
+	 * but cross-fork ordering is not guaranteed.
+	 */
+	static void warnForkCountInOrderMode(MavenProject project, Log log) {
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire == null)
+			return;
+		Xpp3Dom config = (Xpp3Dom) surefire.getConfiguration();
+		if (config == null)
+			return;
+		String forkCount = childValue(config, "forkCount");
+		if (forkCount == null || forkCount.isBlank())
+			return;
+		String numPart = forkCount.trim().replaceAll("[Cc]$", "");
+		try {
+			double value = Double.parseDouble(numPart);
+			if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
+				log.warn("[test-order] Surefire <forkCount>" + forkCount
+						+ "</forkCount> — each fork orders classes independently. "
+						+ "Global fail-first ordering is weakened across forks.");
+			}
+		} catch (NumberFormatException ignored) {
+			// Non-standard forkCount, skip
+		}
+	}
+
+	/**
+	 * Warns when {@code reuseForks=false} in learn mode. Each test class runs
+	 * in a fresh JVM, so the agent restarts each time. This works but has
+	 * significant overhead and may produce less accurate dependency data
+	 * because cross-class static state is never visible.
+	 */
+	static void warnReuseForksFalseInLearnMode(MavenProject project, Log log) {
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire == null)
+			return;
+		Xpp3Dom config = (Xpp3Dom) surefire.getConfiguration();
+		if (config == null)
+			return;
+		String reuseForks = childValue(config, "reuseForks");
+		if ("false".equalsIgnoreCase(reuseForks != null ? reuseForks.trim() : null)) {
+			log.warn("[test-order] Surefire <reuseForks>false</reuseForks> — "
+					+ "each test class runs in a new JVM. Learn mode works but is slower "
+					+ "and may miss cross-class static dependencies.");
+		}
+	}
+
+	/**
+	 * Warns when {@code rerunFailingTestsCount > 0} in learn mode. Surefire
+	 * reruns failing tests, and the agent records dependencies for both the
+	 * failing and passing runs. This creates duplicate/inconsistent entries in
+	 * the .deps files.
+	 */
+	static void warnRerunFailingTestsInLearnMode(MavenProject project, Log log) {
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire == null)
+			return;
+		Xpp3Dom config = (Xpp3Dom) surefire.getConfiguration();
+		if (config == null)
+			return;
+		String rerunCount = childValue(config, "rerunFailingTestsCount");
+		if (rerunCount != null && !rerunCount.isBlank()) {
+			try {
+				int count = Integer.parseInt(rerunCount.trim());
+				if (count > 0) {
+					log.warn("[test-order] Surefire <rerunFailingTestsCount>" + count
+							+ "</rerunFailingTestsCount> — re-run failures may produce duplicate "
+							+ "dependency entries in learn mode. The dependency index will still "
+							+ "be usable but may contain redundant data.");
+				}
+			} catch (NumberFormatException ignored) {
+				// Non-standard value, skip
+			}
+		}
+	}
+
+	/**
+	 * Forces {@code <useModulePath>false</useModulePath>} when test-order
+	 * injects classpath entries. JPMS module path mode ignores
+	 * {@code maven.test.additionalClasspath}, so test-order JARs would not
+	 * be visible to the forked JVM.
+	 */
+	static void forceClasspathModeIfNeeded(MavenProject project, Log log) {
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire == null)
+			return;
+		Xpp3Dom config = getOrCreateConfiguration(surefire);
+		String useModulePath = childValue(config, "useModulePath");
+		// Only force if not already explicitly set to false
+		if (useModulePath == null || "true".equalsIgnoreCase(useModulePath.trim())) {
+			// Check if project actually uses module-info.java
+			java.io.File moduleInfo = new java.io.File(project.getBasedir(), "src/main/java/module-info.java");
+			java.io.File testModuleInfo = new java.io.File(project.getBasedir(), "src/test/java/module-info.java");
+			if (moduleInfo.exists() || testModuleInfo.exists()) {
+				log.info("[test-order] JPMS module-info.java detected — forcing useModulePath=false "
+						+ "to ensure test-order classpath injection works.");
+				setChild(config, "useModulePath", "false");
+			}
+		}
+	}
+
+	/**
+	 * Warns when Surefire has {@code <groups>}, {@code <excludedGroups>},
+	 * {@code <includes>}, or {@code <excludes>} configured while test-order is
+	 * in select mode. These filters interact with test-order's selection:
+	 * <ul>
+	 * <li>{@code <groups>/<excludedGroups>} (JUnit 5 tags) still apply
+	 * alongside {@code <test>}, so tests selected by test-order may be silently
+	 * skipped by Surefire's tag filter.</li>
+	 * <li>{@code <includes>/<excludes>} are overridden by {@code <test>}, so
+	 * test-order may run classes the user explicitly excluded.</li>
+	 * </ul>
+	 * Call this once before {@link #configureIncludes} in select-mode paths.
+	 */
+	static void warnSelectModeFilters(MavenProject project, Log log) {
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire == null)
+			return;
+		Xpp3Dom config = (Xpp3Dom) surefire.getConfiguration();
+		if (config == null)
+			return;
+
+		String groups = childValue(config, "groups");
+		if (groups != null && !groups.isBlank()) {
+			log.warn("[test-order] Surefire <groups>" + groups
+					+ "</groups> is configured — Surefire's tag filter still applies alongside "
+					+ "test-order's selection. Selected tests without matching tags will be skipped by Surefire.");
+		}
+		String excludedGroups = childValue(config, "excludedGroups");
+		if (excludedGroups != null && !excludedGroups.isBlank()) {
+			log.warn("[test-order] Surefire <excludedGroups>" + excludedGroups
+					+ "</excludedGroups> is configured — tests matching this tag filter will be "
+					+ "skipped even if selected by test-order.");
+		}
+		Xpp3Dom excludes = config.getChild("excludes");
+		if (excludes != null && excludes.getChildCount() > 0) {
+			log.warn("[test-order] Surefire <excludes> is configured but test-order's select mode "
+					+ "overrides it via <test> parameter. Previously excluded tests may run. "
+					+ "Consider using <excludedGroups> (JUnit 5 @Tag) instead for consistent filtering.");
+		}
 	}
 
 	/**

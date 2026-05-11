@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.engine.TestSource;
@@ -65,6 +66,7 @@ public class TelemetryListener implements TestExecutionListener {
 	private final Map<String, List<Long>> pendingMethodDurations = new ConcurrentHashMap<>();
 	private final Set<String> failedMethodNames = ConcurrentHashMap.newKeySet();
 	private final Set<String> warnedConcurrentClasses = ConcurrentHashMap.newKeySet();
+	private final AtomicBoolean warnedGlobalParallel = new AtomicBoolean(false);
 
 	// Tracks method keys (className#methodName) that are currently being tracked
 	// via a container node (e.g., @ParameterizedTest template). Child invocations
@@ -262,9 +264,23 @@ public class TelemetryListener implements TestExecutionListener {
 				Long start = methodStartTimes.remove(testIdentifier.getUniqueId());
 				if (start != null) {
 					long duration = elapsedMillis(start);
-					pendingMethodDurations
-							.computeIfAbsent(methodKey, ignored -> Collections.synchronizedList(new ArrayList<>()))
-							.add(duration);
+					if (testIdentifier.getType().isTest()) {
+						// Record duration for actual test invocations (leaf @Test,
+						// @ParameterizedTest invocations, @RepeatedTest invocations).
+						pendingMethodDurations
+								.computeIfAbsent(methodKey, ignored -> Collections.synchronizedList(new ArrayList<>()))
+								.add(duration);
+					} else if (!pendingMethodDurations.containsKey(methodKey)) {
+						// Container with no child durations recorded (e.g. @TestFactory whose
+						// DynamicTests lack MethodSource). Record the container's total duration
+						// so this method gets speed scoring and stops receiving the perpetual
+						// "new method" bonus.
+						pendingMethodDurations
+								.computeIfAbsent(methodKey, ignored -> Collections.synchronizedList(new ArrayList<>()))
+								.add(duration);
+					}
+					// else: Container with child durations (@ParameterizedTest/@RepeatedTest)
+					// — skip to avoid double-counting (children already recorded theirs).
 				}
 			}
 		});
@@ -280,8 +296,14 @@ public class TelemetryListener implements TestExecutionListener {
 			return;
 		}
 		testIdentifier.getSource().ifPresent(source -> {
+			String className = null;
 			if (source instanceof ClassSource classSource) {
-				String topLevel = TestOrderConfigResolver.toTopLevelClassName(classSource.getClassName());
+				className = classSource.getClassName();
+			} else if (source instanceof MethodSource methodSource) {
+				className = methodSource.getClassName();
+			}
+			if (className != null) {
+				String topLevel = TestOrderConfigResolver.toTopLevelClassName(className);
 				if (executionOrderSet.add(topLevel)) {
 					executionOrder.add(topLevel);
 				}
@@ -354,6 +376,17 @@ public class TelemetryListener implements TestExecutionListener {
 		}
 		PriorityMethodOrderer.clearPendingState();
 
+		// Clear accumulated data after persisting to prevent double-counting
+		// when Surefire re-runs the test plan (rerunFailingTestsCount > 0).
+		// Without this, a rerun plan execution would re-apply all durations and
+		// failures from the original plan.
+		pendingDurations.clear();
+		pendingMethodDurations.clear();
+		failedClassNames.clear();
+		failedMethodNames.clear();
+		executionOrder.clear();
+		executionOrderSet.clear();
+
 		// Mark normal completion and remove the shutdown hook — the state was already
 		// saved.
 		finishedNormally = true;
@@ -369,12 +402,31 @@ public class TelemetryListener implements TestExecutionListener {
 	 * Emergency save invoked from the JVM shutdown hook when
 	 * {@code testPlanExecutionFinished()} was never called (e.g. OOM, SIGTERM).
 	 * Saves whatever durations and failures have been accumulated so far.
+	 * <p>
+	 * Snapshots all collections to avoid races with a concurrent
+	 * {@code testPlanExecutionFinished()} call clearing the live maps.
 	 */
 	private void emergencySave() {
 		if (finishedNormally)
 			return;
-		TelemetryPersistence.emergencySave(statePath, pendingDurations, failedClassNames, pendingMethodDurations,
-				failedMethodNames);
+		// Snapshot to avoid ConcurrentModificationException if the main thread
+		// is clearing these maps in testPlanExecutionFinished().
+		Map<String, List<Long>> durSnap = snapshotMapOfLists(pendingDurations);
+		Set<String> failSnap = new java.util.HashSet<>(failedClassNames);
+		Map<String, List<Long>> methDurSnap = snapshotMapOfLists(pendingMethodDurations);
+		Set<String> methFailSnap = new java.util.HashSet<>(failedMethodNames);
+		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methDurSnap, methFailSnap);
+	}
+
+	private static Map<String, List<Long>> snapshotMapOfLists(Map<String, List<Long>> source) {
+		Map<String, List<Long>> snapshot = new java.util.HashMap<>();
+		for (var entry : source.entrySet()) {
+			List<Long> list = entry.getValue();
+			synchronized (list) {
+				snapshot.put(entry.getKey(), new java.util.ArrayList<>(list));
+			}
+		}
+		return snapshot;
 	}
 
 	private Set<String> extractTestClassNames(TestPlan testPlan) {
@@ -407,6 +459,17 @@ public class TelemetryListener implements TestExecutionListener {
 	}
 
 	private void maybeWarnConcurrentExecution(String className) {
+		// One-time check: warn if global parallel execution is enabled via system
+		// properties or junit-platform.properties (no annotation needed)
+		if (warnedGlobalParallel.compareAndSet(false, true)) {
+			String globalEnabled = System.getProperty("junit.jupiter.execution.parallel.enabled");
+			String globalMode = System.getProperty("junit.jupiter.execution.parallel.mode.default");
+			if ("true".equalsIgnoreCase(globalEnabled) && "concurrent".equalsIgnoreCase(globalMode)) {
+				TestOrderLogger.warn(
+						"Global parallel execution is enabled (junit.jupiter.execution.parallel.enabled=true, "
+								+ "mode.default=concurrent); learn-mode dependency tracking may be inaccurate");
+			}
+		}
 		if (!warnedConcurrentClasses.add(className)) {
 			return;
 		}

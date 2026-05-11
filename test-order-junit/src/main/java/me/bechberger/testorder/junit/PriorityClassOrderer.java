@@ -1,6 +1,7 @@
 package me.bechberger.testorder.junit;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.ClassDescriptor;
@@ -52,20 +53,31 @@ public class PriorityClassOrderer implements ClassOrderer {
 
 	/**
 	 * Cached setup result — avoids repeated load attempts (and error logs) on every
-	 * orderClasses() call.
+	 * orderClasses() call. Volatile to ensure visibility across threads.
 	 */
-	private ClassOrderingEngine.SetupResult cachedSetup;
-	private boolean setupAttempted;
+	private volatile ClassOrderingEngine.SetupResult cachedSetup;
+	private volatile boolean setupAttempted;
+
+	/** Lock for one-time setup initialization. */
+	private final Object setupLock = new Object();
 
 	@Override
 	public void orderClasses(ClassOrdererContext context) {
 		if (config == null) {
-			config = new TestOrderConfigResolver(getClass().getClassLoader());
+			synchronized (setupLock) {
+				if (config == null) {
+					config = new TestOrderConfigResolver(getClass().getClassLoader());
+				}
+			}
 		}
 
 		if (!setupAttempted) {
-			setupAttempted = true;
-			cachedSetup = ClassOrderingEngine.setup(config);
+			synchronized (setupLock) {
+				if (!setupAttempted) {
+					cachedSetup = ClassOrderingEngine.setup(config);
+					setupAttempted = true;
+				}
+			}
 		}
 		ClassOrderingEngine.SetupResult s = cachedSetup;
 		if (s == null) {
@@ -138,6 +150,7 @@ public class PriorityClassOrderer implements ClassOrderer {
 		List<ClassDescriptor> pinFirst = new ArrayList<>();
 		List<ClassDescriptor> pinLast = new ArrayList<>();
 		List<ClassDescriptor> junitOrdered = new ArrayList<>();
+		Set<ClassDescriptor> pinFirstSet = Collections.newSetFromMap(new IdentityHashMap<>());
 		for (ClassDescriptor desc : mutableDescriptors) {
 			// JUnit's @Order: extract into a separate block sorted by @Order value,
 			// placed after FIRST-pinned but before score-ordered classes.
@@ -161,7 +174,7 @@ public class PriorityClassOrderer implements ClassOrderer {
 			TestOrder.Priority prio = ann != null ? ann.priority() : TestOrder.Priority.NORMAL;
 
 			if (alwaysRun || prio == TestOrder.Priority.FIRST) {
-				if (!pinFirst.contains(desc))
+				if (pinFirstSet.add(desc))
 					pinFirst.add(desc);
 			} else if (prio == TestOrder.Priority.LAST) {
 				pinLast.add(desc);
@@ -180,9 +193,11 @@ public class PriorityClassOrderer implements ClassOrderer {
 			}
 		}
 		// Remove pinned and @Order descriptors from main list before score-based sort
-		mutableDescriptors.removeAll(pinFirst);
-		mutableDescriptors.removeAll(pinLast);
-		mutableDescriptors.removeAll(junitOrdered);
+		Set<ClassDescriptor> toRemove = Collections.newSetFromMap(new IdentityHashMap<>());
+		toRemove.addAll(pinFirst);
+		toRemove.addAll(pinLast);
+		toRemove.addAll(junitOrdered);
+		mutableDescriptors.removeAll(toRemove);
 		// Stable sort pinFirst by scoreBonus desc then name, pinLast by scoreBonus asc
 		// then name
 		pinFirst.sort(Comparator
@@ -260,11 +275,15 @@ public class PriorityClassOrderer implements ClassOrderer {
 				springContextGrouping ? d -> TestScorer.springContextKey(d.getTestClass()) : null);
 	}
 
+	private final Map<ClassDescriptor, String> topLevelClassNameCache = new ConcurrentHashMap<>();
+
 	private String getTopLevelClassName(ClassDescriptor descriptor) {
-		Class<?> clazz = descriptor.getTestClass();
-		while (clazz.getEnclosingClass() != null) {
-			clazz = clazz.getEnclosingClass();
-		}
-		return clazz.getName();
+		return topLevelClassNameCache.computeIfAbsent(descriptor, d -> {
+			Class<?> clazz = d.getTestClass();
+			while (clazz.getEnclosingClass() != null) {
+				clazz = clazz.getEnclosingClass();
+			}
+			return clazz.getName();
+		});
 	}
 }

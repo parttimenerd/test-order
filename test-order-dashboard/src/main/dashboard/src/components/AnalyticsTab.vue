@@ -2,7 +2,7 @@
 import { inject, watch, nextTick, onMounted } from 'vue'
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
-import { sn, DIST } from '../utils'
+import { sn, esc, DIST } from '../utils'
 import { mkChart, destroyCharts, chartOpts } from '../composables/useCharts'
 
 const d = inject<DashboardState>('dashboard')!
@@ -166,7 +166,7 @@ function buildCoverageTreemap() {
     if (!nd.data.data) return
     const c = nd.data.data
     const selHit = highlightSources ? (highlightSources.has(c.name) ? ' · <span style="color:#22c55e">covered by selection</span>' : ' · <span style="color:#64748b">not in selection</span>') : ''
-    tip.style('opacity', '1').html(`<strong>${sn(c.name)}</strong><br><span style="color:#64748b">${c.testCount} test${c.testCount === 1 ? '' : 's'}${selHit}</span>`)
+    tip.style('opacity', '1').html(`<strong>${esc(sn(c.name))}</strong><br><span style="color:#64748b">${c.testCount} test${c.testCount === 1 ? '' : 's'}${selHit}</span>`)
   }).on('mousemove', (e: MouseEvent) => tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'))
     .on('mouseout', () => tip.style('opacity', '0'))
     .on('click', (_e: MouseEvent, nd: any) => { if (nd.data.data) d.covSelectedClass.value = nd.data.data })

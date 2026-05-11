@@ -3,12 +3,13 @@ package me.bechberger.testorder.testng;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.testng.ITestContext;
 import org.testng.ITestListener;
@@ -42,35 +43,46 @@ public class TestNGTelemetryListener implements ITestListener {
 
 	private String statePath;
 
-	// Plain collections — tests never execute in parallel within the same JVM.
-	private final Set<String> executionOrderSet = new HashSet<>();
-	private final List<String> executionOrder = new ArrayList<>();
-	private final Set<String> failedClassNames = new HashSet<>();
-	private final Map<String, List<Long>> pendingDurations = new HashMap<>();
-	private final Map<String, List<Long>> pendingMethodDurations = new HashMap<>();
-	private final Set<String> failedMethodNames = new HashSet<>();
+	// Thread-safe collections — TestNG supports parallel="methods"/"classes".
+	private final Set<String> executionOrderSet = ConcurrentHashMap.newKeySet();
+	private final List<String> executionOrder = Collections.synchronizedList(new ArrayList<>());
+	private final Set<String> failedClassNames = ConcurrentHashMap.newKeySet();
+	private final Map<String, List<Long>> pendingDurations = new ConcurrentHashMap<>();
+	private final Map<String, List<Long>> pendingMethodDurations = new ConcurrentHashMap<>();
+	private final Set<String> failedMethodNames = ConcurrentHashMap.newKeySet();
 
-	/** The currently active test class (sequential execution). */
-	private String activeTestClassName;
-	/** Start time (nanos) of the current test class. */
-	private long classStartTimeNanos;
+	/** Per-class start times for parallel-safe class boundary tracking. */
+	private final Map<String, Long> classStartTimes = new ConcurrentHashMap<>();
+	/** Debug mode — skip duration recording to avoid inflated EMA values. */
+	private volatile boolean debugMode;
 
 	private volatile boolean finishedNormally;
-	private boolean initialized;
+	private final AtomicBoolean initialized = new AtomicBoolean();
+	private final AtomicBoolean finished = new AtomicBoolean();
 	private Thread shutdownHook;
 
 	@Override
 	public void onStart(ITestContext context) {
 		// Guard against multiple <test> tags calling onStart multiple times
-		if (initialized)
+		if (!initialized.compareAndSet(false, true))
 			return;
-		initialized = true;
 
 		learnMode = "true".equals(System.getProperty(TestOrderConfig.LEARN));
 		String instrumentationMode = System.getProperty(TestOrderConfig.INSTRUMENTATION_MODE);
 		fullMethodMode = "FULL_METHOD".equals(instrumentationMode) || "FULL_MEMBER".equals(instrumentationMode);
 
-		statePath = System.getProperty(TestOrderConfig.STATE_PATH);
+		// L17: Detect debug mode — skip duration recording to avoid inflated EMA values
+		debugMode = isDebugMode();
+		if (debugMode) {
+			TestOrderLogger
+					.info("[telemetry] Debug mode detected — duration recording disabled to avoid EMA inflation.");
+		}
+
+		// Resolve state path from system property or classpath config (matching JUnit
+		// TelemetryListener behavior)
+		TestOrderConfigResolver configResolver = new TestOrderConfigResolver(
+				Thread.currentThread().getContextClassLoader());
+		statePath = configResolver.getConfig(TestOrderConfig.STATE_PATH);
 
 		if (learnMode) {
 			bridge = new UsageStoreReflectionBridge(fullMethodMode);
@@ -85,21 +97,11 @@ public class TestNGTelemetryListener implements ITestListener {
 	@Override
 	public void onTestStart(ITestResult result) {
 		String className = result.getTestClass().getRealClass().getName();
-		// Track class boundary: start tracking when we enter a new class
-		if (!className.equals(activeTestClassName)) {
-			if (activeTestClassName != null) {
-				// Record class-level duration for the previous class
-				long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - classStartTimeNanos);
-				pendingDurations.computeIfAbsent(activeTestClassName, k -> new ArrayList<>()).add(durationMs);
-				if (learnMode && bridge.isAvailable()) {
-					bridge.callEndTestClass(activeTestClassName);
-				}
-			}
-			activeTestClassName = className;
-			classStartTimeNanos = System.nanoTime();
-
-			if (executionOrderSet.add(className)) {
-				executionOrder.add(className);
+		// Track execution order and start time per class (thread-safe for parallel modes)
+		if (executionOrderSet.add(className)) {
+			executionOrder.add(className);
+			if (!debugMode) {
+				classStartTimes.putIfAbsent(className, System.nanoTime());
 			}
 			if (learnMode && bridge.isAvailable()) {
 				bridge.callStartTestClass(className);
@@ -137,7 +139,7 @@ public class TestNGTelemetryListener implements ITestListener {
 		String methodName = result.getMethod().getMethodName();
 		long durationMs = result.getEndMillis() - result.getStartMillis();
 		if (durationMs > 0) {
-			pendingMethodDurations.computeIfAbsent(className + "#" + methodName, k -> new ArrayList<>())
+			pendingMethodDurations.computeIfAbsent(className + "#" + methodName, k -> Collections.synchronizedList(new ArrayList<>()))
 					.add(durationMs);
 		}
 	}
@@ -149,14 +151,44 @@ public class TestNGTelemetryListener implements ITestListener {
 
 	@Override
 	public void onFinish(ITestContext context) {
-		// End any remaining active class boundary and record its duration
-		if (activeTestClassName != null) {
-			long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - classStartTimeNanos);
-			pendingDurations.computeIfAbsent(activeTestClassName, k -> new ArrayList<>()).add(durationMs);
-			if (learnMode && bridge.isAvailable()) {
-				bridge.callEndTestClass(activeTestClassName);
+		// Guard against multiple <test> tags calling onFinish multiple times
+		if (!finished.compareAndSet(false, true))
+			return;
+
+		// Record class-level durations for all tracked classes.
+		// In parallel execution, wall-clock (now - startTime) includes concurrent
+		// work from other classes, inflating duration and skewing speed scores.
+		// Use sum of per-method durations when available (accurate under parallelism),
+		// falling back to wall-clock for classes without method-level data.
+		if (!debugMode) {
+			long now = System.nanoTime();
+			for (var entry : classStartTimes.entrySet()) {
+				String className = entry.getKey();
+				// Sum method durations for this class
+				long methodSum = 0;
+				boolean hasMethodData = false;
+				for (var mEntry : pendingMethodDurations.entrySet()) {
+					if (mEntry.getKey().startsWith(className + "#")) {
+						for (Long d : mEntry.getValue()) {
+							methodSum += d;
+						}
+						hasMethodData = true;
+					}
+				}
+				long durationMs;
+				if (hasMethodData) {
+					durationMs = methodSum;
+				} else {
+					durationMs = TimeUnit.NANOSECONDS.toMillis(now - entry.getValue());
+				}
+				pendingDurations.computeIfAbsent(className, k -> Collections.synchronizedList(new ArrayList<>())).add(durationMs);
 			}
-			activeTestClassName = null;
+		}
+		// End learn-mode tracking for all discovered classes
+		if (learnMode && bridge.isAvailable()) {
+			for (String className : executionOrderSet) {
+				bridge.callEndTestClass(className);
+			}
 		}
 
 		persistState();
@@ -192,8 +224,24 @@ public class TestNGTelemetryListener implements ITestListener {
 
 		// Record method-level durations only (class-level recorded at class boundary
 		// transitions)
-		long durationMs = result.getEndMillis() - result.getStartMillis();
-		pendingMethodDurations.computeIfAbsent(className + "#" + methodName, k -> new ArrayList<>()).add(durationMs);
+		if (!debugMode) {
+			long durationMs = result.getEndMillis() - result.getStartMillis();
+			pendingMethodDurations.computeIfAbsent(className + "#" + methodName, k -> Collections.synchronizedList(new ArrayList<>())).add(durationMs);
+		}
+	}
+
+	/**
+	 * Detects whether the JVM is running in debug mode (-agentlib:jdwp or
+	 * -Xrunjdwp). Duration recording is skipped in debug mode to avoid inflating
+	 * EMA values with breakpoint-inflated timings.
+	 */
+	private static boolean isDebugMode() {
+		for (String arg : java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments()) {
+			if (arg.startsWith("-agentlib:jdwp") || arg.startsWith("-Xrunjdwp")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void persistState() {
@@ -215,7 +263,7 @@ public class TestNGTelemetryListener implements ITestListener {
 				TelemetryPersistence.applyPendingTelemetry(state, pendingDurations, failedClassNames,
 						pendingMethodDurations, failedMethodNames);
 
-				if (TestOrderState.hasPendingData() && !executionOrder.isEmpty()) {
+				if (!executionOrder.isEmpty()) {
 					TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder, failedClassNames);
 					state.addRunRecord(record);
 					boolean isLearnRun = Boolean.parseBoolean(System.getProperty(TestOrderConfig.LEARN, "false"));
@@ -231,7 +279,7 @@ public class TestNGTelemetryListener implements ITestListener {
 				state.save(stateFile);
 				return state;
 			});
-			resetPending = TestOrderState.hasPendingData() && !executionOrder.isEmpty();
+			resetPending = TestOrderState.hasPendingData();
 		} catch (IOException e) {
 			TestOrderLogger.error("Failed to save TestNG state: {}", e.getMessage());
 		}

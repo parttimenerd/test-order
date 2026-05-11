@@ -37,6 +37,43 @@ class TieredTestSelectorTest {
 	}
 
 	@Test
+	void durationBudgetAccountsForUnknownDurations() {
+		// 4 tests with NO dependency overlap → all go to remaining (none in tier 1).
+		// 2 have known durations (100ms each), 2 have unknown durations.
+		// With tier2Fraction=0.5, tier 2 should contain ~50% = 2 tests.
+		DependencyMap depMap = new DependencyMap();
+		depMap.put("t.Known1", Set.of("p.A"));
+		depMap.put("t.Unknown1", Set.of("p.B"));
+		depMap.put("t.Known2", Set.of("p.C"));
+		depMap.put("t.Unknown2", Set.of("p.D"));
+
+		TestOrderState state = new TestOrderState();
+		// Only record durations for 2 of the 4 tests
+		state.recordDuration("t.Known1", 100);
+		state.recordDuration("t.Known2", 100);
+		// t.Unknown1 and t.Unknown2 have NO recorded duration → Long.MAX_VALUE
+
+		TieredTestSelector selector = new TieredTestSelector(depMap, state,
+				Set.of(), // no changed classes → nothing goes to tier 1
+				Set.of(), TestOrderState.ScoringWeights.DEFAULT,
+				new TieredTestSelector.Config(0.5, true), Set.of());
+
+		TieredTestSelector.TieredSelection selection = selector.select();
+
+		// All 4 tests should be in remaining (none in tier 1)
+		assertEquals(0, selection.tier1().size(), "No tests should be in tier 1");
+		// With tier2Fraction=0.5, tier 2 should contain ~50% = 2 tests
+		// Bug: budget is computed from known durations only (200 * 0.5 = 100ms),
+		// but unknown tests consume estimated avgDuration (100ms) from the budget.
+		// The first test costs 100ms, exhausting the budget, so only 1 is selected
+		// instead of 2.
+		assertEquals(2, selection.tier2().size(),
+				"tier2Fraction=0.5 should select ~50% of remaining tests, "
+						+ "but got tier2=" + selection.tier2() + ", tier3=" + selection.tier3());
+		assertEquals(2, selection.tier3().size());
+	}
+
+	@Test
 	void supportsCountBasedTierTwoSelection() {
 		DependencyMap depMap = new DependencyMap();
 		depMap.put("t.A", Set.of("p.A"));

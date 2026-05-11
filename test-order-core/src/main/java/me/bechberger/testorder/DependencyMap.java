@@ -78,7 +78,7 @@ public class DependencyMap {
 	public DependencyMap(Map<String, Set<String>> dependencies) {
 		this.dependencies = new LinkedHashMap<>();
 		for (var e : dependencies.entrySet()) {
-			this.dependencies.put(e.getKey(), new TreeSet<>(e.getValue()));
+			this.dependencies.put(e.getKey(), Collections.unmodifiableSet(new HashSet<>(e.getValue())));
 		}
 		this.methodDependencies = new LinkedHashMap<>();
 		this.memberDependencies = new LinkedHashMap<>();
@@ -90,7 +90,7 @@ public class DependencyMap {
 	 * entry.
 	 */
 	public void put(String testClass, Set<String> deps) {
-		dependencies.put(testClass, new TreeSet<>(deps));
+		dependencies.put(testClass, Collections.unmodifiableSet(new HashSet<>(deps)));
 	}
 
 	/**
@@ -98,7 +98,7 @@ public class DependencyMap {
 	 * or an empty set if unknown.
 	 */
 	public Set<String> get(String testClass) {
-		return Collections.unmodifiableSet(dependencies.getOrDefault(testClass, Collections.emptySet()));
+		return dependencies.getOrDefault(testClass, Collections.emptySet());
 	}
 
 	/**
@@ -124,18 +124,17 @@ public class DependencyMap {
 
 	/** Store per-method dependencies. Key format: "className#methodName" */
 	public void putMethodDeps(String methodKey, Set<String> deps) {
-		methodDependencies.put(methodKey, new TreeSet<>(deps));
+		methodDependencies.put(methodKey, Collections.unmodifiableSet(new HashSet<>(deps)));
 	}
 
 	/** Get per-method dependencies. Returns empty set if not available. */
 	public Set<String> getMethodDeps(String className, String methodName) {
-		return Collections
-				.unmodifiableSet(methodDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet()));
+		return methodDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet());
 	}
 
 	/** Get per-method dependencies by composite key (className#methodName). */
 	public Set<String> getMethodDeps(String methodKey) {
-		return Collections.unmodifiableSet(methodDependencies.getOrDefault(methodKey, Collections.emptySet()));
+		return methodDependencies.getOrDefault(methodKey, Collections.emptySet());
 	}
 
 	/** Returns all method keys (className#methodName) that have dependency data. */
@@ -155,12 +154,12 @@ public class DependencyMap {
 	 * "depClass#memberName".
 	 */
 	public void putMemberDeps(String testClass, Set<String> memberDeps) {
-		memberDependencies.put(testClass, new TreeSet<>(memberDeps));
+		memberDependencies.put(testClass, Collections.unmodifiableSet(new HashSet<>(memberDeps)));
 	}
 
 	/** Get per-test-class member deps. Returns empty set if not available. */
 	public Set<String> getMemberDeps(String testClass) {
-		return Collections.unmodifiableSet(memberDependencies.getOrDefault(testClass, Collections.emptySet()));
+		return memberDependencies.getOrDefault(testClass, Collections.emptySet());
 	}
 
 	/** Whether this map has any member-level dependency data. */
@@ -173,18 +172,17 @@ public class DependencyMap {
 	 * "depClass#memberName".
 	 */
 	public void putMethodMemberDeps(String methodKey, Set<String> memberDeps) {
-		methodMemberDependencies.put(methodKey, new TreeSet<>(memberDeps));
+		methodMemberDependencies.put(methodKey, Collections.unmodifiableSet(new HashSet<>(memberDeps)));
 	}
 
 	/** Get per-test-method member deps. Returns empty set if not available. */
 	public Set<String> getMethodMemberDeps(String methodKey) {
-		return Collections.unmodifiableSet(methodMemberDependencies.getOrDefault(methodKey, Collections.emptySet()));
+		return methodMemberDependencies.getOrDefault(methodKey, Collections.emptySet());
 	}
 
 	/** Get per-test-method member deps by class and method name. */
 	public Set<String> getMethodMemberDeps(String className, String methodName) {
-		return Collections.unmodifiableSet(
-				methodMemberDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet()));
+		return methodMemberDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet());
 	}
 
 	/**
@@ -575,7 +573,15 @@ public class DependencyMap {
 							RoaringBitmap memberBitmap = new RoaringBitmap();
 							memberBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(memberBytes)));
 							Set<String>[] finalDepSets = ds;
-							memberBitmap.forEach((int ti) -> finalDepSets[ti] = sharedDeps);
+							int testCount = ds.length;
+							memberBitmap.forEach((int ti) -> {
+								if (ti < 0 || ti >= testCount) {
+									throw new IllegalStateException(
+											"Invalid test index " + ti + " in member bitmap (valid: 0–"
+													+ (testCount - 1) + ")");
+								}
+								finalDepSets[ti] = sharedDeps;
+							});
 						}
 						// build map preserving test insertion order
 						for (int i = 0; i < testNames.length; i++) {
@@ -600,7 +606,7 @@ public class DependencyMap {
 							Set<String> deps = new HashSet<>((int) (depBitmap.getLongCardinality() * 2));
 							ClassNameTrie finalTrie = trie;
 							depBitmap.forEach((int id) -> deps.add(finalTrie.getName(id)));
-							map.methodDependencies.put(methodKey, deps);
+							map.methodDependencies.put(methodKey, Collections.unmodifiableSet(deps));
 						}
 					}
 					case SECTION_MEMBER_DEPS -> {
@@ -617,7 +623,7 @@ public class DependencyMap {
 							for (int j = 0; j < memberCount; j++) {
 								members.add(s.readUTF());
 							}
-							map.memberDependencies.put(testClass, members);
+							map.memberDependencies.put(testClass, Collections.unmodifiableSet(members));
 						}
 					}
 					case SECTION_METHOD_MEMBER_DEPS -> {
@@ -634,7 +640,7 @@ public class DependencyMap {
 							for (int j = 0; j < memberCount; j++) {
 								members.add(s.readUTF());
 							}
-							map.methodMemberDependencies.put(methodKey, members);
+							map.methodMemberDependencies.put(methodKey, Collections.unmodifiableSet(members));
 						}
 					}
 					default -> {
@@ -691,7 +697,7 @@ public class DependencyMap {
 					if (fileName.endsWith(".deps")) {
 						String testClass = fileName.substring(0, fileName.length() - 5); // strip .deps
 						Set<String> deps = Files.readAllLines(file).stream().map(String::trim).filter(s -> !s.isEmpty())
-								.collect(Collectors.toCollection(TreeSet::new));
+								.collect(Collectors.toCollection(HashSet::new));
 						map.put(testClass, deps);
 					} else if (fileName.endsWith(".mdeps")) {
 						List<String> lines = Files.readAllLines(file);
@@ -699,14 +705,14 @@ public class DependencyMap {
 							String methodKey = lines.get(0).substring(2).trim();
 							Set<String> deps = lines.stream().skip(1).map(String::trim)
 									.filter(s -> !s.isEmpty() && !s.startsWith("#"))
-									.collect(Collectors.toCollection(TreeSet::new));
+									.collect(Collectors.toCollection(HashSet::new));
 							map.putMethodDeps(methodKey, deps);
 						}
 					} else if (fileName.endsWith(".members")) {
 						String testClass = fileName.substring(0, fileName.length() - 8); // strip .members
 						Set<String> members = Files.readAllLines(file).stream().map(String::trim)
 								.filter(s -> !s.isEmpty() && !s.startsWith("#"))
-								.collect(Collectors.toCollection(TreeSet::new));
+								.collect(Collectors.toCollection(HashSet::new));
 						map.putMemberDeps(testClass, members);
 					} else if (fileName.endsWith(".mmembers")) {
 						List<String> lines = Files.readAllLines(file);
@@ -714,7 +720,7 @@ public class DependencyMap {
 							String methodKey = lines.get(0).substring(2).trim();
 							Set<String> members = lines.stream().skip(1).map(String::trim)
 									.filter(s -> !s.isEmpty() && !s.startsWith("#"))
-									.collect(Collectors.toCollection(TreeSet::new));
+									.collect(Collectors.toCollection(HashSet::new));
 							map.putMethodMemberDeps(methodKey, members);
 						}
 					}
@@ -753,22 +759,22 @@ public class DependencyMap {
 
 		// Merge incrementally, deduplicating to save space
 		for (var entry : deps.entrySet()) {
-			Set<String> existing = new TreeSet<>(map.dependencies.getOrDefault(entry.getKey(), Set.of()));
+			Set<String> existing = new HashSet<>(map.dependencies.getOrDefault(entry.getKey(), Set.of()));
 			existing.addAll(entry.getValue());
 			map.dependencies.put(entry.getKey(), existing);
 		}
 		for (var entry : methodDeps.entrySet()) {
-			Set<String> existing = new TreeSet<>(map.methodDependencies.getOrDefault(entry.getKey(), Set.of()));
+			Set<String> existing = new HashSet<>(map.methodDependencies.getOrDefault(entry.getKey(), Set.of()));
 			existing.addAll(entry.getValue());
 			map.methodDependencies.put(entry.getKey(), existing);
 		}
 		for (var entry : memberDeps.entrySet()) {
-			Set<String> existing = new TreeSet<>(map.memberDependencies.getOrDefault(entry.getKey(), Set.of()));
+			Set<String> existing = new HashSet<>(map.memberDependencies.getOrDefault(entry.getKey(), Set.of()));
 			existing.addAll(entry.getValue());
 			map.memberDependencies.put(entry.getKey(), existing);
 		}
 		for (var entry : methodMemberDeps.entrySet()) {
-			Set<String> existing = new TreeSet<>(map.methodMemberDependencies.getOrDefault(entry.getKey(), Set.of()));
+			Set<String> existing = new HashSet<>(map.methodMemberDependencies.getOrDefault(entry.getKey(), Set.of()));
 			existing.addAll(entry.getValue());
 			map.methodMemberDependencies.put(entry.getKey(), existing);
 		}
@@ -816,6 +822,18 @@ public class DependencyMap {
 	 * </ul>
 	 */
 	public static void aggregateFromDepsDirectory(Path depsDir, Path indexFile) throws IOException {
+		aggregateFromDepsDirectory(depsDir, indexFile, null);
+	}
+
+	/**
+	 * Aggregates .deps files from a directory into a single index file.
+	 * Uses file locking to prevent corruption in concurrent builds.
+	 *
+	 * @param depsDir   directory containing .deps files
+	 * @param indexFile target index file
+	 * @param log       optional logger (null = use System.out)
+	 */
+	public static void aggregateFromDepsDirectory(Path depsDir, Path indexFile, me.bechberger.testorder.ops.PluginLog log) throws IOException {
 		if (!Files.isDirectory(depsDir)) {
 			return; // empty directory, skip
 		}
@@ -865,7 +883,7 @@ public class DependencyMap {
 			testClass = testClass.substring(0, testClass.length() - 5); // remove .deps
 			try {
 				Set<String> deps = Files.readAllLines(depFile).stream().filter(line -> !line.trim().isEmpty())
-						.collect(Collectors.toCollection(TreeSet::new));
+						.collect(Collectors.toCollection(HashSet::new));
 				return java.util.Map.entry(testClass, deps);
 			} catch (IOException e) {
 				System.err.println("[test-order] Failed to read " + depFile + ": " + e.getMessage());
@@ -883,7 +901,7 @@ public class DependencyMap {
 						map.dependencies.put(entry.getKey(), entry.getValue());
 					} else {
 						// existing may be an unmodifiable set from loadBinary — copy into mutable set
-						Set<String> merged = new TreeSet<>(existing);
+						Set<String> merged = new HashSet<>(existing);
 						merged.addAll(entry.getValue());
 						map.dependencies.put(entry.getKey(), merged);
 					}
@@ -902,7 +920,7 @@ public class DependencyMap {
 					return null;
 
 				String methodKey = null;
-				Set<String> deps = new TreeSet<>();
+				Set<String> deps = new HashSet<>();
 				for (String line : lines) {
 					if (line.startsWith("# ")) {
 						methodKey = line.substring(2).trim();
@@ -925,7 +943,8 @@ public class DependencyMap {
 			try {
 				var entry = task.get();
 				if (entry != null) {
-					Set<String> existing = map.methodDependencies.getOrDefault(entry.getKey(), new TreeSet<>());
+					// existing may be an unmodifiable set from loadBinary — copy into mutable set
+					Set<String> existing = new HashSet<>(map.methodDependencies.getOrDefault(entry.getKey(), Set.of()));
 					existing.addAll(entry.getValue());
 					map.methodDependencies.put(entry.getKey(), existing);
 					methodDepCount++;
@@ -942,7 +961,7 @@ public class DependencyMap {
 			try {
 				Set<String> members = Files.readAllLines(memberFile).stream().map(String::trim)
 						.filter(line -> !line.isEmpty() && !line.startsWith("#"))
-						.collect(Collectors.toCollection(TreeSet::new));
+						.collect(Collectors.toCollection(HashSet::new));
 				return java.util.Map.entry(testClass, members);
 			} catch (IOException e) {
 				System.err.println("[test-order] Failed to read " + memberFile + ": " + e.getMessage());
@@ -954,7 +973,8 @@ public class DependencyMap {
 			try {
 				var entry = task.get();
 				if (entry != null) {
-					Set<String> existing = map.memberDependencies.getOrDefault(entry.getKey(), new TreeSet<>());
+					// existing may be an unmodifiable set from loadBinary — copy into mutable set
+					Set<String> existing = new HashSet<>(map.memberDependencies.getOrDefault(entry.getKey(), Set.of()));
 					existing.addAll(entry.getValue());
 					map.memberDependencies.put(entry.getKey(), existing);
 					memberDepCount++;
@@ -972,7 +992,7 @@ public class DependencyMap {
 					return null;
 
 				String methodKey = null;
-				Set<String> members = new TreeSet<>();
+				Set<String> members = new HashSet<>();
 				for (String line : lines) {
 					if (line.startsWith("# ")) {
 						methodKey = line.substring(2).trim();
@@ -994,7 +1014,8 @@ public class DependencyMap {
 			try {
 				var entry = task.get();
 				if (entry != null) {
-					Set<String> existing = map.methodMemberDependencies.getOrDefault(entry.getKey(), new TreeSet<>());
+					// existing may be an unmodifiable set from loadBinary — copy into mutable set
+					Set<String> existing = new HashSet<>(map.methodMemberDependencies.getOrDefault(entry.getKey(), Set.of()));
 					existing.addAll(entry.getValue());
 					map.methodMemberDependencies.put(entry.getKey(), existing);
 					methodMemberDepCount++;
@@ -1004,14 +1025,22 @@ public class DependencyMap {
 			}
 		}
 
-		// Save aggregated index
+		// Save aggregated index under file lock (R7-6: prevent corruption in concurrent -T N builds)
 		Files.createDirectories(indexFile.getParent());
-		map.save(indexFile);
+		PersistenceSupport.withFileLock(indexFile, () -> {
+			map.save(indexFile);
+			return null;
+		});
 
 		long duration = System.currentTimeMillis() - startTime;
-		System.out.println("[test-order] Aggregated " + depCount + " test classes + " + methodDepCount
+		String msg = "[test-order] Aggregated " + depCount + " test classes + " + methodDepCount
 				+ " test methods + " + memberDepCount + " class-member sets + " + methodMemberDepCount
-				+ " method-member sets from deps files in " + duration + "ms");
+				+ " method-member sets from deps files in " + duration + "ms";
+		if (log != null) {
+			log.info(msg);
+		} else {
+			System.out.println(msg);
+		}
 	}
 
 	@Override

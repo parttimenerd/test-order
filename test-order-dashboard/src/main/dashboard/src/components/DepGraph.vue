@@ -2,7 +2,7 @@
 import { inject, watch, onMounted, nextTick, ref as vueRef } from 'vue'
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
-import { sn, GRAPH } from '../utils'
+import { sn, esc, GRAPH } from '../utils'
 import type { TestEntry, MethodEntry } from '../types'
 
 const props = defineProps<{
@@ -159,7 +159,7 @@ function initGraph() {
 
   const tip = d3.select(container).append('div').attr('class', 'dep-graph__tooltip')
   node.on('mouseover', (e, n) => {
-    tip.style('opacity', '1').html(`<strong>${n.id}</strong><br><span style="color:#64748b">${n.type === 'test' ? n.depCount + ' deps' : 'dep · ' + (n.changed ? '<span style=color:#ef4444>changed</span>' : 'unchanged')}</span><br><span style="color:#475569;font-size:9px">pkg: ${n.pkg}</span>`)
+    tip.style('opacity', '1').html(`<strong>${esc(n.id)}</strong><br><span style="color:#64748b">${n.type === 'test' ? n.depCount + ' deps' : 'dep · ' + (n.changed ? '<span style=color:#ef4444>changed</span>' : 'unchanged')}</span><br><span style="color:#475569;font-size:9px">pkg: ${esc(n.pkg)}</span>`)
   }).on('mousemove', e => tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'))
     .on('mouseout', () => tip.style('opacity', '0'))
 

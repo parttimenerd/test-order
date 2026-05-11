@@ -25,11 +25,15 @@ public class DownloadMojo extends AbstractTestOrderMojo {
 
 	@Override
 	public void execute() throws MojoExecutionException {
+		initContext();
 		if (skip) {
 			getLog().info("[test-order] download skipped (testorder.skip=true)");
 			return;
 		}
-		initContext();
+		if ("pom".equals(project.getPackaging())) {
+			getLog().debug("[test-order] Skipping download — POM module.");
+			return;
+		}
 
 		Path projectDir = project.getBasedir().toPath();
 		Path indexTarget = resolveIndexPath();

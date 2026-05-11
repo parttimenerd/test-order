@@ -49,6 +49,15 @@ mvn test -Dtestorder.skip=true
 Add the plugin to your `build.gradle` (Groovy DSL):
 
 ```groovy
+// settings.gradle — required until the plugin is published to the Gradle Plugin Portal
+pluginManagement {
+    repositories {
+        mavenLocal()
+        gradlePluginPortal()
+    }
+}
+
+// build.gradle
 plugins {
     id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
 }
@@ -87,6 +96,7 @@ That's it! Most single-module projects need no further configuration.
 | Auto mode | `mvn test-order:auto test` | `./gradlew test` (auto-detected) |
 | Learn mode | `mvn test -Dtestorder.mode=learn` | `./gradlew test -Dtestorder.mode=learn` |
 | Dashboard | `mvn test-order:dashboard` | `./gradlew testOrderDashboard` |
+| Detect OD tests | `mvn test-order:detect-dependencies` | `./gradlew testOrderDetectDependencies` |
 | Export index JSON | `mvn test-order:export-json` | `./gradlew testOrderExportJson` |
 | Diagnose setup | `mvn test-order:diagnose` | `./gradlew testOrderDiagnose` |
 | Optimise weights | `mvn test-order:optimize` | `./gradlew testOrderOptimize` |
@@ -375,9 +385,10 @@ For full Maven goal reference, all parameters, and CI YAML examples, see **[docs
 | Feature | Command | Details |
 |---|---|---|
 | **Dashboard** | `mvn test-order:dashboard` | Interactive HTML report with test explorer, analytics, and weight simulator. Gradle: `./gradlew testOrderDashboard` |
+| **Detect OD tests** | `mvn test-order:detect-dependencies` | Find order-dependent (flaky) tests by reordering strategies. See [docs/DETECT_DEPENDENCIES.md](docs/DETECT_DEPENDENCIES.md) |
 | **Coverage gaps** | `mvn test-order:coverage` | Identifies least-tested production classes. See [docs/MAVEN_PLUGIN.md](docs/MAVEN_PLUGIN.md#coverage-analysis) |
 | **CI index download** | `mvn test-order:download` | Download dependency index from CI instead of cold-start learning. See [test-order-ci README](test-order-ci/README.md) |
-| **Method-level ordering** | `mvn test -Dtestorder.methodOrder=true` | Opt-in reordering within each class by failure recency, change status, speed. See [docs/SCORING.md](docs/SCORING.md#method-level-scoring) |
+| **Method-level ordering** | `mvn test -Dtestorder.methodOrder.enabled=true` | Opt-in reordering within each class by failure recency, change status, speed. See [docs/SCORING.md](docs/SCORING.md#method-level-scoring) |
 | **Serve dashboard** | `mvn test-order:serve` | Local HTTP server for the dashboard |
 
 ## Gradle plugin

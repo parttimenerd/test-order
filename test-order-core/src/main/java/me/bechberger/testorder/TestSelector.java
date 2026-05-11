@@ -80,11 +80,6 @@ public class TestSelector {
 		int beforeRandom = selected.size();
 		selectDiverseFast(scored, selected);
 		int randomActual = selected.size() - beforeRandom;
-		// R14-5: Warn if randomM requested more tests than were available
-		if (config.randomM() > 0 && randomActual < config.randomM()) {
-			System.err.println("[test-order] WARNING: Requested randomM=" + config.randomM() + " but only "
-					+ randomActual + " candidate tests available — selecting all.");
-		}
 
 		List<String> remaining = new ArrayList<>();
 		for (ScoredTest s : scored) {
@@ -136,6 +131,8 @@ public class TestSelector {
 
 	/**
 	 * Phase 2: include the top-N highest-scored tests. topN=-1 means select all.
+	 * Tests already selected by earlier phases (e.g., new tests) count towards the
+	 * topN budget — only {@code @AlwaysRun} tests are truly additive.
 	 */
 	private void selectTopN(List<ScoredTest> scored, Set<String> selected) {
 		if (config.topN() < 0) {
@@ -145,12 +142,15 @@ public class TestSelector {
 			}
 			return;
 		}
-		int added = 0;
+		int counted = 0;
 		for (ScoredTest s : scored) {
-			if (added >= config.topN())
+			if (counted >= config.topN())
 				break;
-			if (selected.add(s.name()))
-				added++;
+			// @AlwaysRun tests are additive and don't count towards topN
+			if (alwaysRunClasses.contains(s.name()))
+				continue;
+			selected.add(s.name());
+			counted++;
 		}
 	}
 
@@ -167,12 +167,16 @@ public class TestSelector {
 		if (config.seed() != null) {
 			rng = new Random(config.seed());
 		} else {
-			System.err.println("[test-order] WARNING: randomM selection is non-deterministic (no seed set)."
-					+ " Set -Dtestorder.select.seed=<number> for reproducible CI runs.");
 			rng = new Random();
 		}
 		// shuffle once up front for random tie-breaking (iteration order)
 		Collections.shuffle(fastCandidates, rng);
+
+		// Pre-cache dependency sets to avoid repeated map lookups
+		Map<String, Set<String>> depsCache = new HashMap<>(fastCandidates.size());
+		for (ScoredTest c : fastCandidates) {
+			depsCache.put(c.name(), depMap.get(c.name()));
+		}
 
 		Set<String> coveredDeps = new HashSet<>();
 		for (String tc : selected) {
@@ -184,16 +188,18 @@ public class TestSelector {
 			double bestDist = -1;
 			for (int j = 0; j < fastCandidates.size(); j++) {
 				ScoredTest c = fastCandidates.get(j);
-				double dist = jaccardDistance(depMap.get(c.name()), coveredDeps);
+				double dist = jaccardDistance(depsCache.get(c.name()), coveredDeps);
 				if (dist > bestDist) {
 					bestDist = dist;
 					bestIdx = j;
 				}
+				// maximum possible distance — no need to check remaining candidates
+				if (dist == 1.0) break;
 			}
 			if (bestIdx >= 0) {
 				ScoredTest best = fastCandidates.get(bestIdx);
 				selected.add(best.name());
-				coveredDeps.addAll(depMap.get(best.name()));
+				coveredDeps.addAll(depsCache.get(best.name()));
 				// O(1) swap-to-end removal
 				int last = fastCandidates.size() - 1;
 				if (bestIdx != last) {

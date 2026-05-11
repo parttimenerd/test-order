@@ -44,6 +44,7 @@ mvn test-order:show-order
 | `clean` | Removes all test-order state, indexes, and hash files | Start fresh |
 | `download` | Downloads dependency index from CI artifact store | CI warm-start |
 | `coverage` | Generates least-tested / coverage reports | Coverage gap analysis |
+| `detect-dependencies` | Detect order-dependent (flaky) tests via reordering | Flaky test detection |
 | `metrics` | Exports test-order metrics as JSON | CI/CD reporting, dashboards |
 | `help` | Displays all goals and common properties | Quick reference |
 
@@ -165,6 +166,7 @@ Recommended defaults:
 | Property | Default | Notes |
 |---|---|---|
 | `testorder.history.maxRuns` | `50` | Maximum run records to retain in state |
+| `testorder.autoCompactEvery` | `50` | Rebuild index from `.deps` files every N order-mode runs (`0` = disabled) |
 | `testorder.structuralDiff.enabled` | `true` | Use structural diff for change complexity scoring |
 | `testorder.score.springContextGrouping` | `false` | Group tests sharing a Spring context |
 | `testorder.score.ema.varianceThreshold` | `0.35` | EMA variance threshold for adaptive smoothing (`0` = no adaptation) |
@@ -304,7 +306,7 @@ mvn -pl core,api test-order:auto test
 - `testorder.select.topN` must be `>= -1` (`-1` = all affected, `0` = none, `>0` = exact count).
 - `testorder.select.randomM` must be `>= 0`.
 - `testorder.instrumentation.mode` must be one of: `METHOD_ENTRY`, `FULL`, `FULL_METHOD`, `FULL_MEMBER`.
-- `coverage.threshold` must be `>= 1` (minimum number of exercising tests for a class to be "well-tested").
+- `testorder.coverage.threshold` must be `>= 1` (minimum number of exercising tests for a class to be "well-tested").
 
 ## Notes on Property Names
 

@@ -340,11 +340,13 @@ class TestOrderPluginIntegrationTest {
                 "-Dtestorder.select.randomM=0",
                 "-Dtestorder.auto.runRemaining=false").build();
 
+        // Read remaining file BEFORE testOrderRunRemaining consumes and deletes it
+        List<String> deferred = Files.readAllLines(projectDir.resolve("build/test-order-remaining.txt"));
+        assertEquals(1, deferred.size());
+
         BuildResult result = runner("testOrderRunRemaining").build();
 
         assertEquals(SUCCESS, result.task(":testOrderRunRemaining").getOutcome());
-        List<String> deferred = Files.readAllLines(projectDir.resolve("build/test-order-remaining.txt"));
-        assertEquals(1, deferred.size());
         assertTrue(result.getOutput().contains("[test-order] Running 1 remaining test classes"));
         assertTrue(Files.exists(projectDir.resolve("build/test-results/testOrderRunRemaining/TEST-" + deferred.get(0) + ".xml")));
     }

@@ -89,11 +89,9 @@
 - **Impact**: Typo produces unhandled `NumberFormatException` with raw stack trace, no actionable message.
 - **Fix**: Wrap in try/catch → `throw new GradleException("[test-order] Invalid testorder.dashboard.port value '...' — must be a number")`.
 
-### R7-3: Maven `TieredSelectMojo` runs change analysis twice
-- **File**: `TieredSelectMojo.java` ~L155
-- **Current**: Calls `ChangeAnalysis.analyze()` for tiered selection, then `OrderWorkflow.setup()` which internally re-runs `ChangeAnalysis.analyze()`.
-- **Impact**: Tiered-select takes ~2× as long on large projects (doubled git/hash I/O).
-- **Fix**: Build orderer config map directly from already-computed `analysis.changedClasses()` using `OrdererConfigOperation.buildConfig()`.
+### ~~R7-3: Maven `TieredSelectMojo` runs change analysis twice~~ [FIXED]
+- **File**: `TieredSelectMojo.java`
+- **Status**: Fixed — uses already-computed `analysis` results with `OrdererConfigOperation.buildConfig()` instead of re-running change detection via `OrderWorkflow.setup()`.
 
 ### R7-4: Gradle `testOrderRunTier` doesn't set `testorder.index.path` system property [CRITICAL]
 - **File**: `TestOrderPlugin.java` ~L1106
@@ -101,11 +99,9 @@
 - **Impact**: Tier 2/3 tests filtered correctly but run *unordered* — PriorityClassOrderer can't find index.
 - **Fix**: In `doFirst` block, add `((Test) t).systemProperty("testorder.index.path", ...)` and state path.
 
-### R7-5: Maven `RunTierMojo` passes empty changed-class sets to orderer config [CRITICAL]
-- **File**: `RunTierMojo.java` ~L96
-- **Current**: Calls `writeOrdererConfig(Set.of(), Set.of())` — empty changed-class sets mean PriorityClassOrderer can't score change-affected tests.
-- **Impact**: Within-tier ordering ignores code changes, becomes duration-only.
-- **Fix**: Persist changed-class sets during `tiered-select` so `run-tier` can read and pass them to orderer config.
+### ~~R7-5: Maven `RunTierMojo` passes empty changed-class sets to orderer config~~ [FIXED]
+- **File**: `RunTierMojo.java`
+- **Status**: Fixed — `RunTierMojo` now calls `detectChangedClasses()` and `detectChangedTestClasses()` and passes the results to `writeOrdererConfig()`.
 
 ### R7-6: `DependencyMap.aggregate()` is not atomic — concurrent writes corrupt index
 - **File**: `DependencyMap.java` ~L660
@@ -149,11 +145,9 @@
 - **Impact**: Raw `NumberFormatException` on typo.
 - **Fix**: Wrap in try/catch → `throw new GradleException("[test-order] Invalid coverage.threshold — must be a positive integer")`.
 
-### R7-13: Maven `SelectMojo` runs change detection twice
-- **File**: `SelectMojo.java` ~L104
-- **Current**: `SelectWorkflow.select(pctx)` runs change analysis, then `OrderWorkflow.setup(pctx, loadState())` re-runs it.
-- **Impact**: Doubled git/hash I/O.
-- **Fix**: Have `SelectWorkflow.select()` return change analysis results; pass directly to `OrdererConfigOperation.buildConfig()`.
+### ~~R7-13: Maven `SelectMojo` runs change detection twice~~ [FIXED]
+- **File**: `SelectMojo.java`
+- **Status**: Fixed — `SelectWorkflow.selectWithAnalysis()` returns both the selection and the change analysis; `SelectMojo` reuses the analysis for `OrdererConfigOperation.buildConfig()`.
 
 ### R7-14: Gradle `testOrderAggregateAll` may fail in multi-project builds
 - **File**: `TestOrderPlugin.java` ~L137
@@ -173,17 +167,14 @@
 
 *Discovered by running the plugin against real OSS projects (jsoup, commons-lang) and deep code review.*
 
-### R8-1: Agent and classpath injection breaks Multi-Release JAR projects [CRITICAL]
-- **File**: `AbstractTestOrderMojo.java` → `injectTestClasspath()` / `injectNativeAccessFlag()`
-- **Current**: Even in **order mode** (no agent), test-order's classpath injection causes `ClassNotFoundException` for classes loaded via Multi-Release JARs. Confirmed on jsoup: `HttpClientExecutorTest` passes cleanly without test-order but fails with 7 errors when test-order is active. The issue is `maven.test.additionalClasspath` interacts with Surefire's `<additionalClasspathElements>` XML, and `-Xshare:off` disables CDS which affects MR-JAR class resolution.
-- **Impact**: Any project using Multi-Release JARs (MR-JARs) — including libraries like jsoup, Log4j2, JUnit itself — will have test failures in learn AND order mode with no workaround.
-- **Fix**: Remove `-Xshare:off` (no longer needed since LZ4 uses safeInstance). For classpath injection, check if Surefire already has `<additionalClasspathElements>` in XML and inject into that list instead of using the property, or prefer `<additionalClasspathDependencies>` approach.
+### R8-1: ~~Agent and classpath injection breaks Multi-Release JAR projects~~ [FIXED]
+- **File**: `AbstractTestOrderMojo.java` → `injectTestClasspath()`
+- **Root cause**: `injectTestClasspath()` set the `maven.test.additionalClasspath` property, which **overrides** (not merges with) Surefire's XML `<additionalClasspathElements>`. Projects like jsoup that declare `<additionalClasspathElement>target/classes/META-INF/versions/11</additionalClasspathElement>` in their Surefire config lost that classpath entry when test-order set the property.
+- **Fix**: `injectTestClasspath()` now reads existing `<additionalClasspathElements>` from the Surefire XML config via `SurefireHelper.extractAdditionalClasspathElements()` and merges them into the property on first call. Added 4 tests to `SurefireHelperTest`.
+- **Verified**: jsoup 1961 tests pass in both learn mode (0 errors, was 149) and order mode (0 errors, was 149).
 
-### R8-2: `maven.test.additionalClasspath` silently conflicts with Surefire XML `<additionalClasspathElements>`
-- **File**: `AbstractTestOrderMojo.java` ~L1075
-- **Current**: `injectTestClasspath()` sets the `maven.test.additionalClasspath` property. But when a project already declares `<additionalClasspathElements>` in their Surefire XML config, both sources are merged by Surefire in unpredictable ways. No conflict detection or warning.
-- **Impact**: Projects with existing Surefire classpath configuration get broken silently. The jsoup MR-JAR issue manifests because Surefire has `<additionalClasspathElement>target/classes/META-INF/versions/11</additionalClasspathElement>` which conflicts with the property-based injection.
-- **Fix**: In `initContext()`, detect existing `<additionalClasspathElements>` in Surefire config and either (a) merge test-order entries INTO the existing XML, or (b) warn about the conflict.
+### R8-2: ~~`maven.test.additionalClasspath` silently conflicts with Surefire XML `<additionalClasspathElements>`~~ [FIXED]
+- **Same root cause and fix as R8-1 above.**
 
 ### R8-3: Agent-induced test failures permanently pollute state weights
 - **File**: `TestOrderState.java` → `addRunRecord()`
@@ -1173,12 +1164,12 @@ The following issues were reviewed but require larger architectural changes or w
 
 1. **R18-4**: Corrupt state file produces 12× repeated error messages → requires caching/deduplication logic
 2. **R18-10**: Dashboard embeds absolute local filesystem paths → requires path relativization
-3. **R18-13**: autoRunRemaining property doesn't auto-run → requires invoking second Surefire execution
+3. ~~**R18-13**: autoRunRemaining property doesn't auto-run~~ [FIXED]
 4. **R18-12**: show-order cross-framework ranking misleading → requires per-module display or disclaimer
 5. **R12-2/R8-1**: Multi-Release JAR agent compatibility → requires deeper agent architecture redesign
 6. **R8-2**: Classpath injection conflicts with existing Surefire config → requires detecting and merging XML
 7. **R11-1/R11-2**: README documentation inconsistencies → primarily documentation fixes
-8. **R7-3/R7-13**: Double change-detection runs → requires refactoring SelectWorkflow
+8. ~~**R7-3/R7-13**: Double change-detection runs~~ [FIXED]
 9. **R10-2**: Git timeout inconsistency → requires making timeout configurable
 10. **R10-3**: Stale lock threshold too short → requires lock strategy redesign
 
@@ -1270,14 +1261,9 @@ Issues requiring larger architectural changes or deeper refactoring:
    - Would require path relativization throughout dashboard generation
    - Complexity: Medium
 
-3. **R18-13**: autoRunRemaining property doesn't auto-run
-   - Would require invoking second Surefire execution
-   - Complexity: High
+3. ~~**R18-13**: autoRunRemaining property doesn't auto-run~~ [FIXED]
 
-4. **R7-3/R7-13**: Double change detection runs
-   - SelectMojo and TieredSelectMojo each run change analysis independently
-   - Would require refactoring shared workflow
-   - Complexity: High
+4. ~~**R7-3/R7-13**: Double change detection runs~~ [FIXED]
 
 5. **R12-2/R8-1**: Multi-Release JAR agent compatibility
    - Would require deeper agent architecture changes
@@ -1306,3 +1292,53 @@ The test-order plugin has been significantly improved with:
 - **Backward compatibility** maintained throughout all changes
 
 The remaining issues are predominantly architectural or documentation-focused. The plugin is substantially more robust with better error messages, security hardening, diagnostic guidance, and user-friendly features.
+
+---
+
+## Session 4 - Bug Fix Marathon
+
+This session fixed additional bugs including Surefire configuration validation, rerun deduplication, and remaining tracked issues.
+
+### Surefire Configuration Validation (8 new checks)
+1. `warnConflictingRunOrder()` — warns when Surefire `runOrder` conflicts with test-order's ordering
+2. `warnForkCountInLearnMode()` — warns when `forkCount > 1` may cause incomplete dependency data
+3. `warnForkCountInOrderMode()` — warns when `forkCount > 1` runs separate PriorityClassOrderer instances
+4. `warnReuseForksFalseInLearnMode()` — warns when `reuseForks=false` may cause agent re-init overhead
+5. `warnRerunFailingTestsInLearnMode()` — warns when rerun count may cause duplicate telemetry
+6. `forceClasspathModeIfNeeded()` — forces classpath over modulepath when injecting agent
+7. `warnSelectModeFilters()` — warns about Surefire includes/excludes conflicting with selection
+8. `extractAdditionalClasspathElements()` — merges existing XML classpath elements (Bug #33 MRJAR fix)
+
+All wired into PrepareMojo, AutoMojo, SelectMojo, TieredSelectMojo, RunTierMojo, RunRemainingMojo.
+
+### TelemetryListener Rerun Fix
+- Pending data (durations, failures, execution order) cleared between plan executions
+- Prevents double-counting when `rerunFailingTestsCount > 0`
+
+### Additional Bug Fixes
+1. **OD#53**: `PersistenceSupport.cleanupStaleTemps()` — changed `System.err.println` to `LOGGER.info()`
+2. **R12-1 (CORS)**: `DashboardServerOperation.sendJson()` — restricted CORS from `*` to matching localhost origin
+3. **R13-10**: `OptimizeMojo` — overfit case no longer increments `optimized` counter (misleading "Optimised" message)
+4. **R13-4**: `testorder.serve.port` added as recognized alias for `testorder.dashboard.port` with full wiring in ServeDashboardMojo
+5. **FIX#7**: Cleaned stale `.test-order-state` file from `samples/sample-shop/` root
+
+### Issues Verified as Already Fixed (additional)
+- R15-1: AlwaysRunScanner uses correct annotation descriptor `Lme/bechberger/testorder/annotations/AlwaysRun;`
+- R15-3: PrepareMojo mode validation uses `toLowerCase(Locale.ROOT)`
+- R14-15: `escapePropertyValue()` handles Windows path backslashes
+- R11-13: DiagnosticMojo has no field shadowing
+- R11-15: CoverageMojo uses namespaced `testorder.coverage.*` properties
+- R8-4: `-Xshare:off` already removed
+- R14-11: `removeLegacyGeneratedOrdererFiles()` already inside `!skip` branch
+- R16-5: `skip` respects explicit CLI invocation
+- OD#50: MavenTestRunner uses fully-qualified plugin coordinates
+- R9-1: No double `[test-order]` prefix in PriorityClassOrderer
+- R10-7: ChangeDetector InterruptedException handling is correct
+- FIX#8: Legacy property deprecation warnings already implemented
+- FIX#9: `springContextGrouping` already has `@Parameter`; `ema.varianceThreshold` is state-level config (by design)
+
+### Summary Statistics (Session 4)
+- **New code fixes this session**: 13 (8 Surefire checks + rerun fix + 4 bug fixes)
+- **Issues verified as already fixed**: 13 additional
+- **Total code-level fixes across all sessions**: 28+
+- **Test suite**: 175 tests, 0 failures

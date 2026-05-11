@@ -230,7 +230,16 @@ public class HttpDownloader implements DepDownloader {
 					}
 				}
 
-				verifyChecksum(digest);
+				try {
+					verifyChecksum(digest);
+				} catch (DepDownloadException e) {
+					try {
+						java.nio.file.Files.deleteIfExists(outputPath);
+					} catch (IOException suppressed) {
+						e.addSuppressed(suppressed);
+					}
+					throw e;
+				}
 				logger.info("Downloaded to: {}", outputPath);
 				return true;
 			}

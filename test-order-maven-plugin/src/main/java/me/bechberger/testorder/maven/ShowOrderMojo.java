@@ -70,10 +70,15 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
 			autoAggregateOrFail(idxPath);
 		}
 
+		// auto-enable explain when debug mode is active (R13-6)
+		boolean effectiveExplain = explain
+				|| "true".equalsIgnoreCase(project.getProperties().getProperty("testorder.debug"))
+				|| "true".equalsIgnoreCase(System.getProperty("testorder.debug"));
+
 		PluginContext pctx = buildPluginContextBuilder().topN(topN).randomM(randomM).seed(seed).build();
 
 		try {
-			ShowOrderWorkflow.printReportWithSelectionPreview(pctx, System.out, explain, fullNames, true, true);
+			ShowOrderWorkflow.printReportWithSelectionPreview(pctx, System.out, effectiveExplain, fullNames, true, true);
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to compute test order", e);
 		}

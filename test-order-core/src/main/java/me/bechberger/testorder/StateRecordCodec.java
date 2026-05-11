@@ -27,7 +27,7 @@ final class StateRecordCodec {
 			return null;
 		}
 		List<Object> arr = Util.asList(obj);
-		if (arr.isEmpty() || !(arr.get(0) instanceof String)) {
+		if (arr.size() < 2 || !(arr.get(0) instanceof String)) {
 			log.fine("Skipping numeric/empty compact outcome entry (legacy format)");
 			return null;
 		}
@@ -35,9 +35,12 @@ final class StateRecordCodec {
 			String tc = (String) arr.get(0);
 			int flags = toInt(arr.get(1));
 			return new TestOrderState.TestOutcome(tc, 0, (flags & 1) != 0, (flags & 2) != 0,
-					arr.size() > 2 ? toInt(arr.get(2)) : 0, arr.size() > 3 ? toInt(arr.get(3)) : 0,
-					arr.size() > 4 ? toDouble(arr.get(4)) : 0.0, (flags & 4) != 0, (flags & 8) != 0, (flags & 16) != 0,
-					arr.size() > 5 ? toDouble(arr.get(5)) : 0.0, arr.size() > 6 ? toDouble(arr.get(6)) : 0.0,
+					Math.max(0, arr.size() > 2 ? toInt(arr.get(2)) : 0),
+					Math.max(0, arr.size() > 3 ? toInt(arr.get(3)) : 0),
+					Math.max(0.0, arr.size() > 4 ? toDouble(arr.get(4)) : 0.0),
+					(flags & 4) != 0, (flags & 8) != 0, (flags & 16) != 0,
+					Math.max(0.0, arr.size() > 5 ? toDouble(arr.get(5)) : 0.0),
+					Math.max(0.0, arr.size() > 6 ? toDouble(arr.get(6)) : 0.0),
 					(flags & 32) != 0);
 		} catch (NumberFormatException e) {
 			log.warning("Malformed compact outcome entry, skipping: " + e.getMessage());

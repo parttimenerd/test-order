@@ -23,8 +23,8 @@ Each test class receives a score. Tests are sorted by descending score, with fas
 score = (isNew ? newTestBonus : 0)
       + (isChanged ? changedTestBonus : 0)
       + min(ceil(recencyWeightedFailures), maxFailureBonus)
-      + round(speedRatio × speedBonus)         # speedRatio ∈ [-1, 0] for fast tests
-      - round(speedRatio × speedPenalty)        # speedRatio ∈ [0, 1] for slow tests
+      + round(|speedRatio| × speedBonus)       # speedRatio ∈ [-1, 0] for fast tests
+      - round(|speedRatio| × speedPenalty)      # speedRatio ∈ (0, 1] for slow tests
       + min(ceil(|dependencies ∩ changedClasses| / √|dependencies| × depOverlap), depOverlap)
       + min(ceil(Σ complexity(dep) / √|dependencies| × changeComplexity), changeComplexity)
 
@@ -284,7 +284,7 @@ Within each test class, methods can be reordered to surface failing methods
 earlier. This is opt-in via:
 
 ```bash
-mvn test -Dtestorder.methodOrder=true
+mvn test -Dtestorder.methodOrder.enabled=true
 ```
 
 Or in plugin config:

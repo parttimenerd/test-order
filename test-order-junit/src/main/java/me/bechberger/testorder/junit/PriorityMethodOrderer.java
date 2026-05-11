@@ -151,16 +151,18 @@ public class PriorityMethodOrderer implements MethodOrderer {
 				methods.size());
 
 		// Log each method's score
-		for (MethodScorer.MethodScoreResult score : scores) {
-			TestOrderLogger.debug(
-					"[method-order] → {}: score={} (recency={}, speed={}, depOverlap={}, coverage={}, new={}, changed={}, classMedian={}ms)",
-					score.methodName(), String.format(java.util.Locale.US, "%.1f", score.score()),
-					String.format(java.util.Locale.US, "%.1f", score.failureRecencyBonus()),
-					String.format(java.util.Locale.US, "%.1f", score.speedBonus()),
-					String.format(java.util.Locale.US, "%.1f", score.depOverlapBonus()),
-					String.format(java.util.Locale.US, "%.1f", score.coverageBonus()),
-					String.format(java.util.Locale.US, "%.1f", score.newMethodBonus()),
-					String.format(java.util.Locale.US, "%.1f", score.changedMethodBonus()), score.classMedianMs());
+		if (Boolean.parseBoolean(System.getProperty(TestOrderConfig.DEBUG))) {
+			for (MethodScorer.MethodScoreResult score : scores) {
+				TestOrderLogger.debug(
+						"[method-order] → {}: score={} (recency={}, speed={}, depOverlap={}, coverage={}, new={}, changed={}, classMedian={}ms)",
+						score.methodName(), String.format(java.util.Locale.US, "%.1f", score.score()),
+						String.format(java.util.Locale.US, "%.1f", score.failureRecencyBonus()),
+						String.format(java.util.Locale.US, "%.1f", score.speedBonus()),
+						String.format(java.util.Locale.US, "%.1f", score.depOverlapBonus()),
+						String.format(java.util.Locale.US, "%.1f", score.coverageBonus()),
+						String.format(java.util.Locale.US, "%.1f", score.newMethodBonus()),
+						String.format(java.util.Locale.US, "%.1f", score.changedMethodBonus()), score.classMedianMs());
+			}
 		}
 
 		// Pre-build lookup map for O(1) score access (instead of O(N) linear search per
@@ -174,6 +176,8 @@ public class PriorityMethodOrderer implements MethodOrderer {
 		Map<String, Double> effectiveScores = new HashMap<>(scores.size() * 2);
 		List<org.junit.jupiter.api.MethodDescriptor> pinFirstMethods = new ArrayList<>();
 		List<org.junit.jupiter.api.MethodDescriptor> pinLastMethods = new ArrayList<>();
+		Set<org.junit.jupiter.api.MethodDescriptor> pinFirstSet = Collections.newSetFromMap(new IdentityHashMap<>());
+		Set<org.junit.jupiter.api.MethodDescriptor> pinLastSet = Collections.newSetFromMap(new IdentityHashMap<>());
 		for (MethodScorer.MethodScoreResult sr : scores) {
 			effectiveScores.put(sr.methodName(), sr.score());
 		}
@@ -187,10 +191,11 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			double delta = ann != null ? ann.scoreBonus() + (isChanged ? ann.changeBonus() : 0) : 0;
 			TestOrder.Priority prio = ann != null ? ann.priority() : TestOrder.Priority.NORMAL;
 			if (alwaysRun || prio == TestOrder.Priority.FIRST) {
-				if (!pinFirstMethods.contains(md))
+				if (pinFirstSet.add(md))
 					pinFirstMethods.add(md);
 			} else if (prio == TestOrder.Priority.LAST) {
 				pinLastMethods.add(md);
+				pinLastSet.add(md);
 			} else {
 				if (prio == TestOrder.Priority.HIGH)
 					delta += TestOrder.Priority.BOOST;
@@ -203,8 +208,8 @@ public class PriorityMethodOrderer implements MethodOrderer {
 
 		// Sort by effective score descending, maintain source order for ties
 		context.getMethodDescriptors().sort((a, b) -> {
-			boolean aPin1 = pinFirstMethods.contains(a), bPin1 = pinFirstMethods.contains(b);
-			boolean aPin0 = pinLastMethods.contains(a), bPin0 = pinLastMethods.contains(b);
+			boolean aPin1 = pinFirstSet.contains(a), bPin1 = pinFirstSet.contains(b);
+			boolean aPin0 = pinLastSet.contains(a), bPin0 = pinLastSet.contains(b);
 			if (aPin1 && !bPin1)
 				return -1;
 			if (!aPin1 && bPin1)
@@ -231,8 +236,11 @@ public class PriorityMethodOrderer implements MethodOrderer {
 	 * we should not override the user's explicit ordering.
 	 */
 	private boolean hasJUnitOrderAnnotation(MethodOrdererContext context) {
-		// Check for @TestMethodOrder on the class itself
-		if (context.getTestClass().isAnnotationPresent(org.junit.jupiter.api.TestMethodOrder.class)) {
+		// Check for @TestMethodOrder on the class itself — but only if it specifies
+		// a different orderer (not this one), otherwise we'd skip our own ordering
+		org.junit.jupiter.api.TestMethodOrder tmo = context.getTestClass()
+				.getAnnotation(org.junit.jupiter.api.TestMethodOrder.class);
+		if (tmo != null && !PriorityMethodOrderer.class.equals(tmo.value())) {
 			return true;
 		}
 		// Check for @Order on any test method
@@ -245,39 +253,51 @@ public class PriorityMethodOrderer implements MethodOrderer {
 	}
 
 	/**
-	 * Detects @Execution(CONCURRENT) on the test class via reflection to avoid a
+	 * Detects @Execution(CONCURRENT) on the test class or any enclosing class
+	 * (for @Nested classes that inherit the annotation) via reflection to avoid a
 	 * hard compile-time dependency on jupiter-api parallel classes.
 	 */
 	private boolean hasConcurrentExecution(Class<?> testClass) {
-		try {
-			Class<?> executionClass = Class.forName("org.junit.jupiter.api.parallel.Execution");
-			Object execution = testClass
-					.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
-			if (execution != null) {
-				Object mode = executionClass.getMethod("value").invoke(execution);
-				return "CONCURRENT".equals(mode.toString());
+		for (Class<?> c = testClass; c != null; c = c.getEnclosingClass()) {
+			try {
+				Class<?> executionClass = Class.forName("org.junit.jupiter.api.parallel.Execution");
+				Object execution = c
+						.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
+				if (execution != null) {
+					Object mode = executionClass.getMethod("value").invoke(execution);
+					if ("CONCURRENT".equals(mode.toString())) {
+						return true;
+					}
+				}
+			} catch (ReflectiveOperationException ignored) {
+				// Jupiter parallel API not available
+				break;
 			}
-		} catch (ReflectiveOperationException ignored) {
-			// Jupiter parallel API not available
 		}
 		return false;
 	}
 
 	/**
-	 * Detects @TestInstance(Lifecycle.PER_CLASS) on the test class, either via
-	 * annotation or the global default config parameter.
+	 * Detects @TestInstance(Lifecycle.PER_CLASS) on the test class or any
+	 * enclosing class (for @Nested classes that inherit the lifecycle), either
+	 * via annotation or the global default config parameter.
 	 */
 	private boolean isPerClassLifecycle(Class<?> testClass) {
-		try {
-			Class<?> testInstanceClass = Class.forName("org.junit.jupiter.api.TestInstance");
-			Object annotation = testClass
-					.getAnnotation(testInstanceClass.asSubclass(java.lang.annotation.Annotation.class));
-			if (annotation != null) {
-				Object lifecycle = testInstanceClass.getMethod("value").invoke(annotation);
-				return "PER_CLASS".equals(lifecycle.toString());
+		for (Class<?> c = testClass; c != null; c = c.getEnclosingClass()) {
+			try {
+				Class<?> testInstanceClass = Class.forName("org.junit.jupiter.api.TestInstance");
+				Object annotation = c
+						.getAnnotation(testInstanceClass.asSubclass(java.lang.annotation.Annotation.class));
+				if (annotation != null) {
+					Object lifecycle = testInstanceClass.getMethod("value").invoke(annotation);
+					if ("PER_CLASS".equals(lifecycle.toString())) {
+						return true;
+					}
+				}
+			} catch (ReflectiveOperationException ignored) {
+				// TestInstance API not available
+				break;
 			}
-		} catch (ReflectiveOperationException ignored) {
-			// TestInstance API not available
 		}
 		// Also check global default via system property (C9)
 		String globalDefault = System.getProperty("junit.jupiter.testinstance.lifecycle.default");

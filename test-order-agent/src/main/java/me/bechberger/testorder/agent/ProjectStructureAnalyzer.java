@@ -103,8 +103,8 @@ public class ProjectStructureAnalyzer {
 			while (matcher.find()) {
 				String depGroupId = matcher.group(1).trim();
 
-				// Skip test dependencies
-				if (content.substring(matcher.end()).contains("<scope>test</scope>")) {
+				// Skip test dependencies by checking within the matched dependency block
+				if (matcher.group(0).contains("<scope>test</scope>")) {
 					continue;
 				}
 

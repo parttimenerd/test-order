@@ -4,6 +4,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -233,7 +234,10 @@ public class ArtifactCache {
 			jsonMap.put(e.getKey(), entryMap);
 		}
 		String json = PrettyPrinter.prettyPrint(jsonMap);
-		Files.writeString(metadataPath, json);
+		// Write atomically via temp file to avoid corruption on crash
+		Path tempFile = cacheDir.resolve(METADATA_FILE + ".tmp");
+		Files.writeString(tempFile, json);
+		Files.move(tempFile, metadataPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 	}
 
 	/**

@@ -78,6 +78,10 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
+		if ("pom".equals(project.getPackaging())) {
+			getLog().debug("[test-order] Skipping tiered-select — POM module.");
+			return;
+		}
 		if (skipIfNotExplicitlySelectedReactorProject("tiered-select"))
 			return;
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
@@ -131,6 +135,7 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 		TieredTestSelector.TieredSelection selection = result.selection();
 
 		// Configure Surefire to run only tier 1
+		SurefireHelper.warnSelectModeFilters(project, getLog());
 		if (!selection.tier1().isEmpty()) {
 			SurefireHelper.configureIncludes(project, selection.tier1(), true);
 			getLog().info("[test-order] Tier 1: running " + selection.tier1().size() + " change-affected tests");
@@ -140,9 +145,13 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 			if (!selection.tier2().isEmpty()) {
 				SurefireHelper.configureIncludes(project, selection.tier2(), true);
 				getLog().info("[test-order] Running " + selection.tier2().size() + " tier-2 tests directly");
+				// Clear the tier 2 file so downstream CI steps don't re-run these tests
+				clearTierFile(Path.of(tier2File));
 			} else if (!selection.tier3().isEmpty()) {
 				SurefireHelper.configureIncludes(project, selection.tier3(), true);
 				getLog().info("[test-order] Running " + selection.tier3().size() + " tier-3 tests directly");
+				// Clear the tier 3 file so downstream CI steps don't re-run these tests
+				clearTierFile(Path.of(tier3File));
 			} else {
 				getLog().info("[test-order] No tests to run.");
 				project.getProperties().setProperty("skipTests", "true");
@@ -156,7 +165,7 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 				.buildConfig(new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
 						pctx.indexFile().toAbsolutePath().toString(), pctx.stateFile().toAbsolutePath().toString(),
 						pctx.weightsFile() != null ? pctx.weightsFile().toAbsolutePath().toString() : null,
-						analysis.changedClasses(), analysis.changedTests(), Set.of(), pctx.scoreOverrides(),
+						analysis.changedClasses(), analysis.changedTests(), analysis.changedMethods(), pctx.scoreOverrides(),
 						pctx.methodOrderingEnabled(), pctx.springContextGrouping(),
 						pctx.projectRoot().toAbsolutePath().toString(),
 						pctx.sourceRoot() != null ? pctx.sourceRoot().toAbsolutePath().toString() : null,
@@ -188,6 +197,21 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 			if (!selection.tier3().isEmpty()) {
 				getLog().info("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");
 			}
+		} else if (selection.tier1().isEmpty() && !selection.tier3().isEmpty()) {
+			// Tier 2 ran inline — remind user that tier 3 still needs a separate run
+			getLog().info("[test-order] Next step:");
+			getLog().info("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");
+		}
+	}
+
+	/** Clear a tier file that was already executed inline, to prevent duplicate runs. */
+	private void clearTierFile(Path tierFile) {
+		try {
+			if (Files.exists(tierFile)) {
+				Files.writeString(tierFile, "");
+			}
+		} catch (IOException e) {
+			getLog().warn("[test-order] Could not clear tier file " + tierFile + ": " + e.getMessage());
 		}
 	}
 }

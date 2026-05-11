@@ -1,6 +1,5 @@
 package me.bechberger.testorder;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -30,7 +29,9 @@ final class PendingRunCoordinator {
 	}
 
 	static Map<String, TestOrderState.ScoreBreakdown> getPendingBreakdowns() {
-		return Collections.unmodifiableMap(PENDING_BREAKDOWNS);
+		synchronized (LOCK) {
+			return Map.copyOf(PENDING_BREAKDOWNS);
+		}
 	}
 
 	static String getPendingStatePath() {

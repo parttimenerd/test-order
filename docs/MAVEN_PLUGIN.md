@@ -72,13 +72,88 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:dump` | Print dependency index contents |
 | `test-order:export-json` | Export dependency index as JSON |
 | `test-order:diagnose` | Run diagnostic health checks |
-| `test-order:compact` | Compact the state file (remove old entries) |
+| `test-order:compact` | Rebuild dependency index from `.deps` files (removes stale entries) |
 | `test-order:clean` | Remove all test-order state, indexes, and hashes |
 | `test-order:download` | Download dependency index from CI artifact store |
 | `test-order:coverage` | Generate least-tested / coverage reports |
+| `test-order:metrics` | Export test-order metrics as JSON for CI/CD reporting |
+| `test-order:detect-dependencies` | Detect order-dependent tests via reordering strategies |
 | `test-order:help` | Display all goals and common properties |
 
 > `test-order:learn` only prepares learn mode — always pair it with the `test` phase to actually execute tests. Similarly, `test-order:select` configures Surefire but needs `test` to run the selected subset.
+
+## Plugin Prefix Resolution
+
+If Maven reports `No plugin found for prefix 'test-order'`, use one of these solutions:
+
+1. **Add plugin group to `~/.m2/settings.xml`** (recommended):
+   ```xml
+   <settings>
+     <pluginGroups>
+       <pluginGroup>me.bechberger</pluginGroup>
+     </pluginGroups>
+   </settings>
+   ```
+
+2. **Use fully-qualified coordinates**:
+   ```bash
+   mvn me.bechberger:test-order-maven-plugin:0.1.0-SNAPSHOT:detect-dependencies
+   ```
+
+3. **Declare the plugin in your POM** (if not already):
+   ```xml
+   <build>
+     <plugins>
+       <plugin>
+         <groupId>me.bechberger</groupId>
+         <artifactId>test-order-maven-plugin</artifactId>
+         <version>0.1.0-SNAPSHOT</version>
+       </plugin>
+     </plugins>
+   </build>
+   ```
+
+## Detecting Order-Dependent Tests
+
+The `detect-dependencies` goal discovers tests that pass or fail depending on execution order:
+
+```bash
+mvn test-order:detect-dependencies
+```
+
+### Detection Properties
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.detect.algorithm` | `combined` | Detection strategy (see below) |
+| `testorder.detect.timeBudget` | `300` | Time budget in seconds (0 = unlimited) |
+| `testorder.detect.stopOnFirst` | `false` | Stop after first finding |
+| `testorder.detect.seed` | `42` | Random seed for reproducibility |
+| `testorder.detect.failOnDetection` | `false` | Fail the build if ODs are found |
+
+### Algorithm Recommendations
+
+| Algorithm | Runs | Best For |
+|---|---|---|
+| `combined` | Adaptive | **Default.** Tries reverse, random, and history strategies adaptively. Best general-purpose choice. |
+| `reverse` | 1 | Quick smoke-checks with minimal cost. |
+| `random` | Many | Generous time budgets; explores diverse orderings. |
+| `history` | Varies | Leveraging prior run data to target suspicious tests. |
+| `pfast` | Varies | Large suites; probabilistic approach (Pradet-style). |
+| `iterative` | O(n²) | Thorough pairwise iteration; slow but exhaustive. |
+| `bounded` | Fixed | Random with a bounded number of runs. |
+| `tuscan` | Covering | Systematic coverage via covering arrays. |
+
+### Incremental Detection
+
+If a previous JSON report exists at `.test-order/detection/od-detection-report.json`, the goal loads it and
+skips re-testing known victims. This makes repeated runs cheaper.
+
+### Multi-Module Projects
+
+The goal automatically iterates reactor modules that have `src/test/java`. Each module
+runs detection independently. The build fails if any module has findings (when
+`failOnDetection=true`).
 
 ## Learn Mode
 
@@ -100,6 +175,25 @@ mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=FULL_MEMBER
 This run writes/updates `.test-order/test-dependencies.lz4` directly.
 
 Use `mvn test-order:aggregate` only when you intentionally aggregate fallback `.deps` files.
+
+## Index Compaction
+
+The dependency index (`.test-order/test-dependencies.lz4`) grows over time as learn
+runs add entries. When test classes are renamed, deleted, or moved, their old entries
+become stale but remain in the index. `compact` rebuilds the index from scratch using
+only the current `.deps` files:
+
+```bash
+mvn test-order:compact
+```
+
+This is useful when:
+- The index has grown large with stale entries from deleted/renamed tests
+- The index file is corrupted (e.g., partial write, disk error)
+- You want to verify the index matches the current `.deps` data
+
+By default, the plugin runs compaction automatically every 50 order-mode runs. You can
+tune this with `testorder.autoCompactEvery` (set to `0` to disable automatic compaction).
 
 ## Order Mode
 
@@ -170,8 +264,8 @@ mvn test-order:auto test
 
 | Parameter | Property | Default | Description |
 |---|---|---|---|
-| `runRemaining` | `testorder.combined.runRemaining` | `true` | Automatically run remaining tests after the selected subset |
-| `optimizeEvery` | `testorder.combined.optimizeEvery` | `10` | Optimise weights every N runs (0 = never) |
+| `runRemaining` | `testorder.auto.runRemaining` | `true` | Automatically run remaining tests after the selected subset |
+| `optimizeEvery` | `testorder.auto.optimizeEvery` | `10` | Optimise weights every N runs (0 = never) |
 | `autoLearnRunThreshold` | `testorder.autoLearnRunThreshold` | `10` | Force a full learn pass every N runs (0 = disable) |
 
 Then run the deferred tests only when the first command succeeds:
@@ -284,8 +378,8 @@ mvn test-order:coverage
 
 | Parameter | Property | Default | Description |
 |---|---|---|---|
-| `threshold` | `coverage.threshold` | `2` | Minimum number of exercising tests for a class to count as well-tested |
-| `outputDir` | `coverage.outputDir` | `target/coverage-reports` | Report output directory |
+| `threshold` | `testorder.coverage.threshold` | `2` | Minimum number of exercising tests for a class to count as well-tested |
+| `outputDir` | `testorder.coverage.outputDir` | `target/coverage-reports` | Report output directory |
 
 ## Structural Change Analysis
 

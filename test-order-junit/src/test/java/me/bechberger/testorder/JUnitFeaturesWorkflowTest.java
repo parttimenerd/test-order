@@ -83,7 +83,8 @@ class JUnitFeaturesWorkflowTest {
 
 		Launcher launcher = LauncherFactory.create();
 		SummaryGeneratingListener summaryListener = new SummaryGeneratingListener();
-		launcher.registerTestExecutionListeners(summaryListener);
+		TelemetryListener telemetryListener = new TelemetryListener();
+		launcher.registerTestExecutionListeners(summaryListener, telemetryListener);
 		launcher.execute(request);
 		return summaryListener.getSummary();
 	}
@@ -115,9 +116,12 @@ class JUnitFeaturesWorkflowTest {
 		assertTrue(summary.getTestsSucceededCount() >= 4,
 				"Expected >= 4 tests (3 repetitions + 1 normal), got " + summary.getTestsSucceededCount());
 
+		assertTrue(java.nio.file.Files.exists(stateFile),
+				"State file must exist at " + stateFile);
 		TestOrderState state = TestOrderState.load(stateFile);
 		// The class should have a recorded duration
-		long classDur = state.getDuration(RepeatedSubject.class.getName(), -1);
+		String expectedName = RepeatedSubject.class.getName();
+		long classDur = state.getDuration(expectedName, -1);
 		assertTrue(classDur >= 0, "RepeatedSubject class duration must be recorded");
 	}
 

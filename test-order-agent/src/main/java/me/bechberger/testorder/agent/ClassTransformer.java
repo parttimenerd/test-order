@@ -7,6 +7,7 @@ import java.security.ProtectionDomain;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javassist.*;
 import javassist.expr.ExprEditor;
 import javassist.expr.FieldAccess;
@@ -53,7 +54,7 @@ public class ClassTransformer implements ClassFileTransformer {
 	 * Whether transformation caches have been released. Once tests start running,
 	 * class loading is essentially done and these caches are dead weight.
 	 */
-	private volatile boolean cachesReleased;
+	private final AtomicBoolean cachesReleased = new AtomicBoolean();
 
 	public ClassTransformer(Agent options) {
 		this.mode = options.getMode();
@@ -141,9 +142,8 @@ public class ClassTransformer implements ClassFileTransformer {
 	 * caching (rare case).
 	 */
 	public void releaseTransformationCaches() {
-		if (cachesReleased)
+		if (!cachesReleased.compareAndSet(false, true))
 			return;
-		cachesReleased = true;
 		loaderPools = null;
 		classCallCache = null;
 		memberCallCache = null;
@@ -192,6 +192,10 @@ public class ClassTransformer implements ClassFileTransformer {
 	public byte[] transform(Module module, ClassLoader loader, String className, Class<?> classBeingRedefined,
 			ProtectionDomain protectionDomain, byte[] classfileBuffer) {
 		if (className == null) {
+			return classfileBuffer;
+		}
+		// Skip re-instrumentation on class redefinition (hot-swap, JRebel, etc.)
+		if (classBeingRedefined != null) {
 			return classfileBuffer;
 		}
 		if (!shouldInstrument(className)) {

@@ -87,6 +87,8 @@ public class AutoMojo extends AbstractTestOrderMojo {
 
 		validateAutoMojoParameters();
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
+		SurefireHelper.warnConflictingRunOrder(project, getLog());
+		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
 
 		// Resolve effective mode: CLI property override wins
 		String modeOverride = session != null && session.getUserProperties() != null
@@ -129,11 +131,15 @@ public class AutoMojo extends AbstractTestOrderMojo {
 
 		} else if (result instanceof AutoWorkflow.Result.Learn l) {
 			getLog().info("[test-order] " + l.reason());
+			SurefireHelper.warnForkCountInLearnMode(project, getLog());
+			SurefireHelper.warnReuseForksFalseInLearnMode(project, getLog());
+			SurefireHelper.warnRerunFailingTestsInLearnMode(project, getLog());
 			String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
 			configureLearnMode(instrumentationMode, effectiveInclude, true);
 			project.getProperties().setProperty("testorder.auto.active", "true");
 
 		} else if (result instanceof AutoWorkflow.Result.OrderSelect os) {
+			SurefireHelper.warnForkCountInOrderMode(project, getLog());
 			TestSelector.Selection selection = os.selection();
 
 			if (os.selectResult().allSelected()) {
@@ -145,6 +151,7 @@ public class AutoMojo extends AbstractTestOrderMojo {
 						+ (selection.selected().size() + selection.remaining().size()) + " tests in priority order.");
 				// Don't filter Surefire — let all tests run, but in scored order via orderer
 			} else if (!selection.selected().isEmpty()) {
+				SurefireHelper.warnSelectModeFilters(project, getLog());
 				SurefireHelper.configureIncludes(project, selection.selected(), true);
 			} else {
 				getLog().info("[test-order] No tests selected" + " — skipping test execution.");

@@ -406,4 +406,316 @@ class SurefireHelperTest {
 
 		verify(log).warn(contains("ordering guarantees"));
 	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// extractAdditionalClasspathElements — MRJAR classpath preservation
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void extractAdditionalClasspathElements_returnsEmptyWhenNoSurefire() {
+		MavenProject project = new MavenProject();
+		project.setBuild(new Build());
+
+		assertTrue(SurefireHelper.extractAdditionalClasspathElements(project).isEmpty());
+	}
+
+	@Test
+	void extractAdditionalClasspathElements_returnsEmptyWhenNoConfig() {
+		MavenProject project = projectWithSurefire(config());
+
+		assertTrue(SurefireHelper.extractAdditionalClasspathElements(project).isEmpty());
+	}
+
+	@Test
+	void extractAdditionalClasspathElements_returnsSingleEntry() {
+		Xpp3Dom elements = child("additionalClasspathElements", null);
+		elements.addChild(child("additionalClasspathElement", "/some/path/META-INF/versions/11"));
+		MavenProject project = projectWithSurefire(config(elements));
+
+		List<String> result = SurefireHelper.extractAdditionalClasspathElements(project);
+
+		assertEquals(1, result.size());
+		assertEquals("/some/path/META-INF/versions/11", result.get(0));
+	}
+
+	@Test
+	void extractAdditionalClasspathElements_returnsMultipleEntries() {
+		Xpp3Dom elements = child("additionalClasspathElements", null);
+		elements.addChild(child("additionalClasspathElement", "/path/a"));
+		elements.addChild(child("additionalClasspathElement", "/path/b"));
+		MavenProject project = projectWithSurefire(config(elements));
+
+		List<String> result = SurefireHelper.extractAdditionalClasspathElements(project);
+
+		assertEquals(2, result.size());
+		assertEquals("/path/a", result.get(0));
+		assertEquals("/path/b", result.get(1));
+	}
+
+	@Test
+	void extractAdditionalClasspathElements_skipsBlankEntries() {
+		Xpp3Dom elements = child("additionalClasspathElements", null);
+		elements.addChild(child("additionalClasspathElement", "/path/a"));
+		elements.addChild(child("additionalClasspathElement", "  "));
+		elements.addChild(child("additionalClasspathElement", "/path/b"));
+		MavenProject project = projectWithSurefire(config(elements));
+
+		List<String> result = SurefireHelper.extractAdditionalClasspathElements(project);
+
+		assertEquals(2, result.size());
+		assertEquals("/path/a", result.get(0));
+		assertEquals("/path/b", result.get(1));
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// warnConflictingRunOrder — detects runOrder conflicts
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void warnConflictingRunOrder_noWarningForDefault() {
+		MavenProject project = projectWithSurefire(config());
+		Log log = mockLog();
+
+		SurefireHelper.warnConflictingRunOrder(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnConflictingRunOrder_noWarningForFilesystem() {
+		MavenProject project = projectWithSurefire(config(child("runOrder", "filesystem")));
+		Log log = mockLog();
+
+		SurefireHelper.warnConflictingRunOrder(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnConflictingRunOrder_warnsForRandom() {
+		MavenProject project = projectWithSurefire(config(child("runOrder", "random")));
+		Log log = mockLog();
+
+		SurefireHelper.warnConflictingRunOrder(project, log);
+
+		verify(log).warn(contains("runOrder"));
+	}
+
+	@Test
+	void warnConflictingRunOrder_warnsForFailedFirst() {
+		MavenProject project = projectWithSurefire(config(child("runOrder", "failedfirst")));
+		Log log = mockLog();
+
+		SurefireHelper.warnConflictingRunOrder(project, log);
+
+		verify(log).warn(contains("runOrder"));
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// warnForkCountInLearnMode — multi-fork learn corruption
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void warnForkCount_noWarningForDefault() {
+		MavenProject project = projectWithSurefire(config());
+		Log log = mockLog();
+
+		SurefireHelper.warnForkCountInLearnMode(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnForkCount_noWarningForOne() {
+		MavenProject project = projectWithSurefire(config(child("forkCount", "1")));
+		Log log = mockLog();
+
+		SurefireHelper.warnForkCountInLearnMode(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnForkCount_warnsForMultipleForks() {
+		MavenProject project = projectWithSurefire(config(child("forkCount", "4")));
+		Log log = mockLog();
+
+		SurefireHelper.warnForkCountInLearnMode(project, log);
+
+		verify(log).warn(contains("forkCount"));
+	}
+
+	@Test
+	void warnForkCount_warnsForCoreMultiplied() {
+		MavenProject project = projectWithSurefire(config(child("forkCount", "1.5C")));
+		Log log = mockLog();
+
+		SurefireHelper.warnForkCountInLearnMode(project, log);
+
+		verify(log).warn(contains("forkCount"));
+	}
+
+	@Test
+	void warnForkCountOrderMode_warnsForMultipleForks() {
+		MavenProject project = projectWithSurefire(config(child("forkCount", "2")));
+		Log log = mockLog();
+
+		SurefireHelper.warnForkCountInOrderMode(project, log);
+
+		verify(log).warn(contains("forkCount"));
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// warnReuseForksFalseInLearnMode
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void warnReuseForksFalse_noWarningForDefault() {
+		MavenProject project = projectWithSurefire(config());
+		Log log = mockLog();
+
+		SurefireHelper.warnReuseForksFalseInLearnMode(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnReuseForksFalse_noWarningForTrue() {
+		MavenProject project = projectWithSurefire(config(child("reuseForks", "true")));
+		Log log = mockLog();
+
+		SurefireHelper.warnReuseForksFalseInLearnMode(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnReuseForksFalse_warnsForFalse() {
+		MavenProject project = projectWithSurefire(config(child("reuseForks", "false")));
+		Log log = mockLog();
+
+		SurefireHelper.warnReuseForksFalseInLearnMode(project, log);
+
+		verify(log).warn(contains("reuseForks"));
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// warnRerunFailingTestsInLearnMode
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void warnRerunFailingTests_noWarningForDefault() {
+		MavenProject project = projectWithSurefire(config());
+		Log log = mockLog();
+
+		SurefireHelper.warnRerunFailingTestsInLearnMode(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnRerunFailingTests_noWarningForZero() {
+		MavenProject project = projectWithSurefire(config(child("rerunFailingTestsCount", "0")));
+		Log log = mockLog();
+
+		SurefireHelper.warnRerunFailingTestsInLearnMode(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnRerunFailingTests_warnsForPositive() {
+		MavenProject project = projectWithSurefire(config(child("rerunFailingTestsCount", "3")));
+		Log log = mockLog();
+
+		SurefireHelper.warnRerunFailingTestsInLearnMode(project, log);
+
+		verify(log).warn(contains("rerunFailingTestsCount"));
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// forceClasspathModeIfNeeded — JPMS module path
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void forceClasspathMode_noActionWhenNoModuleInfo() {
+		MavenProject project = projectWithSurefire(config());
+		project.getModel().getBuild().setDirectory("/tmp/nonexistent-project/target");
+		project.setFile(new java.io.File("/tmp/nonexistent-project/pom.xml"));
+		Log log = mockLog();
+
+		SurefireHelper.forceClasspathModeIfNeeded(project, log);
+
+		// Should not modify config when no module-info.java exists
+		Xpp3Dom config = (Xpp3Dom) SurefireHelper.findSurefirePlugin(project).getConfiguration();
+		assertNull(config.getChild("useModulePath"));
+	}
+
+	@Test
+	void forceClasspathMode_noActionWhenAlreadyFalse() {
+		MavenProject project = projectWithSurefire(config(child("useModulePath", "false")));
+		Log log = mockLog();
+
+		SurefireHelper.forceClasspathModeIfNeeded(project, log);
+
+		// Should not change if already false
+		verify(log, never()).info(contains("JPMS"));
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// warnSelectModeFilters — groups/excludes in select mode
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void warnSelectModeFilters_noWarningForDefault() {
+		MavenProject project = projectWithSurefire(config());
+		Log log = mockLog();
+
+		SurefireHelper.warnSelectModeFilters(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
+
+	@Test
+	void warnSelectModeFilters_warnsForGroups() {
+		MavenProject project = projectWithSurefire(config(child("groups", "slow")));
+		Log log = mockLog();
+
+		SurefireHelper.warnSelectModeFilters(project, log);
+
+		verify(log).warn(contains("groups"));
+	}
+
+	@Test
+	void warnSelectModeFilters_warnsForExcludedGroups() {
+		MavenProject project = projectWithSurefire(config(child("excludedGroups", "integration")));
+		Log log = mockLog();
+
+		SurefireHelper.warnSelectModeFilters(project, log);
+
+		verify(log).warn(contains("excludedGroups"));
+	}
+
+	@Test
+	void warnSelectModeFilters_warnsForExcludes() {
+		Xpp3Dom excludes = child("excludes", null);
+		excludes.addChild(child("exclude", "**/Abstract*Test.java"));
+		MavenProject project = projectWithSurefire(config(excludes));
+		Log log = mockLog();
+
+		SurefireHelper.warnSelectModeFilters(project, log);
+
+		verify(log).warn(contains("excludes"));
+	}
+
+	@Test
+	void warnSelectModeFilters_noWarningForEmptyExcludes() {
+		// <excludes> element present but no children
+		MavenProject project = projectWithSurefire(config(child("excludes", null)));
+		Log log = mockLog();
+
+		SurefireHelper.warnSelectModeFilters(project, log);
+
+		verify(log, never()).warn(anyString());
+	}
 }

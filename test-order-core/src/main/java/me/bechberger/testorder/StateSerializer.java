@@ -27,11 +27,12 @@ final class StateSerializer {
 			if (parent != null) {
 				Files.createDirectories(parent);
 			}
-			byte[] jsonBytes = PrettyPrinter.compactPrint(state.toPersistedRoot()).getBytes(StandardCharsets.UTF_8);
 			Path tempFile = PersistenceSupport.temporarySibling(file);
-			try (var out = LZ4Support.blockOutputStream(Files.newOutputStream(tempFile), 1 << 16,
-					LZ4Support.highCompressor(17))) {
-				out.write(jsonBytes);
+			try (var writer = new java.io.OutputStreamWriter(
+					LZ4Support.blockOutputStream(Files.newOutputStream(tempFile), 1 << 16,
+							LZ4Support.highCompressor(17)),
+					StandardCharsets.UTF_8)) {
+				writer.write(PrettyPrinter.compactPrint(state.toPersistedRoot()));
 			}
 			PersistenceSupport.moveIntoPlace(tempFile, file);
 			state.afterSave();
@@ -67,8 +68,20 @@ final class StateSerializer {
 		} catch (IOException | RuntimeException primaryFailure) {
 			Path tempFile = PersistenceSupport.temporarySibling(file);
 			if (!loadPath.equals(tempFile) && Files.exists(tempFile)) {
-				return TestOrderState.fromPersistedRoot(
-						TestOrderState.safeMap(JSONParser.parse(decode(Files.readAllBytes(tempFile))), "root"));
+				try {
+					return TestOrderState.fromPersistedRoot(
+							TestOrderState.safeMap(JSONParser.parse(decode(Files.readAllBytes(tempFile))), "root"));
+				} catch (StateDowngradeException tempDowngrade) {
+					Path backup = createTimestampedBackup(tempFile);
+					LOG.warning("Temp state file was also from a newer version. Backup at " + backup
+							+ ". Starting fresh.");
+					return new TestOrderState();
+				} catch (IOException | RuntimeException tempFailure) {
+					tempFailure.addSuppressed(primaryFailure);
+					if (tempFailure instanceof IOException ioe)
+						throw ioe;
+					throw new IOException("Failed to load state from both primary and temp: " + tempFailure.getMessage(), tempFailure);
+				}
 			}
 			if (primaryFailure instanceof IOException ioe)
 				throw ioe;
@@ -95,8 +108,15 @@ final class StateSerializer {
 		if (raw[0] == '{' || raw[0] == ' ' || raw[0] == '\n' || raw[0] == '\r' || raw[0] == '\t') {
 			return new String(raw, StandardCharsets.UTF_8).strip();
 		}
-		try (var in = LZ4Support.blockInputStream(new ByteArrayInputStream(raw))) {
-			return new String(in.readAllBytes(), StandardCharsets.UTF_8).strip();
+		try (var reader = new java.io.InputStreamReader(
+				LZ4Support.blockInputStream(new ByteArrayInputStream(raw)), StandardCharsets.UTF_8)) {
+			StringBuilder sb = new StringBuilder(raw.length * 3);
+			char[] buf = new char[8192];
+			int n;
+			while ((n = reader.read(buf)) >= 0) {
+				sb.append(buf, 0, n);
+			}
+			return sb.toString().strip();
 		}
 	}
 

@@ -182,6 +182,7 @@ Score weights (`scoreNewTest`, `scoreChangedTest`, etc.) must be set in the `tes
 | `testOrderOptimize` | Tune scoring weights based on failure history |
 | `testOrderExportJson` | Export test-order data as JSON for scripting |
 | `testOrderCoverage` | Analyze dependency coverage and identify gaps |
+| `testOrderDetectDependencies` | Detect order-dependent (flaky) tests via reordering strategies |
 | `testOrderMetrics` | Export test-order metrics as JSON for CI/CD dashboards |
 | `testOrderDownload` | Download dependency index from CI artifacts |
 | `testOrderSnapshot` | Create hash snapshot for since-last-run change detection |

@@ -591,6 +591,10 @@ public class TestOrderPlugin implements Plugin<Project> {
         // tools that inspect task properties without executing the task see them.
         testTask.systemProperty("testorder.index.path", indexFile.getAbsolutePath());
         String changeMode = ext.getChangeMode().get();
+        String propChangeMode = gradleOrSystemProperty(project, "testorder.changeMode");
+        if (propChangeMode != null && !propChangeMode.isBlank()) {
+            changeMode = propChangeMode;
+        }
         if (changeMode != null && !changeMode.isBlank()) {
             testTask.systemProperty("testorder.changeMode", changeMode);
         }
@@ -991,7 +995,7 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.doFirst("testOrderRunRemainingPrepare", t -> {
                 Path remainingFile = ext.getRemainingFile().get().getAsFile().toPath();
                 if (!Files.exists(remainingFile)) {
-                    project.getLogger().lifecycle("[test-order] No remaining-tests file found at {} — nothing to run.",
+                    project.getLogger().warn("[test-order] No remaining-tests file found at {} — nothing to run.",
                             remainingFile);
                     applySelectedTests((Test) t, List.of());
                     return;
@@ -999,7 +1003,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 try {
                     List<String> tests = TestSelector.readTestList(remainingFile);
                     if (tests.isEmpty()) {
-                        project.getLogger().lifecycle("[test-order] Remaining tests file is empty — skipping tests.");
+                        project.getLogger().warn("[test-order] Remaining tests file is empty — skipping tests.");
                     } else {
                         project.getLogger().lifecycle("[test-order] Running {} remaining test classes", tests.size());
                     }
@@ -1171,6 +1175,110 @@ public class TestOrderPlugin implements Plugin<Project> {
                     ((Test) t).systemProperty("testorder.index.path", indexPath.toAbsolutePath().toString());
                     ((Test) t).systemProperty("testorder.state.path",
                             ext.getStateFile().get().getAsFile().getAbsolutePath());
+                }
+            });
+        });
+
+        project.getTasks().register("testOrderDetectDependencies", task -> {
+            task.setGroup("test-order");
+            task.setDescription("Detect order-dependent tests by running permutations");
+            task.doLast(t -> {
+                autoAggregateIfNeeded(project, ext);
+
+                Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
+                Path statePath = ext.getStateFile().get().getAsFile().toPath();
+                Path outputDir = project.getProjectDir().toPath()
+                        .resolve(".test-order/detection");
+
+                String algorithm = Optional
+                        .ofNullable(gradleOrSystemProperty(project, "testorder.detect.algorithm"))
+                        .orElse("combined");
+                int timeBudget;
+                String timeBudgetStr = gradleOrSystemProperty(project, "testorder.detect.timeBudget");
+                if (timeBudgetStr != null) {
+                    try {
+                        timeBudget = Integer.parseInt(timeBudgetStr);
+                    } catch (NumberFormatException e) {
+                        throw new GradleException(
+                                "[test-order] Invalid testorder.detect.timeBudget value '"
+                                        + timeBudgetStr + "' — must be an integer");
+                    }
+                } else {
+                    timeBudget = 300;
+                }
+                if (timeBudget < 0) {
+                    throw new GradleException(
+                            "[test-order] Invalid timeBudget: " + timeBudget
+                                    + ". Must be >= 0 (0 = unlimited).");
+                }
+                boolean stopOnFirst = Optional
+                        .ofNullable(gradleOrSystemProperty(project, "testorder.detect.stopOnFirst"))
+                        .map(Boolean::parseBoolean)
+                        .orElse(false);
+                long seed;
+                String seedStr = gradleOrSystemProperty(project, "testorder.detect.seed");
+                if (seedStr != null) {
+                    try {
+                        seed = Long.parseLong(seedStr);
+                    } catch (NumberFormatException e) {
+                        throw new GradleException(
+                                "[test-order] Invalid testorder.detect.seed value '"
+                                        + seedStr + "' — must be a number");
+                    }
+                } else {
+                    seed = 42L;
+                }
+                boolean failOnDetection = Optional
+                        .ofNullable(gradleOrSystemProperty(project, "testorder.detect.failOnDetection"))
+                        .map(Boolean::parseBoolean)
+                        .orElse(false);
+
+                me.bechberger.testorder.ops.DetectDependenciesOperation.Config config =
+                        new me.bechberger.testorder.ops.DetectDependenciesOperation.Config(
+                                indexPath, statePath, outputDir,
+                                algorithm, timeBudget, stopOnFirst, seed,
+                                project.getName(), wrapLog(project));
+
+                me.bechberger.testorder.ops.detection.TestRunner runner =
+                        new GradleTestRunner(project.getProjectDir().toPath(), project.getLogger());
+
+                try {
+                    me.bechberger.testorder.ops.DetectDependenciesOperation.Result result =
+                            me.bechberger.testorder.ops.DetectDependenciesOperation.run(config, runner);
+
+                    if (result.hasFindings()) {
+                        int classLevel = result.results().size();
+                        int methodLevel = result.methodResults().size();
+                        int total = classLevel + methodLevel;
+                        project.getLogger().warn("[test-order] Detected " + total
+                                + " order-dependent finding(s): "
+                                + result.victimCount() + " class-level victims, "
+                                + result.brittleCount() + " class-level brittles"
+                                + (methodLevel > 0 ? ", " + methodLevel + " method-level" : ""));
+                        if (result.reportPath() != null) {
+                            project.getLogger().warn("[test-order] JSON report: " + result.reportPath());
+                        }
+                        if (result.markdownReportPath() != null) {
+                            project.getLogger().warn("[test-order] Markdown report: "
+                                    + result.markdownReportPath());
+                        }
+                        if (failOnDetection) {
+                            throw new GradleException("[test-order] Detected " + total
+                                    + " order-dependent test(s). See reports in " + outputDir);
+                        }
+                    } else {
+                        if (timeBudget > 0) {
+                            project.getLogger().lifecycle("[test-order] No order-dependent tests "
+                                    + "detected within time budget (" + timeBudget + "s). Increase "
+                                    + "testorder.detect.timeBudget for more coverage.");
+                        } else {
+                            project.getLogger().lifecycle(
+                                    "[test-order] No order-dependent tests detected.");
+                        }
+                    }
+                } catch (IOException e) {
+                    throw new GradleException(
+                            "Detect-dependencies failed: " + e.getMessage(), e);
                 }
             });
         });
@@ -1389,6 +1497,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  testOrderDashboard           Generate interactive HTML report");
                 log.lifecycle("  testOrderServe               Serve dashboard on local HTTP server");
                 log.lifecycle("  testOrderDiagnose            Validate setup and detect issues");
+                log.lifecycle("  testOrderDetectDependencies  Detect order-dependent tests");
                 log.lifecycle("  testOrderCompact             Rebuild index (remove stale entries)");
                 log.lifecycle("  testOrderMetrics             Export metrics JSON for CI/CD");
                 log.lifecycle("  testOrderAggregate           Aggregate .deps files into index");
@@ -1532,7 +1641,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .hashFile(ext.getHashFile().get().getAsFile().toPath())
                 .testHashFile(ext.getTestHashFile().get().getAsFile().toPath())
                 .methodHashFile(ext.getMethodHashFile().get().getAsFile().toPath())
-                .changeMode(ext.getChangeMode().get())
+                .changeMode(resolveChangeMode(project, ext))
                 .changedClasses(changedClasses)
                 .changedTestClasses(changedTestClasses)
                 .weightsFile(weightsFile != null && !weightsFile.isBlank() ? Path.of(weightsFile) : null)
@@ -1839,6 +1948,15 @@ public class TestOrderPlugin implements Plugin<Project> {
             return val != null ? val.toString() : null;
         }
         return System.getProperty(key);
+    }
+
+    /** Resolves changeMode from CLI property override or extension default. */
+    private static String resolveChangeMode(Project project, TestOrderExtension ext) {
+        String propChangeMode = gradleOrSystemProperty(project, "testorder.changeMode");
+        if (propChangeMode != null && !propChangeMode.isBlank()) {
+            return propChangeMode;
+        }
+        return ext.getChangeMode().get();
     }
 
     private static void runShowOrderReport(Project project, TestOrderExtension ext,

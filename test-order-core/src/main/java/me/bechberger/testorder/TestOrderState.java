@@ -95,6 +95,11 @@ public class TestOrderState {
 
 	private static CommentedConfig loadResourceConfig() {
 		try (InputStream is = TestOrderState.class.getResourceAsStream("/default-scoring-weights.toml")) {
+			if (is == null) {
+				throw new IllegalStateException(
+						"default-scoring-weights.toml missing from resources — "
+								+ "the test-order-core JAR may be corrupt or classpath is misconfigured");
+			}
 			return new TomlParser().parse(is);
 		} catch (IOException e) {
 			throw new IllegalStateException("default-scoring-weights.toml missing from resources", e);
@@ -116,7 +121,11 @@ public class TestOrderState {
 
 	private static int readConfigInt(CommentedConfig root, String key) {
 		CommentedConfig cfg = root.get("config");
-		return ((Number) cfg.get(key)).intValue();
+		Number val = cfg.get(key);
+		if (val == null) {
+			throw new IllegalStateException("Missing config key '" + key + "' in default-scoring-weights.toml");
+		}
+		return val.intValue();
 	}
 
 	private static int readConfigInt(CommentedConfig root, String key, int fallback) {
@@ -130,7 +139,11 @@ public class TestOrderState {
 
 	private static double readConfigDouble(CommentedConfig root, String key) {
 		CommentedConfig cfg = root.get("config");
-		return ((Number) cfg.get(key)).doubleValue();
+		Number val = cfg.get(key);
+		if (val == null) {
+			throw new IllegalStateException("Missing config key '" + key + "' in default-scoring-weights.toml");
+		}
+		return val.doubleValue();
 	}
 
 	private static double readConfigDouble(CommentedConfig root, String key, double fallback) {
@@ -753,9 +766,45 @@ public class TestOrderState {
 			root.put("config", configMap);
 
 		root.put("weights", new LinkedHashMap<>(weights.toMap()));
-		root.put("durations", new LinkedHashMap<>(durationTracker.classDurations()));
+
+		// run history (capped at MAX_HISTORY_RUNS, most recent entries)
+		List<RunRecord> persistedRuns = RunHistoryManager.thinRunHistory(runHistory.runs(), config.historyMaxRuns());
+
+		// Build the set of active classes from run outcomes. Note: outcomes are
+		// omitted for successful runs after a save-load cycle (to save space),
+		// so also include classes known to the duration tracker and failure history
+		// to avoid incorrectly pruning data for passing-only test classes.
+		Set<String> activeClasses = new java.util.HashSet<>();
+		for (RunRecord run : persistedRuns) {
+			if (run.outcomes() != null) {
+				for (TestOutcome outcome : run.outcomes()) {
+					activeClasses.add(outcome.testClass());
+				}
+			}
+		}
+		activeClasses.addAll(durationTracker.classDurations().keySet());
+		activeClasses.addAll(failureHistory.knownClasses());
+
+		// Filter duration/failure maps for serialization WITHOUT mutating live state.
+		// Actual pruning is deferred to afterSave() so that a failed save does not
+		// lose in-memory data.
+		Map<String, Long> prunedDurations = new LinkedHashMap<>();
+		for (var e : durationTracker.classDurations().entrySet()) {
+			if (activeClasses.isEmpty() || DurationTracker.isActive(e.getKey(), activeClasses)) {
+				prunedDurations.put(e.getKey(), e.getValue());
+			}
+		}
+		root.put("durations", prunedDurations);
 		if (!durationTracker.classDurationVariances().isEmpty()) {
-			root.put("durationVariances", new LinkedHashMap<>(durationTracker.classDurationVariances()));
+			Map<String, Double> prunedVariances = new LinkedHashMap<>();
+			for (var e : durationTracker.classDurationVariances().entrySet()) {
+				if (activeClasses.isEmpty() || DurationTracker.isActive(e.getKey(), activeClasses)) {
+					prunedVariances.put(e.getKey(), e.getValue());
+				}
+			}
+			if (!prunedVariances.isEmpty()) {
+				root.put("durationVariances", prunedVariances);
+			}
 		}
 
 		// failure scores: decay historical when a test run completed (detected via
@@ -769,11 +818,6 @@ public class TestOrderState {
 				config.failureDecay(), config.methodFailureDecay(), config.failurePruneThreshold(), LOG);
 		Map<String, Object> mergedFailures = mergedFailureState.failureScores();
 		root.put("failureScores", mergedFailures);
-
-		// run history (capped at MAX_HISTORY_RUNS, most recent entries)
-		List<RunRecord> persistedRuns = RunHistoryManager.thinRunHistory(runHistory.runs(), config.historyMaxRuns());
-		// Prune stale duration and failure entries for test classes no longer in runs
-		pruneStaleEntries();
 		List<Object> runsList = new ArrayList<>(persistedRuns.size());
 		for (RunRecord run : persistedRuns) {
 			runsList.add(runRecordToMap(run));
@@ -784,6 +828,8 @@ public class TestOrderState {
 		if (!durationTracker.methodDurations().isEmpty()) {
 			Map<String, Object> mdMap = new LinkedHashMap<>();
 			for (var classEntry : durationTracker.methodDurations().entrySet()) {
+				if (!activeClasses.isEmpty() && !DurationTracker.isActive(classEntry.getKey(), activeClasses))
+					continue;
 				Map<String, Object> methods = new LinkedHashMap<>();
 				for (var methodEntry : classEntry.getValue().entrySet()) {
 					methods.put(methodEntry.getKey(), methodEntry.getValue());
@@ -795,6 +841,8 @@ public class TestOrderState {
 		if (!durationTracker.methodDurationVariances().isEmpty()) {
 			Map<String, Object> mdvMap = new LinkedHashMap<>();
 			for (var classEntry : durationTracker.methodDurationVariances().entrySet()) {
+				if (!activeClasses.isEmpty() && !DurationTracker.isActive(classEntry.getKey(), activeClasses))
+					continue;
 				Map<String, Object> methods = new LinkedHashMap<>();
 				for (var methodEntry : classEntry.getValue().entrySet()) {
 					methods.put(methodEntry.getKey(), methodEntry.getValue());
@@ -819,17 +867,24 @@ public class TestOrderState {
 		persistedFailureScores = mergedFailures;
 		persistedMethodFailureScores = mergedMethodFailures;
 		persistedRunsAfterSave = persistedRuns;
+		persistedActiveClasses = activeClasses;
 		return root;
 	}
 
 	private transient Map<String, Object> persistedFailureScores = Map.of();
 	private transient Map<String, Object> persistedMethodFailureScores = Map.of();
 	private transient List<RunRecord> persistedRunsAfterSave = List.of();
+	private transient Set<String> persistedActiveClasses = Set.of();
 
 	void afterSave() {
 		failureHistory.applyPersisted(
 				new FailureHistoryTracker.PersistedScores(persistedFailureScores, persistedMethodFailureScores));
 		runHistory.replace(persistedRunsAfterSave);
+		// Prune stale entries now that the save succeeded — safe to mutate live state
+		if (!persistedActiveClasses.isEmpty()) {
+			durationTracker.pruneToActiveClasses(persistedActiveClasses);
+			failureHistory.pruneToActiveClasses(persistedActiveClasses);
+		}
 		pendingRunCompleted = false;
 	}
 
@@ -1045,6 +1100,8 @@ public class TestOrderState {
 	}
 
 	private static int safeInt(Object o, int defaultValue, String label) {
+		if (o == null)
+			return defaultValue;
 		try {
 			return toInt(o);
 		} catch (RuntimeException e) {
@@ -1054,6 +1111,8 @@ public class TestOrderState {
 	}
 
 	private static long safeLong(Object o, long defaultValue, String label) {
+		if (o == null)
+			return defaultValue;
 		try {
 			return toLong(o);
 		} catch (RuntimeException e) {
@@ -1063,6 +1122,8 @@ public class TestOrderState {
 	}
 
 	private static double safeDouble(Object o, double defaultValue, String label) {
+		if (o == null)
+			return defaultValue;
 		try {
 			return toDouble(o);
 		} catch (RuntimeException e) {
@@ -1072,24 +1133,18 @@ public class TestOrderState {
 	}
 
 	private static int toInt(Object o) {
-		if (o == null)
-			return 0;
 		if (o instanceof Number n)
 			return n.intValue();
 		return Integer.parseInt(o.toString());
 	}
 
 	private static long toLong(Object o) {
-		if (o == null)
-			return 0L;
 		if (o instanceof Number n)
 			return n.longValue();
 		return Long.parseLong(o.toString());
 	}
 
 	private static double toDouble(Object o) {
-		if (o == null)
-			return 0.0;
 		if (o instanceof Number n)
 			return n.doubleValue();
 		return Double.parseDouble(o.toString());

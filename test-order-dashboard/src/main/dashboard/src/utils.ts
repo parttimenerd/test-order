@@ -27,6 +27,11 @@ export function sn(fqcn: string): string {
   return p.length <= 2 ? fqcn : p[p.length - 2] + '.' + p[p.length - 1]
 }
 
+/** Escape HTML special characters to prevent XSS when inserting into .html() */
+export function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 /** Format millisecond duration to human-readable */
 export function fmtDur(ms: number | null | undefined): string {
   if (ms == null || ms < 0) return '?'
@@ -280,7 +285,7 @@ function shortMember(ref: string): string {
 export function exportTestsCsv(tests: TestEntry[]): string {
   const header = 'rank,name,score,duration_ms,deps,dep_overlap,fail_score,is_new,is_changed,is_fast,is_slow,static_overlap'
   const rows = tests.map(t =>
-    [t.rank, '"' + t.name + '"', t.score, t.duration, t.depTotal, t.depOverlap,
+    [t.rank, '"' + t.name.replace(/"/g, '""') + '"', t.score, t.duration, t.depTotal, t.depOverlap,
      t.failScore.toFixed(2), t.isNew, t.isChanged, t.isFast, t.isSlow, t.hasStaticFieldOverlap].join(',')
   )
   return header + '\n' + rows.join('\n')

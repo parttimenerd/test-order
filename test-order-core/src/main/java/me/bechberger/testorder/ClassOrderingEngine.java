@@ -175,6 +175,12 @@ public final class ClassOrderingEngine {
 			groups.computeIfAbsent(scores.getOrDefault(className, 0), k -> new ArrayList<>()).add(className);
 		}
 
+		// Pre-cache dependency sets to avoid repeated map lookups and wrapper creation
+		Map<String, Set<String>> depsCache = new HashMap<>(classNames.size());
+		for (String className : classNames) {
+			depsCache.put(className, depMap.get(className));
+		}
+
 		List<String> result = new ArrayList<>(classNames.size());
 		Set<String> coveredDeps = new HashSet<>();
 
@@ -188,7 +194,7 @@ public final class ClassOrderingEngine {
 
 				for (int i = 0; i < group.size(); i++) {
 					String name = group.get(i);
-					Set<String> deps = depMap.get(name);
+					Set<String> deps = depsCache.get(name);
 					double distance = TestSelector.jaccardDistance(deps, coveredDeps);
 					long dur = state.getDuration(name, Long.MAX_VALUE);
 
@@ -209,7 +215,7 @@ public final class ClassOrderingEngine {
 				}
 				group.remove(last);
 				result.add(best);
-				coveredDeps.addAll(depMap.get(best));
+				coveredDeps.addAll(depsCache.get(best));
 			}
 		}
 		return result;

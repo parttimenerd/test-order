@@ -26,6 +26,10 @@ public final class TelemetryPersistence {
 		try {
 			return TestOrderState.load(stateFile);
 		} catch (IOException e) {
+			if (java.nio.file.Files.exists(stateFile)) {
+				TestOrderLogger.warn("Failed to load state from {}: {} — starting fresh",
+						stateFile, e.getMessage());
+			}
 			return new TestOrderState();
 		}
 	}
@@ -56,7 +60,17 @@ public final class TelemetryPersistence {
 		for (var entry : pendingMethodDurations.entrySet()) {
 			String[] parts = entry.getKey().split("#", 2);
 			if (parts.length == 2) {
-				entry.getValue().forEach(duration -> state.recordMethodDuration(parts[0], parts[1], duration));
+				List<Long> durations = entry.getValue();
+				if (durations.size() <= 1) {
+					durations.forEach(duration -> state.recordMethodDuration(parts[0], parts[1], duration));
+				} else {
+					// Multiple observations in one run (e.g. @ParameterizedTest invocations).
+					// Aggregate to a single observation to preserve cross-run EMA smoothing.
+					// Applying N separate EMA updates in one run effectively erases historical
+					// data after ~log(0.03)/log(1-alpha) updates.
+					long avg = durations.stream().mapToLong(Long::longValue).sum() / durations.size();
+					state.recordMethodDuration(parts[0], parts[1], avg);
+				}
 			}
 		}
 		for (String methodKey : failedMethodNames) {
@@ -76,7 +90,9 @@ public final class TelemetryPersistence {
 		if (maxRunsProp != null) {
 			try {
 				state.setHistoryMaxRuns(Integer.parseInt(maxRunsProp));
-			} catch (IllegalArgumentException ignored) {
+			} catch (IllegalArgumentException e) {
+				TestOrderLogger.warn("Invalid {} value '{}': {}", TestOrderConfig.HISTORY_MAX_RUNS,
+						maxRunsProp, e.getMessage());
 			}
 		}
 	}

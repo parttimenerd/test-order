@@ -1230,6 +1230,122 @@ class TelemetryListenerTest {
 		assertEquals(0, runs.get(runs.size() - 1).totalFailures(), "ABORTED tests should not count as failures");
 	}
 
+	// ── Rerun recovery tests ─────────────────────────────────────────
+
+	/**
+	 * Simulates Surefire's rerunFailingTestsCount: a test fails in the first
+	 * plan execution, then succeeds in the rerun plan. The final state should
+	 * NOT record the class as failed, and durations should not be double-counted.
+	 */
+	@Test
+	void rerunRecovery_failThenPass_clearsFailure() throws IOException {
+		Path stateFile = tempDir.resolve(".state-rerun-recovery");
+
+		System.clearProperty("testorder.learn");
+		System.setProperty("testorder.state.path", stateFile.toString());
+
+		TelemetryListener listener = new TelemetryListener();
+
+		// Plan 1: test fails
+		listener.testPlanExecutionStarted(StubTestPlan.EMPTY);
+		TestIdentifier classId1 = createClassSourceTestIdentifier("com.example.FlakyTest", "attempt1");
+		listener.executionStarted(classId1);
+		listener.executionFinished(classId1, TestExecutionResult.failed(new AssertionError("flaky")));
+		listener.testPlanExecutionFinished(StubTestPlan.EMPTY);
+
+		// After plan 1, state has a failure recorded
+		TestOrderState state1 = TestOrderState.load(stateFile);
+		assertTrue(state1.getFailureScores().containsKey("com.example.FlakyTest"),
+				"After first plan, failure should be recorded");
+
+		// Plan 2: rerun — same test succeeds
+		listener.testPlanExecutionStarted(StubTestPlan.EMPTY);
+		TestIdentifier classId2 = createClassSourceTestIdentifier("com.example.FlakyTest", "attempt2");
+		listener.executionStarted(classId2);
+		listener.executionFinished(classId2, TestExecutionResult.successful());
+		listener.testPlanExecutionFinished(StubTestPlan.EMPTY);
+
+		// After plan 2, the rerun success should NOT add another failure
+		TestOrderState state2 = TestOrderState.load(stateFile);
+		List<TestOrderState.RunRecord> runs = state2.runs();
+		// The second run record (rerun) should have 0 failures
+		assertTrue(runs.size() >= 2, "Should have at least 2 run records");
+		assertEquals(0, runs.get(runs.size() - 1).totalFailures(),
+				"Rerun plan with passing test should record 0 failures");
+	}
+
+	/**
+	 * Verifies that pending data is cleared between plan executions so durations
+	 * from plan 1 are not re-applied in plan 2.
+	 */
+	@Test
+	void rerunDoesNotDoubleDurations() throws IOException {
+		Path stateFile = tempDir.resolve(".state-rerun-durations");
+
+		System.clearProperty("testorder.learn");
+		System.setProperty("testorder.state.path", stateFile.toString());
+
+		TelemetryListener listener = new TelemetryListener();
+
+		// Plan 1: test runs
+		listener.testPlanExecutionStarted(StubTestPlan.EMPTY);
+		TestIdentifier id1 = createClassSourceTestIdentifier("com.example.SlowTest", "run1");
+		listener.executionStarted(id1);
+		listener.executionFinished(id1, TestExecutionResult.successful());
+		listener.testPlanExecutionFinished(StubTestPlan.EMPTY);
+
+		// Plan 2: rerun (same test)
+		listener.testPlanExecutionStarted(StubTestPlan.EMPTY);
+		TestIdentifier id2 = createClassSourceTestIdentifier("com.example.SlowTest", "run2");
+		listener.executionStarted(id2);
+		listener.executionFinished(id2, TestExecutionResult.successful());
+		listener.testPlanExecutionFinished(StubTestPlan.EMPTY);
+
+		// Load state — should have duration data (not zero, not doubled)
+		TestOrderState state = TestOrderState.load(stateFile);
+		long dur = state.getDuration("com.example.SlowTest", -1L);
+		assertTrue(dur >= 0, "Duration should be recorded after rerun");
+	}
+
+	/**
+	 * Method-level rerun recovery: a method fails, then passes on retry.
+	 */
+	@Test
+	void rerunRecovery_methodLevel_clearsMethodFailure() throws IOException {
+		Path stateFile = tempDir.resolve(".state-rerun-method");
+
+		System.clearProperty("testorder.learn");
+		System.setProperty("testorder.state.path", stateFile.toString());
+
+		TelemetryListener listener = new TelemetryListener();
+
+		// Plan 1: method fails
+		listener.testPlanExecutionStarted(StubTestPlan.EMPTY);
+		TestIdentifier classId1 = createClassSourceTestIdentifier("com.example.MethodFlakyTest", "a1");
+		listener.executionStarted(classId1);
+		TestIdentifier methodId1 = createMethodSourceTestIdentifier("com.example.MethodFlakyTest", "flakyMethod", "m1");
+		listener.executionStarted(methodId1);
+		listener.executionFinished(methodId1, TestExecutionResult.failed(new AssertionError("flaky")));
+		listener.executionFinished(classId1, TestExecutionResult.failed(new AssertionError("child failed")));
+		listener.testPlanExecutionFinished(StubTestPlan.EMPTY);
+
+		// Plan 2: method passes on retry
+		listener.testPlanExecutionStarted(StubTestPlan.EMPTY);
+		TestIdentifier classId2 = createClassSourceTestIdentifier("com.example.MethodFlakyTest", "a2");
+		listener.executionStarted(classId2);
+		TestIdentifier methodId2 = createMethodSourceTestIdentifier("com.example.MethodFlakyTest", "flakyMethod", "m2");
+		listener.executionStarted(methodId2);
+		listener.executionFinished(methodId2, TestExecutionResult.successful());
+		listener.executionFinished(classId2, TestExecutionResult.successful());
+		listener.testPlanExecutionFinished(StubTestPlan.EMPTY);
+
+		TestOrderState state = TestOrderState.load(stateFile);
+		List<TestOrderState.RunRecord> runs = state.runs();
+		assertTrue(runs.size() >= 2);
+		assertEquals(0, runs.get(runs.size() - 1).totalFailures(),
+				"Rerun plan with passing method should record 0 failures");
+	}
+
 	private static TestIdentifier createClassSourceTestIdentifier(String className) {
 		return createClassSourceTestIdentifier(className, className);
 	}

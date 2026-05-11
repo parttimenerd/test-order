@@ -1,5 +1,6 @@
 package me.bechberger.testorder.maven;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,9 +41,36 @@ final class ReactorContext {
 	ReactorContext(MavenSession session, MavenProject project) {
 		this.session = session;
 		this.project = project;
-		this.multiModule = session.getProjects().size() > 1;
-		this.reactorRoot = session.getTopLevelProject().getBasedir().toPath();
+
+		// Primary detection: multiple projects in the reactor
+		boolean explicitMulti = session.getProjects().size() > 1;
+
+		// Secondary detection: running -pl <module> without -am.
+		// In this case the reactor has only 1 project but the project is still
+		// a submodule. We detect this by comparing the project basedir to
+		// getMultiModuleProjectDirectory() and checking if the reactor root
+		// already has a .test-order/ directory from a prior multi-module run.
+		boolean inferredMulti = false;
+		Path mmDir = resolveMultiModuleRoot(session);
+		Path projectDir = project.getBasedir().toPath().normalize();
+		if (!explicitMulti && mmDir != null && !projectDir.equals(mmDir)
+				&& Files.isDirectory(mmDir.resolve(SHARED_DIR_NAME))) {
+			inferredMulti = true;
+		}
+
+		this.multiModule = explicitMulti || inferredMulti;
+		this.reactorRoot = inferredMulti ? mmDir : session.getTopLevelProject().getBasedir().toPath();
 		this.sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
+	}
+
+	private static Path resolveMultiModuleRoot(MavenSession session) {
+		try {
+			File dir = session.getRequest().getMultiModuleProjectDirectory();
+			return dir != null ? dir.toPath().normalize() : null;
+		} catch (Exception e) {
+			// Fallback for older Maven versions or mocked sessions
+			return null;
+		}
 	}
 
 	boolean isMultiModule() {

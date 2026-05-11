@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Singleton that records which application classes are used during test runs.
@@ -139,7 +140,7 @@ public class UsageStore {
 	 * transformation-phase caches and reclaim memory.
 	 */
 	private volatile Runnable onFirstTestClassCallback;
-	private volatile boolean firstTestClassSeen;
+	private final AtomicBoolean firstTestClassSeen = new AtomicBoolean();
 
 	/** Register a callback to be invoked when the first test class starts. */
 	public void setOnFirstTestClassCallback(Runnable callback) {
@@ -150,8 +151,7 @@ public class UsageStore {
 
 	/** Called when a test class starts execution. */
 	public void startTestClass(String testClass) {
-		if (!firstTestClassSeen) {
-			firstTestClassSeen = true;
+		if (firstTestClassSeen.compareAndSet(false, true)) {
 			Runnable cb = onFirstTestClassCallback;
 			if (cb != null) {
 				cb.run();
@@ -415,8 +415,8 @@ public class UsageStore {
 	 */
 	private void writeMethodDepsFiles(Path baseDir, Map<String, Set<String>> methodDeps) {
 		for (var entry : methodDeps.entrySet()) {
-			// className#methodName → className__methodName.mdeps
-			String safeName = entry.getKey().replace('#', '_');
+			// className#methodName → className__methodName.mdeps (double underscore)
+			String safeName = entry.getKey().replace("#", "__");
 			Path outFile = baseDir.resolve(safeName + ".mdeps");
 			try {
 				List<String> lines = new ArrayList<>(entry.getValue().size() + 1);
@@ -450,7 +450,7 @@ public class UsageStore {
 	 */
 	private void writeMethodMemberDepsFiles(Path baseDir, Map<String, Set<String>> methodMemberDeps) {
 		for (var entry : methodMemberDeps.entrySet()) {
-			String safeName = entry.getKey().replace('#', '_');
+			String safeName = entry.getKey().replace("#", "__");
 			Path outFile = baseDir.resolve(safeName + ".mmembers");
 			try {
 				List<String> lines = new ArrayList<>(entry.getValue().size() + 1);

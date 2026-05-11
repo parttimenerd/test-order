@@ -105,8 +105,7 @@ final class APFDCalculator {
 			} else {
 				if (outcome.isFast()) {
 					score += weights.speed();
-				}
-				if (outcome.isSlow()) {
+				} else if (outcome.isSlow()) {
 					score -= weights.speedPenalty();
 				}
 			}

@@ -93,10 +93,19 @@ final class DurationTracker {
 	}
 
 	void pruneToActiveClasses(Set<String> activeClasses) {
-		classDurations.keySet().retainAll(activeClasses);
-		classDurationVariances.keySet().retainAll(activeClasses);
-		methodDurations.keySet().retainAll(activeClasses);
-		methodDurationVariances.keySet().retainAll(activeClasses);
+		classDurations.keySet().removeIf(key -> !isActive(key, activeClasses));
+		classDurationVariances.keySet().removeIf(key -> !isActive(key, activeClasses));
+		methodDurations.keySet().removeIf(key -> !isActive(key, activeClasses));
+		methodDurationVariances.keySet().removeIf(key -> !isActive(key, activeClasses));
+	}
+
+	/** Returns true if the class is active, or if its top-level enclosing class is active. */
+	static boolean isActive(String className, Set<String> activeClasses) {
+		if (activeClasses.contains(className)) {
+			return true;
+		}
+		int dollar = className.indexOf('$');
+		return dollar > 0 && activeClasses.contains(className.substring(0, dollar));
 	}
 
 	private static double adaptiveAlpha(double baseAlpha, double mean, double variance, double varianceThreshold,
