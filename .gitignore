@@ -19,7 +19,7 @@ __pycache__/
 *.class
 
 # Maven
-.mvn/
+.mvn/wrapper/
 dependency-reduced-pom.xml
 pom.xml.releaseBackup
 release.properties

@@ -39,6 +39,12 @@ public abstract class BaseFixtureIT {
 		Path tempFixture = tempDir.resolve(fixtureName);
 		Files.createDirectories(tempFixture);
 
+		// Copy the parent POM so that <relativePath>../pom.xml</relativePath> resolves
+		Path parentPom = Path.of("test-fixtures", "pom.xml");
+		if (Files.exists(parentPom)) {
+			Files.copy(parentPom, tempDir.resolve("pom.xml"), StandardCopyOption.REPLACE_EXISTING);
+		}
+
 		// Recursively copy fixture
 		Files.walk(fixtureSource).forEach(sourcePath -> {
 			try {
