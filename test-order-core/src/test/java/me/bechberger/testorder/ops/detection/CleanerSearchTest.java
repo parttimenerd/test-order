@@ -121,7 +121,7 @@ class CleanerSearchTest {
 
 	@Test
 	void respectsRunBudget() {
-		int[] counter = { 0 };
+		int[] counter = {0};
 		TestRunner runner = order -> {
 			counter[0]++;
 			Set<String> passed = new HashSet<>();

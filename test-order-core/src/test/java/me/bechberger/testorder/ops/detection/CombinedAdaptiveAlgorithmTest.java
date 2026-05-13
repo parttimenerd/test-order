@@ -66,7 +66,7 @@ class CombinedAdaptiveAlgorithmTest {
 
 	@Test
 	void respectsTimeBudget() {
-		int[] runCount = { 0 };
+		int[] runCount = {0};
 		TestRunner runner = order -> {
 			runCount[0]++;
 			return new TestRunner.TestRunResult(order, new HashSet<>(order), Set.of());

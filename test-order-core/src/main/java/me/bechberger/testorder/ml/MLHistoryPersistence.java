@@ -30,7 +30,7 @@ import me.bechberger.testorder.TestOrderLogger;
  */
 public final class MLHistoryPersistence {
 
-	private static final byte[] FORMAT_MAGIC = { 'T', 'O', 'M', 'L' }; // Test Order ML
+	private static final byte[] FORMAT_MAGIC = {'T', 'O', 'M', 'L'}; // Test Order ML
 	private static final short FORMAT_VERSION = 1;
 
 	private MLHistoryPersistence() {

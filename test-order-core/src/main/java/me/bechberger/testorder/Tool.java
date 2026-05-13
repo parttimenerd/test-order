@@ -24,7 +24,7 @@ import me.bechberger.testorder.ops.PluginLog;
 @Command(name = "test-order", mixinStandardHelpOptions = true, version = "0.1.0", description = "Manage JUnit test ordering based on dependency telemetry", subcommands = {
 		Tool.Aggregate.class, Tool.Affected.class, Tool.Stats.class, Tool.HashSnapshot.class, Tool.Changed.class,
 		Tool.Run.class, Tool.Dump.class, Tool.ExportJson.class, Tool.Optimize.class, Tool.Select.class,
-		Tool.StructDiff.class, Tool.Advise.class })
+		Tool.StructDiff.class, Tool.Advise.class})
 public class Tool implements Runnable {
 
 	@Override
@@ -42,8 +42,8 @@ public class Tool implements Runnable {
 		@Parameters(description = "Directory containing .deps files")
 		Path depsDir;
 
-		@Option(names = { "-o",
-				"--output" }, description = "Output index file (default: ${DEFAULT-VALUE})", defaultValue = "test-dependencies.lz4")
+		@Option(names = {"-o",
+				"--output"}, description = "Output index file (default: ${DEFAULT-VALUE})", defaultValue = "test-dependencies.lz4")
 		Path output;
 
 		@Override
@@ -75,7 +75,7 @@ public class Tool implements Runnable {
 		@Parameters(description = "Dependency index file")
 		Path indexFile;
 
-		@Option(names = { "-c", "--classes" }, required = true, description = "Comma-separated changed class FQCNs")
+		@Option(names = {"-c", "--classes"}, required = true, description = "Comma-separated changed class FQCNs")
 		String changedClasses;
 
 		@Override
@@ -119,12 +119,12 @@ public class Tool implements Runnable {
 
 	@Command(name = "hash-snapshot", description = "Scan source tree and save file hash snapshot", mixinStandardHelpOptions = true)
 	static class HashSnapshot implements Callable<Integer> {
-		@Option(names = { "-s",
-				"--source-root" }, description = "Source root directory (default: ${DEFAULT-VALUE})", defaultValue = "src/main/java")
+		@Option(names = {"-s",
+				"--source-root"}, description = "Source root directory (default: ${DEFAULT-VALUE})", defaultValue = "src/main/java")
 		Path sourceRoot;
 
-		@Option(names = { "-o",
-				"--output" }, description = "Hash file path (default: ${DEFAULT-VALUE})", defaultValue = ".test-order-hashes.lz4")
+		@Option(names = {"-o",
+				"--output"}, description = "Hash file path (default: ${DEFAULT-VALUE})", defaultValue = ".test-order-hashes.lz4")
 		Path hashFile;
 
 		@Override
@@ -143,23 +143,23 @@ public class Tool implements Runnable {
 
 	@Command(name = "changed", description = "Detect changed source files", mixinStandardHelpOptions = true)
 	static class Changed implements Callable<Integer> {
-		@Option(names = { "-m",
-				"--mode" }, description = "Detection mode: since-last-run, since-last-commit, uncommitted, explicit (default: ${DEFAULT-VALUE})", defaultValue = "since-last-run")
+		@Option(names = {"-m",
+				"--mode"}, description = "Detection mode: since-last-run, since-last-commit, uncommitted, explicit (default: ${DEFAULT-VALUE})", defaultValue = "since-last-run")
 		String modeStr;
 
-		@Option(names = { "-p",
-				"--project-root" }, description = "Project root directory (default: ${DEFAULT-VALUE})", defaultValue = ".")
+		@Option(names = {"-p",
+				"--project-root"}, description = "Project root directory (default: ${DEFAULT-VALUE})", defaultValue = ".")
 		Path projectRoot;
 
-		@Option(names = { "-s",
-				"--source-root" }, description = "Source root (relative to project root, default: ${DEFAULT-VALUE})", defaultValue = "src/main/java")
+		@Option(names = {"-s",
+				"--source-root"}, description = "Source root (relative to project root, default: ${DEFAULT-VALUE})", defaultValue = "src/main/java")
 		Path sourceRoot;
 
 		@Option(names = {
-				"--hash-file" }, description = "Hash file path (default: ${DEFAULT-VALUE})", defaultValue = ".test-order-hashes.lz4")
+				"--hash-file"}, description = "Hash file path (default: ${DEFAULT-VALUE})", defaultValue = ".test-order-hashes.lz4")
 		Path hashFile;
 
-		@Option(names = { "-c", "--classes" }, description = "Comma-separated class FQCNs (for EXPLICIT mode)")
+		@Option(names = {"-c", "--classes"}, description = "Comma-separated class FQCNs (for EXPLICIT mode)")
 		String classes;
 
 		@Override
@@ -185,23 +185,23 @@ public class Tool implements Runnable {
 		@Parameters(description = "Dependency index file")
 		Path indexFile;
 
-		@Option(names = { "-m",
-				"--mode" }, description = "Detection mode: since-last-run, since-last-commit, uncommitted, explicit (default: ${DEFAULT-VALUE})", defaultValue = "since-last-run")
+		@Option(names = {"-m",
+				"--mode"}, description = "Detection mode: since-last-run, since-last-commit, uncommitted, explicit (default: ${DEFAULT-VALUE})", defaultValue = "since-last-run")
 		String modeStr;
 
-		@Option(names = { "-p",
-				"--project-root" }, description = "Project root (default: ${DEFAULT-VALUE})", defaultValue = ".")
+		@Option(names = {"-p",
+				"--project-root"}, description = "Project root (default: ${DEFAULT-VALUE})", defaultValue = ".")
 		Path projectRoot;
 
-		@Option(names = { "-s",
-				"--source-root" }, description = "Source root (default: ${DEFAULT-VALUE})", defaultValue = "src/main/java")
+		@Option(names = {"-s",
+				"--source-root"}, description = "Source root (default: ${DEFAULT-VALUE})", defaultValue = "src/main/java")
 		Path sourceRoot;
 
 		@Option(names = {
-				"--hash-file" }, description = "Hash file path (default: ${DEFAULT-VALUE})", defaultValue = ".test-order-hashes.lz4")
+				"--hash-file"}, description = "Hash file path (default: ${DEFAULT-VALUE})", defaultValue = ".test-order-hashes.lz4")
 		Path hashFile;
 
-		@Option(names = { "-c", "--classes" }, description = "Comma-separated class FQCNs (for EXPLICIT mode)")
+		@Option(names = {"-c", "--classes"}, description = "Comma-separated class FQCNs (for EXPLICIT mode)")
 		String classes;
 
 		@Override
@@ -237,7 +237,7 @@ public class Tool implements Runnable {
 		@Parameters(description = "Dependency index file (binary data format v1)")
 		Path indexFile;
 
-		@Option(names = { "-o", "--output" }, description = "Output file (default: stdout)")
+		@Option(names = {"-o", "--output"}, description = "Output file (default: stdout)")
 		Path output;
 
 		@Override
@@ -273,11 +273,10 @@ public class Tool implements Runnable {
 		@Parameters(description = "Dependency index file (binary data format v1)")
 		Path indexFile;
 
-		@Option(names = { "-o", "--output" }, description = "Output JSON file (default: stdout)")
+		@Option(names = {"-o", "--output"}, description = "Output JSON file (default: stdout)")
 		Path output;
 
-		@Option(names = { "-s",
-				"--state" }, description = "State file for history data (default: .test-order/state.lz4)")
+		@Option(names = {"-s", "--state"}, description = "State file for history data (default: .test-order/state.lz4)")
 		Path stateFile;
 
 		@Override
@@ -391,32 +390,32 @@ public class Tool implements Runnable {
 		Path indexFile;
 
 		@Option(names = {
-				"--state" }, description = "State file (default: ${DEFAULT-VALUE})", defaultValue = ".test-order-state")
+				"--state"}, description = "State file (default: ${DEFAULT-VALUE})", defaultValue = ".test-order-state")
 		Path stateFile;
 
 		@Option(names = {
-				"--top-n" }, description = "Number of top-scored tests (default: ${DEFAULT-VALUE})", defaultValue = "20")
+				"--top-n"}, description = "Number of top-scored tests (default: ${DEFAULT-VALUE})", defaultValue = "20")
 		int topN;
 
 		@Option(names = {
-				"--random-m" }, description = "Number of random diverse fast tests (default: ${DEFAULT-VALUE})", defaultValue = "10")
+				"--random-m"}, description = "Number of random diverse fast tests (default: ${DEFAULT-VALUE})", defaultValue = "10")
 		int randomM;
 
-		@Option(names = { "--seed" }, description = "Random seed for reproducibility")
+		@Option(names = {"--seed"}, description = "Random seed for reproducibility")
 		Long seed;
 
-		@Option(names = { "-c", "--changed" }, description = "Comma-separated changed class FQCNs")
+		@Option(names = {"-c", "--changed"}, description = "Comma-separated changed class FQCNs")
 		String changedClasses;
 
-		@Option(names = { "--changed-tests" }, description = "Comma-separated changed test class FQCNs")
+		@Option(names = {"--changed-tests"}, description = "Comma-separated changed test class FQCNs")
 		String changedTestClasses;
 
 		@Option(names = {
-				"--selected-file" }, description = "Output file for selected tests", defaultValue = "test-order-selected.txt")
+				"--selected-file"}, description = "Output file for selected tests", defaultValue = "test-order-selected.txt")
 		Path selectedFile;
 
 		@Option(names = {
-				"--remaining-file" }, description = "Output file for remaining tests", defaultValue = "test-order-remaining.txt")
+				"--remaining-file"}, description = "Output file for remaining tests", defaultValue = "test-order-remaining.txt")
 		Path remainingFile;
 
 		@Override
@@ -456,15 +455,15 @@ public class Tool implements Runnable {
 	@Command(name = "struct-diff", description = "Structural diff of Java files (types, methods, fields)", mixinStandardHelpOptions = true)
 	static class StructDiff implements Callable<Integer> {
 
-		@Option(names = { "-p",
-				"--project-root" }, description = "Project root directory (default: ${DEFAULT-VALUE})", defaultValue = ".")
+		@Option(names = {"-p",
+				"--project-root"}, description = "Project root directory (default: ${DEFAULT-VALUE})", defaultValue = ".")
 		Path projectRoot;
 
 		@Option(names = {
-				"--ref" }, description = "Git ref to diff against (default: ${DEFAULT-VALUE})", defaultValue = "HEAD")
+				"--ref"}, description = "Git ref to diff against (default: ${DEFAULT-VALUE})", defaultValue = "HEAD")
 		String gitRef;
 
-		@Option(names = { "--since-last-commit" }, description = "Include changes from the last commit (HEAD~1..HEAD)")
+		@Option(names = {"--since-last-commit"}, description = "Include changes from the last commit (HEAD~1..HEAD)")
 		boolean sinceLastCommit;
 
 		@Parameters(description = "Specific Java files to diff (default: all changed files)")
@@ -510,11 +509,11 @@ public class Tool implements Runnable {
 		@Parameters(description = "Dependency index file")
 		Path indexFile;
 
-		@Option(names = { "--threshold" }, description = "Similarity threshold (default: ${DEFAULT-VALUE}); "
+		@Option(names = {"--threshold"}, description = "Similarity threshold (default: ${DEFAULT-VALUE}); "
 				+ "classes whose avg pairwise Jaccard similarity is below this are flagged", defaultValue = "0.3")
 		double threshold;
 
-		@Option(names = { "--verbose", "-v" }, description = "Print per-class details including suggested split groups")
+		@Option(names = {"--verbose", "-v"}, description = "Print per-class details including suggested split groups")
 		boolean verbose;
 
 		@Override

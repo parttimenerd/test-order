@@ -272,7 +272,7 @@ class JUnit5AdvancedIntegrationTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "junit5-features", "advanced-tests", "extension-tests" })
+	@ValueSource(strings = {"junit5-features", "advanced-tests", "extension-tests"})
 	@DisplayName("Each JUnit5 feature test can be discovered")
 	void testMultipleJunit5Features(String projectName, @TempDir Path workDir) throws Exception {
 		Path project = workDir.resolve(projectName);

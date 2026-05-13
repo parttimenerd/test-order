@@ -724,9 +724,9 @@ class BugVerificationIT {
 		java.nio.file.Path stateFile = project.getProjectDir().resolve(".test-order/state.lz4");
 		if (!java.nio.file.Files.exists(stateFile)) {
 			// Create it explicitly with garbage so the test is meaningful
-			java.nio.file.Files.write(stateFile, new byte[] { (byte) 0xFF, (byte) 0xFE, 0x00, 0x01, 0x02 });
+			java.nio.file.Files.write(stateFile, new byte[]{(byte) 0xFF, (byte) 0xFE, 0x00, 0x01, 0x02});
 		} else {
-			java.nio.file.Files.write(stateFile, new byte[] { (byte) 0xFF, (byte) 0xFE, 0x00, 0x01, 0x02 });
+			java.nio.file.Files.write(stateFile, new byte[]{(byte) 0xFF, (byte) 0xFE, 0x00, 0x01, 0x02});
 		}
 
 		// Order mode should survive the corrupt state

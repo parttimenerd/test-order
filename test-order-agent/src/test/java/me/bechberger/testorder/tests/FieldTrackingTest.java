@@ -105,11 +105,11 @@ public class FieldTrackingTest {
 		String methodName = "recordsEverything";
 		String methodKey = testClass + "#" + methodName;
 
-		String[] classNames = new String[] { "com.example.parallel." + suffix + ".Alpha",
+		String[] classNames = new String[]{"com.example.parallel." + suffix + ".Alpha",
 				"com.example.parallel." + suffix + ".Beta", "com.example.parallel." + suffix + ".Gamma",
-				"com.example.parallel." + suffix + ".Delta" };
-		String[] memberNames = new String[] { classNames[0] + "#fieldA", classNames[1] + "#fieldB",
-				classNames[2] + "#fieldC", classNames[3] + "#fieldD" };
+				"com.example.parallel." + suffix + ".Delta"};
+		String[] memberNames = new String[]{classNames[0] + "#fieldA", classNames[1] + "#fieldB",
+				classNames[2] + "#fieldC", classNames[3] + "#fieldD"};
 
 		int[] classIds = new int[classNames.length];
 		int[] memberIds = new int[memberNames.length];

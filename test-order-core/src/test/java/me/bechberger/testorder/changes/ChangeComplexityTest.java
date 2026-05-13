@@ -608,7 +608,7 @@ class ChangeComplexityTest {
 		@Test
 		@DisplayName("single byte array returns a positive size")
 		void singleByteReturnsPositiveSize() {
-			int size = ChangeComplexity.deflateSize(new byte[] { 42 });
+			int size = ChangeComplexity.deflateSize(new byte[]{42});
 			assertTrue(size > 0, "Compressed size must be positive");
 		}
 	}

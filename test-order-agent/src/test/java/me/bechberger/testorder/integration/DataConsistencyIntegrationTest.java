@@ -240,7 +240,7 @@ class DataConsistencyIntegrationTest {
 		Path cacheFile = cacheDir.resolve("corrupt.lz4");
 
 		// Write corrupted data (invalid LZ4)
-		byte[] corruptedData = new byte[] { (byte) 0xFF, (byte) 0xFE, (byte) 0xFD, 0x00, 0x01, 0x02 };
+		byte[] corruptedData = new byte[]{(byte) 0xFF, (byte) 0xFE, (byte) 0xFD, 0x00, 0x01, 0x02};
 		Files.write(cacheFile, corruptedData);
 
 		// Tool should detect this is not valid LZ4/data

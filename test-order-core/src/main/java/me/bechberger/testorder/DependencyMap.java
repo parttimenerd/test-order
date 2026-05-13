@@ -28,7 +28,7 @@ public class DependencyMap {
 	static final long MAX_COMPRESSED_FILE_SIZE = 1_000_000_000L;
 
 	/** Magic marker inside the LZ4 payload: ASCII "TORD". */
-	private static final byte[] FORMAT_MAGIC = { 'T', 'O', 'R', 'D' };
+	private static final byte[] FORMAT_MAGIC = {'T', 'O', 'R', 'D'};
 
 	/** Current binary format version. */
 	public static final short FORMAT_VERSION = 1;

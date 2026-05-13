@@ -65,24 +65,23 @@ class HttpDownloaderSecurityTest {
 	// ── CLI-CRIT-3: SSRF — URL validation ──────────────────────────
 
 	@ParameterizedTest
-	@ValueSource(strings = { "file:///etc/passwd", "file:///C:/Windows/System32/config/sam",
-			"jar:file:///archive.jar!/entry", "gopher://internal:70/", "dict://internal:11211/",
-			"ftp://internal/file" })
+	@ValueSource(strings = {"file:///etc/passwd", "file:///C:/Windows/System32/config/sam",
+			"jar:file:///archive.jar!/entry", "gopher://internal:70/", "dict://internal:11211/", "ftp://internal/file"})
 	@DisplayName("CLI-CRIT-3: Reject non-HTTP(S) schemes")
 	void rejectNonHttpSchemes(String url) {
 		assertThrows(DepDownloader.DepDownloadException.class, () -> HttpDownloader.validateUrl(url));
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "https://localhost/admin", "https://127.0.0.1/admin", "https://127.1/admin",
-			"https://0.0.0.0/file", "https://[::1]/file" })
+	@ValueSource(strings = {"https://localhost/admin", "https://127.0.0.1/admin", "https://127.1/admin",
+			"https://0.0.0.0/file", "https://[::1]/file"})
 	@DisplayName("CLI-CRIT-3: Reject localhost addresses")
 	void rejectLocalhostAddresses(String url) {
 		assertThrows(DepDownloader.DepDownloadException.class, () -> HttpDownloader.validateUrl(url));
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "https://10.0.0.1/internal", "https://192.168.1.100/backup", "https://172.16.0.1/admin" })
+	@ValueSource(strings = {"https://10.0.0.1/internal", "https://192.168.1.100/backup", "https://172.16.0.1/admin"})
 	@DisplayName("CLI-CRIT-3: Reject private IP ranges")
 	void rejectPrivateIpRanges(String url) {
 		assertThrows(DepDownloader.DepDownloadException.class, () -> HttpDownloader.validateUrl(url));

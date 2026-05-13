@@ -26,7 +26,7 @@ class ClassTransformerTest {
 	@Test
 	void skipsJdkClasses() {
 		ClassTransformer t = createTransformer();
-		byte[] input = new byte[] { 1, 2, 3 };
+		byte[] input = new byte[]{1, 2, 3};
 		assertSame(input, t.transform(null, null, "java/lang/String", null, null, input));
 		assertSame(input, t.transform(null, null, "sun/misc/Unsafe", null, null, input));
 		assertSame(input, t.transform(null, null, "jdk/internal/misc/Unsafe", null, null, input));
@@ -50,7 +50,7 @@ class ClassTransformerTest {
 	@Test
 	void skipsOwnAgentClasses() {
 		ClassTransformer t = createTransformer();
-		byte[] input = new byte[] { 1, 2, 3 };
+		byte[] input = new byte[]{1, 2, 3};
 		assertSame(input, t.transform(null, null, "me/bechberger/testorder/agent/Agent", null, null, input));
 		assertFalse(t.shouldInstrument("me/bechberger/testorder/agent/ClassTransformer"));
 	}
@@ -96,7 +96,7 @@ class ClassTransformerTest {
 	@Test
 	void skipsNullClassName() {
 		ClassTransformer t = createTransformer();
-		byte[] input = new byte[] { 1, 2, 3 };
+		byte[] input = new byte[]{1, 2, 3};
 		assertSame(input, t.transform(null, null, null, null, null, input));
 	}
 
@@ -105,7 +105,7 @@ class ClassTransformerTest {
 	@Test
 	void includePackagesFilterAllowsMatchingClass() {
 		ClassTransformer t = createTransformer("com.example");
-		byte[] input = new byte[] { 1, 2, 3 };
+		byte[] input = new byte[]{1, 2, 3};
 		// attempt to instrument — invalid bytecode → falls back to original
 		assertSame(input, t.transform(null, null, "com/example/MyClass", null, null, input));
 	}
@@ -113,7 +113,7 @@ class ClassTransformerTest {
 	@Test
 	void includePackagesFilterRejectsNonMatchingClass() {
 		ClassTransformer t = createTransformer("com.example");
-		byte[] input = new byte[] { 1, 2, 3 };
+		byte[] input = new byte[]{1, 2, 3};
 		assertSame(input, t.transform(null, null, "org/other/MyClass", null, null, input));
 	}
 
@@ -167,7 +167,7 @@ class ClassTransformerTest {
 		ClassTransformer t = createTransformer();
 		// default Agent mode is FULL — verifiable via transform behaviour:
 		// a matching class with invalid bytecode still returns the input unchanged
-		byte[] input = new byte[] { 1, 2, 3 };
+		byte[] input = new byte[]{1, 2, 3};
 		assertSame(input, t.transform(null, null, "com/myapp/Foo", null, null, input));
 	}
 

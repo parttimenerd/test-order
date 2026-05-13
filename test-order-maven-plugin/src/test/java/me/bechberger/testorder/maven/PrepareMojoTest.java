@@ -126,7 +126,7 @@ class PrepareMojoTest {
 		inject(mojo, "autoLearnRunThreshold", 3);
 
 		Path idxPath = tempDir.resolve("test-dependencies.lz4");
-		Files.write(idxPath, new byte[] { 1, 2, 3 });
+		Files.write(idxPath, new byte[]{1, 2, 3});
 		inject(mojo, "indexFile", idxPath.toString());
 
 		TestOrderState state = new TestOrderState();
@@ -156,7 +156,7 @@ class PrepareMojoTest {
 		// Create a test hash file so the "new test" detection uses retainAll
 		// (simulating a module that has been learned before)
 		Path testHashPath = tempDir.resolve(".test-order-test-hashes.lz4");
-		Files.write(testHashPath, new byte[] { 0 });
+		Files.write(testHashPath, new byte[]{0});
 
 		TestOrderState state = new TestOrderState();
 		for (int i = 0; i < 2; i++)
@@ -186,7 +186,7 @@ class PrepareMojoTest {
 		inject(mojo, "changedClasses", "com.example.ChangedClass");
 
 		Path idxPath = tempDir.resolve("test-dependencies.lz4");
-		Files.write(idxPath, new byte[] { 1, 2, 3 });
+		Files.write(idxPath, new byte[]{1, 2, 3});
 		inject(mojo, "indexFile", idxPath.toString());
 
 		MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
@@ -201,7 +201,7 @@ class PrepareMojoTest {
 		inject(mojo, "mode", "order");
 
 		Path idxPath = tempDir.resolve("test-dependencies.lz4");
-		Files.write(idxPath, new byte[] { 1, 2, 3 });
+		Files.write(idxPath, new byte[]{1, 2, 3});
 		inject(mojo, "indexFile", idxPath.toString());
 
 		TestOrderState state = new TestOrderState();
@@ -237,7 +237,7 @@ class PrepareMojoTest {
 		inject(mojo, "mode", "order");
 
 		Path idxPath = tempDir.resolve("test-dependencies.lz4");
-		Files.write(idxPath, new byte[] { 1, 2, 3 });
+		Files.write(idxPath, new byte[]{1, 2, 3});
 		inject(mojo, "indexFile", idxPath.toString());
 
 		TestOrderState state = new TestOrderState();

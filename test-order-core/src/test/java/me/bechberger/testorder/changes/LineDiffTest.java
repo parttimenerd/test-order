@@ -377,8 +377,8 @@ class LineDiffTest {
 		@Test
 		@DisplayName("Verify lcsLength for simple case")
 		void lcsLengthSimpleCase() {
-			String[] a = { "a", "b", "c" };
-			String[] b = { "a", "b", "c" };
+			String[] a = {"a", "b", "c"};
+			String[] b = {"a", "b", "c"};
 
 			assertEquals(3, LineDiff.lcsLength(a, b));
 		}
@@ -386,8 +386,8 @@ class LineDiffTest {
 		@Test
 		@DisplayName("Verify lcsLength with partial match")
 		void lcsLengthPartialMatch() {
-			String[] a = { "a", "b", "c" };
-			String[] b = { "a", "x", "c" };
+			String[] a = {"a", "b", "c"};
+			String[] b = {"a", "x", "c"};
 
 			// LCS is: a, c
 			assertEquals(2, LineDiff.lcsLength(a, b));
@@ -396,8 +396,8 @@ class LineDiffTest {
 		@Test
 		@DisplayName("Verify lcsLength with no match")
 		void lcsLengthNoMatch() {
-			String[] a = { "a", "b", "c" };
-			String[] b = { "x", "y", "z" };
+			String[] a = {"a", "b", "c"};
+			String[] b = {"x", "y", "z"};
 
 			assertEquals(0, LineDiff.lcsLength(a, b));
 		}
@@ -406,7 +406,7 @@ class LineDiffTest {
 		@DisplayName("Verify lcsLength with empty array")
 		void lcsLengthEmptyArray() {
 			String[] a = {};
-			String[] b = { "x", "y", "z" };
+			String[] b = {"x", "y", "z"};
 
 			assertEquals(0, LineDiff.lcsLength(a, b));
 		}
@@ -414,8 +414,8 @@ class LineDiffTest {
 		@Test
 		@DisplayName("Verify lcsLength handles order independence")
 		void lcsLengthOrderIndependent() {
-			String[] a = { "a", "b", "c" };
-			String[] b = { "x", "y", "z" };
+			String[] a = {"a", "b", "c"};
+			String[] b = {"x", "y", "z"};
 
 			int result1 = LineDiff.lcsLength(a, b);
 			int result2 = LineDiff.lcsLength(b, a);

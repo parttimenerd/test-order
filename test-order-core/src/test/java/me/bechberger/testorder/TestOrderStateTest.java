@@ -846,7 +846,7 @@ class TestOrderStateTest {
 	@Test
 	void l2PenaltyRequiresMatchingLengths() {
 		IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-				() -> ScoringOptimizer.l2Penalty(new int[] { 1, 2 }, new int[] { 1 }));
+				() -> ScoringOptimizer.l2Penalty(new int[]{1, 2}, new int[]{1}));
 		assertTrue(error.getMessage().contains("length mismatch"));
 	}
 
@@ -954,15 +954,15 @@ class TestOrderStateTest {
 
 	@Test
 	void l2PenaltyWithMismatchedArraysThrows() {
-		int[] w = { 1, 2, 3 };
-		int[] defaults = { 1, 2 };
+		int[] w = {1, 2, 3};
+		int[] defaults = {1, 2};
 		assertThrows(IllegalArgumentException.class, () -> ScoringOptimizer.l2Penalty(w, defaults));
 	}
 
 	@Test
 	void l2PenaltyWithMatchingArraysIsNonNegative() {
-		int[] w = { 10, 5, 0 };
-		int[] defaults = { 5, 5, 5 };
+		int[] w = {10, 5, 0};
+		int[] defaults = {5, 5, 5};
 		double penalty = ScoringOptimizer.l2Penalty(w, defaults);
 		assertTrue(penalty >= 0);
 	}

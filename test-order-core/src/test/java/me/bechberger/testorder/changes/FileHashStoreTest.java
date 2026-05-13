@@ -167,7 +167,7 @@ class FileHashStoreTest {
 	@Test
 	void loadTruncatedLz4FileThrowsIOException() throws IOException {
 		Path hashFile = tempDir.resolve("truncated.lz4");
-		byte[] truncated = { 0x04, 0x22, 0x4D, 0x18, 0x60, 0x70, 0x73 };
+		byte[] truncated = {0x04, 0x22, 0x4D, 0x18, 0x60, 0x70, 0x73};
 		Files.write(hashFile, truncated);
 		assertThrows(IOException.class, () -> FileHashStore.load(hashFile),
 				"Loading a truncated LZ4 file must throw IOException");

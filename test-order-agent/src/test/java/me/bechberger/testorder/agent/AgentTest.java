@@ -126,7 +126,7 @@ class AgentTest {
 
 		private Instrumentation proxy() {
 			return (Instrumentation) Proxy.newProxyInstance(Instrumentation.class.getClassLoader(),
-					new Class<?>[] { Instrumentation.class }, this);
+					new Class<?>[]{Instrumentation.class}, this);
 		}
 
 		@Override

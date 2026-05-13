@@ -22,9 +22,9 @@ import me.bechberger.testorder.agent.runtime.ClassIdMap;
 public class HotPathBenchmark {
 
 	// Pre-registered class names for testing
-	private static final String[] TEST_CLASSES = { "java.lang.Object", "java.lang.String", "java.util.ArrayList",
+	private static final String[] TEST_CLASSES = {"java.lang.Object", "java.lang.String", "java.util.ArrayList",
 			"java.util.HashMap", "com.example.UserService", "com.example.Database", "com.example.NetworkClient",
-			"org.springframework.context.ApplicationContext" };
+			"org.springframework.context.ApplicationContext"};
 
 	@State(Scope.Benchmark)
 	public static class MapState {

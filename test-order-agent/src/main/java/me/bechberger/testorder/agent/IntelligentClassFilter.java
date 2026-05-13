@@ -34,8 +34,8 @@ public class IntelligentClassFilter {
 		WHITELIST_SMART
 	}
 
-	private static final String[] ALWAYS_SKIP_PREFIXES = { "java/", "jdk/", "sun/", "com/sun/", "javax/", "jakarta/",
-			"me/bechberger/testorder/agent/" };
+	private static final String[] ALWAYS_SKIP_PREFIXES = {"java/", "jdk/", "sun/", "com/sun/", "javax/", "jakarta/",
+			"me/bechberger/testorder/agent/"};
 
 	/**
 	 * Index from first-char → offsets into ALWAYS_SKIP_PREFIXES that share that
@@ -57,8 +57,8 @@ public class IntelligentClassFilter {
 		return idx;
 	}
 
-	private static final String[] GENERATED_CLASS_MARKERS = { "$$", "$Proxy", "CGLIB", "ByteBuddy", "MockitoMock",
-			"SpringCGLIB", "$Lambda$", "EnhancerBySpringCGLIB", "FastClass", "MethodAccessor" };
+	private static final String[] GENERATED_CLASS_MARKERS = {"$$", "$Proxy", "CGLIB", "ByteBuddy", "MockitoMock",
+			"SpringCGLIB", "$Lambda$", "EnhancerBySpringCGLIB", "FastClass", "MethodAccessor"};
 
 	private final Strategy strategy;
 	private final List<Pattern> includePatterns;

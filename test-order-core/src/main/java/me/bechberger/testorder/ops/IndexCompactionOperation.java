@@ -111,7 +111,7 @@ public final class IndexCompactionOperation {
 	private static String formatBytes(long bytes) {
 		if (bytes <= 0)
 			return "0 B";
-		final String[] units = new String[] { "B", "KB", "MB", "GB" };
+		final String[] units = new String[]{"B", "KB", "MB", "GB"};
 		int digitGroups = Math.min((int) (Math.log10(bytes) / Math.log10(1024)), units.length - 1);
 		return String.format(java.util.Locale.US, "%.1f %s", bytes / Math.pow(1024, digitGroups), units[digitGroups]);
 	}

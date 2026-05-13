@@ -506,6 +506,6 @@ Contribution and feedback are encouraged and always welcome.
 MIT, Copyright 2026 SAP SE or an SAP affiliate company, Johannes Bechberger and contributors
 
 
-TODO: gradle and maven parity, explain how to setup caching of .test-order between CI steps
+TODO: 
 
 

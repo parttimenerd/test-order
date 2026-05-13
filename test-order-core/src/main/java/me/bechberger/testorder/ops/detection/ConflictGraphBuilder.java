@@ -158,7 +158,7 @@ public final class ConflictGraphBuilder {
 		Map<String, boolean[]> outcomes = new HashMap<>();
 		for (TestOrderState.RunRecord run : state.runs()) {
 			for (TestOrderState.TestOutcome outcome : run.outcomes()) {
-				outcomes.computeIfAbsent(outcome.testClass(), k -> new boolean[] { false, false });
+				outcomes.computeIfAbsent(outcome.testClass(), k -> new boolean[]{false, false});
 				boolean[] flags = outcomes.get(outcome.testClass());
 				if (outcome.failed())
 					flags[0] = true;

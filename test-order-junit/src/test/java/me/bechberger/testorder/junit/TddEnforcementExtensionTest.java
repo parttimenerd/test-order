@@ -186,7 +186,7 @@ class TddEnforcementExtensionTest {
 	void skipsWhenStateFileCorrupt() throws Exception {
 		System.setProperty(TestOrderConfig.TDD, "true");
 		Path corrupt = tempDir.resolve("state.lz4");
-		java.nio.file.Files.write(corrupt, new byte[] { 0, 1, 2, 3, 4 });
+		java.nio.file.Files.write(corrupt, new byte[]{0, 1, 2, 3, 4});
 		System.setProperty(TestOrderConfig.STATE_PATH, corrupt.toString());
 
 		TddEnforcementExtension ext = new TddEnforcementExtension();
@@ -234,30 +234,30 @@ class TddEnforcementExtensionTest {
 			Optional<Throwable> executionException) {
 		InvocationHandler handler = (proxy, method, args) -> {
 			switch (method.getName()) {
-				case "getExecutionException":
+				case "getExecutionException" :
 					return executionException;
-				case "getRequiredTestClass":
+				case "getRequiredTestClass" :
 					return testClass;
-				case "getRequiredTestMethod":
+				case "getRequiredTestMethod" :
 					return testMethod;
-				case "getTestClass":
+				case "getTestClass" :
 					return Optional.of(testClass);
-				case "getTestMethod":
+				case "getTestMethod" :
 					return Optional.of(testMethod);
-				case "getParent":
+				case "getParent" :
 					return Optional.empty();
-				case "getDisplayName":
+				case "getDisplayName" :
 					return testClass.getName() + "#" + testMethod.getName();
-				case "getUniqueId":
+				case "getUniqueId" :
 					return "fake-context";
-				case "getTags":
+				case "getTags" :
 					return java.util.Set.of();
-				default:
+				default :
 					throw new UnsupportedOperationException("Unexpected method: " + method.getName());
 			}
 		};
 		return (ExtensionContext) Proxy.newProxyInstance(ExtensionContext.class.getClassLoader(),
-				new Class<?>[] { ExtensionContext.class }, handler);
+				new Class<?>[]{ExtensionContext.class}, handler);
 	}
 
 	static class KnownTestA {

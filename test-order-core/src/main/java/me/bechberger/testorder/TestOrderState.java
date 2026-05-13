@@ -247,8 +247,8 @@ public class TestOrderState {
 
 		/** Convert to array in WEIGHT_DEFS order. */
 		public int[] toArray() {
-			return new int[] { newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity,
-					staticFieldBonus, coverageBonus };
+			return new int[]{newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity,
+					staticFieldBonus, coverageBonus};
 		}
 
 		/** Human-readable key=value format. */

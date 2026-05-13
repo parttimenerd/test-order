@@ -620,7 +620,7 @@ public class SourceFileModel {
 					bodyText = normalizeForHashing(source.substring(bodyStart, bodyEnd + 1));
 					bodyHash = sha256(bodyText);
 					compactBody = removeCommentsAndEmptyLines(source.substring(bodyStart, bodyEnd + 1));
-					methodBodyRanges.add(new int[] { bodyStart, bodyEnd, expectedDepth });
+					methodBodyRanges.add(new int[]{bodyStart, bodyEnd, expectedDepth});
 				}
 			} else {
 				// abstract method ending with ';' — capture signature from original source

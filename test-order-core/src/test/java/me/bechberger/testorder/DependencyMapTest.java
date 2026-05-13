@@ -430,7 +430,7 @@ class DependencyMapTest {
 		// than NPE, OOM, or silent wrong result.
 		Path idx = tempDir.resolve("truncated.lz4");
 		// Plausible starting bytes for LZ4 framing, then abrupt end
-		byte[] truncated = new byte[] { 0x04, (byte) 0x22, 0x4d, 0x18, // LZ4 magic: 0x184D2204 (little-endian)
+		byte[] truncated = new byte[]{0x04, (byte) 0x22, 0x4d, 0x18, // LZ4 magic: 0x184D2204 (little-endian)
 				0x60, 0x70, 0x73, 0x00 // partial FLG + BD fields, no content
 		};
 		Files.write(idx, truncated);
@@ -478,7 +478,7 @@ class DependencyMapTest {
 				var lz4 = new net.jpountz.lz4.LZ4FrameOutputStream(fos);
 				var out = new java.io.DataOutputStream(lz4)) {
 
-			out.write(new byte[] { 'T', 'O', 'R', 'D' }); // magic
+			out.write(new byte[]{'T', 'O', 'R', 'D'}); // magic
 			out.writeShort(1); // version
 
 			out.writeInt(4); // sectionCount: trie + test_classes + dep_groups + unknown

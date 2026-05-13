@@ -52,7 +52,7 @@ class GradleAdvancedIntegrationTest {
 		Files.writeString(project.resolve("build.gradle"), rootBuild);
 
 		// Create submodules
-		for (String module : new String[] { "app", "lib1", "lib2" }) {
+		for (String module : new String[]{"app", "lib1", "lib2"}) {
 			Path moduleDir = project.resolve(module);
 			createGradleModule(moduleDir, module);
 		}

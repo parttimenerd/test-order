@@ -216,7 +216,6 @@
                     <java>
                         <eclipse>
                             <version>4.33</version>
-                            <file>${maven.multiModuleProjectDirectory}/config/spotless/eclipse-formatter.xml</file>
                         </eclipse>
                         <importOrder>
                             <order>java,javax,jakarta,org,com,</order>

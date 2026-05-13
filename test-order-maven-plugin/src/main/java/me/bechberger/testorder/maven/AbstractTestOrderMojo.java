@@ -1246,10 +1246,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		entries.add(codeSourcePath(DependencyMap.class));
 		// Dynamically resolve additional runtime jars by class name to avoid
 		// compile-time dependencies
-		for (String className : new String[] { "me.bechberger.femtocli.FemtoCli", "net.jpountz.lz4.LZ4FrameInputStream",
+		for (String className : new String[]{"me.bechberger.femtocli.FemtoCli", "net.jpountz.lz4.LZ4FrameInputStream",
 				"org.roaringbitmap.RoaringBitmap", "io.jenetics.Genotype", "com.github.javaparser.JavaParser",
 				"com.electronwill.nightconfig.core.CommentedConfig", "com.electronwill.nightconfig.toml.TomlParser",
-				"me.bechberger.util.json.Util" }) {
+				"me.bechberger.util.json.Util"}) {
 			try {
 				Class<?> cls = Class.forName(className);
 				Path jar = codeSourcePath(cls);
@@ -1500,7 +1500,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (testClassesDir == null || testClassesDir.isBlank())
 			return;
 		Path testClasses = Path.of(testClassesDir);
-		for (String name : new String[] { "testorder-config.properties", "junit-platform.properties" }) {
+		for (String name : new String[]{"testorder-config.properties", "junit-platform.properties"}) {
 			Path stale = testClasses.resolve(name);
 			if (!Files.exists(stale))
 				continue;
@@ -1586,7 +1586,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			}
 		}
 
-		for (String version : new String[] { pluginVersion, project.getVersion() }) {
+		for (String version : new String[]{pluginVersion, project.getVersion()}) {
 			if (version == null)
 				continue;
 			Path baseDir = localRepo.resolve("me/bechberger").resolve(artifactId).resolve(version);

@@ -110,7 +110,7 @@ class ClassNameTrieTest {
 
 	@Test
 	void varintRoundTrip() throws IOException {
-		int[] values = { 0, 1, 127, 128, 255, 256, 16383, 16384, Integer.MAX_VALUE };
+		int[] values = {0, 1, 127, 128, 255, 256, 16383, 16384, Integer.MAX_VALUE};
 		for (int v : values) {
 			ByteArrayOutputStream bos = new ByteArrayOutputStream();
 			ClassNameTrie.writeVarInt(new DataOutputStream(bos), v);
@@ -144,7 +144,7 @@ class ClassNameTrieTest {
 	@Test
 	void readVarIntRejectsOverflowContinuationBytes() {
 		// 6 continuation bytes (all 0x80) followed by no terminator → shift exceeds 35
-		byte[] corrupt = { (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80 };
+		byte[] corrupt = {(byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80};
 		assertThrows(IOException.class,
 				() -> ClassNameTrie.readVarInt(new DataInputStream(new ByteArrayInputStream(corrupt))));
 	}
@@ -152,7 +152,7 @@ class ClassNameTrieTest {
 	@Test
 	void readVarIntHandlesValidValues() throws IOException {
 		// Round-trip small, medium, and large values
-		for (int val : new int[] { 0, 1, 127, 128, 16384, Integer.MAX_VALUE }) {
+		for (int val : new int[]{0, 1, 127, 128, 16384, Integer.MAX_VALUE}) {
 			ByteArrayOutputStream bos = new ByteArrayOutputStream();
 			ClassNameTrie.writeVarInt(new DataOutputStream(bos), val);
 			int read = ClassNameTrie.readVarInt(new DataInputStream(new ByteArrayInputStream(bos.toByteArray())));

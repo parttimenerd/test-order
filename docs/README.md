@@ -9,7 +9,6 @@
 | [KOTEST.md](KOTEST.md) | Kotest framework integration guide |
 | [MAVEN_PLUGIN.md](MAVEN_PLUGIN.md) | Maven plugin detailed reference: goals, ML predictions, show command, CI setup |
 | [MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md) | Multi-module project setup and aggregation |
-| [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) | Measurement-first tuning playbook |
 | [SCORING.md](SCORING.md) | Scoring formula, weights, ML-enhanced scoring, and automatic tuning |
 
 ## Quick Links
