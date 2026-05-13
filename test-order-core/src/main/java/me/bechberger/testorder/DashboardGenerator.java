@@ -5,6 +5,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+import me.bechberger.testorder.ml.TestHealthReport;
 import me.bechberger.util.json.PrettyPrinter;
 
 /**
@@ -91,6 +92,23 @@ public class DashboardGenerator {
 	public Map<String, Object> buildData(List<ScoredTest> scored, Set<String> changed, Set<String> changedTests,
 			TestOrderState state, TestOrderState.ScoringWeights sw, DependencyMap depMap, long medianDuration,
 			List<TestOrderState.WeightDef> weightDefs) {
+		return buildData(scored, changed, changedTests, state, sw, depMap, medianDuration, weightDefs, null, null);
+	}
+
+	/**
+	 * Full overload that includes optional ML data for the dashboard.
+	 *
+	 * @param mlPredictions
+	 *            ML failure probability predictions (test class → P(fail)), or null
+	 *            if ML is disabled
+	 * @param healthReport
+	 *            ML health report with test classifications, or null if not
+	 *            available
+	 */
+	public Map<String, Object> buildData(List<ScoredTest> scored, Set<String> changed, Set<String> changedTests,
+			TestOrderState state, TestOrderState.ScoringWeights sw, DependencyMap depMap, long medianDuration,
+			List<TestOrderState.WeightDef> weightDefs, Map<String, Double> mlPredictions,
+			TestHealthReport healthReport) {
 
 		Map<String, Object> root = new LinkedHashMap<>();
 
@@ -189,6 +207,11 @@ public class DashboardGenerator {
 			} else {
 				t.put("methods", null);
 			}
+			// ML failure prediction (if available)
+			if (mlPredictions != null) {
+				Double pFail = mlPredictions.get(st.name());
+				t.put("mlPFail", pFail != null ? Math.round(pFail * 10000.0) / 10000.0 : null);
+			}
 			tests.add(t);
 		}
 		root.put("tests", tests);
@@ -228,6 +251,42 @@ public class DashboardGenerator {
 
 		// coverage: invert dependency map (test→sources) to (source→tests)
 		root.put("coverage", buildCoverageData(depMap));
+
+		// ML section (health report + predictions summary)
+		if (healthReport != null) {
+			Map<String, Object> ml = new LinkedHashMap<>();
+			ml.put("enabled", true);
+			ml.put("runsAnalyzed", healthReport.runsAnalyzed());
+
+			Map<String, Object> summary = new LinkedHashMap<>();
+			summary.put("healthy", healthReport.byStatus(TestHealthReport.HealthStatus.HEALTHY).size());
+			summary.put("degrading", healthReport.byStatus(TestHealthReport.HealthStatus.DEGRADING).size());
+			summary.put("flaky", healthReport.byStatus(TestHealthReport.HealthStatus.FLAKY).size());
+			summary.put("failing", healthReport.byStatus(TestHealthReport.HealthStatus.FAILING).size());
+			ml.put("summary", summary);
+
+			List<Object> health = new ArrayList<>();
+			for (var entry : healthReport.tests().values()) {
+				Map<String, Object> h = new LinkedHashMap<>();
+				h.put("testClass", entry.testClass());
+				h.put("status", entry.status().name());
+				h.put("flakinessScore", Math.round(entry.flakinessScore() * 10000.0) / 10000.0);
+				h.put("degradationTrend", Math.round(entry.degradationTrend() * 10000.0) / 10000.0);
+				h.put("recentFailureRate", Math.round(entry.recentFailureRate() * 10000.0) / 10000.0);
+				h.put("volatility", Math.round(entry.volatility() * 10000.0) / 10000.0);
+				h.put("totalRuns", entry.totalRuns());
+				h.put("totalFailures", entry.totalFailures());
+				health.add(h);
+			}
+			ml.put("health", health);
+
+			if (mlPredictions != null && !mlPredictions.isEmpty()) {
+				ml.put("hasPredictions", true);
+			}
+
+			root.put("ml", ml);
+		}
+
 		return root;
 	}
 

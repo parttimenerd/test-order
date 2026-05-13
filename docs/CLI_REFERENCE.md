@@ -16,7 +16,7 @@ mvn me.bechberger:test-order-maven-plugin:<version>:auto test
 mvn test-order:run-remaining test
 
 # Inspect ordering decisions without executing tests
-mvn test-order:show-order
+mvn test-order:show
 ```
 
 ## Maven Goals
@@ -30,8 +30,9 @@ mvn test-order:show-order
 | `run-remaining` | Executes deferred tests from prior selection | Follow-up confidence run |
 | `tiered-select` | Splits tests into tier 1/2/3 files and runs tier 1 | Three-phase CI fail-fast workflow |
 | `run-tier` | Executes tier 2 or tier 3 from prior tiered selection | Progressive confidence after tier 1 |
-| `show-order` | Prints ranking/order and score breakdown | Debug prioritization |
-| `show-method-order` | Prints method-level priority order within each test class | Debug method ordering |
+| `show` | Unified view: class order, method order, ML health (auto-detects available data) | Debug prioritization |
+| `show-order` | _(deprecated → use `show`)_ Prints ranking/order and score breakdown | Debug prioritization |
+| `show-method-order` | _(deprecated → use `show`)_ Prints method-level priority order within each test class | Debug method ordering |
 | `dashboard` | Generates HTML dashboard | Visual analysis |
 | `serve` | Serves dashboard via local HTTP server | Browser compatibility / sharing |
 | `optimize` | Re-optimizes scoring weights from run history | Periodic tuning |
@@ -98,6 +99,7 @@ Recommended defaults:
 |---|---|---|
 | `testorder.skip` | `false` | Skip the plugin entirely for a vanilla test run |
 | `testorder.debug` | `false` | Enable debug-level logging |
+| `testorder.tdd` | `false` | Enforce TDD discipline: new tests that pass without failing first are artificially failed |
 
 ### Files and Paths
 
@@ -144,7 +146,20 @@ Recommended defaults:
 | `testorder.auto.optimizeEvery` | `10` | Run weight optimization every N auto runs (`0` = disabled) |
 | `testorder.auto.runRemaining` | `true` | Print hint to run deferred tests (Maven); auto-run remaining tests via `finalizedBy` (Gradle) |
 
-### Show-Order
+### Show (unified)
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.show.classes` | `true` | Include class-level order section |
+| `testorder.show.methods` | `auto` | Include method-level order (`true`/`false`/`auto` = show if data exists) |
+| `testorder.show.ml` | `auto` | Include ML health analysis (`true`/`false`/`auto` = show if history exists) |
+| `testorder.show.all` | `false` | Force all sections on (equivalent to classes+methods+ml) |
+| `testorder.show.explain` | `false` | Show per-test scoring breakdown |
+| `testorder.show.fullNames` | `false` | Use fully qualified class names |
+| `testorder.show.format` | `text` | Output format: `text` or `json` |
+| `testorder.show.filter` | unset | Glob pattern to restrict output. Supports `*` and `?` wildcards, comma-separated patterns with OR semantics (e.g. `*Service*,*Controller*`). Matching is case-insensitive. |
+
+### Show-Order (deprecated)
 
 | Property | Default | Notes |
 |---|---|---|
@@ -179,6 +194,24 @@ Recommended defaults:
 | `testorder.includePackages` | unset | Restricts instrumentation scope |
 | `testorder.filterByGroupId` | `true` | Falls back to project groupId when package detection is empty |
 | `testorder.methodOrder.enabled` | `false` | Experimental method ordering |
+
+### ML (Machine Learning) Predictions
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.ml.enabled` | `false` | Enable ML history collection during test runs |
+| `testorder.ml.historyDir` | `.test-order/ml/` | Directory for ML history data |
+| `testorder.ml.history.maxRuns` | `2000` | Maximum runs retained in history ring buffer |
+| `testorder.ml.predictions.file` | auto | Intermediate predictions file consumed by test JVM |
+
+When enabled, test-order records per-test outcomes (pass/fail, duration, exception type) after each run. With 5+ recorded runs, the ML layer can:
+
+- **Predict failure probability** — Tribuo logistic regression trained on 26 features including change coupling, duration trends, co-failure patterns, and failure streaks.
+- **Classify test health** — Statistical analysis (EWMA, autocorrelation, trend slope) labels tests as HEALTHY, DEGRADING, FLAKY, or FAILING.
+
+ML data is shown in:
+- `mvn test-order:show` (auto-detected when history exists)
+- `mvn test-order:dashboard` (ML Health tab + P(fail) column)
 
 ### Scoring Overrides
 
@@ -221,6 +254,22 @@ mvn test-order:auto test \
 mvn test-order:auto test \
   -Dtestorder.changeMode=explicit \
   -Dtestorder.changed.classes=com.example.Service,com.example.Repository
+```
+
+### ML-powered prioritization
+
+```bash
+# Enable ML history collection (add to POM or pass on every run)
+mvn test -Dtestorder.ml.enabled=true
+
+# After 5+ runs, view ML health analysis
+mvn test-order:show -Dtestorder.show.ml=true
+
+# Full report (class order + method order + ML) in JSON
+mvn test-order:show -Dtestorder.show.all=true -Dtestorder.show.format=json
+
+# Dashboard includes ML health tab automatically
+mvn test-order:dashboard
 ```
 
 ### Dashboard
@@ -298,6 +347,29 @@ mvn test-order:auto test
 # Specific modules
 mvn -pl core,api test-order:auto test
 ```
+
+## TDD Enforcement
+
+When `testorder.tdd=true`, new test classes and methods that pass without a prior failure
+in the state file are artificially failed with a descriptive error message.
+This enforces the red-green-refactor cycle: write the test, see it **fail**, then make it pass.
+
+```bash
+# Maven
+mvn test -Dtestorder.tdd=true
+
+# Gradle
+./gradlew test -Dtestorder.tdd=true
+```
+
+Or set it permanently in the plugin configuration (Maven `<tdd>true</tdd>`, Gradle `tdd = true`).
+
+Behaviour:
+- **First run** (no state file): enforcement is skipped — all tests pass normally.
+- **Known test passes**: no enforcement — only new classes/methods are checked.
+- **New test class passes without prior failure**: artificially failed.
+- **New test method passes without prior failure**: artificially failed (only when method-level data exists in state).
+- **Test that already fails**: not flagged — TDD discipline is satisfied.
 
 ## Validation Rules (High Impact)
 

@@ -190,6 +190,12 @@ public abstract class TestOrderExtension {
     public abstract Property<Boolean> getSkip();
 
     /**
+     * Enable TDD enforcement: new test classes and methods that pass without
+     * having failed first are artificially failed with a descriptive error message.
+     */
+    public abstract Property<Boolean> getTdd();
+
+    /**
      * In auto mode, whether to run deferred (remaining) tests after selected tests.
      * <p>
      * Default: {@code true} for the regular 'test' task (runs all tests).
@@ -251,6 +257,7 @@ public abstract class TestOrderExtension {
         getAutoCompactEvery().convention(50);
         getSpringContextGrouping().convention(false);
         getSkip().convention(false);
+        getTdd().convention(false);
         getAutoRunRemaining().convention(true);
         getDumpOutputFile().convention("");
         getCoverageThreshold().convention(2);

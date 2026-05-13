@@ -28,10 +28,8 @@ final class StateSerializer {
 				Files.createDirectories(parent);
 			}
 			Path tempFile = PersistenceSupport.temporarySibling(file);
-			try (var writer = new java.io.OutputStreamWriter(
-					LZ4Support.blockOutputStream(Files.newOutputStream(tempFile), 1 << 16,
-							LZ4Support.highCompressor(17)),
-					StandardCharsets.UTF_8)) {
+			try (var writer = new java.io.OutputStreamWriter(LZ4Support.blockOutputStream(
+					Files.newOutputStream(tempFile), 1 << 16, LZ4Support.highCompressor(17)), StandardCharsets.UTF_8)) {
 				writer.write(PrettyPrinter.compactPrint(state.toPersistedRoot()));
 			}
 			PersistenceSupport.moveIntoPlace(tempFile, file);
@@ -73,14 +71,16 @@ final class StateSerializer {
 							TestOrderState.safeMap(JSONParser.parse(decode(Files.readAllBytes(tempFile))), "root"));
 				} catch (StateDowngradeException tempDowngrade) {
 					Path backup = createTimestampedBackup(tempFile);
-					LOG.warning("Temp state file was also from a newer version. Backup at " + backup
-							+ ". Starting fresh.");
+					LOG.warning(
+							"Temp state file was also from a newer version. Backup at " + backup + ". Starting fresh.");
 					return new TestOrderState();
 				} catch (IOException | RuntimeException tempFailure) {
 					tempFailure.addSuppressed(primaryFailure);
 					if (tempFailure instanceof IOException ioe)
 						throw ioe;
-					throw new IOException("Failed to load state from both primary and temp: " + tempFailure.getMessage(), tempFailure);
+					throw new IOException(
+							"Failed to load state from both primary and temp: " + tempFailure.getMessage(),
+							tempFailure);
 				}
 			}
 			if (primaryFailure instanceof IOException ioe)
@@ -108,8 +108,8 @@ final class StateSerializer {
 		if (raw[0] == '{' || raw[0] == ' ' || raw[0] == '\n' || raw[0] == '\r' || raw[0] == '\t') {
 			return new String(raw, StandardCharsets.UTF_8).strip();
 		}
-		try (var reader = new java.io.InputStreamReader(
-				LZ4Support.blockInputStream(new ByteArrayInputStream(raw)), StandardCharsets.UTF_8)) {
+		try (var reader = new java.io.InputStreamReader(LZ4Support.blockInputStream(new ByteArrayInputStream(raw)),
+				StandardCharsets.UTF_8)) {
 			StringBuilder sb = new StringBuilder(raw.length * 3);
 			char[] buf = new char[8192];
 			int n;

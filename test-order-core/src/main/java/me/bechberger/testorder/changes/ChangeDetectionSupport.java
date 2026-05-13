@@ -45,13 +45,14 @@ public final class ChangeDetectionSupport {
 	/**
 	 * Normalizes and validates a change mode value.
 	 *
-	 * @return lower-case mode name
+	 * @return lower-case mode name; defaults to {@code uncommitted} when blank or
+	 *         null
 	 * @throws IOException
-	 *             when mode is unknown or blank
+	 *             when mode is unknown
 	 */
 	public static String normalizeMode(String changeMode) throws IOException {
 		if (changeMode == null || changeMode.isBlank()) {
-			throw new IOException("Unknown changeMode: " + changeMode);
+			return "uncommitted";
 		}
 		String normalized = changeMode.toLowerCase(Locale.ROOT);
 		if (!SUPPORTED_CHANGE_MODES.contains(normalized)) {

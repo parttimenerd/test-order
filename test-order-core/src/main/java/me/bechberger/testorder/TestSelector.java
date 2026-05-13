@@ -194,7 +194,8 @@ public class TestSelector {
 					bestIdx = j;
 				}
 				// maximum possible distance — no need to check remaining candidates
-				if (dist == 1.0) break;
+				if (dist == 1.0)
+					break;
 			}
 			if (bestIdx >= 0) {
 				ScoredTest best = fastCandidates.get(bestIdx);

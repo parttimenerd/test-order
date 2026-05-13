@@ -273,6 +273,21 @@ class TestOrderPluginIntegrationTest {
     }
 
     @Test
+    @DisplayName("testOrderHelp prints quick-start and unified show guidance")
+    void helpTaskShowsQuickStartAndUnifiedShow() throws IOException {
+        scaffoldProject();
+
+        BuildResult result = runner("testOrderHelp").build();
+
+        assertEquals(SUCCESS, result.task(":testOrderHelp").getOutcome());
+        assertTrue(result.getOutput().contains("QUICK START:"));
+        assertTrue(result.getOutput().contains("1) First run:   ./gradlew test"));
+        assertTrue(result.getOutput().contains("2) Inspect:     ./gradlew testOrderShow"));
+        assertTrue(result.getOutput().contains("3) Dashboard:   ./gradlew testOrderDashboard"));
+        assertTrue(result.getOutput().contains("testOrderShow                Unified view: class order, method order, ML health"));
+    }
+
+    @Test
     @DisplayName("Skip mode does not configure learn or order")
     void skipModeDisablesPlugin() throws IOException {
         scaffoldProject();

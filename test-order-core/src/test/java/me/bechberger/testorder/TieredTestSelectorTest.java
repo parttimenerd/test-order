@@ -53,10 +53,9 @@ class TieredTestSelectorTest {
 		state.recordDuration("t.Known2", 100);
 		// t.Unknown1 and t.Unknown2 have NO recorded duration → Long.MAX_VALUE
 
-		TieredTestSelector selector = new TieredTestSelector(depMap, state,
-				Set.of(), // no changed classes → nothing goes to tier 1
-				Set.of(), TestOrderState.ScoringWeights.DEFAULT,
-				new TieredTestSelector.Config(0.5, true), Set.of());
+		TieredTestSelector selector = new TieredTestSelector(depMap, state, Set.of(), // no changed classes → nothing
+																						// goes to tier 1
+				Set.of(), TestOrderState.ScoringWeights.DEFAULT, new TieredTestSelector.Config(0.5, true), Set.of());
 
 		TieredTestSelector.TieredSelection selection = selector.select();
 
@@ -67,9 +66,8 @@ class TieredTestSelectorTest {
 		// but unknown tests consume estimated avgDuration (100ms) from the budget.
 		// The first test costs 100ms, exhausting the budget, so only 1 is selected
 		// instead of 2.
-		assertEquals(2, selection.tier2().size(),
-				"tier2Fraction=0.5 should select ~50% of remaining tests, "
-						+ "but got tier2=" + selection.tier2() + ", tier3=" + selection.tier3());
+		assertEquals(2, selection.tier2().size(), "tier2Fraction=0.5 should select ~50% of remaining tests, "
+				+ "but got tier2=" + selection.tier2() + ", tier3=" + selection.tier3());
 		assertEquals(2, selection.tier3().size());
 	}
 

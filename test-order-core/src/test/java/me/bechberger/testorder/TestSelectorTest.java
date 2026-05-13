@@ -279,14 +279,9 @@ class TestSelectorTest {
 		// Setup: 5 tests in depMap (C, D, E) plus 2 NEW tests NOT in depMap (A, B).
 		// New tests are always selected first. With topN=3, the 2 new tests
 		// should count towards the 3, so only 1 additional from topN is needed.
-		DependencyMap depMap = buildDepMap(Map.of(
-				"com.C", Set.of("app.Z"),
-				"com.D", Set.of("app.W"),
-				"com.E", Set.of("app.V")));
-		TestOrderState state = stateWithDurations(Map.of(
-				"com.C", 100L,
-				"com.D", 200L,
-				"com.E", 300L));
+		DependencyMap depMap = buildDepMap(
+				Map.of("com.C", Set.of("app.Z"), "com.D", Set.of("app.W"), "com.E", Set.of("app.V")));
+		TestOrderState state = stateWithDurations(Map.of("com.C", 100L, "com.D", 200L, "com.E", 300L));
 		// com.A and com.B are changed test classes NOT in depMap → "new"
 		Set<String> changedTests = Set.of("com.A", "com.B");
 
@@ -295,11 +290,12 @@ class TestSelectorTest {
 
 		// The 2 new tests are always selected. topN=3 should include at most 3
 		// tests total from the priority list (2 new + 1 more).
-		// Bug: currently new tests don't count towards topN, so we get 2 new + 3 topN = 5
+		// Bug: currently new tests don't count towards topN, so we get 2 new + 3 topN =
+		// 5
 		assertTrue(sel.selected().contains("com.A"), "new test A must be selected");
 		assertTrue(sel.selected().contains("com.B"), "new test B must be selected");
 		assertTrue(sel.selected().size() <= 3,
-				"topN=3 should yield at most 3 selected tests (new tests count towards topN), "
-						+ "but got " + sel.selected().size() + ": " + sel.selected());
+				"topN=3 should yield at most 3 selected tests (new tests count towards topN), " + "but got "
+						+ sel.selected().size() + ": " + sel.selected());
 	}
 }

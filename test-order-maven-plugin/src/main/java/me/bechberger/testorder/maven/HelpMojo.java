@@ -30,6 +30,12 @@ public class HelpMojo extends AbstractMojo {
 	public void execute() throws MojoExecutionException {
 		StringBuilder sb = new StringBuilder();
 		sb.append("\ntest-order-maven-plugin — Test prioritisation and selection for Maven\n\n");
+		sb.append("Quick start:\n");
+		sb.append("  1) First run:  mvn clean test\n");
+		sb.append("  2) Inspect:    mvn test-order:show\n");
+		sb.append("  3) Dashboard:  mvn test-order:dashboard\n");
+		sb.append("  CI fast path:  mvn test-order:select test && mvn test-order:run-remaining test\n");
+		sb.append("\n");
 		sb.append("Goals:\n");
 		sb.append("  prepare          Configure Surefire for learn or order mode (bound to process-test-classes)\n");
 		sb.append("  auto             Auto local dev mode: learn if needed, then run selected subset\n");
@@ -38,8 +44,9 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  run-remaining    Run the tests deferred by a previous select invocation\n");
 		sb.append("  tiered-select    Select tests into tier1/tier2/tier3 CI phases\n");
 		sb.append("  run-tier         Run tier 2 or tier 3 from a previous tiered-select run\n");
-		sb.append("  show-order       Display the current test priority order as a table\n");
-		sb.append("  show-method-order  Display method-level priority order within each test class\n");
+		sb.append("  show             Unified view: class order, method order, and ML health\n");
+		sb.append("  show-order       (deprecated) Use 'show' instead\n");
+		sb.append("  show-method-order  (deprecated) Use 'show' instead\n");
 		sb.append("  dashboard        Generate an interactive HTML dashboard\n");
 		sb.append("  serve            Generate dashboard and serve it via a local HTTP server\n");
 		sb.append("  optimize         Optimise scoring weights via hill-climbing over run history\n");
@@ -120,7 +127,7 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("               mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2\n");
 		sb.append("               mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3\n");
 		sb.append("  Dashboard:   mvn test-order:dashboard          (generate HTML report)\n");
-		sb.append("  View order:  mvn test-order:show-order         (print priority table)\n");
+		sb.append("  Show report: mvn test-order:show               (class/method/ML view)\n");
 		sb.append("  Diagnose:    mvn test-order:diagnose           (check setup health)\n");
 		sb.append("  Detect OD:  mvn test-order:detect-dependencies  (find order-dependent tests)\n");
 		sb.append("  Coverage:    mvn test-order:coverage           (writes to target/coverage-reports/)\n");

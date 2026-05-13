@@ -10,6 +10,8 @@ import DepGraph from './DepGraph.vue'
 const d = inject<DashboardState>('dashboard')!
 const showToast = inject<(msg: string) => void>('showToast')!
 
+const hasPFail = d.dd.ml?.hasPredictions ?? false
+
 function scoreTip(name: string): string {
   return d.getScoreBreakdown(name, 'orig') + '\n\nClick to open detailed score modal'
 }
@@ -116,6 +118,7 @@ watch(() => d.lw, () => {
               <th class="th--left">Flags</th>
               <th class="th--right">Duration</th>
               <th class="th--right" title="Number of source-class dependencies tracked for this test">Deps</th>
+              <th v-if="hasPFail" class="th--right" title="ML-predicted probability of failure">P(fail)</th>
             </tr>
           </thead>
           <tbody>
@@ -133,6 +136,7 @@ watch(() => d.lw, () => {
               <td><TestBadges :test="t" /></td>
               <td class="td--right td--dim">{{ t.duration >= 0 ? fmtDur(t.duration) : '' }}</td>
               <td class="td--right td--dim">{{ t.depTotal || 0 }}</td>
+              <td v-if="hasPFail" class="td--right" :style="{ color: t.mlPFail != null && t.mlPFail > 0.5 ? 'var(--red)' : t.mlPFail != null && t.mlPFail > 0.2 ? 'var(--yellow, orange)' : 'var(--text-muted)' }">{{ t.mlPFail != null ? (t.mlPFail * 100).toFixed(1) + '%' : '' }}</td>
             </tr>
           </tbody>
         </table>

@@ -40,8 +40,8 @@ final class SurefireHelper {
 	}
 
 	/**
-	 * Returns all test-execution plugins (Surefire and Failsafe) so validation
-	 * can be applied to both when they coexist.
+	 * Returns all test-execution plugins (Surefire and Failsafe) so validation can
+	 * be applied to both when they coexist.
 	 */
 	static List<Plugin> findAllTestPlugins(MavenProject project) {
 		List<Plugin> result = new ArrayList<>();
@@ -318,10 +318,10 @@ final class SurefireHelper {
 	}
 
 	/**
-	 * Extracts existing {@code <additionalClasspathElements>} from the Surefire
-	 * (or Failsafe) XML configuration. These need to be preserved when the
-	 * {@code maven.test.additionalClasspath} property is set, because the
-	 * property overrides the XML value.
+	 * Extracts existing {@code <additionalClasspathElements>} from the Surefire (or
+	 * Failsafe) XML configuration. These need to be preserved when the
+	 * {@code maven.test.additionalClasspath} property is set, because the property
+	 * overrides the XML value.
 	 */
 	static List<String> extractAdditionalClasspathElements(MavenProject project) {
 		List<String> result = new ArrayList<>();
@@ -348,9 +348,9 @@ final class SurefireHelper {
 
 	/**
 	 * Warns when Surefire's {@code <runOrder>} conflicts with test-order's
-	 * {@code PriorityClassOrderer}. Surefire applies {@code runOrder} before
-	 * JUnit Platform's ClassOrderer, so a non-default value like {@code random}
-	 * or {@code failedfirst} partially overrides test-order's ordering.
+	 * {@code PriorityClassOrderer}. Surefire applies {@code runOrder} before JUnit
+	 * Platform's ClassOrderer, so a non-default value like {@code random} or
+	 * {@code failedfirst} partially overrides test-order's ordering.
 	 */
 	static void warnConflictingRunOrder(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -369,10 +369,10 @@ final class SurefireHelper {
 	}
 
 	/**
-	 * Warns when {@code forkCount > 1} in learn mode. Multiple parallel forks
-	 * write to the same {@code .deps/} directory concurrently, which can corrupt
-	 * dependency data. In order mode, each fork gets its own ClassOrderer
-	 * instance, so global ordering is weakened but not broken.
+	 * Warns when {@code forkCount > 1} in learn mode. Multiple parallel forks write
+	 * to the same {@code .deps/} directory concurrently, which can corrupt
+	 * dependency data. In order mode, each fork gets its own ClassOrderer instance,
+	 * so global ordering is weakened but not broken.
 	 */
 	static void warnForkCountInLearnMode(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -427,10 +427,10 @@ final class SurefireHelper {
 	}
 
 	/**
-	 * Warns when {@code reuseForks=false} in learn mode. Each test class runs
-	 * in a fresh JVM, so the agent restarts each time. This works but has
-	 * significant overhead and may produce less accurate dependency data
-	 * because cross-class static state is never visible.
+	 * Warns when {@code reuseForks=false} in learn mode. Each test class runs in a
+	 * fresh JVM, so the agent restarts each time. This works but has significant
+	 * overhead and may produce less accurate dependency data because cross-class
+	 * static state is never visible.
 	 */
 	static void warnReuseForksFalseInLearnMode(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -448,10 +448,9 @@ final class SurefireHelper {
 	}
 
 	/**
-	 * Warns when {@code rerunFailingTestsCount > 0} in learn mode. Surefire
-	 * reruns failing tests, and the agent records dependencies for both the
-	 * failing and passing runs. This creates duplicate/inconsistent entries in
-	 * the .deps files.
+	 * Warns when {@code rerunFailingTestsCount > 0} in learn mode. Surefire reruns
+	 * failing tests, and the agent records dependencies for both the failing and
+	 * passing runs. This creates duplicate/inconsistent entries in the .deps files.
 	 */
 	static void warnRerunFailingTestsInLearnMode(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -477,10 +476,10 @@ final class SurefireHelper {
 	}
 
 	/**
-	 * Forces {@code <useModulePath>false</useModulePath>} when test-order
-	 * injects classpath entries. JPMS module path mode ignores
-	 * {@code maven.test.additionalClasspath}, so test-order JARs would not
-	 * be visible to the forked JVM.
+	 * Forces {@code <useModulePath>false</useModulePath>} when test-order injects
+	 * classpath entries. JPMS module path mode ignores
+	 * {@code maven.test.additionalClasspath}, so test-order JARs would not be
+	 * visible to the forked JVM.
 	 */
 	static void forceClasspathModeIfNeeded(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -503,12 +502,12 @@ final class SurefireHelper {
 
 	/**
 	 * Warns when Surefire has {@code <groups>}, {@code <excludedGroups>},
-	 * {@code <includes>}, or {@code <excludes>} configured while test-order is
-	 * in select mode. These filters interact with test-order's selection:
+	 * {@code <includes>}, or {@code <excludes>} configured while test-order is in
+	 * select mode. These filters interact with test-order's selection:
 	 * <ul>
-	 * <li>{@code <groups>/<excludedGroups>} (JUnit 5 tags) still apply
-	 * alongside {@code <test>}, so tests selected by test-order may be silently
-	 * skipped by Surefire's tag filter.</li>
+	 * <li>{@code <groups>/<excludedGroups>} (JUnit 5 tags) still apply alongside
+	 * {@code <test>}, so tests selected by test-order may be silently skipped by
+	 * Surefire's tag filter.</li>
 	 * <li>{@code <includes>/<excludes>} are overridden by {@code <test>}, so
 	 * test-order may run classes the user explicitly excluded.</li>
 	 * </ul>

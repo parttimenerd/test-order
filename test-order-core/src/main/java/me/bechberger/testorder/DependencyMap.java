@@ -576,9 +576,8 @@ public class DependencyMap {
 							int testCount = ds.length;
 							memberBitmap.forEach((int ti) -> {
 								if (ti < 0 || ti >= testCount) {
-									throw new IllegalStateException(
-											"Invalid test index " + ti + " in member bitmap (valid: 0–"
-													+ (testCount - 1) + ")");
+									throw new IllegalStateException("Invalid test index " + ti
+											+ " in member bitmap (valid: 0–" + (testCount - 1) + ")");
 								}
 								finalDepSets[ti] = sharedDeps;
 							});
@@ -826,14 +825,18 @@ public class DependencyMap {
 	}
 
 	/**
-	 * Aggregates .deps files from a directory into a single index file.
-	 * Uses file locking to prevent corruption in concurrent builds.
+	 * Aggregates .deps files from a directory into a single index file. Uses file
+	 * locking to prevent corruption in concurrent builds.
 	 *
-	 * @param depsDir   directory containing .deps files
-	 * @param indexFile target index file
-	 * @param log       optional logger (null = use System.out)
+	 * @param depsDir
+	 *            directory containing .deps files
+	 * @param indexFile
+	 *            target index file
+	 * @param log
+	 *            optional logger (null = use System.out)
 	 */
-	public static void aggregateFromDepsDirectory(Path depsDir, Path indexFile, me.bechberger.testorder.ops.PluginLog log) throws IOException {
+	public static void aggregateFromDepsDirectory(Path depsDir, Path indexFile,
+			me.bechberger.testorder.ops.PluginLog log) throws IOException {
 		if (!Files.isDirectory(depsDir)) {
 			return; // empty directory, skip
 		}
@@ -1015,7 +1018,8 @@ public class DependencyMap {
 				var entry = task.get();
 				if (entry != null) {
 					// existing may be an unmodifiable set from loadBinary — copy into mutable set
-					Set<String> existing = new HashSet<>(map.methodMemberDependencies.getOrDefault(entry.getKey(), Set.of()));
+					Set<String> existing = new HashSet<>(
+							map.methodMemberDependencies.getOrDefault(entry.getKey(), Set.of()));
 					existing.addAll(entry.getValue());
 					map.methodMemberDependencies.put(entry.getKey(), existing);
 					methodMemberDepCount++;
@@ -1025,7 +1029,8 @@ public class DependencyMap {
 			}
 		}
 
-		// Save aggregated index under file lock (R7-6: prevent corruption in concurrent -T N builds)
+		// Save aggregated index under file lock (R7-6: prevent corruption in concurrent
+		// -T N builds)
 		Files.createDirectories(indexFile.getParent());
 		PersistenceSupport.withFileLock(indexFile, () -> {
 			map.save(indexFile);
@@ -1033,8 +1038,8 @@ public class DependencyMap {
 		});
 
 		long duration = System.currentTimeMillis() - startTime;
-		String msg = "[test-order] Aggregated " + depCount + " test classes + " + methodDepCount
-				+ " test methods + " + memberDepCount + " class-member sets + " + methodMemberDepCount
+		String msg = "[test-order] Aggregated " + depCount + " test classes + " + methodDepCount + " test methods + "
+				+ memberDepCount + " class-member sets + " + methodMemberDepCount
 				+ " method-member sets from deps files in " + duration + "ms";
 		if (log != null) {
 			log.info(msg);

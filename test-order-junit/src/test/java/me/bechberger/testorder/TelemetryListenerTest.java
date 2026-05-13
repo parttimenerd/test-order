@@ -1233,9 +1233,9 @@ class TelemetryListenerTest {
 	// ── Rerun recovery tests ─────────────────────────────────────────
 
 	/**
-	 * Simulates Surefire's rerunFailingTestsCount: a test fails in the first
-	 * plan execution, then succeeds in the rerun plan. The final state should
-	 * NOT record the class as failed, and durations should not be double-counted.
+	 * Simulates Surefire's rerunFailingTestsCount: a test fails in the first plan
+	 * execution, then succeeds in the rerun plan. The final state should NOT record
+	 * the class as failed, and durations should not be double-counted.
 	 */
 	@Test
 	void rerunRecovery_failThenPass_clearsFailure() throws IOException {

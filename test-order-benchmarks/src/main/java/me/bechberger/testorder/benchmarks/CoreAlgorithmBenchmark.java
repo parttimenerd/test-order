@@ -117,7 +117,10 @@ public class CoreAlgorithmBenchmark {
 			if (tempDir != null) {
 				try (var stream = Files.walk(tempDir)) {
 					stream.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
-						try { Files.deleteIfExists(p); } catch (IOException ignored) { }
+						try {
+							Files.deleteIfExists(p);
+						} catch (IOException ignored) {
+						}
 					});
 				}
 			}

@@ -2,8 +2,10 @@ package me.bechberger.testorder.ops.workflows;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Map;
 
 import me.bechberger.testorder.TestScorer;
+import me.bechberger.testorder.ml.TestHealthReport;
 import me.bechberger.testorder.ops.DashboardServerOperation;
 import me.bechberger.testorder.ops.GenerateDashboardOperation;
 import me.bechberger.testorder.ops.PluginContext;
@@ -22,11 +24,20 @@ public final class DashboardWorkflow {
 	private final PluginContext ctx;
 	private final String htmlTemplate;
 	private final Path outputDir;
+	private final Map<String, Double> mlPredictions;
+	private final TestHealthReport healthReport;
 
 	public DashboardWorkflow(PluginContext ctx, String htmlTemplate, Path outputDir) {
+		this(ctx, htmlTemplate, outputDir, null, null);
+	}
+
+	public DashboardWorkflow(PluginContext ctx, String htmlTemplate, Path outputDir, Map<String, Double> mlPredictions,
+			TestHealthReport healthReport) {
 		this.ctx = ctx;
 		this.htmlTemplate = htmlTemplate;
 		this.outputDir = outputDir;
+		this.mlPredictions = mlPredictions;
+		this.healthReport = healthReport;
 	}
 
 	/**
@@ -54,7 +65,7 @@ public final class DashboardWorkflow {
 				a.changedTests(), a.depMap(), ctx.projectName(),
 				ctx.stateFile() != null ? relativize(ctx.projectRoot(), ctx.stateFile()) : "",
 				ctx.indexFile() != null ? relativize(ctx.projectRoot(), ctx.indexFile()) : "", ctx.pluginVersion(),
-				a.loadedWeights().defs(), htmlTemplate, outputFile, ctx.log());
+				a.loadedWeights().defs(), mlPredictions, healthReport, htmlTemplate, outputFile, ctx.log());
 
 		return outputFile;
 	}

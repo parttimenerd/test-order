@@ -26,7 +26,7 @@ import me.bechberger.testorder.ops.workflows.DashboardWorkflow;
  * Output: {@code target/test-order-dashboard/index.html}
  */
 @Mojo(name = "dashboard", defaultPhase = LifecyclePhase.VALIDATE, aggregator = true)
-public class DashboardMojo extends ShowOrderMojo {
+public class DashboardMojo extends AbstractTestOrderMojo {
 
 	/** Output HTML file path. */
 	@Parameter(property = MavenPluginConfigKeys.DASHBOARD_OUTPUT, defaultValue = "${project.build.directory}/test-order-dashboard/index.html")
@@ -59,7 +59,34 @@ public class DashboardMojo extends ShowOrderMojo {
 		Path outPath = Path.of(dashboardOutput);
 		try {
 			Files.createDirectories(outPath.getParent());
-			new DashboardWorkflow(pctx, template, outPath.getParent()).generate(outPath);
+
+			// Compute ML health data if available
+			java.util.Map<String, Double> mlPredictions = null;
+			me.bechberger.testorder.ml.TestHealthReport healthReport = null;
+			Path mlHistoryDir = resolveMLHistoryDir();
+			me.bechberger.testorder.ml.MLHealthLoader.LoadResult mlResult = me.bechberger.testorder.ml.MLHealthLoader
+					.load(mlHistoryDir);
+			if (mlResult.hasData()) {
+				healthReport = mlResult.healthReport();
+				// Generate predictions via Tribuo
+				Path idxPathForML = resolveIndexPath();
+				if (Files.exists(idxPathForML)) {
+					try {
+						me.bechberger.testorder.DependencyMap depMap = me.bechberger.testorder.DependencyMap
+								.load(idxPathForML);
+						Set<String> testClasses = new HashSet<>(depMap.testClasses());
+						if (!testClasses.isEmpty()) {
+							Path historyFile = mlHistoryDir.resolve("history.lz4");
+							mlPredictions = me.bechberger.testorder.maven.ml.TestFailurePredictor
+									.trainAndPredict(historyFile, depMap, Set.of(), Set.of(), testClasses);
+						}
+					} catch (Exception e) {
+						getLog().debug("[test-order] ML predictions for dashboard failed: " + e.getMessage());
+					}
+				}
+			}
+
+			new DashboardWorkflow(pctx, template, outPath.getParent(), mlPredictions, healthReport).generate(outPath);
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to write dashboard to " + outPath, e);
 		}

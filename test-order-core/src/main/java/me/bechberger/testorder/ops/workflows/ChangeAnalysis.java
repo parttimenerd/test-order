@@ -108,14 +108,22 @@ public final class ChangeAnalysis {
 		}
 
 		// ── Change detection ────────────────────────────────────────
-		Set<String> changed = ChangeDetectionOps.detectChangedClasses(ctx.changeMode(), ctx.projectRoot(),
+		Set<String> changed = ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
 				ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log());
 
-		Set<String> changedTests = ChangeDetectionOps.detectChangedTestClasses(ctx.changeMode(), ctx.projectRoot(),
-				ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log());
+		Set<String> changedTests = ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(),
+				ctx.projectRoot(), ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log());
+		if (opts.filterToModule() && ctx.testClassesDir() != null && Files.isDirectory(ctx.testClassesDir())) {
+			Set<String> moduleTests = TestClassDiscovery.scanTestClasses(ctx.testClassesDir());
+			if (!moduleTests.isEmpty()) {
+				changedTests = changedTests.stream().filter(moduleTests::contains)
+						.collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+			}
+		}
 
 		Set<String> changedMethods = Set.of();
-		if (opts.includeMethodChanges() && ctx.methodOrderingEnabled() && ctx.methodHashFile() != null) {
+		if (opts.includeMethodChanges() && ctx.methodOrderingEnabled() && ctx.methodHashFile() != null
+				&& ctx.testSourceRoot() != null) {
 			changedMethods = ChangeDetectionOps.detectChangedMethods(ctx.testSourceRoot(), ctx.methodHashFile(),
 					ctx.log());
 		}

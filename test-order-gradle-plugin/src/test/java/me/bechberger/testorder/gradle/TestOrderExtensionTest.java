@@ -24,6 +24,7 @@ class TestOrderExtensionTest {
         assertEquals(-1, extension.getSelectTopN().get());
         assertEquals(10, extension.getSelectRandomM().get());
         assertFalse(extension.getMethodOrderingEnabled().get());
+        assertFalse(extension.getTdd().get());
         assertFalse(extension.getScoreNewTest().isPresent());
     }
 

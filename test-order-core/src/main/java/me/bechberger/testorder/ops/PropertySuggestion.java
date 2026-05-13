@@ -16,27 +16,32 @@ public final class PropertySuggestion {
 	/** All canonical testorder.* property keys accepted by the plugins. */
 	public static final Set<String> KNOWN_KEYS = Set.of("testorder.mode", "testorder.skip", "testorder.debug",
 			"testorder.learn", "testorder.verbose", "testorder.instrumentation.mode", "testorder.changeMode",
-			"testorder.includePackages", "testorder.filterByGroupId", "testorder.methodOrder.enabled",
-			"testorder.methodOrder", "testorder.weightsFile", "testorder.changed.classes",
-			"testorder.changed.test.classes", "testorder.changed.methods", "testorder.changed.classes.file",
-			"testorder.index.path", "testorder.state.path", "testorder.source.root", "testorder.project.root",
-			"testorder.autoLearnRunThreshold", "testorder.autoLearnDiffThreshold", "testorder.auto.optimizeEvery",
-			"testorder.autoCompactEvery", "testorder.auto.runRemaining", "testorder.auto.active",
-			"testorder.select.topN", "testorder.select.randomM", "testorder.select.seed",
-			"testorder.select.remainingFile", "testorder.select.selectedFile", "testorder.tiered.tier2Fraction",
-			"testorder.tiered.weightByDuration", "testorder.tiered.tier1File", "testorder.tiered.tier2File",
-			"testorder.tiered.tier3File", "testorder.tiered.currentTier", "testorder.showOrder.explain",
-			"testorder.showOrder.fullNames", "testorder.showMethodOrder.explain", "testorder.score.newTest",
-			"testorder.score.changedTest", "testorder.score.maxFailure", "testorder.score.speed",
-			"testorder.score.speedPenalty", "testorder.score.depOverlap", "testorder.score.changeComplexity",
-			"testorder.score.staticFieldBonus", "testorder.score.coverageBonus",
+			"testorder.change.complexity", "testorder.includePackages", "testorder.filterByGroupId",
+			"testorder.methodOrder.enabled", "testorder.methodOrder", "testorder.weightsFile",
+			"testorder.changed.classes", "testorder.changed.test.classes", "testorder.changed.methods",
+			"testorder.changed.classes.file", "testorder.weights.file", "testorder.index.path", "testorder.state.path",
+			"testorder.source.root", "testorder.project.root", "testorder.autoLearnRunThreshold",
+			"testorder.autoLearnDiffThreshold", "testorder.auto.optimizeEvery", "testorder.autoCompactEvery",
+			"testorder.auto.runRemaining", "testorder.auto.active", "testorder.select.topN", "testorder.select.randomM",
+			"testorder.select.seed", "testorder.select.remainingFile", "testorder.select.selectedFile",
+			"testorder.tiered.tier2Fraction", "testorder.tiered.weightByDuration", "testorder.tiered.tier1File",
+			"testorder.tiered.tier2File", "testorder.tiered.tier3File", "testorder.tiered.currentTier",
+			"testorder.showOrder.explain", "testorder.showOrder.fullNames", "testorder.showMethodOrder.explain",
+			"testorder.score.newTest", "testorder.score.changedTest", "testorder.score.maxFailure",
+			"testorder.score.speed", "testorder.score.speedPenalty", "testorder.score.depOverlap",
+			"testorder.score.changeComplexity", "testorder.score.staticFieldBonus", "testorder.score.coverageBonus",
+			"testorder.method.score.failureRecency", "testorder.method.score.fast", "testorder.method.score.slow",
+			"testorder.method.score.depOverlap", "testorder.method.score.newMethod",
+			"testorder.method.score.changedMethod", "testorder.method.score.coverageBonus",
 			"testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold", "testorder.dump.output",
 			"testorder.exportJson.output", "testorder.dashboard.output", "testorder.dashboard.open",
-			"testorder.dashboard.port", "testorder.serve.port", "testorder.dashboard.serveSeconds", "testorder.dashboard.regenerate",
-			"testorder.dashboard.separateAssets", "testorder.metrics.output", "testorder.history.maxRuns",
-			"testorder.remaining.file", "testorder.failOnError", "testorder.coverage.threshold",
-			"testorder.coverage.outputDir", "testorder.coverage.failOnViolation", "coverage.threshold",
-			"coverage.outputDir", "testorder.git.timeout.seconds", "testorder.lock.stale.minutes");
+			"testorder.dashboard.port", "testorder.serve.port", "testorder.dashboard.serveSeconds",
+			"testorder.dashboard.regenerate", "testorder.dashboard.separateAssets", "testorder.metrics.output",
+			"testorder.history.maxRuns", "testorder.tdd", "testorder.ml.enabled", "testorder.ml.historyDir",
+			"testorder.ml.history.maxRuns", "testorder.ml.predictions.file", "testorder.remaining.file",
+			"testorder.failOnError", "testorder.coverage.threshold", "testorder.coverage.outputDir",
+			"testorder.coverage.failOnViolation", "coverage.threshold", "coverage.outputDir",
+			"testorder.git.timeout.seconds", "testorder.lock.stale.minutes");
 
 	/**
 	 * Find the closest known key to the given unknown key using case-insensitive
@@ -87,6 +92,7 @@ public final class PropertySuggestion {
 			// typos like testorder.indx → testorder.index.path (R8-5)
 			String bestPrefixMatch = null;
 			int bestPrefixDist = Integer.MAX_VALUE;
+			int bestFullDist = Integer.MAX_VALUE;
 			for (String known : KNOWN_KEYS) {
 				if (!known.startsWith("testorder."))
 					continue;
@@ -102,9 +108,14 @@ public final class PropertySuggestion {
 						? knownSuffix.substring(0, knownSuffix.indexOf('.'))
 						: knownSuffix;
 				int segDist = levenshtein(unknownFirstSeg, knownFirstSeg);
-				if (segDist <= 2 && segDist < bestPrefixDist) {
-					bestPrefixDist = segDist;
-					bestPrefixMatch = known;
+				if (segDist <= 2) {
+					// Use full suffix distance as tiebreaker when first-segment distances match
+					int fullDist = levenshtein(suffix.toLowerCase(), knownSuffix.toLowerCase());
+					if (segDist < bestPrefixDist || (segDist == bestPrefixDist && fullDist < bestFullDist)) {
+						bestPrefixDist = segDist;
+						bestFullDist = fullDist;
+						bestPrefixMatch = known;
+					}
 				}
 			}
 			if (bestPrefixMatch != null) {

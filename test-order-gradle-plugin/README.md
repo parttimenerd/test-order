@@ -128,6 +128,9 @@ testOrder {
     // Auto-detected from src/main/java if left empty.
     includePackages = ""
 
+    // TDD enforcement: new tests that pass without failing first are artificially failed
+    tdd = false
+
     // Change detection: "uncommitted" | "auto" | "since-last-run" | "since-last-commit" | "explicit"
     changeMode = "uncommitted"
 
@@ -170,7 +173,8 @@ Score weights (`scoreNewTest`, `scoreChangedTest`, etc.) must be set in the `tes
 |---|---|
 | `testOrderDashboard` | Generate an interactive HTML dashboard from current index/state |
 | `testOrderServe` | Serve dashboard over local HTTP (supports timed shutdown) |
-| `testOrderShowOrder` | Display the predicted test execution order without running tests |
+| `testOrderShow` | Unified view: class order, method order, ML health (auto-detects) |
+| `testOrderShowOrder` | _(deprecated → use `testOrderShow`)_ Display predicted test execution order |
 | `testOrderTieredSelect` | Run tier-1 tests and write tier-2/tier-3 files for three-phase CI |
 | `testOrderRunTier` | Run tier 2 or tier 3 from a previous `testOrderTieredSelect` |
 | `testOrderSelect` | Run the prioritized subset and write remaining tests to disk |
@@ -259,6 +263,27 @@ When `mode = "auto"` (default):
 - If `test-dependencies.lz4` **does not exist** → learn mode.
 - If `test-dependencies.lz4` **exists** → order mode.
 
+## TDD Enforcement
+
+Enforce test-driven development discipline: new test classes and methods that
+pass without having failed first are artificially failed.
+
+```groovy
+testOrder {
+    tdd = true
+}
+```
+
+Or via the command line:
+
+```bash
+./gradlew test -Dtestorder.tdd=true
+```
+
+On the first run (no state file), enforcement is skipped.
+After the first learn run, any new test that passes without a prior failure is flagged
+with a descriptive `TDD VIOLATION` error.
+
 ## Scoring system
 
 Each test class receives a score. Tests are sorted by descending score (highest first).
@@ -282,8 +307,65 @@ then by shorter duration, then alphabetically.
 |---|---|---|
 | `.test-order/test-dependencies.lz4` | **Yes** | Binary dependency index (compact, ~KB) |
 | `.test-order/state.lz4` | Optional | Test durations, failure history, run records |
+| `.test-order/ml/history.lz4` | Optional | ML run history (when `ml.enabled=true`) |
 | `.test-order/hashes.lz4` | No | Source hash snapshot for since-last-run change detection |
 | `build/test-order-deps/` | No | Intermediate `.deps` files (cleaned by `testOrderClean`) |
+
+## ML Failure Predictions
+
+The plugin includes an ML layer that learns from test history to predict failures and classify test health.
+
+### Enabling ML
+
+```groovy
+testOrder {
+    ml = true
+}
+```
+
+Or via system property:
+
+```bash
+./gradlew test -Dtestorder.ml.enabled=true
+```
+
+When enabled, per-test outcomes are recorded into `.test-order/ml/history.lz4` after each run.
+
+### ML Properties
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.ml.enabled` | `false` | Enable ML history collection and predictions |
+| `testorder.ml.historyDir` | `.test-order/ml/` | Directory for ML history data |
+| `testorder.ml.history.maxRuns` | `2000` | Max runs retained in ring buffer |
+
+### Viewing ML Results
+
+```bash
+# Unified show task (auto-detects ML history)
+./gradlew testOrderShow
+
+# Explicitly enable ML section
+./gradlew testOrderShow -Dtestorder.show.ml=true
+
+# JSON output
+./gradlew testOrderShow -Dtestorder.show.format=json
+```
+
+### ML in Dashboard
+
+```bash
+./gradlew testOrderDashboard
+```
+
+The dashboard automatically includes an **ML Health** tab and a **P(fail)** column when ML history exists. No extra flags needed.
+
+### What ML Provides
+
+After 5+ recorded runs:
+- **P(fail) predictions** — Logistic regression on 26 features predicts failure probability per test
+- **Health classification** — HEALTHY, DEGRADING (trend worsening), FLAKY (inconsistent), FAILING (broken)
+- **Co-failure tracking** — Tests that tend to fail together are identified
 
 ## Workflow recommendations
 

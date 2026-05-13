@@ -42,8 +42,7 @@ class TelemetryPersistenceTest {
 		TestOrderState state = new TestOrderState();
 		int before = state.historyMaxRuns();
 		assertDoesNotThrow(() -> TelemetryPersistence.applyHistoryMaxRuns(state));
-		assertEquals(before, state.historyMaxRuns(),
-				"Invalid maxRuns=0 should leave the state unchanged");
+		assertEquals(before, state.historyMaxRuns(), "Invalid maxRuns=0 should leave the state unchanged");
 	}
 
 	@Test
@@ -52,8 +51,7 @@ class TelemetryPersistenceTest {
 		TestOrderState state = new TestOrderState();
 		int before = state.historyMaxRuns();
 		assertDoesNotThrow(() -> TelemetryPersistence.applyHistoryMaxRuns(state));
-		assertEquals(before, state.historyMaxRuns(),
-				"Non-numeric maxRuns should leave the state unchanged");
+		assertEquals(before, state.historyMaxRuns(), "Non-numeric maxRuns should leave the state unchanged");
 	}
 
 	@Test
@@ -62,8 +60,7 @@ class TelemetryPersistenceTest {
 		TestOrderState state = new TestOrderState();
 		int before = state.historyMaxRuns();
 		assertDoesNotThrow(() -> TelemetryPersistence.applyHistoryMaxRuns(state));
-		assertEquals(before, state.historyMaxRuns(),
-				"Negative maxRuns should leave the state unchanged");
+		assertEquals(before, state.historyMaxRuns(), "Negative maxRuns should leave the state unchanged");
 	}
 
 	@Test
@@ -72,7 +69,6 @@ class TelemetryPersistenceTest {
 		TestOrderState state = new TestOrderState();
 		int before = state.historyMaxRuns();
 		TelemetryPersistence.applyHistoryMaxRuns(state);
-		assertEquals(before, state.historyMaxRuns(),
-				"Unset property should leave the default unchanged");
+		assertEquals(before, state.historyMaxRuns(), "Unset property should leave the default unchanged");
 	}
 }

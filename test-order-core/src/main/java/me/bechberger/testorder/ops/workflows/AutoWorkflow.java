@@ -194,7 +194,7 @@ public final class AutoWorkflow {
 		// (test hash file exists). On first run in multi-module builds, the hash file
 		// won't
 		// exist yet, so all test classes not in the index are genuinely new.
-		Supplier<Set<String>> changedTestsSupplier = Files.exists(ctx.testHashFile())
+		Supplier<Set<String>> changedTestsSupplier = ctx.testHashFile() != null && Files.exists(ctx.testHashFile())
 				? () -> ChangeDetectionOps.detectChangedTestClasses(ctx.changeMode(), ctx.projectRoot(),
 						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log())
 				: null;

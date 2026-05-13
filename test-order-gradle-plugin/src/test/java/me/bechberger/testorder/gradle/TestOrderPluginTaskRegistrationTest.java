@@ -5,6 +5,7 @@ import org.gradle.testfixtures.ProjectBuilder;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TestOrderPluginTaskRegistrationTest {
 
@@ -18,8 +19,10 @@ class TestOrderPluginTaskRegistrationTest {
         assertNotNull(project.getTasks().findByName("testOrderAggregate"));
         assertNotNull(project.getTasks().findByName("testOrderDump"));
         assertNotNull(project.getTasks().findByName("testOrderExportJson"));
+        assertNotNull(project.getTasks().findByName("testOrderShow"));
         assertNotNull(project.getTasks().findByName("testOrderShowOrder"));
         assertNotNull(project.getTasks().findByName("testOrderExplainOrder"));
+        assertNotNull(project.getTasks().findByName("testOrderHelp"));
         assertNotNull(project.getTasks().findByName("testOrderOptimize"));
         assertNotNull(project.getTasks().findByName("testOrderSelect"));
         assertNotNull(project.getTasks().findByName("testOrderRunRemaining"));
@@ -41,6 +44,22 @@ class TestOrderPluginTaskRegistrationTest {
         plugin.apply(project);
 
         assertNotNull(project.getExtensions().findByName(TestOrderPlugin.EXTENSION_NAME));
+        assertNotNull(project.getTasks().findByName("testOrderShow"));
+        assertNotNull(project.getTasks().findByName("testOrderHelp"));
         assertNotNull(project.getTasks().findByName("testOrderShowOrder"));
+    }
+
+    @Test
+    void unifiedShowTaskDescriptionHighlightsCombinedView() {
+        Project project = ProjectBuilder.builder().build();
+        project.getPluginManager().apply("java");
+
+        new TestOrderPlugin().apply(project);
+
+        var showTask = project.getTasks().findByName("testOrderShow");
+        assertNotNull(showTask);
+        assertNotNull(showTask.getDescription());
+        assertTrue(showTask.getDescription().contains("Unified view"));
+        assertTrue(showTask.getDescription().contains("replaces testOrderShowOrder"));
     }
 }

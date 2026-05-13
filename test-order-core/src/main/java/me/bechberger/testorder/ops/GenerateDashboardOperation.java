@@ -14,6 +14,7 @@ import me.bechberger.testorder.DashboardGenerator.ScoredTest;
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.TestScorer;
+import me.bechberger.testorder.ml.TestHealthReport;
 
 /**
  * Generates a self-contained HTML dashboard. Framework-agnostic — used by both
@@ -72,6 +73,24 @@ public final class GenerateDashboardOperation {
 			String projectName, String stateFileLabel, String indexFileLabel, String pluginVersion,
 			List<TestOrderState.WeightDef> weightDefs, String htmlTemplate, Path outputPath, PluginLog log)
 			throws IOException {
+		return generate(allTests, scorer, state, weights, changed, changedTests, depMap, projectName, stateFileLabel,
+				indexFileLabel, pluginVersion, weightDefs, null, null, htmlTemplate, outputPath, log);
+	}
+
+	/**
+	 * Generates the dashboard HTML with optional ML data and writes it to
+	 * {@code outputPath}.
+	 *
+	 * @param mlPredictions
+	 *            ML failure predictions per test class (null if ML not available)
+	 * @param healthReport
+	 *            ML health report (null if ML not available)
+	 */
+	public static Path generate(Collection<String> allTests, TestScorer scorer, TestOrderState state,
+			TestOrderState.ScoringWeights weights, Set<String> changed, Set<String> changedTests, DependencyMap depMap,
+			String projectName, String stateFileLabel, String indexFileLabel, String pluginVersion,
+			List<TestOrderState.WeightDef> weightDefs, Map<String, Double> mlPredictions, TestHealthReport healthReport,
+			String htmlTemplate, Path outputPath, PluginLog log) throws IOException {
 
 		List<ScoredTest> scored = DashboardOperation.scoreAndSort(allTests, scorer, state);
 		long medianDuration = DashboardOperation.computeMedianDuration(scored);
@@ -79,9 +98,11 @@ public final class GenerateDashboardOperation {
 		DashboardGenerator gen = new DashboardGenerator(projectName, stateFileLabel, indexFileLabel, pluginVersion);
 		Map<String, Object> data;
 		if (weightDefs != null) {
-			data = gen.buildData(scored, changed, changedTests, state, weights, depMap, medianDuration, weightDefs);
+			data = gen.buildData(scored, changed, changedTests, state, weights, depMap, medianDuration, weightDefs,
+					mlPredictions, healthReport);
 		} else {
-			data = gen.buildData(scored, changed, changedTests, state, weights, depMap, medianDuration);
+			data = gen.buildData(scored, changed, changedTests, state, weights, depMap, medianDuration,
+					TestOrderState.WEIGHT_DEFS, mlPredictions, healthReport);
 		}
 
 		String html = gen.injectIntoTemplate(htmlTemplate, data);

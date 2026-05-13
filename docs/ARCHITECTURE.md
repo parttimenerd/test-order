@@ -47,6 +47,14 @@ based on code changes and historical run data.
 - Persists durations, failures, and run history in `.test-order/state.lz4`.
 - Historical data allows adaptive prioritization over time.
 
+### ML Predictions (Optional)
+
+- When enabled (`testorder.ml.enabled=true`), collects per-test outcomes into `.test-order/ml/history.lz4`.
+- After sufficient history (5+ runs), trains a logistic regression model to predict P(fail) per test.
+- `TestHealthAnalyzer` classifies tests as HEALTHY, DEGRADING, FLAKY, or FAILING.
+- Results surface in the `show` goal and dashboard (ML Health tab).
+- All computation is local — no external services.
+
 ## Data Produced
 
 Common outputs include:
@@ -54,6 +62,7 @@ Common outputs include:
 - `.test-order/test-dependencies.lz4`
 - `.test-order/state.lz4`
 - `.test-order/hashes.lz4` (and related hash snapshots)
+- `.test-order/ml/history.lz4` (ML history, when enabled)
 - `target/test-order-selected.txt`
 - `target/test-order-remaining.txt`
 - dashboard and coverage reports under `target/`

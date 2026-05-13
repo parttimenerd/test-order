@@ -26,6 +26,9 @@ import me.bechberger.testorder.TestOrderConfigResolver;
 import me.bechberger.testorder.TestOrderLogger;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.UsageStoreReflectionBridge;
+import me.bechberger.testorder.ml.MLHistoryPersistence;
+import me.bechberger.testorder.ml.MLRunRecord;
+import me.bechberger.testorder.ml.MLTestOutcome;
 
 /**
  * JUnit Platform TestExecutionListener that:
@@ -67,6 +70,11 @@ public class TelemetryListener implements TestExecutionListener {
 	private final Set<String> failedMethodNames = ConcurrentHashMap.newKeySet();
 	private final Set<String> warnedConcurrentClasses = ConcurrentHashMap.newKeySet();
 	private final AtomicBoolean warnedGlobalParallel = new AtomicBoolean(false);
+
+	// ML history: maps test class → failure exception class name (for the most
+	// recent failure in this run)
+	private final Map<String, String> failureTypeMap = new ConcurrentHashMap<>();
+	private boolean mlEnabled;
 
 	// Tracks method keys (className#methodName) that are currently being tracked
 	// via a container node (e.g., @ParameterizedTest template). Child invocations
@@ -120,6 +128,9 @@ public class TelemetryListener implements TestExecutionListener {
 		finishedNormally = false;
 		shutdownHook = new Thread(this::emergencySave, "test-order-emergency-save");
 		Runtime.getRuntime().addShutdownHook(shutdownHook);
+
+		// ML history: check if ML is enabled (opt-in)
+		mlEnabled = "true".equalsIgnoreCase(configResolver.getConfig(TestOrderConfig.ML_ENABLED));
 	}
 
 	/**
@@ -222,13 +233,21 @@ public class TelemetryListener implements TestExecutionListener {
 				}
 				if (className != null) {
 					// Record class-level failure under the top-level enclosing class
-					// so that @Nested class failures are attributed to the outer class
-					// (PriorityClassOrderer looks up scores by top-level class name)
-					failedClassNames.add(TestOrderConfigResolver.toTopLevelClassName(className));
+					// so that @Nested class failures are attributed to the outer class.
+					// TestScorer has a fallback that checks the top-level name when
+					// no failure is found for the exact (nested) class name.
+					String topLevel = TestOrderConfigResolver.toTopLevelClassName(className);
+					failedClassNames.add(topLevel);
 					// Record method-level failure (preserves nested class for method scoring)
 					if (methodName != null) {
 						String methodKey = className + "#" + methodName;
 						failedMethodNames.add(methodKey);
+					}
+					// ML: capture failure exception type
+					if (mlEnabled) {
+						result.getThrowable().ifPresent(throwable -> {
+							failureTypeMap.put(topLevel, throwable.getClass().getName());
+						});
 					}
 				}
 			});
@@ -339,6 +358,7 @@ public class TelemetryListener implements TestExecutionListener {
 		}
 
 		boolean resetPending = false;
+		boolean stateSaved = false;
 		if (effectiveStatePath != null && !effectiveStatePath.isEmpty()) {
 			Path stateFile = Path.of(effectiveStatePath);
 			try {
@@ -366,30 +386,47 @@ public class TelemetryListener implements TestExecutionListener {
 					lockedState.save(stateFile);
 					return lockedState;
 				});
+				stateSaved = true;
+				// Mark normal completion immediately after state is saved — closes
+				// the window where SIGTERM could trigger a double-save via the
+				// shutdown hook while ML history write is in progress.
+				finishedNormally = true;
 				resetPending = TestOrderState.hasPendingData();
 			} catch (IOException e) {
 				TestOrderLogger.error("Failed to save state: {}", e.getMessage());
 			}
+
+			// ML history: persist run data for failure prediction model (opt-in)
+			if (mlEnabled && !executionOrder.isEmpty()) {
+				writeMLHistory(effectiveStatePath);
+			}
 		}
-		if (resetPending) {
-			TestOrderState.resetPending();
+
+		// Only clear data and remove the shutdown hook if state was saved.
+		// If the save failed, keep data in memory so the shutdown hook can
+		// attempt an emergency recovery save.
+		if (stateSaved) {
+
+			if (resetPending) {
+				TestOrderState.resetPending();
+			}
+
+			// Clear accumulated data after persisting to prevent double-counting
+			// when Surefire re-runs the test plan (rerunFailingTestsCount > 0).
+			// Without this, a rerun plan execution would re-apply all durations and
+			// failures from the original plan.
+			pendingDurations.clear();
+			pendingMethodDurations.clear();
+			failedClassNames.clear();
+			failedMethodNames.clear();
+			failureTypeMap.clear();
+			executionOrder.clear();
+			executionOrderSet.clear();
 		}
+
+		// Always clear method ordering state — it's JVM-level state that should
+		// not leak between test plan executions regardless of save outcome.
 		PriorityMethodOrderer.clearPendingState();
-
-		// Clear accumulated data after persisting to prevent double-counting
-		// when Surefire re-runs the test plan (rerunFailingTestsCount > 0).
-		// Without this, a rerun plan execution would re-apply all durations and
-		// failures from the original plan.
-		pendingDurations.clear();
-		pendingMethodDurations.clear();
-		failedClassNames.clear();
-		failedMethodNames.clear();
-		executionOrder.clear();
-		executionOrderSet.clear();
-
-		// Mark normal completion and remove the shutdown hook — the state was already
-		// saved.
-		finishedNormally = true;
 		if (shutdownHook != null) {
 			try {
 				Runtime.getRuntime().removeShutdownHook(shutdownHook);
@@ -416,6 +453,85 @@ public class TelemetryListener implements TestExecutionListener {
 		Map<String, List<Long>> methDurSnap = snapshotMapOfLists(pendingMethodDurations);
 		Set<String> methFailSnap = new java.util.HashSet<>(failedMethodNames);
 		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methDurSnap, methFailSnap);
+	}
+
+	/**
+	 * Writes ML run history for failure prediction. Resolves the ML history
+	 * directory from config (defaults to {@code .test-order-ml/} next to the state
+	 * file) and appends a run record.
+	 */
+	private void writeMLHistory(String effectiveStatePath) {
+		try {
+			Path stateDir = Path.of(effectiveStatePath).getParent();
+			TestOrderConfigResolver mlConfig = new TestOrderConfigResolver(
+					Thread.currentThread().getContextClassLoader());
+			String historyDirStr = mlConfig.getConfig(TestOrderConfig.ML_HISTORY_DIR);
+			Path historyDir = historyDirStr != null
+					? Path.of(historyDirStr)
+					: (stateDir != null ? stateDir.resolve("ml") : Path.of(".test-order-ml"));
+			Path historyFile = historyDir.resolve("history.lz4");
+			int maxRuns = 2000;
+			String maxRunsStr = mlConfig.getConfig(TestOrderConfig.ML_HISTORY_MAX_RUNS);
+			if (maxRunsStr != null) {
+				try {
+					maxRuns = Integer.parseInt(maxRunsStr.trim());
+				} catch (NumberFormatException ignored) {
+				}
+			}
+
+			// Resolve changed classes from config (set by PrepareMojo)
+			List<String> changedClasses = parseCSV(mlConfig.getConfig(TestOrderConfig.CHANGED_CLASSES));
+			List<String> changedTestClasses = parseCSV(mlConfig.getConfig(TestOrderConfig.CHANGED_TEST_CLASSES));
+
+			// Build ML outcomes from execution data.
+			// pendingDurations is keyed by raw class name (e.g. "Outer$Inner")
+			// but executionOrder contains top-level class names (e.g. "Outer").
+			// Aggregate durations from both the top-level name and any nested
+			// class variants so nested class test durations are not lost.
+			List<MLTestOutcome> outcomes = new java.util.ArrayList<>();
+			for (String testClass : executionOrder) {
+				boolean failed = failedClassNames.contains(testClass);
+				long durationMs = sumDurations(pendingDurations.get(testClass));
+				// Also collect durations stored under nested class names (Outer$...)
+				for (var durEntry : pendingDurations.entrySet()) {
+					String rawName = durEntry.getKey();
+					if (!rawName.equals(testClass) && rawName.startsWith(testClass + "$")) {
+						durationMs += sumDurations(durEntry.getValue());
+					}
+				}
+				String failureType = failed ? failureTypeMap.get(testClass) : null;
+				outcomes.add(new MLTestOutcome(testClass, failed, durationMs, failureType));
+			}
+
+			int totalFailures = (int) outcomes.stream().filter(MLTestOutcome::failed).count();
+			MLRunRecord record = new MLRunRecord(System.currentTimeMillis(), changedClasses, changedTestClasses,
+					outcomes.size(), totalFailures, outcomes);
+			MLHistoryPersistence.append(historyFile, record, maxRuns);
+			TestOrderLogger.debug("[ml] Saved ML history ({} outcomes, {} failures) to {}", outcomes.size(),
+					totalFailures, historyFile);
+		} catch (Exception e) {
+			TestOrderLogger.warn("[ml] Failed to write ML history: {}", e.getMessage());
+		}
+	}
+
+	private static long sumDurations(List<Long> durations) {
+		if (durations == null) {
+			return 0;
+		}
+		long total = 0;
+		synchronized (durations) {
+			for (Long d : durations) {
+				total += d;
+			}
+		}
+		return total;
+	}
+
+	private static List<String> parseCSV(String csv) {
+		if (csv == null || csv.isBlank()) {
+			return List.of();
+		}
+		return java.util.Arrays.stream(csv.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
 	}
 
 	private static Map<String, List<Long>> snapshotMapOfLists(Map<String, List<Long>> source) {
@@ -465,8 +581,8 @@ public class TelemetryListener implements TestExecutionListener {
 			String globalEnabled = System.getProperty("junit.jupiter.execution.parallel.enabled");
 			String globalMode = System.getProperty("junit.jupiter.execution.parallel.mode.default");
 			if ("true".equalsIgnoreCase(globalEnabled) && "concurrent".equalsIgnoreCase(globalMode)) {
-				TestOrderLogger.warn(
-						"Global parallel execution is enabled (junit.jupiter.execution.parallel.enabled=true, "
+				TestOrderLogger
+						.warn("Global parallel execution is enabled (junit.jupiter.execution.parallel.enabled=true, "
 								+ "mode.default=concurrent); learn-mode dependency tracking may be inaccurate");
 			}
 		}
@@ -489,7 +605,8 @@ public class TelemetryListener implements TestExecutionListener {
 				}
 			}
 		} catch (ClassNotFoundException ignored) {
-			warnedConcurrentClasses.remove(className);
+			// Jupiter parallel API not on classpath — leave className in
+			// warnedConcurrentClasses so we don't retry on every test method.
 		} catch (ReflectiveOperationException ignored) {
 			// Jupiter parallel API not available or annotation not present
 		}

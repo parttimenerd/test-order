@@ -193,7 +193,7 @@ mvn test-order:aggregate
 mvn clean test
 
 # View test execution plan (before running)
-mvn test-order:show-order
+mvn test-order:show
 
 # Generate dashboard
 mvn test-order:dashboard
@@ -593,7 +593,7 @@ mvn clean install -Dtestorder.mode=learn
 # Ensure full learn cycle
 mvn clean install -Dtestorder.mode=learn
 mvn test-order:aggregate
-mvn test-order:show-order  # Verify Module B tests are included
+mvn test-order:show  # Verify Module B tests are included
 
 # If still missing, check package structure
 # test-order needs source root to auto-detect packages

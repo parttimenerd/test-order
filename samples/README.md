@@ -28,7 +28,7 @@ mvn test -Dtestorder.mode=learn -Dspotless.check.skip=true
 mvn test-order:auto test -Dspotless.check.skip=true
 
 # Show computed order
-mvn test-order:show-order -Dspotless.check.skip=true
+mvn test-order:show -Dspotless.check.skip=true
 ```
 
 ## External test repositories

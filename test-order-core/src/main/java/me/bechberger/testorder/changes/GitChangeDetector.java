@@ -161,8 +161,8 @@ public class GitChangeDetector {
 		try {
 			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
 				process.destroyForcibly();
-				throw new IOException("git command timed out after " + GitTimeout.seconds() + "s: "
-						+ String.join(" ", command));
+				throw new IOException(
+						"git command timed out after " + GitTimeout.seconds() + "s: " + String.join(" ", command));
 			}
 			if (process.exitValue() != 0) {
 				throw new IOException("git command failed: " + String.join(" ", command) + summarizeGitError(lines));

@@ -165,8 +165,8 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 				.buildConfig(new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
 						pctx.indexFile().toAbsolutePath().toString(), pctx.stateFile().toAbsolutePath().toString(),
 						pctx.weightsFile() != null ? pctx.weightsFile().toAbsolutePath().toString() : null,
-						analysis.changedClasses(), analysis.changedTests(), analysis.changedMethods(), pctx.scoreOverrides(),
-						pctx.methodOrderingEnabled(), pctx.springContextGrouping(),
+						analysis.changedClasses(), analysis.changedTests(), analysis.changedMethods(),
+						pctx.scoreOverrides(), pctx.methodOrderingEnabled(), pctx.springContextGrouping(),
 						pctx.projectRoot().toAbsolutePath().toString(),
 						pctx.sourceRoot() != null ? pctx.sourceRoot().toAbsolutePath().toString() : null,
 						pctx.changeMode()));
@@ -204,7 +204,10 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 		}
 	}
 
-	/** Clear a tier file that was already executed inline, to prevent duplicate runs. */
+	/**
+	 * Clear a tier file that was already executed inline, to prevent duplicate
+	 * runs.
+	 */
 	private void clearTierFile(Path tierFile) {
 		try {
 			if (Files.exists(tierFile)) {

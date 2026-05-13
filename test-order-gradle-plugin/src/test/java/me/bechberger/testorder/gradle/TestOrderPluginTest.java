@@ -131,6 +131,63 @@ class TestOrderPluginTest {
     }
 
     @org.junit.jupiter.api.Test
+    void configureLearnModeTddInjectsAutodetection() throws Exception {
+        Project project = newProject();
+        project.getPluginManager().apply("java");
+        TestOrderPlugin plugin = new TestOrderPlugin();
+        TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
+        extension.applyDefaults(project);
+        extension.getTdd().set(true);
+        Files.createDirectories(tempDir.resolve("src/main/java/com/example/app"));
+        Files.writeString(tempDir.resolve("src/main/java/com/example/app/App.java"), "class App {}\n");
+        Configuration agentConf = fileConfiguration(project, tempDir.resolve("agent.jar"));
+        Test testTask = (Test) project.getTasks().getByName("test");
+
+        plugin.configureLearnMode(project, extension, testTask, agentConf);
+
+        assertEquals("true", testTask.getSystemProperties().get("testorder.tdd"));
+        assertEquals("true", testTask.getSystemProperties().get("junit.jupiter.extensions.autodetection.enabled"));
+    }
+
+    @org.junit.jupiter.api.Test
+    void configureLearnModeWithoutTddDoesNotInjectAutodetection() throws Exception {
+        Project project = newProject();
+        project.getPluginManager().apply("java");
+        TestOrderPlugin plugin = new TestOrderPlugin();
+        TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
+        extension.applyDefaults(project);
+        // tdd defaults to false
+        Files.createDirectories(tempDir.resolve("src/main/java/com/example/app"));
+        Files.writeString(tempDir.resolve("src/main/java/com/example/app/App.java"), "class App {}\n");
+        Configuration agentConf = fileConfiguration(project, tempDir.resolve("agent.jar"));
+        Test testTask = (Test) project.getTasks().getByName("test");
+
+        plugin.configureLearnMode(project, extension, testTask, agentConf);
+
+        assertNull(testTask.getSystemProperties().get("testorder.tdd"));
+        assertNull(testTask.getSystemProperties().get("junit.jupiter.extensions.autodetection.enabled"));
+    }
+
+    @org.junit.jupiter.api.Test
+    void configureOrderModeTddInjectsAutodetection() throws IOException {
+        Project project = newProject();
+        project.getPluginManager().apply("java");
+        TestOrderPlugin plugin = new TestOrderPlugin();
+        TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
+        extension.applyDefaults(project);
+        extension.getTdd().set(true);
+        Path indexFile = extension.getIndexFile().get().getAsFile().toPath();
+        Files.createDirectories(indexFile.getParent());
+        Files.write(indexFile, new byte[]{1, 2, 3});
+        Test testTask = (Test) project.getTasks().getByName("test");
+
+        plugin.configureOrderMode(project, extension, testTask);
+
+        assertEquals("true", testTask.getSystemProperties().get("testorder.tdd"));
+        assertEquals("true", testTask.getSystemProperties().get("junit.jupiter.extensions.autodetection.enabled"));
+    }
+
+    @org.junit.jupiter.api.Test
     void resolveModeHonorsOverridesAndExistingIndex() throws IOException {
         Project project = newProject();
         TestOrderPlugin plugin = new TestOrderPlugin();

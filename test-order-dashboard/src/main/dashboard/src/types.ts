@@ -60,6 +60,7 @@ export interface TestEntry {
   deps: string[]
   memberDeps: string[] | null
   methods: MethodEntry[] | null
+  mlPFail: number | null
 }
 
 export interface TestOutcome {
@@ -105,6 +106,29 @@ export interface CoverageData {
   classes: CoverageClass[]
 }
 
+export interface MLHealthEntry {
+  testClass: string
+  status: string
+  failRate: number
+  recentTrend: string
+  runsAnalyzed: number
+}
+
+export interface MLSummary {
+  healthy: number
+  degrading: number
+  flaky: number
+  failing: number
+}
+
+export interface MLData {
+  enabled: boolean
+  runsAnalyzed: number
+  summary: MLSummary
+  tests: MLHealthEntry[]
+  hasPredictions: boolean
+}
+
 export interface DashboardData {
   project: ProjectInfo
   weights: ScoringWeights
@@ -116,6 +140,7 @@ export interface DashboardData {
   tests: TestEntry[]
   runs: RunRecord[]
   coverage: CoverageData | null
+  ml: MLData | null
 }
 
 /** Sort column definition for sidebar */

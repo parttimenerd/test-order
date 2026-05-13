@@ -95,6 +95,7 @@ That's it! Most single-module projects need no further configuration.
 | Plugin application | `<plugin>` in `pom.xml` | `plugins { id 'me.bechberger.test-order' }` |
 | Auto mode | `mvn test-order:auto test` | `./gradlew test` (auto-detected) |
 | Learn mode | `mvn test -Dtestorder.mode=learn` | `./gradlew test -Dtestorder.mode=learn` |
+| Show order + ML | `mvn test-order:show` | `./gradlew testOrderShow` |
 | Dashboard | `mvn test-order:dashboard` | `./gradlew testOrderDashboard` |
 | Detect OD tests | `mvn test-order:detect-dependencies` | `./gradlew testOrderDetectDependencies` |
 | Export index JSON | `mvn test-order:export-json` | `./gradlew testOrderExportJson` |
@@ -240,7 +241,7 @@ Parallel module execution (`mvn ... -T 1C`) is also supported. The dependency in
 6. **Inspect prioritization without executing tests**
 
   ```bash
-  mvn test-order:show-order
+  mvn test-order:show
   mvn test-order:dump
   ```
 
@@ -254,6 +255,7 @@ If you bound `prepare` in your POM (see [Quick Start](#quick-start)), **no separ
 |---|---|---|
 | `.test-order/test-dependencies.lz4` | Dependency index | **Yes** |
 | `.test-order/state.lz4` | Test durations, failure history | Optional |
+| `.test-order/ml/history.lz4` | ML run history (when `ml.enabled=true`) | Optional |
 | `.test-order/hashes.lz4` | Source hash snapshot (machine-local) | No |
 | `.test-order/method-hashes.lz4` | Method-level hash snapshot | No |
 | `.test-order/test-hashes.lz4` | Test source hash snapshot | No |
@@ -385,11 +387,32 @@ For full Maven goal reference, all parameters, and CI YAML examples, see **[docs
 | Feature | Command | Details |
 |---|---|---|
 | **Dashboard** | `mvn test-order:dashboard` | Interactive HTML report with test explorer, analytics, and weight simulator. Gradle: `./gradlew testOrderDashboard` |
+| **ML predictions** | `mvn test-order:show -Dtestorder.show.ml=true` | Failure probability and health classification using logistic regression on test history |
 | **Detect OD tests** | `mvn test-order:detect-dependencies` | Find order-dependent (flaky) tests by reordering strategies. See [docs/DETECT_DEPENDENCIES.md](docs/DETECT_DEPENDENCIES.md) |
 | **Coverage gaps** | `mvn test-order:coverage` | Identifies least-tested production classes. See [docs/MAVEN_PLUGIN.md](docs/MAVEN_PLUGIN.md#coverage-analysis) |
 | **CI index download** | `mvn test-order:download` | Download dependency index from CI instead of cold-start learning. See [test-order-ci README](test-order-ci/README.md) |
 | **Method-level ordering** | `mvn test -Dtestorder.methodOrder.enabled=true` | Opt-in reordering within each class by failure recency, change status, speed. See [docs/SCORING.md](docs/SCORING.md#method-level-scoring) |
 | **Serve dashboard** | `mvn test-order:serve` | Local HTTP server for the dashboard |
+
+### ML failure predictions
+
+When `testorder.ml.enabled=true`, test-order records per-test outcomes after each run into a compressed history file. After 5+ recorded runs, the ML layer provides:
+
+- **P(fail) predictions** — A Tribuo logistic regression model trained on 26 features (change coupling, failure streaks, co-failure patterns, duration trends, EWMA rates) predicts failure probability per test class. Higher-probability tests get prioritized.
+- **Health classification** — Statistical analysis labels each test as **HEALTHY**, **DEGRADING** (failure rate increasing), **FLAKY** (inconsistent pass/fail), or **FAILING** (consistently broken).
+
+```bash
+# Enable ML collection (add to POM or pass as system property)
+mvn test -Dtestorder.ml.enabled=true
+
+# View ML analysis (auto-detected when history exists)
+mvn test-order:show
+
+# Dashboard shows ML Health tab + P(fail) column
+mvn test-order:dashboard
+```
+
+ML data is stored in `.test-order/ml/history.lz4` (LZ4-compressed binary, max 2000 runs). The model trains in-process on each invocation — no external services or cloud dependencies.
 
 ## Gradle plugin
 
@@ -401,7 +424,7 @@ For projects where you don't want to modify build files, use an init script:
 ./gradlew test --init-script path/to/test-order-init.gradle -Dtestorder.mode=learn
 ```
 
-All Gradle tasks (`testOrderAggregate`, `testOrderDump`, `testOrderShowOrder`, `testOrderOptimize`, `testOrderSelect`, `testOrderRunRemaining`, `testOrderClean`, `testOrderDashboard`, `testOrderServe`) mirror their Maven counterparts shown in the [comparison table](#maven-vs-gradle-at-a-glance).
+All Gradle tasks (`testOrderShow`, `testOrderAggregate`, `testOrderDump`, `testOrderOptimize`, `testOrderSelect`, `testOrderRunRemaining`, `testOrderClean`, `testOrderDashboard`, `testOrderServe`) mirror their Maven counterparts shown in the [comparison table](#maven-vs-gradle-at-a-glance).
 
 ## Compatibility & Coexistence
 
@@ -480,4 +503,9 @@ Contribution and feedback are encouraged and always welcome.
 
 ## License
 
-MIT, Copyright 2025 SAP SE or an SAP affiliate company, Johannes Bechberger and contributors
+MIT, Copyright 2026 SAP SE or an SAP affiliate company, Johannes Bechberger and contributors
+
+
+TODO: gradle and maven parity, explain how to setup caching of .test-order between CI steps
+
+

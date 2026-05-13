@@ -138,6 +138,12 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			configureLearnMode(instrumentationMode, effectiveInclude, true);
 			project.getProperties().setProperty("testorder.auto.active", "true");
 
+			// ML predictions are orthogonal to dependency learning
+			if (isMLEnabled()) {
+				appendMLEnabledToConfig();
+				generateMLPredictions(java.util.Set.of(), java.util.Set.of());
+			}
+
 		} else if (result instanceof AutoWorkflow.Result.OrderSelect os) {
 			SurefireHelper.warnForkCountInOrderMode(project, getLog());
 			TestSelector.Selection selection = os.selection();
@@ -159,6 +165,12 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			}
 
 			writeOrdererConfig(os.changedClasses(), os.changedTests(), os.changedMethods(), buildScoreOverrides());
+
+			// ML: record history and generate predictions
+			if (isMLEnabled()) {
+				appendMLEnabledToConfig();
+				generateMLPredictions(os.changedClasses(), os.changedTests());
+			}
 
 			String remainingPath = Path.of(remainingFile).toAbsolutePath().toString();
 			project.getProperties().setProperty(MavenPluginConfigKeys.SELECT_REMAINING_FILE, remainingPath);

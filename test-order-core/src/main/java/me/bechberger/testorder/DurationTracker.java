@@ -99,7 +99,10 @@ final class DurationTracker {
 		methodDurationVariances.keySet().removeIf(key -> !isActive(key, activeClasses));
 	}
 
-	/** Returns true if the class is active, or if its top-level enclosing class is active. */
+	/**
+	 * Returns true if the class is active, or if its top-level enclosing class is
+	 * active.
+	 */
 	static boolean isActive(String className, Set<String> activeClasses) {
 		if (activeClasses.contains(className)) {
 			return true;

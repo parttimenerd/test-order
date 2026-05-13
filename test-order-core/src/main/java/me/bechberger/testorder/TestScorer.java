@@ -303,7 +303,15 @@ public class TestScorer {
 	public ScoreResult score(String testClassName) {
 		int score = 0;
 
+		// For inner/nested classes (e.g. OuterTest$Inner), fall back to the
+		// top-level class name for state lookups where data may be stored under
+		// the parent (failure history, changed test detection).
+		String topLevel = toTopLevel(testClassName);
+
 		boolean isChanged = changedTestClasses.contains(testClassName);
+		if (!isChanged && !topLevel.equals(testClassName)) {
+			isChanged = changedTestClasses.contains(topLevel);
+		}
 		if (isChanged)
 			score += weights.changedTest();
 
@@ -346,6 +354,9 @@ public class TestScorer {
 		}
 
 		double failScore = failureScores.getOrDefault(testClassName, 0.0);
+		if (failScore == 0.0 && !topLevel.equals(testClassName)) {
+			failScore = failureScores.getOrDefault(topLevel, 0.0);
+		}
 		if (failScore > 0) {
 			score += Math.min((int) Math.ceil(failScore), weights.maxFailure());
 		}
@@ -396,9 +407,13 @@ public class TestScorer {
 	 */
 	public ExplainEntry explain(String testClassName, int rank) {
 		int totalScore = 0;
+		String topLevel = toTopLevel(testClassName);
 
 		// Changed test
 		boolean isChanged = changedTestClasses.contains(testClassName);
+		if (!isChanged && !topLevel.equals(testClassName)) {
+			isChanged = changedTestClasses.contains(topLevel);
+		}
 		int changedTestPts = isChanged ? weights.changedTest() : 0;
 		totalScore += changedTestPts;
 
@@ -450,6 +465,9 @@ public class TestScorer {
 
 		// Failure history
 		double failScore = failureScores.getOrDefault(testClassName, 0.0);
+		if (failScore == 0.0 && !topLevel.equals(testClassName)) {
+			failScore = failureScores.getOrDefault(topLevel, 0.0);
+		}
 		int failurePts = failScore > 0 ? Math.min((int) Math.ceil(failScore), weights.maxFailure()) : 0;
 		totalScore += failurePts;
 
@@ -566,5 +584,15 @@ public class TestScorer {
 			}
 		} catch (ReflectiveOperationException ignored) {
 		}
+	}
+
+	/**
+	 * Strips inner/nested class suffixes (everything from the first {@code $}) to
+	 * get the top-level enclosing class name. Returns the original name if it does
+	 * not contain {@code $}.
+	 */
+	static String toTopLevel(String className) {
+		int dollar = className.indexOf('$');
+		return dollar > 0 ? className.substring(0, dollar) : className;
 	}
 }

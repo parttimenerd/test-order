@@ -13,6 +13,7 @@ export interface DashboardState {
   parseError: string | null
   hasData: boolean
   hasCoverage: boolean
+  hasML: boolean
 
   // Reactive UI state
   selectedTest: Ref<TestEntry | null>
@@ -105,6 +106,7 @@ export interface OptimizeApiResult {
 export function useDashboard(dd: DashboardData, parseError: string | null): DashboardState {
   const hasData = !!(dd.tests && dd.tests.length > 0)
   const hasCoverage = !!(dd.coverage && dd.coverage.classes && dd.coverage.classes.length)
+  const hasML = !!(dd.ml && dd.ml.enabled)
 
   const selectedTest = ref<TestEntry | null>(null)
   const selectedTests = ref<Set<string>>(new Set())
@@ -183,11 +185,15 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     { id: 'changed', label: 'Changed subgraph' },
     { id: 'full', label: 'Full' },
   ]
-  const TABS = computed<TabDef[]>(() => [
-    { id: 'tests', label: 'Tests' },
-    { id: 'analytics', label: 'Analytics' },
-    { id: 'weights', label: 'Weights' },
-  ])
+  const TABS = computed<TabDef[]>(() => {
+    const tabs: TabDef[] = [
+      { id: 'tests', label: 'Tests' },
+      { id: 'analytics', label: 'Analytics' },
+      { id: 'weights', label: 'Weights' },
+    ]
+    if (hasML) tabs.push({ id: 'ml', label: 'ML Health' })
+    return tabs
+  })
 
   const tests = dd.tests
   const runs = [...(dd.runs || [])].sort((a, b) => a.timestamp - b.timestamp)
@@ -617,7 +623,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   }
 
   return {
-    dd, parseError, hasData, hasCoverage,
+    dd, parseError, hasData, hasCoverage, hasML,
     selectedTest, selectedTests, activeTab, lw, searchQ, sortKey, sortDir,
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
     showChangedPanel, simSortKey, simSortDir, badgeFilter,

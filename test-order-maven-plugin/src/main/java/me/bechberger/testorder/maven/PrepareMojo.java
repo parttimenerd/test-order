@@ -273,6 +273,14 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		} catch (IOException e) {
 			getLog().warn("[test-order] Could not reset runsSinceLearn: " + e.getMessage());
 		}
+
+		// ML predictions are orthogonal to dependency learning — generate them
+		// even in learn mode so that tests with high historical failure
+		// probability are prioritised from the start.
+		if (isMLEnabled()) {
+			appendMLEnabledToConfig();
+			generateMLPredictions(Set.of(), Set.of());
+		}
 	}
 
 	private void executeOrderMode() throws MojoExecutionException {
@@ -366,6 +374,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 									.changedTestClasses(mergedChangedTestsCsv).build(), state);
 							writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 									buildScoreOverrides());
+							if (isMLEnabled()) {
+								appendMLEnabledToConfig();
+								generateMLPredictions(result.changedClasses(), result.changedTests());
+							}
 							return;
 						}
 					} catch (IOException rebuildEx) {
@@ -380,6 +392,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 								.changedTestClasses(mergedChangedTestsCsv).build(), state);
 						writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 								buildScoreOverrides());
+						if (isMLEnabled()) {
+							appendMLEnabledToConfig();
+							generateMLPredictions(result.changedClasses(), result.changedTests());
+						}
 						return;
 					} catch (IOException retryEx) {
 						getLog().debug("[test-order] Recovered index still unreadable: " + retryEx.getMessage());
@@ -403,11 +419,18 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 				buildScoreOverrides());
 
+		// ML: Always write ml.enabled to config when opt-in is active, so that
+		// TelemetryListener in the forked Surefire JVM can record ML history
+		// even before the first predictions are generated (bootstrap phase).
+		if (isMLEnabled()) {
+			appendMLEnabledToConfig();
+			generateMLPredictions(result.changedClasses(), result.changedTests());
+		}
+
 		// R17-12: Mark that prepare already ran to prevent duplicate execution
 		// when 'mvn test-order:prepare test' triggers both CLI and lifecycle invocation
 		project.getProperties().setProperty("testorder.auto.active", "true");
 	}
-
 	private boolean isRecoverableIndexLoadFailure(IOException e) {
 		for (Throwable t = e; t != null; t = t.getCause()) {
 			String msg = t.getMessage();
@@ -426,15 +449,16 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			return false;
 		}
 		return session.getGoals().stream()
-				.anyMatch(goal -> isGoal(goal, "select") || isGoal(goal, "auto")
-						|| isGoal(goal, "learn") || isGoal(goal, "run-remaining")
-						|| isGoal(goal, "run-tier") || isGoal(goal, "tiered-select"));
+				.anyMatch(goal -> isGoal(goal, "select") || isGoal(goal, "auto") || isGoal(goal, "learn")
+						|| isGoal(goal, "run-remaining") || isGoal(goal, "run-tier") || isGoal(goal, "tiered-select"));
 	}
 
-	/** Matches both shorthand (test-order:auto) and fully-qualified (me.bechberger:test-order-maven-plugin:auto) goal forms. */
+	/**
+	 * Matches both shorthand (test-order:auto) and fully-qualified
+	 * (me.bechberger:test-order-maven-plugin:auto) goal forms.
+	 */
 	private static boolean isGoal(String cliGoal, String goalName) {
-		return cliGoal.equals("test-order:" + goalName)
-				|| cliGoal.endsWith("test-order-maven-plugin:" + goalName);
+		return cliGoal.equals("test-order:" + goalName) || cliGoal.endsWith("test-order-maven-plugin:" + goalName);
 	}
 
 	/**

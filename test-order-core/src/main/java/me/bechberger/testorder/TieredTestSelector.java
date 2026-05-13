@@ -183,6 +183,13 @@ public class TieredTestSelector {
 			return selectByCountFraction(remaining);
 		}
 
+		// If all known durations are zero (e.g. very fast tests or first run with
+		// sub-millisecond resolution), duration-based budgeting degenerates to
+		// "everything fits" — fall back to count-based selection instead.
+		if (totalDuration == 0) {
+			return selectByCountFraction(remaining);
+		}
+
 		long spent = 0;
 		List<String> tier2 = new ArrayList<>();
 		// Estimate unknown durations as the average of known ones (R12-5)

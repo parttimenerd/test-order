@@ -15,7 +15,11 @@ import me.bechberger.testorder.ops.workflows.ShowOrderWorkflow;
  * Displays the computed test execution order without running any tests.
  * <p>
  * Usage: {@code mvn test-order:show-order}
+ *
+ * @deprecated Use {@code mvn test-order:show} instead. This goal will be
+ *             removed in a future release.
  */
+@Deprecated
 @Mojo(name = "show-order", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES, aggregator = true)
 public class ShowOrderMojo extends AbstractTestOrderMojo {
 
@@ -78,7 +82,8 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
 		PluginContext pctx = buildPluginContextBuilder().topN(topN).randomM(randomM).seed(seed).build();
 
 		try {
-			ShowOrderWorkflow.printReportWithSelectionPreview(pctx, System.out, effectiveExplain, fullNames, true, true);
+			ShowOrderWorkflow.printReportWithSelectionPreview(pctx, System.out, effectiveExplain, fullNames, true,
+					true);
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to compute test order", e);
 		}

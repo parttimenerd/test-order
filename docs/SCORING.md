@@ -325,3 +325,14 @@ When method-level ordering is enabled, individual method scoring components can 
 | `testorder.method.score.slow` | Slow method penalty |
 | `testorder.method.score.depOverlap` | Per-method dependency overlap |
 | `testorder.method.score.coverageBonus` | Per-method coverage bonus |
+
+## ML-Enhanced Scoring
+
+When ML predictions are available (`testorder.ml.enabled=true` and 5+ recorded runs),
+the `show` and `dashboard` goals display a **P(fail)** column alongside the standard scoring.
+
+ML predictions complement the deterministic scoring system — they do not replace it.
+The standard score determines test execution order, while P(fail) provides an
+additional signal about test reliability over time.
+
+See [MAVEN_PLUGIN.md](MAVEN_PLUGIN.md#ml-failure-predictions) for configuration details.

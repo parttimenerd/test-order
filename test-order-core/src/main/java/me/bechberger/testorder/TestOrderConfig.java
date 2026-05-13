@@ -35,6 +35,12 @@ public final class TestOrderConfig {
 	public static final String EMA_VARIANCE_THRESHOLD = "testorder.score.ema.varianceThreshold";
 	public static final String HISTORY_MAX_RUNS = "testorder.history.maxRuns";
 
+	/**
+	 * When set to {@code "true"}, new tests that pass without having failed first
+	 * are artificially failed (TDD enforcement).
+	 */
+	public static final String TDD = "testorder.tdd";
+
 	// Scoring override keys
 	public static final String SCORE_NEW_TEST = "testorder.score.newTest";
 	public static final String SCORE_CHANGED_TEST = "testorder.score.changedTest";
@@ -75,6 +81,12 @@ public final class TestOrderConfig {
 	public static final String TIERED_TIER2_FILE = "testorder.tiered.tier2File";
 	public static final String TIERED_TIER3_FILE = "testorder.tiered.tier3File";
 	public static final String TIERED_CURRENT_TIER = "testorder.tiered.currentTier";
+
+	// ML predictive test prioritization (opt-in)
+	public static final String ML_ENABLED = "testorder.ml.enabled";
+	public static final String ML_HISTORY_DIR = "testorder.ml.historyDir";
+	public static final String ML_HISTORY_MAX_RUNS = "testorder.ml.history.maxRuns";
+	public static final String ML_PREDICTIONS_FILE = "testorder.ml.predictions.file";
 
 	// Legacy aliases kept for backward compatibility in Maven user properties
 	public static final String LEGACY_INDEX = "testorder.index";

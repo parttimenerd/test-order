@@ -32,9 +32,9 @@ final class CiHttpClientFactory {
 	}
 
 	/**
-	 * DNS resolver that rejects private/localhost addresses at connection time
-	 * to prevent SSRF via DNS rebinding (CWE-918). The pre-connect URL validation
-	 * in HttpDownloader.validateUrl is TOCTOU-vulnerable because DNS can change
+	 * DNS resolver that rejects private/localhost addresses at connection time to
+	 * prevent SSRF via DNS rebinding (CWE-918). The pre-connect URL validation in
+	 * HttpDownloader.validateUrl is TOCTOU-vulnerable because DNS can change
 	 * between validation and the actual connection.
 	 */
 	static final Dns SSRF_SAFE_DNS = hostname -> {

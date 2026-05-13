@@ -254,8 +254,7 @@ public final class DashboardServerOperation {
 		exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
 		// Restrict CORS to localhost origins — server is loopback-only
 		String origin = exchange.getRequestHeaders().getFirst("Origin");
-		if (origin != null
-				&& (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:"))) {
+		if (origin != null && (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:"))) {
 			exchange.getResponseHeaders().set("Access-Control-Allow-Origin", origin);
 		}
 		exchange.sendResponseHeaders(200, body.length);

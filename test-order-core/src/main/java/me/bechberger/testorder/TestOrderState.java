@@ -96,9 +96,8 @@ public class TestOrderState {
 	private static CommentedConfig loadResourceConfig() {
 		try (InputStream is = TestOrderState.class.getResourceAsStream("/default-scoring-weights.toml")) {
 			if (is == null) {
-				throw new IllegalStateException(
-						"default-scoring-weights.toml missing from resources — "
-								+ "the test-order-core JAR may be corrupt or classpath is misconfigured");
+				throw new IllegalStateException("default-scoring-weights.toml missing from resources — "
+						+ "the test-order-core JAR may be corrupt or classpath is misconfigured");
 			}
 			return new TomlParser().parse(is);
 		} catch (IOException e) {

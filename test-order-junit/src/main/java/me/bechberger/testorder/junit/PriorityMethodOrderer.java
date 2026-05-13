@@ -261,8 +261,7 @@ public class PriorityMethodOrderer implements MethodOrderer {
 		for (Class<?> c = testClass; c != null; c = c.getEnclosingClass()) {
 			try {
 				Class<?> executionClass = Class.forName("org.junit.jupiter.api.parallel.Execution");
-				Object execution = c
-						.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
+				Object execution = c.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
 				if (execution != null) {
 					Object mode = executionClass.getMethod("value").invoke(execution);
 					if ("CONCURRENT".equals(mode.toString())) {
@@ -278,9 +277,9 @@ public class PriorityMethodOrderer implements MethodOrderer {
 	}
 
 	/**
-	 * Detects @TestInstance(Lifecycle.PER_CLASS) on the test class or any
-	 * enclosing class (for @Nested classes that inherit the lifecycle), either
-	 * via annotation or the global default config parameter.
+	 * Detects @TestInstance(Lifecycle.PER_CLASS) on the test class or any enclosing
+	 * class (for @Nested classes that inherit the lifecycle), either via annotation
+	 * or the global default config parameter.
 	 */
 	private boolean isPerClassLifecycle(Class<?> testClass) {
 		for (Class<?> c = testClass; c != null; c = c.getEnclosingClass()) {

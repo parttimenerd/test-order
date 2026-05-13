@@ -181,6 +181,13 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	@Parameter(property = "testorder.score.springContextGrouping", defaultValue = "false")
 	protected boolean springContextGrouping;
 
+	/**
+	 * Enable TDD enforcement: new test classes and methods that pass without having
+	 * failed first are artificially failed with a descriptive error message.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.TDD, defaultValue = "false")
+	protected boolean tdd;
+
 	// ── Score override parameters (shared by auto, select, prepare, show-order) ──
 
 	/** Score bonus for new test classes not in the dependency index */
@@ -735,8 +742,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			getLog().info("[test-order] Auto-aggregated " + map.size() + " test classes → " + idxPath);
 			warnIfNoDeps(map);
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to auto-aggregate deps"
-					+ "\n  For more details: mvn test-order:diagnose", e);
+			throw new MojoExecutionException(
+					"Failed to auto-aggregate deps" + "\n  For more details: mvn test-order:diagnose", e);
 		}
 	}
 
@@ -789,12 +796,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
 			autoAggregate(depsDirPath, idxPath);
 			if (!Files.exists(idxPath)) {
-				throw new MojoExecutionException(
-						"Dependency .deps files exist in " + depsDirPath
-								+ " but contain no test dependencies — the index could not be created. "
-								+ "Check your instrumentation filter: -D"
-								+ MavenPluginConfigKeys.INCLUDE_PACKAGES + "=<package>"
-								+ "\n  For more details: mvn test-order:diagnose");
+				throw new MojoExecutionException("Dependency .deps files exist in " + depsDirPath
+						+ " but contain no test dependencies — the index could not be created. "
+						+ "Check your instrumentation filter: -D" + MavenPluginConfigKeys.INCLUDE_PACKAGES
+						+ "=<package>" + "\n  For more details: mvn test-order:diagnose");
 			}
 		} else {
 			throw new MojoExecutionException("No dependency index at " + idxPath + " and no .deps files found in "
@@ -932,8 +937,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			Path propsFile = runtimeDir.resolve("junit-platform.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
 				pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.junit.PriorityClassOrderer");
+				if (tdd) {
+					pw.println("junit.jupiter.extensions.autodetection.enabled=true");
+				}
 			}
 
+			if (tdd) {
+				configMap.put(MavenPluginConfigKeys.TDD, "true");
+			}
 			Path configFile = runtimeDir.resolve("testorder-config.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
 				for (var entry : configMap.entrySet()) {
@@ -971,6 +982,12 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			Path propsFile = runtimeDir.resolve("junit-platform.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
 				pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.junit.PriorityClassOrderer");
+				if (tdd) {
+					pw.println("junit.jupiter.extensions.autodetection.enabled=true");
+				}
+			}
+			if (tdd) {
+				configMap.put(MavenPluginConfigKeys.TDD, "true");
 			}
 			Path configFile = runtimeDir.resolve("testorder-config.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
@@ -1040,6 +1057,19 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		String sysProps = " -D" + MavenPluginConfigKeys.LEARN + "=true" + " -D"
 				+ MavenPluginConfigKeys.INSTRUMENTATION_MODE + "=" + instrumentationMode.toUpperCase() + " -D"
 				+ MavenPluginConfigKeys.STATE_PATH + "=" + statPathStr;
+		if (tdd) {
+			sysProps += " -D" + MavenPluginConfigKeys.TDD + "=true"
+					+ " -Djunit.jupiter.extensions.autodetection.enabled=true";
+		}
+
+		// Clean up stale TDD entries in runtime config files left by a previous
+		// order-mode run with TDD enabled. In learn mode these files are not
+		// rewritten by writeOrdererConfig(), so a stale testorder.tdd=true /
+		// autodetection=true would cause TDD enforcement to fire even when the
+		// user did NOT request it (sticky TDD bug).
+		if (!tdd) {
+			cleanStaleTddConfig();
+		}
 
 		if (hasHardcodedSurefireArgLine || hasCliArgLine) {
 			// The Surefire argLine is a hardcoded literal with no Maven property
@@ -1115,14 +1145,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			String customProp = null;
 			while (matcher.find()) {
 				String prop = matcher.group(1);
-				if (prop.contains(":")) continue;
+				if (prop.contains(":"))
+					continue;
 				if (prop.equals("argLine")) {
 					hasArgLine = true;
 				} else if (customProp == null) {
 					customProp = prop;
 				}
 			}
-			// If both argLine and a custom prop appear (e.g. "${jacoco.argLine} @{argLine}"),
+			// If both argLine and a custom prop appear (e.g. "${jacoco.argLine}
+			// @{argLine}"),
 			// prefer argLine to avoid overwriting the custom property set by other plugins
 			if (hasArgLine) {
 				return "argLine";
@@ -1486,6 +1518,46 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 	}
 
+	/**
+	 * Removes stale TDD settings from runtime config files written by a previous
+	 * order-mode run. In learn mode the config files are NOT rewritten, so a stale
+	 * {@code testorder.tdd=true} and {@code autodetection.enabled=true} would cause
+	 * TDD enforcement to fire when the user did NOT request it.
+	 */
+	void cleanStaleTddConfig() {
+		Path runtimeDir = runtimeConfigDir();
+		// Clean testorder-config.properties: remove testorder.tdd line
+		Path configFile = runtimeDir.resolve("testorder-config.properties");
+		if (Files.exists(configFile)) {
+			try {
+				List<String> lines = Files.readAllLines(configFile);
+				List<String> cleaned = lines.stream().filter(l -> !l.trim().startsWith(MavenPluginConfigKeys.TDD + "="))
+						.toList();
+				if (cleaned.size() < lines.size()) {
+					Files.writeString(configFile, String.join("\n", cleaned) + "\n");
+					getLog().debug("[test-order] Removed stale testorder.tdd from config");
+				}
+			} catch (IOException e) {
+				getLog().debug("[test-order] Could not clean stale TDD config: " + e.getMessage());
+			}
+		}
+		// Clean junit-platform.properties: remove autodetection line
+		Path propsFile = runtimeDir.resolve("junit-platform.properties");
+		if (Files.exists(propsFile)) {
+			try {
+				List<String> lines = Files.readAllLines(propsFile);
+				List<String> cleaned = lines.stream()
+						.filter(l -> !l.trim().startsWith("junit.jupiter.extensions.autodetection.enabled")).toList();
+				if (cleaned.size() < lines.size()) {
+					Files.writeString(propsFile, String.join("\n", cleaned) + "\n");
+					getLog().debug("[test-order] Removed stale autodetection from junit-platform.properties");
+				}
+			} catch (IOException e) {
+				getLog().debug("[test-order] Could not clean stale autodetection: " + e.getMessage());
+			}
+		}
+	}
+
 	protected Path runtimeConfigDir() {
 		String buildDir = project.getBuild().getDirectory();
 		if (buildDir == null || buildDir.isBlank()) {
@@ -1575,5 +1647,143 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.exists(shadedJarPath))
 			return shadedJarPath;
 		return null;
+	}
+
+	// ── ML support methods (shared by PrepareMojo and AutoMojo) ─────────────
+
+	protected boolean isMLEnabled() {
+		String prop = session != null && session.getUserProperties() != null
+				? session.getUserProperties().getProperty(me.bechberger.testorder.TestOrderConfig.ML_ENABLED)
+				: null;
+		return "true".equalsIgnoreCase(prop);
+	}
+
+	/**
+	 * Appends {@code testorder.ml.enabled=true} to the runtime config file so that
+	 * TelemetryListener in the forked Surefire JVM can record ML history. This must
+	 * run unconditionally when ML is enabled, even if predictions haven't been
+	 * generated yet (bootstrap phase: first N runs collect history).
+	 * <p>
+	 * Skips writing if the config file already contains the ML entries (avoids
+	 * duplicate lines on repeated learn-mode runs that don't truncate the file).
+	 */
+	protected void appendMLEnabledToConfig() {
+		try {
+			Path configFile = runtimeConfigDir().resolve("testorder-config.properties");
+			// Guard against duplicate entries (learn mode appends without truncating)
+			if (Files.exists(configFile)) {
+				String existing = Files.readString(configFile);
+				if (existing.contains(me.bechberger.testorder.TestOrderConfig.ML_ENABLED + "=true")) {
+					return;
+				}
+			}
+			try (var writer = Files.newBufferedWriter(configFile, java.nio.file.StandardOpenOption.APPEND,
+					java.nio.file.StandardOpenOption.CREATE)) {
+				writer.newLine();
+				writer.write(me.bechberger.testorder.TestOrderConfig.ML_ENABLED + "=true");
+				writer.newLine();
+
+				// Propagate historyDir to the forked Surefire JVM so
+				// TelemetryListener writes ML history to the same location
+				// that generateMLPredictions will later read from.
+				Path resolvedHistoryDir = resolveMLHistoryDir();
+				writer.write(me.bechberger.testorder.TestOrderConfig.ML_HISTORY_DIR + "="
+						+ resolvedHistoryDir.toAbsolutePath());
+				writer.newLine();
+
+				// Forward maxRuns if set
+				String maxRunsStr = session != null && session.getUserProperties() != null
+						? session.getUserProperties()
+								.getProperty(me.bechberger.testorder.TestOrderConfig.ML_HISTORY_MAX_RUNS)
+						: null;
+				if (maxRunsStr != null) {
+					writer.write(me.bechberger.testorder.TestOrderConfig.ML_HISTORY_MAX_RUNS + "=" + maxRunsStr);
+					writer.newLine();
+				}
+			}
+		} catch (IOException e) {
+			getLog().warn("[test-order] [ml] Could not write ML config to runtime properties: " + e.getMessage()
+					+ " — ML history will not accumulate in forked JVM.");
+		}
+	}
+
+	/**
+	 * Resolves the ML history directory from user properties, falling back to
+	 * {@code <stateDir>/ml/}. Relative paths are resolved against the project base
+	 * directory. Used by both {@link #appendMLEnabledToConfig()} and
+	 * {@link #generateMLPredictions} to ensure they agree on the same path.
+	 */
+	protected Path resolveMLHistoryDir() {
+		String historyDirProp = session != null && session.getUserProperties() != null
+				? session.getUserProperties().getProperty(me.bechberger.testorder.TestOrderConfig.ML_HISTORY_DIR)
+				: null;
+		Path stateDir;
+		try {
+			stateDir = ctx.resolveStateFile(stateFile).getParent();
+		} catch (Exception e) {
+			stateDir = null;
+		}
+		Path historyDir = historyDirProp != null
+				? Path.of(historyDirProp)
+				: (stateDir != null ? stateDir.resolve("ml") : Path.of(".test-order", "ml"));
+		if (!historyDir.isAbsolute()) {
+			historyDir = project.getBasedir().toPath().resolve(historyDir);
+		}
+		return historyDir;
+	}
+
+	protected void generateMLPredictions(Set<String> changedClasses, Set<String> changedTests) {
+		try {
+			Path historyDir = resolveMLHistoryDir();
+			Path historyFile = historyDir.resolve("history.lz4");
+			if (!Files.exists(historyFile)) {
+				getLog().debug("[test-order] ML history not found at " + historyFile + " — skipping predictions.");
+				return;
+			}
+			Path idxPath = resolveIndexPath();
+			if (!Files.exists(idxPath)) {
+				getLog().debug("[test-order] Dependency index not found — skipping ML predictions.");
+				return;
+			}
+			DependencyMap depMap = DependencyMap.load(idxPath);
+			Set<String> testClasses = depMap.testClasses();
+			if (testClasses.isEmpty()) {
+				return;
+			}
+
+			// Log affected test classes (direct dependency overlap with changed classes)
+			Set<String> affectedTests = depMap.getAffectedTests(changedClasses);
+			if (!affectedTests.isEmpty()) {
+				getLog().debug("[test-order] ML: " + affectedTests.size() + " test class(es) directly affected by "
+						+ changedClasses.size() + " changed class(es).");
+			}
+
+			// Predict for ALL test classes — the model uses dependency/package features
+			// to determine which are likely to fail, even those not directly affected
+			Map<String, Double> predictions = me.bechberger.testorder.maven.ml.TestFailurePredictor
+					.trainAndPredict(historyFile, depMap, changedClasses, changedTests, testClasses);
+			if (predictions.isEmpty()) {
+				return;
+			}
+			Path predictionsFile = runtimeConfigDir().resolve("ml-predictions.properties");
+			me.bechberger.testorder.maven.ml.TestFailurePredictor.writePredictions(predictionsFile, predictions);
+
+			// Append predictions file path to testorder-config.properties so
+			// PriorityClassOrderer in the forked test JVM can discover the predictions.
+			// (ML_ENABLED was already written by appendMLEnabledToConfig above.)
+			Path configFile = runtimeConfigDir().resolve("testorder-config.properties");
+			try (var writer = Files.newBufferedWriter(configFile, java.nio.file.StandardOpenOption.APPEND,
+					java.nio.file.StandardOpenOption.CREATE)) {
+				writer.write(me.bechberger.testorder.TestOrderConfig.ML_PREDICTIONS_FILE + "="
+						+ predictionsFile.toAbsolutePath());
+				writer.newLine();
+			}
+
+			getLog().info("[test-order] [ml] Generated predictions for " + predictions.size() + " test classes" + " ("
+					+ affectedTests.size() + " directly affected by changes).");
+		} catch (Exception e) {
+			getLog().warn("[test-order] ML prediction failed (non-fatal): " + e.getMessage());
+			getLog().debug(e);
+		}
 	}
 }

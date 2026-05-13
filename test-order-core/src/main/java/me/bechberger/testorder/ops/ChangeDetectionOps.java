@@ -211,4 +211,17 @@ public final class ChangeDetectionOps {
 		return mergeKotlinChanges(changed, testSourceRoot, testHashPath, changeMode, null, projectRoot, readOnly, true,
 				log);
 	}
+
+	/**
+	 * Detects changed test classes with explicit overrides and merges Kotlin
+	 * sibling changes in a single call.
+	 */
+	public static Set<String> detectChangedTestClassesWithKotlin(String changeMode, Path projectRoot,
+			Path testSourceRoot, Path testHashPath, String explicitChangedTestClasses, boolean readOnly,
+			PluginLog log) {
+		Set<String> changed = detectChangedTestClasses(changeMode, projectRoot, testSourceRoot, testHashPath,
+				explicitChangedTestClasses, readOnly, log);
+		return mergeKotlinChanges(changed, testSourceRoot, testHashPath, changeMode, null, projectRoot, readOnly, true,
+				log);
+	}
 }

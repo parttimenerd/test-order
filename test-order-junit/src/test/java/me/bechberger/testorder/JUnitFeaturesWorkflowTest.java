@@ -116,8 +116,7 @@ class JUnitFeaturesWorkflowTest {
 		assertTrue(summary.getTestsSucceededCount() >= 4,
 				"Expected >= 4 tests (3 repetitions + 1 normal), got " + summary.getTestsSucceededCount());
 
-		assertTrue(java.nio.file.Files.exists(stateFile),
-				"State file must exist at " + stateFile);
+		assertTrue(java.nio.file.Files.exists(stateFile), "State file must exist at " + stateFile);
 		TestOrderState state = TestOrderState.load(stateFile);
 		// The class should have a recorded duration
 		String expectedName = RepeatedSubject.class.getName();
@@ -230,7 +229,7 @@ class JUnitFeaturesWorkflowTest {
 	}
 
 	@Test
-	void nestedWorkflow_innerTestsAttributedToTopLevel() throws IOException {
+	void nestedWorkflow_innerTestsHaveOwnDuration() throws IOException {
 		Path stateFile = tempDir.resolve(".state-nested-wf");
 		System.clearProperty("testorder.learn");
 		System.setProperty("testorder.state.path", stateFile.toString());
@@ -241,9 +240,12 @@ class JUnitFeaturesWorkflowTest {
 		assertEquals(3, summary.getTestsSucceededCount());
 
 		TestOrderState state = TestOrderState.load(stateFile);
-		// Duration should be under the top-level class (not the $InnerTests)
-		long dur = state.getDuration(NestedSubject.class.getName(), -1);
-		assertTrue(dur >= 0, "Nested class tests must be attributed to top-level class");
+		// Top-level class should have its own duration (from outerTest)
+		long topDur = state.getDuration(NestedSubject.class.getName(), -1);
+		assertTrue(topDur >= 0, "Top-level class should have a duration from outerTest");
+		// Inner class should have its own duration entry
+		long innerDur = state.getDuration(NestedSubject.class.getName() + "$InnerTests", -1);
+		assertTrue(innerDur >= 0, "Inner class should have its own duration entry");
 	}
 
 	// ── Combined workflow: all features in one run ───────────────────────

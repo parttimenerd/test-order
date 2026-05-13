@@ -279,8 +279,7 @@ class ReactorContextTest {
 		ReactorContext ctx = new ReactorContext(session, moduleA);
 		assertThat(ctx.isMultiModule()).isFalse();
 		// Falls back to module-local paths
-		assertThat(ctx.resolveStateFile(null))
-				.isEqualTo(rootDir.resolve("module-a/.test-order/state.lz4"));
+		assertThat(ctx.resolveStateFile(null)).isEqualTo(rootDir.resolve("module-a/.test-order/state.lz4"));
 	}
 
 	// --- helper ---

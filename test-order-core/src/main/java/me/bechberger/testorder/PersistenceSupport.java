@@ -147,8 +147,8 @@ public final class PersistenceSupport {
 					LinkOption.NOFOLLOW_LINKS);
 			Instant lastModified = attrs.lastModifiedTime().toInstant();
 			if (Duration.between(lastModified, Instant.now()).compareTo(STALE_LOCK_THRESHOLD) > 0) {
-				LOGGER.warning("[test-order] Deleting stale lock file (older than "
-						+ STALE_LOCK_THRESHOLD.toMinutes() + " minutes): " + lockFile);
+				LOGGER.warning("[test-order] Deleting stale lock file (older than " + STALE_LOCK_THRESHOLD.toMinutes()
+						+ " minutes): " + lockFile);
 				Files.deleteIfExists(lockFile);
 			}
 		} catch (IOException e) {

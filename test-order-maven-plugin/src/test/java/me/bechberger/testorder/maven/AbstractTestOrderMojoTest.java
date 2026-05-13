@@ -317,6 +317,91 @@ class AbstractTestOrderMojoTest {
 	}
 
 	@Test
+	void cleanStaleTddConfig_removesTddAndAutodetectionFromRuntimeFiles() throws IOException {
+		// Simulate runtime config files left by a previous order-mode run with TDD
+		// enabled
+		Path runtimeDir = tempDir.resolve("target/test-order-runtime");
+		Files.createDirectories(runtimeDir);
+
+		Path configFile = runtimeDir.resolve("testorder-config.properties");
+		Files.writeString(configFile,
+				"testorder.learn=true\ntestorder.tdd=true\ntestorder.state.path=/tmp/state.lz4\n");
+
+		Path junitProps = runtimeDir.resolve("junit-platform.properties");
+		Files.writeString(junitProps,
+				"junit.jupiter.testclass.order.default=me.bechberger.Orderer\njunit.jupiter.extensions.autodetection.enabled=true\n");
+
+		Build build = new Build();
+		build.setDirectory(tempDir.resolve("target").toString());
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBuild()).thenReturn(build);
+		when(project.getBasedir()).thenReturn(tempDir.toFile());
+
+		TestMojo mojo = new TestMojo();
+		mojo.project = project;
+
+		mojo.invokeCleanStaleTddConfig();
+
+		// TDD line should be removed, other lines preserved
+		String configContent = Files.readString(configFile);
+		assertThat(configContent).doesNotContain("testorder.tdd");
+		assertThat(configContent).contains("testorder.learn=true");
+		assertThat(configContent).contains("testorder.state.path=/tmp/state.lz4");
+
+		// Autodetection line should be removed, other lines preserved
+		String junitContent = Files.readString(junitProps);
+		assertThat(junitContent).doesNotContain("junit.jupiter.extensions.autodetection.enabled");
+		assertThat(junitContent).contains("junit.jupiter.testclass.order.default");
+	}
+
+	@Test
+	void cleanStaleTddConfig_noOpWhenFilesDoNotExist() {
+		Build build = new Build();
+		build.setDirectory(tempDir.resolve("target").toString());
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBuild()).thenReturn(build);
+		when(project.getBasedir()).thenReturn(tempDir.toFile());
+
+		TestMojo mojo = new TestMojo();
+		mojo.project = project;
+
+		// Should not throw when runtime dir doesn't exist
+		assertThatCode(() -> mojo.invokeCleanStaleTddConfig()).doesNotThrowAnyException();
+	}
+
+	@Test
+	void cleanStaleTddConfig_noOpWhenNoTddEntriesPresent() throws IOException {
+		Path runtimeDir = tempDir.resolve("target/test-order-runtime");
+		Files.createDirectories(runtimeDir);
+
+		Path configFile = runtimeDir.resolve("testorder-config.properties");
+		String originalConfig = "testorder.learn=true\ntestorder.state.path=/tmp/state.lz4\n";
+		Files.writeString(configFile, originalConfig);
+
+		Path junitProps = runtimeDir.resolve("junit-platform.properties");
+		String originalJunit = "junit.jupiter.testclass.order.default=me.bechberger.Orderer\n";
+		Files.writeString(junitProps, originalJunit);
+
+		Build build = new Build();
+		build.setDirectory(tempDir.resolve("target").toString());
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBuild()).thenReturn(build);
+		when(project.getBasedir()).thenReturn(tempDir.toFile());
+
+		TestMojo mojo = new TestMojo();
+		mojo.project = project;
+
+		mojo.invokeCleanStaleTddConfig();
+
+		// Files should remain unchanged
+		assertThat(Files.readString(configFile)).isEqualTo(originalConfig);
+		assertThat(Files.readString(junitProps)).isEqualTo(originalJunit);
+	}
+
+	@Test
 	void skipIfNotExplicitlySelectedReactorProjectSkipsDependencyModule() {
 		MavenProject project = mock(MavenProject.class);
 		when(project.getArtifactId()).thenReturn("spring-ai-commons");
@@ -367,6 +452,10 @@ class AbstractTestOrderMojoTest {
 
 		void invokeRemoveStaleTestClassesConfig() throws MojoExecutionException {
 			removeStaleTestClassesConfig();
+		}
+
+		void invokeCleanStaleTddConfig() {
+			cleanStaleTddConfig();
 		}
 
 		@Override

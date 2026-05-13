@@ -151,6 +151,12 @@ public class SelectMojo extends AbstractTestOrderMojo {
 						pctx.changeMode()));
 		writeOrdererConfigFromMap(configMap);
 
+		// ML: record history and generate predictions
+		if (isMLEnabled()) {
+			appendMLEnabledToConfig();
+			generateMLPredictions(analysis.changedClasses(), analysis.changedTests());
+		}
+
 		if (runRemaining && !selection.remaining().isEmpty()) {
 			String remainingPath = Path.of(remainingFile).toAbsolutePath().toString();
 			project.getProperties().setProperty(MavenPluginConfigKeys.SELECT_REMAINING_FILE, remainingPath);

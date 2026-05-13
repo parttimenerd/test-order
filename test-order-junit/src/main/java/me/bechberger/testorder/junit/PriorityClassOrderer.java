@@ -1,7 +1,6 @@
 package me.bechberger.testorder.junit;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.ClassDescriptor;
@@ -11,6 +10,7 @@ import org.junit.jupiter.api.ClassOrdererContext;
 import me.bechberger.testorder.*;
 import me.bechberger.testorder.annotations.AlwaysRun;
 import me.bechberger.testorder.annotations.TestOrder;
+import me.bechberger.testorder.ml.MLPredictions;
 
 /**
  * JUnit ClassOrderer that prioritizes test classes based on a weighted score.
@@ -47,9 +47,10 @@ public class PriorityClassOrderer implements ClassOrderer {
 	 * orderClasses() calls.
 	 */
 	private static final AtomicBoolean changeDetectionLogged = new AtomicBoolean(false);
+	private static final AtomicBoolean mlPredictionsLogged = new AtomicBoolean(false);
 
 	/** Shared config resolver (system props + classpath properties). */
-	private TestOrderConfigResolver config;
+	private volatile TestOrderConfigResolver config;
 
 	/**
 	 * Cached setup result — avoids repeated load attempts (and error logs) on every
@@ -103,10 +104,11 @@ public class PriorityClassOrderer implements ClassOrderer {
 		// Create a mutable copy — JUnit may return an unmodifiable list
 		List<ClassDescriptor> mutableDescriptors = new ArrayList<>(descriptors);
 		// Sort by class name for deterministic ordering regardless of JUnit
-		// discovery order
-		mutableDescriptors.sort(Comparator.comparing((ClassDescriptor d) -> getTopLevelClassName(d)));
+		// discovery order — use actual class name so inner classes sort
+		// independently of their enclosing class.
+		mutableDescriptors.sort(Comparator.comparing((ClassDescriptor d) -> getClassName(d)));
 
-		List<String> testClassNames = descriptors.stream().map(this::getTopLevelClassName).toList();
+		List<String> testClassNames = descriptors.stream().map(this::getClassName).toList();
 
 		if (changeDetectionLogged.compareAndSet(false, true)) {
 			// R17-1: With forkCount>1, each fork JVM logs independently. Suppress logging
@@ -126,10 +128,11 @@ public class PriorityClassOrderer implements ClassOrderer {
 
 		TestScorer scorer = ClassOrderingEngine.buildScorer(s, testClassNames);
 
-		// score each test class
+		// score each test class — use actual class name (including inner/nested)
+		// so that each class is scored independently based on its own state data.
 		Map<ClassDescriptor, Integer> scores = new HashMap<>();
 		for (ClassDescriptor desc : descriptors) {
-			String testClassName = getTopLevelClassName(desc);
+			String testClassName = getClassName(desc);
 			TestScorer.ScoreResult result = scorer.score(testClassName);
 			scores.put(desc, result.score());
 
@@ -141,6 +144,35 @@ public class PriorityClassOrderer implements ClassOrderer {
 				TestOrderLogger.debug("{} score={} (deps={}, fail={}, new={}, changed={}, fast={}, slow={}, dur={})",
 						testClassName, result.score(), result.depOverlap(), result.failScore(), result.isNew(),
 						result.isChanged(), result.isFast(), result.isSlow(), dur >= 0 ? dur + "ms" : "?");
+			}
+		}
+
+		// ML: If predictions are available, boost scores for tests likely to fail.
+		// The predictions file is written by PrepareMojo when
+		// testorder.ml.enabled=true.
+		// Predictions are keyed by the exact class name (including inner classes like
+		// ValidateTest$NotNull) from the dependency index. Look up the descriptor's
+		Map<String, Double> mlPredictions = loadMLPredictions();
+		if (!mlPredictions.isEmpty()) {
+			// Scale P(fail) to a score bonus: max P(fail) gets up to maxFailure weight
+			// bonus
+			int maxBonus = effectiveWeights.maxFailure();
+			for (ClassDescriptor desc : descriptors) {
+				String actualName = getClassName(desc);
+				Double pFail = mlPredictions.get(actualName);
+				if (pFail != null && Double.isFinite(pFail) && pFail > 0.01) {
+					int mlBonus = (int) Math.round(pFail * maxBonus);
+					if (mlBonus > 0) {
+						scores.merge(desc, mlBonus, Integer::sum);
+						if (s.debug()) {
+							TestOrderLogger.debug("{} ML P(fail)={} bonus={}", actualName,
+									String.format(java.util.Locale.US, "%.3f", pFail), mlBonus);
+						}
+					}
+				}
+			}
+			if (s.debug() && mlPredictionsLogged.compareAndSet(false, true)) {
+				TestOrderLogger.debug("[ml] Applied ML predictions for {} test classes", mlPredictions.size());
 			}
 		}
 
@@ -160,7 +192,7 @@ public class PriorityClassOrderer implements ClassOrderer {
 				junitOrdered.add(desc);
 				if (s.debug()) {
 					TestOrderLogger.debug("@Order({}) on {} — excluding from score-based sort", orderAnn.value(),
-							getTopLevelClassName(desc));
+							getClassName(desc));
 				}
 				continue;
 			}
@@ -168,7 +200,7 @@ public class PriorityClassOrderer implements ClassOrderer {
 			TestOrder ann = desc.getTestClass().getAnnotation(TestOrder.class);
 			if (!alwaysRun && ann == null)
 				continue;
-			String testClassName = getTopLevelClassName(desc);
+			String testClassName = getClassName(desc);
 			int bonus = ann != null ? ann.scoreBonus() : 0;
 			int changeBonus = ann != null && s.changedTestClasses().contains(testClassName) ? ann.changeBonus() : 0;
 			TestOrder.Priority prio = ann != null ? ann.priority() : TestOrder.Priority.NORMAL;
@@ -200,22 +232,20 @@ public class PriorityClassOrderer implements ClassOrderer {
 		mutableDescriptors.removeAll(toRemove);
 		// Stable sort pinFirst by scoreBonus desc then name, pinLast by scoreBonus asc
 		// then name
-		pinFirst.sort(Comparator
-				.<ClassDescriptor, Integer>comparing(
-						d -> Optional.ofNullable(d.getTestClass().getAnnotation(TestOrder.class))
-								.map(TestOrder::scoreBonus).orElse(0))
-				.reversed().thenComparing(d -> getTopLevelClassName(d)));
-		pinLast.sort(
+		pinFirst.sort(
 				Comparator
 						.<ClassDescriptor, Integer>comparing(
 								d -> Optional.ofNullable(d.getTestClass().getAnnotation(TestOrder.class))
 										.map(TestOrder::scoreBonus).orElse(0))
-						.thenComparing(d -> getTopLevelClassName(d)));
+						.reversed().thenComparing(d -> getClassName(d)));
+		pinLast.sort(Comparator.<ClassDescriptor, Integer>comparing(d -> Optional
+				.ofNullable(d.getTestClass().getAnnotation(TestOrder.class)).map(TestOrder::scoreBonus).orElse(0))
+				.thenComparing(d -> getClassName(d)));
 		// Sort @Order classes by ascending @Order value, then alphabetically
 		junitOrdered.sort(Comparator.<ClassDescriptor, Integer>comparing(d -> {
 			org.junit.jupiter.api.Order o = d.getTestClass().getAnnotation(org.junit.jupiter.api.Order.class);
 			return o != null ? o.value() : Integer.MAX_VALUE;
-		}).thenComparing(d -> getTopLevelClassName(d)));
+		}).thenComparing(d -> getClassName(d)));
 
 		orderByScoreAndDiversity(mutableDescriptors, scores, s.depMap(), s.state(),
 				config.getConfigBool(TestOrderConfig.SPRING_CONTEXT_GROUPING, false));
@@ -270,20 +300,53 @@ public class PriorityClassOrderer implements ClassOrderer {
 			Map<ClassDescriptor, Integer> scores, DependencyMap depMap, TestOrderState state,
 			boolean springContextGrouping) {
 		List<ClassDescriptor> mutable = (List<ClassDescriptor>) descriptors;
-		ClassOrderingEngine.orderByScoreAndDiversity(mutable, d -> scores.getOrDefault(d, 0),
-				this::getTopLevelClassName, depMap, state,
-				springContextGrouping ? d -> TestScorer.springContextKey(d.getTestClass()) : null);
+		ClassOrderingEngine.orderByScoreAndDiversity(mutable, d -> scores.getOrDefault(d, 0), this::getClassName,
+				depMap, state, springContextGrouping ? d -> TestScorer.springContextKey(d.getTestClass()) : null);
 	}
 
-	private final Map<ClassDescriptor, String> topLevelClassNameCache = new ConcurrentHashMap<>();
-
-	private String getTopLevelClassName(ClassDescriptor descriptor) {
-		return topLevelClassNameCache.computeIfAbsent(descriptor, d -> {
-			Class<?> clazz = d.getTestClass();
-			while (clazz.getEnclosingClass() != null) {
-				clazz = clazz.getEnclosingClass();
+	/**
+	 * Loads ML failure predictions from the predictions file written by
+	 * PrepareMojo. Returns an empty map if ML is not enabled or the file is absent.
+	 */
+	private Map<String, Double> loadMLPredictions() {
+		if (config == null) {
+			return Map.of();
+		}
+		String mlEnabled = config.getConfig(TestOrderConfig.ML_ENABLED);
+		if (!"true".equalsIgnoreCase(mlEnabled)) {
+			return Map.of();
+		}
+		// The predictions file is written to the runtime config dir which is on the
+		// classpath.
+		// Try to locate it via the classpath first, then fall back to the config
+		// property.
+		String predictionsPath = config.getConfig(TestOrderConfig.ML_PREDICTIONS_FILE);
+		if (predictionsPath != null && !predictionsPath.isBlank()) {
+			try {
+				return MLPredictions.read(java.nio.file.Path.of(predictionsPath));
+			} catch (Exception e) {
+				TestOrderLogger.warn("[ml] Failed to load predictions from {}: {}", predictionsPath, e.getMessage());
 			}
-			return clazz.getName();
-		});
+		}
+		// Try classpath: ml-predictions.properties is placed in the runtime config dir
+		try {
+			var url = getClass().getClassLoader().getResource("ml-predictions.properties");
+			if (url != null) {
+				return MLPredictions.read(java.nio.file.Path.of(url.toURI()));
+			}
+		} catch (Exception e) {
+			TestOrderLogger.debug("[ml] Could not load predictions from classpath: {}", e.getMessage());
+		}
+		return Map.of();
 	}
+
+	/**
+	 * Returns the actual class name (including inner/nested class names like
+	 * {@code OuterTest$Inner}). This is the primary name used for scoring and
+	 * ordering — each inner class is treated as a separate test class.
+	 */
+	private String getClassName(ClassDescriptor descriptor) {
+		return descriptor.getTestClass().getName();
+	}
+
 }

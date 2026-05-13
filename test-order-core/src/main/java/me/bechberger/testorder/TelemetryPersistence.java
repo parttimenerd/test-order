@@ -27,8 +27,7 @@ public final class TelemetryPersistence {
 			return TestOrderState.load(stateFile);
 		} catch (IOException e) {
 			if (java.nio.file.Files.exists(stateFile)) {
-				TestOrderLogger.warn("Failed to load state from {}: {} — starting fresh",
-						stateFile, e.getMessage());
+				TestOrderLogger.warn("Failed to load state from {}: {} — starting fresh", stateFile, e.getMessage());
 			}
 			return new TestOrderState();
 		}
@@ -91,8 +90,8 @@ public final class TelemetryPersistence {
 			try {
 				state.setHistoryMaxRuns(Integer.parseInt(maxRunsProp));
 			} catch (IllegalArgumentException e) {
-				TestOrderLogger.warn("Invalid {} value '{}': {}", TestOrderConfig.HISTORY_MAX_RUNS,
-						maxRunsProp, e.getMessage());
+				TestOrderLogger.warn("Invalid {} value '{}': {}", TestOrderConfig.HISTORY_MAX_RUNS, maxRunsProp,
+						e.getMessage());
 			}
 		}
 	}

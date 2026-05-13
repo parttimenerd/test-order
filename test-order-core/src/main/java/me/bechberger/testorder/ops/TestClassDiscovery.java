@@ -21,7 +21,11 @@ public final class TestClassDiscovery {
 
 	/**
 	 * Scans a directory for compiled test class files and returns their
-	 * fully-qualified class names. Skips inner classes ({@code $}).
+	 * fully-qualified class names.
+	 *
+	 * Includes nested/member classes (e.g. {@code OuterTest$Nested}) because JUnit
+	 * can execute them as separate test classes, but excludes anonymous/synthetic
+	 * classes (e.g. {@code OuterTest$1}, lambda artifacts).
 	 */
 	public static Set<String> scanTestClasses(Path testClassesDir) {
 		if (testClassesDir == null || !Files.isDirectory(testClassesDir)) {
@@ -29,14 +33,29 @@ public final class TestClassDiscovery {
 		}
 		Set<String> tests = new LinkedHashSet<>();
 		try (Stream<Path> walk = Files.walk(testClassesDir)) {
-			walk.filter(path -> path.toString().endsWith(".class") && !path.toString().contains("$")).forEach(path -> {
+			walk.filter(path -> path.toString().endsWith(".class")).forEach(path -> {
 				String relative = testClassesDir.relativize(path).toString();
-				tests.add(relative.replace('/', '.').replace('\\', '.').replaceAll("\\.class$", ""));
+				String className = relative.replace('/', '.').replace('\\', '.').replaceAll("\\.class$", "");
+				if (isDiscoverableTestClass(className)) {
+					tests.add(className);
+				}
 			});
 		} catch (IOException e) {
 			// Swallow — caller should log if needed
 		}
 		return tests;
+	}
+
+	private static boolean isDiscoverableTestClass(String className) {
+		if (!className.contains("$")) {
+			return true;
+		}
+		// Exclude anonymous/local inner classes such as Outer$1 and Outer$1Inner.
+		if (className.matches(".*\\$\\d+.*")) {
+			return false;
+		}
+		// Exclude synthetic lambda implementation classes.
+		return !className.contains("$$Lambda$");
 	}
 
 	/**

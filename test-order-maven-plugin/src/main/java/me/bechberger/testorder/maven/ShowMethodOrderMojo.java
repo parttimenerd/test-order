@@ -17,7 +17,11 @@ import me.bechberger.testorder.ops.workflows.ShowMethodOrderWorkflow;
  * <p>
  * Requires method ordering to be enabled and at least one prior test run with
  * method-level telemetry.
+ *
+ * @deprecated Use {@code mvn test-order:show -Dtestorder.show.methods=true}
+ *             instead. This goal will be removed in a future release.
  */
+@Deprecated
 @Mojo(name = "show-method-order", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES, aggregator = true)
 public class ShowMethodOrderMojo extends AbstractTestOrderMojo {
 

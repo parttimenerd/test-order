@@ -30,8 +30,8 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 		// Use the shared state file at the reactor root (not per-module paths).
 		Path primaryState = ctx.resolveStateFile(stateFile);
 		if (!Files.exists(primaryState)) {
-			throw new MojoExecutionException("No state file found at " + primaryState
-					+ ". Run some test-order test runs first.");
+			throw new MojoExecutionException(
+					"No state file found at " + primaryState + ". Run some test-order test runs first.");
 		}
 		java.util.List<Path> statePaths = java.util.List.of(primaryState);
 

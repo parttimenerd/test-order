@@ -10,6 +10,7 @@ import TestSidebar from './components/TestSidebar.vue'
 import TestsTab from './components/TestsTab.vue'
 import AnalyticsTab from './components/AnalyticsTab.vue'
 import WeightsTab from './components/WeightsTab.vue'
+import MLTab from './components/MLTab.vue'
 import AppFooter from './components/AppFooter.vue'
 
 const { data, error } = parseDashboardData()
@@ -74,6 +75,7 @@ function onKeydown(e: KeyboardEvent) {
     case '1': dashboard.setTab('tests'); break
     case '2': dashboard.setTab('analytics'); break
     case '3': dashboard.setTab('weights'); break
+    case '4': dashboard.setTab('ml'); break
   }
 }
 
@@ -101,6 +103,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
         <TestsTab />
         <AnalyticsTab />
         <WeightsTab />
+        <MLTab />
       </main>
     </div>
     <AppFooter />

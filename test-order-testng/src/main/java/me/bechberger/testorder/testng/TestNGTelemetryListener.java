@@ -97,7 +97,8 @@ public class TestNGTelemetryListener implements ITestListener {
 	@Override
 	public void onTestStart(ITestResult result) {
 		String className = result.getTestClass().getRealClass().getName();
-		// Track execution order and start time per class (thread-safe for parallel modes)
+		// Track execution order and start time per class (thread-safe for parallel
+		// modes)
 		if (executionOrderSet.add(className)) {
 			executionOrder.add(className);
 			if (!debugMode) {
@@ -139,7 +140,8 @@ public class TestNGTelemetryListener implements ITestListener {
 		String methodName = result.getMethod().getMethodName();
 		long durationMs = result.getEndMillis() - result.getStartMillis();
 		if (durationMs > 0) {
-			pendingMethodDurations.computeIfAbsent(className + "#" + methodName, k -> Collections.synchronizedList(new ArrayList<>()))
+			pendingMethodDurations
+					.computeIfAbsent(className + "#" + methodName, k -> Collections.synchronizedList(new ArrayList<>()))
 					.add(durationMs);
 		}
 	}
@@ -181,7 +183,8 @@ public class TestNGTelemetryListener implements ITestListener {
 				} else {
 					durationMs = TimeUnit.NANOSECONDS.toMillis(now - entry.getValue());
 				}
-				pendingDurations.computeIfAbsent(className, k -> Collections.synchronizedList(new ArrayList<>())).add(durationMs);
+				pendingDurations.computeIfAbsent(className, k -> Collections.synchronizedList(new ArrayList<>()))
+						.add(durationMs);
 			}
 		}
 		// End learn-mode tracking for all discovered classes
@@ -226,7 +229,9 @@ public class TestNGTelemetryListener implements ITestListener {
 		// transitions)
 		if (!debugMode) {
 			long durationMs = result.getEndMillis() - result.getStartMillis();
-			pendingMethodDurations.computeIfAbsent(className + "#" + methodName, k -> Collections.synchronizedList(new ArrayList<>())).add(durationMs);
+			pendingMethodDurations
+					.computeIfAbsent(className + "#" + methodName, k -> Collections.synchronizedList(new ArrayList<>()))
+					.add(durationMs);
 		}
 	}
 

@@ -38,8 +38,9 @@ class ChangeDetectionSupportTest {
 	}
 
 	@Test
-	void normalizeModeRejectsBlankOrUnknownValues() {
-		assertThrows(IOException.class, () -> ChangeDetectionSupport.normalizeMode(""));
+	void normalizeModeDefaultsBlankOrNullToUncommittedAndRejectsUnknown() throws IOException {
+		assertEquals("uncommitted", ChangeDetectionSupport.normalizeMode(""));
+		assertEquals("uncommitted", ChangeDetectionSupport.normalizeMode(null));
 		assertThrows(IOException.class, () -> ChangeDetectionSupport.normalizeMode("bogus"));
 	}
 

@@ -62,8 +62,9 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:run-remaining` | Execute deferred tests from prior selection |
 | `test-order:tiered-select` | Split tests into tier 1/2/3 files and run tier 1 |
 | `test-order:run-tier` | Execute tier 2 or tier 3 from prior tiered selection |
-| `test-order:show-order` | Print ranking and score breakdown |
-| `test-order:show-method-order` | Print method-level priority order within each class |
+| `test-order:show` | Unified view: class order, method order, ML health (auto-detects) |
+| `test-order:show-order` | _(deprecated → use `show`)_ Print ranking and score breakdown |
+| `test-order:show-method-order` | _(deprecated → use `show`)_ Print method-level priority order |
 | `test-order:dashboard` | Generate interactive HTML dashboard |
 | `test-order:serve` | Serve dashboard via local HTTP server |
 | `test-order:optimize` | Re-optimise scoring weights from run history |
@@ -81,6 +82,37 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:help` | Display all goals and common properties |
 
 > `test-order:learn` only prepares learn mode — always pair it with the `test` phase to actually execute tests. Similarly, `test-order:select` configures Surefire but needs `test` to run the selected subset.
+
+## Show Goal
+
+The unified `show` goal displays test ordering, method-level priorities, and ML health analysis in a single command:
+
+```bash
+# Default: show class order + method order (ML auto-detected)
+mvn test-order:show
+
+# All sections explicitly
+mvn test-order:show -Dtestorder.show.all=true
+
+# JSON for CI tooling
+mvn test-order:show -Dtestorder.show.format=json
+```
+
+### Show Properties
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.show.classes` | `true` | Show class-level priority order |
+| `testorder.show.methods` | `true` | Show method-level priority order |
+| `testorder.show.ml` | `auto` | ML health section: `auto` (show if history exists), `true`, `false` |
+| `testorder.show.explain` | `false` | Show per-test score breakdown |
+| `testorder.show.fullNames` | `false` | Print fully-qualified class names |
+| `testorder.show.format` | `text` | Output format: `text` or `json` |
+| `testorder.show.filter` | — | Regex filter for test class names |
+| `testorder.show.topN` | `-1` | Show only top N tests (`-1` = all) |
+| `testorder.show.randomM` | `0` | Include M random diverse tests |
+| `testorder.show.seed` | — | Random seed for `randomM` |
+| `testorder.show.all` | `false` | Enable all sections (classes + methods + ML) |
 
 ## Plugin Prefix Resolution
 
@@ -155,6 +187,43 @@ The goal automatically iterates reactor modules that have `src/test/java`. Each 
 runs detection independently. The build fails if any module has findings (when
 `failOnDetection=true`).
 
+## TDD Enforcement
+
+Enforce test-driven development discipline: new test classes and methods that
+pass without having failed first are artificially failed.
+
+```bash
+mvn test -Dtestorder.tdd=true
+```
+
+Or set it in the plugin configuration:
+
+```xml
+<plugin>
+    <groupId>me.bechberger</groupId>
+    <artifactId>test-order-maven-plugin</artifactId>
+    <configuration>
+        <tdd>true</tdd>
+    </configuration>
+</plugin>
+```
+
+On the first run (no state file), enforcement is skipped so existing projects
+can adopt it without breaking. After the first learn run builds state,
+any new test that passes without a prior failure is flagged:
+
+```
+═══════════════════════════════════════════════════════════════
+  TDD VIOLATION: New test CLASS passed without failing first
+  Test: com.example.MyNewTest#shouldWork
+
+  In TDD, write the test first, see it FAIL,
+  then implement the code to make it pass.
+
+  Disable with: -Dtestorder.tdd=false
+═══════════════════════════════════════════════════════════════
+```
+
 ## Learn Mode
 
 Collect dependency data:
@@ -175,6 +244,95 @@ mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=FULL_MEMBER
 This run writes/updates `.test-order/test-dependencies.lz4` directly.
 
 Use `mvn test-order:aggregate` only when you intentionally aggregate fallback `.deps` files.
+
+## ML Failure Predictions
+
+The ML subsystem learns from test history to predict which tests are most likely to fail and to classify test health over time.
+
+### Enabling ML
+
+```bash
+# Pass as system property
+mvn test -Dtestorder.ml.enabled=true
+
+# Or add to plugin configuration
+```
+```xml
+<configuration>
+  <ml>true</ml>
+</configuration>
+```
+
+When enabled, the `TelemetryListener` records per-test outcomes (pass/fail, duration, timestamp) into `.test-order/ml/history.lz4` after each test run.
+
+### ML Properties
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.ml.enabled` | `false` | Enable ML history collection and predictions |
+| `testorder.ml.historyDir` | `.test-order/ml/` | Directory for ML history data |
+| `testorder.ml.history.maxRuns` | `2000` | Max runs retained in history ring buffer |
+| `testorder.ml.predictions.file` | _(auto)_ | Intermediate predictions file consumed by the test JVM |
+
+### How It Works
+
+1. **History collection** — Each test run appends outcomes to `history.lz4` (LZ4-compressed binary format). The ring buffer discards the oldest runs beyond `maxRuns`.
+
+2. **Feature extraction** — After 5+ recorded runs, `MLFeatureExtractor` computes 26 features per test class:
+   - EWMA failure rate and trend (α=0.3)
+   - Recent failure streak and last-failure recency
+   - Duration variance and mean
+   - Co-failure proximity (Jaccard similarity via `CoFailureTracker`)
+   - Change coupling signals (5 features)
+   - Package/dependency statistics (9 features)
+   - Time-series properties (4 features: autocorrelation, volatility, slope, seasonal)
+
+3. **Prediction** — `TestFailurePredictor` trains a Tribuo logistic regression model in-process. Failures are weighted 5× to emphasize rare but important events. Each test class gets a P(fail) score ∈ [0, 1].
+
+4. **Health classification** — `TestHealthAnalyzer` assigns one of four statuses:
+   - **HEALTHY** — Passes consistently (low failure rate, stable)
+   - **DEGRADING** — Failure trend ≥ 0.02 (getting worse)
+   - **FLAKY** — Volatility ≥ 0.15 or autocorrelation ≤ -0.3 (inconsistent)
+   - **FAILING** — Failure rate ≥ 0.8 (broken)
+
+### Viewing ML Results
+
+```bash
+# Unified show command (auto-detects ML history)
+mvn test-order:show
+
+# Explicitly request ML section
+mvn test-order:show -Dtestorder.show.ml=true
+
+# JSON output for CI tooling
+mvn test-order:show -Dtestorder.show.format=json -Dtestorder.show.ml=true
+```
+
+### ML in Dashboard
+
+The `dashboard` goal automatically detects ML history and includes:
+- **ML Health tab** — breakdown of test health statuses with EWMA charts
+- **P(fail) column** — in the main tests table, showing predicted failure probability
+
+No extra flags needed; if `.test-order/ml/history.lz4` exists with sufficient data, the dashboard renders ML insights.
+
+### CI Integration
+
+```yaml
+# Collect ML history on every run
+test:
+  steps:
+    - run: mvn test -Dtestorder.ml.enabled=true
+
+# Periodically generate dashboard with ML insights
+dashboard:
+  steps:
+    - run: mvn test-order:dashboard
+    - uses: actions/upload-artifact@v4
+      with:
+        name: test-dashboard
+        path: target/test-order-dashboard/
+```
 
 ## Index Compaction
 

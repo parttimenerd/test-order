@@ -28,6 +28,7 @@ import me.bechberger.testorder.ops.workflows.DashboardWorkflow;
 import me.bechberger.testorder.ops.workflows.OrderWorkflow;
 import me.bechberger.testorder.ops.workflows.ShowMethodOrderWorkflow;
 import me.bechberger.testorder.ops.workflows.ShowOrderWorkflow;
+import me.bechberger.testorder.ops.workflows.ShowWorkflow;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
@@ -470,6 +471,12 @@ public class TestOrderPlugin implements Plugin<Project> {
         testTask.systemProperty("testorder.state.path",
                 ext.getStateFile().get().getAsFile().getAbsolutePath());
 
+        // TDD enforcement
+        if (ext.getTdd().get()) {
+            testTask.systemProperty("testorder.tdd", "true");
+            testTask.systemProperty("junit.jupiter.extensions.autodetection.enabled", "true");
+        }
+
         // Attach agent lazily via CommandLineArgumentProvider (configuration-cache safe)
         testTask.getJvmArgumentProviders().add(
                 new AgentArgumentProvider(project, ext, agentConf, instrMode.toUpperCase()));
@@ -580,6 +587,12 @@ public class TestOrderPlugin implements Plugin<Project> {
         // Inject PriorityClassOrderer as the JUnit 5 global class orderer
         testTask.systemProperty("junit.jupiter.testclass.order.default",
                 "me.bechberger.testorder.junit.PriorityClassOrderer");
+
+        // TDD enforcement
+        if (ext.getTdd().get()) {
+            testTask.systemProperty("testorder.tdd", "true");
+            testTask.systemProperty("junit.jupiter.extensions.autodetection.enabled", "true");
+        }
 
         // Forward debug flag so PriorityClassOrderer can emit verbose scoring output
         String debugFlag = gradleOrSystemProperty(project, "testorder.debug");
@@ -710,6 +723,10 @@ public class TestOrderPlugin implements Plugin<Project> {
                 project.getLogger().warn("[test-order] Could not save state: {}", e.getMessage());
             }
 
+            // Snapshot source and test hashes so SINCE_LAST_RUN change detection
+            // has a baseline to compare against on the next run.
+            snapshotHashes(project, ext);
+
             // Apply config map as system properties on the test task
             for (var entry : result.configMap().entrySet()) {
                 ((Test) t).systemProperty(entry.getKey(), entry.getValue());
@@ -817,6 +834,37 @@ public class TestOrderPlugin implements Plugin<Project> {
                 } catch (IOException e) {
                     throw new GradleException("Failed to export dependency index as JSON", e);
                 }
+            });
+        });
+
+        project.getTasks().register("testOrderShow", task -> {
+            task.setGroup("test-order");
+            task.setDescription("Unified view of predicted test order, method order, and ML health"
+                    + " (replaces testOrderShowOrder / testOrderShowMethodOrder)");
+            task.doLast(t -> {
+                String classes = gradleOrSystemProperty(project, "testorder.show.classes");
+                String methods = gradleOrSystemProperty(project, "testorder.show.methods");
+                String ml = gradleOrSystemProperty(project, "testorder.show.ml");
+                boolean all = Boolean.parseBoolean(Optional
+                        .ofNullable(gradleOrSystemProperty(project, "testorder.show.all"))
+                        .orElse("false"));
+                boolean explain = Boolean.parseBoolean(Optional
+                        .ofNullable(gradleOrSystemProperty(project, "testorder.show.explain"))
+                        .orElse("false"));
+                boolean fullNames = Boolean.parseBoolean(Optional
+                        .ofNullable(gradleOrSystemProperty(project, "testorder.show.fullNames"))
+                        .orElse("false"));
+                String format = Optional.ofNullable(gradleOrSystemProperty(project, "testorder.show.format"))
+                        .orElse("text");
+                String filter = gradleOrSystemProperty(project, "testorder.show.filter");
+                String topNStr = gradleOrSystemProperty(project, "testorder.show.topN");
+                String randomMStr = gradleOrSystemProperty(project, "testorder.show.randomM");
+                String seedStr = gradleOrSystemProperty(project, "testorder.show.seed");
+                int topN = parseIntOrDefault(topNStr, -1, "testorder.show.topN");
+                int randomM = parseIntOrDefault(randomMStr, -1, "testorder.show.randomM");
+                Long seed = parseLongOrNull(seedStr, "testorder.show.seed");
+                runShowReport(project, ext, classes, methods, ml, all, explain, fullNames,
+                        format, filter, topN, randomM, seed);
             });
         });
 
@@ -1482,6 +1530,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  test-order — Intelligent Test Prioritization Plugin");
                 log.lifecycle("═══════════════════════════════════════════════════════════");
                 log.lifecycle("");
+                log.lifecycle("QUICK START:");
+                log.lifecycle("  1) First run:   ./gradlew test");
+                log.lifecycle("  2) Inspect:     ./gradlew testOrderShow");
+                log.lifecycle("  3) Dashboard:   ./gradlew testOrderDashboard");
+                log.lifecycle("  CI fast path:   ./gradlew testOrderSelect && ./gradlew testOrderRunRemaining");
+                log.lifecycle("");
                 log.lifecycle("TASKS:");
                 log.lifecycle("  test                         Run tests with auto mode (learn or order)");
                 log.lifecycle("  testOrderLearn               Force learn mode (collect dependencies)");
@@ -1489,6 +1543,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  testOrderRunRemaining        Run deferred tests from testOrderSelect");
                 log.lifecycle("  testOrderTieredSelect        Three-tier CI test selection");
                 log.lifecycle("  testOrderRunTier             Run tier 2 or 3 from tiered-select");
+                log.lifecycle("  testOrderShow                Unified view: class order, method order, ML health");
                 log.lifecycle("  testOrderShowOrder           Display predicted test order");
                 log.lifecycle("  testOrderExplainOrder        Detailed per-test score breakdown");
                 log.lifecycle("  testOrderShowMethodOrder     Display predicted method order");
@@ -1550,9 +1605,22 @@ public class TestOrderPlugin implements Plugin<Project> {
         Path outDir = project.getLayout().getBuildDirectory()
                 .dir("test-order-dashboard").get().getAsFile().toPath();
         PluginContext pctx = buildPluginContext(project, ext);
+
+        // Compute ML health data if ml-history is available
+        java.util.Map<String, Double> mlPredictions = null;
+        me.bechberger.testorder.ml.TestHealthReport healthReport = null;
+        Path mlHistoryDir = pctx.stateFile() != null
+                ? pctx.stateFile().getParent().resolve("ml-history")
+                : pctx.projectRoot().resolve(".testorder/ml-history");
+        me.bechberger.testorder.ml.MLHealthLoader.LoadResult mlResult =
+                me.bechberger.testorder.ml.MLHealthLoader.load(mlHistoryDir);
+        if (mlResult.hasData()) {
+            healthReport = mlResult.healthReport();
+        }
+
         try {
             String template = DashboardResources.assembleTemplate();
-            return new DashboardWorkflow(pctx, template, outDir).generate();
+            return new DashboardWorkflow(pctx, template, outDir, mlPredictions, healthReport).generate();
         } catch (IOException e) {
             String detail = e.getMessage() != null ? e.getMessage() : "unknown error";
             throw new GradleException("[test-order] Dashboard generation failed: " + detail
@@ -1957,6 +2025,75 @@ public class TestOrderPlugin implements Plugin<Project> {
             return propChangeMode;
         }
         return ext.getChangeMode().get();
+    }
+
+    private static void runShowReport(Project project, TestOrderExtension ext,
+            String classes, String methods, String ml, boolean all, boolean explain,
+            boolean fullNames, String format, String filter, int topN, int randomM, Long seed) {
+        autoAggregateIfNeeded(project, ext);
+
+        // Resolve auto flags (same logic as ShowMojo)
+        boolean effectiveClasses = classes == null || classes.isBlank() || Boolean.parseBoolean(classes);
+        Boolean effectiveMethods = resolveAutoFlag(methods);
+        Boolean effectiveMl = resolveAutoFlag(ml);
+        if (all) {
+            effectiveMethods = Boolean.TRUE;
+            effectiveMl = Boolean.TRUE;
+        }
+
+        PluginContext pctx = buildPluginContextBuilder(project, ext)
+                .methodOrderingEnabled(effectiveMethods != null ? effectiveMethods : true)
+                .topN(topN).randomM(randomM).seed(seed)
+                .build();
+        ShowWorkflow.Options opts = new ShowWorkflow.Options(
+                effectiveClasses, effectiveMethods, effectiveMl,
+                explain, fullNames, format, filter, topN, randomM, seed);
+
+        // Resolve ML history dir (same convention as Maven)
+        Path mlHistoryDir = pctx.stateFile() != null
+                ? pctx.stateFile().getParent().resolve("ml-history")
+                : pctx.projectRoot().resolve(".testorder/ml-history");
+
+        try {
+            ShowWorkflow.ShowResult result = ShowWorkflow.compute(pctx, opts, mlHistoryDir);
+
+            if (opts.isJson()) {
+                System.out.println(me.bechberger.testorder.ops.workflows.ShowJsonFormatter.format(result, filter));
+            } else {
+                ShowWorkflow.printReport(System.out, result, opts, pctx);
+            }
+        } catch (IOException e) {
+            throw new GradleException("Failed to compute show report: " + e.getMessage(), e);
+        }
+    }
+
+    private static Boolean resolveAutoFlag(String value) {
+        if (value == null || value.isBlank() || "auto".equalsIgnoreCase(value)) {
+            return null;
+        }
+        return Boolean.parseBoolean(value);
+    }
+
+    private static int parseIntOrDefault(String value, int defaultValue, String paramName) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            throw new GradleException("[test-order] Invalid integer for " + paramName + ": " + value);
+        }
+    }
+
+    private static Long parseLongOrNull(String value, String paramName) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            throw new GradleException("[test-order] Invalid long for " + paramName + ": " + value);
+        }
     }
 
     private static void runShowOrderReport(Project project, TestOrderExtension ext,

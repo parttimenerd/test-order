@@ -40,6 +40,8 @@ class PriorityClassOrdererTest {
 	private String origChangedMethods;
 	private String origProjectRoot;
 	private String origStructuralDiffEnabled;
+	private String origMlEnabled;
+	private String origMlPredictionsFile;
 
 	@BeforeEach
 	void saveProperties() {
@@ -58,6 +60,8 @@ class PriorityClassOrdererTest {
 		origChangedMethods = System.getProperty(TestOrderConfig.CHANGED_METHODS);
 		origProjectRoot = System.getProperty(TestOrderConfig.PROJECT_ROOT);
 		origStructuralDiffEnabled = System.getProperty(TestOrderConfig.STRUCTURAL_DIFF_ENABLED);
+		origMlEnabled = System.getProperty(TestOrderConfig.ML_ENABLED);
+		origMlPredictionsFile = System.getProperty(TestOrderConfig.ML_PREDICTIONS_FILE);
 	}
 
 	@AfterEach
@@ -77,6 +81,8 @@ class PriorityClassOrdererTest {
 		restoreProp(TestOrderConfig.CHANGED_METHODS, origChangedMethods);
 		restoreProp(TestOrderConfig.PROJECT_ROOT, origProjectRoot);
 		restoreProp(TestOrderConfig.STRUCTURAL_DIFF_ENABLED, origStructuralDiffEnabled);
+		restoreProp(TestOrderConfig.ML_ENABLED, origMlEnabled);
+		restoreProp(TestOrderConfig.ML_PREDICTIONS_FILE, origMlPredictionsFile);
 		TestOrderState.resetPending();
 	}
 
@@ -739,13 +745,12 @@ class PriorityClassOrdererTest {
 	}
 
 	@Test
-	void deepNestedInnerClassDescriptorResolvesToTopLevelName() throws IOException {
+	void deepNestedInnerClassTreatedIndependentlyFromTopLevel() throws IOException {
 		DependencyMap map = new DependencyMap();
-		// Score is keyed by the top-level class name that getTopLevelClassName resolves
-		// to.
+		// Top-level class has a dep overlap with the changed class, but the deeply
+		// nested class has its own (empty) dep entry → it should NOT inherit the
+		// parent's scoring because inner classes are treated as separate test classes.
 		map.put(DeepHost.class.getName(), Set.of("com.deep.Dep"));
-		// Guard against false positives if lookup accidentally uses the nested class
-		// name.
 		map.put(DeepHost.Level1.Level2.Level3.class.getName(), Set.of());
 		map.put(Long.class.getName(), Set.of());
 		Path idx = tempDir.resolve("deep.idx");
@@ -759,8 +764,10 @@ class PriorityClassOrdererTest {
 				List.of(desc(Long.class), new StubClassDescriptor(DeepHost.Level1.Level2.Level3.class)));
 		orderer.orderClasses(new StubClassOrdererContext(descs));
 
-		assertEquals(DeepHost.Level1.Level2.Level3.class.getName(), descs.get(0).getTestClass().getName(),
-				"Deeply nested descriptor must resolve to top-level class for dep-map lookup");
+		// Neither Long nor the deeply nested class have deps overlapping with
+		// "com.deep.Dep", so original order is preserved (Long first).
+		assertEquals(Long.class.getName(), descs.get(0).getTestClass().getName(),
+				"Deeply nested class should be scored by its own deps, not inherited from top-level");
 	}
 
 	@Test
@@ -1048,6 +1055,31 @@ class PriorityClassOrdererTest {
 		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(Integer.class), desc(String.class)));
 		orderer.orderClasses(new StubClassOrdererContext(descs));
 		assertEquals(String.class.getName(), descs.get(0).getTestClass().getName());
+	}
+
+	@Test
+	void mlPredictionsContributeSingleBonusWithoutChangingBaseFormula(@TempDir Path dir) throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put(String.class.getName(), Set.of());
+		map.put(Integer.class.getName(), Set.of());
+		Path idx = dir.resolve("test.idx");
+		map.save(idx);
+
+		System.setProperty("testorder.index.path", idx.toString());
+		System.clearProperty("testorder.changed.classes");
+		System.clearProperty("testorder.changed.test.classes");
+		System.setProperty(TestOrderConfig.ML_ENABLED, "true");
+		Path predictions = dir.resolve("ml-predictions.properties");
+		Files.writeString(predictions, "# test-order ML predictions\n" + Integer.class.getName() + "=1.0\n"
+				+ String.class.getName() + "=0.0\n");
+		System.setProperty(TestOrderConfig.ML_PREDICTIONS_FILE, predictions.toString());
+
+		PriorityClassOrderer orderer = new PriorityClassOrderer();
+		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(String.class), desc(Integer.class)));
+		orderer.orderClasses(new StubClassOrdererContext(descs));
+
+		assertEquals(Integer.class.getName(), descs.get(0).getTestClass().getName());
+		assertEquals(String.class.getName(), descs.get(1).getTestClass().getName());
 	}
 
 	// --- Parameterized class ordering tests ---

@@ -90,6 +90,32 @@ class TieredSelectMojoTest {
 				project.getProperties().getProperty("testorder.tiered.tier2File"));
 	}
 
+	@Test
+	void excludesStaleChangedTestClassesNotInCompiledOutput() throws Exception {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.AffectedTest", Set.of("com.example.ServiceA"));
+		map.put("com.example.FastTest", Set.of("com.example.ServiceB"));
+		map.save(tempDir.resolve("test-dependencies.lz4"));
+
+		Path testClassesDir = tempDir.resolve("test-classes/com/example");
+		Files.createDirectories(testClassesDir);
+		Files.write(testClassesDir.resolve("AffectedTest.class"), new byte[0]);
+		Files.write(testClassesDir.resolve("FastTest.class"), new byte[0]);
+
+		inject(mojo, "changedTestClasses", "com.example.RemovedTest");
+
+		assertDoesNotThrow(mojo::execute);
+
+		List<String> tier1 = Files.readAllLines(tempDir.resolve("tier1.txt"));
+		List<String> tier2 = Files.readAllLines(tempDir.resolve("tier2.txt"));
+		List<String> tier3 = Files.readAllLines(tempDir.resolve("tier3.txt"));
+
+		assertTrue(tier1.contains("com.example.AffectedTest"));
+		assertTrue(!tier1.contains("com.example.RemovedTest"));
+		assertTrue(!tier2.contains("com.example.RemovedTest"));
+		assertTrue(!tier3.contains("com.example.RemovedTest"));
+	}
+
 	private static MavenProject projectWithSurefire(Path baseDir) {
 		MavenProject project = mock(MavenProject.class);
 		when(project.getBasedir()).thenReturn(baseDir.toFile());

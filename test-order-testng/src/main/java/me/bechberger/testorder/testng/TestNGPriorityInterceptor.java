@@ -148,9 +148,9 @@ public class TestNGPriorityInterceptor implements IMethodInterceptor {
 	 * {@link MethodOrderingEngine}.
 	 * <p>
 	 * Preserves {@code @Test(dependsOnMethods=...)} and
-	 * {@code @Test(dependsOnGroups=...)} constraints: if the reordered list
-	 * would place a method before one of its dependencies, the dependent method
-	 * is moved after all of its dependencies.
+	 * {@code @Test(dependsOnGroups=...)} constraints: if the reordered list would
+	 * place a method before one of its dependencies, the dependent method is moved
+	 * after all of its dependencies.
 	 */
 	private List<IMethodInstance> reorderMethods(List<IMethodInstance> classMethods, String className,
 			TestOrderState state, DependencyMap depMap, Set<String> changedClasses, Set<String> changedMethods) {
@@ -252,7 +252,8 @@ public class TestNGPriorityInterceptor implements IMethodInterceptor {
 			for (int i = 0; i < order.size(); i++) {
 				String method = order.get(i);
 				Set<String> deps = methodDeps.get(method);
-				if (deps == null) continue;
+				if (deps == null)
+					continue;
 				int latestDepPos = -1;
 				for (String dep : deps) {
 					Integer depPos = posMap.get(dep);
