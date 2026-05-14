@@ -1921,9 +1921,10 @@ public class TestOrderPlugin implements Plugin<Project> {
             return false;
         }
         try {
-            AggregateOperation.Result result = AggregateOperation.aggregate(depsDir, indexFile,
-                    wrapLog(project));
-            return result.written();
+            // Use merging aggregation that preserves entries from other modules
+            // (important when multiple subprojects share the same index file at root)
+            DependencyMap.aggregateFromDepsDirectory(depsDir, indexFile, wrapLog(project));
+            return true;
         } catch (IOException e) {
             throw new GradleException("Failed to aggregate dependency files", e);
         }
@@ -2041,10 +2042,12 @@ public class TestOrderPlugin implements Plugin<Project> {
             effectiveMl = Boolean.TRUE;
         }
 
-        PluginContext pctx = buildPluginContextBuilder(project, ext)
-                .methodOrderingEnabled(effectiveMethods != null ? effectiveMethods : true)
-                .topN(topN).randomM(randomM).seed(seed)
-                .build();
+        PluginContext.Builder ctxBuilder = buildPluginContextBuilder(project, ext)
+                .methodOrderingEnabled(effectiveMethods != null ? effectiveMethods : true);
+        if (topN >= 0) ctxBuilder.topN(topN);
+        if (randomM >= 0) ctxBuilder.randomM(randomM);
+        if (seed != null) ctxBuilder.seed(seed);
+        PluginContext pctx = ctxBuilder.build();
         ShowWorkflow.Options opts = new ShowWorkflow.Options(
                 effectiveClasses, effectiveMethods, effectiveMl,
                 explain, fullNames, format, filter, topN, randomM, seed);
