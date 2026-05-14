@@ -191,4 +191,59 @@ jobs:
           OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}
         run: mvn -B -ntp deploy -DskipTests
 
+      - name: Write job summary
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## SNAPSHOT deployed: \`${VERSION}\`
+
+          ### Quick Start (Maven)
+
+          \`\`\`xml
+          <repositories>
+            <repository>
+              <id>ossrh-snapshots</id>
+              <url>https://s01.oss.sonatype.org/content/repositories/snapshots/</url>
+              <snapshots><enabled>true</enabled></snapshots>
+            </repository>
+          </repositories>
+
+          <build>
+            <plugins>
+              <plugin>
+                <groupId>me.bechberger</groupId>
+                <artifactId>test-order-maven-plugin</artifactId>
+                <version>${VERSION}</version>
+                <executions><execution><goals><goal>prepare</goal></goals></execution></executions>
+              </plugin>
+            </plugins>
+          </build>
+          \`\`\`
+
+          ### Quick Start (Gradle)
+
+          \`\`\`groovy
+          // settings.gradle
+          pluginManagement {
+              repositories {
+                  maven { url 'https://s01.oss.sonatype.org/content/repositories/snapshots/' }
+                  gradlePluginPortal()
+              }
+          }
+
+          // build.gradle
+          plugins {
+              id 'me.bechberger.test-order' version '${VERSION}'
+          }
+          \`\`\`
+
+          ### Documentation
+
+          - [Getting Started](https://github.com/parttimenerd/test-order/blob/main/docs/GETTING_STARTED.md)
+          - [Maven Plugin Reference](https://github.com/parttimenerd/test-order/blob/main/docs/MAVEN_PLUGIN.md)
+          - [CLI Reference](https://github.com/parttimenerd/test-order/blob/main/docs/CLI_REFERENCE.md)
+          - [CI Setup](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/)
+          - [Full Documentation](https://github.com/parttimenerd/test-order/blob/main/docs/README.md)
+          EOF
+
 
