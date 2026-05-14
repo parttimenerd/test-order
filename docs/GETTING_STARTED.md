@@ -4,6 +4,13 @@ This tutorial walks you through using test-order from scratch. By the end, you'l
 
 **Time required:** ~5 minutes.
 
+## Prerequisites
+
+- **Java 17+** installed
+- **Maven 3.6+** or **Gradle 7.6+**
+- A **Git** repository (test-order uses Git to detect changes)
+- A project with **JUnit 5/6**, **TestNG 7.x+**, or **Kotest** tests
+
 ---
 
 ## Step 1: Add the plugin
