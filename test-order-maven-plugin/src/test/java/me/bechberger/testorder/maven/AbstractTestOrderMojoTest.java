@@ -85,13 +85,13 @@ class AbstractTestOrderMojoTest {
 
 	@Test
 	void findBestArtifactJar_prefersPlainJarBeforeFatJarVariants() throws Exception {
-		Files.createFile(tempDir.resolve("test-order-core-0.1.0-SNAPSHOT.jar"));
-		Files.createFile(tempDir.resolve("test-order-core-0.1.0-SNAPSHOT-all.jar"));
-		Files.createFile(tempDir.resolve("test-order-core-0.1.0-SNAPSHOT-jar-with-dependencies.jar"));
+		Files.createFile(tempDir.resolve("test-order-core-0.0.1-SNAPSHOT.jar"));
+		Files.createFile(tempDir.resolve("test-order-core-0.0.1-SNAPSHOT-all.jar"));
+		Files.createFile(tempDir.resolve("test-order-core-0.0.1-SNAPSHOT-jar-with-dependencies.jar"));
 
-		Path resolved = invokeFindBestArtifactJar(tempDir, "test-order-core", "0.1.0-SNAPSHOT");
+		Path resolved = invokeFindBestArtifactJar(tempDir, "test-order-core", "0.0.1-SNAPSHOT");
 
-		assertThat(resolved).isEqualTo(tempDir.resolve("test-order-core-0.1.0-SNAPSHOT.jar"));
+		assertThat(resolved).isEqualTo(tempDir.resolve("test-order-core-0.0.1-SNAPSHOT.jar"));
 	}
 
 	@Test

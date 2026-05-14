@@ -43,7 +43,7 @@ class GenerateDashboardOperationTest {
 		Path out = tempDir.resolve("dashboard/index.html");
 		Path generated = GenerateDashboardOperation.generate(List.of(), null, new TestOrderState(),
 				TestOrderState.ScoringWeights.DEFAULT, Set.of(), Set.of(), new DependencyMap(), "demo-project",
-				".test-order/state.lz4", ".test-order/test-dependencies.lz4", "0.1.0-SNAPSHOT", null,
+				".test-order/state.lz4", ".test-order/test-dependencies.lz4", "0.0.1-SNAPSHOT", null,
 				"<html><body>" + DashboardGenerator.DATA_PLACEHOLDER + "</body></html>", out, log);
 
 		assertTrue(Files.exists(generated), "Dashboard file should be written");

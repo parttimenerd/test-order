@@ -80,9 +80,15 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			return;
 		}
 
+		// Warn if 'test' phase is likely not going to run (standalone CLI goal invocation)
+		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
+				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
+			getLog().warn("[test-order] The 'auto' goal configures test selection but does not execute tests."
+					+ " Include the test phase: mvn test-order:auto test");
+		}
+
 		if (isPrepareGoalBound()) {
-			getLog().info("[test-order] The 'prepare' goal is bound in your POM."
-					+ " The CLI goal takes precedence; 'prepare' will detect this and skip.");
+			getLog().debug("[test-order] Skipping POM-bound 'prepare' (CLI goal takes precedence).");
 		}
 
 		validateAutoMojoParameters();

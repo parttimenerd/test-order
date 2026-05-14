@@ -208,6 +208,14 @@ public final class ShowWorkflow {
 				ShowOrderOperation.printReport(out, ranked, result.classOrder().scorer(),
 						result.classOrder().changedClasses(), result.classOrder().changedTests(),
 						result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
+
+				// Hint when all scores are zero — users see a wall of zeros with no guidance
+				if (result.classOrder().changedClasses().isEmpty() && result.classOrder().changedTests().isEmpty()
+						&& ranked.stream().allMatch(r -> r.score().score() == 0)) {
+					out.println("[test-order] All scores are 0 because no source changes were detected.");
+					out.println("[test-order] Scores increase when you modify source files that tests depend on.");
+					out.println("[test-order] Try: modify a source file, or use -Dtestorder.changeMode=since-last-commit");
+				}
 			}
 
 			// ── Selection preview ────────────────────────────────────

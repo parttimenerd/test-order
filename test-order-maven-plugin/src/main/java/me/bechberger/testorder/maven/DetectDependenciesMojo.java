@@ -184,6 +184,10 @@ public class DetectDependenciesMojo extends AbstractTestOrderMojo {
 		Path statePath = ctx.resolveStateFile(stateFile);
 		Path outputDir = ctx.resolveBaseDir().resolve("detection");
 
+		getLog().info("[test-order] [" + moduleProject.getArtifactId() + "] Starting OD detection (algorithm="
+				+ algorithm + ", budget=" + (timeBudget > 0 ? timeBudget + "s" : "unlimited")
+				+ "). This may take a while...");
+
 		Config config = new Config(indexPath, statePath, outputDir, algorithm, timeBudget, stopOnFirst, randomSeed,
 				moduleProject.getArtifactId(), MavenPluginLog.wrap(getLog()));
 

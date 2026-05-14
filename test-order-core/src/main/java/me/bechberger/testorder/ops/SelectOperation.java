@@ -36,13 +36,18 @@ public final class SelectOperation {
 	 *             if writing test lists fails
 	 */
 	public static SelectResult select(SelectConfig config) throws IOException {
-		// R14-6: Warn if randomM is set but topN=-1 makes it a no-op
-		if (config.topN() == -1 && config.randomM() > 0) {
+		// R14-6: Warn if randomM is explicitly configured but topN=-1 makes it a no-op
+		// Only warn when topN is *not* the default (-1), meaning the user set randomM
+		// without also setting topN — or when topN=-1 is explicitly combined with randomM.
+		// Skip this warning for default configuration to avoid noise on every run.
+		if (config.topN() == -1 && config.randomM() > 0 && config.randomM() != 10) {
 			config.log().warn("[test-order] randomM=" + config.randomM()
 					+ " has no effect when topN=-1 (all tests selected). Set topN to a positive number to use random sampling.");
 		}
-		// R15-5: Warn if randomM is used without a seed (non-deterministic)
-		if (config.randomM() > 0 && config.seed() == null) {
+		// R15-5: Warn if randomM is used without a seed — only when topN is positive
+		// (i.e. actual subsetting is happening), since non-determinism matters only
+		// when a subset is being selected.
+		if (config.topN() > 0 && config.randomM() > 0 && config.seed() == null) {
 			config.log().warn("[test-order] Selection is non-deterministic (no seed set). "
 					+ "Set testorder.select.seed for reproducible CI runs.");
 		}
@@ -61,7 +66,8 @@ public final class SelectOperation {
 
 		boolean allSelected = selection.remaining().isEmpty();
 		if (allSelected) {
-			config.log().info("[test-order] Running full test suite (selection covered all tests)");
+			config.log().info("[test-order] Selected all " + selection.selected().size()
+					+ " tests (no subset — all will run in priority order)");
 		} else {
 			config.log().info("[test-order] Selected " + selection.selected().size() + " tests, deferred "
 					+ selection.remaining().size());
