@@ -45,6 +45,7 @@
           <mode>order</mode>
           <changedClasses>me.bechberger.it.MathHelper</changedClasses>
           <changeMode>explicit</changeMode>
+          <depsDir>${project.basedir}/deps</depsDir>
         </configuration>
       </plugin>
       <plugin>
