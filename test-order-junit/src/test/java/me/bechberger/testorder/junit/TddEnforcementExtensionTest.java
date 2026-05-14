@@ -190,8 +190,7 @@ class TddEnforcementExtensionTest {
 		System.setProperty(TestOrderConfig.STATE_PATH, corrupt.toString());
 
 		// Suppress expected WARNING + stack trace from corrupt-file error path
-		java.util.logging.Logger tddLog = java.util.logging.Logger
-				.getLogger(TddEnforcementExtension.class.getName());
+		java.util.logging.Logger tddLog = java.util.logging.Logger.getLogger(TddEnforcementExtension.class.getName());
 		java.util.logging.Level prev = tddLog.getLevel();
 		tddLog.setLevel(java.util.logging.Level.SEVERE);
 		try {
