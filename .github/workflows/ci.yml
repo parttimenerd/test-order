@@ -77,6 +77,9 @@ jobs:
       - name: Install project artifacts
         run: mvn -B -ntp -DskipTests install
 
+      - name: Run fixture integration tests
+        run: mvn -B -ntp test -pl test-order-junit -Dtest="**/*IT" -DfailIfNoTests=false
+
       - name: Run plugin integration tests
         run: mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
 
