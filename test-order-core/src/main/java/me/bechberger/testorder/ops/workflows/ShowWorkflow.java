@@ -214,7 +214,8 @@ public final class ShowWorkflow {
 						&& ranked.stream().allMatch(r -> r.score().score() == 0)) {
 					out.println("[test-order] All scores are 0 because no source changes were detected.");
 					out.println("[test-order] Scores increase when you modify source files that tests depend on.");
-					out.println("[test-order] Try: modify a source file, or use -Dtestorder.changeMode=since-last-commit");
+					out.println(
+							"[test-order] Try: modify a source file, or use -Dtestorder.changeMode=since-last-commit");
 				}
 			}
 

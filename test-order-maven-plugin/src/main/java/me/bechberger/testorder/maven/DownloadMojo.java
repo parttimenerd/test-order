@@ -47,10 +47,8 @@ public class DownloadMojo extends AbstractTestOrderMojo {
 		} else {
 			throw new MojoExecutionException(
 					"CI download failed. Ensure .test-order/download-config.yml exists with your CI provider settings.\n"
-							+ "  Example config (GitHub Actions):\n"
-							+ "    provider: github\n"
-							+ "    repo: owner/repo\n"
-							+ "    artifact: test-order-index\n"
+							+ "  Example config (GitHub Actions):\n" + "    provider: github\n"
+							+ "    repo: owner/repo\n" + "    artifact: test-order-index\n"
 							+ "  Required env vars: GITHUB_TOKEN (or GITLAB_TOKEN for GitLab).\n"
 							+ "  See docs/CI.md for full configuration reference.");
 		}

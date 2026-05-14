@@ -80,7 +80,8 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			return;
 		}
 
-		// Warn if 'test' phase is likely not going to run (standalone CLI goal invocation)
+		// Warn if 'test' phase is likely not going to run (standalone CLI goal
+		// invocation)
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
 				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'auto' goal configures test selection but does not execute tests."

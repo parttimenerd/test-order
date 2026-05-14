@@ -38,7 +38,8 @@ public final class SelectOperation {
 	public static SelectResult select(SelectConfig config) throws IOException {
 		// R14-6: Warn if randomM is explicitly configured but topN=-1 makes it a no-op
 		// Only warn when topN is *not* the default (-1), meaning the user set randomM
-		// without also setting topN — or when topN=-1 is explicitly combined with randomM.
+		// without also setting topN — or when topN=-1 is explicitly combined with
+		// randomM.
 		// Skip this warning for default configuration to avoid noise on every run.
 		if (config.topN() == -1 && config.randomM() > 0 && config.randomM() != 10) {
 			config.log().warn("[test-order] randomM=" + config.randomM()
