@@ -22,15 +22,21 @@ class GitChangeDetectorTest {
 		java.util.Collections.addAll(cmd, args);
 		ProcessBuilder pb = new ProcessBuilder(cmd);
 		pb.directory(tempDir.toFile());
-		// Prevent background git processes (gc, maintenance, fsmonitor) that hold file
-		// locks and cause @TempDir cleanup failures on CI.
+		// Prevent background git processes (gc, maintenance, fsmonitor, credential
+		// helpers) that hold file locks and cause @TempDir cleanup failures on CI.
 		pb.environment().put("GIT_CONFIG_NOSYSTEM", "1");
 		pb.environment().put("GIT_TERMINAL_PROMPT", "0");
-		pb.environment().put("GIT_CONFIG_COUNT", "2");
+		pb.environment().put("GIT_CONFIG_COUNT", "5");
 		pb.environment().put("GIT_CONFIG_KEY_0", "gc.auto");
 		pb.environment().put("GIT_CONFIG_VALUE_0", "0");
 		pb.environment().put("GIT_CONFIG_KEY_1", "core.fsmonitor");
 		pb.environment().put("GIT_CONFIG_VALUE_1", "false");
+		pb.environment().put("GIT_CONFIG_KEY_2", "gc.autoDetach");
+		pb.environment().put("GIT_CONFIG_VALUE_2", "false");
+		pb.environment().put("GIT_CONFIG_KEY_3", "maintenance.auto");
+		pb.environment().put("GIT_CONFIG_VALUE_3", "0");
+		pb.environment().put("GIT_CONFIG_KEY_4", "credential.helper");
+		pb.environment().put("GIT_CONFIG_VALUE_4", "");
 		pb.redirectErrorStream(true);
 		Process p = pb.start();
 		p.getInputStream().readAllBytes(); // consume output
