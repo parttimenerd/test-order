@@ -19,9 +19,16 @@ import org.apache.maven.model.Plugin;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
+import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
+import org.eclipse.aether.RepositorySystem;
+import org.eclipse.aether.RepositorySystemSession;
+import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.repository.RemoteRepository;
+import org.eclipse.aether.resolution.ArtifactRequest;
+import org.eclipse.aether.resolution.ArtifactResult;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.PersistenceSupport;
@@ -44,6 +51,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 	@Parameter(defaultValue = "${session}", readonly = true, required = true)
 	protected MavenSession session;
+
+	@Component
+	protected RepositorySystem repoSystem;
 
 	protected ReactorContext ctx;
 
@@ -1632,6 +1642,30 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				.resolve(artifactId + ".jar");
 		if (Files.exists(reactorPath))
 			return reactorPath;
+
+		// Try downloading the artifact from remote repositories via Maven's Aether resolver.
+		if (repoSystem != null && session != null) {
+			for (String version : new String[]{pluginVersion, project.getVersion()}) {
+				if (version == null)
+					continue;
+				try {
+					RepositorySystemSession repoSession = session.getRepositorySession();
+					List<RemoteRepository> remoteRepos = project.getRemoteProjectRepositories();
+					ArtifactRequest request = new ArtifactRequest();
+					request.setArtifact(new DefaultArtifact("me.bechberger", artifactId, "jar", version));
+					request.setRepositories(remoteRepos);
+					ArtifactResult result = repoSystem.resolveArtifact(repoSession, request);
+					if (result.isResolved() && result.getArtifact().getFile() != null) {
+						Path resolved = result.getArtifact().getFile().toPath();
+						getLog().info("[test-order] Resolved " + artifactId + " via remote repository: " + resolved);
+						return resolved;
+					}
+				} catch (Exception e) {
+					getLog().debug("[test-order] Remote resolution attempt for " + artifactId
+							+ ":" + version + " failed: " + e.getMessage());
+				}
+			}
+		}
 
 		throw new MojoExecutionException("Cannot find " + artifactId + " jar. Build the parent project first.");
 	}

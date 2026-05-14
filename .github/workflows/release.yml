@@ -53,6 +53,8 @@ jobs:
           generate_release_notes: true
 
       - name: Trigger sample project version update
+        if: env.GH_TOKEN != ''
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.SAMPLE_REPO_TOKEN }}
         run: |
