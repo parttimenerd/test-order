@@ -350,7 +350,7 @@ public class TestOrderPlugin implements Plugin<Project> {
         warnJUnit4Unsupported(project);
 
         // Clean up stale temp files from interrupted writes (parity with Maven)
-        Path baseDir = project.getProjectDir().toPath().resolve(".test-order");
+        Path baseDir = project.getRootProject().getProjectDir().toPath().resolve(".test-order");
         me.bechberger.testorder.PersistenceSupport.cleanupStaleTemps(baseDir);
 
         // Validate cache directory is writable (clear message vs cryptic AccessDeniedException)
@@ -423,13 +423,13 @@ public class TestOrderPlugin implements Plugin<Project> {
         if (propMode != null) mode = propMode;
 
         PluginContext pctx = buildPluginContext(project, ext);
-        Path projectDir = project.getProjectDir().toPath();
+        Path rootDir = project.getRootProject().getProjectDir().toPath();
         File indexFile = ext.getIndexFile().getAsFile().get();
 
         Runnable ciDownload = () -> {
-            if (me.bechberger.testorder.ci.CiConfigParser.configExistsIn(projectDir)) {
+            if (me.bechberger.testorder.ci.CiConfigParser.configExistsIn(rootDir)) {
                 me.bechberger.testorder.ci.CiDepDownloadManager
-                        .downloadIfConfigured(projectDir, indexFile.toPath())
+                        .downloadIfConfigured(rootDir, indexFile.toPath())
                         .ifPresent(p -> project.getLogger().lifecycle(
                                 "[test-order] CI index downloaded to {}", p));
             }
@@ -752,7 +752,7 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setGroup("test-order");
             task.setDescription("Download the dependency index from CI (GitHub Actions, GitLab CI, or HTTP)");
             task.doLast(t -> {
-                Path projectDir = project.getProjectDir().toPath();
+                Path projectDir = project.getRootProject().getProjectDir().toPath();
                 Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
                 Path configPath = projectDir.resolve(".test-order/download-config.yml");
                 if (!Files.exists(configPath)) {
@@ -972,12 +972,12 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.doFirst("testOrderSelectAndOrder", t -> {
                 PluginContext pctx = buildPluginContext(project, ext);
                 // Provide CI download callback and depsDir for auto-aggregation (R7-7/R7-15)
-                Path projectDir = project.getProjectDir().toPath();
+                Path rootDir = project.getRootProject().getProjectDir().toPath();
                 File indexFileObj = ext.getIndexFile().getAsFile().get();
                 Runnable ciDownloadCb = () -> {
-                    if (me.bechberger.testorder.ci.CiConfigParser.configExistsIn(projectDir)) {
+                    if (me.bechberger.testorder.ci.CiConfigParser.configExistsIn(rootDir)) {
                         me.bechberger.testorder.ci.CiDepDownloadManager
-                                .downloadIfConfigured(projectDir, indexFileObj.toPath())
+                                .downloadIfConfigured(rootDir, indexFileObj.toPath())
                                 .ifPresent(p -> project.getLogger().lifecycle(
                                         "[test-order] CI index downloaded to {}", p));
                     }
@@ -1235,7 +1235,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
                 Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
                 Path statePath = ext.getStateFile().get().getAsFile().toPath();
-                Path outputDir = project.getProjectDir().toPath()
+                Path outputDir = project.getRootProject().getProjectDir().toPath()
                         .resolve(".test-order/detection");
 
                 String algorithm = Optional
@@ -1698,7 +1698,7 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
 
         return PluginContext.builder()
-                .projectRoot(project.getProjectDir().toPath().toAbsolutePath())
+                .projectRoot(project.getRootProject().getProjectDir().toPath().toAbsolutePath())
                 .sourceRoot(sourceRoot)
                 .testSourceRoot(testSourceRoot)
                 .additionalSourceRoots(additionalSourceRoots)
@@ -1866,7 +1866,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static boolean recoverIndexFromBackup(Project project, TestOrderExtension ext, Path indexFile) {
-        Path projectDir = project.getProjectDir().toPath();
+        Path projectDir = project.getRootProject().getProjectDir().toPath();
         List<Path> candidates = List.of(
                 indexFile.resolveSibling(indexFile.getFileName() + ".bak"),
                 projectDir.resolve(".test-order/test-dependencies.lz4.bak"),

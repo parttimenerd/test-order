@@ -690,8 +690,8 @@ class TestOrderPluginIntegrationTest {
     }
 
     @Test
-    @DisplayName("Multi-project: each subproject uses its own state file path")
-    void multiProjectSubprojectsHaveSeparateStateFiles() throws IOException {
+    @DisplayName("Multi-project: subprojects share root .test-order directory")
+    void multiProjectSubprojectsShareRootStateFiles() throws IOException {
         // Settings: root + two subprojects
         writeFile("settings.gradle", """
                 pluginManagement {
@@ -765,17 +765,20 @@ class TestOrderPluginIntegrationTest {
         assertEquals(SUCCESS, result.task(":sub-a:test").getOutcome());
         assertEquals(SUCCESS, result.task(":sub-b:test").getOutcome());
 
-        // Each subproject should have its own state file under its own directory
+        // Both subprojects should share a single .test-order/ at the root (like Maven)
+        Path rootState = projectDir.resolve(".test-order/state.lz4");
+
+        assertTrue(Files.exists(rootState),
+                "Root project should have shared state file at .test-order/state.lz4");
+
+        // Per-module state files should NOT exist
         Path stateA = projectDir.resolve("sub-a/.test-order/state.lz4");
         Path stateB = projectDir.resolve("sub-b/.test-order/state.lz4");
 
-        assertTrue(Files.exists(stateA),
-                "sub-a should have its own state file at sub-a/.test-order/state.lz4");
-        assertTrue(Files.exists(stateB),
-                "sub-b should have its own state file at sub-b/.test-order/state.lz4");
-
-        // The two state files must be distinct paths
-        assertNotEquals(stateA.toAbsolutePath(), stateB.toAbsolutePath());
+        assertFalse(Files.exists(stateA),
+                "sub-a should NOT have its own state file — it should be at root");
+        assertFalse(Files.exists(stateB),
+                "sub-b should NOT have its own state file — it should be at root");
     }
 
     @Test

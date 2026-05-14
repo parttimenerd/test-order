@@ -222,11 +222,12 @@ public abstract class TestOrderExtension {
         getMode().convention("auto");
         getInstrumentationMode().convention("FULL");
 
-        var localDir = project.getLayout().getProjectDirectory().dir(".test-order");
+        // In multi-module builds, store all test-order data at the root project
+        // level (like Maven's ReactorContext). This ensures a single shared index
+        // across all subprojects without requiring manual configuration.
+        var rootDir = project.getRootProject().getLayout().getProjectDirectory();
+        var localDir = rootDir.dir(".test-order");
 
-        // Keep all files project-local by default so module-scoped tasks
-        // (for example :core:spring-boot:testOrderShowOrder) read the same
-        // artifacts produced by the module's learn run.
         getIndexFile().convention(localDir.file("test-dependencies.lz4"));
         getStateFile().convention(localDir.file("state.lz4"));
         getDepsDir().convention(project.getLayout().getBuildDirectory().dir("test-order-deps"));

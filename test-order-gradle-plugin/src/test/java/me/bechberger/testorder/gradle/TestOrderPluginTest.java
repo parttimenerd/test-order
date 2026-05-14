@@ -220,9 +220,9 @@ class TestOrderPluginTest {
     }
 
     @org.junit.jupiter.api.Test
-    void twoSubprojectsHaveSeparateStateFilePaths() {
-        // In a multi-project build each subproject's extension defaults to a project-local
-        // state file, so parallel test runs never share state files.
+    void twoSubprojectsShareRootStateFilePaths() {
+        // In a multi-project build all subprojects share a single .test-order/ directory
+        // at the root project level (parity with Maven's ReactorContext behavior).
         Path rootDir = tempDir.resolve("iso-root");
         Path moduleADir = tempDir.resolve("iso-module-a");
         Path moduleBDir = tempDir.resolve("iso-module-b");
@@ -246,24 +246,18 @@ class TestOrderPluginTest {
         java.io.File hashA = extA.getHashFile().get().getAsFile();
         java.io.File hashB = extB.getHashFile().get().getAsFile();
 
-        assertNotEquals(stateA.getAbsolutePath(), stateB.getAbsolutePath(),
-                "Subprojects must use separate state file paths to prevent collision in parallel builds");
-        assertNotEquals(indexA.getAbsolutePath(), indexB.getAbsolutePath(),
-            "Subprojects must use separate index file paths to keep learn/order artifacts module-local");
-        assertNotEquals(hashA.getAbsolutePath(), hashB.getAbsolutePath(),
-            "Subprojects must use separate hash files to avoid collisions in parallel builds");
-        assertTrue(stateA.getAbsolutePath().contains("iso-module-a"),
-                "Module-A state path should be under module-a directory");
-        assertTrue(stateB.getAbsolutePath().contains("iso-module-b"),
-                "Module-B state path should be under module-b directory");
-        assertTrue(indexA.getAbsolutePath().contains("iso-module-a"),
-            "Module-A index path should be under module-a directory");
-        assertTrue(indexB.getAbsolutePath().contains("iso-module-b"),
-            "Module-B index path should be under module-b directory");
-        assertTrue(hashA.getAbsolutePath().contains("iso-module-a"),
-            "Module-A hash path should be under module-a directory");
-        assertTrue(hashB.getAbsolutePath().contains("iso-module-b"),
-            "Module-B hash path should be under module-b directory");
+        assertEquals(stateA.getAbsolutePath(), stateB.getAbsolutePath(),
+                "Subprojects must share state file path at root project level");
+        assertEquals(indexA.getAbsolutePath(), indexB.getAbsolutePath(),
+                "Subprojects must share index file path at root project level");
+        assertEquals(hashA.getAbsolutePath(), hashB.getAbsolutePath(),
+                "Subprojects must share hash file path at root project level");
+        assertTrue(stateA.getAbsolutePath().contains("iso-root"),
+                "State path should be under root directory, got: " + stateA.getAbsolutePath());
+        assertTrue(indexA.getAbsolutePath().contains("iso-root"),
+                "Index path should be under root directory, got: " + indexA.getAbsolutePath());
+        assertTrue(hashA.getAbsolutePath().contains("iso-root"),
+                "Hash path should be under root directory, got: " + hashA.getAbsolutePath());
     }
 
     @org.junit.jupiter.api.Test
