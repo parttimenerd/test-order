@@ -1853,6 +1853,12 @@ public class TestOrderPlugin implements Plugin<Project> {
         } catch (IOException e) {
             project.getLogger().warn("[test-order] Existing index appears invalid at {} ({}). "
                     + "Attempting to rebuild from .deps files.", indexFile, e.getMessage());
+            // Delete corrupt index so aggregation starts fresh instead of trying to load it
+            try {
+                Files.deleteIfExists(indexFile);
+            } catch (IOException ignored) {
+                // best-effort
+            }
             boolean rebuilt = aggregateDependencyFiles(project, ext, false);
             if (rebuilt) {
                 project.getLogger().lifecycle("[test-order] Rebuilt dependency index from .deps files: {}", indexFile);
@@ -1926,7 +1932,11 @@ public class TestOrderPlugin implements Plugin<Project> {
             DependencyMap.aggregateFromDepsDirectory(depsDir, indexFile, wrapLog(project));
             return true;
         } catch (IOException e) {
-            throw new GradleException("Failed to aggregate dependency files", e);
+            if (failIfMissing) {
+                throw new GradleException("Failed to aggregate dependency files", e);
+            }
+            project.getLogger().warn("[test-order] Failed to aggregate from .deps: {}", e.getMessage());
+            return false;
         }
     }
 
