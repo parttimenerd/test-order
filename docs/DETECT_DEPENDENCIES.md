@@ -34,7 +34,7 @@ All parameters can be set via `-D` on the command line or in `<configuration>` i
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.0.1-SNAPSHOT</version>
   <configuration>
     <!-- Detection algorithm (default: combined) -->
     <algorithm>combined</algorithm>
@@ -118,7 +118,7 @@ The target project must have `test-order-junit` on the test classpath for order 
 <dependency>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-junit</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.0.1-SNAPSHOT</version>
   <scope>test</scope>
 </dependency>
 ```

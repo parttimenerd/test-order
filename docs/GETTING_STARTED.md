@@ -16,7 +16,7 @@ Add to your `pom.xml` inside `<build><plugins>`:
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.0.1-SNAPSHOT</version>
   <executions>
     <execution>
       <goals><goal>prepare</goal></goals>
@@ -31,7 +31,7 @@ Add to your `build.gradle`:
 
 ```groovy
 plugins {
-    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
 }
 ```
 
@@ -49,7 +49,7 @@ initscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'me.bechberger:test-order-gradle-plugin:0.1.0-SNAPSHOT'
+        classpath 'me.bechberger:test-order-gradle-plugin:0.0.1-SNAPSHOT'
     }
 }
 

@@ -101,7 +101,7 @@ Legend:
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <test-order.version>0.1.0-SNAPSHOT</test-order.version>
+        <test-order.version>0.0.1-SNAPSHOT</test-order.version>
     </properties>
 
     <!-- Plugin Management (inherited by all modules) -->
@@ -241,7 +241,7 @@ includeBuild 'module-c'
 
 ```gradle
 plugins {
-    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT' apply false
+    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT' apply false
 }
 
 // Shared configuration for all subprojects

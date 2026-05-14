@@ -38,7 +38,7 @@ Add the plugin to your project's `pom.xml`:
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.0.1-SNAPSHOT</version>
   <executions>
     <execution>
       <goals><goal>prepare</goal></goals>
@@ -62,7 +62,7 @@ pluginManagement {
 
 // build.gradle
 plugins {
-    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
 }
 
 repositories {

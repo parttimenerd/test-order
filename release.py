@@ -51,7 +51,14 @@ class ReleaseManager:
             self.changelog,
             *self.module_poms,
             *self.sample_poms,
+            *self._discover_doc_files(),
         ]
+
+    def _discover_doc_files(self) -> List[Path]:
+        docs_dir = self.project_root / "docs"
+        if not docs_dir.is_dir():
+            return []
+        return list(docs_dir.rglob("*.md"))
 
     def _discover_module_poms(self) -> List[Path]:
         content = self.root_pom.read_text(encoding="utf-8")
@@ -125,11 +132,101 @@ class ReleaseManager:
         if not self.readme.exists():
             return
         content = self.readme.read_text(encoding="utf-8")
-        content = content.replace(f"<version>{old}</version>", f"<version>{new}</version>")
-        base_old = self.to_base_version(old)
-        if base_old != old:
-            content = content.replace(f"<version>{base_old}</version>", f"<version>{new}</version>")
+        content = self._replace_version_strings(content, old, new)
         self.readme.write_text(content, encoding="utf-8")
+
+    def update_docs_versions(self, old: str, new: str) -> None:
+        """Update test-order version references in docs/ markdown files."""
+        docs_dir = self.project_root / "docs"
+        if not docs_dir.is_dir():
+            return
+        for md in docs_dir.rglob("*.md"):
+            content = md.read_text(encoding="utf-8")
+            updated = self._replace_version_strings(content, old, new)
+            if updated != content:
+                md.write_text(updated, encoding="utf-8")
+
+    def _replace_version_strings(self, content: str, old: str, new: str) -> str:
+        """Replace test-order version strings (Maven <version>, Gradle plugin version, classpath).
+
+        Only replaces <version> tags that are in me.bechberger contexts.
+        """
+        base_old = self.to_base_version(old)
+        versions_to_replace = [old]
+        if base_old != old:
+            versions_to_replace.append(base_old)
+        for ver in versions_to_replace:
+            # Maven: <version> after me.bechberger groupId
+            pattern = (
+                r"(<groupId>me\.bechberger</groupId>\s*"
+                r"<artifactId>[^<]+</artifactId>\s*"
+                r"<version>)" + re.escape(ver) + r"(</version>)"
+            )
+            content = re.sub(pattern, r"\g<1>" + new + r"\g<2>", content, flags=re.DOTALL)
+            # Property-style version in docs
+            content = content.replace(
+                f"<test-order.version>{ver}</test-order.version>",
+                f"<test-order.version>{new}</test-order.version>",
+            )
+            # Gradle plugin DSL
+            content = content.replace(
+                f"'me.bechberger.test-order' version '{ver}'",
+                f"'me.bechberger.test-order' version '{new}'",
+            )
+            content = content.replace(
+                f'"me.bechberger.test-order") version "{ver}"',
+                f'"me.bechberger.test-order") version "{new}"',
+            )
+            # Gradle classpath
+            content = content.replace(
+                f"test-order-gradle-plugin:{ver}",
+                f"test-order-gradle-plugin:{new}",
+            )
+            content = content.replace(
+                f"test-order-maven-plugin:{ver}",
+                f"test-order-maven-plugin:{new}",
+            )
+        return content
+
+    def _doc_files(self) -> List[str]:
+        """Return relative paths of docs files that contain version references."""
+        docs_dir = self.project_root / "docs"
+        if not docs_dir.is_dir():
+            return []
+        return [str(md.relative_to(self.project_root)) for md in docs_dir.rglob("*.md")]
+
+    def sync_docs_to_version(self, target_version: str) -> List[str]:
+        """Find stale version references in README and docs, update them to target_version.
+
+        Returns list of relative paths of files that were updated.
+        """
+        # Pattern to detect any me.bechberger version string (x.y.z or x.y.z-SNAPSHOT)
+        version_re = re.compile(r"\d+\.\d+\.\d+(?:-SNAPSHOT)?")
+        updated_files: List[str] = []
+
+        files_to_check: List[Path] = []
+        if self.readme.exists():
+            files_to_check.append(self.readme)
+        docs_dir = self.project_root / "docs"
+        if docs_dir.is_dir():
+            files_to_check.extend(docs_dir.rglob("*.md"))
+
+        for filepath in files_to_check:
+            content = filepath.read_text(encoding="utf-8")
+            new_content = content
+            # Find versions in me.bechberger contexts
+            for old_ver in set(version_re.findall(content)):
+                if old_ver == target_version:
+                    continue
+                # Only replace if it appears in a test-order context
+                candidate = self._replace_version_strings(new_content, old_ver, target_version)
+                if candidate != new_content:
+                    new_content = candidate
+            if new_content != content:
+                filepath.write_text(new_content, encoding="utf-8")
+                updated_files.append(str(filepath.relative_to(self.project_root)))
+
+        return updated_files
 
     def update_sample_versions(self, old: str, new: str) -> None:
         """Update test-order version references in sample/fixture POMs (scoped to me.bechberger)."""
@@ -326,6 +423,7 @@ class ReleaseManager:
             *[str(p.relative_to(self.project_root)) for p in self.module_poms],
             *[str(p.relative_to(self.project_root)) for p in self.sample_poms],
             *self._gradle_plugin_files(),
+            *self._doc_files(),
         ]
         self.run_command(["git", "add", *files], "Staging release files")
         self.run_command(["git", "commit", "-m", f"Release {version}"], "Creating release commit")
@@ -340,11 +438,15 @@ class ReleaseManager:
         self.update_module_parent_versions(release_version, next_snapshot)
         self.update_sample_versions(release_version, next_snapshot)
         self.update_gradle_plugin_version(release_version, next_snapshot)
+        self.update_readme_versions(release_version, next_snapshot)
+        self.update_docs_versions(release_version, next_snapshot)
         files = [
             "pom.xml",
+            "README.md",
             *[str(p.relative_to(self.project_root)) for p in self.module_poms],
             *[str(p.relative_to(self.project_root)) for p in self.sample_poms],
             *self._gradle_plugin_files(),
+            *self._doc_files(),
         ]
         self.run_command(["git", "add", *files], "Staging SNAPSHOT bump")
         self.run_command(["git", "commit", "-m", f"Prepare next development iteration {next_snapshot}"],
@@ -472,6 +574,10 @@ def main() -> None:
             print(f"Error: current version '{current}' is not a SNAPSHOT version.")
             sys.exit(1)
         print(f"Deploying SNAPSHOT: {current}")
+        # Synchronize docs/README to current version if stale
+        stale = manager.sync_docs_to_version(current)
+        if stale:
+            print(f"  Updated version references in: {', '.join(stale)}")
         manager.deploy_snapshot()
         print(f"\nSNAPSHOT {current} deployed successfully.")
         return
@@ -506,6 +612,7 @@ def main() -> None:
         manager.update_sample_versions(current, new)
         manager.update_gradle_plugin_version(current, new)
         manager.update_readme_versions(current, new)
+        manager.update_docs_versions(current, new)
 
         manager.run_checks(include_its=not args.no_its)
 
