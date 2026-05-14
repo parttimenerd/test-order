@@ -155,6 +155,7 @@
                             <extraArtifacts>
                                 <extraArtifact>me.bechberger:test-order-junit:${project.version}</extraArtifact>
                                 <extraArtifact>me.bechberger:test-order-annotations:${project.version}</extraArtifact>
+                                <extraArtifact>me.bechberger:test-order-agent:${project.version}</extraArtifact>
                             </extraArtifacts>
                         </configuration>
                         <executions>

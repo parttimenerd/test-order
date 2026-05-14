@@ -46,6 +46,7 @@
           <changedClasses>me.bechberger.it.MathHelper</changedClasses>
           <topN>1</topN>
           <randomM>0</randomM>
+          <depsDir>${project.basedir}/deps</depsDir>
         </configuration>
       </plugin>
       <plugin>
