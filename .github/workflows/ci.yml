@@ -61,7 +61,7 @@ jobs:
   maven-plugin-integration-tests:
     runs-on: ubuntu-latest
     needs: build-and-test
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -75,18 +75,19 @@ jobs:
           cache: maven
 
       - name: Install project artifacts
-        run: mvn -B -ntp -DskipTests install
+        run: mvn -B -ntp -DskipTests -Dspotless.check.skip=true install
 
       - name: Run fixture integration tests
-        run: mvn -B -ntp test -pl test-order-junit -Dtest="**/*IT" -DfailIfNoTests=false
+        run: mvn -B -ntp test -pl test-order-junit -Dtest="**/*IT" -DfailIfNoTests=false -Dspotless.check.skip=true
 
       - name: Run plugin integration tests
         run: >
           mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
           -Dit.test="MavenPluginIT,EndToEndJUnit5IT,EndToEndJUnit6IT,ExportJsonMojoIT,TieredWorkflowIT"
+          -Dspotless.check.skip=true
 
       - name: Run invoker fixture tests
-        run: mvn -B -ntp -Prun-its verify -pl test-order-maven-plugin
+        run: mvn -B -ntp -Prun-its verify -pl test-order-maven-plugin -Dspotless.check.skip=true
 
       - name: Verify plugin integration tests ran
         run: |
@@ -116,7 +117,7 @@ jobs:
   gradle-plugin-tests:
     runs-on: ubuntu-latest
     needs: build-and-test
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -133,7 +134,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Install artifacts for Gradle plugin tests
-        run: mvn -B -ntp -pl test-order-core,test-order-junit,test-order-agent,test-order-ci,test-order-dashboard -am install -DskipTests
+        run: mvn -B -ntp -pl test-order-core,test-order-junit,test-order-agent,test-order-ci,test-order-dashboard -am install -DskipTests -Dspotless.check.skip=true
 
       - name: Publish Gradle plugin to mavenLocal
         working-directory: test-order-gradle-plugin
