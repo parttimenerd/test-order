@@ -246,4 +246,12 @@ jobs:
           - [Full Documentation](https://github.com/parttimenerd/test-order/blob/main/docs/README.md)
           EOF
 
+      - name: Trigger sample project rebuild
+        env:
+          GH_TOKEN: ${{ secrets.SAMPLE_REPO_TOKEN }}
+        run: |
+          gh api repos/parttimenerd/sample-ci-test-order/dispatches \
+            -f event_type=plugin-updated \
+            -f "client_payload[version]=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" \
+            -f "client_payload[sha]=${{ github.sha }}"
 
