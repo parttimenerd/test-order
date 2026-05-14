@@ -467,6 +467,11 @@ class AbstractTestOrderMojoTest {
 		}
 
 		@Override
+		protected Path[] resolveOrdererClasspath() throws MojoExecutionException {
+			return new Path[0];
+		}
+
+		@Override
 		protected void injectTestClasspath(Path... jars) {
 			// no-op for focused unit tests
 		}

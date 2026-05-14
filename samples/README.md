@@ -1,8 +1,9 @@
 # Sample Projects
 
-Internal sample projects used by integration tests and for manual testing of the
-`test-order-maven-plugin`. Each sample binds the `prepare` goal in its POM and
-is a child module of the root `test-order` parent.
+Sample projects for trying out test-order and for integration testing.
+If you're new, start with **`sample-basic`** (minimal setup) or **`sample-shop`** (realistic app with multiple services).
+
+Each sample binds the `prepare` goal in its POM and is a child module of the root `test-order` parent. See [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md) for a guided walkthrough using these samples.
 
 | Sample | Purpose |
 |---|---|

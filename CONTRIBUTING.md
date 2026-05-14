@@ -1,5 +1,7 @@
 # Contributing
 
+> **Just want to build and try the development version?** See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for a quickstart.
+
 ## Requirements
 
 - Java 17 or higher

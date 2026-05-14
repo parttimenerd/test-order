@@ -2,6 +2,8 @@
 
 | Document | Description |
 |----------|-------------|
+| [GETTING_STARTED.md](GETTING_STARTED.md) | Step-by-step tutorial: first run → reordering → dashboard |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Build from source, use the SNAPSHOT locally, common dev commands |
 | [CLI_REFERENCE.md](CLI_REFERENCE.md) | Goals, properties, change-detection modes, ML configuration, CI patterns |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Stable architecture, data flow, ML subsystem, and contribution guidance |
 | [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) | Order-dependent test detection algorithms and configuration |
@@ -13,7 +15,8 @@
 
 ## Quick Links
 
-- **Getting started**: See the [main README](../README.md)
+- **New here?** Start with the [Getting Started tutorial](GETTING_STARTED.md)
+- **Building from source**: [DEVELOPMENT.md](DEVELOPMENT.md)
 - **Gradle plugin**: See [test-order-gradle-plugin/README.md](../test-order-gradle-plugin/README.md)
 - **ML predictions**: [MAVEN_PLUGIN.md § ML Failure Predictions](MAVEN_PLUGIN.md#ml-failure-predictions)
 - **Show command**: [MAVEN_PLUGIN.md § Show Goal](MAVEN_PLUGIN.md#show-goal)

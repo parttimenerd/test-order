@@ -18,6 +18,16 @@ Large test suites destroy developer momentum. A suite that once ran in minutes c
 
 Works with **JUnit 5** (Jupiter 5.x), **JUnit 6** (Jupiter 6.x), and **TestNG** (7.x+) on Java 17+. Kotlin projects using Kotest with the JUnit Platform runner are also supported; see [docs/KOTEST.md](docs/KOTEST.md) for details.
 
+### Guides
+
+| | |
+|---|---|
+| **[Getting Started Tutorial](docs/GETTING_STARTED.md)** | Step-by-step walkthrough: first run → reordering → dashboard |
+| **[CI Setup](docs/ci-examples/)** | Ready-to-use GitHub Actions, GitLab CI, Azure Pipelines configs |
+| **[Multi-Module Setup](docs/MULTI_MODULE_SETUP.md)** | Configuring reactor-level aggregation |
+| **[Building from Source](docs/DEVELOPMENT.md)** | Compile and use the development version locally |
+| **[Samples](samples/README.md)** | Hands-on example projects to experiment with |
+| **[Full Documentation](docs/README.md)** | Architecture, scoring, CLI reference, and more |
 
 ## Quick Start
 
@@ -599,9 +609,22 @@ The [docs/](docs/) directory contains in-depth guides:
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture, data flow, and extension/contribution guidance |
 | [PERFORMANCE_TUNING.md](docs/PERFORMANCE_TUNING.md) | Measurement-first performance tuning guide |
 
+## Development version
+
+To build and use the latest unreleased code:
+
+```bash
+git clone https://github.com/parttimenerd/test-order.git
+cd test-order && mvn install -DskipTests -Dspotless.check.skip=true
+```
+
+This installs the `0.1.0-SNAPSHOT` to your local Maven repository. Use the plugin snippet from [Quick Start](#quick-start) as-is — Maven resolves SNAPSHOTs from `~/.m2` automatically.
+
+Full instructions (Gradle, samples, iteration workflow): **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
+
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions, test configuration, and how to extend test-order.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for PR guidelines, code style, and release process. For building from source, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Support & Feedback
 
@@ -612,8 +635,5 @@ Contribution and feedback are encouraged and always welcome.
 ## License
 
 MIT, Copyright 2026 SAP SE or an SAP affiliate company, Johannes Bechberger and contributors
-
-
-TODO: 
 
 

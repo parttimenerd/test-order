@@ -167,8 +167,7 @@ class TieredSelectMojoTest {
 		}
 
 		@Override
-		protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests, Set<String> changedMethods,
-				Map<String, Integer> scoreOverrides) throws MojoExecutionException {
+		protected void writeOrdererConfigFromMap(Map<String, String> configMap) throws MojoExecutionException {
 			// no-op in this focused unit test
 		}
 	}
