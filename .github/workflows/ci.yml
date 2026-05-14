@@ -131,7 +131,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Install artifacts for Gradle plugin tests
-        run: mvn -B -ntp -pl test-order-core,test-order-junit,test-order-ci,test-order-dashboard -am install -DskipTests
+        run: mvn -B -ntp -pl test-order-core,test-order-junit,test-order-agent,test-order-ci,test-order-dashboard -am install -DskipTests
 
       - name: Publish Gradle plugin to mavenLocal
         working-directory: test-order-gradle-plugin
