@@ -92,11 +92,6 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			return;
 		// Ensure the argLine property is defined (even if empty) so that
 		// Surefire's @{argLine} late-binding resolves to "" rather than the
-		// literal string "@{argLine}" when no agent is attached. This removes
-		// the need for users to declare <argLine/> in their POM <properties>.
-		if (project.getProperties().getProperty("argLine") == null) {
-			project.getProperties().setProperty("argLine", "");
-		}
 		// POM-packaging modules (reactor parents) have no tests — skip silently
 		if ("pom".equals(project.getPackaging())) {
 			getLog().debug("[test-order] Skipping prepare — POM module.");
@@ -105,6 +100,12 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		if (hasCliWorkflowGoal()) {
 			getLog().debug("[test-order] Skipping prepare — CLI test-order workflow already configured Surefire.");
 			return;
+		}
+
+		// literal string "@{argLine}" when no agent is attached. This removes
+		// the need for users to declare <argLine/> in their POM <properties>.
+		if (project.getProperties().getProperty("argLine") == null) {
+			project.getProperties().setProperty("argLine", "");
 		}
 
 		// Allow CLI system property to override POM-level <configuration><mode>

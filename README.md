@@ -2,19 +2,7 @@
 
 [![CI](https://github.com/parttimenerd/test-order/actions/workflows/ci.yml/badge.svg)](https://github.com/parttimenerd/test-order/actions/workflows/ci.yml)
 
-**Run the tests that matter first.** Add one plugin, run `mvn test` — tests that exercise your changed code move to the front of the queue. No configuration, no cloud, no annotations.
-
-```xml
-<!-- Add to pom.xml → run mvn test → affected tests run first. That's it. -->
-<plugin>
-  <groupId>me.bechberger</groupId>
-  <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
-  <executions><execution><goals><goal>prepare</goal></goals></execution></executions>
-</plugin>
-```
-
-Typical projects see relevant failures surface within the **first 5–10%** of the suite.
+**Run the tests that matter first.** Add one plugin, run `mvn test` — tests that exercise your changed code move to the front of the queue. No configuration, no cloud, no annotations. Typical projects see relevant failures surface within the **first 5–10%** of the suite.
 
 ---
 
