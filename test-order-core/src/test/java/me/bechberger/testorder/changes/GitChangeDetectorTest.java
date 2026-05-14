@@ -22,6 +22,15 @@ class GitChangeDetectorTest {
 		java.util.Collections.addAll(cmd, args);
 		ProcessBuilder pb = new ProcessBuilder(cmd);
 		pb.directory(tempDir.toFile());
+		// Prevent background git processes (gc, maintenance, fsmonitor) that hold file
+		// locks and cause @TempDir cleanup failures on CI.
+		pb.environment().put("GIT_CONFIG_NOSYSTEM", "1");
+		pb.environment().put("GIT_TERMINAL_PROMPT", "0");
+		pb.environment().put("GIT_CONFIG_COUNT", "2");
+		pb.environment().put("GIT_CONFIG_KEY_0", "gc.auto");
+		pb.environment().put("GIT_CONFIG_VALUE_0", "0");
+		pb.environment().put("GIT_CONFIG_KEY_1", "core.fsmonitor");
+		pb.environment().put("GIT_CONFIG_VALUE_1", "false");
 		pb.redirectErrorStream(true);
 		Process p = pb.start();
 		p.getInputStream().readAllBytes(); // consume output

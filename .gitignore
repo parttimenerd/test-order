@@ -27,6 +27,8 @@ release.properties
 # Gradle
 .gradle/
 *.gradle.bak
+test-order-gradle-plugin/.gradle
+docs/JavaMLforTestCasePrediction.html
 
 # Logs and local run artifacts
 *.log
