@@ -81,7 +81,9 @@ jobs:
         run: mvn -B -ntp test -pl test-order-junit -Dtest="**/*IT" -DfailIfNoTests=false
 
       - name: Run plugin integration tests
-        run: mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
+        run: >
+          mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
+          -Dit.test="MavenPluginIT,EndToEndJUnit5IT,EndToEndJUnit6IT,ExportJsonMojoIT,TieredWorkflowIT"
 
       - name: Run invoker fixture tests
         run: mvn -B -ntp -Prun-its verify -pl test-order-maven-plugin
