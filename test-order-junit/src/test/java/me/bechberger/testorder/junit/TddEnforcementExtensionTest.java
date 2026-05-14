@@ -189,9 +189,18 @@ class TddEnforcementExtensionTest {
 		java.nio.file.Files.write(corrupt, new byte[]{0, 1, 2, 3, 4});
 		System.setProperty(TestOrderConfig.STATE_PATH, corrupt.toString());
 
-		TddEnforcementExtension ext = new TddEnforcementExtension();
-		// Should not throw — gracefully skips enforcement on unreadable state
-		ext.afterTestExecution(fakeContext(NewTestClass.class, "testSomething", Optional.empty()));
+		// Suppress expected WARNING + stack trace from corrupt-file error path
+		java.util.logging.Logger tddLog = java.util.logging.Logger
+				.getLogger(TddEnforcementExtension.class.getName());
+		java.util.logging.Level prev = tddLog.getLevel();
+		tddLog.setLevel(java.util.logging.Level.SEVERE);
+		try {
+			TddEnforcementExtension ext = new TddEnforcementExtension();
+			// Should not throw — gracefully skips enforcement on unreadable state
+			ext.afterTestExecution(fakeContext(NewTestClass.class, "testSomething", Optional.empty()));
+		} finally {
+			tddLog.setLevel(prev);
+		}
 	}
 
 	@Test
