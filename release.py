@@ -406,6 +406,25 @@ class ReleaseManager:
             )
             init_gradle.write_text(updated, encoding="utf-8")
 
+        # Update VERSION constant and test fixtures in Gradle plugin Java sources
+        gradle_src = self.project_root / "test-order-gradle-plugin" / "src"
+        if gradle_src.is_dir():
+            for java_file in gradle_src.rglob("*.java"):
+                content = java_file.read_text(encoding="utf-8")
+                updated = content.replace(
+                    f'VERSION = "{old}"', f'VERSION = "{new}"'
+                )
+                updated = updated.replace(
+                    f"'me.bechberger.test-order' version '{old}'",
+                    f"'me.bechberger.test-order' version '{new}'",
+                )
+                updated = updated.replace(
+                    f'"me.bechberger.test-order") version "{old}"',
+                    f'"me.bechberger.test-order") version "{new}"',
+                )
+                if updated != content:
+                    java_file.write_text(updated, encoding="utf-8")
+
     def _gradle_plugin_files(self) -> List[str]:
         """Return relative paths of Gradle plugin files managed by release."""
         files: List[str] = []
@@ -413,6 +432,13 @@ class ReleaseManager:
             path = self.project_root / "test-order-gradle-plugin" / name
             if path.exists():
                 files.append(str(path.relative_to(self.project_root)))
+        # Include Java sources that contain version constants
+        gradle_src = self.project_root / "test-order-gradle-plugin" / "src"
+        if gradle_src.is_dir():
+            for java_file in gradle_src.rglob("*.java"):
+                content = java_file.read_text(encoding="utf-8")
+                if 'VERSION = "' in content or "me.bechberger.test-order" in content:
+                    files.append(str(java_file.relative_to(self.project_root)))
         return files
 
     def git_commit_tag(self, version: str) -> None:

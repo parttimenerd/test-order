@@ -68,7 +68,7 @@ class TestOrderPluginIntegrationTest {
         writeFile("build.gradle", """
                 plugins {
                     id 'java'
-                    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+                    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
                 }
                 group = 'com.example'
                 version = '1.0.0'
@@ -156,7 +156,7 @@ class TestOrderPluginIntegrationTest {
                         mavenCentral()
                     }
                     dependencies {
-                        classpath 'me.bechberger:test-order-gradle-plugin:0.1.0-SNAPSHOT'
+                        classpath 'me.bechberger:test-order-gradle-plugin:0.0.1-SNAPSHOT'
                     }
                 }
                 projectsLoaded {
@@ -657,7 +657,7 @@ class TestOrderPluginIntegrationTest {
         writeFile("build.gradle", """
                 plugins {
                     id 'java'
-                    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+                    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
                 }
                 // Second apply (e.g. from init script)
                 apply plugin: 'me.bechberger.test-order'
@@ -711,7 +711,7 @@ class TestOrderPluginIntegrationTest {
         writeFile("sub-a/build.gradle", """
                 plugins {
                     id 'java'
-                    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+                    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
                 }
                 repositories { mavenLocal(); mavenCentral() }
                 dependencies {
@@ -735,7 +735,7 @@ class TestOrderPluginIntegrationTest {
         writeFile("sub-b/build.gradle", """
                 plugins {
                     id 'java'
-                    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+                    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
                 }
                 repositories { mavenLocal(); mavenCentral() }
                 dependencies {
@@ -796,7 +796,7 @@ class TestOrderPluginIntegrationTest {
                 plugins {
                     id("java")
                     kotlin("jvm") version "2.3.20"
-                    id("me.bechberger.test-order") version "0.1.0-SNAPSHOT"
+                    id("me.bechberger.test-order") version "0.0.1-SNAPSHOT"
                 }
                 
                 group = "com.example"
@@ -868,7 +868,7 @@ class TestOrderPluginIntegrationTest {
                 plugins {
                     id("java")
                     kotlin("jvm") version "2.3.20"
-                    id("me.bechberger.test-order") version "0.1.0-SNAPSHOT"
+                    id("me.bechberger.test-order") version "0.0.1-SNAPSHOT"
                 }
                 
                 group = "com.example"

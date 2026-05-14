@@ -133,6 +133,10 @@ jobs:
       - name: Install artifacts for Gradle plugin tests
         run: mvn -B -ntp -pl test-order-core,test-order-ci,test-order-dashboard -am install -DskipTests
 
+      - name: Publish Gradle plugin to mavenLocal
+        working-directory: test-order-gradle-plugin
+        run: ./gradlew --no-daemon publishToMavenLocal
+
       - name: Run Gradle plugin tests
         working-directory: test-order-gradle-plugin
         run: ./gradlew --no-daemon test
