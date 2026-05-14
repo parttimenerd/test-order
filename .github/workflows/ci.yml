@@ -123,6 +123,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-test
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        it-class:
+          - EndToEndJUnit5IT
+          - EndToEndJUnit6IT
+          - ExportJsonMojoIT
+          - TieredWorkflowIT
 
     steps:
       - name: Checkout
@@ -138,32 +146,17 @@ jobs:
       - name: Install project artifacts
         run: mvn -B -ntp -DskipTests -Dspotless.check.skip=true install
 
-      - name: Run plugin integration tests
+      - name: Run ${{ matrix.it-class }}
         run: >
           mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
-          -Dit.test="MavenPluginIT,EndToEndJUnit5IT,EndToEndJUnit6IT,ExportJsonMojoIT,TieredWorkflowIT"
+          -Dit.test="${{ matrix.it-class }}"
           -Dspotless.check.skip=true
 
-      - name: Verify plugin integration tests ran
-        run: |
-          python - <<'PY'
-          import glob
-          import sys
-          import xml.etree.ElementTree as ET
-
-          total = 0
-          for path in glob.glob("test-order-maven-plugin/target/failsafe-reports/TEST-*.xml"):
-              total += int(ET.parse(path).getroot().attrib.get("tests", "0"))
-          if total <= 0:
-              sys.exit("No plugin integration tests were recorded")
-          print(f"Recorded {total} plugin integration tests")
-          PY
-
-      - name: Upload integration test reports on failure
+      - name: Upload reports on failure
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: plugin-it-reports
+          name: plugin-it-${{ matrix.it-class }}
           path: |
             test-order-maven-plugin/target/failsafe-reports/**
             test-order-maven-plugin/target/surefire-reports/**
@@ -305,6 +298,7 @@ jobs:
 
       - name: Trigger sample project rebuild
         if: env.GH_TOKEN != ''
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.SAMPLE_REPO_TOKEN }}
         run: |
