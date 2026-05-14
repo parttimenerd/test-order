@@ -11,6 +11,12 @@ This tutorial walks you through using test-order from scratch. By the end, you'l
 - A **Git** repository (test-order uses Git to detect changes)
 - A project with **JUnit 5/6**, **TestNG 7.x+**, or **Kotest** tests
 
+Quick check:
+```bash
+bash scripts/check_prerequisites.sh   # or just verify manually:
+java -version && mvn --version && git --version
+```
+
 ---
 
 ## Step 1: Add the plugin
@@ -98,7 +104,7 @@ mvn test
 [INFO] BUILD SUCCESS
 ```
 
-This creates a `.test-order/` directory with the dependency index. Commit `test-dependencies.lz4` to version control so teammates and CI benefit immediately.
+This creates a `.test-order/` directory with the dependency index. You can gitignore it — the plugin auto-learns on first run for any new checkout.
 
 ---
 
@@ -189,23 +195,17 @@ This checks index health, agent attachment, framework detection, and configurati
 
 ---
 
-## What to commit
+## .gitignore
 
-| Path | Commit? | Why |
-|------|---------|-----|
-| `.test-order/test-dependencies.lz4` | **Yes** | Dependency index — shared by team and CI |
-| `.test-order/state.lz4` | Optional | Test durations & failure history (improves scoring) |
-| `.test-order/hashes.lz4` | No | Machine-local hash snapshots |
-| `target/test-order-dashboard/` | No | Regenerated on demand |
-
-Add to `.gitignore`:
+The simplest setup — just gitignore everything (the plugin auto-learns on first run):
 
 ```gitignore
-.test-order/hashes.lz4
-.test-order/method-hashes.lz4
-.test-order/test-hashes.lz4
+.test-order/
 target/test-order-dashboard/
+build/test-order-dashboard/
 ```
+
+If your learn run is slow and you want to share the index, commit `.test-order/test-dependencies.lz4` and only gitignore the rest.
 
 ---
 
@@ -221,15 +221,19 @@ mvn install -DskipTests -Dspotless.check.skip=true
 
 # Run the basic sample
 cd samples/sample-basic
-mvn test -Dspotless.check.skip=true         # learns dependencies
-mvn test -Dspotless.check.skip=true         # reorders
-mvn test-order:show -Dspotless.check.skip=true  # inspect
+mvn test                  # learns dependencies
+mvn test                  # reorders tests
+mvn test-order:show       # inspect rankings
 
 # Try the realistic shopping app sample
 cd ../sample-shop
-mvn test -Dspotless.check.skip=true
-mvn test-order:dashboard -Dspotless.check.skip=true
+mvn test
+mvn test-order:dashboard
 ```
+
+> **Note:** The `-Dspotless.check.skip=true` flag is only needed when building
+> the test-order framework itself (it runs code formatting checks). The sample
+> projects don't need it.
 
 ---
 
@@ -244,3 +248,15 @@ mvn test-order:dashboard -Dspotless.check.skip=true
 | Detect order-dependent (flaky) tests | [docs/DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) |
 | Build from source / contribute | [docs/DEVELOPMENT.md](DEVELOPMENT.md) |
 | Full CLI & properties reference | [docs/CLI_REFERENCE.md](CLI_REFERENCE.md) |
+
+---
+
+## Uninstalling
+
+test-order makes no permanent changes to your project. To remove it completely:
+
+1. Remove the plugin from your `pom.xml` (or `build.gradle`)
+2. Delete the state directory: `rm -rf .test-order/`
+3. Remove the `.test-order/` entry from `.gitignore` if you added one
+
+Your tests will immediately go back to their default execution order.

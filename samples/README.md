@@ -22,15 +22,21 @@ Each sample binds the `prepare` goal in its POM and is a child module of the roo
 ```bash
 cd samples/sample-basic
 
-# Learn mode
-mvn test -Dtestorder.mode=learn -Dspotless.check.skip=true
+# Learn mode (first run — records dependencies)
+mvn test
 
-# Auto mode
-mvn test-order:auto test -Dspotless.check.skip=true
+# Order mode (second run — tests reordered by priority)
+mvn test
 
 # Show computed order
-mvn test-order:show -Dspotless.check.skip=true
+mvn test-order:show
+
+# Interactive dashboard
+mvn test-order:dashboard
 ```
+
+> **Tip:** If you want to force learn mode, use `mvn test -Dtestorder.mode=learn`.
+> To see debug output: `mvn test -Dtestorder.debug=true`.
 
 ## External test repositories
 

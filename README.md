@@ -16,39 +16,75 @@
 
 Typical projects see relevant failures surface within the **first 5–10%** of the suite.
 
+---
+
+> **New here?** Jump to the [Quick Start](#quick-start) below, or follow the [Getting Started Tutorial](docs/GETTING_STARTED.md) for a hands-on 5-minute walkthrough. Something not working? Run `mvn test-order:diagnose` or see [Troubleshooting](#troubleshooting).
+
+---
+
 ## Requirements
 
-- **Java 17+**
-- **Maven 3.6+** or **Gradle 7.6+**
-- **Git** (for change detection)
-- One of: **JUnit 5** (Jupiter 5.x), **JUnit 6** (Jupiter 6.x), **TestNG** (7.x+), or **Kotest** (via JUnit Platform)
+| Requirement | Version |
+|---|---|
+| Java | 17+ |
+| Build tool | Maven 3.6+ or Gradle 7.6+ |
+| VCS | Git (for change detection) |
+| Test framework | JUnit 5/6, TestNG 7.x+, or Kotest (JUnit Platform) |
 
-> **New here?** Follow the [Getting Started Tutorial](docs/GETTING_STARTED.md) for a 5-minute walkthrough.
+<details>
+<summary><strong>Check prerequisites</strong></summary>
+
+```bash
+java -version   # Must be 17+
+mvn --version   # Must be 3.6+
+git --version   # Any recent version
+```
+
+</details>
 
 ## Quick Start
 
 ### Maven
 
-**1. Add the plugin** to your `pom.xml` `<build><plugins>` section (snippet above).
+**1. Add the plugin** to your `pom.xml` inside `<build><plugins>`:
 
-**2. Run your tests:**
+```xml
+<plugin>
+  <groupId>me.bechberger</groupId>
+  <artifactId>test-order-maven-plugin</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <executions>
+    <execution>
+      <goals><goal>prepare</goal></goals>
+    </execution>
+  </executions>
+</plugin>
+```
+
+**2. Run your tests twice:**
 
 ```bash
-mvn test          # First run: automatically learns test dependencies
-mvn test          # Second run: reorders tests — affected tests run first
+mvn test          # First run: learns which tests cover which code
+mvn test          # Second run: reorders — affected tests run first
 ```
 
 That's it. The plugin auto-switches between learn and order mode. No configuration needed.
 
+**3. Explore (optional):**
+
 ```bash
-# Useful commands:
 mvn test-order:show           # See how tests are ranked and why
 mvn test-order:dashboard      # Interactive HTML report
 mvn test-order:diagnose       # Check setup health
+mvn test-order:help           # List all goals and options
 mvn test -Dtestorder.skip=true  # Skip the plugin entirely
 ```
 
-> **No POM changes?** You can also run `mvn test-order:auto test` without any `<execution>` block.
+> **Want to try without modifying your POM?** Run directly with the fully-qualified goal:
+> ```bash
+> mvn me.bechberger:test-order-maven-plugin:0.0.1-SNAPSHOT:auto test
+> ```
+> Or add the `<execution>` block above and use the short prefix `test-order:auto test`.
 
 <a id="gradle"></a>
 
@@ -90,21 +126,21 @@ plugins {
 ./gradlew testOrderDashboard            # Interactive report
 ```
 
-### What to commit
-
-After your first run, commit the dependency index so teammates and CI benefit immediately:
-
-```bash
-git add .test-order/test-dependencies.lz4
-```
+### .gitignore
 
 Add to `.gitignore`:
 ```gitignore
-.test-order/hashes.lz4
-.test-order/method-hashes.lz4
-.test-order/test-hashes.lz4
+.test-order/
 target/test-order-dashboard/
+build/test-order-dashboard/
 ```
+
+<details>
+<summary><strong>Optional: commit the dependency index</strong></summary>
+
+If your learn run is slow (large projects), you can commit `.test-order/test-dependencies.lz4` so teammates and CI skip the initial learn. Otherwise, just gitignore the whole directory — the plugin auto-learns on first run.
+
+</details>
 
 ### Maven vs Gradle at a glance
 
@@ -317,11 +353,66 @@ Run `mvn test-order:diagnose` first — it checks everything automatically.
 | Symptom | Fix |
 |---|---|
 | Tests in default order | Run with `-Dtestorder.debug=true` to see what's happening |
+| `No dependency index found` on second run | Ensure the first run completed successfully and `.test-order/test-dependencies.lz4` exists |
 | JaCoCo reports 0% coverage | Use `@{argLine}` syntax (see Compatibility above) |
 | Stale ordering after refactor | Re-learn: `mvn test -Dtestorder.mode=learn` |
 | No index despite sources | Set `-Dtestorder.includePackages=com.yourcompany` |
+| `Could not resolve artifact` | Plugin not published to Maven Central yet — build from source (see [Development](#development)) |
+| Agent attachment warning on Java 21+ | Add `--add-opens` flags or use `-Dtestorder.agent.dynamic=false` |
 
 Nuclear option: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
+
+## FAQ
+
+<details>
+<summary><strong>Does test-order skip tests?</strong></summary>
+
+No. By default, all tests still run — they're just **reordered** so the most relevant ones execute first. If a test fails, you see it sooner. If you want to actually select a subset, use `mvn test-order:select test` (runs only high-priority tests) followed by `mvn test-order:run-remaining test`.
+
+</details>
+
+<details>
+<summary><strong>Is there runtime overhead?</strong></summary>
+
+- **Order mode** (normal runs): Near-zero. The plugin resolves ordering before tests start.
+- **Learn mode** (first run or after dependency changes): ~5–20% overhead from the Java agent recording class coverage. This runs automatically and infrequently.
+
+</details>
+
+<details>
+<summary><strong>Does it work with my existing build?</strong></summary>
+
+Yes. test-order integrates through standard build tool mechanisms (JUnit Platform `ClassOrderer`, Surefire/Failsafe configuration). It doesn't modify your source code, test code, or build output. Remove the plugin declaration to go back to the default behavior instantly.
+
+</details>
+
+<details>
+<summary><strong>What if I don't use Git?</strong></summary>
+
+Git is the default change detection backend. Without Git, you can use `-Dtestorder.changeMode=since-last-run` (compares file hashes between runs) or `-Dtestorder.changeMode=explicit` with `-Dtestorder.changed.classes=...`.
+
+</details>
+
+<details>
+<summary><strong>Does it work with multi-module projects?</strong></summary>
+
+Yes. Each module gets its own dependency index. For reactor-level features (e.g., skipping entire modules that have no relevant changes), see [Multi-Module Setup](docs/MULTI_MODULE_SETUP.md).
+
+</details>
+
+<details>
+<summary><strong>How do I share the index with my team?</strong></summary>
+
+Commit `.test-order/test-dependencies.lz4` to version control. Teammates and CI will immediately benefit from the learned dependency index without needing a learn run. Add the machine-local files (`hashes.lz4`, `method-hashes.lz4`, `test-hashes.lz4`) to `.gitignore`.
+
+</details>
+
+<details>
+<summary><strong>Can I use it alongside JaCoCo, Mockito, or other agents?</strong></summary>
+
+Yes. Use Maven's `@{argLine}` late-binding in Surefire to chain multiple agents. See [Compatibility](#compatibility) above.
+
+</details>
 
 ## Documentation
 
