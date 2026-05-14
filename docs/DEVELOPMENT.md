@@ -1,6 +1,6 @@
 # Building & Using the Development Version
 
-This guide helps you build test-order from source and use the `0.1.0-SNAPSHOT` in your own projects.
+This guide helps you build test-order from source and use the `0.0.1-SNAPSHOT` in your own projects.
 
 ## Prerequisites
 
@@ -127,3 +127,68 @@ cd samples/sample-basic && mvn test-order:show -Dspotless.check.skip=true
 
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — PR guidelines, code style, release process
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md) — system design and data flow
+
+## Releasing a version
+
+Releases are managed by `release.py` in the project root. The script handles:
+
+1. Bumping versions in **all** POMs, README, docs, Gradle build files, and samples
+2. Rolling CHANGELOG.md's `[Unreleased]` into a dated version entry
+3. Running tests and building release artifacts
+4. Creating a git commit + tag (`vX.Y.Z`)
+5. Deploying to Maven Central (Sonatype OSSRH)
+6. Bumping to the next `-SNAPSHOT` and committing
+7. Pushing and creating a GitHub Release
+
+### Quick release
+
+```bash
+# Patch release (0.0.1 → 0.0.2)
+python release.py --patch
+
+# Minor release (0.0.1 → 0.1.0)
+python release.py --minor
+
+# Preview what would change without modifying anything
+python release.py --patch --dry-run
+```
+
+### What `release.py` updates automatically
+
+| File(s) | What changes |
+|---------|--------------|
+| `pom.xml` (root) | `<version>` |
+| All module `pom.xml` files | `<parent><version>` |
+| All sample/fixture `pom.xml` | `<version>` in `me.bechberger` blocks |
+| `README.md` | Plugin snippet versions, Gradle DSL versions |
+| `docs/*.md` | All `me.bechberger` version references, `<test-order.version>` properties |
+| `test-order-gradle-plugin/build.gradle.kts` | `version = "..."` |
+| `test-order-gradle-plugin/test-order-init.gradle` | classpath version |
+| `CHANGELOG.md` | `[Unreleased]` → `[X.Y.Z] - date` |
+
+After a release, the script automatically bumps everything to the next SNAPSHOT (e.g., `0.0.2-SNAPSHOT`) so the README and docs always show the current development version.
+
+### SNAPSHOT deployment
+
+SNAPSHOTs are deployed automatically by CI on every push to `main` (after tests pass). You can also deploy manually:
+
+```bash
+python release.py --snapshot
+```
+
+### Options reference
+
+| Flag | Effect |
+|------|--------|
+| `--major` / `--minor` / `--patch` | Bump level (default: minor) |
+| `--no-its` | Skip integration tests during release |
+| `--no-push` | Don't push to remote |
+| `--no-deploy` | Skip Maven Central deploy |
+| `--no-github-release` | Skip GitHub Release creation |
+| `--snapshot` | Deploy current SNAPSHOT as-is |
+| `--github-release-only` | Only create a GitHub Release for the current version |
+| `--dry-run` | Preview changes without modifying files |
+
+### CI release workflow
+
+Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds and deploys to Maven Central with GPG signing. Required secrets: `OSSRH_USERNAME`, `OSSRH_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`.

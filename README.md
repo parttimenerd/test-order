@@ -611,6 +611,8 @@ The [docs/](docs/) directory contains in-depth guides:
 
 ## Development version
 
+> **Note:** The version shown throughout this README is the current SNAPSHOT — it updates automatically on each release via `release.py`. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#releasing-a-version) for the full release process.
+
 To build and use the latest unreleased code:
 
 ```bash
@@ -618,7 +620,7 @@ git clone https://github.com/parttimenerd/test-order.git
 cd test-order && mvn install -DskipTests -Dspotless.check.skip=true
 ```
 
-This installs the `0.1.0-SNAPSHOT` to your local Maven repository. Use the plugin snippet from [Quick Start](#quick-start) as-is — Maven resolves SNAPSHOTs from `~/.m2` automatically.
+This installs the `0.0.1-SNAPSHOT` to your local Maven repository. Use the plugin snippet from [Quick Start](#quick-start) as-is — Maven resolves SNAPSHOTs from `~/.m2` automatically.
 
 Full instructions (Gradle, samples, iteration workflow): **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
 

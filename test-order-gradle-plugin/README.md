@@ -29,7 +29,7 @@ pluginManagement {
 // build.gradle
 plugins {
     id 'java'
-    id 'me.bechberger.test-order' version '0.1.0-SNAPSHOT'
+    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
 }
 
 repositories {
@@ -60,7 +60,7 @@ initscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'me.bechberger:test-order-gradle-plugin:0.1.0-SNAPSHOT'
+        classpath 'me.bechberger:test-order-gradle-plugin:0.0.1-SNAPSHOT'
     }
 }
 
