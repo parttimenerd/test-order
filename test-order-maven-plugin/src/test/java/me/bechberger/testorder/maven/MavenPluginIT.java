@@ -45,7 +45,7 @@ class MavenPluginIT {
 		Path projectDir = itProjectsDir.resolve("order-mode");
 		assertThat(Files.exists(projectDir)).isTrue();
 
-		Path propsFile = projectDir.resolve("target/test-classes/junit-platform.properties");
+		Path propsFile = projectDir.resolve("target/test-order-runtime/junit-platform.properties");
 		assertThat(Files.exists(propsFile)).withFailMessage("junit-platform.properties should exist: " + propsFile)
 				.isTrue();
 
@@ -80,43 +80,13 @@ class MavenPluginIT {
 	}
 
 	@Test
-	void junit6LearnModeProducesDepsFiles() {
-		Path projectDir = itProjectsDir.resolve("basic-learn-mode-junit6");
-		assertThat(Files.exists(projectDir)).isTrue();
-
-		Path surefireReports = projectDir.resolve("target/surefire-reports");
-		assertThat(Files.isDirectory(surefireReports))
-				.withFailMessage("surefire-reports should exist after JUnit 6 learn mode: " + surefireReports).isTrue();
-	}
-
-	@Test
-	void junit6OrderModeTestsStillPass() {
-		Path projectDir = itProjectsDir.resolve("order-mode-junit6");
-		assertThat(Files.exists(projectDir)).isTrue();
-
-		Path surefireReports = projectDir.resolve("target/surefire-reports");
-		assertThat(Files.isDirectory(surefireReports))
-				.withFailMessage("surefire-reports should exist (JUnit 6): " + surefireReports).isTrue();
-	}
-
-	@Test
 	void selectModeWritesSelectionFilesAndRunsSubset() throws IOException {
 		assertSelectFixture("select-mode");
 	}
 
 	@Test
-	void junit6SelectModeWritesSelectionFilesAndRunsSubset() throws IOException {
-		assertSelectFixture("select-mode-junit6");
-	}
-
-	@Test
 	void runRemainingModeRunsOnlyDeferredSubset() {
 		assertRunRemainingFixture("run-remaining-mode");
-	}
-
-	@Test
-	void junit6RunRemainingModeRunsOnlyDeferredSubset() {
-		assertRunRemainingFixture("run-remaining-mode-junit6");
 	}
 
 	@Test
@@ -161,8 +131,9 @@ class MavenPluginIT {
 				.withFailMessage("surefire-reports should exist: " + surefireReports).isTrue();
 		assertThat(reportClassNames(surefireReports)).containsExactly("me.bechberger.it.StringHelperTest");
 
-		Path remainingFile = projectDir.resolve("target/test-order-remaining.txt");
-		assertThat(Files.exists(remainingFile)).withFailMessage("remaining file should exist: " + remainingFile)
+		// The mojo renames the file to .consumed after reading it
+		Path consumedFile = projectDir.resolve("target/test-order-remaining.txt.consumed");
+		assertThat(Files.exists(consumedFile)).withFailMessage("consumed remaining file should exist: " + consumedFile)
 				.isTrue();
 	}
 

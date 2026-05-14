@@ -77,6 +77,9 @@ jobs:
       - name: Install project artifacts
         run: mvn -B -ntp -DskipTests -Dspotless.check.skip=true install
 
+      - name: Run invoker fixture tests
+        run: mvn -B -ntp -Prun-its verify -pl test-order-maven-plugin -Dspotless.check.skip=true
+
       - name: Run fixture integration tests
         run: mvn -B -ntp test -pl test-order-junit -Dtest="**/*IT" -DfailIfNoTests=false -Dspotless.check.skip=true
 
@@ -85,9 +88,6 @@ jobs:
           mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
           -Dit.test="MavenPluginIT,EndToEndJUnit5IT,EndToEndJUnit6IT,ExportJsonMojoIT,TieredWorkflowIT"
           -Dspotless.check.skip=true
-
-      - name: Run invoker fixture tests
-        run: mvn -B -ntp -Prun-its verify -pl test-order-maven-plugin -Dspotless.check.skip=true
 
       - name: Verify plugin integration tests ran
         run: |
