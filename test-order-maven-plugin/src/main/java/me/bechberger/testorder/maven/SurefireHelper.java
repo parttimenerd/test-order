@@ -575,5 +575,10 @@ final class SurefireHelper {
 		Plugin surefire = requireSurefirePlugin(project);
 		Xpp3Dom config = getOrCreateConfiguration(surefire);
 		setChild(config, "test", project.getProperties().getProperty("test"));
+
+		// Prevent Surefire from failing when no tests match the filter (e.g. empty
+		// tier, renamed classes). Users should not have to pass
+		// -Dsurefire.failIfNoSpecifiedTests=false manually.
+		project.getProperties().setProperty("surefire.failIfNoSpecifiedTests", "false");
 	}
 }
