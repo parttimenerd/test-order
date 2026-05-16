@@ -49,7 +49,7 @@ class GenerateDashboardOperationTest {
 		assertTrue(Files.exists(generated), "Dashboard file should be written");
 		assertTrue(infos.stream().anyMatch(s -> s.contains("Dashboard written to:")),
 				"Should log written dashboard path");
-		assertTrue(infos.stream().anyMatch(s -> s.contains("To open automatically, set testorder.dashboard.open=true")),
+		assertTrue(infos.stream().anyMatch(s -> s.contains("mvn test-order:dashboard -Dtestorder.dashboard.open=true")),
 				"Should log explicit open guidance");
 		assertFalse(infos.stream().anyMatch(s -> s.contains("Open in browser")),
 				"Should not log misleading unconditional open-browser message");

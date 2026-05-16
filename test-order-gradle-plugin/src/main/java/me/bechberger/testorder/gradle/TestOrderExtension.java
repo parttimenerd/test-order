@@ -196,6 +196,16 @@ public abstract class TestOrderExtension {
     public abstract Property<Boolean> getTdd();
 
     /**
+     * Storage location for test-order data:
+     * <ul>
+     *   <li><b>local</b> (default) — stores data in {@code <project>/.test-order/}</li>
+     *   <li><b>home</b> — stores data in {@code ~/.test-order/<project-name>-<hash>/},
+     *   surviving {@code git clean -fdx}</li>
+     * </ul>
+     */
+    public abstract Property<String> getStorage();
+
+    /**
      * In auto mode, whether to run deferred (remaining) tests after selected tests.
      * <p>
      * Default: {@code true} for the regular 'test' task (runs all tests).
@@ -221,6 +231,7 @@ public abstract class TestOrderExtension {
     void applyDefaults(Project project) {
         getMode().convention("auto");
         getInstrumentationMode().convention("FULL");
+        getStorage().convention("local");
 
         // In multi-module builds, store all test-order data at the root project
         // level (like Maven's ReactorContext). This ensures a single shared index

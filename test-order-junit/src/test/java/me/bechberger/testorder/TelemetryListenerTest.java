@@ -1524,7 +1524,7 @@ class TelemetryListenerTest {
 		static final StubTestPlan EMPTY = new StubTestPlan();
 
 		private StubTestPlan() {
-			super(false, null, null);
+			super(false, null);
 		}
 
 		@Override

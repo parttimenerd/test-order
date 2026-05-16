@@ -10,6 +10,9 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.execution.ProjectDependencyGraph;
 import org.apache.maven.project.MavenProject;
 
+import me.bechberger.testorder.ops.HomeStorageResolver;
+import me.bechberger.testorder.ops.PluginLog;
+
 /**
  * Reactor-aware context for multi-module builds.
  * <p>
@@ -37,8 +40,13 @@ final class ReactorContext {
 	private final boolean multiModule;
 	private final Path reactorRoot;
 	private final Path sharedDir;
+	private final boolean homeStorage;
 
 	ReactorContext(MavenSession session, MavenProject project) {
+		this(session, project, "local", null);
+	}
+
+	ReactorContext(MavenSession session, MavenProject project, String storage, PluginLog log) {
 		this.session = session;
 		this.project = project;
 
@@ -60,7 +68,19 @@ final class ReactorContext {
 
 		this.multiModule = explicitMulti || inferredMulti;
 		this.reactorRoot = inferredMulti ? mmDir : session.getTopLevelProject().getBasedir().toPath();
-		this.sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
+		this.homeStorage = "home".equalsIgnoreCase(storage);
+
+		if (this.homeStorage) {
+			HomeStorageResolver resolver = new HomeStorageResolver();
+			String projectName = session.getTopLevelProject().getArtifactId();
+			try {
+				this.sharedDir = resolver.resolve(reactorRoot, projectName, log);
+			} catch (IOException e) {
+				throw new RuntimeException("Failed to resolve home storage for project '" + projectName + "'", e);
+			}
+		} else {
+			this.sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
+		}
 	}
 
 	private static Path resolveMultiModuleRoot(MavenSession session) {
@@ -125,20 +145,25 @@ final class ReactorContext {
 	// --- Path resolution ---
 
 	Path resolveIndexFile(String configured) {
-		return multiModule
-				? sharedDir.resolve("test-dependencies.lz4")
-				: resolveConfiguredPath(configured,
-						project.getBasedir().toPath().resolve(".test-order/test-dependencies.lz4"));
+		if (multiModule || homeStorage) {
+			return sharedDir.resolve("test-dependencies.lz4");
+		}
+		return resolveConfiguredPath(configured,
+				project.getBasedir().toPath().resolve(".test-order/test-dependencies.lz4"));
 	}
 
 	Path resolveStateFile(String configured) {
-		return multiModule
-				? sharedDir.resolve("state.lz4")
-				: resolveConfiguredPath(configured, project.getBasedir().toPath().resolve(".test-order/state.lz4"));
+		if (multiModule || homeStorage) {
+			return sharedDir.resolve("state.lz4");
+		}
+		return resolveConfiguredPath(configured, project.getBasedir().toPath().resolve(".test-order/state.lz4"));
 	}
 
 	Path resolveDepsDir(String configured) {
 		if (multiModule) {
+			return sharedDir.resolve("deps");
+		}
+		if (homeStorage) {
 			return sharedDir.resolve("deps");
 		}
 		if (configured != null && !configured.isBlank()) {
@@ -148,23 +173,35 @@ final class ReactorContext {
 	}
 
 	Path resolveHashFile(String configured) {
-		return multiModule
-				? sharedDir.resolve("hashes").resolve(moduleId() + "-hashes.lz4")
-				: resolveConfiguredPath(configured, project.getBasedir().toPath().resolve(".test-order/hashes.lz4"));
+		if (multiModule) {
+			return sharedDir.resolve("hashes").resolve(moduleId() + "-hashes.lz4");
+		}
+		if (homeStorage) {
+			return sharedDir.resolve("hashes.lz4");
+		}
+		return resolveConfiguredPath(configured, project.getBasedir().toPath().resolve(".test-order/hashes.lz4"));
 	}
 
 	Path resolveTestHashFile(String configured) {
-		return multiModule
-				? sharedDir.resolve("hashes").resolve(moduleId() + "-test-hashes.lz4")
-				: resolveConfiguredPath(configured,
-						project.getBasedir().toPath().resolve(".test-order/test-hashes.lz4"));
+		if (multiModule) {
+			return sharedDir.resolve("hashes").resolve(moduleId() + "-test-hashes.lz4");
+		}
+		if (homeStorage) {
+			return sharedDir.resolve("test-hashes.lz4");
+		}
+		return resolveConfiguredPath(configured,
+				project.getBasedir().toPath().resolve(".test-order/test-hashes.lz4"));
 	}
 
 	Path resolveMethodHashFile(String configured) {
-		return multiModule
-				? sharedDir.resolve("hashes").resolve(moduleId() + "-method-hashes.lz4")
-				: resolveConfiguredPath(configured,
-						project.getBasedir().toPath().resolve(".test-order/method-hashes.lz4"));
+		if (multiModule) {
+			return sharedDir.resolve("hashes").resolve(moduleId() + "-method-hashes.lz4");
+		}
+		if (homeStorage) {
+			return sharedDir.resolve("method-hashes.lz4");
+		}
+		return resolveConfiguredPath(configured,
+				project.getBasedir().toPath().resolve(".test-order/method-hashes.lz4"));
 	}
 
 	private Path resolveConfiguredPath(String configured, Path fallback) {

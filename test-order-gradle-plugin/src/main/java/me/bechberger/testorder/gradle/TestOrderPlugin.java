@@ -14,6 +14,7 @@ import me.bechberger.testorder.ops.DashboardServerOperation;
 import me.bechberger.testorder.ops.DumpOperation;
 import me.bechberger.testorder.ops.ExportJsonOperation;
 import me.bechberger.testorder.ops.HashSnapshotOperation;
+import me.bechberger.testorder.ops.HomeStorageResolver;
 import me.bechberger.testorder.ops.JUnitPlatformValidator;
 import me.bechberger.testorder.ops.ModeResolverOperation;
 import me.bechberger.testorder.ops.OptimizeOperation;
@@ -65,6 +66,9 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     static final String EXTENSION_NAME = "testOrder";
     static final String AGENT_CONFIG_NAME = "testOrderAgent";
+    /** Guards against repeating the JUnit 4 warning for every subproject. */
+    private static final java.util.Set<String> junit4WarnedProjects = java.util.Collections.newSetFromMap(
+            new java.util.concurrent.ConcurrentHashMap<>());
     /** Group and version for the test-order artifacts. Must match the build. */
     static final String GROUP_ID = "me.bechberger";
     static final String VERSION = "0.0.1-SNAPSHOT";
@@ -236,18 +240,21 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private void warnJUnit4Unsupported(Project project) {
-        if (isJUnit4OnTestClasspath(project)) {
-            if (isJUnit5OnTestClasspath(project)) {
-                project.getLogger().warn("[test-order] JUnit 4 dependency detected alongside JUnit 5. "
-                        + "test-order only supports JUnit 5 (Jupiter) and TestNG — "
-                        + "JUnit 4 tests will not be reordered or tracked. "
-                        + "Consider migrating to JUnit 5 or using the JUnit Vintage engine.");
-            } else {
-                project.getLogger().warn("[test-order] JUnit 4 dependency detected but no JUnit 5 (Jupiter) found. "
-                        + "test-order does NOT support JUnit 4 — tests will not be reordered or tracked. "
-                        + "Please migrate to JUnit 5 or add the JUnit Vintage engine with "
-                        + "junit-jupiter-engine on the test classpath.");
-            }
+        if (!isJUnit4OnTestClasspath(project)) return;
+        // Only warn once per root project to avoid spamming multi-module builds
+        String rootPath = project.getRootProject().getProjectDir().getAbsolutePath();
+        if (!junit4WarnedProjects.add(rootPath)) return;
+
+        if (isJUnit5OnTestClasspath(project)) {
+            project.getLogger().warn("[test-order] JUnit 4 dependency detected alongside JUnit 5. "
+                    + "test-order only supports JUnit 5 (Jupiter) and TestNG — "
+                    + "JUnit 4 tests will not be reordered or tracked. "
+                    + "Consider migrating to JUnit 5 or using the JUnit Vintage engine.");
+        } else {
+            project.getLogger().warn("[test-order] JUnit 4 dependency detected but no JUnit 5 (Jupiter) found. "
+                    + "test-order does NOT support JUnit 4 — tests will not be reordered or tracked. "
+                    + "Please migrate to JUnit 5 or add the JUnit Vintage engine with "
+                    + "junit-jupiter-engine on the test classpath.");
         }
     }
 
@@ -1670,6 +1677,38 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
         }
 
+        // Resolve home storage if configured
+        String storageMode = gradleOrSystemProperty(project, "testorder.storage");
+        if (storageMode == null || storageMode.isBlank()) {
+            storageMode = ext.getStorage().getOrElse("local");
+        }
+        Path indexFile, stateFile, depsDir, hashFile, testHashFile, methodHashFile;
+        if ("home".equalsIgnoreCase(storageMode)) {
+            Path rootDir = project.getRootProject().getProjectDir().toPath().toAbsolutePath();
+            String projectName = project.getRootProject().getName();
+            HomeStorageResolver resolver = new HomeStorageResolver();
+            Path homeDir;
+            try {
+                homeDir = resolver.resolve(rootDir, projectName, wrapLog(project));
+            } catch (java.io.IOException e) {
+                throw new org.gradle.api.GradleException(
+                        "Failed to resolve home storage for project '" + projectName + "'", e);
+            }
+            indexFile = homeDir.resolve("test-dependencies.lz4");
+            stateFile = homeDir.resolve("state.lz4");
+            depsDir = homeDir.resolve("deps");
+            hashFile = homeDir.resolve("hashes.lz4");
+            testHashFile = homeDir.resolve("test-hashes.lz4");
+            methodHashFile = homeDir.resolve("method-hashes.lz4");
+        } else {
+            indexFile = ext.getIndexFile().get().getAsFile().toPath();
+            stateFile = ext.getStateFile().get().getAsFile().toPath();
+            depsDir = ext.getDepsDir().get().getAsFile().toPath();
+            hashFile = ext.getHashFile().get().getAsFile().toPath();
+            testHashFile = ext.getTestHashFile().get().getAsFile().toPath();
+            methodHashFile = ext.getMethodHashFile().get().getAsFile().toPath();
+        }
+
         String weightsFile = ext.getWeightsFile().get();
         Map<String, Integer> scoreOverrides = WeightResolverOperation.buildScoreOverrides(
                 orNull(ext.getScoreNewTest()), orNull(ext.getScoreChangedTest()),
@@ -1703,12 +1742,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .testSourceRoot(testSourceRoot)
                 .additionalSourceRoots(additionalSourceRoots)
                 .testClassesDir(resolveTestClassesDir(project))
-                .indexFile(ext.getIndexFile().get().getAsFile().toPath())
-                .stateFile(ext.getStateFile().get().getAsFile().toPath())
-                .depsDir(ext.getDepsDir().get().getAsFile().toPath())
-                .hashFile(ext.getHashFile().get().getAsFile().toPath())
-                .testHashFile(ext.getTestHashFile().get().getAsFile().toPath())
-                .methodHashFile(ext.getMethodHashFile().get().getAsFile().toPath())
+                .indexFile(indexFile)
+                .stateFile(stateFile)
+                .depsDir(depsDir)
+                .hashFile(hashFile)
+                .testHashFile(testHashFile)
+                .methodHashFile(methodHashFile)
                 .changeMode(resolveChangeMode(project, ext))
                 .changedClasses(changedClasses)
                 .changedTestClasses(changedTestClasses)

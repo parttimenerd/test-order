@@ -196,11 +196,11 @@ class MultiModuleWorkflowIT {
 
 			// The web module should detect the upstream change and report it
 			assertThat(result.output()).as("Web module should detect core's UserService change via reactor propagation")
-					.contains("Detected 1 changed source classes");
+					.contains("Detected 1 changed source classes:");
 
-			// Count how many times "Detected 1 changed source classes" appears —
+			// Count how many times "Detected 1 changed source classes:" appears —
 			// it should appear for BOTH the core module AND the web module
-			long detectedCount = result.output().lines().filter(l -> l.contains("Detected 1 changed source classes"))
+			long detectedCount = result.output().lines().filter(l -> l.contains("Detected 1 changed source classes:"))
 					.count();
 			assertThat(detectedCount).as("Both core and web modules should detect the UserService change")
 					.isGreaterThanOrEqualTo(2);

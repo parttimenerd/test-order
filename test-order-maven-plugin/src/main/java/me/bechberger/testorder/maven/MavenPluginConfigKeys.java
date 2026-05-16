@@ -90,6 +90,9 @@ final class MavenPluginConfigKeys {
 	// TDD enforcement
 	static final String TDD = "testorder.tdd";
 
+	// Storage location: "local" (default, in-project .test-order/) or "home" (~/.test-order/<project>/)
+	static final String STORAGE = "testorder.storage";
+
 	static final String DETECT_ALGORITHM = "testorder.detect.algorithm";
 	static final String DETECT_TIME_BUDGET = "testorder.detect.timeBudget";
 	static final String DETECT_STOP_ON_FIRST = "testorder.detect.stopOnFirst";
@@ -126,7 +129,7 @@ final class MavenPluginConfigKeys {
 			LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip", "testorder.debug",
 			"testorder.history.maxRuns", "testorder.changed.classes.file", "testorder.methodOrder",
 			"testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold", "testorder.auto.active",
-			"testorder.remaining.file", "testorder.metrics.output", SERVE_PORT_ALIAS, TDD);
+			"testorder.remaining.file", "testorder.metrics.output", SERVE_PORT_ALIAS, TDD, STORAGE);
 
 	/**
 	 * Find the closest known key to the given unknown key. Delegates to

@@ -196,6 +196,8 @@ Configure via `-Dtestorder.changeMode=<mode>`:
 
 The Maven/Gradle plugins automatically detect which framework is on the test classpath — no configuration needed.
 
+> **JUnit 5 / 6 compatibility:** `test-order-junit` is compiled against JUnit 5.10.x and runs on both JUnit 5 (Jupiter 5.8+) and JUnit 6 (Jupiter 6.x) without changes. The same JAR works for both versions — no separate module needed.
+
 **Parameterized tests** work normally. **Spring test slices** are treated as regular test classes. See [docs/KOTEST.md](docs/KOTEST.md) for Kotlin/Kotest details.
 
 </details>
@@ -340,6 +342,7 @@ Run `mvn test-order:diagnose` first — it checks everything automatically.
 
 | Symptom | Fix |
 |---|---|
+| `No plugin found for prefix 'test-order'` | Add the plugin to your `pom.xml` first (see [Quick Start](#quick-start)) — or use the fully-qualified goal: `mvn me.bechberger:test-order-maven-plugin:0.0.1-SNAPSHOT:auto test` |
 | Tests in default order | Run with `-Dtestorder.debug=true` to see what's happening |
 | `No dependency index found` on second run | Ensure the first run completed successfully and `.test-order/test-dependencies.lz4` exists |
 | JaCoCo reports 0% coverage | Use `@{argLine}` syntax (see Compatibility above) |
@@ -402,6 +405,19 @@ Yes. Use Maven's `@{argLine}` late-binding in Surefire to chain multiple agents.
 
 </details>
 
+<details>
+<summary><strong>How do I survive <code>git clean</code>?</strong></summary>
+
+By default, test-order stores data in `.test-order/` inside your project, which `git clean -fdx` will delete. To store data in your home directory instead:
+
+```bash
+mvn test -Dtestorder.storage=home
+```
+
+This stores data in `~/.test-order/<project-name>-<hash>/`. It survives `git clean`, fresh clones, and even project moves (test-order will detect the move and relink automatically). Works with both Maven and Gradle (`-Dtestorder.storage=home` or in the DSL).
+
+</details>
+
 ## Documentation
 
 | Guide | Description |
@@ -441,3 +457,8 @@ Contribution and feedback are encouraged and always welcome.
 MIT, Copyright 2026 SAP SE or an SAP affiliate company, Johannes Bechberger and contributors
 
 
+
+
+please print how much time test-order saved (estimation) everytime a test failure is detected in order mode. The estimation is based on the cumulative duration of tests that would normally have run before the failed test in the default order. This can be implemented by tracking the execution time of each test and calculating the saved time when a failure occurs. The output can be printed to the console or included in the test reports for easy visibility.
+
+start dog fooding in condensed-data and other projects (especially in TDD mode), maybe promote this mode more as it helps in  AI coding (spec driven development)

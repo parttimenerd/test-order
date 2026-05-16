@@ -50,6 +50,10 @@ plugins {
 
 > **Settings:** If using a SNAPSHOT or local build, add `mavenLocal()` to your `pluginManagement.repositories` in `settings.gradle`.
 
+> **Warning:** Adding `mavenLocal()` to project repositories can cause **"Failed to load JUnit Platform"** errors
+> when stale JUnit JARs in `~/.m2` shadow your project's versions. Prefer the **init script** approach below
+> to avoid this — it isolates `mavenLocal()` to the plugin classpath only.
+
 <details>
 <summary><b>Alternative: Gradle init script (no build file changes)</b></summary>
 

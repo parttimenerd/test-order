@@ -48,6 +48,11 @@ class TestOrderPluginTest {
         assertFalse(configuration.isVisible());
         assertFalse(configuration.isTransitive());
         assertTrue(project.getRepositories().stream().anyMatch(repo -> repo.getName().equals("testOrderMavenLocal")));
+        // Verify mavenLocal is scoped to test-order artifacts only (avoids JUnit version conflicts)
+        org.gradle.api.artifacts.repositories.MavenArtifactRepository mavenLocal =
+                (org.gradle.api.artifacts.repositories.MavenArtifactRepository) project.getRepositories().stream()
+                        .filter(repo -> repo.getName().equals("testOrderMavenLocal")).findFirst().orElseThrow();
+        assertNotNull(mavenLocal);
         assertEquals(1L, project.getTasks().stream().filter(task -> task.getName().equals("testOrderSelect")).count());
         assertTrue(project.getTasks().getNames().containsAll(Set.of(
                 "testOrderAggregate", "testOrderDump", "testOrderExportJson", "testOrderShowOrder", "testOrderExplainOrder",

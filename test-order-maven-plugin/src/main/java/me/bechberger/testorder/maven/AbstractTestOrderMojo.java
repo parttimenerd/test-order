@@ -198,6 +198,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	@Parameter(property = MavenPluginConfigKeys.TDD, defaultValue = "false")
 	protected boolean tdd;
 
+	/**
+	 * Storage location for test-order data:
+	 * <ul>
+	 * <li><b>local</b> (default) — stores data in {@code <project>/.test-order/}</li>
+	 * <li><b>home</b> — stores data in {@code ~/.test-order/<project-name>-<hash>/},
+	 * surviving {@code git clean -fdx}</li>
+	 * </ul>
+	 */
+	@Parameter(property = MavenPluginConfigKeys.STORAGE, defaultValue = "local")
+	protected String storage;
+
 	// ── Score override parameters (shared by auto, select, prepare, show-order) ──
 
 	/** Score bonus for new test classes not in the dependency index */
@@ -256,7 +267,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		warnJUnit4Unsupported();
 		applyCanonicalUserPropertyOverrides();
 		validateParameters();
-		ctx = new ReactorContext(session, project);
+		ctx = new ReactorContext(session, project, storage, pluginLog());
 		try {
 			ctx.ensureSharedDirectories();
 		} catch (IOException e) {

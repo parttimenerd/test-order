@@ -46,13 +46,19 @@ public final class OrderWorkflow {
 				ctx.sourceRoot() != null ? ctx.sourceRoot().toAbsolutePath().toString() : null, ctx.changeMode()));
 
 		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {
-			ctx.log().info("[test-order] No changed classes detected — running tests in default order.");
+			ctx.log().info("[test-order] No changed classes detected — scoring still applies but no change-bonus will be added.");
 		} else {
 			if (!a.changedClasses().isEmpty()) {
-				ctx.log().info("[test-order] Detected " + a.changedClasses().size() + " changed source classes");
+				ctx.log().info("[test-order] Detected " + a.changedClasses().size() + " changed source classes: "
+						+ String.join(", ", new java.util.TreeSet<>(a.changedClasses())));
+				Set<String> boosted = a.depMap().getAffectedTests(a.changedClasses());
+				if (!boosted.isEmpty()) {
+					ctx.log().info("[test-order]   \u2192 boosting " + boosted.size() + " tests that depend on them");
+				}
 			}
 			if (!a.changedTests().isEmpty()) {
-				ctx.log().info("[test-order] Detected " + a.changedTests().size() + " changed test classes");
+				ctx.log().info("[test-order] Detected " + a.changedTests().size() + " changed test classes: "
+						+ String.join(", ", new java.util.TreeSet<>(a.changedTests())));
 			}
 		}
 

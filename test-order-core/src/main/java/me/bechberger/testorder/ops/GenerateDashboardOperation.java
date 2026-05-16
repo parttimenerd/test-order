@@ -111,7 +111,7 @@ public final class GenerateDashboardOperation {
 		Files.writeString(outputPath, html, StandardCharsets.UTF_8);
 
 		log.info("[test-order] Dashboard written to: " + outputPath);
-		log.info("[test-order] To open automatically, set testorder.dashboard.open=true");
+		log.info("[test-order] To open automatically: mvn test-order:dashboard -Dtestorder.dashboard.open=true");
 
 		return outputPath;
 	}

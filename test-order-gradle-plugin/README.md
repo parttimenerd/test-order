@@ -76,6 +76,16 @@ projectsLoaded {
 
 </details>
 
+### Troubleshooting: `mavenLocal()` and JUnit Platform conflicts
+
+> The plugin automatically scopes its `mavenLocal()` repository to only resolve `me.bechberger` artifacts,
+> so it will **not** pull in stale JUnit Platform JARs from `~/.m2`. Both the plugin DSL and init-script
+> approaches work safely with JUnit 5 and JUnit 6 projects.
+>
+> If you still encounter **"Failed to load JUnit Platform"** errors, check that you haven't added an
+> unscoped `mavenLocal()` elsewhere in your `build.gradle` or `settings.gradle`.
+> Running `mvn dependency:purge-local-repository -DmanualInclude=org.junit` can clear stale JUnit artifacts.
+
 ### 2. Learn — build the dependency index
 
 ```bash
@@ -130,6 +140,10 @@ testOrder {
 
     // TDD enforcement: new tests that pass without failing first are artificially failed
     tdd = false
+
+    // Storage location: "local" (default, in-project .test-order/) or "home" (~/.test-order/<project>/)
+    // "home" survives git clean -fdx and fresh clones
+    storage = "local"
 
     // Change detection: "uncommitted" | "auto" | "since-last-run" | "since-last-commit" | "explicit"
     changeMode = "uncommitted"
