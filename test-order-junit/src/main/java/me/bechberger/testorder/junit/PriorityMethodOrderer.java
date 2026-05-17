@@ -193,6 +193,8 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			if (alwaysRun || prio == TestOrder.Priority.FIRST) {
 				if (pinFirstSet.add(md))
 					pinFirstMethods.add(md);
+				if (delta != 0)
+					effectiveScores.merge(md.getMethod().getName(), delta, Double::sum);
 			} else if (prio == TestOrder.Priority.LAST) {
 				pinLastMethods.add(md);
 				pinLastSet.add(md);

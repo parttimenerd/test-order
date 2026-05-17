@@ -45,6 +45,7 @@ class PriorityClassOrdererTest {
 
 	@BeforeEach
 	void saveProperties() {
+		PriorityClassOrderer.resetForTesting();
 		origIndexPath = System.getProperty("testorder.index.path");
 		origChangedClasses = System.getProperty("testorder.changed.classes");
 		origChangedClassesFile = System.getProperty("testorder.changed.classes.file");
@@ -975,6 +976,7 @@ class PriorityClassOrdererTest {
 		// The key check: it should NOT be pushed above String purely by changeBonus
 		// Mark ChangeBonusTest as changed: now bonus applies
 		System.setProperty("testorder.changed.test.classes", ChangeBonusTest.class.getName());
+		PriorityClassOrderer.resetForTesting();
 		PriorityClassOrderer orderer2 = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs2 = new ArrayList<>(List.of(desc(String.class), desc(ChangeBonusTest.class)));
 		orderer2.orderClasses(new StubClassOrdererContext(descs2));

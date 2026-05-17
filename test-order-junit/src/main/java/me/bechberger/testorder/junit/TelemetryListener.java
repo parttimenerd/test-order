@@ -482,7 +482,7 @@ public class TelemetryListener implements TestExecutionListener {
 
 		// Default order: alphabetical by class name
 		List<String> defaultOrder = new ArrayList<>(executionOrder);
-		defaultOrder.sort(String::compareTo);
+		defaultOrder.sort(String.CASE_INSENSITIVE_ORDER);
 		int defaultFailPos = defaultOrder.indexOf(firstFailedClass);
 		if (defaultFailPos < 0) {
 			return;

@@ -47,15 +47,20 @@ public class ChangeDetector {
 
 	private static Set<String> doDetect(Mode mode, Path projectRoot, Path sourceRoot, Path hashFile,
 			String explicitClasses, boolean readOnly) throws IOException {
-		Path gitRoot = findGitRoot(projectRoot);
-		String gitPrefix = toGitPrefix(projectRoot, sourceRoot);
 		Path absoluteSourceRoot = projectRoot.resolve(sourceRoot);
 		try {
 			return switch (mode) {
 				case SINCE_LAST_RUN -> detectSinceLastRun(absoluteSourceRoot, hashFile, !readOnly);
-				case SINCE_LAST_COMMIT ->
-					mergeUncommitted(GitChangeDetector.changedSinceLastCommit(gitRoot, gitPrefix), gitRoot, gitPrefix);
-				case UNCOMMITTED -> GitChangeDetector.uncommittedChanges(gitRoot, gitPrefix);
+				case SINCE_LAST_COMMIT, UNCOMMITTED -> {
+					Path gitRoot = findGitRoot(projectRoot);
+					String gitPrefix = toGitPrefix(projectRoot, sourceRoot, gitRoot);
+					yield switch (mode) {
+						case SINCE_LAST_COMMIT -> mergeUncommitted(
+								GitChangeDetector.changedSinceLastCommit(gitRoot, gitPrefix), gitRoot, gitPrefix);
+						case UNCOMMITTED -> GitChangeDetector.uncommittedChanges(gitRoot, gitPrefix);
+						default -> throw new AssertionError();
+					};
+				}
 				case EXPLICIT -> parseExplicit(explicitClasses);
 			};
 		} catch (IOException e) {
@@ -91,13 +96,20 @@ public class ChangeDetector {
 	 * {@code src/main/java/}.
 	 */
 	static String toGitPrefix(Path projectRoot, Path sourceRoot) {
+		return toGitPrefix(projectRoot, sourceRoot, findGitRoot(projectRoot));
+	}
+
+	/**
+	 * Converts a source root to a git-relative prefix path using the provided git
+	 * root, avoiding a redundant {@code git rev-parse} subprocess.
+	 */
+	static String toGitPrefix(Path projectRoot, Path sourceRoot, Path gitRoot) {
 		Path absoluteSource;
 		if (sourceRoot.isAbsolute()) {
 			absoluteSource = sourceRoot;
 		} else {
 			absoluteSource = projectRoot.resolve(sourceRoot);
 		}
-		Path gitRoot = findGitRoot(projectRoot);
 		Path relative;
 		try {
 			relative = gitRoot.relativize(absoluteSource.toAbsolutePath().normalize());
@@ -128,8 +140,11 @@ public class ChangeDetector {
 			try (var is = process.getInputStream()) {
 				output = new String(is.readAllBytes()).trim();
 			}
-			if (process.waitFor(GitTimeout.seconds(), java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0
-					&& !output.isEmpty()) {
+			if (!process.waitFor(GitTimeout.seconds(), java.util.concurrent.TimeUnit.SECONDS)) {
+				process.destroyForcibly();
+				return projectRoot.toAbsolutePath().normalize();
+			}
+			if (process.exitValue() == 0 && !output.isEmpty()) {
 				return Path.of(output).toAbsolutePath().normalize();
 			}
 		} catch (IOException e) {

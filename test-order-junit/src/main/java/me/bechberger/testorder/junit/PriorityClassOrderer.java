@@ -51,17 +51,33 @@ public class PriorityClassOrderer implements ClassOrderer {
 	private static final AtomicBoolean negativeWeightsWarned = new AtomicBoolean(false);
 
 	/** Shared config resolver (system props + classpath properties). */
-	private volatile TestOrderConfigResolver config;
+	private static volatile TestOrderConfigResolver config;
 
 	/**
 	 * Cached setup result — avoids repeated load attempts (and error logs) on every
-	 * orderClasses() call. Volatile to ensure visibility across threads.
+	 * orderClasses() call. Static + volatile because JUnit may create a new
+	 * ClassOrderer instance per orderClasses() call.
 	 */
-	private volatile ClassOrderingEngine.SetupResult cachedSetup;
-	private volatile boolean setupAttempted;
+	private static volatile ClassOrderingEngine.SetupResult cachedSetup;
+	private static volatile boolean setupAttempted;
 
 	/** Lock for one-time setup initialization. */
-	private final Object setupLock = new Object();
+	private static final Object setupLock = new Object();
+
+	/**
+	 * Resets all static cached state so that the next {@code orderClasses()} call
+	 * re-runs setup from scratch. Intended for test isolation only.
+	 */
+	public static void resetForTesting() {
+		synchronized (setupLock) {
+			config = null;
+			cachedSetup = null;
+			setupAttempted = false;
+		}
+		changeDetectionLogged.set(false);
+		mlPredictionsLogged.set(false);
+		negativeWeightsWarned.set(false);
+	}
 
 	@Override
 	public void orderClasses(ClassOrdererContext context) {

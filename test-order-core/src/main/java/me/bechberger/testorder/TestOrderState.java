@@ -939,19 +939,20 @@ public class TestOrderState {
 		if (root.containsKey("config")) {
 			Map<String, Object> cm = safeMap(root.get("config"), "config");
 			if (cm.containsKey("failureDecay"))
-				state.setFailureDecay(safeDouble(cm.get("failureDecay"), state.failureDecay(), "config.failureDecay"));
+				state.setFailureDecay(
+						clamp01(safeDouble(cm.get("failureDecay"), state.failureDecay(), "config.failureDecay")));
 			if (cm.containsKey("methodFailureDecay"))
-				state.setMethodFailureDecay(safeDouble(cm.get("methodFailureDecay"), state.methodFailureDecay(),
-						"config.methodFailureDecay"));
+				state.setMethodFailureDecay(clamp01(safeDouble(cm.get("methodFailureDecay"), state.methodFailureDecay(),
+						"config.methodFailureDecay")));
 			if (cm.containsKey("durationAlpha"))
 				state.setDurationAlpha(
-						safeDouble(cm.get("durationAlpha"), state.durationAlpha(), "config.durationAlpha"));
+						clamp01(safeDouble(cm.get("durationAlpha"), state.durationAlpha(), "config.durationAlpha")));
 			if (cm.containsKey("methodDurationAlpha"))
-				state.setMethodDurationAlpha(safeDouble(cm.get("methodDurationAlpha"), state.methodDurationAlpha(),
-						"config.methodDurationAlpha"));
+				state.setMethodDurationAlpha(clamp01(safeDouble(cm.get("methodDurationAlpha"),
+						state.methodDurationAlpha(), "config.methodDurationAlpha")));
 			if (cm.containsKey("failurePruneThreshold"))
-				state.setFailurePruneThreshold(safeDouble(cm.get("failurePruneThreshold"),
-						state.failurePruneThreshold(), "config.failurePruneThreshold"));
+				state.setFailurePruneThreshold(clamp01(safeDouble(cm.get("failurePruneThreshold"),
+						state.failurePruneThreshold(), "config.failurePruneThreshold")));
 			if (cm.containsKey("emaVarianceThreshold"))
 				state.setEmaVarianceThreshold(safeDouble(cm.get("emaVarianceThreshold"), state.emaVarianceThreshold(),
 						"config.emaVarianceThreshold"));
@@ -1129,6 +1130,11 @@ public class TestOrderState {
 			LOG.warning("Invalid double for " + label + ": " + o);
 			return defaultValue;
 		}
+	}
+
+	/** Clamps a value to the [0, 1] range. */
+	private static double clamp01(double v) {
+		return Math.max(0.0, Math.min(1.0, v));
 	}
 
 	private static int toInt(Object o) {
