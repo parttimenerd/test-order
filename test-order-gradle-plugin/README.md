@@ -85,6 +85,22 @@ projectsLoaded {
 > If you still encounter **"Failed to load JUnit Platform"** errors, check that you haven't added an
 > unscoped `mavenLocal()` elsewhere in your `build.gradle` or `settings.gradle`.
 > Running `mvn dependency:purge-local-repository -DmanualInclude=org.junit` can clear stale JUnit artifacts.
+>
+> **Note:** If you scope `mavenLocal()` in `pluginManagement` for safety, include **both** groups:
+> ```groovy
+> pluginManagement {
+>     repositories {
+>         mavenLocal {
+>             content {
+>                 includeGroup("me.bechberger")
+>                 includeGroup("me.bechberger.test-order") // plugin marker artifact
+>             }
+>         }
+>         gradlePluginPortal()
+>         mavenCentral()
+>     }
+> }
+> ```
 
 ### 2. Learn — build the dependency index
 

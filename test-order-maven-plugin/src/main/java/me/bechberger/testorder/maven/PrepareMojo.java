@@ -227,8 +227,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				if (!Files.exists(testHash)) {
 					Path statePath = ctx.resolveStateFile(stateFile);
 					if (!Files.exists(statePath)) {
-						getLog().info(
-								"[test-order] State file missing — re-learning to rebuild scoring data.");
+						getLog().info("[test-order] State file missing — re-learning to rebuild scoring data.");
 					}
 					getLog().debug("[test-order] First learn for this module — " + newTests.size()
 							+ " test class(es) not yet in index.");

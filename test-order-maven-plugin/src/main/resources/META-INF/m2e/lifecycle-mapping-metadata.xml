@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lifecycleMappingMetadata>
+  <pluginExecutions>
+    <pluginExecution>
+      <pluginExecutionFilter>
+        <groupId>me.bechberger</groupId>
+        <artifactId>test-order-maven-plugin</artifactId>
+        <versionRange>[0.0.1-SNAPSHOT,)</versionRange>
+        <goals>
+          <goal>prepare</goal>
+          <goal>auto</goal>
+          <goal>learn</goal>
+          <goal>select</goal>
+          <goal>run-remaining</goal>
+          <goal>run-tier</goal>
+          <goal>tiered-select</goal>
+        </goals>
+      </pluginExecutionFilter>
+      <action>
+        <execute>
+          <runOnIncremental>false</runOnIncremental>
+          <runOnConfiguration>false</runOnConfiguration>
+        </execute>
+      </action>
+    </pluginExecution>
+  </pluginExecutions>
+</lifecycleMappingMetadata>

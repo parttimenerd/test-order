@@ -320,19 +320,22 @@ JUnit's `@Order` and `@TestMethodOrder` annotations are respected — test-order
 <details>
 <summary><strong>JaCoCo / Mockito coexistence</strong></summary>
 
-If your POM defines a custom `<argLine>`, use Maven's late-binding syntax to chain agents:
+test-order and JaCoCo chain automatically — no configuration needed in most cases. Both plugins set the Maven `argLine` property, and they append to each other.
+
+You only need `@{argLine}` if your POM already has a **hardcoded** `<argLine>` with custom JVM flags:
 
 ```xml
 <plugin>
   <groupId>org.apache.maven.plugins</groupId>
   <artifactId>maven-surefire-plugin</artifactId>
   <configuration>
+    <!-- @{argLine} lets JaCoCo + test-order inject their agents -->
     <argLine>@{argLine} -Xmx1024m</argLine>
   </configuration>
 </plugin>
 ```
 
-The plugin auto-detects hardcoded `<argLine>` and falls back gracefully, but `@{argLine}` is recommended.
+If you don't have a custom `<argLine>`, don't add one — the plugin auto-detects and handles it.
 
 </details>
 
@@ -345,7 +348,7 @@ Run `mvn test-order:diagnose` first — it checks everything automatically.
 | `No plugin found for prefix 'test-order'` | Add the plugin to your `pom.xml` first (see [Quick Start](#quick-start)) — or use the fully-qualified goal: `mvn me.bechberger:test-order-maven-plugin:0.0.1-SNAPSHOT:auto test` |
 | Tests in default order | Run with `-Dtestorder.debug=true` to see what's happening |
 | `No dependency index found` on second run | Ensure the first run completed successfully and `.test-order/test-dependencies.lz4` exists |
-| JaCoCo reports 0% coverage | Use `@{argLine}` syntax (see Compatibility above) |
+| JaCoCo reports 0% coverage | Usually works automatically; if you have a hardcoded `<argLine>`, add `@{argLine}` (see Compatibility above) |
 | Stale ordering after refactor | Re-learn: `mvn test -Dtestorder.mode=learn` |
 | No index despite sources | Set `-Dtestorder.includePackages=com.yourcompany` |
 | `Could not resolve artifact` | Plugin not published to Maven Central yet — build from source (see [Development](#development)) |
@@ -401,7 +404,7 @@ Commit `.test-order/test-dependencies.lz4` to version control. Teammates and CI 
 <details>
 <summary><strong>Can I use it alongside JaCoCo, Mockito, or other agents?</strong></summary>
 
-Yes. Use Maven's `@{argLine}` late-binding in Surefire to chain multiple agents. See [Compatibility](#compatibility) above.
+Yes. JaCoCo and test-order chain automatically with no configuration. Only if you have a hardcoded `<argLine>` in Surefire do you need `@{argLine}` — see [Compatibility](#compatibility).
 
 </details>
 

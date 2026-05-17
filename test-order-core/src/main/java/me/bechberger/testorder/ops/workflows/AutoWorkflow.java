@@ -133,7 +133,8 @@ public final class AutoWorkflow {
 			var allTests = new ArrayList<>(a.depMap().testClasses());
 			selectResult = new SelectOperation.SelectResult(new TestSelector.Selection(allTests, java.util.List.of()),
 					true);
-			ctx.log().info("[test-order] No changed classes detected — running all tests without change-bonus scoring.");
+			ctx.log()
+					.info("[test-order] No changed classes detected — running all tests without change-bonus scoring.");
 		} else {
 			if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {
 				ctx.log().info("[test-order] No changed classes detected — applying topN/randomM selection only.");

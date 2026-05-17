@@ -90,7 +90,8 @@ final class MavenPluginConfigKeys {
 	// TDD enforcement
 	static final String TDD = "testorder.tdd";
 
-	// Storage location: "local" (default, in-project .test-order/) or "home" (~/.test-order/<project>/)
+	// Storage location: "local" (default, in-project .test-order/) or "home"
+	// (~/.test-order/<project>/)
 	static final String STORAGE = "testorder.storage";
 
 	static final String DETECT_ALGORITHM = "testorder.detect.algorithm";

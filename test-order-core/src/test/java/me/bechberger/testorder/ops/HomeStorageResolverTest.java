@@ -94,14 +94,12 @@ class HomeStorageResolverTest {
 		Path relinked = r.resolve(newLocation, "moveable", null);
 
 		// Should reuse the same storage (has our marker)
-		assertTrue(Files.exists(relinked.resolve("marker.txt")),
-				"Should reuse storage from the old location");
+		assertTrue(Files.exists(relinked.resolve("marker.txt")), "Should reuse storage from the old location");
 		assertEquals("hello", Files.readString(relinked.resolve("marker.txt")));
 
 		// Metadata should be updated to new path
 		Properties props = loadProps(relinked.resolve("metadata.properties"));
-		assertEquals(newLocation.toAbsolutePath().normalize().toString(),
-				props.getProperty("projectPath"));
+		assertEquals(newLocation.toAbsolutePath().normalize().toString(), props.getProperty("projectPath"));
 	}
 
 	// ── Conflict detection ──────────────────────────────────────────
@@ -191,10 +189,22 @@ class HomeStorageResolverTest {
 		Path project = fakeProject("logtest");
 		List<String> logs = new ArrayList<>();
 		PluginLog log = new PluginLog() {
-			@Override public void info(String msg) { logs.add("INFO: " + msg); }
-			@Override public void warn(String msg) { logs.add("WARN: " + msg); }
-			@Override public void error(String msg) { logs.add("ERROR: " + msg); }
-			@Override public void debug(String msg) { logs.add("DEBUG: " + msg); }
+			@Override
+			public void info(String msg) {
+				logs.add("INFO: " + msg);
+			}
+			@Override
+			public void warn(String msg) {
+				logs.add("WARN: " + msg);
+			}
+			@Override
+			public void error(String msg) {
+				logs.add("ERROR: " + msg);
+			}
+			@Override
+			public void debug(String msg) {
+				logs.add("DEBUG: " + msg);
+			}
 		};
 
 		resolver().resolve(project, "logtest", log);

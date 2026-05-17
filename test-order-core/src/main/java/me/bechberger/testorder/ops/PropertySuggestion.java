@@ -41,7 +41,10 @@ public final class PropertySuggestion {
 			"testorder.ml.history.maxRuns", "testorder.ml.predictions.file", "testorder.remaining.file",
 			"testorder.failOnError", "testorder.coverage.threshold", "testorder.coverage.outputDir",
 			"testorder.coverage.failOnViolation", "coverage.threshold", "coverage.outputDir",
-			"testorder.git.timeout.seconds", "testorder.lock.stale.minutes");
+			"testorder.git.timeout.seconds", "testorder.lock.stale.minutes", "testorder.storage",
+			"testorder.detect.algorithm", "testorder.detect.timeBudget", "testorder.detect.stopOnFirst",
+			"testorder.detect.seed", "testorder.detect.failOnDetection", "testorder.structuralDiff.enabled",
+			"testorder.dashboard.coverageDir");
 
 	/**
 	 * Find the closest known key to the given unknown key using case-insensitive

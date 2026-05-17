@@ -191,7 +191,18 @@ public class DetectDependenciesMojo extends AbstractTestOrderMojo {
 		Config config = new Config(indexPath, statePath, outputDir, algorithm, timeBudget, stopOnFirst, randomSeed,
 				moduleProject.getArtifactId(), MavenPluginLog.wrap(getLog()));
 
-		TestRunner runner = new MavenTestRunner(moduleProject, session, getLog());
+		// Resolve test-order-junit and dependencies so the FixedOrderClassOrderer
+		// is available on the forked test classpath
+		List<String> ordererClasspath;
+		try {
+			Path[] resolved = resolveOrdererClasspath();
+			ordererClasspath = java.util.Arrays.stream(resolved).map(p -> p.toAbsolutePath().toString()).toList();
+		} catch (MojoExecutionException e) {
+			getLog().warn("[test-order] Could not resolve orderer classpath: " + e.getMessage());
+			ordererClasspath = List.of();
+		}
+
+		TestRunner runner = new MavenTestRunner(moduleProject, session, getLog(), ordererClasspath);
 
 		try {
 			Result result = DetectDependenciesOperation.run(config, runner);

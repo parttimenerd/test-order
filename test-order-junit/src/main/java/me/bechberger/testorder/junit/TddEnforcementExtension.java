@@ -55,10 +55,11 @@ public class TddEnforcementExtension implements AfterTestExecutionCallback {
 
 		String className = context.getRequiredTestClass().getName();
 		String methodName = context.getRequiredTestMethod().getName();
+		String topLevel = TestOrderConfigResolver.toTopLevelClassName(className);
 
 		Map<String, Long> classDurations = state.getClassDurations();
 
-		if (!classDurations.containsKey(className)) {
+		if (!classDurations.containsKey(className) && !classDurations.containsKey(topLevel)) {
 			throw new AssertionError(
 					formatViolation("New test CLASS passed without failing first", className, methodName));
 		}
@@ -68,6 +69,9 @@ public class TddEnforcementExtension implements AfterTestExecutionCallback {
 		// class-level data but no per-method data — flagging every method in that
 		// case would be a false positive.
 		Map<String, Double> methodsForClass = state.getMethodDurations().get(className);
+		if (methodsForClass == null && !topLevel.equals(className)) {
+			methodsForClass = state.getMethodDurations().get(topLevel);
+		}
 		if (methodsForClass != null && !methodsForClass.containsKey(methodName)) {
 			throw new AssertionError(
 					formatViolation("New test METHOD passed without failing first", className, methodName));

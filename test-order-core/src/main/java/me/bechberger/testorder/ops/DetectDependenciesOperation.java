@@ -166,7 +166,9 @@ public final class DetectDependenciesOperation {
 		// Determine passing tests (run in reference order)
 		log.info("Running reference test run (" + referenceOrder.size()
 				+ " classes) to determine baseline pass/fail...");
-		Set<String> passingTests = determinePassingTests(referenceOrder, runner, log);
+		PassingTestsResult ptr = determinePassingTests(referenceOrder, runner, log);
+		Set<String> passingTests = ptr.passing();
+		referenceOrder = ptr.effectiveOrder();
 		if (passingTests.isEmpty()) {
 			log.warn("No tests pass in reference order — cannot detect OD bugs. " + "All " + referenceOrder.size()
 					+ " test classes had failures. "
@@ -312,10 +314,15 @@ public final class DetectDependenciesOperation {
 	}
 
 	private static List<String> determineReferenceOrder(TestOrderState state, DependencyMap depMap) {
-		// Prefer last passing run's order
+		// Prefer last run with outcomes (search backwards for one that has test
+		// results)
 		if (state != null && !state.runs().isEmpty()) {
-			TestOrderState.RunRecord lastRun = state.runs().get(state.runs().size() - 1);
-			return lastRun.outcomes().stream().map(TestOrderState.TestOutcome::testClass).toList();
+			for (int i = state.runs().size() - 1; i >= 0; i--) {
+				TestOrderState.RunRecord run = state.runs().get(i);
+				if (!run.outcomes().isEmpty()) {
+					return run.outcomes().stream().map(TestOrderState.TestOutcome::testClass).toList();
+				}
+			}
 		}
 		// Fall back to dependency map's test classes
 		if (depMap != null) {
@@ -342,14 +349,37 @@ public final class DetectDependenciesOperation {
 		return sorted;
 	}
 
-	private static Set<String> determinePassingTests(List<String> referenceOrder, TestRunner runner, PluginLog log) {
+	private record PassingTestsResult(Set<String> passing, List<String> effectiveOrder) {
+	}
+
+	private static PassingTestsResult determinePassingTests(List<String> referenceOrder, TestRunner runner,
+			PluginLog log) {
 		TestRunner.TestRunResult result = runner.run(referenceOrder);
 		Set<String> passing = new HashSet<>(result.passedTests());
+		List<String> effectiveOrder = new ArrayList<>(referenceOrder);
 		if (!result.failedTests().isEmpty()) {
-			log.warn(result.failedTests().size() + " of " + referenceOrder.size()
-					+ " test classes fail in reference order (ignored for detection)");
+			// Some tests fail in the reference order. Try putting them at the end
+			// (after passing tests) to check if they are order-dependent rather than
+			// genuinely broken. This catches the common case where a test depends on
+			// another test running first.
+			List<String> reordered = new ArrayList<>(result.passedTests());
+			reordered.addAll(result.failedTests());
+			TestRunner.TestRunResult retryResult = runner.run(reordered);
+			Set<String> recovered = new HashSet<>(retryResult.passedTests());
+			recovered.removeAll(passing);
+			if (!recovered.isEmpty()) {
+				log.info(recovered.size() + " test(s) pass when run after others — "
+						+ "these are likely order-dependent (included in detection)");
+				passing.addAll(recovered);
+				effectiveOrder = reordered;
+			}
+			Set<String> stillFailing = new HashSet<>(retryResult.failedTests());
+			if (!stillFailing.isEmpty()) {
+				log.warn(stillFailing.size() + " of " + effectiveOrder.size()
+						+ " test classes fail regardless of order (ignored for detection)");
+			}
 		}
-		return passing;
+		return new PassingTestsResult(passing, effectiveOrder);
 	}
 
 	private static final Set<String> VALID_ALGORITHMS = Set.of("reverse", "reverse-order", "random",

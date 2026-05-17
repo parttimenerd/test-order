@@ -189,8 +189,7 @@ final class ReactorContext {
 		if (homeStorage) {
 			return sharedDir.resolve("test-hashes.lz4");
 		}
-		return resolveConfiguredPath(configured,
-				project.getBasedir().toPath().resolve(".test-order/test-hashes.lz4"));
+		return resolveConfiguredPath(configured, project.getBasedir().toPath().resolve(".test-order/test-hashes.lz4"));
 	}
 
 	Path resolveMethodHashFile(String configured) {

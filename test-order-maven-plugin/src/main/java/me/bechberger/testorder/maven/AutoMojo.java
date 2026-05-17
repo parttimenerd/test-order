@@ -95,6 +95,7 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		validateAutoMojoParameters();
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
 		SurefireHelper.warnConflictingRunOrder(project, getLog());
+		SurefireHelper.warnConflictingOrderers(project, getLog());
 		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
 
 		// Resolve effective mode: CLI property override wins
@@ -207,6 +208,9 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		if (autoLearnRunThreshold < 0)
 			throw new MojoExecutionException(
 					"[test-order] autoLearnRunThreshold cannot be negative: " + autoLearnRunThreshold);
+		if (autoLearnDiffThreshold < 0)
+			throw new MojoExecutionException(
+					"[test-order] autoLearnDiffThreshold cannot be negative: " + autoLearnDiffThreshold);
 	}
 
 	private boolean isPrepareGoalBound() {

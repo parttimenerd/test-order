@@ -23,6 +23,7 @@ class MavenTestRunner implements TestRunner {
 	private final Log log;
 	private final Path reportDir;
 	private final Path runtimeDir;
+	private final List<String> extraClasspathEntries;
 
 	/** Circular buffer of last N lines of subprocess output for diagnostics. */
 	private static final int OUTPUT_BUFFER_SIZE = 50;
@@ -37,11 +38,16 @@ class MavenTestRunner implements TestRunner {
 			"-Dlicense.skip=true", "-Danimal.sniffer.skip=true");
 
 	MavenTestRunner(MavenProject project, MavenSession session, Log log) {
+		this(project, session, log, List.of());
+	}
+
+	MavenTestRunner(MavenProject project, MavenSession session, Log log, List<String> extraClasspathEntries) {
 		this.project = project;
 		this.session = session;
 		this.log = log;
 		this.reportDir = Path.of(project.getBuild().getDirectory(), "surefire-reports");
 		this.runtimeDir = Path.of(project.getBuild().getDirectory(), "test-order-detect-runtime");
+		this.extraClasspathEntries = extraClasspathEntries;
 	}
 
 	@Override
@@ -145,8 +151,8 @@ class MavenTestRunner implements TestRunner {
 					"-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
 					// Pass the order file path to the forked JVM via argLine (quote for spaces)
 					"-DargLine=-Dtestorder.fixed.order.file=\"" + orderFile.toAbsolutePath() + "\"",
-					// Add runtime dir to test classpath for junit-platform.properties
-					"-Dmaven.test.additionalClasspath=" + runtimeDir.toAbsolutePath(), "--batch-mode", "--quiet"));
+					// Add runtime dir + test-order JARs to test classpath
+					"-Dmaven.test.additionalClasspath=" + buildAdditionalClasspath(), "--batch-mode", "--quiet"));
 			command.addAll(PLUGIN_SKIP_FLAGS);
 			if (!runAll) {
 				command.add(2, "-Dtest=" + testList);
@@ -232,7 +238,7 @@ class MavenTestRunner implements TestRunner {
 			List<String> command = new ArrayList<>(List.of("mvn", "surefire:test", "-Dtest=" + testClass,
 					"-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
 					"-DargLine=-Dtestorder.fixed.method.order.file=\"" + methodOrderFile.toAbsolutePath() + "\"",
-					"-Dmaven.test.additionalClasspath=" + runtimeDir.toAbsolutePath(), "--batch-mode", "--quiet"));
+					"-Dmaven.test.additionalClasspath=" + buildAdditionalClasspath(), "--batch-mode", "--quiet"));
 			command.addAll(PLUGIN_SKIP_FLAGS);
 
 			File workDir;
@@ -294,6 +300,13 @@ class MavenTestRunner implements TestRunner {
 		Files.createDirectories(orderFile.getParent());
 		Files.writeString(orderFile, String.join("\n", testOrder));
 		return orderFile;
+	}
+
+	private String buildAdditionalClasspath() {
+		List<String> entries = new ArrayList<>();
+		entries.add(runtimeDir.toAbsolutePath().toString());
+		entries.addAll(extraClasspathEntries);
+		return String.join(",", entries);
 	}
 
 	private TestRunResult parseResults(List<String> executionOrder) {

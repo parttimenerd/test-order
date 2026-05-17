@@ -356,8 +356,11 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         warnJUnit4Unsupported(project);
 
+        // Redirect extension file properties to home storage if configured
+        applyHomeStorageRedirect(project, ext);
+
         // Clean up stale temp files from interrupted writes (parity with Maven)
-        Path baseDir = project.getRootProject().getProjectDir().toPath().resolve(".test-order");
+        Path baseDir = ext.getIndexFile().get().getAsFile().toPath().getParent();
         me.bechberger.testorder.PersistenceSupport.cleanupStaleTemps(baseDir);
 
         // Validate cache directory is writable (clear message vs cryptic AccessDeniedException)
@@ -1646,6 +1649,43 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     // -----------------------------------------------------------------------
+    // Home storage redirect
+    // -----------------------------------------------------------------------
+
+    /**
+     * When {@code testorder.storage=home} is configured, update the extension
+     * file properties (indexFile, stateFile, hashFile, etc.) to point to the
+     * home directory ({@code ~/.test-order/<project-hash>/}) instead of the
+     * default local {@code .test-order/} directory.  This ensures all methods
+     * that read {@code ext.getIndexFile()} etc. use the correct home paths.
+     */
+    private static void applyHomeStorageRedirect(Project project, TestOrderExtension ext) {
+        String storageMode = gradleOrSystemProperty(project, "testorder.storage");
+        if (storageMode == null || storageMode.isBlank()) {
+            storageMode = ext.getStorage().getOrElse("local");
+        }
+        if (!"home".equalsIgnoreCase(storageMode)) {
+            return;
+        }
+        Path rootDir = project.getRootProject().getProjectDir().toPath().toAbsolutePath();
+        String projectName = project.getRootProject().getName();
+        HomeStorageResolver resolver = new HomeStorageResolver();
+        Path homeDir;
+        try {
+            homeDir = resolver.resolve(rootDir, projectName, wrapLog(project));
+        } catch (java.io.IOException e) {
+            throw new GradleException(
+                    "Failed to resolve home storage for project '" + projectName + "'", e);
+        }
+        project.getLogger().lifecycle("[test-order] Storing data in home directory: {}", homeDir);
+        ext.getIndexFile().set(homeDir.resolve("test-dependencies.lz4").toFile());
+        ext.getStateFile().set(homeDir.resolve("state.lz4").toFile());
+        ext.getHashFile().set(homeDir.resolve("hashes.lz4").toFile());
+        ext.getTestHashFile().set(homeDir.resolve("test-hashes.lz4").toFile());
+        ext.getMethodHashFile().set(homeDir.resolve("method-hashes.lz4").toFile());
+    }
+
+    // -----------------------------------------------------------------------
     // PluginContext builder
     // -----------------------------------------------------------------------
 
@@ -1677,37 +1717,14 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
         }
 
-        // Resolve home storage if configured
-        String storageMode = gradleOrSystemProperty(project, "testorder.storage");
-        if (storageMode == null || storageMode.isBlank()) {
-            storageMode = ext.getStorage().getOrElse("local");
-        }
-        Path indexFile, stateFile, depsDir, hashFile, testHashFile, methodHashFile;
-        if ("home".equalsIgnoreCase(storageMode)) {
-            Path rootDir = project.getRootProject().getProjectDir().toPath().toAbsolutePath();
-            String projectName = project.getRootProject().getName();
-            HomeStorageResolver resolver = new HomeStorageResolver();
-            Path homeDir;
-            try {
-                homeDir = resolver.resolve(rootDir, projectName, wrapLog(project));
-            } catch (java.io.IOException e) {
-                throw new org.gradle.api.GradleException(
-                        "Failed to resolve home storage for project '" + projectName + "'", e);
-            }
-            indexFile = homeDir.resolve("test-dependencies.lz4");
-            stateFile = homeDir.resolve("state.lz4");
-            depsDir = homeDir.resolve("deps");
-            hashFile = homeDir.resolve("hashes.lz4");
-            testHashFile = homeDir.resolve("test-hashes.lz4");
-            methodHashFile = homeDir.resolve("method-hashes.lz4");
-        } else {
-            indexFile = ext.getIndexFile().get().getAsFile().toPath();
-            stateFile = ext.getStateFile().get().getAsFile().toPath();
-            depsDir = ext.getDepsDir().get().getAsFile().toPath();
-            hashFile = ext.getHashFile().get().getAsFile().toPath();
-            testHashFile = ext.getTestHashFile().get().getAsFile().toPath();
-            methodHashFile = ext.getMethodHashFile().get().getAsFile().toPath();
-        }
+        // Extension properties already reflect home storage if configured
+        // (via applyHomeStorageRedirect in configureTestTasks)
+        Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
+        Path stateFile = ext.getStateFile().get().getAsFile().toPath();
+        Path depsDir = ext.getDepsDir().get().getAsFile().toPath();
+        Path hashFile = ext.getHashFile().get().getAsFile().toPath();
+        Path testHashFile = ext.getTestHashFile().get().getAsFile().toPath();
+        Path methodHashFile = ext.getMethodHashFile().get().getAsFile().toPath();
 
         String weightsFile = ext.getWeightsFile().get();
         Map<String, Integer> scoreOverrides = WeightResolverOperation.buildScoreOverrides(

@@ -19,17 +19,20 @@ import java.util.Properties;
  * <p>
  * Each project directory stores a {@code metadata.properties} file with:
  * <ul>
- *   <li>{@code projectPath} — the canonical path the project was first linked from</li>
- *   <li>{@code projectName} — human-readable project name (Maven artifactId, directory name)</li>
- *   <li>{@code createdAt} — ISO timestamp</li>
+ * <li>{@code projectPath} — the canonical path the project was first linked
+ * from</li>
+ * <li>{@code projectName} — human-readable project name (Maven artifactId,
+ * directory name)</li>
+ * <li>{@code createdAt} — ISO timestamp</li>
  * </ul>
  * <p>
- * <b>Move detection:</b> If the project directory has moved, the resolver checks
- * for orphaned entries with the same project name and relinks them (updating the
- * stored path).
+ * <b>Move detection:</b> If the project directory has moved, the resolver
+ * checks for orphaned entries with the same project name and relinks them
+ * (updating the stored path).
  * <p>
  * <b>Conflict detection:</b> If a different project already occupies the
- * computed slot, the resolver falls back to a new slot with a longer hash suffix.
+ * computed slot, the resolver falls back to a new slot with a longer hash
+ * suffix.
  */
 public final class HomeStorageResolver {
 
@@ -51,11 +54,15 @@ public final class HomeStorageResolver {
 	}
 
 	/**
-	 * Resolves (and creates) the home-based storage directory for the given project.
+	 * Resolves (and creates) the home-based storage directory for the given
+	 * project.
 	 *
-	 * @param projectRoot canonical project root directory
-	 * @param projectName human-readable name (e.g. Maven artifactId)
-	 * @param log         plugin logger (may be null for silent operation)
+	 * @param projectRoot
+	 *            canonical project root directory
+	 * @param projectName
+	 *            human-readable name (e.g. Maven artifactId)
+	 * @param log
+	 *            plugin logger (may be null for silent operation)
 	 * @return the storage directory under {@code ~/.test-order/}
 	 */
 	public Path resolve(Path projectRoot, String projectName, PluginLog log) throws IOException {
@@ -76,17 +83,16 @@ public final class HomeStorageResolver {
 				if (storedName.equals(projectName) && isOrphaned(Path.of(storedPath))) {
 					// The old location no longer exists → treat as a move
 					if (log != null) {
-						log.info("[test-order] Project appears to have moved from " + storedPath
-								+ " → " + canonicalRoot + ". Relinking home storage.");
+						log.info("[test-order] Project appears to have moved from " + storedPath + " → " + canonicalRoot
+								+ ". Relinking home storage.");
 					}
 					updateMetadataPath(candidate, canonicalRoot);
 					return candidate;
 				}
 				// True conflict: different project with same name at a different path
 				if (log != null) {
-					log.warn("[test-order] Home storage conflict: '" + dirName
-							+ "' is already used by project at " + storedPath
-							+ ". Creating a separate storage directory.");
+					log.warn("[test-order] Home storage conflict: '" + dirName + "' is already used by project at "
+							+ storedPath + ". Creating a separate storage directory.");
 				}
 				candidate = resolveConflict(projectName, canonicalRoot);
 			}
@@ -98,8 +104,8 @@ public final class HomeStorageResolver {
 			if (log != null) {
 				Properties meta = loadMetadata(orphan);
 				String oldPath = meta != null ? meta.getProperty(PROP_PROJECT_PATH, "?") : "?";
-				log.info("[test-order] Found existing data for '" + projectName + "' (previously at "
-						+ oldPath + "). Relinking to " + canonicalRoot + ".");
+				log.info("[test-order] Found existing data for '" + projectName + "' (previously at " + oldPath
+						+ "). Relinking to " + canonicalRoot + ".");
 			}
 			updateMetadataPath(orphan, canonicalRoot);
 			return orphan;
@@ -117,8 +123,8 @@ public final class HomeStorageResolver {
 	// ── Internal helpers ─────────────────────────────────────────────
 
 	/**
-	 * Builds a directory name like {@code myproject-a1b2c3d4} from the project
-	 * name and an 8-char hash of the canonical path.
+	 * Builds a directory name like {@code myproject-a1b2c3d4} from the project name
+	 * and an 8-char hash of the canonical path.
 	 */
 	static String buildDirName(String projectName, Path canonicalRoot) {
 		String safeName = sanitize(projectName);
@@ -147,11 +153,11 @@ public final class HomeStorageResolver {
 		try (DirectoryStream<Path> dirs = Files.newDirectoryStream(homeBase, Files::isDirectory)) {
 			for (Path dir : dirs) {
 				Properties meta = loadMetadata(dir);
-				if (meta == null) continue;
+				if (meta == null)
+					continue;
 				String storedName = meta.getProperty(PROP_PROJECT_NAME, "");
 				String storedPath = meta.getProperty(PROP_PROJECT_PATH, "");
-				if (storedName.equals(projectName)
-						&& !storedPath.equals(currentRoot.toString())
+				if (storedName.equals(projectName) && !storedPath.equals(currentRoot.toString())
 						&& isOrphaned(Path.of(storedPath))) {
 					return dir;
 				}
@@ -166,8 +172,7 @@ public final class HomeStorageResolver {
 		if (!Files.isDirectory(projectPath)) {
 			return true;
 		}
-		return !Files.exists(projectPath.resolve("pom.xml"))
-				&& !Files.exists(projectPath.resolve("build.gradle"))
+		return !Files.exists(projectPath.resolve("pom.xml")) && !Files.exists(projectPath.resolve("build.gradle"))
 				&& !Files.exists(projectPath.resolve("build.gradle.kts"));
 	}
 
@@ -229,9 +234,7 @@ public final class HomeStorageResolver {
 		if (name == null || name.isBlank()) {
 			return "unknown";
 		}
-		return name.toLowerCase(java.util.Locale.ROOT)
-				.replaceAll("[^a-z0-9._-]", "-")
-				.replaceAll("-{2,}", "-")
+		return name.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9._-]", "-").replaceAll("-{2,}", "-")
 				.replaceAll("^-|-$", "");
 	}
 
@@ -248,11 +251,8 @@ public final class HomeStorageResolver {
 			for (Path dir : dirs) {
 				Properties meta = loadMetadata(dir);
 				if (meta != null) {
-					projects.add(new StoredProject(
-							dir,
-							meta.getProperty(PROP_PROJECT_NAME, ""),
-							meta.getProperty(PROP_PROJECT_PATH, ""),
-							meta.getProperty(PROP_CREATED_AT, ""),
+					projects.add(new StoredProject(dir, meta.getProperty(PROP_PROJECT_NAME, ""),
+							meta.getProperty(PROP_PROJECT_PATH, ""), meta.getProperty(PROP_CREATED_AT, ""),
 							isOrphaned(Path.of(meta.getProperty(PROP_PROJECT_PATH, "")))));
 				}
 			}
@@ -263,7 +263,7 @@ public final class HomeStorageResolver {
 	/**
 	 * A project entry stored in the home directory.
 	 */
-	public record StoredProject(Path storageDir, String projectName, String projectPath,
-			String createdAt, boolean orphaned) {
+	public record StoredProject(Path storageDir, String projectName, String projectPath, String createdAt,
+			boolean orphaned) {
 	}
 }

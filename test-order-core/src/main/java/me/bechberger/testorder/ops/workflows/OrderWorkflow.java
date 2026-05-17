@@ -46,7 +46,8 @@ public final class OrderWorkflow {
 				ctx.sourceRoot() != null ? ctx.sourceRoot().toAbsolutePath().toString() : null, ctx.changeMode()));
 
 		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {
-			ctx.log().info("[test-order] No changed classes detected — scoring still applies but no change-bonus will be added.");
+			ctx.log().info(
+					"[test-order] No changed classes detected — scoring still applies but no change-bonus will be added.");
 		} else {
 			if (!a.changedClasses().isEmpty()) {
 				ctx.log().info("[test-order] Detected " + a.changedClasses().size() + " changed source classes: "

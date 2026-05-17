@@ -379,6 +379,11 @@ public class TelemetryListener implements TestExecutionListener {
 							TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
 									String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
 									record.firstFailurePosition() + 1, record.totalTests());
+							// Estimate time saved: compare cumulative duration before first
+							// failure in default (alphabetical) order vs. prioritized order
+							if (!isLearnRun) {
+								logTimeSaved(lockedState, record);
+							}
 						} else if (!isLearnRun && record.totalTests() > 1) {
 							TestOrderLogger.info("{} tests ran in priority order — all passed", record.totalTests());
 						}
@@ -453,6 +458,104 @@ public class TelemetryListener implements TestExecutionListener {
 		Map<String, List<Long>> methDurSnap = snapshotMapOfLists(pendingMethodDurations);
 		Set<String> methFailSnap = new java.util.HashSet<>(failedMethodNames);
 		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methDurSnap, methFailSnap);
+	}
+
+	/**
+	 * Calculates and logs the estimated time saved by prioritized ordering.
+	 * Compares the cumulative duration of tests that ran before the first failure
+	 * in the prioritized order against what would have run in the default
+	 * (alphabetical) order.
+	 */
+	private void logTimeSaved(TestOrderState lockedState, TestOrderState.RunRecord record) {
+		if (record.firstFailurePosition() < 0 || executionOrder.size() <= 1) {
+			return;
+		}
+
+		// Find the first failed test class
+		String firstFailedClass = null;
+		for (int i = 0; i < executionOrder.size(); i++) {
+			if (failedClassNames.contains(executionOrder.get(i))) {
+				firstFailedClass = executionOrder.get(i);
+				break;
+			}
+		}
+		if (firstFailedClass == null) {
+			return;
+		}
+
+		// Default order: alphabetical by class name
+		List<String> defaultOrder = new ArrayList<>(executionOrder);
+		defaultOrder.sort(String::compareTo);
+		int defaultFailPos = defaultOrder.indexOf(firstFailedClass);
+		if (defaultFailPos < 0) {
+			return;
+		}
+
+		// No improvement — first failure already at same or worse position
+		if (record.firstFailurePosition() >= defaultFailPos) {
+			return;
+		}
+
+		// Compute duration for each test class: use actual measurement from this run,
+		// fall back to EMA from state
+		java.util.function.Function<String, Long> durationOf = tc -> {
+			List<Long> measured = pendingDurations.get(tc);
+			if (measured != null) {
+				return sumDurations(measured);
+			}
+			// Check nested class durations (Outer$Inner stored under Outer)
+			long nested = 0;
+			for (var entry : pendingDurations.entrySet()) {
+				if (entry.getKey().startsWith(tc + "$")) {
+					nested += sumDurations(entry.getValue());
+				}
+			}
+			if (nested > 0) {
+				return nested;
+			}
+			return lockedState.getDuration(tc, 0);
+		};
+
+		// Cumulative duration before first failure in prioritized (actual) order
+		long prioritizedDurationBeforeFailure = 0;
+		for (int i = 0; i < record.firstFailurePosition(); i++) {
+			prioritizedDurationBeforeFailure += durationOf.apply(executionOrder.get(i));
+		}
+
+		// Cumulative duration before first failure in default order
+		long defaultDurationBeforeFailure = 0;
+		for (int i = 0; i < defaultFailPos; i++) {
+			defaultDurationBeforeFailure += durationOf.apply(defaultOrder.get(i));
+		}
+
+		long savedMs = defaultDurationBeforeFailure - prioritizedDurationBeforeFailure;
+		int positionsEarlier = defaultFailPos - record.firstFailurePosition();
+		if (savedMs > 0) {
+			TestOrderLogger.info("\u23f1\ufe0f  Estimated time saved: {} (based on default execution order)",
+					formatDuration(savedMs));
+		} else {
+			// Position improved but durations are zero/unknown
+			TestOrderLogger.info("\u23f1\ufe0f  First failure surfaced {} positions earlier than default order",
+					positionsEarlier);
+		}
+	}
+
+	private static String formatDuration(long ms) {
+		if (ms < 1000) {
+			return ms + "ms";
+		}
+		long seconds = ms / 1000;
+		if (seconds < 60) {
+			return seconds + "s";
+		}
+		long minutes = seconds / 60;
+		long remainingSeconds = seconds % 60;
+		if (minutes < 60) {
+			return String.format("%dm %02ds", minutes, remainingSeconds);
+		}
+		long hours = minutes / 60;
+		long remainingMinutes = minutes % 60;
+		return String.format("%dh %02dm %02ds", hours, remainingMinutes, remainingSeconds);
 	}
 
 	/**

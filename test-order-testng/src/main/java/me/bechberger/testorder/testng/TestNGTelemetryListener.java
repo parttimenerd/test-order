@@ -279,6 +279,9 @@ public class TestNGTelemetryListener implements ITestListener {
 						TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
 								String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
 								record.firstFailurePosition() + 1, record.totalTests());
+						if (!isLearnRun) {
+							logTimeSaved(state, record);
+						}
 					}
 				}
 				state.save(stateFile);
@@ -298,5 +301,90 @@ public class TestNGTelemetryListener implements ITestListener {
 			return;
 		TelemetryPersistence.emergencySave(statePath, pendingDurations, failedClassNames, pendingMethodDurations,
 				failedMethodNames);
+	}
+
+	/**
+	 * Calculates and logs the estimated time saved by prioritized ordering.
+	 */
+	private void logTimeSaved(TestOrderState lockedState, TestOrderState.RunRecord record) {
+		if (record.firstFailurePosition() < 0 || executionOrder.size() <= 1) {
+			return;
+		}
+
+		String firstFailedClass = null;
+		for (int i = 0; i < executionOrder.size(); i++) {
+			if (failedClassNames.contains(executionOrder.get(i))) {
+				firstFailedClass = executionOrder.get(i);
+				break;
+			}
+		}
+		if (firstFailedClass == null) {
+			return;
+		}
+
+		List<String> defaultOrder = new ArrayList<>(executionOrder);
+		defaultOrder.sort(String::compareTo);
+		int defaultFailPos = defaultOrder.indexOf(firstFailedClass);
+		if (defaultFailPos < 0) {
+			return;
+		}
+
+		// No improvement — first failure already at same or worse position
+		if (record.firstFailurePosition() >= defaultFailPos) {
+			return;
+		}
+
+		java.util.function.Function<String, Long> durationOf = tc -> {
+			List<Long> measured = pendingDurations.get(tc);
+			if (measured != null) {
+				long total = 0;
+				synchronized (measured) {
+					for (Long d : measured)
+						total += d;
+				}
+				return total;
+			}
+			return lockedState.getDuration(tc, 0);
+		};
+
+		long prioritizedDurationBeforeFailure = 0;
+		for (int i = 0; i < record.firstFailurePosition(); i++) {
+			prioritizedDurationBeforeFailure += durationOf.apply(executionOrder.get(i));
+		}
+
+		long defaultDurationBeforeFailure = 0;
+		for (int i = 0; i < defaultFailPos; i++) {
+			defaultDurationBeforeFailure += durationOf.apply(defaultOrder.get(i));
+		}
+
+		long savedMs = defaultDurationBeforeFailure - prioritizedDurationBeforeFailure;
+		int positionsEarlier = defaultFailPos - record.firstFailurePosition();
+		if (savedMs > 0) {
+			TestOrderLogger.info("\u23f1\ufe0f  Estimated time saved: {} (based on default execution order)",
+					formatDuration(savedMs));
+		} else {
+			// Position improved but durations are zero/unknown
+			TestOrderLogger.info(
+					"\u23f1\ufe0f  First failure surfaced {} positions earlier than default order",
+					positionsEarlier);
+		}
+	}
+
+	private static String formatDuration(long ms) {
+		if (ms < 1000) {
+			return ms + "ms";
+		}
+		long seconds = ms / 1000;
+		if (seconds < 60) {
+			return seconds + "s";
+		}
+		long minutes = seconds / 60;
+		long remainingSeconds = seconds % 60;
+		if (minutes < 60) {
+			return String.format("%dm %02ds", minutes, remainingSeconds);
+		}
+		long hours = minutes / 60;
+		long remainingMinutes = minutes % 60;
+		return String.format("%dh %02dm %02ds", hours, remainingMinutes, remainingSeconds);
 	}
 }

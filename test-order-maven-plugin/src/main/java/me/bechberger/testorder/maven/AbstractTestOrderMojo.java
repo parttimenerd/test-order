@@ -201,9 +201,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	/**
 	 * Storage location for test-order data:
 	 * <ul>
-	 * <li><b>local</b> (default) — stores data in {@code <project>/.test-order/}</li>
-	 * <li><b>home</b> — stores data in {@code ~/.test-order/<project-name>-<hash>/},
-	 * surviving {@code git clean -fdx}</li>
+	 * <li><b>local</b> (default) — stores data in
+	 * {@code <project>/.test-order/}</li>
+	 * <li><b>home</b> — stores data in
+	 * {@code ~/.test-order/<project-name>-<hash>/}, surviving
+	 * {@code git clean -fdx}</li>
 	 * </ul>
 	 */
 	@Parameter(property = MavenPluginConfigKeys.STORAGE, defaultValue = "local")
@@ -1149,6 +1151,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 
 		snapshotHashes();
+		suggestSpringContextGrouping();
 	}
 
 	/**
@@ -1444,13 +1447,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	/**
-	 * Returns {@code true} when the project declares {@code spring-boot-test} or
-	 * {@code spring-test} as a dependency.
+	 * Returns {@code true} when the project declares {@code spring-boot-test},
+	 * {@code spring-boot-starter-test}, or {@code spring-test} as a dependency.
 	 */
 	protected boolean isSpringTestOnClasspath() {
 		return project.getDependencies().stream().anyMatch(
-				d -> "org.springframework.boot".equals(d.getGroupId()) && "spring-boot-test".equals(d.getArtifactId())
-						|| "org.springframework".equals(d.getGroupId()) && "spring-test".equals(d.getArtifactId()));
+				d -> ("org.springframework.boot".equals(d.getGroupId()) && ("spring-boot-test".equals(d.getArtifactId())
+						|| "spring-boot-starter-test".equals(d.getArtifactId())))
+						|| ("org.springframework".equals(d.getGroupId()) && "spring-test".equals(d.getArtifactId())));
 	}
 
 	/**
@@ -1654,7 +1658,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.exists(reactorPath))
 			return reactorPath;
 
-		// Try downloading the artifact from remote repositories via Maven's Aether resolver.
+		// Try downloading the artifact from remote repositories via Maven's Aether
+		// resolver.
 		if (repoSystem != null && session != null) {
 			for (String version : new String[]{pluginVersion, project.getVersion()}) {
 				if (version == null)
@@ -1672,8 +1677,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						return resolved;
 					}
 				} catch (Exception e) {
-					getLog().debug("[test-order] Remote resolution attempt for " + artifactId
-							+ ":" + version + " failed: " + e.getMessage());
+					getLog().debug("[test-order] Remote resolution attempt for " + artifactId + ":" + version
+							+ " failed: " + e.getMessage());
 				}
 			}
 		}

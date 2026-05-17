@@ -92,6 +92,10 @@ plan-*.prompt.md
 # Asciinema demo recordings (large binary)
 demo-spring-ai.cast
 
+# Demo project nested git repos and state (created by setup-all.sh)
+demo/dkom-presentation/legacy-demo/.git
+demo/dkom-presentation/vibe-demo/.git
+
 # Root package.json (leftover from MCP testing)
 /package.json
 /package-lock.json
