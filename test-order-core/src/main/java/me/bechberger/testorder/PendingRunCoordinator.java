@@ -13,7 +13,9 @@ final class PendingRunCoordinator {
 	}
 
 	static void recordBreakdown(String testClass, TestOrderState.ScoreBreakdown breakdown) {
-		PENDING_BREAKDOWNS.put(testClass, breakdown);
+		synchronized (LOCK) {
+			PENDING_BREAKDOWNS.put(testClass, breakdown);
+		}
 	}
 
 	static void setStatePath(String path) {

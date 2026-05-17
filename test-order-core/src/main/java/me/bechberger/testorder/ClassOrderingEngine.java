@@ -91,7 +91,10 @@ public final class ClassOrderingEngine {
 				Path projectRoot = Path.of(projectRootStr);
 				String changeMode = config.getConfig(TestOrderConfig.CHANGE_MODE);
 				StructuralChangeAnalyzer.AnalysisResult analysis;
-				if ("since-last-commit".equals(changeMode) || "SINCE_LAST_COMMIT".equals(changeMode)) {
+				String normalizedMode = changeMode != null
+						? changeMode.replace('_', '-').toLowerCase(java.util.Locale.ROOT)
+						: "";
+				if ("since-last-commit".equals(normalizedMode)) {
 					analysis = StructuralChangeAnalyzer.analyzeSinceLastCommitFull(projectRoot);
 				} else {
 					analysis = StructuralChangeAnalyzer.analyzeUncommittedFull(projectRoot);

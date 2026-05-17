@@ -388,14 +388,11 @@ public class TelemetryListener implements TestExecutionListener {
 							TestOrderLogger.info("{} tests ran in priority order — all passed", record.totalTests());
 						}
 					}
+					finishedNormally = true;
 					lockedState.save(stateFile);
 					return lockedState;
 				});
 				stateSaved = true;
-				// Mark normal completion immediately after state is saved — closes
-				// the window where SIGTERM could trigger a double-save via the
-				// shutdown hook while ML history write is in progress.
-				finishedNormally = true;
 				resetPending = TestOrderState.hasPendingData();
 			} catch (IOException e) {
 				TestOrderLogger.error("Failed to save state: {}", e.getMessage());
