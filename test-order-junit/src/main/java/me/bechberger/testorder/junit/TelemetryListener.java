@@ -70,6 +70,12 @@ public class TelemetryListener implements TestExecutionListener {
 	private final Set<String> failedMethodNames = ConcurrentHashMap.newKeySet();
 	private final Set<String> warnedConcurrentClasses = ConcurrentHashMap.newKeySet();
 	private final AtomicBoolean warnedGlobalParallel = new AtomicBoolean(false);
+	/**
+	 * Cached lookup of org.junit.jupiter.api.parallel.Execution; null means not yet
+	 * resolved, ABSENT means not on classpath
+	 */
+	private volatile Class<? extends java.lang.annotation.Annotation> cachedExecutionAnnotation;
+	private static final Class<? extends java.lang.annotation.Annotation> ABSENT = java.lang.annotation.Retention.class; // sentinel
 
 	// ML history: maps test class → failure exception class name (for the most
 	// recent failure in this run)
@@ -151,59 +157,65 @@ public class TelemetryListener implements TestExecutionListener {
 		if (dryRunMode || isSuiteEngineNode(testIdentifier)) {
 			return;
 		}
-		testIdentifier.getSource().ifPresent(source -> {
-			if (source instanceof ClassSource classSource) {
-				String name = classSource.getClassName();
-				if (name == null)
-					return; // guard against pathological custom engines
+		TestSource source = testIdentifier.getSource().orElse(null);
+		if (source == null) {
+			return;
+		}
+		if (source instanceof ClassSource classSource) {
+			String name = classSource.getClassName();
+			if (name == null)
+				return; // guard against pathological custom engines
+
+			// Only warn about concurrent execution in learn mode (irrelevant otherwise)
+			if (learnMode) {
 				maybeWarnConcurrentExecution(name);
-
-				// track start time for duration (local map operation, very fast)
-				if (!debugMode) {
-					classStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
-				}
-
-				// track execution order for run quality (O(1) dedup with HashSet)
-				// Normalize to top-level class so inner/nested classes are attributed
-				// to the same class used by failedClassNames (also normalized).
-				String topLevel = TestOrderConfigResolver.toTopLevelClassName(name);
-				if (executionOrderSet.add(topLevel)) {
-					executionOrder.add(topLevel);
-				}
-
-				// In learn mode: call agent to record per-test-class boundary
-				// Do this AFTER timing starts so agent overhead isn't counted
-				if (learnMode && bridge.isAvailable()) {
-					bridge.callStartTestClass(name);
-				}
-			} else if (source instanceof MethodSource methodSource) {
-				if (methodSource.getClassName() == null || methodSource.getMethodName() == null)
-					return;
-				// track method-level start time
-				String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
-				if (!debugMode) {
-					methodStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
-				}
-
-				// In FULL_METHOD and FULL_MEMBER modes: start per-method dependency recording.
-				// For @ParameterizedTest and @TestTemplate (type=CONTAINER), start tracking
-				// on the container node so we capture @MethodSource provider calls and
-				// argument resolution which happen BEFORE individual invocations fire.
-				// For regular @Test (type=TEST), start as before.
-				// Skip child invocations of a container (they share the parent's tracker).
-				if (fullMethodMode && learnMode && bridge.isAvailable()) {
-					if (!testIdentifier.getType().isTest()) {
-						// Container node (e.g., @ParameterizedTest template) — start tracking early
-						containerTrackedMethods.add(methodKey);
-						bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
-					} else if (!containerTrackedMethods.contains(methodKey)) {
-						// Regular @Test (not a child of a container) — start tracking normally
-						bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
-					}
-					// else: child invocation of a container — skip, parent already tracks
-				}
 			}
-		});
+
+			// track start time for duration (local map operation, very fast)
+			if (!debugMode) {
+				classStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
+			}
+
+			// track execution order for run quality (O(1) dedup with HashSet)
+			// Normalize to top-level class so inner/nested classes are attributed
+			// to the same class used by failedClassNames (also normalized).
+			String topLevel = TestOrderConfigResolver.toTopLevelClassName(name);
+			if (executionOrderSet.add(topLevel)) {
+				executionOrder.add(topLevel);
+			}
+
+			// In learn mode: call agent to record per-test-class boundary
+			// Do this AFTER timing starts so agent overhead isn't counted
+			if (learnMode && bridge.isAvailable()) {
+				bridge.callStartTestClass(name);
+			}
+		} else if (source instanceof MethodSource methodSource) {
+			if (methodSource.getClassName() == null || methodSource.getMethodName() == null)
+				return;
+			// track method-level start time
+			String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
+			if (!debugMode) {
+				methodStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
+			}
+
+			// In FULL_METHOD and FULL_MEMBER modes: start per-method dependency recording.
+			// For @ParameterizedTest and @TestTemplate (type=CONTAINER), start tracking
+			// on the container node so we capture @MethodSource provider calls and
+			// argument resolution which happen BEFORE individual invocations fire.
+			// For regular @Test (type=TEST), start as before.
+			// Skip child invocations of a container (they share the parent's tracker).
+			if (fullMethodMode && learnMode && bridge.isAvailable()) {
+				if (!testIdentifier.getType().isTest()) {
+					// Container node (e.g., @ParameterizedTest template) — start tracking early
+					containerTrackedMethods.add(methodKey);
+					bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
+				} else if (!containerTrackedMethods.contains(methodKey)) {
+					// Regular @Test (not a child of a container) — start tracking normally
+					bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
+				}
+				// else: child invocation of a container — skip, parent already tracks
+			}
+		}
 	}
 
 	@Override
@@ -385,7 +397,21 @@ public class TelemetryListener implements TestExecutionListener {
 								logTimeSaved(lockedState, record);
 							}
 						} else if (!isLearnRun && record.totalTests() > 1) {
-							TestOrderLogger.info("{} tests ran in priority order — all passed", record.totalTests());
+							// All tests passed — still show useful info about ordering effectiveness
+							long totalDuration = 0;
+							for (String tc : executionOrder) {
+								List<Long> measured = pendingDurations.get(tc);
+								if (measured != null) {
+									totalDuration += sumDurations(measured);
+								}
+							}
+							if (totalDuration > 1000) {
+								TestOrderLogger.info("{} tests ran in priority order — all passed ({})",
+										record.totalTests(), formatDuration(totalDuration));
+							} else {
+								TestOrderLogger.info("{} tests ran in priority order — all passed",
+										record.totalTests());
+							}
 						}
 					}
 					finishedNormally = true;
@@ -686,29 +712,39 @@ public class TelemetryListener implements TestExecutionListener {
 								+ "mode.default=concurrent); learn-mode dependency tracking may be inaccurate");
 			}
 		}
+		// Resolve the @Execution annotation class once
+		Class<? extends java.lang.annotation.Annotation> execAnnotation = cachedExecutionAnnotation;
+		if (execAnnotation == null) {
+			try {
+				@SuppressWarnings("unchecked")
+				Class<? extends java.lang.annotation.Annotation> found = (Class<? extends java.lang.annotation.Annotation>) Class
+						.forName("org.junit.jupiter.api.parallel.Execution");
+				execAnnotation = found;
+			} catch (ClassNotFoundException e) {
+				execAnnotation = ABSENT;
+			}
+			cachedExecutionAnnotation = execAnnotation;
+		}
+		if (execAnnotation == ABSENT) {
+			return; // Jupiter parallel API not on classpath
+		}
 		if (!warnedConcurrentClasses.add(className)) {
 			return;
 		}
 		try {
-			Class<?> testClass = Class.forName(className);
-			// Use reflection to avoid hard dependency on jupiter-api parallel classes
-			// (which may not be on the classpath for Vintage-only projects)
-			Class<?> executionClass = Class.forName("org.junit.jupiter.api.parallel.Execution");
-			Object execution = testClass
-					.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
+			// Use initialize=false to avoid triggering expensive static initializers
+			Class<?> testClass = Class.forName(className, false, Thread.currentThread().getContextClassLoader());
+			Object execution = testClass.getAnnotation(execAnnotation);
 			if (execution != null) {
-				Object mode = executionClass.getMethod("value").invoke(execution);
+				Object mode = execAnnotation.getMethod("value").invoke(execution);
 				if ("CONCURRENT".equals(mode.toString())) {
 					TestOrderLogger.warn(
 							"Test class {} uses @Execution(CONCURRENT); learn-mode dependency tracking may be inaccurate",
 							className);
 				}
 			}
-		} catch (ClassNotFoundException ignored) {
-			// Jupiter parallel API not on classpath — leave className in
-			// warnedConcurrentClasses so we don't retry on every test method.
 		} catch (ReflectiveOperationException ignored) {
-			// Jupiter parallel API not available or annotation not present
+			// annotation not present or method not accessible
 		}
 	}
 }

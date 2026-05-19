@@ -140,24 +140,32 @@ public class StructuralDiff {
 		}
 
 		Map<String, String> oldSources = readFilesFromGit(gitRoot, gitRef, relevantPaths);
-		List<FileDiff> diffs = new ArrayList<>();
+
+		// Read new sources in bulk (I/O) before parsing
+		record FilePair(Path absFile, String oldSource, String newSource) {
+		}
+		List<FilePair> pairs = new ArrayList<>(relevantPaths.size());
 		for (String relPath : relevantPaths) {
 			Path absFile = gitRoot.resolve(relPath).normalize();
 			String oldSource = oldSources.get(relPath);
 			String newSource = Files.exists(absFile) ? Files.readString(absFile) : null;
-
 			if (oldSource == null && newSource == null)
 				continue;
-			if (oldSource == null)
-				oldSource = "";
-			if (newSource == null) {
-				// File deleted — all removals
-				newSource = "";
-			}
+			pairs.add(new FilePair(absFile, oldSource != null ? oldSource : "", newSource != null ? newSource : ""));
+		}
 
-			FileDiff diff = diffSources(absFile, oldSource, newSource);
-			if (diff.hasChanges()) {
-				diffs.add(diff);
+		// Parallelize source parsing (CPU-bound) for multiple files
+		List<FileDiff> diffs;
+		if (pairs.size() > 1) {
+			diffs = pairs.parallelStream().map(p -> diffSources(p.absFile, p.oldSource, p.newSource))
+					.filter(FileDiff::hasChanges).collect(java.util.stream.Collectors.toList());
+		} else {
+			diffs = new ArrayList<>();
+			for (FilePair p : pairs) {
+				FileDiff diff = diffSources(p.absFile, p.oldSource, p.newSource);
+				if (diff.hasChanges()) {
+					diffs.add(diff);
+				}
 			}
 		}
 		return diffs;

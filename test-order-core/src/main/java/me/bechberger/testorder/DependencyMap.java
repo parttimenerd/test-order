@@ -51,6 +51,15 @@ public class DependencyMap {
 	private final Map<String, Set<String>> dependencies;
 
 	/**
+	 * Inverted index: depClass → Set of test classes that depend on it. Built
+	 * lazily on first call to {@link #getAffectedTests(Set)}. Includes entries for
+	 * top-level class names derived from nested class deps (e.g. if testA depends
+	 * on com.Foo$Bar, the inverted index has both "com.Foo$Bar" → {testA} and
+	 * "com.Foo" → {testA}).
+	 */
+	private volatile Map<String, Set<String>> invertedIndex;
+
+	/**
 	 * Per-method dependencies: className#methodName → deps. Only populated in
 	 * FULL_METHOD or FULL_MEMBER mode.
 	 */
@@ -91,14 +100,38 @@ public class DependencyMap {
 	 */
 	public void put(String testClass, Set<String> deps) {
 		dependencies.put(testClass, Collections.unmodifiableSet(new HashSet<>(deps)));
+		invertedIndex = null;
+	}
+
+	/**
+	 * Checks whether {@code dep} is contained in {@code changedClasses}, falling
+	 * back to the top-level class if {@code dep} is a nested class. This handles
+	 * the "reverse" nested class case: a test depends on
+	 * {@code com.Service$Builder} but the changed set only contains
+	 * {@code com.Service}.
+	 */
+	public static boolean changedClassesContains(Set<String> changedClasses, String dep) {
+		if (changedClasses.contains(dep)) {
+			return true;
+		}
+		int dollar = dep.indexOf('$');
+		return dollar > 0 && changedClasses.contains(dep.substring(0, dollar));
 	}
 
 	/**
 	 * Returns an unmodifiable view of the dependency set for the given test class,
-	 * or an empty set if unknown.
+	 * or an empty set if unknown. Falls back to the top-level class entry for
+	 * nested test classes.
 	 */
 	public Set<String> get(String testClass) {
-		return dependencies.getOrDefault(testClass, Collections.emptySet());
+		Set<String> result = dependencies.getOrDefault(testClass, Collections.emptySet());
+		if (result.isEmpty()) {
+			int dollar = testClass.indexOf('$');
+			if (dollar > 0) {
+				result = dependencies.getOrDefault(testClass.substring(0, dollar), Collections.emptySet());
+			}
+		}
+		return result;
 	}
 
 	/**
@@ -107,6 +140,7 @@ public class DependencyMap {
 	 */
 	void putDirect(String testClass, Set<String> deps) {
 		dependencies.put(testClass, deps);
+		invertedIndex = null;
 	}
 
 	/**
@@ -129,12 +163,41 @@ public class DependencyMap {
 
 	/** Get per-method dependencies. Returns empty set if not available. */
 	public Set<String> getMethodDeps(String className, String methodName) {
-		return methodDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet());
+		String key = className + "#" + methodName;
+		Set<String> deps = methodDependencies.get(key);
+		if (deps != null) {
+			return deps;
+		}
+		int dollar = className.indexOf('$');
+		if (dollar > 0) {
+			String parentKey = className.substring(0, dollar) + "#" + methodName;
+			deps = methodDependencies.get(parentKey);
+			if (deps != null) {
+				return deps;
+			}
+		}
+		return Collections.emptySet();
 	}
 
 	/** Get per-method dependencies by composite key (className#methodName). */
 	public Set<String> getMethodDeps(String methodKey) {
-		return methodDependencies.getOrDefault(methodKey, Collections.emptySet());
+		Set<String> deps = methodDependencies.get(methodKey);
+		if (deps != null) {
+			return deps;
+		}
+		int hash = methodKey.indexOf('#');
+		if (hash > 0) {
+			String className = methodKey.substring(0, hash);
+			int dollar = className.indexOf('$');
+			if (dollar > 0) {
+				String parentKey = className.substring(0, dollar) + methodKey.substring(hash);
+				deps = methodDependencies.get(parentKey);
+				if (deps != null) {
+					return deps;
+				}
+			}
+		}
+		return Collections.emptySet();
 	}
 
 	/** Returns all method keys (className#methodName) that have dependency data. */
@@ -159,7 +222,14 @@ public class DependencyMap {
 
 	/** Get per-test-class member deps. Returns empty set if not available. */
 	public Set<String> getMemberDeps(String testClass) {
-		return memberDependencies.getOrDefault(testClass, Collections.emptySet());
+		Set<String> result = memberDependencies.getOrDefault(testClass, Collections.emptySet());
+		if (result.isEmpty()) {
+			int dollar = testClass.indexOf('$');
+			if (dollar > 0) {
+				result = memberDependencies.getOrDefault(testClass.substring(0, dollar), Collections.emptySet());
+			}
+		}
+		return result;
 	}
 
 	/** Whether this map has any member-level dependency data. */
@@ -177,12 +247,32 @@ public class DependencyMap {
 
 	/** Get per-test-method member deps. Returns empty set if not available. */
 	public Set<String> getMethodMemberDeps(String methodKey) {
-		return methodMemberDependencies.getOrDefault(methodKey, Collections.emptySet());
+		Set<String> result = methodMemberDependencies.getOrDefault(methodKey, Collections.emptySet());
+		if (result.isEmpty()) {
+			int dollar = methodKey.indexOf('$');
+			if (dollar > 0) {
+				int hash = methodKey.indexOf('#');
+				if (hash > dollar) {
+					String topLevel = methodKey.substring(0, dollar) + methodKey.substring(hash);
+					result = methodMemberDependencies.getOrDefault(topLevel, Collections.emptySet());
+				}
+			}
+		}
+		return result;
 	}
 
 	/** Get per-test-method member deps by class and method name. */
 	public Set<String> getMethodMemberDeps(String className, String methodName) {
-		return methodMemberDependencies.getOrDefault(className + "#" + methodName, Collections.emptySet());
+		Set<String> result = methodMemberDependencies.getOrDefault(className + "#" + methodName,
+				Collections.emptySet());
+		if (result.isEmpty()) {
+			int dollar = className.indexOf('$');
+			if (dollar > 0) {
+				result = methodMemberDependencies.getOrDefault(className.substring(0, dollar) + "#" + methodName,
+						Collections.emptySet());
+			}
+		}
+		return result;
 	}
 
 	/**
@@ -193,26 +283,43 @@ public class DependencyMap {
 		Set<String> affected = new LinkedHashSet<>();
 		if (changedClasses.isEmpty())
 			return affected;
-		for (var entry : dependencies.entrySet()) {
-			Set<String> deps = entry.getValue();
-			// check the smaller set against the larger for best performance
-			if (changedClasses.size() <= deps.size()) {
-				for (String cc : changedClasses) {
-					if (deps.contains(cc)) {
-						affected.add(entry.getKey());
-						break;
-					}
-				}
-			} else {
-				for (String dep : deps) {
-					if (changedClasses.contains(dep)) {
-						affected.add(entry.getKey());
-						break;
-					}
+		Map<String, Set<String>> idx = getInvertedIndex();
+		for (String changed : changedClasses) {
+			Set<String> tests = idx.get(changed);
+			if (tests != null)
+				affected.addAll(tests);
+		}
+		return affected;
+	}
+
+	private Map<String, Set<String>> getInvertedIndex() {
+		Map<String, Set<String>> idx = invertedIndex;
+		if (idx == null) {
+			synchronized (this) {
+				idx = invertedIndex;
+				if (idx == null) {
+					idx = buildInvertedIndex();
+					invertedIndex = idx;
 				}
 			}
 		}
-		return affected;
+		return idx;
+	}
+
+	private Map<String, Set<String>> buildInvertedIndex() {
+		Map<String, Set<String>> idx = new HashMap<>();
+		for (var entry : dependencies.entrySet()) {
+			String testClass = entry.getKey();
+			for (String dep : entry.getValue()) {
+				idx.computeIfAbsent(dep, k -> new HashSet<>()).add(testClass);
+				// Also index by top-level class for nested class deps
+				int dollar = dep.indexOf('$');
+				if (dollar > 0) {
+					idx.computeIfAbsent(dep.substring(0, dollar), k -> new HashSet<>()).add(testClass);
+				}
+			}
+		}
+		return idx;
 	}
 
 	/**

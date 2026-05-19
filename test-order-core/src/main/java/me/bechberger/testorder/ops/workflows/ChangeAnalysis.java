@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
@@ -107,25 +108,34 @@ public final class ChangeAnalysis {
 			state = new TestOrderState();
 		}
 
-		// ── Change detection ────────────────────────────────────────
-		Set<String> changed = ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
-				ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log());
+		// ── Change detection (parallel) ─────────────────────────────
+		CompletableFuture<Set<String>> changedFuture = CompletableFuture
+				.supplyAsync(() -> ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(),
+						ctx.projectRoot(), ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log()));
 
-		Set<String> changedTests = ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(),
-				ctx.projectRoot(), ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log());
+		CompletableFuture<Set<String>> changedTestsFuture = CompletableFuture.supplyAsync(
+				() -> ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
+						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log()));
+
+		CompletableFuture<Set<String>> changedMethodsFuture;
+		if (opts.includeMethodChanges() && ctx.methodOrderingEnabled() && ctx.methodHashFile() != null
+				&& ctx.testSourceRoot() != null) {
+			changedMethodsFuture = CompletableFuture.supplyAsync(() -> ChangeDetectionOps
+					.detectChangedMethods(ctx.testSourceRoot(), ctx.methodHashFile(), ctx.log()));
+		} else {
+			changedMethodsFuture = CompletableFuture.completedFuture(Set.of());
+		}
+
+		Set<String> changed = changedFuture.join();
+		Set<String> changedTests = changedTestsFuture.join();
+		Set<String> changedMethods = changedMethodsFuture.join();
+
 		if (opts.filterToModule() && ctx.testClassesDir() != null && Files.isDirectory(ctx.testClassesDir())) {
 			Set<String> moduleTests = TestClassDiscovery.scanTestClasses(ctx.testClassesDir());
 			if (!moduleTests.isEmpty()) {
 				changedTests = changedTests.stream().filter(moduleTests::contains)
 						.collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
 			}
-		}
-
-		Set<String> changedMethods = Set.of();
-		if (opts.includeMethodChanges() && ctx.methodOrderingEnabled() && ctx.methodHashFile() != null
-				&& ctx.testSourceRoot() != null) {
-			changedMethods = ChangeDetectionOps.detectChangedMethods(ctx.testSourceRoot(), ctx.methodHashFile(),
-					ctx.log());
 		}
 
 		// ── Weight resolution ───────────────────────────────────────

@@ -123,6 +123,14 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		}
 		TestSelector.Selection selection = result.selection();
 
+		// ── Startup banner: show users what select mode will do ──
+		getLog().info("[test-order] ─── Select mode | " + changeMode + " | " + selection.selected().size()
+				+ " selected, " + selection.remaining().size() + " deferred ───");
+		if (!selection.selected().isEmpty()) {
+			getLog().info("[test-order]   → Running only affected tests; remaining can be run later with: "
+					+ "mvn test-order:run-remaining test");
+		}
+
 		// Only print remaining file message if there actually are remaining tests
 		if (!selection.remaining().isEmpty()) {
 			getLog().info("[test-order] Remaining tests → " + remainingFile);

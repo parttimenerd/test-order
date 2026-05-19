@@ -725,6 +725,21 @@ public class TestOrderPlugin implements Plugin<Project> {
                 throw new GradleException("Failed to set up test ordering", e);
             }
 
+            // ── Startup banner: show users what test-order will do ──
+            Set<String> changedSet = pctx.changedClasses() != null && !pctx.changedClasses().isBlank()
+                    ? Set.of(pctx.changedClasses().split(",")) : Set.of();
+            Set<String> changedTestSet = pctx.changedTestClasses() != null && !pctx.changedTestClasses().isBlank()
+                    ? Set.of(pctx.changedTestClasses().split(",")) : Set.of();
+            int totalChanged = changedSet.size() + changedTestSet.size();
+            String changeSummary = totalChanged == 0 ? "no changes detected"
+                    : totalChanged + " changed " + (totalChanged == 1 ? "class" : "classes");
+            String plan = totalChanged > 0
+                    ? "tests exercising changed code will run first"
+                    : "using historical failure data and speed for ordering";
+            project.getLogger().lifecycle("[test-order] ─── Order mode | {} | {} ───",
+                    ext.getChangeMode().get(), changeSummary);
+            project.getLogger().lifecycle("[test-order]   → {}", plan);
+
             // Save state if it was modified (e.g., runsSinceLearn reset by fingerprint change) (R7-8)
             try {
                 Path statePath = ext.getStateFile().get().getAsFile().toPath();

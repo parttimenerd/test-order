@@ -17,7 +17,7 @@
 | Java | 17+ |
 | Build tool | Maven 3.6+ or Gradle 7.6+ |
 | VCS | Git (for change detection) |
-| Test framework | JUnit 5/6, TestNG 7.x+, or Kotest (JUnit Platform) |
+| Test framework | JUnit 5/6, JUnit 4 (via Vintage engine), TestNG 7.x+, or Kotest (JUnit Platform) |
 
 <details>
 <summary><strong>Check prerequisites</strong></summary>
@@ -179,7 +179,7 @@ Configure via `-Dtestorder.changeMode=<mode>`:
 |------|-----------|----------|
 | `uncommitted` (default) | Detects staged, unstaged, and untracked changes in your working tree | Local development |
 | `auto` | Uses `since-last-run` if hash snapshot exists, otherwise `since-last-commit` | Most projects |
-| `since-last-commit` | Compares working tree against `HEAD` via `git diff` | CI / branch validation |
+| `since-last-commit` | Detects HEAD~1..HEAD changes + merges uncommitted changes | CI / branch validation |
 | `since-last-run` | Compares file hashes against the previous test run's snapshot | CI without git history / shallow clones |
 | `explicit` | Only scores classes listed in `-Dtestorder.changed.classes=...` | Scripted pipelines |
 
@@ -191,10 +191,29 @@ Configure via `-Dtestorder.changeMode=<mode>`:
 | Framework | Learn mode | Order mode | Auto-discovery |
 |-----------|-----------|-----------|----------------|
 | **JUnit 5 / 6** | `TelemetryListener` (JUnit Platform) | `PriorityClassOrderer` + `PriorityMethodOrderer` | Via JUnit service files |
+| **JUnit 4 (via Vintage)** | `TelemetryListener` (JUnit Platform) | `PriorityClassOrderer` + `PriorityMethodOrderer` | Via JUnit Vintage engine |
 | **TestNG 7.x+** | `TestNGTelemetryListener` (`ITestListener`) | `TestNGPriorityInterceptor` (`IMethodInterceptor`) | Via `META-INF/services/org.testng.ITestNGListener` |
 | **Kotest** | Via JUnit Platform (Kotest runner) | Via JUnit Platform | Same as JUnit |
 
 The Maven/Gradle plugins automatically detect which framework is on the test classpath — no configuration needed.
+
+<details>
+<summary><strong>JUnit 4 with Vintage engine</strong></summary>
+
+If your project uses JUnit 4 tests, you can run them through test-order by adding the `junit-vintage-engine` dependency. This allows JUnit 4 tests to execute on the JUnit Platform, enabling full support for learn, select, and order modes — no test migration required:
+
+```xml
+<dependency>
+  <groupId>org.junit.vintage</groupId>
+  <artifactId>junit-vintage-engine</artifactId>
+  <version>5.11.4</version>
+  <scope>test</scope>
+</dependency>
+```
+
+Or in Gradle: `testImplementation 'org.junit.vintage:junit-vintage-engine:5.11.4'`
+
+</details>
 
 > **JUnit 5 / 6 compatibility:** `test-order-junit` is compiled against JUnit 5.10.x and runs on both JUnit 5 (Jupiter 5.8+) and JUnit 6 (Jupiter 6.x) without changes. The same JAR works for both versions — no separate module needed.
 
@@ -276,6 +295,21 @@ Each test gets a score based on multiple signals. Tests run in descending score 
 All weights are configurable. Run `mvn test-order:optimize` to auto-tune them for your project.
 
 For the full formula, weight customization (TOML), and tuning guide: **[docs/SCORING.md](docs/SCORING.md)**
+
+### Run Quality: APFD
+
+After each test run with failures, test-order reports the **APFD** (Average Percentage of Faults Detected) — a standard metric measuring how early in the test suite failures are surfaced:
+
+```
+[test-order] Run APFD: 92.9% (first failure at position 1/7)
+[test-order] ⏱️  Estimated time saved: 21s (based on default execution order)
+```
+
+- **100% APFD** = all failures found at the very start of the run (perfect ordering)
+- **50% APFD** = equivalent to random ordering
+- **0% APFD** = failures found only at the very end (worst case)
+
+The time-saved estimate compares the actual (prioritized) order against alphabetical order — the default for most test frameworks. Higher APFD means faster feedback on broken code.
 
 ## Features
 
@@ -421,6 +455,33 @@ This stores data in `~/.test-order/<project-name>-<hash>/`. It survives `git cle
 
 </details>
 
+## AI Coding Assistant Integration
+
+If you use GitHub Copilot, Claude Code, or similar AI coding assistants, add the following to your project instructions (`.github/copilot-instructions.md`, `CLAUDE.md`, etc.) so the assistant knows how to run tests efficiently:
+
+<details>
+<summary><strong>Suggested instructions snippet</strong></summary>
+
+```markdown
+## Running Tests
+
+This project uses test-order for affected-test selection.
+
+- **Quick check** (few files changed): `mvn test-order:select test`
+  Runs only tests affected by uncommitted changes. Use for fast feedback.
+- **After large changes** (new dependencies, refactors): `mvn test-order:learn test`
+  Rebuilds the dependency index. Required after major structural changes.
+- **Normal run**: `mvn test`
+  Auto-detects whether to learn or select.
+- **Run deferred tests**: `mvn test-order:run-remaining test`
+  Runs tests that were skipped by `select`.
+
+Change detection: `-Dtestorder.changeMode=since-last-commit` for CI,
+`uncommitted` (default) for local development.
+```
+
+</details>
+
 ## Documentation
 
 | Guide | Description |
@@ -464,4 +525,4 @@ MIT, Copyright 2026 SAP SE or an SAP affiliate company, Johannes Bechberger and 
 
 please print how much time test-order saved (estimation) everytime a test failure is detected in order mode. The estimation is based on the cumulative duration of tests that would normally have run before the failed test in the default order. This can be implemented by tracking the execution time of each test and calculating the saved time when a failure occurs. The output can be printed to the console or included in the test reports for easy visibility.
 
-start dog fooding in condensed-data and other projects (especially in TDD mode), maybe promote this mode more as it helps in  AI coding (spec driven development)
+start dog fooding in condensed-data and other projects (especially in TDD mode), maybe promote this mode more as it helps in  AI coding (spec driven development

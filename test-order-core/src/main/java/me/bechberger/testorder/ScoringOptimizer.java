@@ -134,6 +134,13 @@ final class ScoringOptimizer {
 		double weightTotal = 0;
 		double retain = 1.0 - RECENCY_DECAY;
 
+		// Compute recency weights iteratively instead of Math.pow per fold.
+		// The most recent fold (fold = numFolds-1) gets weight 1.0 (retain^0).
+		// The oldest fold (fold = 0) gets weight retain^(numFolds-1).
+		// We iterate from oldest to newest, multiplying by (1/retain) each step.
+		double recencyWeight = Math.pow(retain, numFolds - 1);
+		double retainInv = 1.0 / retain;
+
 		for (int fold = 0; fold < numFolds; fold++) {
 			int validationIndex = minTrainSize + fold;
 			if (validationIndex >= runs.size()) {
@@ -142,9 +149,9 @@ final class ScoringOptimizer {
 			TestOrderState.RunRecord validationRun = runs.get(validationIndex);
 			double foldScore = APFDCalculator.computeAPFDcWithWeights(validationRun.outcomes(), scoringWeights,
 					durations);
-			double recencyWeight = Math.pow(retain, numFolds - 1 - fold);
 			weightedSum += foldScore * recencyWeight;
 			weightTotal += recencyWeight;
+			recencyWeight *= retainInv;
 		}
 
 		return weightTotal > 0 ? weightedSum / weightTotal : 0.0;
@@ -160,11 +167,15 @@ final class ScoringOptimizer {
 		double weightTotal = 0;
 		double retain = 1.0 - RECENCY_DECAY;
 
+		// Iterative recency weight: oldest run (i=0) gets retain^(n-1), newest gets 1.0
+		double recencyWeight = Math.pow(retain, runs.size() - 1);
+		double retainInv = 1.0 / retain;
+
 		for (int i = 0; i < runs.size(); i++) {
 			double score = APFDCalculator.computeAPFDcWithWeights(runs.get(i).outcomes(), scoringWeights, durations);
-			double recencyWeight = Math.pow(retain, runs.size() - 1 - i);
 			weightedSum += score * recencyWeight;
 			weightTotal += recencyWeight;
+			recencyWeight *= retainInv;
 		}
 
 		return weightTotal > 0 ? weightedSum / weightTotal : 0.0;

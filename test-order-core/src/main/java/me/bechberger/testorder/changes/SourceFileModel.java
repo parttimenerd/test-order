@@ -69,15 +69,13 @@ public class SourceFileModel {
 
 	// Flattened to avoid StackOverflowError: iterates per inner <...> block,
 	// not per character (Java's regex engine recurses for each (?:A|B)* iteration).
-	private static final String BOUNDED_GENERICS_REQUIRED = "(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>)"; // up
-																																																			// to
-																																																			// 6
-																																																			// nesting
-																																																			// levels
+	// Supports up to 10 nesting levels of generics.
+	private static final String BOUNDED_GENERICS_REQUIRED = "(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*(?:<[^<>{};]*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>[^<>{};]*)*>)";
+	// levels
 	private static final String BOUNDED_GENERICS = BOUNDED_GENERICS_REQUIRED + "?"; // optional version
 
 	static final Pattern TYPE_ISLAND = Pattern
-			.compile("(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed|strictfp)\\s+)*"
+			.compile("(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed|strictfp)\\s+)*+"
 					+ "(?<!\\p{javaJavaIdentifierPart})" // word boundary
 					+ "(class|interface|enum|record|@interface)\\s+" // keyword (group 1)
 					+ "(\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)" // name (group 2)
@@ -113,12 +111,11 @@ public class SourceFileModel {
 	private static final String ARRAY_DIMS_WITH_ANNOS = "(?:\\s*(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*\\[\\s*])*";
 
 	static final Pattern METHOD_ISLAND = Pattern
-			.compile("(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*" // annotations (possessive
-																							// ident)
+			.compile("(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*+" // annotations (possessive)
 					+ "(?:(?:public|protected|private|static|final|native|synchronized"
-					+ "|abstract|default|strictfp)\\s+)*" // modifiers
-					+ "(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*" // type annotations
-																							// (@Nullable etc.)
+					+ "|abstract|default|strictfp)\\s+)*+" // modifiers (possessive)
+					+ "(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*+" // type annotations
+																							// (possessive)
 					+ "(?:" + BOUNDED_GENERICS + "\\s+)?" // type parameters <T>
 					+ "(?:void|" + METHOD_RETURN_TYPE + ")" // return type (optional for ctor)
 					+ "\\s+(\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)" // name (group 1)
@@ -132,12 +129,11 @@ public class SourceFileModel {
 	// The same pattern but with the return type made optional so we also catch
 	// constructors
 	static final Pattern METHOD_OR_CTOR_ISLAND = Pattern
-			.compile("(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*" // annotations (possessive
-																							// ident)
+			.compile("(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*+" // annotations (possessive)
 					+ "(?:(?:public|protected|private|static|final|native|synchronized"
-					+ "|abstract|default|strictfp)\\s+)*"
-					+ "(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*" // type annotations
-																							// (@Nullable etc.)
+					+ "|abstract|default|strictfp)\\s+)*+" // modifiers (possessive)
+					+ "(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*+" // type annotations
+																							// (possessive)
 					+ "(?:" + BOUNDED_GENERICS + "\\s+)?" // type parameters <T>
 					+ "(?:(?:void|" + METHOD_RETURN_TYPE + ")\\s+)?" // return type (optional)
 					+ "(\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)" // name (group 1)
@@ -154,11 +150,10 @@ public class SourceFileModel {
 	// Captures group 1 = field name
 
 	static final Pattern FIELD_ISLAND = Pattern
-			.compile("(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*" // annotations (possessive
-																							// ident)
-					+ "(?:(?:public|protected|private|static|final|transient|volatile)\\s+)*" // modifiers
-					+ "(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*" // type annotations
-																							// (@Nullable etc.)
+			.compile("(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*+" // annotations (possessive)
+					+ "(?:(?:public|protected|private|static|final|transient|volatile)\\s+)*+" // modifiers (possessive)
+					+ "(?:@\\p{javaJavaIdentifierStart}[\\w.]*+(?:\\s*\\([^)]*\\))?\\s*)*+" // type annotations
+																							// (possessive)
 					+ METHOD_RETURN_TYPE // type
 					+ ARRAY_DIMS_WITH_ANNOS // array dims between type and name
 					+ "\\s+(\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)" // field name (group 1)
@@ -198,7 +193,7 @@ public class SourceFileModel {
 			String bodyHash, // SHA-256 hex of bodyText (null if abstract)
 			String compactBody, // original body with comments and empty lines removed (null if abstract)
 			String signatureText // original source text from match start to '{' (includes annotations,
-									// modifiers,
+									// modifiers (possessive),
 									// params); null for synthesized methods
 	) {
 		/**
@@ -434,7 +429,8 @@ public class SourceFileModel {
 		// matches that fall inside method bodies.
 		List<int[]> methodBodyRanges = new ArrayList<>();
 		if (detail == Detail.METHODS || detail == Detail.FIELDS) {
-			methods = findMethodIslands(stripped, source, braceDepth, types, claimedBraces, methodBodyRanges);
+			methods = findMethodIslands(stripped, source, braceDepth, types, claimedBraces, methodBodyRanges,
+					detail == Detail.FIELDS);
 		} else {
 			methods = List.of();
 		}
@@ -486,7 +482,7 @@ public class SourceFileModel {
 			// (i.e. this brace opens a new nesting level for this type)
 			if (braceDepth[bodyStart] != matchDepth)
 				continue;
-			int bodyEnd = findMatchingBrace(stripped, bodyStart);
+			int bodyEnd = findMatchingBrace(stripped, bodyStart, braceDepth);
 			if (bodyEnd < 0)
 				continue;
 
@@ -529,7 +525,7 @@ public class SourceFileModel {
 					break; // no body
 			}
 			if (bodyStart >= 0) {
-				bodyEnd = findMatchingBrace(stripped, bodyStart);
+				bodyEnd = findMatchingBrace(stripped, bodyStart, braceDepth);
 			}
 			String signature = (bodyStart >= 0)
 					? stripped.substring(m.start(), bodyStart).trim()
@@ -554,81 +550,253 @@ public class SourceFileModel {
 	// ── Method island extraction ─────────────────────────────────────
 
 	private static List<MethodNode> findMethodIslands(String stripped, String source, int[] braceDepth,
-			List<TypeNode> types, Set<Integer> claimedBraces, List<int[]> methodBodyRanges) {
+			List<TypeNode> types, Set<Integer> claimedBraces, List<int[]> methodBodyRanges,
+			boolean includeCompactBody) {
 
 		List<MethodNode> methods = new ArrayList<>();
+		if (types.isEmpty())
+			return methods;
+
 		Matcher matcher = METHOD_OR_CTOR_ISLAND.matcher(stripped);
 
-		while (matcher.find()) {
-			int pos = matcher.start();
-			int depth = braceDepth[pos];
-
-			String name = matcher.group(1);
-			String terminator = matcher.group(2);
-
-			// Skip inner type declarations, constructor invocations (`new Foo()`),
-			// and method calls (`obj.method()`) by inspecting the token before the name.
-			if (isPrecededByTypeKeyword(stripped, matcher.start(1)))
+		// Iterate per type and restrict the regex search to each type's body,
+		// excluding nested type bodies. This avoids the expensive regex trying
+		// (and failing) at every character position inside nested classes.
+		for (TypeNode enclosing : types) {
+			if (enclosing.bodyStart < 0 || enclosing.bodyEnd < 0)
 				continue;
-
-			// determine enclosing type (innermost for nested types)
-			TypeNode enclosing = findInnermostEnclosingType(types, pos);
-			if (enclosing == null)
-				continue;
-
-			// method must be directly inside the enclosing type body
 			int expectedDepth = braceDepth[enclosing.bodyStart] + 1;
-			if (depth != expectedDepth)
-				continue;
 
-			// Skip enum constants: inside an enum, anything before the first ';'
-			// at the right depth is a constant declaration, not a method.
-			if (enclosing.kind == TypeKind.ENUM) {
-				int enumSemicolon = findEnumConstantEnd(stripped, braceDepth, enclosing);
-				if (enumSemicolon < 0 || pos < enumSemicolon)
+			// Build list of regions to skip (nested type bodies at our depth).
+			// These are child types whose opening brace is at expectedDepth
+			// (i.e., directly nested inside this type).
+			int[] skipStarts = null;
+			int[] skipEnds = null;
+			int skipCount = 0;
+			for (TypeNode child : types) {
+				if (child == enclosing || child.bodyStart < 0)
 					continue;
-			}
-
-			boolean isCtor = name.equals(enclosing.simpleName);
-			boolean isAbstract = ";".equals(terminator);
-
-			// Annotation elements (inside @interface) are always abstract — they
-			// never have method bodies. A `default {}` is a default value, not a body.
-			if (enclosing.kind == TypeKind.ANNOTATION) {
-				isAbstract = true;
-			}
-
-			String bodyText = null;
-			String bodyHash = null;
-			String compactBody = null;
-			String signatureText = null;
-			if ("{".equals(terminator)) {
-				int bodyStart = matcher.end() - 1;
-				claimedBraces.add(bodyStart);
-				// Capture annotations + modifiers + return type + name + params from the
-				// ORIGINAL source (not stripped) so that annotation string values like
-				// @CsvSource({"1,2"}) are preserved in the hash. Normalize to ignore
-				// comment/whitespace changes in the signature area.
-				signatureText = normalizeForHashing(source.substring(matcher.start(), bodyStart));
-				if (!isAbstract) {
-					int bodyEnd = findMatchingBrace(stripped, bodyStart);
-					if (bodyEnd < 0)
-						continue;
-					// Use normalizeForHashing on the original body text so that
-					// comment-only and whitespace-only changes are ignored, but
-					// string literal changes are still detected.
-					bodyText = normalizeForHashing(source.substring(bodyStart, bodyEnd + 1));
-					bodyHash = sha256(bodyText);
-					compactBody = removeCommentsAndEmptyLines(source.substring(bodyStart, bodyEnd + 1));
-					methodBodyRanges.add(new int[]{bodyStart, bodyEnd, expectedDepth});
+				if (child.bodyStart > enclosing.bodyStart && child.bodyEnd < enclosing.bodyEnd
+						&& braceDepth[child.bodyStart] == expectedDepth) {
+					if (skipStarts == null) {
+						skipStarts = new int[8];
+						skipEnds = new int[8];
+					} else if (skipCount == skipStarts.length) {
+						skipStarts = java.util.Arrays.copyOf(skipStarts, skipCount * 2);
+						skipEnds = java.util.Arrays.copyOf(skipEnds, skipCount * 2);
+					}
+					skipStarts[skipCount] = child.bodyStart;
+					skipEnds[skipCount] = child.bodyEnd;
+					skipCount++;
 				}
-			} else {
-				// abstract method ending with ';' — capture signature from original source
-				signatureText = normalizeForHashing(source.substring(matcher.start(), matcher.end()));
 			}
 
-			methods.add(new MethodNode(name, enclosing.fqcn, isCtor, isAbstract, bodyText, bodyHash, compactBody,
-					signatureText));
+			// Sort skip regions by start position
+			if (skipCount > 1) {
+				// Simple insertion sort (typically very few nested types)
+				for (int i = 1; i < skipCount; i++) {
+					int ks = skipStarts[i], ke = skipEnds[i];
+					int j = i - 1;
+					while (j >= 0 && skipStarts[j] > ks) {
+						skipStarts[j + 1] = skipStarts[j];
+						skipEnds[j + 1] = skipEnds[j];
+						j--;
+					}
+					skipStarts[j + 1] = ks;
+					skipEnds[j + 1] = ke;
+				}
+			}
+
+			// Pre-compute candidate positions: find all '(' at expectedDepth
+			// within this type's non-skip region. Method declarations always
+			// contain a parameter list opening paren at the same brace depth.
+			// We scan for these first and only apply the expensive regex in a
+			// limited lookback window before each candidate.
+			List<int[]> segments = new ArrayList<>();
+			{
+				int segStart = enclosing.bodyStart + 1;
+				int regionEnd = enclosing.bodyEnd;
+				int sIdx = 0;
+				while (segStart < regionEnd) {
+					while (sIdx < skipCount && skipStarts[sIdx] <= segStart) {
+						if (skipEnds[sIdx] >= segStart)
+							segStart = skipEnds[sIdx] + 1;
+						sIdx++;
+					}
+					if (segStart >= regionEnd)
+						break;
+					int segEnd = (sIdx < skipCount) ? skipStarts[sIdx] : regionEnd;
+					segments.add(new int[]{segStart, segEnd});
+					segStart = segEnd;
+				}
+			}
+
+			// Maximum lookback before a '(' for method annotations/modifiers/return type
+			// A typical method declaration spans at most ~500 chars before the paren
+			// (annotations, modifiers, generics, return type, name).
+			final int MAX_LOOKBACK = 600;
+
+			// Find '(' candidates at the expected depth and apply regex
+			for (int[] seg : segments) {
+				int segStart = seg[0];
+				int segEnd = seg[1];
+
+				// Collect paren candidates within this segment
+				int searchFrom = segStart;
+				while (searchFrom < segEnd) {
+					int parenPos = -1;
+					for (int k = searchFrom; k < segEnd; k++) {
+						if (stripped.charAt(k) == '(' && braceDepth[k] == expectedDepth) {
+							parenPos = k;
+							break;
+						}
+					}
+					if (parenPos < 0)
+						break;
+
+					// Apply regex in a window from (parenPos - MAX_LOOKBACK) to segEnd
+					int windowStart = Math.max(segStart, parenPos - MAX_LOOKBACK);
+					// Find the beginning of the line or statement containing this paren
+					// to avoid starting mid-token
+					for (int b = windowStart; b < parenPos; b++) {
+						char ch = stripped.charAt(b);
+						if (ch == '}' || ch == ';') {
+							windowStart = b + 1;
+						}
+					}
+
+					// Tighten the region end: find the matching ')' after the '(' and
+					// then the first '{' or ';' after it. This prevents the regex engine
+					// from scanning far past the declaration if it fails at windowStart.
+					int windowEnd = segEnd;
+					int closeParen = findClosingParen(stripped, parenPos);
+					if (closeParen > 0) {
+						for (int e = closeParen + 1; e < segEnd; e++) {
+							char ce = stripped.charAt(e);
+							if (ce == '{' || ce == ';') {
+								windowEnd = e + 1;
+								break;
+							}
+						}
+					}
+
+					matcher.region(windowStart, windowEnd);
+					if (matcher.find() && matcher.start() <= parenPos) {
+						int pos = matcher.start();
+						int depth = braceDepth[pos];
+
+						if (depth == expectedDepth) {
+							String name = matcher.group(1);
+							String terminator = matcher.group(2);
+
+							boolean valid = !isPrecededByTypeKeyword(stripped, matcher.start(1));
+							if (valid && enclosing.kind == TypeKind.ENUM) {
+								int enumSemicolon = findEnumConstantEnd(stripped, braceDepth, enclosing);
+								if (enumSemicolon < 0 || pos < enumSemicolon)
+									valid = false;
+							}
+
+							if (valid) {
+								boolean isCtor = name.equals(enclosing.simpleName);
+								boolean isAbstract = ";".equals(terminator);
+								if (enclosing.kind == TypeKind.ANNOTATION) {
+									isAbstract = true;
+								}
+
+								String bodyText = null;
+								String bodyHash = null;
+								String compactBody = null;
+								String signatureText = null;
+								if ("{".equals(terminator)) {
+									int bodyStart = matcher.end() - 1;
+									claimedBraces.add(bodyStart);
+									signatureText = normalizeForHashing(source.substring(matcher.start(), bodyStart));
+									if (!isAbstract) {
+										int bodyEnd = findMatchingBrace(stripped, bodyStart, braceDepth);
+										if (bodyEnd >= 0) {
+											bodyText = normalizeForHashing(source.substring(bodyStart, bodyEnd + 1));
+											bodyHash = sha256(bodyText);
+											if (includeCompactBody) {
+												compactBody = removeCommentsAndEmptyLines(
+														source.substring(bodyStart, bodyEnd + 1));
+											}
+											methodBodyRanges.add(new int[]{bodyStart, bodyEnd, expectedDepth});
+											// Skip past method body for next candidate search
+											searchFrom = bodyEnd + 1;
+											methods.add(new MethodNode(name, enclosing.fqcn, isCtor, isAbstract,
+													bodyText, bodyHash, compactBody, signatureText));
+											continue;
+										}
+									}
+								} else {
+									signatureText = normalizeForHashing(
+											source.substring(matcher.start(), matcher.end()));
+								}
+
+								methods.add(new MethodNode(name, enclosing.fqcn, isCtor, isAbstract, bodyText, bodyHash,
+										compactBody, signatureText));
+							}
+						}
+					}
+
+					// Move past this paren candidate
+					searchFrom = parenPos + 1;
+				}
+			}
+
+			// Compact constructor detection for records: `public RecordName { ... }`
+			// Compact constructors have no parameter list, so they aren't found by the
+			// paren-based search above.
+			if (enclosing.kind == TypeKind.RECORD) {
+				String recordName = enclosing.simpleName;
+				// Search for pattern: (access-modifier)? RecordName { in the type body
+				int searchStart = enclosing.bodyStart + 1;
+				int searchEnd = enclosing.bodyEnd;
+				int nameIdx = stripped.indexOf(recordName, searchStart);
+				while (nameIdx >= 0 && nameIdx < searchEnd) {
+					if (braceDepth[nameIdx] == expectedDepth) {
+						// Check that the character after the name is whitespace or '{'
+						int afterName = nameIdx + recordName.length();
+						if (afterName < searchEnd) {
+							// Skip whitespace after name
+							int k = afterName;
+							while (k < searchEnd && (stripped.charAt(k) == ' ' || stripped.charAt(k) == '\t'
+									|| stripped.charAt(k) == '\n' || stripped.charAt(k) == '\r')) {
+								k++;
+							}
+							if (k < searchEnd && stripped.charAt(k) == '{' && braceDepth[k] == expectedDepth
+									&& !claimedBraces.contains(k)) {
+								// Verify it's preceded only by access modifiers / whitespace
+								// Look back from nameIdx to the last statement terminator or body start
+								int lineStart = nameIdx - 1;
+								while (lineStart > searchStart && stripped.charAt(lineStart) != ';'
+										&& stripped.charAt(lineStart) != '}' && stripped.charAt(lineStart) != '{') {
+									lineStart--;
+								}
+								lineStart++;
+								String prefix = stripped.substring(lineStart, nameIdx).trim();
+								if (prefix.isEmpty() || prefix.equals("public") || prefix.equals("protected")
+										|| prefix.equals("private")) {
+									int bodyStart = k;
+									int bodyEnd = findMatchingBrace(stripped, bodyStart, braceDepth);
+									if (bodyEnd >= 0) {
+										String bodyText = normalizeForHashing(source.substring(bodyStart, bodyEnd + 1));
+										String bodyHash = sha256(bodyText);
+										String compactBody = includeCompactBody
+												? removeCommentsAndEmptyLines(source.substring(bodyStart, bodyEnd + 1))
+												: null;
+										String signatureText = normalizeForHashing(
+												source.substring(lineStart, bodyStart));
+										methods.add(new MethodNode(recordName, enclosing.fqcn, true, false, bodyText,
+												bodyHash, compactBody, signatureText));
+									}
+								}
+							}
+						}
+					}
+					nameIdx = stripped.indexOf(recordName, nameIdx + 1);
+				}
+			}
 		}
 
 		return methods;
@@ -647,6 +815,25 @@ public class SourceFileModel {
 			if (c == ';' && braceDepth[i] == targetDepth)
 				return i;
 			// Skip over constant-specific class bodies { ... } at greater depth
+		}
+		return -1;
+	}
+
+	/**
+	 * Find the matching ')' for a '(' at the given position (simple paren
+	 * counting).
+	 */
+	private static int findClosingParen(String s, int openPos) {
+		int depth = 1;
+		int len = s.length();
+		for (int i = openPos + 1; i < len; i++) {
+			char c = s.charAt(i);
+			if (c == '(')
+				depth++;
+			else if (c == ')') {
+				if (--depth == 0)
+					return i;
+			}
 		}
 		return -1;
 	}
@@ -872,82 +1059,166 @@ public class SourceFileModel {
 			List<TypeNode> types, Set<Integer> claimedBraces, List<int[]> methodBodyRanges) {
 
 		List<FieldNode> fields = new ArrayList<>();
+		if (types.isEmpty())
+			return fields;
+
 		Matcher matcher = FIELD_ISLAND.matcher(stripped);
 
-		while (matcher.find()) {
-			int pos = matcher.start();
-			int depth = braceDepth[pos];
-
-			// Skip matches inside parentheses (e.g. method parameter lists)
-			if (parenDepth[pos] > 0)
+		// Iterate per type and restrict the regex search to each type's body,
+		// excluding nested type bodies and method bodies. This avoids the
+		// expensive regex trying at every position inside irrelevant regions.
+		for (TypeNode enclosing : types) {
+			if (enclosing.bodyStart < 0 || enclosing.bodyEnd < 0)
 				continue;
-
-			// Skip matches inside angle brackets (e.g. generic type parameters)
-			if (isInsideAngleBrackets(stripped, pos, braceDepth[pos]))
-				continue;
-
-			String name = matcher.group(1);
-
-			// Skip reserved words/literals that can't be field names
-			if (FIELD_SKIP_NAMES.contains(name))
-				continue;
-
-			// Skip type keywords matched as field names
-			if (isPrecededByTypeKeyword(stripped, matcher.start(1)))
-				continue;
-
-			// Skip when the "type" part of the match is a Java keyword
-			// (e.g. "throws Exception;", "extends Base,", "case FOO,")
-			if (isFieldTypeAKeyword(stripped, matcher.start(1)))
-				continue;
-
-			// determine enclosing type (innermost for nested types)
-			TypeNode enclosing = findInnermostEnclosingType(types, pos);
-			if (enclosing == null)
-				continue;
-
-			// field must be directly inside the enclosing type body
 			int expectedDepth = braceDepth[enclosing.bodyStart] + 1;
-			if (depth != expectedDepth)
-				continue;
 
-			// Skip matches inside method/constructor bodies at the same depth
-			if (isInsideMethodBody(pos, expectedDepth, methodBodyRanges))
-				continue;
+			// Build list of regions to skip: nested type bodies + method bodies at this
+			// depth
+			int[] skipStarts = null;
+			int[] skipEnds = null;
+			int skipCount = 0;
 
-			// Skip enum constants: inside an enum, anything before the first ';'
-			// at the right depth is a constant declaration, not a field.
-			if (enclosing.kind == TypeKind.ENUM) {
-				int enumSemicolon = findEnumConstantEnd(stripped, braceDepth, enclosing);
-				if (enumSemicolon < 0 || pos < enumSemicolon)
+			// Add nested type bodies
+			for (TypeNode child : types) {
+				if (child == enclosing || child.bodyStart < 0)
 					continue;
+				if (child.bodyStart > enclosing.bodyStart && child.bodyEnd < enclosing.bodyEnd
+						&& braceDepth[child.bodyStart] == expectedDepth) {
+					if (skipStarts == null) {
+						skipStarts = new int[16];
+						skipEnds = new int[16];
+					} else if (skipCount == skipStarts.length) {
+						skipStarts = java.util.Arrays.copyOf(skipStarts, skipCount * 2);
+						skipEnds = java.util.Arrays.copyOf(skipEnds, skipCount * 2);
+					}
+					skipStarts[skipCount] = child.bodyStart;
+					skipEnds[skipCount] = child.bodyEnd;
+					skipCount++;
+				}
 			}
 
-			// Find the end of the declaration (the ; at the right depth)
-			int declEnd = findFieldDeclarationEnd(stripped, matcher.end() - 1, expectedDepth, braceDepth);
-			if (declEnd < 0)
-				continue;
-
-			// Claim all '{' within this field declaration so they are not
-			// mistaken for initializer blocks (covers array init, anon classes,
-			// lambda bodies, etc.)
-			for (int i = pos; i <= declEnd; i++) {
-				if (stripped.charAt(i) == '{')
-					claimedBraces.add(i);
+			// Add method body ranges at this depth
+			for (int[] range : methodBodyRanges) {
+				if (range[2] == expectedDepth && range[0] > enclosing.bodyStart && range[1] < enclosing.bodyEnd) {
+					if (skipStarts == null) {
+						skipStarts = new int[16];
+						skipEnds = new int[16];
+					} else if (skipCount == skipStarts.length) {
+						skipStarts = java.util.Arrays.copyOf(skipStarts, skipCount * 2);
+						skipEnds = java.util.Arrays.copyOf(skipEnds, skipCount * 2);
+					}
+					skipStarts[skipCount] = range[0];
+					skipEnds[skipCount] = range[1];
+					skipCount++;
+				}
 			}
 
-			// Hash the original declaration text so string literal changes are preserved,
-			// while comment-only and whitespace-only edits are ignored.
-			String declText = source.substring(pos, declEnd + 1);
-			String declHash = sha256(normalizeForHashing(declText));
+			// Sort skip regions by start position
+			if (skipCount > 1) {
+				for (int i = 1; i < skipCount; i++) {
+					int ks = skipStarts[i], ke = skipEnds[i];
+					int j = i - 1;
+					while (j >= 0 && skipStarts[j] > ks) {
+						skipStarts[j + 1] = skipStarts[j];
+						skipEnds[j + 1] = skipEnds[j];
+						j--;
+					}
+					skipStarts[j + 1] = ks;
+					skipEnds[j + 1] = ke;
+				}
+			}
 
-			fields.add(new FieldNode(name, enclosing.fqcn, declText, declHash));
+			// Scan the type body in segments, skipping nested type bodies and method
+			// bodies.
+			int segStart = enclosing.bodyStart + 1;
+			int regionEnd = enclosing.bodyEnd;
+			int skipIdx = 0;
 
-			// Handle multi-field declarations (e.g. "int a, b, c;")
-			// Scan from the terminator char (,/;/=) that ended the first name match
-			// so that MULTI_FIELD_NAME can find ", nextName" patterns.
-			extractAdditionalFieldNames(stripped, matcher.end() - 1, declEnd, expectedDepth, braceDepth, parenDepth,
-					enclosing.fqcn, declText, declHash, fields);
+			while (segStart < regionEnd) {
+				// Advance segStart past any skip region that starts at or before segStart
+				while (skipIdx < skipCount && skipStarts[skipIdx] <= segStart) {
+					if (skipEnds[skipIdx] >= segStart)
+						segStart = skipEnds[skipIdx] + 1;
+					skipIdx++;
+				}
+				if (segStart >= regionEnd)
+					break;
+
+				// Determine segment end: either next skip region or type body end
+				int segEnd = (skipIdx < skipCount) ? skipStarts[skipIdx] : regionEnd;
+
+				matcher.region(segStart, segEnd);
+				while (matcher.find()) {
+					int pos = matcher.start();
+					int depth = braceDepth[pos];
+
+					// field must be directly inside this type body
+					if (depth != expectedDepth)
+						continue;
+
+					// Skip matches inside parentheses (e.g. method parameter lists)
+					if (parenDepth[pos] > 0)
+						continue;
+
+					// Skip matches inside angle brackets (e.g. generic type parameters)
+					if (isInsideAngleBrackets(stripped, pos, braceDepth[pos]))
+						continue;
+
+					String name = matcher.group(1);
+
+					// Skip reserved words/literals that can't be field names
+					if (FIELD_SKIP_NAMES.contains(name))
+						continue;
+
+					// Skip type keywords matched as field names
+					if (isPrecededByTypeKeyword(stripped, matcher.start(1)))
+						continue;
+
+					// Skip when the "type" part of the match is a Java keyword
+					if (isFieldTypeAKeyword(stripped, matcher.start(1)))
+						continue;
+
+					// Skip enum constants: inside an enum, anything before the first ';'
+					// at the right depth is a constant declaration, not a field.
+					if (enclosing.kind == TypeKind.ENUM) {
+						int enumSemicolon = findEnumConstantEnd(stripped, braceDepth, enclosing);
+						if (enumSemicolon < 0 || pos < enumSemicolon)
+							continue;
+					}
+
+					// Find the end of the declaration (the ; at the right depth)
+					int declEnd = findFieldDeclarationEnd(stripped, matcher.end() - 1, expectedDepth, braceDepth);
+					if (declEnd < 0)
+						continue;
+
+					// Claim all '{' within this field declaration so they are not
+					// mistaken for initializer blocks (covers array init, anon classes,
+					// lambda bodies, etc.)
+					for (int i = pos; i <= declEnd; i++) {
+						if (stripped.charAt(i) == '{')
+							claimedBraces.add(i);
+					}
+
+					// Hash the original declaration text so string literal changes are preserved,
+					// while comment-only and whitespace-only edits are ignored.
+					String declText = source.substring(pos, declEnd + 1);
+					String declHash = sha256(normalizeForHashing(declText));
+
+					fields.add(new FieldNode(name, enclosing.fqcn, declText, declHash));
+
+					// Handle multi-field declarations (e.g. "int a, b, c;")
+					extractAdditionalFieldNames(stripped, matcher.end() - 1, declEnd, expectedDepth, braceDepth,
+							parenDepth, enclosing.fqcn, declText, declHash, fields);
+
+					// Skip past the field declaration — no field at this depth within it.
+					if (declEnd + 1 < segEnd) {
+						matcher.region(declEnd + 1, segEnd);
+					}
+				}
+
+				// Move to after this segment
+				segStart = segEnd;
+			}
 		}
 
 		return fields;
@@ -1075,7 +1346,7 @@ public class SourceFileModel {
 				if (!isValidInitializerPosition(stripped, i))
 					continue;
 
-				int blockEnd = findMatchingBrace(stripped, i);
+				int blockEnd = findMatchingBrace(stripped, i, braceDepth);
 				if (blockEnd < 0)
 					continue;
 
@@ -1200,6 +1471,24 @@ public class SourceFileModel {
 				if (depth == 0)
 					return i;
 			}
+		}
+		return -1;
+	}
+
+	/**
+	 * Finds the matching closing brace using a precomputed cumulative brace depth
+	 * array. Much faster than linear scanning for large bodies because it uses the
+	 * fact that the matching '}' is the first position after openBrace where
+	 * braceDepth drops back to braceDepth[openBrace].
+	 */
+	static int findMatchingBrace(String source, int openBrace, int[] braceDepth) {
+		int targetDepth = braceDepth[openBrace]; // depth before the '{'
+		// After the '{', braceDepth[openBrace+1] = targetDepth + 1
+		// The matching '}' is at position j where braceDepth[j+1] = targetDepth
+		// i.e. braceDepth[j] = targetDepth + 1 and source[j] = '}'
+		for (int i = openBrace + 1; i < source.length(); i++) {
+			if (source.charAt(i) == '}' && braceDepth[i + 1] == targetDepth)
+				return i;
 		}
 		return -1;
 	}
@@ -1346,14 +1635,22 @@ public class SourceFileModel {
 
 	private static final HexFormat HEX_FORMAT = HexFormat.of();
 
-	static String sha256(String text) {
+	/**
+	 * ThreadLocal MessageDigest to avoid allocating a new instance per hash call.
+	 */
+	private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
 		try {
-			MessageDigest md = MessageDigest.getInstance("SHA-256");
-			byte[] hash = md.digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-			return HEX_FORMAT.formatHex(hash);
+			return MessageDigest.getInstance("SHA-256");
 		} catch (NoSuchAlgorithmException e) {
 			throw new RuntimeException("SHA-256 not available", e);
 		}
+	});
+
+	static String sha256(String text) {
+		MessageDigest md = SHA256_DIGEST.get();
+		md.reset();
+		byte[] hash = md.digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		return HEX_FORMAT.formatHex(hash);
 	}
 
 	// ── @MethodSource resolution ─────────────────────────────────────
@@ -1628,37 +1925,111 @@ public class SourceFileModel {
 	 * Strips block comments, line comments, and string/char literals from Java
 	 * source code. Replaces them with spaces (preserving newlines) so line
 	 * positions are maintained.
+	 * <p>
+	 * Uses a {@code char[]} output buffer instead of StringBuilder for faster
+	 * character output (avoids bounds-checking and capacity growth).
 	 */
 	public static String stripCommentsAndStrings(String source) {
-		StringBuilder sb = new StringBuilder(source.length());
-		int i = 0;
 		int len = source.length();
+		char[] out = new char[len]; // output is always <= input length
+		int o = 0; // output position
+		int i = 0;
 		while (i < len) {
 			char c = source.charAt(i);
 			if (c == '/' && i + 1 < len) {
 				char next = source.charAt(i + 1);
 				if (next == '/') {
-					i = skipLineComment(source, sb, i, len);
+					// Line comment: replace with spaces until newline
+					while (i < len && source.charAt(i) != '\n') {
+						out[o++] = ' ';
+						i++;
+					}
 				} else if (next == '*') {
-					i = skipBlockComment(source, sb, i, len);
+					// Block comment: replace with spaces, preserve newlines
+					out[o++] = ' ';
+					out[o++] = ' ';
+					i += 2;
+					while (i + 1 < len && !(source.charAt(i) == '*' && source.charAt(i + 1) == '/')) {
+						out[o++] = source.charAt(i) == '\n' ? '\n' : ' ';
+						i++;
+					}
+					if (i + 1 < len) {
+						out[o++] = ' ';
+						out[o++] = ' ';
+						i += 2;
+					}
 				} else {
-					sb.append(c);
+					out[o++] = c;
 					i++;
 				}
 			} else if (c == '"') {
 				if (i + 2 < len && source.charAt(i + 1) == '"' && source.charAt(i + 2) == '"') {
-					i = skipTextBlock(source, sb, i, len);
+					// Text block: replace with spaces, preserve newlines
+					out[o++] = ' ';
+					out[o++] = ' ';
+					out[o++] = ' ';
+					i += 3;
+					while (i < len) {
+						if (source.charAt(i) == '\\' && i + 1 < len) {
+							out[o++] = ' ';
+							out[o++] = ' ';
+							i += 2;
+							continue;
+						}
+						if (i + 2 < len && source.charAt(i) == '"' && source.charAt(i + 1) == '"'
+								&& source.charAt(i + 2) == '"') {
+							out[o++] = ' ';
+							out[o++] = ' ';
+							out[o++] = ' ';
+							i += 3;
+							break;
+						}
+						out[o++] = source.charAt(i) == '\n' ? '\n' : ' ';
+						i++;
+					}
 				} else {
-					i = skipStringLiteral(source, sb, i, len);
+					// String literal: replace with spaces
+					out[o++] = ' ';
+					i++;
+					while (i < len && source.charAt(i) != '"') {
+						if (source.charAt(i) == '\\' && i + 1 < len) {
+							out[o++] = ' ';
+							out[o++] = ' ';
+							i += 2;
+						} else {
+							out[o++] = source.charAt(i) == '\n' ? '\n' : ' ';
+							i++;
+						}
+					}
+					if (i < len) {
+						out[o++] = ' ';
+						i++;
+					}
 				}
 			} else if (c == '\'') {
-				i = skipCharLiteral(source, sb, i, len);
+				// Char literal: replace with spaces
+				out[o++] = ' ';
+				i++;
+				while (i < len && source.charAt(i) != '\'') {
+					if (source.charAt(i) == '\\' && i + 1 < len) {
+						out[o++] = ' ';
+						out[o++] = ' ';
+						i += 2;
+					} else {
+						out[o++] = ' ';
+						i++;
+					}
+				}
+				if (i < len) {
+					out[o++] = ' ';
+					i++;
+				}
 			} else {
-				sb.append(c);
+				out[o++] = c;
 				i++;
 			}
 		}
-		return sb.toString();
+		return new String(out, 0, o);
 	}
 
 	private static int skipLineComment(String source, StringBuilder sb, int i, int len) {
@@ -1865,10 +2236,150 @@ public class SourceFileModel {
 	 * The result is a canonical form where comment-only and whitespace-only edits
 	 * produce an identical normalized output, while any change to code or string
 	 * literals produces a different output.
+	 * <p>
+	 * This is a fused single-pass implementation: it strips comments and normalizes
+	 * whitespace simultaneously, avoiding the intermediate String allocation of a
+	 * two-pass approach.
 	 */
 	public static String normalizeForHashing(String source) {
-		String noComments = stripComments(source);
-		return normalizeWhitespace(noComments);
+		if (source == null || source.isEmpty())
+			return source;
+		int len = source.length();
+		// Output is always <= input length (comments removed, whitespace collapsed)
+		char[] out = new char[len];
+		int o = 0; // output position
+		int i = 0;
+		boolean pendingSpace = false;
+
+		while (i < len) {
+			char c = source.charAt(i);
+
+			// Line comment: skip to end of line, treat as whitespace
+			if (c == '/' && i + 1 < len && source.charAt(i + 1) == '/') {
+				i += 2;
+				while (i < len && source.charAt(i) != '\n')
+					i++;
+				pendingSpace = true;
+				continue;
+			}
+
+			// Block comment: skip to */, treat as whitespace
+			if (c == '/' && i + 1 < len && source.charAt(i + 1) == '*') {
+				i += 2;
+				while (i + 1 < len && !(source.charAt(i) == '*' && source.charAt(i + 1) == '/'))
+					i++;
+				if (i + 1 < len)
+					i += 2;
+				pendingSpace = true;
+				continue;
+			}
+
+			// Text block: preserve verbatim
+			if (c == '"' && i + 2 < len && source.charAt(i + 1) == '"' && source.charAt(i + 2) == '"') {
+				o = emitPendingSpaceChar(out, o, pendingSpace, c);
+				pendingSpace = false;
+				out[o++] = '"';
+				out[o++] = '"';
+				out[o++] = '"';
+				i += 3;
+				while (i < len) {
+					if (source.charAt(i) == '\\' && i + 1 < len) {
+						out[o++] = source.charAt(i);
+						out[o++] = source.charAt(i + 1);
+						i += 2;
+						continue;
+					}
+					if (i + 2 < len && source.charAt(i) == '"' && source.charAt(i + 1) == '"'
+							&& source.charAt(i + 2) == '"') {
+						out[o++] = '"';
+						out[o++] = '"';
+						out[o++] = '"';
+						i += 3;
+						break;
+					}
+					out[o++] = source.charAt(i);
+					i++;
+				}
+				continue;
+			}
+
+			// String literal: preserve verbatim
+			if (c == '"') {
+				o = emitPendingSpaceChar(out, o, pendingSpace, c);
+				pendingSpace = false;
+				out[o++] = '"';
+				i++;
+				while (i < len && source.charAt(i) != '"') {
+					if (source.charAt(i) == '\\' && i + 1 < len) {
+						out[o++] = source.charAt(i);
+						out[o++] = source.charAt(i + 1);
+						i += 2;
+					} else {
+						out[o++] = source.charAt(i);
+						i++;
+					}
+				}
+				if (i < len) {
+					out[o++] = '"';
+					i++;
+				}
+				continue;
+			}
+
+			// Char literal: preserve verbatim
+			if (c == '\'') {
+				o = emitPendingSpaceChar(out, o, pendingSpace, c);
+				pendingSpace = false;
+				out[o++] = '\'';
+				i++;
+				while (i < len && source.charAt(i) != '\'') {
+					if (source.charAt(i) == '\\' && i + 1 < len) {
+						out[o++] = source.charAt(i);
+						out[o++] = source.charAt(i + 1);
+						i += 2;
+					} else {
+						out[o++] = source.charAt(i);
+						i++;
+					}
+				}
+				if (i < len) {
+					out[o++] = '\'';
+					i++;
+				}
+				continue;
+			}
+
+			// Whitespace: collapse
+			if (c == '\n' || c == ' ' || c == '\t' || c == '\r') {
+				pendingSpace = true;
+				i++;
+				continue;
+			}
+
+			// Non-whitespace character
+			o = emitPendingSpaceChar(out, o, pendingSpace, c);
+			pendingSpace = false;
+			out[o++] = c;
+			i++;
+		}
+
+		return new String(out, 0, o);
+	}
+
+	/**
+	 * char[]-based equivalent of emitPendingSpace: emits a space into the output
+	 * buffer only when needed to separate word/operator tokens.
+	 */
+	private static int emitPendingSpaceChar(char[] out, int o, boolean pendingSpace, char nextChar) {
+		if (!pendingSpace || o == 0)
+			return o;
+		char last = out[o - 1];
+		if (last == '\n')
+			return o;
+		if ((isWordChar(last) && isWordChar(nextChar)) || (isOperatorChar(last) && isOperatorChar(nextChar))) {
+			out[o++] = ' ';
+		}
+		return o;
 	}
 
 	/**
@@ -1881,7 +2392,6 @@ public class SourceFileModel {
 		StringBuilder sb = new StringBuilder(text.length());
 		int len = text.length();
 		int i = 0;
-		int consecutiveNewlines = 0;
 		boolean pendingSpace = false; // whitespace seen since last emitted token
 
 		while (i < len) {
@@ -1889,8 +2399,6 @@ public class SourceFileModel {
 
 			// Preserve string literals verbatim (don't collapse whitespace inside them)
 			if (c == '"') {
-				flushNewlines(sb, consecutiveNewlines);
-				consecutiveNewlines = 0;
 				emitPendingSpace(sb, pendingSpace, c);
 				pendingSpace = false;
 				if (i + 2 < len && text.charAt(i + 1) == '"' && text.charAt(i + 2) == '"') {
@@ -1901,30 +2409,17 @@ public class SourceFileModel {
 				continue;
 			}
 			if (c == '\'') {
-				flushNewlines(sb, consecutiveNewlines);
-				consecutiveNewlines = 0;
 				emitPendingSpace(sb, pendingSpace, c);
 				pendingSpace = false;
 				i = copyCharLiteral(text, sb, i, len);
 				continue;
 			}
 
-			if (c == '\n') {
-				consecutiveNewlines++;
-				pendingSpace = false;
-				i++;
-				continue;
-			}
-
-			if (c == ' ' || c == '\t' || c == '\r') {
+			if (c == '\n' || c == ' ' || c == '\t' || c == '\r') {
 				pendingSpace = true;
 				i++;
 				continue;
 			}
-
-			// Non-whitespace character: flush pending newlines
-			flushNewlines(sb, consecutiveNewlines);
-			consecutiveNewlines = 0;
 
 			// Only emit a space if removing it could merge two distinct lexical tokens.
 			// This keeps formatting-only edits ignored, but preserves semantics-changing
@@ -1934,11 +2429,6 @@ public class SourceFileModel {
 
 			sb.append(c);
 			i++;
-		}
-
-		// Trailing newline — emit at most one
-		if (consecutiveNewlines > 0) {
-			sb.append('\n');
 		}
 
 		return sb.toString();
@@ -1966,12 +2456,6 @@ public class SourceFileModel {
 
 	private static boolean isOperatorChar(char c) {
 		return "+-*/%&|^!=<>?:~".indexOf(c) >= 0;
-	}
-
-	private static void flushNewlines(StringBuilder sb, int count) {
-		if (count > 0 && sb.length() > 0) {
-			sb.append('\n');
-		}
 	}
 
 	// ── Lombok annotation-processor synthesis ───────────────────────

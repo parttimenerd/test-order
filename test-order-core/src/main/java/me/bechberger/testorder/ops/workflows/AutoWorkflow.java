@@ -129,7 +129,7 @@ public final class AutoWorkflow {
 		var alwaysRun = ctx.testClassesDir() != null ? AlwaysRunScanner.scan(ctx.testClassesDir()) : Set.<String>of();
 
 		SelectOperation.SelectResult selectResult;
-		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0 && ctx.randomM() < 0) {
+		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0) {
 			var allTests = new ArrayList<>(a.depMap().testClasses());
 			selectResult = new SelectOperation.SelectResult(new TestSelector.Selection(allTests, java.util.List.of()),
 					true);

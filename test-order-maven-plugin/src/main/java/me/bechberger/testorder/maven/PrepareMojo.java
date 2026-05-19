@@ -271,12 +271,19 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	}
 
 	private void switchToLearnMode() throws MojoExecutionException {
+		String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
+		getLog().info("[test-order] ─── Learn mode ───────────────────────────────────────────");
+		getLog().info("[test-order]   module:          " + project.getArtifactId());
+		getLog().info("[test-order]   instrumentation: " + instrumentationMode);
+		getLog().info("[test-order]   changeMode:      " + changeMode);
+		getLog().info("[test-order]   packages:        "
+				+ (effectiveInclude != null && !effectiveInclude.isEmpty() ? effectiveInclude : "(all)"));
+		getLog().info("[test-order] ─────────────────────────────────────────────────────────────");
 		SurefireHelper.rejectClassLevelParallelForLearn(project, getLog());
 		SurefireHelper.warnForkCountInLearnMode(project, getLog());
 		SurefireHelper.warnReuseForksFalseInLearnMode(project, getLog());
 		SurefireHelper.warnRerunFailingTestsInLearnMode(project, getLog());
 		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
-		String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
 		configureLearnMode(instrumentationMode, effectiveInclude, true);
 		TestOrderState state = loadState();
 		state.resetRunsSinceLearn();
@@ -310,6 +317,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		// Detect which test framework is on the classpath to print correct class name
 		String frameworkName = isTestNGOnTestClasspath() ? "TestNGPriorityInterceptor" : "PriorityClassOrderer";
 		getLog().info("[test-order] Order mode: injecting " + frameworkName);
+
+		// Write the change-detection.logged flag so PriorityClassOrderer
+		// (running in the forked Surefire JVM) can suppress duplicate info.
+		// (config property will be written later via writeOrdererConfig)
 
 		// Warn if topN was explicitly set — it only applies to select/auto-select, not
 		// pure order mode
@@ -359,6 +370,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		Set<String> mergedChangedTests = detectChangedTestClasses();
 		String mergedChangedCsv = mergedChanged.isEmpty() ? null : String.join(",", mergedChanged);
 		String mergedChangedTestsCsv = mergedChangedTests.isEmpty() ? null : String.join(",", mergedChangedTests);
+
+		// ── Startup banner: show users what test-order will do ──
+		logOrderModeBanner(mergedChanged, mergedChangedTests);
 
 		TestOrderState state = loadState();
 		OrderWorkflow.OrderSetupResult result;
@@ -499,5 +513,45 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Logs a one-line startup banner summarizing mode, change detection, and plan.
+	 */
+	private void logOrderModeBanner(Set<String> changedClasses, Set<String> changedTests) {
+		int totalChanged = changedClasses.size() + changedTests.size();
+		String changeSummary;
+		if (totalChanged == 0) {
+			changeSummary = "no changes detected";
+		} else {
+			StringBuilder sb = new StringBuilder();
+			if (!changedClasses.isEmpty()) {
+				sb.append(changedClasses.size()).append(" changed source");
+				sb.append(changedClasses.size() == 1 ? " class" : " classes");
+			}
+			if (!changedTests.isEmpty()) {
+				if (sb.length() > 0)
+					sb.append(", ");
+				sb.append(changedTests.size()).append(" changed test");
+				sb.append(changedTests.size() == 1 ? " class" : " classes");
+			}
+			changeSummary = sb.toString();
+		}
+
+		String plan;
+		if (totalChanged > 0) {
+			plan = "tests exercising changed code will run first";
+		} else {
+			plan = "using historical failure data and speed for ordering";
+		}
+
+		getLog().info("[test-order] ─── Order mode | " + changeMode + " | " + changeSummary + " ───");
+		getLog().info("[test-order]   → " + plan);
+		if (!changedClasses.isEmpty() && changedClasses.size() <= 5) {
+			getLog().info("[test-order]   Changed: " + String.join(", ", changedClasses));
+		} else if (changedClasses.size() > 5) {
+			String first5 = changedClasses.stream().sorted().limit(5).reduce((a, b) -> a + ", " + b).orElse("");
+			getLog().info("[test-order]   Changed: " + first5 + " (+" + (changedClasses.size() - 5) + " more)");
+		}
 	}
 }

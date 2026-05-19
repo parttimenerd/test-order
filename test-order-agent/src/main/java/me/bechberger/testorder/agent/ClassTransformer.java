@@ -4,13 +4,20 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javassist.*;
-import javassist.expr.ExprEditor;
-import javassist.expr.FieldAccess;
+import javassist.bytecode.BadBytecode;
+import javassist.bytecode.Bytecode;
+import javassist.bytecode.CodeAttribute;
+import javassist.bytecode.CodeIterator;
+import javassist.bytecode.ConstPool;
+import javassist.bytecode.MethodInfo;
+import javassist.bytecode.Opcode;
 
 import me.bechberger.testorder.agent.runtime.AgentLogger;
 import me.bechberger.testorder.agent.runtime.ClassIdMap;
@@ -42,8 +49,6 @@ public class ClassTransformer implements ClassFileTransformer {
 	private final FieldTrackingMode fieldTrackingMode;
 	private final ClassIdMap classIdMap = ClassIdMap.getInstance();
 	private volatile ConcurrentHashMap<ClassLoader, ClassPool> loaderPools = new ConcurrentHashMap<>();
-	private volatile ConcurrentHashMap<String, String> classCallCache = new ConcurrentHashMap<>();
-	private volatile ConcurrentHashMap<String, String> memberCallCache = new ConcurrentHashMap<>();
 
 	/**
 	 * Maximum entries per string cache to prevent unbounded growth in large builds.
@@ -145,47 +150,9 @@ public class ClassTransformer implements ClassFileTransformer {
 		if (!cachesReleased.compareAndSet(false, true))
 			return;
 		loaderPools = null;
-		classCallCache = null;
-		memberCallCache = null;
 		slashToDotCache = null;
 		filter.clearCache();
 		AgentLogger.log("[ClassTransformer] Released transformation caches to reclaim memory");
-	}
-
-	private String recordClassCall(String fqcn) {
-		ConcurrentHashMap<String, String> cache = classCallCache;
-		if (cache != null) {
-			String cached = cache.get(fqcn);
-			if (cached != null)
-				return cached;
-		}
-		int classId = classIdMap.getOrRegisterClass(fqcn);
-		String result = (classId < 0)
-				? ""
-				: "me.bechberger.testorder.agent.runtime.UsageStore.recordUsageIdFast(" + classId + ");";
-		if (cache != null && cache.size() < MAX_CACHE_ENTRIES) {
-			String prev = cache.putIfAbsent(fqcn, result);
-			return prev != null ? prev : result;
-		}
-		return result;
-	}
-
-	private String recordMemberCall(String memberKey) {
-		ConcurrentHashMap<String, String> cache = memberCallCache;
-		if (cache != null) {
-			String cached = cache.get(memberKey);
-			if (cached != null)
-				return cached;
-		}
-		int memberId = classIdMap.getOrRegisterMember(memberKey);
-		String result = (memberId < 0)
-				? ""
-				: "me.bechberger.testorder.agent.runtime.UsageStore.recordMemberUsageIdFast(" + memberId + ");";
-		if (cache != null && cache.size() < MAX_CACHE_ENTRIES) {
-			String prev = cache.putIfAbsent(memberKey, result);
-			return prev != null ? prev : result;
-		}
-		return result;
 	}
 
 	@Override
@@ -227,7 +194,7 @@ public class ClassTransformer implements ClassFileTransformer {
 					}
 				}
 			}
-		} catch (CannotCompileException | IOException | RuntimeException e) {
+		} catch (CannotCompileException | BadBytecode | IOException | RuntimeException e) {
 			if (AgentLogger.isVerbose()) {
 				AgentLogger.log("[transform] FAIL: " + className + " -> " + e);
 			}
@@ -246,7 +213,7 @@ public class ClassTransformer implements ClassFileTransformer {
 
 	private volatile ConcurrentHashMap<String, String> slashToDotCache = new ConcurrentHashMap<>();
 
-	private void instrument(String className, CtClass cc) throws CannotCompileException {
+	private void instrument(String className, CtClass cc) throws BadBytecode {
 		ConcurrentHashMap<String, String> dotCache = slashToDotCache;
 		String fqcn = dotCache != null ? dotCache.get(className) : null;
 		if (fqcn == null) {
@@ -257,28 +224,26 @@ public class ClassTransformer implements ClassFileTransformer {
 					fqcn = prev;
 			}
 		}
-		String initialCall = recordClassCall(fqcn);
-		if (initialCall.isEmpty()) {
+		int mainClassId = classIdMap.getOrRegisterClass(fqcn);
+		if (mainClassId < 0) {
 			return;
 		}
-		StringBuilder callBuilder = new StringBuilder(initialCall);
+
+		// Collect class IDs: main class + interfaces + interface-typed fields
+		List<Integer> classIds = new ArrayList<>();
+		classIds.add(mainClassId);
 
 		// Also record: (a) interfaces this class directly implements, and (b)
-		// interface-typed
-		// declared fields — when their names match includePackages. This ensures that
-		// changes to interface-only application types (e.g. Spring Data JPA
-		// repositories)
-		// are captured in the dependency index even though those interfaces cannot be
-		// directly instrumented (no method bodies to inject into).
-		Set<String> extra = null;
+		// interface-typed declared fields — when their names match includePackages.
 		try {
 			CtClass[] interfaces = cc.getInterfaces();
 			for (CtClass iface : interfaces) {
 				String ifaceSlash = iface.getName().replace('.', '/');
 				if (!ifaceSlash.equals(className) && shouldInstrument(ifaceSlash)) {
-					if (extra == null)
-						extra = new HashSet<>();
-					extra.add(iface.getName());
+					int id = classIdMap.getOrRegisterClass(iface.getName());
+					if (id >= 0) {
+						classIds.add(id);
+					}
 				}
 			}
 		} catch (NotFoundException ignored) {
@@ -291,9 +256,10 @@ public class ClassTransformer implements ClassFileTransformer {
 					if (ft.isInterface()) {
 						String ftSlash = ft.getName().replace('.', '/');
 						if (!ftSlash.equals(className) && shouldInstrument(ftSlash)) {
-							if (extra == null)
-								extra = new HashSet<>();
-							extra.add(ft.getName());
+							int id = classIdMap.getOrRegisterClass(ft.getName());
+							if (id >= 0) {
+								classIds.add(id);
+							}
 						}
 					}
 				} catch (NotFoundException ignored) {
@@ -301,26 +267,15 @@ public class ClassTransformer implements ClassFileTransformer {
 			}
 		} catch (RuntimeException ignored) {
 		}
-		if (extra != null) {
-			for (String extraFqcn : extra) {
-				String extraCall = recordClassCall(extraFqcn);
-				if (!extraCall.isEmpty()) {
-					callBuilder.append(extraCall);
-				}
-			}
-		}
 
-		String call = callBuilder.toString();
-		instrumentMethodEntry(cc, fqcn, call, mode == Agent.InstrumentationMode.FULL_MEMBER);
+		int[] ids = classIds.stream().mapToInt(Integer::intValue).toArray();
+		instrumentMethodEntry(cc, fqcn, ids, mode == Agent.InstrumentationMode.FULL_MEMBER);
 	}
 
-	private void instrumentMethodEntry(CtClass cc, String selfFqcn, String selfCall, boolean recordMembers)
-			throws CannotCompileException {
+	private void instrumentMethodEntry(CtClass cc, String selfFqcn, int[] classIds, boolean recordMembers)
+			throws BadBytecode {
 		boolean includeFieldAccess = fieldTrackingMode != FieldTrackingMode.NONE;
-		// Reuse a single FieldAccessCollector per class; reset() between methods.
-		FieldAccessCollector fieldCollector = includeFieldAccess
-				? new FieldAccessCollector(selfFqcn, recordMembers)
-				: null;
+		ConstPool cp = cc.getClassFile().getConstPool();
 
 		// instrument all declared methods
 		for (CtMethod method : cc.getDeclaredMethods()) {
@@ -328,14 +283,12 @@ public class ClassTransformer implements ClassFileTransformer {
 				continue;
 			}
 			try {
-				String entryCall = buildEntryCall(selfCall,
-						recordMembers ? recordMemberCall(selfFqcn + "#" + method.getName()) : "");
-				method.insertBefore(entryCall);
-				if (fieldCollector != null) {
-					fieldCollector.reset();
-					method.instrument(fieldCollector);
+				int memberId = recordMembers ? classIdMap.getOrRegisterMember(selfFqcn + "#" + method.getName()) : -1;
+				insertEntryBytecode(method.getMethodInfo(), cp, classIds, memberId, false);
+				if (includeFieldAccess) {
+					instrumentFieldAccesses(method.getMethodInfo(), cp, selfFqcn, recordMembers);
 				}
-			} catch (CannotCompileException e) {
+			} catch (BadBytecode e) {
 				// skip methods that can't be instrumented (e.g., synthetic bridge methods)
 			}
 		}
@@ -345,112 +298,174 @@ public class ClassTransformer implements ClassFileTransformer {
 				continue;
 			}
 			try {
-				String entryCall = buildEntryCall(selfCall,
-						recordMembers ? recordMemberCall(selfFqcn + "#<init>") : "");
-				ctor.insertBefore(entryCall);
-				if (fieldCollector != null) {
-					fieldCollector.reset();
-					ctor.instrument(fieldCollector);
+				int memberId = recordMembers ? classIdMap.getOrRegisterMember(selfFqcn + "#<init>") : -1;
+				insertEntryBytecode(ctor.getMethodInfo(), cp, classIds, memberId, true);
+				if (includeFieldAccess) {
+					instrumentFieldAccesses(ctor.getMethodInfo(), cp, selfFqcn, recordMembers);
 				}
-			} catch (CannotCompileException e) {
+			} catch (BadBytecode e) {
 				// skip
 			}
 		}
 		// also instrument static initializer if present
 		CtConstructor clinit = cc.getClassInitializer();
 		if (clinit != null) {
-			String entryCall = buildEntryCall(selfCall, recordMembers ? recordMemberCall(selfFqcn + "#<clinit>") : "");
-			clinit.insertBefore(entryCall);
-			if (fieldCollector != null) {
-				try {
-					fieldCollector.reset();
-					clinit.instrument(fieldCollector);
-				} catch (CannotCompileException e) {
-					// skip
+			try {
+				int memberId = recordMembers ? classIdMap.getOrRegisterMember(selfFqcn + "#<clinit>") : -1;
+				insertEntryBytecode(clinit.getMethodInfo(), cp, classIds, memberId, false);
+				if (includeFieldAccess) {
+					instrumentFieldAccesses(clinit.getMethodInfo(), cp, selfFqcn, recordMembers);
 				}
+			} catch (BadBytecode e) {
+				// skip
 			}
 		}
-	}
-
-	private String buildEntryCall(String classCall, String memberCall) {
-		if (memberCall == null || memberCall.isEmpty()) {
-			return classCall;
-		}
-		return classCall + memberCall;
 	}
 
 	/**
-	 * ExprEditor that instruments field accesses to record the declaring class of
-	 * the accessed field. Only instruments accesses to classes other than the
-	 * current class (self-accesses are already recorded by method-entry
-	 * instrumentation) and skips JDK/framework classes.
+	 * Inserts recording bytecode at the entry point of a method/constructor. Uses
+	 * raw bytecode emission instead of javassist's source compiler, avoiding the
+	 * overhead of TypeChecker/CodeGen for each method.
 	 */
-	private class FieldAccessCollector extends ExprEditor {
-		private final String selfFqcn;
-		private final boolean recordMembers;
-		private final Set<String> seenClasses = new HashSet<>(64);
-		private final Set<String> seenMembers = new HashSet<>(64);
-
-		FieldAccessCollector(String selfFqcn, boolean recordMembers) {
-			this.selfFqcn = selfFqcn;
-			this.recordMembers = recordMembers;
-		}
-
-		/**
-		 * Clear dedup sets between methods so the collector can be reused per class.
-		 */
-		void reset() {
-			seenClasses.clear();
-			seenMembers.clear();
-		}
-
-		@Override
-		public void edit(FieldAccess fa) throws CannotCompileException {
-			String declaringClass;
-			String fieldName;
-			try {
-				declaringClass = fa.getClassName();
-				fieldName = fa.getFieldName();
-			} catch (RuntimeException e) {
-				return;
+	private void insertEntryBytecode(MethodInfo mi, ConstPool cp, int[] classIds, int memberId, boolean isConstructor)
+			throws BadBytecode {
+		CodeAttribute ca = mi.getCodeAttribute();
+		if (ca == null)
+			return;
+		Bytecode bc = new Bytecode(cp, 1, 0);
+		for (int classId : classIds) {
+			if (classId >= 0) {
+				bc.addIconst(classId);
+				bc.addInvokestatic("me.bechberger.testorder.agent.runtime.UsageStore", "recordUsageIdFast", "(I)V");
 			}
+		}
+		if (memberId >= 0) {
+			bc.addIconst(memberId);
+			bc.addInvokestatic("me.bechberger.testorder.agent.runtime.UsageStore", "recordMemberUsageIdFast", "(I)V");
+		}
+		byte[] bytecode = bc.get();
+		if (bytecode.length == 0)
+			return;
+
+		CodeIterator ci = ca.iterator();
+		if (isConstructor) {
+			// For constructors, insert after super/this call
+			int pos = skipSuperConstructorCall(ci);
+			ci.insert(pos, bytecode);
+		} else {
+			ci.insert(bytecode);
+		}
+		// Our instrumentation uses at most 1 stack slot (for the int argument)
+		ca.setMaxStack(Math.max(ca.getMaxStack(), 1));
+	}
+
+	/**
+	 * Finds the bytecode position right after the super()/this() call in a
+	 * constructor.
+	 */
+	private int skipSuperConstructorCall(CodeIterator ci) throws BadBytecode {
+		// Walk bytecode looking for invokespecial on <init>
+		// Track the 'this' reference depth to handle nested new+invokespecial
+		int nested = 0;
+		while (ci.hasNext()) {
+			int pos = ci.next();
+			int op = ci.byteAt(pos);
+			if (op == Opcode.NEW) {
+				nested++;
+			} else if (op == Opcode.INVOKESPECIAL) {
+				if (nested > 0) {
+					nested--;
+				} else {
+					// This is the super/this call; return position after it
+					return ci.hasNext() ? ci.next() : pos + 3;
+				}
+			}
+		}
+		// Fallback: insert at beginning (shouldn't happen for valid constructors)
+		ci.begin();
+		return 0;
+	}
+
+	/**
+	 * Instruments field accesses in a method by scanning bytecode directly for
+	 * getfield/putfield/getstatic/putstatic instructions and inserting recording
+	 * calls before them. This avoids the javassist compiler overhead of ExprEditor.
+	 */
+	private void instrumentFieldAccesses(MethodInfo mi, ConstPool cp, String selfFqcn, boolean recordMembers)
+			throws BadBytecode {
+		CodeAttribute ca = mi.getCodeAttribute();
+		if (ca == null)
+			return;
+		CodeIterator ci = ca.iterator();
+
+		// First pass: collect field access positions that need instrumentation
+		record FieldAccessEntry(int pos, int classId, int memberId) {
+		}
+		List<FieldAccessEntry> entries = new ArrayList<>();
+		Set<String> seenClasses = new HashSet<>();
+		Set<String> seenMembers = new HashSet<>();
+
+		while (ci.hasNext()) {
+			int pos = ci.next();
+			int op = ci.byteAt(pos);
+			if (op != Opcode.GETFIELD && op != Opcode.PUTFIELD && op != Opcode.GETSTATIC && op != Opcode.PUTSTATIC) {
+				continue;
+			}
+			if (fieldTrackingMode == FieldTrackingMode.STATIC_ONLY
+					&& (op == Opcode.GETFIELD || op == Opcode.PUTFIELD)) {
+				continue;
+			}
+			int fieldRefIndex = ci.u16bitAt(pos + 1);
+			String declaringClass = cp.getFieldrefClassName(fieldRefIndex);
+			String fieldName = cp.getFieldrefName(fieldRefIndex);
 			// skip self — already recorded by method-entry instrumentation
 			if (declaringClass.equals(selfFqcn)) {
-				return;
+				continue;
 			}
-			// skip JDK/framework and generated classes using intelligent filter
+			// skip JDK/framework and generated classes
 			String internalName = declaringClass.replace('.', '/');
 			if (!filter.shouldInstrument(internalName)) {
-				return;
+				continue;
 			}
-			if (fieldTrackingMode == FieldTrackingMode.STATIC_ONLY && !fa.isStatic()) {
-				return;
-			}
-			String classCall = "";
-			// class-level recording (deduplicated per declaring class per method)
+			int classId = -1;
 			if (seenClasses.add(declaringClass)) {
-				classCall = recordClassCall(declaringClass);
+				classId = classIdMap.getOrRegisterClass(declaringClass);
 			}
-			String memberCall = "";
-			// member-level recording (deduplicated per declaring class#field per method)
+			int memberId = -1;
 			if (recordMembers) {
 				String memberKey = declaringClass + "#" + fieldName;
 				if (seenMembers.add(memberKey)) {
-					memberCall = recordMemberCall(memberKey);
+					memberId = classIdMap.getOrRegisterMember(memberKey);
 				}
 			}
-			if (classCall.isEmpty() && memberCall.isEmpty()) {
-				return;
+			if (classId >= 0 || memberId >= 0) {
+				entries.add(new FieldAccessEntry(pos, classId, memberId));
 			}
-			StringBuilder replacement = new StringBuilder("{ ");
-			if (!classCall.isEmpty()) {
-				replacement.append(classCall).append(' ');
-			}
-			if (!memberCall.isEmpty()) {
-				replacement.append(memberCall).append(' ');
-			}
-			replacement.append("$_ = $proceed($$); }");
-			fa.replace(replacement.toString());
 		}
+
+		if (entries.isEmpty())
+			return;
+
+		// Second pass: insert bytecode from back to front to maintain positions
+		for (int i = entries.size() - 1; i >= 0; i--) {
+			FieldAccessEntry entry = entries.get(i);
+			Bytecode bc = new Bytecode(cp, 2, 0);
+			if (entry.classId >= 0 && entry.memberId >= 0) {
+				// Combined call: saves one invokestatic (5 bytes per site)
+				bc.addIconst(entry.classId);
+				bc.addIconst(entry.memberId);
+				bc.addInvokestatic("me.bechberger.testorder.agent.runtime.UsageStore", "recordFieldAccessFast",
+						"(II)V");
+			} else if (entry.classId >= 0) {
+				bc.addIconst(entry.classId);
+				bc.addInvokestatic("me.bechberger.testorder.agent.runtime.UsageStore", "recordUsageIdFast", "(I)V");
+			} else if (entry.memberId >= 0) {
+				bc.addIconst(entry.memberId);
+				bc.addInvokestatic("me.bechberger.testorder.agent.runtime.UsageStore", "recordMemberUsageIdFast",
+						"(I)V");
+			}
+			ci.insert(entry.pos, bc.get());
+		}
+		ca.setMaxStack(Math.max(ca.getMaxStack(), 2));
 	}
 }

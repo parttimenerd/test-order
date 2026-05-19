@@ -801,4 +801,248 @@ class SourceFileModelUtilTest {
 			assertTrue(SourceFileModel.extractClassNames(src, "com.x").isEmpty());
 		}
 	}
+
+	// =====================================================================
+	// PERFORMANCE & OPTIMIZATION CORRECTNESS
+	// =====================================================================
+
+	@Nested
+	class PerformanceOptimizations {
+
+		@Test
+		void sha256IsDeterministic() {
+			String input = "public void foo() { return 42; }";
+			String h1 = SourceFileModel.sha256(input);
+			String h2 = SourceFileModel.sha256(input);
+			assertEquals(h1, h2, "SHA-256 must be deterministic across calls");
+			assertEquals(64, h1.length(), "SHA-256 hex should be 64 chars");
+		}
+
+		@Test
+		void sha256ThreadSafety() throws Exception {
+			String input = "some text to hash";
+			String expected = SourceFileModel.sha256(input);
+			int threadCount = 8;
+			int iterations = 100;
+			java.util.concurrent.CyclicBarrier barrier = new java.util.concurrent.CyclicBarrier(threadCount);
+			java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger(0);
+			Thread[] threads = new Thread[threadCount];
+			for (int t = 0; t < threadCount; t++) {
+				final int tid = t;
+				threads[t] = new Thread(() -> {
+					try {
+						barrier.await();
+						for (int i = 0; i < iterations; i++) {
+							String h = SourceFileModel.sha256(input + tid + i);
+							assertNotNull(h);
+							assertEquals(64, h.length());
+						}
+						// Verify determinism
+						assertEquals(expected, SourceFileModel.sha256(input));
+					} catch (Exception e) {
+						failures.incrementAndGet();
+					}
+				});
+				threads[t].start();
+			}
+			for (Thread t : threads)
+				t.join();
+			assertEquals(0, failures.get(), "SHA-256 must be thread-safe");
+		}
+
+		@Test
+		void stripCommentsAndStringsPreservesLength() {
+			// char[] output should be exactly same length as input
+			String src = """
+					package com.x;
+					// line comment
+					/* block comment */
+					public class T {
+					    String s = "hello world";
+					    char c = 'x';
+					    String tb = \"\"\\"
+					            text block content
+					            \\"\"\";
+					    void m() {}
+					}
+					""";
+			String stripped = SourceFileModel.stripCommentsAndStrings(src);
+			assertEquals(src.length(), stripped.length(),
+					"Stripped output must preserve positional mapping (same length)");
+		}
+
+		@Test
+		void stripCommentsPreservesNewlines() {
+			String src = "line1\n// comment\nline3\n/* multi\nline\n*/\nline7\n";
+			String stripped = SourceFileModel.stripCommentsAndStrings(src);
+			long origNewlines = src.chars().filter(c -> c == '\n').count();
+			long strippedNewlines = stripped.chars().filter(c -> c == '\n').count();
+			assertEquals(origNewlines, strippedNewlines, "Newline count must be preserved");
+		}
+
+		@Test
+		void normalizeForHashingFusedEquivalence() {
+			// The fused single-pass normalizeForHashing must produce same results as
+			// the conceptual two-pass: stripComments → normalizeWhitespace
+			String src = """
+					package com.x;
+					/**
+					 * Javadoc with @param
+					 */
+					public class Foo {
+					    // inline comment
+					    String s = "keep this";
+					    int x = /* mid-code comment */ 42;
+					    void method(/* param comment */ int a,
+					               int   b) {
+					        return a   +   b; // trailing
+					    }
+					}
+					""";
+			String result = SourceFileModel.normalizeForHashing(src);
+			// Key properties: comments removed, strings preserved, whitespace collapsed
+			assertFalse(result.contains("Javadoc"), "Javadoc should be stripped");
+			assertFalse(result.contains("inline comment"), "Line comment should be stripped");
+			assertFalse(result.contains("mid-code"), "Block comment should be stripped");
+			assertFalse(result.contains("trailing"), "Trailing comment should be stripped");
+			assertTrue(result.contains("\"keep this\""), "String content must be preserved");
+			assertFalse(result.contains("  "), "No double spaces should remain (outside strings)");
+		}
+
+		@Test
+		void normalizeForHashingTextBlockPreserved() {
+			String src = "String s = \"\"\"\n        hello   world\n        \"\"\";\nvoid m() {}";
+			String result = SourceFileModel.normalizeForHashing(src);
+			// Text block content including internal whitespace must be preserved verbatim
+			assertTrue(result.contains("hello   world"), "Text block whitespace must be preserved");
+		}
+
+		@Test
+		void normalizeForHashingEmptyInput() {
+			assertEquals("", SourceFileModel.normalizeForHashing(""));
+			assertNull(SourceFileModel.normalizeForHashing(null));
+		}
+
+		@Test
+		void normalizeForHashingOnlyComments() {
+			String src = "// just a comment\n/* another one */\n";
+			String result = SourceFileModel.normalizeForHashing(src);
+			assertTrue(result.isEmpty() || result.isBlank(), "Only-comments source should produce empty result");
+		}
+
+		@Test
+		void findMatchingBraceWithDepthArray() {
+			String src = "class T { void m() { if (true) { } } }";
+			String stripped = SourceFileModel.stripCommentsAndStrings(src);
+			int len = stripped.length();
+			int[] braceDepth = new int[len + 1];
+			for (int i = 0; i < len; i++) {
+				char c = stripped.charAt(i);
+				braceDepth[i + 1] = braceDepth[i] + (c == '{' ? 1 : c == '}' ? -1 : 0);
+			}
+			// Find the first '{' (class body open)
+			int classOpen = stripped.indexOf('{');
+			int classClose = SourceFileModel.findMatchingBrace(stripped, classOpen, braceDepth);
+			assertEquals(stripped.lastIndexOf('}'), classClose);
+
+			// Find method body open
+			int methodOpen = stripped.indexOf('{', classOpen + 1);
+			int methodClose = SourceFileModel.findMatchingBrace(stripped, methodOpen, braceDepth);
+			assertTrue(methodClose > methodOpen);
+			assertTrue(methodClose < classClose);
+		}
+
+		@Test
+		void largeSourceParsingPerformance() {
+			// Generate a moderately large source file (50 classes, 10 methods each)
+			StringBuilder sb = new StringBuilder();
+			sb.append("package com.perf;\n");
+			for (int c = 0; c < 50; c++) {
+				sb.append("public class Class").append(c).append(" {\n");
+				for (int m = 0; m < 10; m++) {
+					sb.append("    /**\n     * Method doc for method").append(m).append("\n     */\n");
+					sb.append("    public String method").append(m).append("(int param").append(m).append(") {\n");
+					sb.append("        String s = \"value_").append(m).append("\";\n");
+					sb.append("        return s + param").append(m).append(";\n");
+					sb.append("    }\n");
+				}
+				sb.append("}\n");
+			}
+			String src = sb.toString();
+
+			// Warm up
+			SourceFileModel.parse(src, "com.perf", SourceFileModel.Detail.FIELDS);
+
+			// Time it
+			long start = System.nanoTime();
+			int iterations = 20;
+			for (int i = 0; i < iterations; i++) {
+				SourceFileModel.parse(src, "com.perf", SourceFileModel.Detail.FIELDS);
+			}
+			long elapsed = System.nanoTime() - start;
+			long avgMs = elapsed / (iterations * 1_000_000);
+
+			// Sanity check: should complete in reasonable time (< 200ms per parse)
+			// This is a regression guard, not a tight benchmark
+			assertTrue(avgMs < 200, "Parsing 50 classes x 10 methods should take < 200ms, took " + avgMs + "ms");
+		}
+
+		@Test
+		void stripCommentsAndStringsPerformance() {
+			// Generate a source with lots of strings and comments
+			StringBuilder sb = new StringBuilder();
+			for (int i = 0; i < 1000; i++) {
+				sb.append("String s").append(i).append(" = \"value ").append(i).append("\"; // comment ").append(i)
+						.append("\n");
+			}
+			String src = sb.toString();
+
+			// Warm up
+			SourceFileModel.stripCommentsAndStrings(src);
+
+			// Time it
+			long start = System.nanoTime();
+			int iterations = 100;
+			for (int i = 0; i < iterations; i++) {
+				SourceFileModel.stripCommentsAndStrings(src);
+			}
+			long elapsed = System.nanoTime() - start;
+			long avgUs = elapsed / (iterations * 1_000);
+
+			// Should be very fast for 1000 lines
+			assertTrue(avgUs < 10_000, "Stripping 1000 lines should take < 10ms, took " + (avgUs / 1000.0) + "ms");
+		}
+
+		@Test
+		void normalizeForHashingPerformance() {
+			// Source with mix of comments, strings, whitespace
+			StringBuilder sb = new StringBuilder();
+			sb.append("package com.x;\n");
+			for (int i = 0; i < 200; i++) {
+				sb.append("    /** doc ").append(i).append(" */\n");
+				sb.append("    public void method").append(i).append("() {\n");
+				sb.append("        String s = \"value ").append(i).append("\";\n");
+				sb.append("        // line comment\n");
+				sb.append("        int x = ").append(i).append(";\n");
+				sb.append("    }\n");
+			}
+			String src = sb.toString();
+
+			// Warm up
+			SourceFileModel.normalizeForHashing(src);
+
+			// Time it
+			long start = System.nanoTime();
+			int iterations = 50;
+			for (int i = 0; i < iterations; i++) {
+				SourceFileModel.normalizeForHashing(src);
+			}
+			long elapsed = System.nanoTime() - start;
+			long avgUs = elapsed / (iterations * 1_000);
+
+			// Single-pass should be fast
+			assertTrue(avgUs < 20_000,
+					"normalizeForHashing 200 methods should take < 20ms, took " + (avgUs / 1000.0) + "ms");
+		}
+	}
 }

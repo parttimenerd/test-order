@@ -350,6 +350,27 @@ class DependencyMapTest {
 	}
 
 	@Test
+	void get_nestedClassFallsBackToTopLevel() {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo", "com.example.Bar"));
+
+		// Nested class that doesn't have its own entry should fall back to top-level
+		Set<String> deps = map.get("com.example.FooTest$Inner");
+		assertEquals(Set.of("com.example.Foo", "com.example.Bar"), deps);
+	}
+
+	@Test
+	void get_nestedClassWithOwnEntryDoesNotFallBack() {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo"));
+		map.put("com.example.FooTest$Inner", Set.of("com.example.Bar"));
+
+		// Nested class with its own entry should use its own data
+		Set<String> deps = map.get("com.example.FooTest$Inner");
+		assertEquals(Set.of("com.example.Bar"), deps);
+	}
+
+	@Test
 	void getDependenciesReturnsUnmodifiableSet() {
 		DependencyMap map = new DependencyMap();
 		map.put("com.example.FooTest", Set.of("com.example.Foo", "com.example.Bar"));
@@ -366,6 +387,57 @@ class DependencyMapTest {
 
 		Set<String> deps = map.getMemberDeps("com.example.FooTest");
 		assertThrows(UnsupportedOperationException.class, () -> deps.add("com.example.X#y"));
+	}
+
+	@Test
+	void getMemberDeps_nestedClassFallsBackToTopLevel() {
+		DependencyMap map = new DependencyMap();
+		map.putMemberDeps("com.example.FooTest", Set.of("com.example.Foo#doWork", "com.example.Bar#init"));
+
+		// Nested class that doesn't have its own entry should fall back to top-level
+		Set<String> deps = map.getMemberDeps("com.example.FooTest$Inner");
+		assertEquals(Set.of("com.example.Foo#doWork", "com.example.Bar#init"), deps);
+	}
+
+	@Test
+	void getMemberDeps_nestedClassWithOwnEntryDoesNotFallBack() {
+		DependencyMap map = new DependencyMap();
+		map.putMemberDeps("com.example.FooTest", Set.of("com.example.Foo#doWork"));
+		map.putMemberDeps("com.example.FooTest$Inner", Set.of("com.example.Bar#init"));
+
+		// Nested class with its own entry should use its own data
+		Set<String> deps = map.getMemberDeps("com.example.FooTest$Inner");
+		assertEquals(Set.of("com.example.Bar#init"), deps);
+	}
+
+	@Test
+	void getMethodMemberDeps_nestedClassFallsBackToTopLevel() {
+		DependencyMap map = new DependencyMap();
+		map.putMethodMemberDeps("com.example.FooTest#testA", Set.of("com.example.Foo#field1"));
+
+		// Nested class method that doesn't have its own entry should fall back
+		Set<String> deps = map.getMethodMemberDeps("com.example.FooTest$Inner", "testA");
+		assertEquals(Set.of("com.example.Foo#field1"), deps);
+	}
+
+	@Test
+	void getMethodMemberDeps_nestedClassWithOwnEntryDoesNotFallBack() {
+		DependencyMap map = new DependencyMap();
+		map.putMethodMemberDeps("com.example.FooTest#testA", Set.of("com.example.Foo#field1"));
+		map.putMethodMemberDeps("com.example.FooTest$Inner#testA", Set.of("com.example.Bar#field2"));
+
+		Set<String> deps = map.getMethodMemberDeps("com.example.FooTest$Inner", "testA");
+		assertEquals(Set.of("com.example.Bar#field2"), deps);
+	}
+
+	@Test
+	void getMethodMemberDeps_byKey_nestedClassFallsBackToTopLevel() {
+		DependencyMap map = new DependencyMap();
+		map.putMethodMemberDeps("com.example.FooTest#testA", Set.of("com.example.Foo#field1"));
+
+		// Key-based overload should also fallback
+		Set<String> deps = map.getMethodMemberDeps("com.example.FooTest$Inner#testA");
+		assertEquals(Set.of("com.example.Foo#field1"), deps);
 	}
 
 	@Test
@@ -547,5 +619,66 @@ class DependencyMapTest {
 	void formatVersionIsAccessible() {
 		// Verify the FORMAT_VERSION constant is exposed for ExportJsonOperation
 		assertEquals(1, DependencyMap.FORMAT_VERSION);
+	}
+
+	@Test
+	void getMethodDepsFallsBackToTopLevelForNestedClass() {
+		DependencyMap map = new DependencyMap();
+		map.putMethodDeps("com.example.OuterTest#testFoo", Set.of("app.Service", "app.Repo"));
+
+		// Direct lookup works
+		assertEquals(Set.of("app.Service", "app.Repo"), map.getMethodDeps("com.example.OuterTest", "testFoo"));
+		// Nested class falls back to parent
+		assertEquals(Set.of("app.Service", "app.Repo"), map.getMethodDeps("com.example.OuterTest$Inner", "testFoo"),
+				"nested class should inherit parent's method deps");
+		// Composite key overload also falls back
+		assertEquals(Set.of("app.Service", "app.Repo"), map.getMethodDeps("com.example.OuterTest$Inner#testFoo"),
+				"composite key fallback should work for nested classes");
+		// Non-existent method returns empty
+		assertEquals(Set.of(), map.getMethodDeps("com.example.OuterTest$Inner", "testBar"));
+	}
+
+	@Test
+	void getMethodDepsPrefersNestedClassOwnData() {
+		DependencyMap map = new DependencyMap();
+		map.putMethodDeps("com.example.OuterTest#testFoo", Set.of("app.Service"));
+		map.putMethodDeps("com.example.OuterTest$Inner#testFoo", Set.of("app.Controller"));
+
+		// Should prefer nested class's own data
+		assertEquals(Set.of("app.Controller"), map.getMethodDeps("com.example.OuterTest$Inner", "testFoo"));
+		assertEquals(Set.of("app.Controller"), map.getMethodDeps("com.example.OuterTest$Inner#testFoo"));
+	}
+
+	@Test
+	void changedClassesContainsHandlesNestedProductionClass() {
+		Set<String> changed = Set.of("com.example.Service", "com.example.Repo");
+
+		// Direct match
+		assertTrue(DependencyMap.changedClassesContains(changed, "com.example.Service"));
+		// Nested production class should match via parent
+		assertTrue(DependencyMap.changedClassesContains(changed, "com.example.Service$Builder"));
+		assertTrue(DependencyMap.changedClassesContains(changed, "com.example.Service$Inner$Deep"));
+		// Non-matching
+		assertFalse(DependencyMap.changedClassesContains(changed, "com.example.Other"));
+		assertFalse(DependencyMap.changedClassesContains(changed, "com.example.Other$Inner"));
+	}
+
+	@Test
+	void getAffectedTestsMatchesNestedProductionDependencies() {
+		DependencyMap map = new DependencyMap();
+		// Test depends on nested production class Service$Builder
+		map.put("com.test.ServiceTest", Set.of("com.example.Service$Builder"));
+		map.put("com.test.RepoTest", Set.of("com.example.Repo"));
+		map.put("com.test.OtherTest", Set.of("com.example.Other"));
+
+		// Change detection reports top-level class only
+		Set<String> changed = Set.of("com.example.Service");
+
+		Set<String> affected = map.getAffectedTests(changed);
+
+		assertTrue(affected.contains("com.test.ServiceTest"),
+				"test depending on Service$Builder should be affected when Service changes");
+		assertFalse(affected.contains("com.test.RepoTest"));
+		assertFalse(affected.contains("com.test.OtherTest"));
 	}
 }

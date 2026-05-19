@@ -1,6 +1,5 @@
 package me.bechberger.testorder;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -70,58 +69,142 @@ final class APFDCalculator {
 
 	static double computeAPFDWithWeights(List<TestOrderState.TestOutcome> outcomes,
 			TestOrderState.ScoringWeights weights) {
-		List<TestOrderState.TestOutcome> reordered = new ArrayList<>(outcomes);
-		reordered.sort(reorderComparator(weights));
-		return computeAPFD(reordered);
+		int n = outcomes.size();
+		if (n == 0)
+			return 1.0;
+		int[] order = sortedIndicesByScore(outcomes, weights);
+		int m = 0;
+		double positionSum = 0;
+		for (int pos = 0; pos < n; pos++) {
+			if (outcomes.get(order[pos]).failed()) {
+				m++;
+				positionSum += (pos + 1);
+			}
+		}
+		if (m == 0)
+			return 1.0;
+		return 1.0 - positionSum / ((double) n * m) + 1.0 / (2.0 * n);
 	}
 
 	static double computeAPFDcWithWeights(List<TestOrderState.TestOutcome> outcomes,
 			TestOrderState.ScoringWeights weights, Map<String, Long> durations) {
-		List<TestOrderState.TestOutcome> reordered = new ArrayList<>(outcomes);
-		reordered.sort(reorderComparator(weights));
-		return computeAPFDc(reordered, durations);
+		int n = outcomes.size();
+		if (n == 0)
+			return 1.0;
+		int[] order = sortedIndicesByScore(outcomes, weights);
+
+		double[] costs = new double[n];
+		boolean hasCosts = false;
+		for (int i = 0; i < n; i++) {
+			Long duration = durations.get(outcomes.get(i).testClass());
+			if (duration != null && duration > 0) {
+				costs[i] = duration;
+				hasCosts = true;
+			} else {
+				costs[i] = 1.0;
+			}
+		}
+		if (!hasCosts) {
+			// Fall back to unweighted APFD using sorted order
+			int m = 0;
+			double positionSum = 0;
+			for (int pos = 0; pos < n; pos++) {
+				if (outcomes.get(order[pos]).failed()) {
+					m++;
+					positionSum += (pos + 1);
+				}
+			}
+			if (m == 0)
+				return 1.0;
+			return 1.0 - positionSum / ((double) n * m) + 1.0 / (2.0 * n);
+		}
+
+		double totalCost = 0;
+		for (double cost : costs)
+			totalCost += cost;
+
+		int failures = 0;
+		double weightedSum = 0;
+		double cumulativeCost = 0;
+		for (int pos = 0; pos < n; pos++) {
+			int idx = order[pos];
+			cumulativeCost += costs[idx];
+			if (outcomes.get(idx).failed()) {
+				failures++;
+				weightedSum += cumulativeCost - 0.5 * costs[idx];
+			}
+		}
+		if (failures == 0 || totalCost <= 0)
+			return 1.0;
+		return 1.0 - weightedSum / (totalCost * failures);
+	}
+
+	/**
+	 * Returns indices sorted by descending score. Pre-computes all scores O(n) then
+	 * sorts the index array, avoiding repeated score computation in the comparator
+	 * (which would be O(n log n) score evaluations).
+	 */
+	private static int[] sortedIndicesByScore(List<TestOrderState.TestOutcome> outcomes,
+			TestOrderState.ScoringWeights weights) {
+		int n = outcomes.size();
+		double[] scores = new double[n];
+		for (int i = 0; i < n; i++) {
+			scores[i] = scoreOutcome(outcomes.get(i), weights);
+		}
+		// Sort indices by descending score using a simple parallel array approach
+		Integer[] indices = new Integer[n];
+		for (int i = 0; i < n; i++)
+			indices[i] = i;
+		java.util.Arrays.sort(indices, (a, b) -> Double.compare(scores[b], scores[a]));
+		int[] result = new int[n];
+		for (int i = 0; i < n; i++)
+			result[i] = indices[i];
+		return result;
+	}
+
+	static double scoreOutcome(TestOrderState.TestOutcome outcome, TestOrderState.ScoringWeights weights) {
+		double score = 0;
+		if (outcome.isNew()) {
+			score += weights.newTest();
+		}
+		if (outcome.isChanged()) {
+			score += weights.changedTest();
+		}
+		if (outcome.failScore() > 0) {
+			score += Math.min(Math.ceil(outcome.failScore()), weights.maxFailure());
+		}
+
+		if (outcome.speedRatio() != 0.0) {
+			double speedRatio = outcome.speedRatio();
+			if (speedRatio <= 0) {
+				score += (-speedRatio) * weights.speed();
+			} else {
+				score -= speedRatio * weights.speedPenalty();
+			}
+		} else {
+			if (outcome.isFast()) {
+				score += weights.speed();
+			} else if (outcome.isSlow()) {
+				score -= weights.speedPenalty();
+			}
+		}
+
+		if (weights.coverageBonus() > 0) {
+			score += TestScorer.depOverlapScore(outcome.depOverlap(), outcome.depTotal(), weights.coverageBonus());
+		} else {
+			score += TestScorer.depOverlapScore(outcome.depOverlap(), outcome.depTotal(), weights.depOverlap());
+			score += TestScorer.complexityScore(outcome.complexityOverlap(), outcome.depTotal(),
+					weights.changeComplexity());
+		}
+
+		if (outcome.hasStaticFieldOverlap()) {
+			score += weights.staticFieldBonus();
+		}
+		return score;
 	}
 
 	static Comparator<TestOrderState.TestOutcome> reorderComparator(TestOrderState.ScoringWeights weights) {
-		return Comparator.comparingDouble((TestOrderState.TestOutcome outcome) -> {
-			double score = 0;
-			if (outcome.isNew()) {
-				score += weights.newTest();
-			}
-			if (outcome.isChanged()) {
-				score += weights.changedTest();
-			}
-			if (outcome.failScore() > 0) {
-				score += Math.min(Math.ceil(outcome.failScore()), weights.maxFailure());
-			}
-
-			if (outcome.speedRatio() != 0.0) {
-				double speedRatio = outcome.speedRatio();
-				if (speedRatio <= 0) {
-					score += (-speedRatio) * weights.speed();
-				} else {
-					score -= speedRatio * weights.speedPenalty();
-				}
-			} else {
-				if (outcome.isFast()) {
-					score += weights.speed();
-				} else if (outcome.isSlow()) {
-					score -= weights.speedPenalty();
-				}
-			}
-
-			if (weights.coverageBonus() > 0) {
-				score += TestScorer.depOverlapScore(outcome.depOverlap(), outcome.depTotal(), weights.coverageBonus());
-			} else {
-				score += TestScorer.depOverlapScore(outcome.depOverlap(), outcome.depTotal(), weights.depOverlap());
-				score += TestScorer.complexityScore(outcome.complexityOverlap(), outcome.depTotal(),
-						weights.changeComplexity());
-			}
-
-			if (outcome.hasStaticFieldOverlap()) {
-				score += weights.staticFieldBonus();
-			}
-			return score;
-		}).reversed();
+		return Comparator.comparingDouble((TestOrderState.TestOutcome outcome) -> scoreOutcome(outcome, weights))
+				.reversed();
 	}
 }

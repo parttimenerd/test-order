@@ -364,8 +364,7 @@ public class TestNGTelemetryListener implements ITestListener {
 					formatDuration(savedMs));
 		} else {
 			// Position improved but durations are zero/unknown
-			TestOrderLogger.info(
-					"\u23f1\ufe0f  First failure surfaced {} positions earlier than default order",
+			TestOrderLogger.info("\u23f1\ufe0f  First failure surfaced {} positions earlier than default order",
 					positionsEarlier);
 		}
 	}

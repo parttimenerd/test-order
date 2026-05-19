@@ -189,6 +189,15 @@ public final class ClassOrderingEngine {
 
 		for (var entry : groups.entrySet()) {
 			List<String> group = new ArrayList<>(entry.getValue());
+			// Singleton groups need no diversity sort
+			if (group.size() == 1) {
+				String single = group.get(0);
+				result.add(single);
+				Set<String> deps = depsCache.get(single);
+				if (deps != null)
+					coveredDeps.addAll(deps);
+				continue;
+			}
 			while (!group.isEmpty()) {
 				int bestIdx = -1;
 				double bestDistance = -1;
@@ -199,15 +208,19 @@ public final class ClassOrderingEngine {
 					String name = group.get(i);
 					Set<String> deps = depsCache.get(name);
 					double distance = TestSelector.jaccardDistance(deps, coveredDeps);
-					long dur = state.getDuration(name, Long.MAX_VALUE);
-
-					if (distance > bestDistance || (distance == bestDistance && dur < bestDuration)
-							|| (distance == bestDistance && dur == bestDuration && bestName != null
-									&& name.compareTo(bestName) < 0)) {
+					if (distance > bestDistance) {
 						bestIdx = i;
 						bestDistance = distance;
-						bestDuration = dur;
+						bestDuration = state.getDuration(name, Long.MAX_VALUE);
 						bestName = name;
+					} else if (distance == bestDistance) {
+						long dur = state.getDuration(name, Long.MAX_VALUE);
+						if (dur < bestDuration
+								|| (dur == bestDuration && bestName != null && name.compareTo(bestName) < 0)) {
+							bestIdx = i;
+							bestDuration = dur;
+							bestName = name;
+						}
 					}
 				}
 
@@ -218,7 +231,9 @@ public final class ClassOrderingEngine {
 				}
 				group.remove(last);
 				result.add(best);
-				coveredDeps.addAll(depsCache.get(best));
+				Set<String> bestDeps = depsCache.get(best);
+				if (bestDeps != null)
+					coveredDeps.addAll(bestDeps);
 			}
 		}
 		return result;
@@ -263,6 +278,18 @@ public final class ClassOrderingEngine {
 
 		for (var entry : groups.entrySet()) {
 			List<T> group = new ArrayList<>(entry.getValue());
+			// Singleton groups need no diversity sort
+			if (group.size() == 1) {
+				T single = group.get(0);
+				result.add(single);
+				Set<String> deps = depsCache.get(single);
+				if (deps != null)
+					coveredDeps.addAll(deps);
+				if (springContextFunc != null) {
+					activeSpringContext = springContextFunc.apply(single);
+				}
+				continue;
+			}
 			while (!group.isEmpty()) {
 				int bestIdx = -1;
 				double bestDistance = -1;
@@ -274,22 +301,28 @@ public final class ClassOrderingEngine {
 					T item = group.get(i);
 					Set<String> deps = depsCache.get(item);
 					double distance = TestSelector.jaccardDistance(deps, coveredDeps);
-					String name = nameFunc.apply(item);
-					long dur = state.getDuration(name, Long.MAX_VALUE);
-					boolean matchesSpringContext = springContextFunc != null && activeSpringContext != null
-							&& Objects.equals(activeSpringContext, springContextFunc.apply(item));
 
-					if (distance > bestDistance
-							|| (distance == bestDistance && matchesSpringContext && !bestMatchesSpringContext)
-							|| (distance == bestDistance && matchesSpringContext == bestMatchesSpringContext
-									&& dur < bestDuration)
-							|| (distance == bestDistance && matchesSpringContext == bestMatchesSpringContext
-									&& dur == bestDuration && bestName != null && name.compareTo(bestName) < 0)) {
+					if (distance > bestDistance) {
 						bestIdx = i;
 						bestDistance = distance;
-						bestMatchesSpringContext = matchesSpringContext;
-						bestDuration = dur;
-						bestName = name;
+						bestName = nameFunc.apply(item);
+						bestDuration = state.getDuration(bestName, Long.MAX_VALUE);
+						bestMatchesSpringContext = springContextFunc != null && activeSpringContext != null
+								&& Objects.equals(activeSpringContext, springContextFunc.apply(item));
+					} else if (distance == bestDistance) {
+						String name = nameFunc.apply(item);
+						long dur = state.getDuration(name, Long.MAX_VALUE);
+						boolean matchesSpringContext = springContextFunc != null && activeSpringContext != null
+								&& Objects.equals(activeSpringContext, springContextFunc.apply(item));
+						if ((matchesSpringContext && !bestMatchesSpringContext)
+								|| (matchesSpringContext == bestMatchesSpringContext && dur < bestDuration)
+								|| (matchesSpringContext == bestMatchesSpringContext && dur == bestDuration
+										&& bestName != null && name.compareTo(bestName) < 0)) {
+							bestIdx = i;
+							bestMatchesSpringContext = matchesSpringContext;
+							bestDuration = dur;
+							bestName = name;
+						}
 					}
 				}
 
@@ -300,7 +333,9 @@ public final class ClassOrderingEngine {
 				}
 				group.remove(last);
 				result.add(best);
-				coveredDeps.addAll(depsCache.get(best));
+				Set<String> bestDeps = depsCache.get(best);
+				if (bestDeps != null)
+					coveredDeps.addAll(bestDeps);
 				if (springContextFunc != null) {
 					activeSpringContext = springContextFunc.apply(best);
 				}

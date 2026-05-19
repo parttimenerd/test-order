@@ -51,16 +51,24 @@ public class GitChangeDetector {
 	 * prefix.
 	 */
 	public static Set<String> uncommittedChanges(Path projectRoot, String sourcePrefix) throws IOException {
+		// Single git status call instead of 3 separate commands (diff, diff --cached,
+		// ls-files)
+		List<String> statusLines = runGit(projectRoot, "status", "--porcelain", "--", sourcePrefix);
 		Set<String> all = new TreeSet<>();
-		// unstaged
-		List<String> unstaged = runGit(projectRoot, "diff", "--name-only", "--", sourcePrefix);
-		all.addAll(javaFilesToClassNames(unstaged, sourcePrefix, projectRoot, "HEAD"));
-		// staged
-		List<String> staged = runGit(projectRoot, "diff", "--cached", "--name-only", "--", sourcePrefix);
-		all.addAll(javaFilesToClassNames(staged, sourcePrefix, projectRoot, "HEAD"));
-		// untracked (new files not yet added to git)
-		List<String> untracked = runGit(projectRoot, "ls-files", "--others", "--exclude-standard", "--", sourcePrefix);
-		all.addAll(javaFilesToClassNames(untracked, sourcePrefix, projectRoot, null));
+		List<String> paths = new ArrayList<>();
+		for (String line : statusLines) {
+			// porcelain format: XY filename (or XY orig -> renamed)
+			if (line.length() < 4)
+				continue;
+			String filePath = line.substring(3);
+			// Handle renames: "R old -> new"
+			int arrowIdx = filePath.indexOf(" -> ");
+			if (arrowIdx >= 0) {
+				filePath = filePath.substring(arrowIdx + 4);
+			}
+			paths.add(filePath);
+		}
+		all.addAll(javaFilesToClassNames(paths, sourcePrefix, projectRoot, "HEAD"));
 		return all;
 	}
 
@@ -151,7 +159,7 @@ public class GitChangeDetector {
 		try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
 			String line;
 			while ((line = reader.readLine()) != null) {
-				String trimmed = line.trim();
+				String trimmed = line.stripTrailing();
 				if (!trimmed.isEmpty()) {
 					lines.add(trimmed);
 				}

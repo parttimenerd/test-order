@@ -78,13 +78,19 @@ public class FixedOrderClassOrderer implements ClassOrderer {
 		List<ClassDescriptor> sorted = new ArrayList<>(descriptors);
 		sorted.sort(Comparator.comparingInt(d -> {
 			String name = d.getTestClass().getName();
-			// Normalize inner/nested classes (e.g., "OuterTest$InnerTest") to their
-			// top-level class so they inherit the parent's position from the order file.
+			// If the exact name (including $) is listed, use its position directly.
+			if (positionMap.containsKey(name)) {
+				return positionMap.get(name);
+			}
+			// Fallback: normalize inner/nested classes (e.g., "OuterTest$InnerTest") to
+			// their top-level class so they inherit the parent's position from the order
+			// file.
 			int dollar = name.indexOf('$');
 			if (dollar > 0) {
-				name = name.substring(0, dollar);
+				String topLevel = name.substring(0, dollar);
+				return positionMap.getOrDefault(topLevel, Integer.MAX_VALUE);
 			}
-			return positionMap.getOrDefault(name, Integer.MAX_VALUE);
+			return Integer.MAX_VALUE;
 		}));
 
 		// In-place replacement (JUnit ClassOrderer contract)

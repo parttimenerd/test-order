@@ -118,6 +118,30 @@ public class UsageStore {
 		INSTANCE.recordMemberUsageId(memberId);
 	}
 
+	/**
+	 * Combined class + member recording in a single call. Used by FULL_MEMBER field
+	 * access instrumentation to reduce bytecode size (one invokestatic instead of
+	 * two). If classId is negative, only the member is recorded; if memberId is
+	 * negative, only the class is recorded.
+	 */
+	public static void recordFieldAccessFast(int classId, int memberId) {
+		ActiveTrackers at = INSTANCE.activeTrackers;
+		BitsetTracker t = at.test;
+		if (t != null) {
+			if (classId >= 0)
+				t.recordClass(classId);
+			if (memberId >= 0)
+				t.recordMember(memberId);
+		}
+		BitsetTracker m = at.method;
+		if (m != null) {
+			if (classId >= 0)
+				m.recordClass(classId);
+			if (memberId >= 0)
+				m.recordMember(memberId);
+		}
+	}
+
 	// ── Configuration (called by Agent via reflection) ────────────────
 
 	/** Set the output directory for fallback .deps file writing. */

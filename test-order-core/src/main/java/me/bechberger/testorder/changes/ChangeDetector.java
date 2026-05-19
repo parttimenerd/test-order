@@ -65,6 +65,13 @@ public class ChangeDetector {
 			};
 		} catch (IOException e) {
 			if (mode == Mode.SINCE_LAST_COMMIT || mode == Mode.UNCOMMITTED) {
+				if (hashFile == null) {
+					TestOrderLogger.warn(
+							"Git-based change detection failed and no hash file available for fallback: {}",
+							e.getMessage());
+					throw new IOException("Git-based change detection failed and no hash file available for fallback",
+							e);
+				}
 				TestOrderLogger.warn("Git-based change detection failed, falling back to hash-based detection: {}",
 						e.getMessage());
 				return detectSinceLastRun(absoluteSourceRoot, hashFile, !readOnly);
@@ -130,7 +137,19 @@ public class ChangeDetector {
 	 * Finds the git repository root via {@code git rev-parse --show-toplevel}.
 	 * Falls back to projectRoot if git is unavailable.
 	 */
+	/**
+	 * Cache for git root resolution. The git root is the same for all modules in a
+	 * reactor build, so we cache it per projectRoot to avoid repeated subprocess
+	 * calls.
+	 */
+	private static final Map<Path, Path> gitRootCache = Collections.synchronizedMap(new HashMap<>());
+
 	private static Path findGitRoot(Path projectRoot) {
+		Path normalized = projectRoot.toAbsolutePath().normalize();
+		return gitRootCache.computeIfAbsent(normalized, ChangeDetector::resolveGitRoot);
+	}
+
+	private static Path resolveGitRoot(Path projectRoot) {
 		try {
 			ProcessBuilder pb = new ProcessBuilder("git", "rev-parse", "--show-toplevel");
 			pb.directory(projectRoot.toFile());

@@ -32,10 +32,15 @@ public final class AlwaysRunScanner {
 		}
 		Set<String> result = new LinkedHashSet<>();
 		try (Stream<Path> walk = Files.walk(testClassesDir)) {
-			walk.filter(p -> p.toString().endsWith(".class") && !p.toString().contains("$"))
-					.filter(AlwaysRunScanner::hasAlwaysRunAnnotation).forEach(p -> {
+			walk.filter(p -> p.toString().endsWith(".class")).filter(AlwaysRunScanner::hasAlwaysRunAnnotation)
+					.forEach(p -> {
 						String relative = testClassesDir.relativize(p).toString();
 						String fqcn = relative.replace('/', '.').replace('\\', '.').replaceAll("\\.class$", "");
+						// Map nested classes to their top-level parent
+						int dollar = fqcn.indexOf('$');
+						if (dollar > 0) {
+							fqcn = fqcn.substring(0, dollar);
+						}
 						result.add(fqcn);
 					});
 		} catch (IOException e) {

@@ -66,7 +66,7 @@ public final class CoFailureTracker {
 		}
 		double maxSimilarity = 0.0;
 		for (String changed : changedClasses) {
-			Set<String> theirPartners = coFailurePartners.getOrDefault(changed, Set.of());
+			Set<String> theirPartners = partnersWithFallback(changed);
 			if (theirPartners.isEmpty()) {
 				continue;
 			}
@@ -76,6 +76,25 @@ public final class CoFailureTracker {
 			}
 		}
 		return maxSimilarity;
+	}
+
+	/**
+	 * Looks up co-failure partners for the given class, falling back to the
+	 * top-level class (stripping {@code $Inner}) if no direct entry exists.
+	 */
+	private Set<String> partnersWithFallback(String className) {
+		Set<String> partners = coFailurePartners.get(className);
+		if (partners != null) {
+			return partners;
+		}
+		int dollar = className.indexOf('$');
+		if (dollar > 0) {
+			partners = coFailurePartners.get(className.substring(0, dollar));
+			if (partners != null) {
+				return partners;
+			}
+		}
+		return Set.of();
 	}
 
 	/**

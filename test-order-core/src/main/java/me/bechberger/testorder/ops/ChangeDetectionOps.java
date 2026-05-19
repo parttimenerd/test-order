@@ -100,18 +100,20 @@ public final class ChangeDetectionOps {
 
 	/**
 	 * Detects changed test methods by comparing current method hashes against a
-	 * previous snapshot. Returns a set of {@code className#methodName} keys.
+	 * previous snapshot. Uses incremental scanning to avoid re-parsing unchanged
+	 * files. Returns a set of {@code className#methodName} keys.
 	 */
 	public static Set<String> detectChangedMethods(Path testSourceRoot, Path methodHashFile, PluginLog log) {
 		try {
 			if (!Files.isDirectory(testSourceRoot))
 				return Set.of();
-			MethodHashStore current = MethodHashStore.scan(testSourceRoot);
 			if (Files.exists(methodHashFile)) {
 				MethodHashStore previous = MethodHashStore.load(methodHashFile);
+				MethodHashStore current = MethodHashStore.scanIncremental(testSourceRoot, previous);
 				return current.getChangedMethods(previous);
 			}
-			// no previous snapshot → all methods are "changed"
+			// no previous snapshot → full scan, all methods are "changed"
+			MethodHashStore current = MethodHashStore.scan(testSourceRoot);
 			return current.getHashes().keySet();
 		} catch (IOException e) {
 			log.warn("[test-order] Method change detection failed: " + e.getMessage());

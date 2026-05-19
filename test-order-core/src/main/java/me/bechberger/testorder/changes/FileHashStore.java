@@ -39,15 +39,25 @@ public class FileHashStore {
 		if (!Files.isDirectory(sourceRoot)) {
 			return new FileHashStore(hashes);
 		}
+		List<Path> files;
 		try (Stream<Path> walk = Files.walk(sourceRoot)) {
-			for (Path file : walk.filter(p -> Files.isRegularFile(p) && SourceFileModel.isSourceFile(p.toString()))
-					.toList()) {
-				String relativePath = sourceRoot.relativize(file).toString().replace('\\', '/');
-				String hash = sha256(file);
-				hashes.put(relativePath, hash);
-			}
+			files = walk.filter(p -> Files.isRegularFile(p) && SourceFileModel.isSourceFile(p.toString())).toList();
 		}
+		// Hash files in parallel for I/O overlap
+		Map<String, String> collected = files.parallelStream()
+				.collect(java.util.stream.Collectors.toConcurrentMap(
+						file -> sourceRoot.relativize(file).toString().replace('\\', '/'), FileHashStore::sha256Safe,
+						(a, b) -> b));
+		hashes.putAll(collected);
 		return new FileHashStore(hashes);
+	}
+
+	private static String sha256Safe(Path file) {
+		try {
+			return sha256(file);
+		} catch (IOException e) {
+			return "";
+		}
 	}
 
 	/**
