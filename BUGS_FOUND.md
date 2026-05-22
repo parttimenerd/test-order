@@ -1,5 +1,19 @@
 # Bugs Found While Dog-Fooding test-order
 
+## Quick Summary
+- **4 Confirmed Real Bugs** needing fixes
+- **1 Missing Feature** (documented but not implemented)  
+- **3 False Alarms** (working as designed)
+
+### Real Bugs by Severity:
+1. **Bug #6** (High): Method reordering breaks order-dependent tests
+2. **Bug #4** (High): JUnit 4 Vintage engine ClassNotFoundException  
+3. **Bug #8** (High): Nested test classes not executed
+4. **Bug #7** (Medium): Invalid weights file silently ignored
+5. **Bug #1** (Low): Missing time estimate in APFD message
+
+---
+
 ## Bug #1: Missing Time Estimate in APFD Message
 **Status**: CONFIRMED - Feature Not Implemented
 **Severity**: Low (cosmetic)
