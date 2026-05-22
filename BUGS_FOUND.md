@@ -1,7 +1,7 @@
 # Bugs Found While Dog-Fooding test-order
 
 ## Quick Summary
-- **6 Confirmed Real Bugs** needing fixes (includes 1 blocking select command)
+- **7 Confirmed Real Bugs** needing fixes (includes 1 blocking select command, 1 edge case)
 - **1 Missing Feature** (documented but not implemented)  
 - **3 False Alarms** (working as designed)
 
@@ -12,7 +12,8 @@
 4. **Bug #8** (High): Nested test classes not executed
 5. **Bug #7** (Medium): Invalid weights file silently ignored
 6. **Bug #9** (Medium): @Order annotation requires @TestMethodOrder to be respected
-7. **Bug #1** (Low): Missing time estimate in APFD message
+7. **Bug #11** (Low): topN=0 in select command selects multiple tests instead of zero
+8. **Bug #1** (Low): Missing time estimate in APFD message
 
 ---
 
@@ -269,6 +270,31 @@ The following scenarios were NOT tested (due to time constraints or complexity):
 - sample-vintage project does have test-dependencies.lz4 (likely from JUnit 4/Vintage engine which might force agent mode)
 - The README documentation claims the dependency index is always created: "creates a dependency index (`.test-order/test-dependencies.lz4`)"
 - This is either a bug or a documentation issue about when the dependency index is created
+
+---
+
+
+## Bug #11: topN=0 in Select Command Selects Multiple Tests Instead of Zero
+**Status**: NEEDS VERIFICATION - Possible Bug
+**Severity**: Low (edge case)
+**Details**:
+- When running `mvn test-order:select test -Dtestorder.select.topN=0`, the command should select 0 tests
+- Actual behavior: The command selects 11 tests instead
+- Warning message shows "6 tests were NOT selected" but 11 were actually selected
+- Expected: `topN=0` should result in an empty selection
+
+**Reproduction**:
+1. Run `mvn test -Dtestorder.mode=learn` (to create index)
+2. Run `mvn test-order:select test -Dtestorder.select.topN=0`
+3. Check `target/test-order-selected.txt` - contains multiple test classes instead of being empty
+4. Check warning message - says "6 tests were NOT selected" (implying 11 were selected from ~17 total)
+
+**Expected**: Either select 0 tests (topN=0 means select zero) or reject topN=0 as invalid input
+**Actual**: Selects 11 tests
+
+**Code Location**: Test selection logic in select command
+
+**Notes**: This is likely a boundary condition bug where topN=0 is not properly handled, possibly defaulting to some other behavior
 
 ---
 
