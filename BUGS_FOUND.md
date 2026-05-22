@@ -200,6 +200,21 @@ The following scenarios were NOT tested (due to time constraints or complexity):
 - ✓ Exception handling in tests (thrown RuntimeException properly detected as failure)
 - ✓ Skip mode (`-Dtestorder.mode=skip`)
 - ✓ Always-learn mode (`-Dtestorder.mode=learn`)
+- ✓ Test class name patterns: underscore prefix (`_UnderscoreTest`), numbers in names (`Test123Test`)
+- ✓ Very long test method names (200+ character method names)
+- ✓ Mixed test and non-test methods in same class
+- ✓ Tag-based test filtering (`@Tag` annotations)
+- ✓ Wildcard test filtering (`-Dtest="*Test"`)
+- ✓ Tests with `@BeforeEach` that throws exceptions
+- ✓ Conditional test execution (`@EnabledOnOs` etc.)
+- ✓ Test assumptions (`assumeTrue` etc.)
+- ✓ Tests in deeply nested package hierarchies
+- ✓ Test methods calling other test methods
+- ✓ Multiple select/run-remaining cycles
+- ✓ Invalid class names in remaining file (skipped gracefully)
+- ✓ Missing remaining file handling
+- ✓ Corrupted state file detection via diagnose command
+- ✓ Deleted .test-order directory recovery
 
 ---
 ## Bug #9: @Order Annotation Without @TestMethodOrder Not Respected
