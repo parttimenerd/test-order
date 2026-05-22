@@ -184,16 +184,23 @@ The following scenarios were NOT tested (due to time constraints or complexity):
 2. JaCoCo + test-order coexistence
 3. Large-scale projects (1000+ tests)
 4. Custom scoring configuration (TOML)
-5. ML predictions (`-Dtestorder.ml.enabled=true`)
-6. Custom change mode: `since-last-run`, `explicit`
-7. Different storage modes (`-Dtestorder.storage=home`)
-8. Coverage analysis (`mvn test-order:coverage`)
-9. Storage directory permissions issues
-10. Parameterized tests with test-order
-11. Spring test slices
-12. Nested test classes in modern JUnit
+5. Storage directory permissions issues
+6. Spring test slices
+7. Custom change mode: `since-last-run`
 
+**Previously untested scenarios that have NOW been verified as working:**
+- ✓ ML predictions (`-Dtestorder.ml.enabled=true`)
+- ✓ Custom change mode: `explicit` and `since-last-commit`
+- ✓ Different storage modes (`-Dtestorder.storage=home`)
+- ✓ Coverage analysis (`mvn test-order:coverage`)
+- ✓ Parameterized tests with `@ParameterizedTest`, `@ValueSource`, `@CsvSource`
+- ✓ Method name pattern filtering (`ValidatorTest#test*`)
+- ✓ Tests with static initializers
+- ✓ Exception handling in tests (thrown RuntimeException properly detected as failure)
+- ✓ Skip mode (`-Dtestorder.mode=skip`)
+- ✓ Always-learn mode (`-Dtestorder.mode=learn`)
 
+---
 ## Bug #9: @Order Annotation Without @TestMethodOrder Not Respected
 **Status**: CONFIRMED - Design/Documentation Issue
 **Severity**: Medium (usability/documentation)
