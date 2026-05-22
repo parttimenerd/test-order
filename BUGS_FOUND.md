@@ -1,17 +1,18 @@
 # Bugs Found While Dog-Fooding test-order
 
 ## Quick Summary
-- **5 Confirmed Real Bugs** needing fixes
+- **6 Confirmed Real Bugs** needing fixes (includes 1 blocking select command)
 - **1 Missing Feature** (documented but not implemented)  
 - **3 False Alarms** (working as designed)
 
 ### Real Bugs by Severity:
-1. **Bug #6** (High): Method reordering breaks order-dependent tests
-2. **Bug #4** (High): JUnit 4 Vintage engine ClassNotFoundException  
-3. **Bug #8** (High): Nested test classes not executed
-4. **Bug #7** (Medium): Invalid weights file silently ignored
-5. **Bug #9** (Medium): @Order annotation requires @TestMethodOrder to be respected
-6. **Bug #1** (Low): Missing time estimate in APFD message
+1. **Bug #10** (High): Dependency index not created in offline learn mode
+2. **Bug #6** (High): Method reordering breaks order-dependent tests
+3. **Bug #4** (High): JUnit 4 Vintage engine ClassNotFoundException  
+4. **Bug #8** (High): Nested test classes not executed
+5. **Bug #7** (Medium): Invalid weights file silently ignored
+6. **Bug #9** (Medium): @Order annotation requires @TestMethodOrder to be respected
+7. **Bug #1** (Low): Missing time estimate in APFD message
 
 ---
 
@@ -222,6 +223,37 @@ The following scenarios were NOT tested (due to time constraints or complexity):
 **Impact**: Tests with order dependencies may fail silently if only `@Order` is used
 
 **Note**: This is a design/documentation issue rather than a code bug. test-order's behavior (reordering) is correct by design, but it should be documented that `@TestMethodOrder` is required for the annotation to have effect.
+
+---
+
+
+## Bug #10: Dependency Index Not Created in Offline Learn Mode
+**Status**: NEEDS INVESTIGATION - Possible Bug
+**Severity**: High (blocking select command)
+**Details**:
+- When test-order runs in offline learn mode (CLASS instrumentation), it does not create the dependency index file
+- The file `.test-order/test-dependencies.lz4` is never created
+- This causes the `mvn test-order:select` command to fail with error: "No dependency index at ... Run learn mode first"
+- Even after running `mvn test -Dtestorder.mode=learn`, the dependency index is not created
+- However, `mvn test-order:detect-dependencies` triggers auto-learn and completes successfully
+
+**Reproduction**:
+1. Run `mvn test` (which runs in offline learn mode by default)
+2. Check `.test-order/` directory - file `test-dependencies.lz4` is missing
+3. Try to run `mvn test-order:select test -Dtestorder.select.topN=5`
+4. Command fails: "No dependency index found"
+
+**Expected**: `test-dependencies.lz4` should be created during learn mode
+**Actual**: File is never created when using offline (CLASS) instrumentation mode
+
+**Code Location**: Test dependency collection logic in offline instrumentation mode
+
+**Related**: This blocks the select/run-remaining workflow which requires the dependency index
+
+**Notes**: 
+- sample-vintage project does have test-dependencies.lz4 (likely from JUnit 4/Vintage engine which might force agent mode)
+- The README documentation claims the dependency index is always created: "creates a dependency index (`.test-order/test-dependencies.lz4`)"
+- This is either a bug or a documentation issue about when the dependency index is created
 
 ---
 
