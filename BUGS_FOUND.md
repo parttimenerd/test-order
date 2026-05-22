@@ -115,7 +115,24 @@
 - Weights file cannot be parsed
 - At minimum, log which weights file was actually loaded
 
-**Actual**: No error, warning, or confirmation message - silently ignores
+## Bug #8: Nested Test Classes Detected But Not Executed
+**Status**: CONFIRMED - Real Bug
+**Severity**: High (tests don't run)
+**Details**:
+- When test classes use @Nested (JUnit 5 feature), test-order detects them as new test classes
+- Shows up in logs: `NestedTestClass`, `NestedTestClass$InnerTests`, `NestedTestClass$InnerTests$DeeplyNestedTests`
+- However, these nested tests never actually execute - they don't appear in test execution output
+- Total test count doesn't match expected (nested tests are missing from count)
+- **Reproduction**:
+  1. Create a test class with @Nested inner classes
+  2. Run `mvn test`
+  3. test-order logs show nested classes detected, but they never run
+
+**Expected**: Nested test classes should execute along with outer class tests
+
+**Actual**: Nested test classes are indexed but filtered out of execution, resulting in missing tests
+
+**Impact**: Users won't know their nested tests aren't running
 
 ---
 
