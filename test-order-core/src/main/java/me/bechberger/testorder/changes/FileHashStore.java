@@ -23,11 +23,11 @@ public class FileHashStore {
 	private final Map<String, String> hashes; // relative path → hex SHA-256
 
 	public FileHashStore(Map<String, String> hashes) {
-		this.hashes = new TreeMap<>(hashes);
+		this.hashes = new HashMap<>(hashes);
 	}
 
 	public FileHashStore() {
-		this.hashes = new TreeMap<>();
+		this.hashes = new HashMap<>();
 	}
 
 	/**
@@ -48,6 +48,7 @@ public class FileHashStore {
 				.collect(java.util.stream.Collectors.toConcurrentMap(
 						file -> sourceRoot.relativize(file).toString().replace('\\', '/'), FileHashStore::sha256Safe,
 						(a, b) -> b));
+		hashes = new HashMap<>();
 		hashes.putAll(collected);
 		return new FileHashStore(hashes);
 	}
@@ -69,13 +70,14 @@ public class FileHashStore {
 			Files.createDirectories(parent);
 		}
 		Path tempFile = PersistenceSupport.temporarySibling(hashFile);
-		try (LZ4FrameOutputStream lz4os = LZ4Support.frameOutputStream(Files.newOutputStream(tempFile));
+		try (LZ4FrameOutputStream lz4os = LZ4Support.frameOutputStreamHC(Files.newOutputStream(tempFile));
 				PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os))) {
-			for (var entry : hashes.entrySet()) {
+			// Sort entries for deterministic output
+			hashes.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
 				pw.print(entry.getKey());
 				pw.print('\t');
 				pw.println(entry.getValue());
-			}
+			});
 		}
 		PersistenceSupport.moveIntoPlace(tempFile, hashFile);
 	}
@@ -84,7 +86,7 @@ public class FileHashStore {
 	 * Loads a previously saved hash store.
 	 */
 	public static FileHashStore load(Path hashFile) throws IOException {
-		Map<String, String> hashes = new TreeMap<>();
+		Map<String, String> hashes = new HashMap<>();
 		Path loadPath = PersistenceSupport.resolveLoadPath(hashFile);
 		try (LZ4FrameInputStream lz4is = LZ4Support.frameInputStream(Files.newInputStream(loadPath));
 				BufferedReader br = new BufferedReader(new InputStreamReader(lz4is))) {
@@ -105,7 +107,7 @@ public class FileHashStore {
 	 * deleted compared to a previous snapshot.
 	 */
 	public Set<String> getChangedFiles(FileHashStore previous) {
-		Set<String> changed = new TreeSet<>();
+		Set<String> changed = new HashSet<>();
 		// files changed or added
 		for (var entry : hashes.entrySet()) {
 			String prevHash = previous.hashes.get(entry.getKey());
@@ -138,7 +140,17 @@ public class FileHashStore {
 		String normalized = SourceFileModel.normalizeForHashing(source);
 		MessageDigest md = SHA256.get();
 		md.reset();
-		md.update(normalized.getBytes(StandardCharsets.UTF_8));
+
+		// Use CharsetEncoder to avoid creating intermediate byte array from getBytes()
+		java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(Math.min(normalized.length() * 4, 65536));
+		java.nio.charset.CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder();
+		java.nio.CharBuffer charBuf = java.nio.CharBuffer.wrap(normalized);
+		encoder.reset();
+		encoder.encode(charBuf, buffer, true);
+		encoder.flush(buffer);
+		buffer.flip();
+		md.update(buffer);
+
 		return HEX_FORMAT.formatHex(md.digest());
 	}
 

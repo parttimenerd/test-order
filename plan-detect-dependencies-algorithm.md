@@ -20,10 +20,10 @@ dependence-aware-bounded, tuscan-systematic, history-mining, pfast-exclusion, **
 
 | Level | Key | Value | Available When |
 |-------|-----|-------|----------------|
-| Class deps | `testClass` (FQCN) | `Set<appClass>` (FQCNs this test touches) | Always (FULL mode default) |
-| Method deps | `testClass#method` | `Set<appClass>` | FULL_METHOD or FULL_MEMBER mode |
-| Member deps | `testClass` | `Set<"appClass#field">` (member-level) | FULL_MEMBER mode |
-| Method-member deps | `testClass#method` | `Set<"appClass#field">` | FULL_MEMBER mode |
+| Class deps | `testClass` (FQCN) | `Set<appClass>` (FQCNs this test touches) | Always (CLASS mode default) |
+| Method deps | `testClass#method` | `Set<appClass>` | METHOD or MEMBER mode |
+| Member deps | `testClass` | `Set<"appClass#field">` (member-level) | MEMBER mode |
+| Method-member deps | `testClass#method` | `Set<"appClass#field">` | MEMBER mode |
 
 **Critical limitation**: No read/write distinction. We know "test X accesses field Y" but not whether it reads or writes. (PRADET has this via online instrumentation; we trade precision for zero-overhead reuse.)
 
@@ -40,16 +40,16 @@ dependence-aware-bounded, tuscan-systematic, history-mining, pfast-exclusion, **
 
 | Mode | Tracks | Overhead | OD-Detection Value |
 |------|--------|----------|-------------------|
-| `FULL` (default) | Class deps + **static field access** (class-level only) | ~66% | Medium — knows which classes share static fields |
-| `FULL_METHOD` | Above + per-test-method class deps | ~68% | Medium — knows which specific test method touches which classes |
-| `FULL_MEMBER` | Above + **`class#fieldName`** for all fields (static + instance) | ~121% | **High** — knows exactly which fields each test touches |
+| `CLASS` (default) | Class deps + **static field access** (class-level only) | ~66% | Medium — knows which classes share static fields |
+| `METHOD` | Above + per-test-method class deps | ~68% | Medium — knows which specific test method touches which classes |
+| `MEMBER` | Above + **`class#fieldName`** for all fields (static + instance) | ~121% | **High** — knows exactly which fields each test touches |
 
 ### Key Insight: What We Can and Cannot Infer
 
 **CAN infer** (from member deps):
 - Two tests T1, T2 both access `com.example.Service#cache` → shared state candidate
-- Static field access in FULL mode → class-level conflict signal
-- In FULL_MEMBER: exact field names → precise conflict pairs
+- Static field access in CLASS mode → class-level conflict signal
+- In MEMBER: exact field names → precise conflict pairs
 
 **CANNOT infer** (without PRADET-style online R/W tracking):
 - Whether T1 writes and T2 reads, or both read (read-read is benign)
@@ -93,8 +93,8 @@ record TestId(String className, @Nullable String methodName) {
 
 | Granularity | Data Required | Ordering Hook | Detection Use Case |
 |-------------|--------------|---------------|-------------------|
-| **Class-level** | Any mode (FULL/FULL_METHOD/FULL_MEMBER) | `PriorityClassOrderer` | Inter-class OD: test class A pollutes test class B |
-| **Method-level** | FULL_METHOD or FULL_MEMBER mode | `PriorityMethodOrderer` | Intra-class OD: method `testX` in class C pollutes `testY` in same class C; also cross-class method-level deps |
+| **Class-level** | Any mode (CLASS/METHOD/MEMBER) | `PriorityClassOrderer` | Inter-class OD: test class A pollutes test class B |
+| **Method-level** | METHOD or MEMBER mode | `PriorityMethodOrderer` | Intra-class OD: method `testX` in class C pollutes `testY` in same class C; also cross-class method-level deps |
 
 ### Intra-Class vs Inter-Class Dependencies
 
@@ -261,7 +261,7 @@ record DetectionContext(
 
 enum Prerequisite {
     DEPENDENCY_MAP,          // test-dependencies.lz4 exists
-    MEMBER_DEPS,             // FULL_MEMBER mode data available
+    MEMBER_DEPS,             // MEMBER mode data available
     RUN_HISTORY,             // at least 1 historical run in state
     MULTIPLE_RUNS,           // 3+ historical runs (for anomaly detection)
     PASSING_REFERENCE        // at least one known all-passing order
@@ -276,7 +276,7 @@ enum Prerequisite {
 **Prerequisites**: `DEPENDENCY_MAP` + `PASSING_REFERENCE` (best with `MEMBER_DEPS`)  
 **Inspired by**: PRADET (Gambi/Bell/Zeller 2018)  
 **Strength**: Most precise — directly targets high-probability conflict edges  
-**Best for**: Projects with rich dependency data (FULL_MEMBER mode); medium-sized test suites (20-200 tests)
+**Best for**: Projects with rich dependency data (MEMBER mode); medium-sized test suites (20-200 tests)
 
 ### Overview
 
@@ -344,7 +344,7 @@ Map<String, Set<String>> extractSharedMembers(List<String> testIds,
 // Finds: both testA and testB within FooTest access "com.example.Config#initialized"
 ```
 
-For `FULL` mode (no member data): fall back to class-level overlap:
+For `CLASS` mode (no member data): fall back to class-level overlap:
 ```java
 Map<String, Set<String>> classToTests = new HashMap<>();
 for (String testId : testIds) {
@@ -692,7 +692,7 @@ ODClassification classify(ConflictEdge edge, String failingTest) {
 **Prerequisites**: `PASSING_REFERENCE`  
 **Inspired by**: iDFlakies (Lam et al. 2019), DTDetector Randomized (Zhang et al. 2014)  
 **Strength**: No dependency data needed; surprisingly effective (DTDetector found it detected the most tests in practice)  
-**Best for**: First-pass exploration; projects without FULL_MEMBER instrumentation; large test suites where PRADET is too costly
+**Best for**: First-pass exploration; projects without MEMBER instrumentation; large test suites where PRADET is too costly
 
 ### Overview
 
@@ -2282,7 +2282,7 @@ mvn test-order:detect-dependencies \
 
 | Available Data | Behavior |
 |---------------|----------|
-| FULL_MEMBER + history (ideal) | History suspects + conflict graph clusters + reverse + PFAST + method-level. Fastest convergence. |
+| MEMBER + history (ideal) | History suspects + conflict graph clusters + reverse + PFAST + method-level. Fastest convergence. |
 | FULL + history | Class-level conflict graph + history suspects + reverse + PFAST. |
 | FULL only (no history) | Conflict graph + reverse + random + PFAST + method-level. Slightly slower (no priors). |
 | No dep map, has history | History suspects + reverse + PFAST + random. No graph-guided exploration. |
@@ -2737,9 +2737,9 @@ for (ConflictEdge edge : conflictGraph.edges) {
 
 ---
 
-## Fallback: No Member Data (FULL mode only)
+## Fallback: No Member Data (CLASS mode only)
 
-When only class-level deps are available (FULL mode, no `memberDependencies`):
+When only class-level deps are available (CLASS mode, no `memberDependencies`):
 
 1. **Weaker signal**: Two tests touching the same *class* is much less specific than same *field*
 2. **Higher false positive rate**: many tests touch common utility classes without conflict
@@ -2749,7 +2749,7 @@ When only class-level deps are available (FULL mode, no `memberDependencies`):
    - Boost edges where shared class is in the same package as the tests (locality heuristic)
    - Use historical intermittency signal more aggressively as a pre-filter
 
-Recommendation: For OD detection, **recommend FULL_MEMBER mode** in the Maven/Gradle plugin configuration. The 121% overhead (vs 66% for FULL) is acceptable for a one-time `learn` phase since it gives 10-50× better edge precision for detect-dependencies.
+Recommendation: For OD detection, **recommend MEMBER mode** in the Maven/Gradle plugin configuration. The 121% overhead (vs 66% for FULL) is acceptable for a one-time `learn` phase since it gives 10-50× better edge precision for detect-dependencies.
 
 ---
 
@@ -2812,7 +2812,7 @@ The Combined Adaptive algorithm (8) is the **new default**. Run counts are sligh
 
 ```bash
 # Standard usage — Combined Adaptive runs by default:
-mvn test-order:learn -Dtestorder.instrumentation.mode=FULL_MEMBER
+mvn test-order:learn -Dtestorder.instrumentation.mode=MEMBER
 mvn test-order:detect-dependencies
 
 # Options:

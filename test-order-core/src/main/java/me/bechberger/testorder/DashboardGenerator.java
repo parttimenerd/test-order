@@ -188,7 +188,7 @@ public class DashboardGenerator {
 			} else {
 				t.put("memberDeps", null);
 			}
-			// per-test-method dependencies (FULL_METHOD+ mode)
+			// per-test-method dependencies (METHOD+ mode)
 			if (depMap.hasMethodDeps()) {
 				List<Object> methods = new ArrayList<>();
 				String prefix = st.name() + "#";

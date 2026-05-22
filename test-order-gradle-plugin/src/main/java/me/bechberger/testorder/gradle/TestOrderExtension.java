@@ -12,7 +12,7 @@ import org.gradle.api.provider.Property;
  * <pre>
  * testOrder {
  *     mode = "auto"               // auto | learn | order | optimize | skip
- *     instrumentationMode = "FULL" // METHOD_ENTRY | FULL | FULL_METHOD | FULL_MEMBER
+ *     instrumentationMode = "CLASS" // CLASS | METHOD | MEMBER
  *     includePackages = ""         // comma-separated package prefixes (auto-detected if empty)
  *     changeMode = "auto"          // auto | since-last-run | since-last-commit | uncommitted | explicit
  * }
@@ -36,8 +36,20 @@ public abstract class TestOrderExtension {
      */
     public abstract Property<String> getMode();
 
-    /** Instrumentation mode: METHOD_ENTRY, FULL, FULL_METHOD, FULL_MEMBER. */
+    /** Instrumentation mode: CLASS, METHOD, MEMBER. */
     public abstract Property<String> getInstrumentationMode();
+
+    /**
+     * Instrumentation strategy: "offline" (default, build-time — faster, no per-fork agent
+     * overhead) or "online" (agent-based, instruments at class load time in each fork).
+     */
+    public abstract Property<String> getInstrumentation();
+
+    /**
+     * LZ4 compression level for index writes: "fast" (default — 10-50x faster writes,
+     * ~5-15% larger files) or "hc" (high compression, smallest files).
+     */
+    public abstract Property<String> getCompression();
 
     // ---- Paths ----
 
@@ -230,7 +242,9 @@ public abstract class TestOrderExtension {
     /** Apply defaults. Called once during plugin application. */
     void applyDefaults(Project project) {
         getMode().convention("auto");
-        getInstrumentationMode().convention("FULL");
+        getInstrumentationMode().convention("CLASS");
+        getInstrumentation().convention("offline");
+        getCompression().convention("fast");
         getStorage().convention("local");
 
         // In multi-module builds, store all test-order data at the root project
@@ -295,8 +309,8 @@ public abstract class TestOrderExtension {
         }
 
         // Validate instrumentation mode
-        java.util.Set<String> validInstrModes = java.util.Set.of("METHOD_ENTRY", "FULL", "FULL_METHOD", "FULL_MEMBER");
-        String instrMode = getInstrumentationMode().getOrElse("FULL");
+        java.util.Set<String> validInstrModes = java.util.Set.of("CLASS", "METHOD", "MEMBER");
+        String instrMode = getInstrumentationMode().getOrElse("CLASS");
         if (!validInstrModes.contains(instrMode.toUpperCase())) {
             logger.warn("[test-order] Invalid instrumentationMode '{}'. Valid values: {}.", instrMode, validInstrModes);
         }

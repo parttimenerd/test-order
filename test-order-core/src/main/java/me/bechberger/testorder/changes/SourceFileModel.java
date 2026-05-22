@@ -654,6 +654,47 @@ public class SourceFileModel {
 					if (parenPos < 0)
 						break;
 
+					// Quick pre-screen: find the identifier before '(' and check
+					// whether it's preceded by '.' (method call, not declaration).
+					// Also skip control-flow keywords. This avoids applying the
+					// expensive regex for the vast majority of '(' in method bodies.
+					boolean skipCandidate = false;
+					{
+						int nameEnd = parenPos;
+						// Skip whitespace before '('
+						while (nameEnd > segStart && Character.isWhitespace(stripped.charAt(nameEnd - 1)))
+							nameEnd--;
+						int nameStart = nameEnd;
+						// Walk back over identifier chars
+						while (nameStart > segStart && Character.isJavaIdentifierPart(stripped.charAt(nameStart - 1)))
+							nameStart--;
+						if (nameStart == nameEnd) {
+							// No identifier before '(' (e.g. ')(', '>(') → not a declaration
+							skipCandidate = true;
+						} else {
+							// Check for '.' immediately before the name → method call
+							int beforeName = nameStart;
+							while (beforeName > segStart && Character.isWhitespace(stripped.charAt(beforeName - 1)))
+								beforeName--;
+							if (beforeName > segStart && stripped.charAt(beforeName - 1) == '.') {
+								skipCandidate = true;
+							} else {
+								// Check common control-flow keywords that precede '('
+								int nameLen = nameEnd - nameStart;
+								if (nameLen >= 2 && nameLen <= 12) {
+									String name = stripped.substring(nameStart, nameEnd);
+									skipCandidate = name.equals("if") || name.equals("for") || name.equals("while")
+											|| name.equals("switch") || name.equals("catch") || name.equals("assert")
+											|| name.equals("return") || name.equals("instanceof");
+								}
+							}
+						}
+					}
+					if (skipCandidate) {
+						searchFrom = parenPos + 1;
+						continue;
+					}
+
 					// Apply regex in a window from (parenPos - MAX_LOOKBACK) to segEnd
 					int windowStart = Math.max(segStart, parenPos - MAX_LOOKBACK);
 					// Find the beginning of the line or statement containing this paren

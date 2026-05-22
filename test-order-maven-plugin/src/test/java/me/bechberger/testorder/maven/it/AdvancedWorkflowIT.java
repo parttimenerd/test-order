@@ -219,35 +219,6 @@ class AdvancedWorkflowIT {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
-	// 6. METHOD_ENTRY MODE
-	// ═══════════════════════════════════════════════════════════════════
-
-	@Test
-	@Order(50)
-	@DisplayName("Learn METHOD_ENTRY: produces valid index")
-	void learnMethodEntryProducesIndex() {
-		project.cleanAll();
-		MavenResult result = project.maven().learnMethodEntry();
-		assertThat(result).succeeded();
-
-		DependencyMap depMap = project.loadIndex();
-		assertThat(depMap).isLoaded().hasSize(2);
-
-		// basic dependencies should still be captured
-		assertThat(depMap).hasDependency(CALCULATOR_TEST, CALCULATOR).hasDependency(CALCULATOR_TEST, MATH_HELPER)
-				.hasDependency(STRING_UTILS_TEST, STRING_UTILS);
-	}
-
-	@Test
-	@Order(51)
-	@DisplayName("Learn METHOD_ENTRY → order: full cycle works")
-	void methodEntryFollowedByOrderMode() {
-		// index from previous test
-		MavenResult result = project.maven().order(CALCULATOR);
-		assertThat(result).succeeded().outputContains("Tests run:");
-	}
-
-	// ═══════════════════════════════════════════════════════════════════
 	// 7. RE-ORDER AFTER SOURCE MODIFICATION
 	// ═══════════════════════════════════════════════════════════════════
 

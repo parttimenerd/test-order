@@ -3,6 +3,7 @@ package me.bechberger.testorder.changes;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * Bridges {@link StructuralDiff} output with dependency maps to compute
@@ -15,6 +16,8 @@ import java.util.*;
  * depends on the class.
  */
 public class StructuralChangeAnalyzer {
+
+	private static final Pattern STATIC_KEYWORD_PATTERN = Pattern.compile("\\bstatic\\b", Pattern.DOTALL);
 
 	/**
 	 * @param changedClasses
@@ -64,11 +67,12 @@ public class StructuralChangeAnalyzer {
 
 				String memberName = resolveMemberName(change);
 				if (memberName != null) {
-					memberKeys.add(change.fqcn() + "#" + memberName);
+					String memberKey = change.fqcn() + "#" + memberName;
+					memberKeys.add(memberKey);
 					byClass.computeIfAbsent(change.fqcn(), k -> new LinkedHashSet<>()).add(memberName);
 
 					if (change.category() == StructuralDiff.Change.Category.FIELD && isStaticFieldChange(change)) {
-						staticFields.add(change.fqcn() + "#" + memberName);
+						staticFields.add(memberKey);
 					}
 				}
 			}
@@ -86,7 +90,7 @@ public class StructuralChangeAnalyzer {
 		// FIELD change details include stripped declarations (or "was/now" pairs for
 		// modified fields).
 		// Treat as static if either side contains the static modifier.
-		return detail.matches("(?s).*\\bstatic\\b.*");
+		return STATIC_KEYWORD_PATTERN.matcher(detail).find();
 	}
 
 	/**
@@ -144,8 +148,8 @@ public class StructuralChangeAnalyzer {
 	 * Computes the dependency overlap count for a test, using member-level deps
 	 * when available for higher precision.
 	 * <p>
-	 * <b>With member-level deps</b> (FULL_MEMBER mode): a class counts as
-	 * overlapping only if one of the following holds:
+	 * <b>With member-level deps</b> (MEMBER mode): a class counts as overlapping
+	 * only if one of the following holds:
 	 * <ul>
 	 * <li>The test uses at least one member that actually changed.</li>
 	 * <li>A static initializer ({@code <clinit>}) changed — this affects ALL users
@@ -255,43 +259,48 @@ public class StructuralChangeAnalyzer {
 			ChangedMembers changedMembers) {
 		Set<String> affectedClasses = new HashSet<>();
 
-		for (String classDep : testClassDeps) {
-			if (affectedClasses.contains(classDep))
+		// Iterate changedMembers (small, typically 1-20 classes) and check membership
+		// in testClassDeps (HashSet, O(1) lookup) rather than iterating all test deps.
+
+		// Type-level changes → always affected if test depends on the class
+		for (String typeChanged : changedMembers.classesWithTypeChanges()) {
+			if (testClassDeps.contains(typeChanged)) {
+				affectedClasses.add(typeChanged);
+			}
+		}
+
+		// Member-level changes: check each changed class
+		for (var entry : changedMembers.membersByClass().entrySet()) {
+			String classDep = entry.getKey();
+			if (affectedClasses.contains(classDep) || !testClassDeps.contains(classDep))
 				continue;
 
-			// Type-level changes → always affected (class signature changed, type
-			// added/removed)
-			if (changedMembers.classesWithTypeChanges().contains(classDep)) {
-				affectedClasses.add(classDep);
-				continue;
-			}
-
-			Set<String> changedInClass = changedMembers.membersByClass().get(classDep);
-			if (changedInClass == null) {
-				// Class is in changedClasses but has no member-level changes recorded.
-				// This shouldn't happen (structural analysis populates membersByClass for
-				// all non-type changes), but if it does, be conservative.
-				if (changedMembers.changedClasses().contains(classDep)) {
-					affectedClasses.add(classDep);
-				}
-				continue;
-			}
+			Set<String> changedInClass = entry.getValue();
 
 			// Static initializer changed → affects ALL users of this class.
-			// <clinit> runs on class load, which is implicit and non-deterministic
-			// across test execution order.
 			if (changedInClass.contains("<clinit>")) {
 				affectedClasses.add(classDep);
 				continue;
 			}
 
-			// For other members: precise matching against the test's member deps.
-			// <init> (constructor/instance initializer), methods, fields.
+			// For other members: check pre-computed changedMemberKeys against
+			// testMemberDeps
+			// to avoid string concatenation in the loop.
 			for (String changedMember : changedInClass) {
-				if (testMemberDeps.contains(classDep + "#" + changedMember)) {
+				String memberKey = classDep + "#" + changedMember;
+				if (testMemberDeps.contains(memberKey)) {
 					affectedClasses.add(classDep);
 					break;
 				}
+			}
+		}
+
+		// Conservative fallback: classes in changedClasses with no membersByClass entry
+		for (String changedClass : changedMembers.changedClasses()) {
+			if (!affectedClasses.contains(changedClass) && !changedMembers.membersByClass().containsKey(changedClass)
+					&& !changedMembers.classesWithTypeChanges().contains(changedClass)
+					&& testClassDeps.contains(changedClass)) {
+				affectedClasses.add(changedClass);
 			}
 		}
 

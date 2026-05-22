@@ -24,6 +24,15 @@ public final class TestOrderConfig {
 	public static final String PROJECT_ROOT = "testorder.project.root";
 	public static final String SOURCE_ROOT = "testorder.source.root";
 	public static final String WEIGHTS_FILE = "testorder.weights.file";
+
+	// Offline instrumentation properties
+	public static final String OFFLINE_MAPPING = "testorder.offline.mapping";
+	public static final String OFFLINE_OUTPUT = "testorder.offline.output";
+	public static final String OFFLINE_INDEX_FILE = "testorder.offline.indexFile";
+	public static final String OFFLINE_BACKUP_DIR = "testorder.offline.backupDir";
+
+	/** Port of the IndexCollectorServer for socket-based dependency collection */
+	public static final String COLLECTOR_PORT = "testorder.collector.port";
 	public static final String CHANGED_CLASSES = "testorder.changed.classes";
 	public static final String CHANGED_CLASSES_FILE = "testorder.changed.classes.file";
 	public static final String CHANGED_TEST_CLASSES = "testorder.changed.test.classes";

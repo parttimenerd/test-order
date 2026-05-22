@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 import org.apache.maven.execution.MavenSession;
@@ -19,20 +20,16 @@ import org.apache.maven.model.Plugin;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
-import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
-import org.eclipse.aether.RepositorySystem;
-import org.eclipse.aether.RepositorySystemSession;
-import org.eclipse.aether.artifact.DefaultArtifact;
-import org.eclipse.aether.repository.RemoteRepository;
-import org.eclipse.aether.resolution.ArtifactRequest;
-import org.eclipse.aether.resolution.ArtifactResult;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.PersistenceSupport;
 import me.bechberger.testorder.TestOrderState;
+import me.bechberger.testorder.agent.Agent;
+import me.bechberger.testorder.agent.OfflineInstrumentor;
+import me.bechberger.testorder.agent.runtime.ClassIdMapping;
 import me.bechberger.testorder.ops.AlwaysRunScanner;
 import me.bechberger.testorder.ops.ChangeDetectionOps;
 import me.bechberger.testorder.ops.HashSnapshotOperation;
@@ -46,16 +43,24 @@ import me.bechberger.testorder.ops.PluginLog;
  */
 abstract class AbstractTestOrderMojo extends AbstractMojo {
 
+	/**
+	 * Active IndexCollectorServer instances keyed by index file path. Stored
+	 * statically so collectors survive across Mojo instances within the same Maven
+	 * JVM and can be explicitly stopped when tests complete or when a new collector
+	 * is needed.
+	 */
+	static final ConcurrentHashMap<Path, me.bechberger.testorder.IndexCollectorServer> activeCollectors = new ConcurrentHashMap<>();
+
 	@Parameter(defaultValue = "${project}", readonly = true, required = true)
 	protected MavenProject project;
 
 	@Parameter(defaultValue = "${session}", readonly = true, required = true)
 	protected MavenSession session;
 
-	@Component
-	protected RepositorySystem repoSystem;
-
 	protected ReactorContext ctx;
+
+	// Cache for resolved artifacts to avoid repeated filesystem lookups
+	private final Map<String, Path> resolvedArtifactCache = new java.util.HashMap<>();
 
 	/** Returns a {@link PluginLog} backed by Maven's logger. */
 	protected PluginLog pluginLog() {
@@ -191,26 +196,6 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	@Parameter(property = "testorder.score.springContextGrouping", defaultValue = "false")
 	protected boolean springContextGrouping;
 
-	/**
-	 * Enable TDD enforcement: new test classes and methods that pass without having
-	 * failed first are artificially failed with a descriptive error message.
-	 */
-	@Parameter(property = MavenPluginConfigKeys.TDD, defaultValue = "false")
-	protected boolean tdd;
-
-	/**
-	 * Storage location for test-order data:
-	 * <ul>
-	 * <li><b>local</b> (default) — stores data in
-	 * {@code <project>/.test-order/}</li>
-	 * <li><b>home</b> — stores data in
-	 * {@code ~/.test-order/<project-name>-<hash>/}, surviving
-	 * {@code git clean -fdx}</li>
-	 * </ul>
-	 */
-	@Parameter(property = MavenPluginConfigKeys.STORAGE, defaultValue = "local")
-	protected String storage;
-
 	// ── Score override parameters (shared by auto, select, prepare, show-order) ──
 
 	/** Score bonus for new test classes not in the dependency index */
@@ -269,7 +254,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		warnJUnit4Unsupported();
 		applyCanonicalUserPropertyOverrides();
 		validateParameters();
-		ctx = new ReactorContext(session, project, storage, pluginLog());
+		ctx = new ReactorContext(session, project);
 		try {
 			ctx.ensureSharedDirectories();
 		} catch (IOException e) {
@@ -387,6 +372,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 	protected Path resolveIndexPath() {
 		return ctx.resolveIndexFile(indexFile);
+	}
+
+	/** Resolves the ML history directory (inside .test-order/). */
+	protected Path resolveMLHistoryDir() {
+		return ctx.resolveBaseDir().resolve("ml-history");
 	}
 
 	/**
@@ -750,20 +740,98 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 	}
 
+	/**
+	 * Start an IndexCollectorServer for the given index file, stopping any
+	 * previously running collector for the same path. Returns the started
+	 * collector, or null on failure.
+	 */
+	protected me.bechberger.testorder.IndexCollectorServer startCollector(Path indexFilePath) {
+		// Stop any existing collector for this index (e.g. from a previous module or
+		// re-run)
+		stopCollectorForIndex(indexFilePath);
+		try {
+			// Always pass the mapping file path so the collector can lazily load it
+			// after deferred offline instrumentation completes (CLI goals run before
+			// compile).
+			Path targetDir = Path.of(project.getBuild().getDirectory());
+			Path mappingFile = targetDir.resolve(".test-order").resolve("class-id-map.bin");
+
+			me.bechberger.testorder.IndexCollectorServer collector = new me.bechberger.testorder.IndexCollectorServer(
+					indexFilePath, mappingFile);
+			activeCollectors.put(indexFilePath.toAbsolutePath().normalize(), collector);
+			getLog().info("[test-order] IndexCollectorServer started on port " + collector.getPort()
+					+ (java.nio.file.Files.exists(mappingFile)
+							? " (v2 binary protocol enabled)"
+							: " (v2 pending mapping)"));
+			return collector;
+		} catch (java.io.IOException e) {
+			getLog().warn("[test-order] Failed to start IndexCollectorServer, falling back to .deps files: "
+					+ e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Stop and merge the collector for the given index file path, if one is
+	 * running. Called before aggregation or when starting a new collector for the
+	 * same path.
+	 *
+	 * @return the number of test classes merged, or 0 if no collector was running
+	 */
+	protected int stopCollectorForIndex(Path indexFilePath) {
+		me.bechberger.testorder.IndexCollectorServer collector = activeCollectors
+				.remove(indexFilePath.toAbsolutePath().normalize());
+		if (collector != null) {
+			int merged = collector.stopAndMerge();
+			if (merged > 0) {
+				getLog().info("[test-order] IndexCollectorServer merged " + merged + " test classes via socket");
+			}
+			return merged;
+		}
+		return 0;
+	}
+
 	protected void autoAggregate(Path depsDirPath, Path idxPath) throws MojoExecutionException {
+		// Stop any running socket collector first — its data is merged directly into
+		// the index
+		int collectorMerged = stopCollectorForIndex(idxPath);
+
+		// Process any fallback payload file from a previous run's failed shutdown hook
+		try {
+			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
+				getLog().info("[test-order] Processed fallback collector payloads from previous run");
+				collectorMerged++; // count as having existing data
+			}
+		} catch (IOException e) {
+			getLog().warn("[test-order] Failed to process fallback payloads: " + e.getMessage());
+		}
+
 		try {
 			DependencyMap map = DependencyMap.aggregate(depsDirPath);
 			if (map.size() == 0) {
-				getLog().info(
-						"[test-order] No test dependencies found in " + depsDirPath + " — skipping index creation.");
+				if (collectorMerged > 0) {
+					getLog().info("[test-order] Socket collector already merged " + collectorMerged
+							+ " test classes — no additional .deps files to aggregate.");
+				} else {
+					getLog().info("[test-order] No test dependencies found in " + depsDirPath
+							+ " — skipping index creation.");
+				}
 				return;
 			}
+			// If the collector already wrote data to the index, merge .deps into it
+			// rather than overwriting (handles mixed socket + file fallback scenario)
+			if (collectorMerged > 0 && Files.exists(idxPath)) {
+				DependencyMap existing = DependencyMap.load(idxPath);
+				existing.mergeWith(map);
+				map = existing;
+			}
+			final DependencyMap finalMap = map;
 			PersistenceSupport.withFileLock(idxPath, () -> {
-				map.save(idxPath);
+				finalMap.save(idxPath);
 				return null;
 			});
-			getLog().info("[test-order] Auto-aggregated " + map.size() + " test classes → " + idxPath);
-			warnIfNoDeps(map);
+			getLog().info("[test-order] Auto-aggregated " + finalMap.size() + " test classes → " + idxPath);
+			warnIfNoDeps(finalMap);
 		} catch (IOException e) {
 			throw new MojoExecutionException(
 					"Failed to auto-aggregate deps" + "\n  For more details: mvn test-order:diagnose", e);
@@ -815,6 +883,23 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * directory exists.
 	 */
 	protected void autoAggregateOrFail(Path idxPath) throws MojoExecutionException {
+		// Always check for fallback payload file written by IndexCollectorServer
+		// shutdown
+		// hook — this is the normal path for offline learn mode.
+		if (!Files.exists(idxPath)) {
+			try {
+				if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
+					getLog().info(
+							"[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
+				}
+			} catch (IOException e) {
+				getLog().warn("[test-order] Failed to process collector fallback payloads: " + e.getMessage());
+			}
+		}
+		if (Files.exists(idxPath)) {
+			return;
+		}
+
 		Path depsDirPath = ctx.resolveDepsDir(depsDir);
 		if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
 			autoAggregate(depsDirPath, idxPath);
@@ -960,14 +1045,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			Path propsFile = runtimeDir.resolve("junit-platform.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
 				pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.junit.PriorityClassOrderer");
-				if (tdd) {
-					pw.println("junit.jupiter.extensions.autodetection.enabled=true");
-				}
 			}
 
-			if (tdd) {
-				configMap.put(MavenPluginConfigKeys.TDD, "true");
-			}
 			Path configFile = runtimeDir.resolve("testorder-config.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
 				for (var entry : configMap.entrySet()) {
@@ -1005,12 +1084,6 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			Path propsFile = runtimeDir.resolve("junit-platform.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
 				pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.junit.PriorityClassOrderer");
-				if (tdd) {
-					pw.println("junit.jupiter.extensions.autodetection.enabled=true");
-				}
-			}
-			if (tdd) {
-				configMap.put(MavenPluginConfigKeys.TDD, "true");
 			}
 			Path configFile = runtimeDir.resolve("testorder-config.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
@@ -1031,7 +1104,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * classpath, and configures system properties for the forked JVM.
 	 *
 	 * @param instrumentationMode
-	 *            METHOD_ENTRY, FULL, FULL_METHOD, or FULL_MEMBER
+	 *            CLASS, METHOD, or MEMBER
 	 * @param includePackages
 	 *            effective package filter (may be null)
 	 * @param includeIndexInArgs
@@ -1068,31 +1141,29 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		Path agentJar = resolveArtifact("test-order-agent");
 
+		// Pre-extract runtime jar once so forked JVMs skip per-fork extraction
+		Path targetDir = Path.of(project.getBuild().getDirectory());
+		Path runtimeJar = me.bechberger.testorder.AgentArgsBuilder.preExtractRuntimeJar(agentJar, targetDir);
+
 		String agentArgs = me.bechberger.testorder.AgentArgsBuilder.buildArgs(ctx.resolveDepsDir(depsDir),
 				instrumentationMode, includeIndexInArgs ? ctx.resolveIndexFile(indexFile) : null, includePackages,
-				verboseFile);
+				verboseFile, true, runtimeJar);
 
 		String statPathStr = ctx.resolveStateFile(stateFile).toAbsolutePath().toString();
 		String agentString = "\"-javaagent:" + agentJar.toAbsolutePath() + "=" + agentArgs + "\"";
 		// Pass system properties via -D flags; using <systemPropertyVariables> XML
 		// modifications to an already-planned MojoExecution are not picked up by
 		// Surefire.
+		String collectorPortProp = "";
+		Path indexFilePath = ctx.resolveIndexFile(indexFile);
+		me.bechberger.testorder.IndexCollectorServer collector = startCollector(indexFilePath);
+		if (collector != null) {
+			collectorPortProp = " -D" + me.bechberger.testorder.TestOrderConfig.COLLECTOR_PORT + "="
+					+ collector.getPort();
+		}
 		String sysProps = " -D" + MavenPluginConfigKeys.LEARN + "=true" + " -D"
 				+ MavenPluginConfigKeys.INSTRUMENTATION_MODE + "=" + instrumentationMode.toUpperCase() + " -D"
-				+ MavenPluginConfigKeys.STATE_PATH + "=" + statPathStr;
-		if (tdd) {
-			sysProps += " -D" + MavenPluginConfigKeys.TDD + "=true"
-					+ " -Djunit.jupiter.extensions.autodetection.enabled=true";
-		}
-
-		// Clean up stale TDD entries in runtime config files left by a previous
-		// order-mode run with TDD enabled. In learn mode these files are not
-		// rewritten by writeOrdererConfig(), so a stale testorder.tdd=true /
-		// autodetection=true would cause TDD enforcement to fire even when the
-		// user did NOT request it (sticky TDD bug).
-		if (!tdd) {
-			cleanStaleTddConfig();
-		}
+				+ MavenPluginConfigKeys.STATE_PATH + "=" + statPathStr + collectorPortProp;
 
 		if (hasHardcodedSurefireArgLine || hasCliArgLine) {
 			// The Surefire argLine is a hardcoded literal with no Maven property
@@ -1151,7 +1222,137 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 
 		snapshotHashes();
-		suggestSpringContextGrouping();
+	}
+
+	/**
+	 * Configures Surefire for offline learn mode: no agent attachment, instead
+	 * passes the mapping file path and output dirs via system properties so that
+	 * TelemetryListener can bootstrap UsageStore at test startup.
+	 * <p>
+	 * Requires that {@code test-order:instrument} has already run to produce the
+	 * mapping file at {@code target/.test-order/class-id-map.bin}.
+	 */
+	protected void configureOfflineLearnMode(String instrumentationMode, String includePackages)
+			throws MojoExecutionException {
+		Path targetDir = Path.of(project.getBuild().getDirectory());
+		Path mappingFile = targetDir.resolve(".test-order").resolve("class-id-map.bin");
+
+		if (!java.nio.file.Files.exists(mappingFile)) {
+			// Auto-instrument: run offline instrumentation inline
+			Path classesDir = Path.of(project.getBuild().getOutputDirectory());
+			if (!java.nio.file.Files.isDirectory(classesDir)) {
+				// Classes not compiled yet (CLI goal runs before compile phase).
+				// Defer instrumentation to the 'prepare' mojo at process-test-classes.
+				getLog().info("[test-order] Classes not yet compiled — deferring offline instrumentation to "
+						+ "process-test-classes phase.");
+				project.getProperties().setProperty("testorder.offline.pending", "true");
+				project.getProperties().setProperty("testorder.offline.instrMode", instrumentationMode);
+				project.getProperties().setProperty("testorder.offline.includePackages",
+						includePackages == null ? "" : includePackages);
+			} else {
+				getLog().info("[test-order] Auto-instrumenting classes for offline learn mode: " + classesDir);
+				try {
+					Agent.InstrumentationMode iMode = Agent.InstrumentationMode.fromString(instrumentationMode);
+					List<String> includes = includePackages == null || includePackages.isBlank()
+							? List.of()
+							: List.of(includePackages.split(","));
+					OfflineInstrumentor instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
+					Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
+					ClassIdMapping mapping = instrumentor.instrument(classesDir, backupDir);
+					if (instrumentor.getTransformedCount() == 0 && instrumentor.getSkippedCount() > 0) {
+						// All classes have stale marker from prior instrumentation without
+						// a matching mapping. Force re-instrument by ignoring the marker.
+						getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
+						instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
+						instrumentor.setIgnoreMarker(true);
+						mapping = instrumentor.instrument(classesDir, backupDir);
+					}
+					mapping.save(mappingFile);
+					getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes"
+							+ " (skipped " + instrumentor.getSkippedCount() + ")");
+				} catch (IOException e) {
+					throw new MojoExecutionException("[test-order] Offline instrumentation failed", e);
+				}
+			}
+		}
+
+		getLog().info("[test-order] Offline learn mode (" + instrumentationMode.toUpperCase()
+				+ "): no agent, using pre-instrumented classes");
+
+		// Resolve output paths
+		Path depsDir = ctx.resolveDepsDir(this.depsDir);
+		Path indexFile = ctx.resolveIndexFile(this.indexFile);
+		String statPathStr = ctx.resolveStateFile(stateFile).toAbsolutePath().toString();
+
+		// Start IndexCollectorServer for socket-based dep collection (eliminates .deps
+		// file I/O and classloader issues in forked JVMs)
+		String collectorPortProp = "";
+		me.bechberger.testorder.IndexCollectorServer collector = startCollector(indexFile);
+		if (collector != null) {
+			collectorPortProp = " -D" + me.bechberger.testorder.TestOrderConfig.COLLECTOR_PORT + "="
+					+ collector.getPort();
+		}
+
+		// Build system properties for forked JVMs
+		String sysProps = " -D" + MavenPluginConfigKeys.LEARN + "=true" + " -D"
+				+ MavenPluginConfigKeys.INSTRUMENTATION_MODE + "=" + instrumentationMode.toUpperCase() + " -D"
+				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_MAPPING + "=" + mappingFile.toAbsolutePath() + " -D"
+				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_OUTPUT + "=" + depsDir.toAbsolutePath() + " -D"
+				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_INDEX_FILE + "=" + indexFile.toAbsolutePath() + " -D"
+				+ MavenPluginConfigKeys.STATE_PATH + "=" + statPathStr + collectorPortProp;
+
+		// Inject system props into argLine (same strategy as online mode but without
+		// agent)
+		Plugin surefire = SurefireHelper.requireSurefirePlugin(project);
+		org.codehaus.plexus.util.xml.Xpp3Dom config = SurefireHelper.getOrCreateConfiguration(surefire);
+		String surefireArgLine = "";
+		org.codehaus.plexus.util.xml.Xpp3Dom argLineNode = config.getChild("argLine");
+		if (argLineNode != null && argLineNode.getValue() != null) {
+			surefireArgLine = argLineNode.getValue().trim();
+		}
+		boolean hasHardcodedSurefireArgLine = SurefireHelper.isHardcodedArgLine(surefireArgLine);
+		boolean hasCliArgLine = session != null && session.getUserProperties() != null
+				&& session.getUserProperties().getProperty("argLine") != null;
+
+		if (hasHardcodedSurefireArgLine || hasCliArgLine) {
+			boolean isFailsafe = "maven-failsafe-plugin".equals(surefire.getArtifactId());
+			String debugProperty = isFailsafe ? "maven.failsafe.debug" : "maven.surefire.debug";
+			String existingDebugValue = project.getProperties() != null
+					? project.getProperties().getProperty(debugProperty)
+					: null;
+			String debugValue = ((existingDebugValue == null ? "" : existingDebugValue + " ") + sysProps).trim();
+			project.getProperties().setProperty(debugProperty, debugValue);
+		} else {
+			boolean isFailsafe = "maven-failsafe-plugin".equals(surefire.getArtifactId());
+			String argLineProperty = detectArgLinePropertyName(surefireArgLine, isFailsafe);
+			String projectArgLine = project.getProperties().getProperty(argLineProperty, "").trim();
+			String mergedProjectArgLine = (projectArgLine + " " + sysProps).trim();
+			project.getProperties().setProperty(argLineProperty, mergedProjectArgLine);
+			if (session != null && session.getUserProperties() != null) {
+				session.getUserProperties().setProperty(argLineProperty, mergedProjectArgLine);
+			}
+			String placeholder = "@{" + argLineProperty + "}";
+			String dollarPlaceholder = "${" + argLineProperty + "}";
+			if (!surefireArgLine.contains(placeholder) && !surefireArgLine.contains(dollarPlaceholder)) {
+				String mergedSurefireArgLine = (surefireArgLine + " " + placeholder).trim();
+				SurefireHelper.setChild(config, "argLine", mergedSurefireArgLine);
+			}
+		}
+
+		// Inject runtime jar on test classpath (UsageStore needs to be accessible)
+		Path agentJar = resolveArtifact("test-order-agent");
+		Path runtimeJar = me.bechberger.testorder.AgentArgsBuilder.preExtractRuntimeJar(agentJar, targetDir);
+		injectTestClasspath(runtimeJar);
+
+		injectTestClasspath(resolveOrdererClasspath());
+		Path runtimeDir = runtimeConfigDir();
+		injectTestClasspath(runtimeDir);
+		ensureListenerServiceFile(runtimeDir);
+		if (isTestNGOnTestClasspath()) {
+			ensureTestNGListenerServiceFile(runtimeDir);
+		}
+
+		snapshotHashes();
 	}
 
 	/**
@@ -1447,14 +1648,13 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	/**
-	 * Returns {@code true} when the project declares {@code spring-boot-test},
-	 * {@code spring-boot-starter-test}, or {@code spring-test} as a dependency.
+	 * Returns {@code true} when the project declares {@code spring-boot-test} or
+	 * {@code spring-test} as a dependency.
 	 */
 	protected boolean isSpringTestOnClasspath() {
 		return project.getDependencies().stream().anyMatch(
-				d -> ("org.springframework.boot".equals(d.getGroupId()) && ("spring-boot-test".equals(d.getArtifactId())
-						|| "spring-boot-starter-test".equals(d.getArtifactId())))
-						|| ("org.springframework".equals(d.getGroupId()) && "spring-test".equals(d.getArtifactId())));
+				d -> "org.springframework.boot".equals(d.getGroupId()) && "spring-boot-test".equals(d.getArtifactId())
+						|| "org.springframework".equals(d.getGroupId()) && "spring-test".equals(d.getArtifactId()));
 	}
 
 	/**
@@ -1543,46 +1743,6 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 	}
 
-	/**
-	 * Removes stale TDD settings from runtime config files written by a previous
-	 * order-mode run. In learn mode the config files are NOT rewritten, so a stale
-	 * {@code testorder.tdd=true} and {@code autodetection.enabled=true} would cause
-	 * TDD enforcement to fire when the user did NOT request it.
-	 */
-	void cleanStaleTddConfig() {
-		Path runtimeDir = runtimeConfigDir();
-		// Clean testorder-config.properties: remove testorder.tdd line
-		Path configFile = runtimeDir.resolve("testorder-config.properties");
-		if (Files.exists(configFile)) {
-			try {
-				List<String> lines = Files.readAllLines(configFile);
-				List<String> cleaned = lines.stream().filter(l -> !l.trim().startsWith(MavenPluginConfigKeys.TDD + "="))
-						.toList();
-				if (cleaned.size() < lines.size()) {
-					Files.writeString(configFile, String.join("\n", cleaned) + "\n");
-					getLog().debug("[test-order] Removed stale testorder.tdd from config");
-				}
-			} catch (IOException e) {
-				getLog().debug("[test-order] Could not clean stale TDD config: " + e.getMessage());
-			}
-		}
-		// Clean junit-platform.properties: remove autodetection line
-		Path propsFile = runtimeDir.resolve("junit-platform.properties");
-		if (Files.exists(propsFile)) {
-			try {
-				List<String> lines = Files.readAllLines(propsFile);
-				List<String> cleaned = lines.stream()
-						.filter(l -> !l.trim().startsWith("junit.jupiter.extensions.autodetection.enabled")).toList();
-				if (cleaned.size() < lines.size()) {
-					Files.writeString(propsFile, String.join("\n", cleaned) + "\n");
-					getLog().debug("[test-order] Removed stale autodetection from junit-platform.properties");
-				}
-			} catch (IOException e) {
-				getLog().debug("[test-order] Could not clean stale autodetection: " + e.getMessage());
-			}
-		}
-	}
-
 	protected Path runtimeConfigDir() {
 		String buildDir = project.getBuild().getDirectory();
 		if (buildDir == null || buildDir.isBlank()) {
@@ -1591,9 +1751,48 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		return Path.of(buildDir).resolve("test-order-runtime");
 	}
 
+	/**
+	 * Removes TDD-specific entries from runtime config files left by a previous
+	 * run. Strips {@code testorder.tdd=...} from
+	 * {@code testorder-config.properties} and
+	 * {@code junit.jupiter.extensions.autodetection.enabled=...} from
+	 * {@code junit-platform.properties}.
+	 */
+	protected void cleanStaleTddConfig() {
+		Path runtimeDir = runtimeConfigDir();
+		if (!Files.isDirectory(runtimeDir))
+			return;
+		stripLines(runtimeDir.resolve("testorder-config.properties"), "testorder.tdd");
+		stripLines(runtimeDir.resolve("junit-platform.properties"), "junit.jupiter.extensions.autodetection.enabled");
+	}
+
+	private void stripLines(Path file, String keyPrefix) {
+		if (!Files.exists(file))
+			return;
+		try {
+			List<String> lines = Files.readAllLines(file);
+			List<String> filtered = lines.stream()
+					.filter(l -> !l.startsWith(keyPrefix + "=") && !l.startsWith(keyPrefix + " ")).toList();
+			if (filtered.size() < lines.size()) {
+				Files.writeString(file, String.join("\n", filtered) + (filtered.isEmpty() ? "" : "\n"));
+			}
+		} catch (IOException e) {
+			getLog().debug("[test-order] Could not clean TDD config from " + file + ": " + e.getMessage());
+		}
+	}
+
 	// ── Artifact resolution ───────────────────────────────────────────
 
 	protected Path resolveArtifact(String artifactId) throws MojoExecutionException {
+		// Check cache first to avoid repeated filesystem lookups in multi-module builds
+		Path cachedResult = resolvedArtifactCache.get(artifactId);
+		if (cachedResult != null) {
+			if (Files.exists(cachedResult))
+				return cachedResult;
+			// Cache entry stale (file was deleted), remove and continue
+			resolvedArtifactCache.remove(artifactId);
+		}
+
 		String repoPath = null;
 		if (session != null && session.getLocalRepository() != null) {
 			repoPath = session.getLocalRepository().getBasedir();
@@ -1616,8 +1815,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				continue;
 			Path baseDir = localRepo.resolve("me/bechberger").resolve(artifactId).resolve(version);
 			Path match = findBestArtifactJar(baseDir, artifactId, version);
-			if (match != null)
+			if (match != null) {
+				resolvedArtifactCache.put(artifactId, match);
 				return match;
+			}
 		}
 
 		// Fallback for standalone/external projects: pick the most recently installed
@@ -1641,6 +1842,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				}).orElse(null);
 				if (newest != null) {
 					getLog().debug("[test-order] Resolved " + artifactId + " via local repo fallback: " + newest);
+					resolvedArtifactCache.put(artifactId, newest);
 					return newest;
 				}
 			} catch (IOException ignored) {
@@ -1650,37 +1852,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		Path reactorFatJar = project.getBasedir().toPath().getParent().resolve(artifactId).resolve("target")
 				.resolve(artifactId + "-jar-with-dependencies.jar");
-		if (Files.exists(reactorFatJar))
+		if (Files.exists(reactorFatJar)) {
+			resolvedArtifactCache.put(artifactId, reactorFatJar);
 			return reactorFatJar;
+		}
 
 		Path reactorPath = project.getBasedir().toPath().getParent().resolve(artifactId).resolve("target")
 				.resolve(artifactId + ".jar");
-		if (Files.exists(reactorPath))
+		if (Files.exists(reactorPath)) {
+			resolvedArtifactCache.put(artifactId, reactorPath);
 			return reactorPath;
-
-		// Try downloading the artifact from remote repositories via Maven's Aether
-		// resolver.
-		if (repoSystem != null && session != null) {
-			for (String version : new String[]{pluginVersion, project.getVersion()}) {
-				if (version == null)
-					continue;
-				try {
-					RepositorySystemSession repoSession = session.getRepositorySession();
-					List<RemoteRepository> remoteRepos = project.getRemoteProjectRepositories();
-					ArtifactRequest request = new ArtifactRequest();
-					request.setArtifact(new DefaultArtifact("me.bechberger", artifactId, "jar", version));
-					request.setRepositories(remoteRepos);
-					ArtifactResult result = repoSystem.resolveArtifact(repoSession, request);
-					if (result.isResolved() && result.getArtifact().getFile() != null) {
-						Path resolved = result.getArtifact().getFile().toPath();
-						getLog().info("[test-order] Resolved " + artifactId + " via remote repository: " + resolved);
-						return resolved;
-					}
-				} catch (Exception e) {
-					getLog().debug("[test-order] Remote resolution attempt for " + artifactId + ":" + version
-							+ " failed: " + e.getMessage());
-				}
-			}
 		}
 
 		throw new MojoExecutionException("Cannot find " + artifactId + " jar. Build the parent project first.");
@@ -1697,143 +1878,5 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.exists(shadedJarPath))
 			return shadedJarPath;
 		return null;
-	}
-
-	// ── ML support methods (shared by PrepareMojo and AutoMojo) ─────────────
-
-	protected boolean isMLEnabled() {
-		String prop = session != null && session.getUserProperties() != null
-				? session.getUserProperties().getProperty(me.bechberger.testorder.TestOrderConfig.ML_ENABLED)
-				: null;
-		return "true".equalsIgnoreCase(prop);
-	}
-
-	/**
-	 * Appends {@code testorder.ml.enabled=true} to the runtime config file so that
-	 * TelemetryListener in the forked Surefire JVM can record ML history. This must
-	 * run unconditionally when ML is enabled, even if predictions haven't been
-	 * generated yet (bootstrap phase: first N runs collect history).
-	 * <p>
-	 * Skips writing if the config file already contains the ML entries (avoids
-	 * duplicate lines on repeated learn-mode runs that don't truncate the file).
-	 */
-	protected void appendMLEnabledToConfig() {
-		try {
-			Path configFile = runtimeConfigDir().resolve("testorder-config.properties");
-			// Guard against duplicate entries (learn mode appends without truncating)
-			if (Files.exists(configFile)) {
-				String existing = Files.readString(configFile);
-				if (existing.contains(me.bechberger.testorder.TestOrderConfig.ML_ENABLED + "=true")) {
-					return;
-				}
-			}
-			try (var writer = Files.newBufferedWriter(configFile, java.nio.file.StandardOpenOption.APPEND,
-					java.nio.file.StandardOpenOption.CREATE)) {
-				writer.newLine();
-				writer.write(me.bechberger.testorder.TestOrderConfig.ML_ENABLED + "=true");
-				writer.newLine();
-
-				// Propagate historyDir to the forked Surefire JVM so
-				// TelemetryListener writes ML history to the same location
-				// that generateMLPredictions will later read from.
-				Path resolvedHistoryDir = resolveMLHistoryDir();
-				writer.write(me.bechberger.testorder.TestOrderConfig.ML_HISTORY_DIR + "="
-						+ resolvedHistoryDir.toAbsolutePath());
-				writer.newLine();
-
-				// Forward maxRuns if set
-				String maxRunsStr = session != null && session.getUserProperties() != null
-						? session.getUserProperties()
-								.getProperty(me.bechberger.testorder.TestOrderConfig.ML_HISTORY_MAX_RUNS)
-						: null;
-				if (maxRunsStr != null) {
-					writer.write(me.bechberger.testorder.TestOrderConfig.ML_HISTORY_MAX_RUNS + "=" + maxRunsStr);
-					writer.newLine();
-				}
-			}
-		} catch (IOException e) {
-			getLog().warn("[test-order] [ml] Could not write ML config to runtime properties: " + e.getMessage()
-					+ " — ML history will not accumulate in forked JVM.");
-		}
-	}
-
-	/**
-	 * Resolves the ML history directory from user properties, falling back to
-	 * {@code <stateDir>/ml/}. Relative paths are resolved against the project base
-	 * directory. Used by both {@link #appendMLEnabledToConfig()} and
-	 * {@link #generateMLPredictions} to ensure they agree on the same path.
-	 */
-	protected Path resolveMLHistoryDir() {
-		String historyDirProp = session != null && session.getUserProperties() != null
-				? session.getUserProperties().getProperty(me.bechberger.testorder.TestOrderConfig.ML_HISTORY_DIR)
-				: null;
-		Path stateDir;
-		try {
-			stateDir = ctx.resolveStateFile(stateFile).getParent();
-		} catch (Exception e) {
-			stateDir = null;
-		}
-		Path historyDir = historyDirProp != null
-				? Path.of(historyDirProp)
-				: (stateDir != null ? stateDir.resolve("ml") : Path.of(".test-order", "ml"));
-		if (!historyDir.isAbsolute()) {
-			historyDir = project.getBasedir().toPath().resolve(historyDir);
-		}
-		return historyDir;
-	}
-
-	protected void generateMLPredictions(Set<String> changedClasses, Set<String> changedTests) {
-		try {
-			Path historyDir = resolveMLHistoryDir();
-			Path historyFile = historyDir.resolve("history.lz4");
-			if (!Files.exists(historyFile)) {
-				getLog().debug("[test-order] ML history not found at " + historyFile + " — skipping predictions.");
-				return;
-			}
-			Path idxPath = resolveIndexPath();
-			if (!Files.exists(idxPath)) {
-				getLog().debug("[test-order] Dependency index not found — skipping ML predictions.");
-				return;
-			}
-			DependencyMap depMap = DependencyMap.load(idxPath);
-			Set<String> testClasses = depMap.testClasses();
-			if (testClasses.isEmpty()) {
-				return;
-			}
-
-			// Log affected test classes (direct dependency overlap with changed classes)
-			Set<String> affectedTests = depMap.getAffectedTests(changedClasses);
-			if (!affectedTests.isEmpty()) {
-				getLog().debug("[test-order] ML: " + affectedTests.size() + " test class(es) directly affected by "
-						+ changedClasses.size() + " changed class(es).");
-			}
-
-			// Predict for ALL test classes — the model uses dependency/package features
-			// to determine which are likely to fail, even those not directly affected
-			Map<String, Double> predictions = me.bechberger.testorder.maven.ml.TestFailurePredictor
-					.trainAndPredict(historyFile, depMap, changedClasses, changedTests, testClasses);
-			if (predictions.isEmpty()) {
-				return;
-			}
-			Path predictionsFile = runtimeConfigDir().resolve("ml-predictions.properties");
-			me.bechberger.testorder.maven.ml.TestFailurePredictor.writePredictions(predictionsFile, predictions);
-
-			// Append predictions file path to testorder-config.properties so
-			// PriorityClassOrderer in the forked test JVM can discover the predictions.
-			// (ML_ENABLED was already written by appendMLEnabledToConfig above.)
-			Path configFile = runtimeConfigDir().resolve("testorder-config.properties");
-			try (var writer = Files.newBufferedWriter(configFile, java.nio.file.StandardOpenOption.APPEND,
-					java.nio.file.StandardOpenOption.CREATE)) {
-				writer.write(me.bechberger.testorder.TestOrderConfig.ML_PREDICTIONS_FILE + "="
-						+ predictionsFile.toAbsolutePath());
-				writer.newLine();
-			}
-
-			getLog().info("[test-order] [ml] Generated predictions for " + predictions.size() + " test classes" + " ("
-					+ affectedTests.size() + " directly affected by changes).");
-		} catch (Exception e) {
-			getLog().warn("[test-order] ML prediction failed (non-fatal): " + e.getMessage());
-			getLog().debug(e);
-		}
 	}
 }

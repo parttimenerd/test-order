@@ -75,12 +75,10 @@ public class BitsetTracker {
 			if (index < w.length) {
 				// Speculative: plain read first; skip lock-or if bit already set.
 				// Safe because bits are monotone 0→1: seeing "set" is never a false positive.
-				if ((w[index] & mask) == 0) {
-					LONG_ARRAY.getAndBitwiseOr(w, index, mask);
-					advanceHighWater(index);
-				} else if (index > highWater) {
-					advanceHighWater(index);
-				}
+				if ((w[index] & mask) != 0)
+					return; // already set — most common case
+				LONG_ARRAY.getAndBitwiseOr(w, index, mask);
+				advanceHighWater(index);
 				return;
 			}
 			growAndRecord(index, mask);
@@ -130,20 +128,16 @@ public class BitsetTracker {
 
 	private final WordArray classWords = new WordArray(INITIAL_CLASS_WORDS);
 	// Lazy: only allocated on first recordMember() call to save 4KB per tracker in
-	// non-FULL_MEMBER modes.
+	// non-MEMBER modes.
 	private volatile WordArray memberWords;
 
 	// ── Recording ────────────────────────────────────────────────────
 
 	public void recordClass(int classId) {
-		if (classId < 0)
-			return;
 		classWords.record(classId >>> 6, 1L << classId);
 	}
 
 	public void recordMember(int memberId) {
-		if (memberId < 0)
-			return;
 		WordArray mw = memberWords;
 		if (mw == null) {
 			synchronized (this) {
@@ -159,6 +153,36 @@ public class BitsetTracker {
 	}
 
 	// ── Flush-time helpers ────────────────────────────────────────────
+
+	/**
+	 * Derives class bits from recorded member bits. For each set member bit, looks
+	 * up the owning classId and sets it in classWords. Called at flush time so the
+	 * hot path only needs to record memberIds.
+	 */
+	public void deriveClassBitsFromMembers() {
+		WordArray mw = memberWords;
+		if (mw == null)
+			return;
+		int hw = mw.highWater;
+		if (hw < 0)
+			return;
+		ClassIdMap classIdMap = ClassIdMap.getInstance();
+		long[] w = mw.words;
+		int limit = Math.min(hw + 1, w.length);
+		for (int wi = 0; wi < limit; wi++) {
+			long word = w[wi];
+			if (word == 0)
+				continue;
+			int baseAdjusted = wi << 6;
+			for (long bits = word; bits != 0; bits &= bits - 1) {
+				int adjusted = baseAdjusted + Long.numberOfTrailingZeros(bits);
+				int classId = classIdMap.getClassIdForMember(adjusted + MEMBER_ID_OFFSET);
+				if (classId >= 0) {
+					classWords.record(classId >>> 6, 1L << classId);
+				}
+			}
+		}
+	}
 
 	/**
 	 * Convert recorded class IDs to class names. Single-pass: iterates only up to
@@ -237,4 +261,120 @@ public class BitsetTracker {
 		if (mw != null)
 			mw.clear();
 	}
+
+	/**
+	 * Merge all bits from {@code other} into this tracker (bitwise OR). Used at
+	 * flush time to fold per-method deps into the per-class tracker. Not
+	 * thread-safe — call only when recording is stopped.
+	 */
+	public void mergeFrom(BitsetTracker other) {
+		mergeWordArrays(classWords, other.classWords);
+		WordArray otherMw = other.memberWords;
+		if (otherMw != null) {
+			WordArray mw = memberWords;
+			if (mw == null) {
+				synchronized (this) {
+					mw = memberWords;
+					if (mw == null) {
+						mw = new WordArray(INITIAL_MEMBER_WORDS);
+						memberWords = mw;
+					}
+				}
+			}
+			mergeWordArrays(mw, otherMw);
+		}
+	}
+
+	private static void mergeWordArrays(WordArray dst, WordArray src) {
+		int hw = src.highWater;
+		if (hw < 0)
+			return;
+		long[] srcW = src.words;
+		int limit = Math.min(hw + 1, srcW.length);
+		long[] dstW = dst.words;
+		if (limit > dstW.length) {
+			// grow dst — use growAndRecord with mask=0 to trigger resize without setting
+			// bits
+			dst.growAndRecord(limit - 1, 0L);
+			dstW = dst.words;
+		}
+		for (int i = 0; i < limit; i++) {
+			long bits = srcW[i];
+			if (bits != 0)
+				dstW[i] |= bits; // plain OR — safe since recording is stopped
+		}
+		// advance dst highWater
+		int dstHw = dst.highWater;
+		if (hw > dstHw)
+			dst.highWater = hw;
+	}
+
+	// ── Raw bitset access (for binary protocol) ──────────────────────
+
+	/**
+	 * Returns the class-words array trimmed to highWater+1, or empty array if
+	 * nothing recorded. For sending raw bitset data over the wire.
+	 */
+	public long[] getClassWordsRaw() {
+		int hw = classWords.highWater;
+		if (hw < 0)
+			return EMPTY_LONGS;
+		long[] w = classWords.words;
+		int limit = Math.min(hw + 1, w.length);
+		// If the live array is already the right size, return it directly
+		// (safe at flush time when recording is stopped).
+		return (w.length == limit) ? w : java.util.Arrays.copyOf(w, limit);
+	}
+
+	/** Effective length of class words (highWater + 1), or 0 if empty. */
+	public int getClassWordsLength() {
+		int hw = classWords.highWater;
+		if (hw < 0)
+			return 0;
+		return Math.min(hw + 1, classWords.words.length);
+	}
+
+	/**
+	 * Direct reference to the class words backing array. Use only at flush time.
+	 */
+	public long[] getClassWordsArray() {
+		return classWords.words;
+	}
+
+	/**
+	 * Returns the member-words array trimmed to highWater+1, or empty array if
+	 * nothing recorded. For sending raw bitset data over the wire.
+	 */
+	public long[] getMemberWordsRaw() {
+		WordArray mw = memberWords;
+		if (mw == null)
+			return EMPTY_LONGS;
+		int hw = mw.highWater;
+		if (hw < 0)
+			return EMPTY_LONGS;
+		long[] w = mw.words;
+		int limit = Math.min(hw + 1, w.length);
+		return (w.length == limit) ? w : java.util.Arrays.copyOf(w, limit);
+	}
+
+	/** Effective length of member words (highWater + 1), or 0 if empty. */
+	public int getMemberWordsLength() {
+		WordArray mw = memberWords;
+		if (mw == null)
+			return 0;
+		int hw = mw.highWater;
+		if (hw < 0)
+			return 0;
+		return Math.min(hw + 1, mw.words.length);
+	}
+
+	/**
+	 * Direct reference to the member words backing array. Use only at flush time.
+	 */
+	public long[] getMemberWordsArray() {
+		WordArray mw = memberWords;
+		return (mw != null) ? mw.words : EMPTY_LONGS;
+	}
+
+	private static final long[] EMPTY_LONGS = new long[0];
 }

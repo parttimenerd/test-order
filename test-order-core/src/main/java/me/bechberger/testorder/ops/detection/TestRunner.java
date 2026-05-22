@@ -45,7 +45,7 @@ public interface TestRunner {
 	 * fresh data.
 	 *
 	 * @param instrumentationMode
-	 *            the instrumentation mode to use (e.g. "FULL_MEMBER")
+	 *            the instrumentation mode to use (e.g. "MEMBER")
 	 * @return true if the learn phase succeeded
 	 */
 	default boolean runLearnPhase(String instrumentationMode) {

@@ -26,11 +26,6 @@ final class MavenPluginConfigKeys {
 	static final String CHANGED_METHODS = "testorder.changed.methods";
 	static final String METHOD_ORDER_ENABLED = "testorder.methodOrder.enabled";
 	static final String STRUCTURAL_DIFF_ENABLED = "testorder.structuralDiff.enabled";
-	static final String ML_ENABLED = "testorder.ml.enabled";
-	static final String ML_HISTORY_DIR = "testorder.ml.historyDir";
-	static final String LEGACY_ML_HISTORY_DIR = "testorder.ml.history.dir";
-	static final String ML_HISTORY_MAX_RUNS = "testorder.ml.history.maxRuns";
-	static final String ML_PREDICTIONS_FILE = "testorder.ml.predictions.file";
 
 	// Score overrides
 	static final String SCORE_NEW_TEST = "testorder.score.newTest";
@@ -54,6 +49,8 @@ final class MavenPluginConfigKeys {
 	static final String SELECTED_FILE = "testorder.select.selectedFile";
 	static final String AUTO_RUN_REMAINING = "testorder.auto.runRemaining";
 	static final String AUTO_OPTIMIZE_EVERY = "testorder.auto.optimizeEvery";
+	static final String INSTRUMENTATION = "testorder.instrumentation"; // online | offline
+	static final String COMPRESSION = "testorder.compression"; // fast | hc
 	static final String SHOW_ORDER_FULL_NAMES = "testorder.showOrder.fullNames";
 	static final String AUTO_LEARN_RUN_THRESHOLD = "testorder.autoLearnRunThreshold";
 	static final String AUTO_LEARN_DIFF_THRESHOLD = "testorder.autoLearnDiffThreshold";
@@ -87,13 +84,6 @@ final class MavenPluginConfigKeys {
 	static final String SERVE_PORT_ALIAS = "testorder.serve.port";
 
 	// Detect-dependencies goal keys
-	// TDD enforcement
-	static final String TDD = "testorder.tdd";
-
-	// Storage location: "local" (default, in-project .test-order/) or "home"
-	// (~/.test-order/<project>/)
-	static final String STORAGE = "testorder.storage";
-
 	static final String DETECT_ALGORITHM = "testorder.detect.algorithm";
 	static final String DETECT_TIME_BUDGET = "testorder.detect.timeBudget";
 	static final String DETECT_STOP_ON_FIRST = "testorder.detect.stopOnFirst";
@@ -115,22 +105,21 @@ final class MavenPluginConfigKeys {
 	/** All known testorder.* property keys (canonical + legacy). */
 	static final Set<String> ALL_KNOWN_KEYS = Set.of(INDEX_PATH, STATE_PATH, LEARN, INSTRUMENTATION_MODE, CHANGE_MODE,
 			PROJECT_ROOT, SOURCE_ROOT, WEIGHTS_FILE, CHANGED_CLASSES, CHANGED_TEST_CLASSES, CHANGED_METHODS,
-			METHOD_ORDER_ENABLED, STRUCTURAL_DIFF_ENABLED, ML_ENABLED, ML_HISTORY_DIR, LEGACY_ML_HISTORY_DIR,
-			ML_HISTORY_MAX_RUNS, ML_PREDICTIONS_FILE, SCORE_NEW_TEST, SCORE_CHANGED_TEST, SCORE_MAX_FAILURE,
+			METHOD_ORDER_ENABLED, STRUCTURAL_DIFF_ENABLED, SCORE_NEW_TEST, SCORE_CHANGED_TEST, SCORE_MAX_FAILURE,
 			SCORE_SPEED, SCORE_SPEED_PENALTY, SCORE_DEP_OVERLAP, SCORE_CHANGE_COMPLEXITY, SCORE_STATIC_FIELD_BONUS,
 			SCORE_COVERAGE_BONUS, MODE, INCLUDE_PACKAGES, FILTER_BY_GROUP_ID, SELECT_TOP_N, SELECT_RANDOM_M,
 			SELECT_SEED, SELECT_REMAINING_FILE, SELECTED_FILE, AUTO_RUN_REMAINING, AUTO_OPTIMIZE_EVERY,
 			AUTO_LEARN_RUN_THRESHOLD, AUTO_LEARN_DIFF_THRESHOLD, DUMP_OUTPUT, EXPORT_JSON_OUTPUT, SHOW_ORDER_EXPLAIN,
-			SHOW_METHOD_ORDER_EXPLAIN, SHOW_ORDER_FULL_NAMES, DASHBOARD_OUTPUT, DASHBOARD_COVERAGE_DIR, DASHBOARD_OPEN,
-			DASHBOARD_SEPARATE_ASSETS, DASHBOARD_PORT, DASHBOARD_REGENERATE, DASHBOARD_SERVE_SECONDS, DETECT_ALGORITHM,
-			DETECT_TIME_BUDGET, DETECT_STOP_ON_FIRST, DETECT_SEED, DETECT_FAIL_ON_DETECTION, TIERED_TIER2_FRACTION,
-			TIERED_WEIGHT_BY_DURATION, TIERED_TIER1_FILE, TIERED_TIER2_FILE, TIERED_TIER3_FILE, TIERED_CURRENT_TIER,
-			LEGACY_INDEX, LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE, LEGACY_TEST_HASH_FILE,
-			LEGACY_METHOD_HASH_FILE, LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT, LEGACY_VERBOSE_FILE,
-			LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip", "testorder.debug",
-			"testorder.history.maxRuns", "testorder.changed.classes.file", "testorder.methodOrder",
+			SHOW_METHOD_ORDER_EXPLAIN, SHOW_ORDER_FULL_NAMES, COMPRESSION, DASHBOARD_OUTPUT, DASHBOARD_COVERAGE_DIR,
+			DASHBOARD_OPEN, DASHBOARD_SEPARATE_ASSETS, DASHBOARD_PORT, DASHBOARD_REGENERATE, DASHBOARD_SERVE_SECONDS,
+			DETECT_ALGORITHM, DETECT_TIME_BUDGET, DETECT_STOP_ON_FIRST, DETECT_SEED, DETECT_FAIL_ON_DETECTION,
+			TIERED_TIER2_FRACTION, TIERED_WEIGHT_BY_DURATION, TIERED_TIER1_FILE, TIERED_TIER2_FILE, TIERED_TIER3_FILE,
+			TIERED_CURRENT_TIER, LEGACY_INDEX, LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE,
+			LEGACY_TEST_HASH_FILE, LEGACY_METHOD_HASH_FILE, LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT,
+			LEGACY_VERBOSE_FILE, LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip",
+			"testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file", "testorder.methodOrder",
 			"testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold", "testorder.auto.active",
-			"testorder.remaining.file", "testorder.metrics.output", SERVE_PORT_ALIAS, TDD, STORAGE);
+			"testorder.remaining.file", "testorder.metrics.output", SERVE_PORT_ALIAS);
 
 	/**
 	 * Find the closest known key to the given unknown key. Delegates to

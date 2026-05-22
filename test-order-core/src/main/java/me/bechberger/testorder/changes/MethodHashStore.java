@@ -196,7 +196,7 @@ public class MethodHashStore {
 			Files.createDirectories(parent);
 		}
 		Path tempFile = PersistenceSupport.temporarySibling(hashFile);
-		try (LZ4FrameOutputStream lz4os = LZ4Support.frameOutputStream(Files.newOutputStream(tempFile));
+		try (LZ4FrameOutputStream lz4os = LZ4Support.frameOutputStreamHC(Files.newOutputStream(tempFile));
 				PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os))) {
 			// Write file fingerprints first (prefixed with #FILE:)
 			for (var entry : fileFingerprints.entrySet()) {

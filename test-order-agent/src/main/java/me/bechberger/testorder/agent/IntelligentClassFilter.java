@@ -57,8 +57,12 @@ public class IntelligentClassFilter {
 		return idx;
 	}
 
-	private static final String[] GENERATED_CLASS_MARKERS = {"$$", "$Proxy", "CGLIB", "ByteBuddy", "MockitoMock",
-			"SpringCGLIB", "$Lambda$", "EnhancerBySpringCGLIB", "FastClass", "MethodAccessor"};
+	// Markers that only appear in class names containing '$' — skip for clean
+	// names.
+	private static final String[] DOLLAR_MARKERS = {"$$", "$Proxy", "$Lambda$"};
+	// Markers that can appear even without '$' in the name.
+	private static final String[] NON_DOLLAR_MARKERS = {"CGLIB", "ByteBuddy", "MockitoMock", "SpringCGLIB",
+			"EnhancerBySpringCGLIB", "FastClass", "MethodAccessor"};
 
 	private final Strategy strategy;
 	private final List<Pattern> includePatterns;
@@ -68,8 +72,11 @@ public class IntelligentClassFilter {
 	private final boolean skipTestClasses;
 	private final boolean useHeuristics;
 
-	// Cache for filter decisions (className → shouldInstrument)
-	private final ConcurrentHashMap<String, Boolean> filterCache;
+	// Two keysets replace ConcurrentHashMap<String, Boolean> to avoid Boolean
+	// boxing
+	// on every cache lookup/store. The total count is bounded at maxCacheSize.
+	private final Set<String> cachedTrue;
+	private final Set<String> cachedFalse;
 	private final int maxCacheSize;
 	private final AtomicInteger cacheSize = new AtomicInteger();
 	private final LongAdder cacheHits = new LongAdder();
@@ -149,29 +156,32 @@ public class IntelligentClassFilter {
 		this.skipTestClasses = builder.skipTestClasses;
 		this.useHeuristics = builder.useHeuristics;
 		this.maxCacheSize = builder.maxCacheSize;
-		this.filterCache = new ConcurrentHashMap<>();
+		this.cachedTrue = ConcurrentHashMap.newKeySet();
+		this.cachedFalse = ConcurrentHashMap.newKeySet();
 	}
 
 	/**
 	 * Determine if a class should be instrumented. Uses cache for performance.
 	 */
 	public boolean shouldInstrument(String className) {
-		// Fast path: check cache
-		Boolean cached = filterCache.get(className);
-		if (cached != null) {
+		if (cachedTrue.contains(className)) {
 			cacheHits.increment();
-			return cached;
+			return true;
+		}
+		if (cachedFalse.contains(className)) {
+			cacheHits.increment();
+			return false;
 		}
 
-		// Slow path: evaluate filter
 		cacheMisses.increment();
 		boolean result = evaluateFilter(className);
 
 		// Atomically claim a cache slot; roll back if over capacity
 		int slot = cacheSize.getAndIncrement();
 		if (slot < maxCacheSize) {
-			if (filterCache.putIfAbsent(className, result) != null) {
-				cacheSize.decrementAndGet(); // slot unused (duplicate key)
+			boolean added = (result ? cachedTrue : cachedFalse).add(className);
+			if (!added) {
+				cacheSize.decrementAndGet(); // duplicate key — slot unused
 			}
 		} else {
 			cacheSize.decrementAndGet(); // over capacity, release slot
@@ -296,7 +306,16 @@ public class IntelligentClassFilter {
 	 * Check if a class is generated/synthetic (no real source).
 	 */
 	private boolean isGeneratedClass(String className) {
-		for (String marker : GENERATED_CLASS_MARKERS) {
+		// DOLLAR_MARKERS only appear in names containing '$' — skip the scan for
+		// clean names, which is the common case for instrumented application classes.
+		if (className.indexOf('$') >= 0) {
+			for (String marker : DOLLAR_MARKERS) {
+				if (className.contains(marker)) {
+					return true;
+				}
+			}
+		}
+		for (String marker : NON_DOLLAR_MARKERS) {
 			if (className.contains(marker)) {
 				return true;
 			}
@@ -317,7 +336,8 @@ public class IntelligentClassFilter {
 	 * Clear the filter cache.
 	 */
 	public void clearCache() {
-		filterCache.clear();
+		cachedTrue.clear();
+		cachedFalse.clear();
 		cacheSize.set(0);
 	}
 
@@ -325,7 +345,7 @@ public class IntelligentClassFilter {
 	 * Get cache statistics.
 	 */
 	public CacheStats getCacheStats() {
-		return new CacheStats(cacheHits.sum(), cacheMisses.sum(), filterCache.size(), maxCacheSize);
+		return new CacheStats(cacheHits.sum(), cacheMisses.sum(), cachedTrue.size() + cachedFalse.size(), maxCacheSize);
 	}
 
 	/**

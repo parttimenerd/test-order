@@ -38,7 +38,7 @@ public class MavenRunner {
 	 * Run {@code mvn clean test -Dtestorder.mode=learn} with verbose agent logging
 	 */
 	public MavenResult learnVerbose(Path verboseFile) {
-		return run("clean", "test", "-Dtestorder.mode=learn",
+		return run("clean", "test", "-Dtestorder.mode=learn", "-Dtestorder.instrumentation=online",
 				"-Dtestorder.verboseFile=" + verboseFile.toAbsolutePath());
 	}
 
@@ -98,9 +98,10 @@ public class MavenRunner {
 		return run("test-order:aggregate");
 	}
 
-	/** Run learn mode with METHOD_ENTRY instrumentation */
-	public MavenResult learnMethodEntry() {
-		return run("clean", "test", "-Dtestorder.mode=learn", "-Dtestorder.instrumentation.mode=METHOD_ENTRY");
+	/** Run offline learn: compile, instrument, then test without agent */
+	public MavenResult learnOffline() {
+		return run("clean", "compile", "test-order:instrument", "test", "-Dtestorder.mode=learn",
+				"-Dtestorder.instrumentation=offline");
 	}
 
 	/** Run {@code mvn test-order:select test} with explicit changed classes */

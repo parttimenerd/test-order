@@ -1,7 +1,6 @@
 package me.bechberger.testorder.agent.runtime;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -22,19 +21,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>
  * Supports three instrumentation modes:
  * <ul>
- * <li><b>METHOD_ENTRY</b>: Records class usage via method/constructor entry
- * instrumentation. Supports multiple test classes per JVM (default fork mode).
- * The JUnit listener calls {@link #startTestClass}/{@link #endTestClass} via
- * reflection to track per-test-class dependencies.</li>
- * <li><b>FULL</b>: Like METHOD_ENTRY, but the agent also instruments field
- * accesses to foreign classes. Uses the same per-test-class tracking
- * mechanism.</li>
- * <li><b>FULL_METHOD</b>: Like FULL, but additionally records per-test-method
+ * <li><b>CLASS</b>: Records class usage via method/constructor entry
+ * instrumentation plus foreign static-field access. Supports multiple test
+ * classes per JVM (default fork mode). The JUnit listener calls
+ * {@link #startTestClass}/{@link #endTestClass} via reflection to track
+ * per-test-class dependencies.</li>
+ * <li><b>METHOD</b>: Like CLASS, but additionally records per-test-method
  * dependencies. The JUnit listener calls
  * {@link #startTestMethod}/{@link #endTestMethod} around each test method.
  * Dependencies from setup/teardown ({@code @BeforeEach}, {@code @AfterEach},
  * etc.) are captured in class-level deps only; method-level deps contain only
  * what the test method itself touches.</li>
+ * <li><b>MEMBER</b>: Like METHOD, but also records member-level dependencies
+ * ({@code class#method}, {@code class#field}). Enables precise impact analysis:
+ * a test that never calls the changed method won't be selected.</li>
  * </ul>
  * <p>
  * <b>Known limitation (C5/M23):</b> Dependency tracking uses a plain field (not
@@ -53,6 +53,48 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class UsageStore {
 
 	private static final UsageStore INSTANCE = new UsageStore();
+
+	/**
+	 * Immutable snapshot pairing both trackers. A single volatile read of
+	 * {@code activeState} gives the hot path an atomic view of (classTracker,
+	 * methodTracker) without a second volatile read. The object is replaced
+	 * atomically in startTestClass/endTestClass/startTestMethod/endTestMethod.
+	 * <p>
+	 * The {@code target} field points to whichever tracker should receive
+	 * recordings right now (methodTracker if inside a test method, classTracker
+	 * otherwise). This eliminates a branch on every hot-path call.
+	 */
+	static final class RecordingState {
+		final BitsetTracker target; // record here — no branch needed
+		final BitsetTracker classTracker; // for lifecycle/flush reference
+		final BitsetTracker methodTracker; // null between test methods
+
+		RecordingState(BitsetTracker classTracker, BitsetTracker methodTracker) {
+			this.classTracker = classTracker;
+			this.methodTracker = methodTracker;
+			this.target = (methodTracker != null) ? methodTracker : classTracker;
+		}
+	}
+
+	/**
+	 * Combined hot-path state for METHOD/MEMBER modes. One volatile read replaces
+	 * the former two-field approach (activeClassTracker + activeMethodTracker).
+	 * Null means not recording.
+	 */
+	static volatile RecordingState activeState;
+
+	/**
+	 * Direct class-tracker reference for FULL mode's {@code recordClassOnly}.
+	 * Avoids the extra pointer dereference through RecordingState. Null means not
+	 * recording.
+	 */
+	static volatile BitsetTracker activeClassTracker;
+
+	/**
+	 * Legacy guard kept for backward compatibility (external code may read it).
+	 * Maintained in sync with activeClassTracker != null.
+	 */
+	public static volatile boolean recording;
 
 	// Configuration (set by Agent via reflection)
 	private volatile String outputDir;
@@ -107,42 +149,89 @@ public class UsageStore {
 		return INSTANCE;
 	}
 
-	// ── Hot path recording (called by instrumented code via reflection)
-	// ───────────────
+	// ── Hot path recording (called by instrumented code) ─────────────
+	//
+	// Design:
+	// - FULL mode: one volatile read of activeClassTracker (direct BitsetTracker
+	// ref)
+	// - METHOD/MEMBER: one volatile read of activeState (immutable pair),
+	// giving both classTracker and methodTracker atomically without a second
+	// volatile read. The methodTracker field is a plain read on an L1-cached
+	// object — much cheaper than a volatile.
+	//
+	// Private methods skip class-ID recording entirely (the class is already
+	// recorded by the non-private entry point that called them). They only
+	// emit recordMemberUsageIdFast if member-level tracking is active.
+	//
+	// Method dispatch by mode and visibility:
+	//
+	// ┌────────────────┬────────────────────────┬───────────────────────────────┐
+	// │ Mode │ Non-private method │ Private method │
+	// ├────────────────┼────────────────────────┼───────────────────────────────┤
+	// │ CLASS │ recordClassOnly │ (nothing emitted) │
+	// │ METHOD │ recordMemberUsageIdFast │ recordMemberUsageIdFast │
+	// │ MEMBER │ recordMemberUsageIdFast │ recordMemberUsageIdFast │
+	// └────────────────┴────────────────────────┴───────────────────────────────┘
+	//
+	// Field access (GETSTATIC/PUTSTATIC to foreign class):
+	// ┌────────────────┬─────────────────────────────────────────────────────────┐
+	// │ Mode │ Call emitted │
+	// ├────────────────┼─────────────────────────────────────────────────────────┤
+	// │ CLASS │ recordClassOnly(classId) │
+	// │ MEMBER │ recordMemberUsageIdFast(memberId) │
+	// │ METHOD │ recordUsageIdFast(classId) │
+	// └────────────────┴─────────────────────────────────────────────────────────┘
 
-	public static void recordUsageIdFast(int classId) {
-		INSTANCE.recordUsageId(classId);
-	}
-
-	public static void recordMemberUsageIdFast(int memberId) {
-		INSTANCE.recordMemberUsageId(memberId);
+	/**
+	 * CLASS mode, non-private methods: records class usage only. Also used for
+	 * field access in CLASS mode (classId of the field owner).
+	 * <p>
+	 * Reads: activeClassTracker (1 volatile). No method-tracker overhead.
+	 */
+	public static void recordClassOnly(int classId) {
+		BitsetTracker t = activeClassTracker; // single volatile read
+		if (t == null)
+			return;
+		t.recordClass(classId);
 	}
 
 	/**
-	 * Combined class + member recording in a single call. Used by FULL_MEMBER field
-	 * access instrumentation to reduce bytecode size (one invokestatic instead of
-	 * two). If classId is negative, only the member is recorded; if memberId is
-	 * negative, only the class is recorded.
+	 * METHOD/MEMBER: records classId to the active target tracker. Used for field
+	 * access in METHOD mode (no memberId available).
+	 * <p>
+	 * Reads: activeState (1 volatile) + target (1 plain field). No branch.
 	 */
-	public static void recordFieldAccessFast(int classId, int memberId) {
-		ActiveTrackers at = INSTANCE.activeTrackers;
-		BitsetTracker t = at.test;
-		if (t != null) {
-			if (classId >= 0)
-				t.recordClass(classId);
-			if (memberId >= 0)
-				t.recordMember(memberId);
-		}
-		BitsetTracker m = at.method;
-		if (m != null) {
-			if (classId >= 0)
-				m.recordClass(classId);
-			if (memberId >= 0)
-				m.recordMember(memberId);
-		}
+	public static void recordUsageIdFast(int classId) {
+		RecordingState s = activeState; // single volatile read
+		if (s == null)
+			return;
+		s.target.recordClass(classId);
+	}
+
+	/**
+	 * METHOD/MEMBER: records memberId to the active target tracker. Used for ALL
+	 * method entries (private and non-private) and MEMBER field access. The classId
+	 * is derived from the memberId at flush time via
+	 * ClassIdMap.getClassIdForMember().
+	 * <p>
+	 * Reads: activeState (1 volatile) + target (1 plain field). No branch.
+	 */
+	public static void recordMemberUsageIdFast(int memberId) {
+		RecordingState s = activeState;
+		if (s == null)
+			return;
+		s.target.recordMember(memberId);
 	}
 
 	// ── Configuration (called by Agent via reflection) ────────────────
+
+	/** Configure all settings at once (used by OfflineRuntimeBootstrap). */
+	public void configure(String outputDir, String indexFile, boolean methodLevel, Runnable onFirstTestCallback) {
+		this.outputDir = outputDir;
+		this.indexFile = indexFile;
+		this.methodLevelRecordingEnabled = methodLevel;
+		this.onFirstTestClassCallback = onFirstTestCallback;
+	}
 
 	/** Set the output directory for fallback .deps file writing. */
 	public void setOutputDir(String dir) {
@@ -184,17 +273,25 @@ public class UsageStore {
 		}
 		BitsetTracker tracker = perTestTrackers.computeIfAbsent(testClass, k -> new BitsetTracker());
 		activeTrackers = new ActiveTrackers(testClass, tracker, null);
+		// Volatile stores last — act as release fence for worker threads.
+		activeClassTracker = tracker;
+		activeState = new RecordingState(tracker, null);
+		recording = true;
 	}
 
 	/** Called when a test class finishes execution. */
 	public void endTestClass(String testClass) {
 		if (activeTrackers.test != null && testClass.equals(activeTrackers.testClassName)) {
+			// Clear volatile fields — acts as release fence.
+			activeState = null;
+			activeClassTracker = null;
+			recording = false;
 			activeTrackers = ActiveTrackers.IDLE;
 		}
 	}
 
 	// ── Test method lifecycle (called by TelemetryListener via reflection,
-	// FULL_METHOD mode) ──
+	// METHOD/MEMBER mode) ──
 
 	/**
 	 * Called when a test method starts execution. Deps recorded during the method
@@ -208,6 +305,8 @@ public class UsageStore {
 		String methodKey = testClass + "#" + methodName;
 		BitsetTracker tracker = perMethodTrackers.computeIfAbsent(methodKey, k -> new BitsetTracker());
 		activeTrackers = activeTrackers.createMethodTracker(tracker);
+		// Atomic swap: new RecordingState pairs classTracker with methodTracker
+		activeState = new RecordingState(activeTrackers.test, tracker);
 	}
 
 	/** Called when a test method finishes execution. */
@@ -215,6 +314,8 @@ public class UsageStore {
 		if (!methodLevelRecordingEnabled) {
 			return;
 		}
+		// Atomic swap: methodTracker goes back to null
+		activeState = new RecordingState(activeTrackers.test, null);
 		activeTrackers = activeTrackers.createMethodTracker(null);
 	}
 
@@ -251,12 +352,56 @@ public class UsageStore {
 	// ── Flush on shutdown ─────────────────────────────────────────────
 
 	private void flush() {
+		if (perTestTrackers.isEmpty()) {
+			return;
+		}
+
+		// Merge method-level deps into class-level trackers. During recording,
+		// deps inside a test method only go to the methodTracker for performance.
+		// We reconstruct the class-level view here (one-time O(n) merge).
+		for (var entry : perMethodTrackers.entrySet()) {
+			String methodKey = entry.getKey();
+			int hashIdx = methodKey.indexOf('#');
+			if (hashIdx < 0)
+				continue;
+			String testClass = methodKey.substring(0, hashIdx);
+			BitsetTracker classTracker = perTestTrackers.get(testClass);
+			if (classTracker != null) {
+				classTracker.mergeFrom(entry.getValue());
+			}
+		}
+
+		// Derive class bits from member bits (needed for both binary and string paths)
+		for (var entry : perTestTrackers.entrySet()) {
+			entry.getValue().deriveClassBitsFromMembers();
+		}
+		for (var entry : perMethodTrackers.entrySet()) {
+			entry.getValue().deriveClassBitsFromMembers();
+		}
+
+		// Try binary protocol first (v2) — sends raw bitset data, no string conversion
+		String collectorPort = System.getProperty("testorder.collector.port");
+		if (collectorPort != null && !collectorPort.isEmpty()) {
+			try {
+				int port = Integer.parseInt(collectorPort);
+				if (IndexCollectorClient.sendBinary(port, perTestTrackers, perMethodTrackers)) {
+					AgentLogger.log("[flush] Sent binary deps to IndexCollectorServer on port " + port + " ("
+							+ perTestTrackers.size() + " test classes)");
+					return;
+				}
+			} catch (NumberFormatException e) {
+				AgentLogger.log("[flush] Invalid collector port: " + collectorPort);
+			}
+			// Fall through to string-based approach on failure
+			AgentLogger.log("[flush] Binary socket send failed, falling back to string-based approach");
+		}
+
+		// String-based path: convert IDs to names (needed for .deps files or v1
+		// fallback)
 		Map<String, Set<String>> allDeps;
 		Map<String, Set<String>> allMethodDeps;
 		Map<String, Set<String>> allMemberDeps;
 		Map<String, Set<String>> allMethodMemberDeps;
-		// Single-pass collection: iterate each tracker map once, calling toClassNames()
-		// and toMemberNames() just once per BitsetTracker instead of twice.
 		{
 			allDeps = new HashMap<>(perTestTrackers.size());
 			allMemberDeps = new HashMap<>(perTestTrackers.size());
@@ -289,14 +434,23 @@ public class UsageStore {
 			return;
 		}
 
-		// Performance optimization: prefer writing incremental .deps files over
-		// synchronized index merges.
-		// When outputDir is set, always write .deps files first (safe for multi-fork).
-		// If indexFile is also set, attempt direct merge afterwards so the index is
-		// immediately available
-		// (e.g. AutoMojo first-run learn mode).
+		// Try v1 string-based socket (e.g. if v2 is not available on server)
+		if (collectorPort != null && !collectorPort.isEmpty()) {
+			try {
+				int port = Integer.parseInt(collectorPort);
+				if (IndexCollectorClient.send(port, allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps)) {
+					AgentLogger.log("[flush] Sent string deps to IndexCollectorServer on port " + port);
+					return;
+				}
+			} catch (NumberFormatException e) {
+				// already logged above
+			}
+			AgentLogger.log("[flush] Socket send failed, falling back to file-based approach");
+		}
+
+		// Fallback: write .deps files when socket is unavailable (standalone agent
+		// usage or server failure)
 		if (outputDir != null && !outputDir.isEmpty()) {
-			// Ensure output directory exists once (not per file)
 			Path baseDir = Path.of(outputDir);
 			try {
 				Files.createDirectories(baseDir);
@@ -304,41 +458,21 @@ public class UsageStore {
 				AgentLogger.error("Failed to create output dir: " + outputDir, e);
 				return;
 			}
-			// Write incremental .deps files
 			for (var entry : allDeps.entrySet()) {
 				writeDepsFile(baseDir, entry.getKey(), entry.getValue());
 			}
-			// Write per-method .mdeps files
 			if (!allMethodDeps.isEmpty()) {
 				writeMethodDepsFiles(baseDir, allMethodDeps);
 			}
-			// Write class-level member deps for FULL_MEMBER mode
 			if (!allMemberDeps.isEmpty()) {
 				writeMemberDepsFiles(baseDir, allMemberDeps);
 			}
-			// Write method-level member deps for FULL_MEMBER mode
 			if (!allMethodMemberDeps.isEmpty()) {
 				writeMethodMemberDepsFiles(baseDir, allMethodMemberDeps);
 			}
 			AgentLogger.log("[flush] Wrote incremental .deps files to " + outputDir);
-			// Also try direct merge when indexFile is set, so the index is available
-			// immediately.
-			// Failure is non-fatal — .deps files are already written and can be aggregated
-			// later.
-			if (indexFile != null && !indexFile.isEmpty()) {
-				if (tryDirectMerge(allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps)) {
-					AgentLogger.log("[flush] Also merged directly into " + indexFile);
-					AgentLogger.info("Written dependency index with " + allDeps.size() + " entries to " + indexFile);
-				}
-			}
-			return;
-		}
-
-		// Fallback: only use direct merge when no outputDir is configured (edge case)
-		if (indexFile != null && !indexFile.isEmpty()) {
-			if (tryDirectMerge(allDeps, allMethodDeps, allMemberDeps, allMethodMemberDeps)) {
-				AgentLogger.info("Written dependency index with " + allDeps.size() + " entries to " + indexFile);
-			}
+		} else {
+			AgentLogger.log("[flush] No collector port and no outputDir configured — deps lost");
 		}
 	}
 
@@ -385,48 +519,10 @@ public class UsageStore {
 		return snapshot;
 	}
 
-	/**
-	 * Attempts to merge deps directly into the binary index file using
-	 * DependencyMap from the system classpath via reflection.
-	 *
-	 * @return true if successful, false if DependencyMap is not available
-	 */
-	private boolean tryDirectMerge(Map<String, Set<String>> deps, Map<String, Set<String>> methodDeps,
-			Map<String, Set<String>> memberDeps, Map<String, Set<String>> methodMemberDeps) {
-		try {
-			Class<?> depMapClass = Class.forName("me.bechberger.testorder.DependencyMap", true,
-					ClassLoader.getSystemClassLoader());
-			// Try 5-arg signature first (with member deps)
-			try {
-				Method mergeMethod = depMapClass.getMethod("mergeFromAgent", Path.class, Map.class, Map.class,
-						Map.class, Map.class);
-				mergeMethod.invoke(null, Path.of(indexFile), deps, methodDeps, memberDeps, methodMemberDeps);
-				return true;
-			} catch (NoSuchMethodException ignore) {
-				// fall through to 3-arg
-			}
-			// Try 3-arg signature (without member deps)
-			try {
-				Method mergeMethod = depMapClass.getMethod("mergeFromAgent", Path.class, Map.class, Map.class);
-				mergeMethod.invoke(null, Path.of(indexFile), deps, methodDeps);
-				return true;
-			} catch (NoSuchMethodException ignore) {
-				// fall through to 2-arg
-			}
-			// Try 2-arg signature (oldest)
-			Method mergeMethod = depMapClass.getMethod("mergeFromAgent", Path.class, Map.class);
-			mergeMethod.invoke(null, Path.of(indexFile), deps);
-			return true;
-		} catch (Exception e) {
-			AgentLogger.error("Direct index merge failed, falling back to .deps files", e);
-			return false;
-		}
-	}
-
 	private void writeDepsFile(Path baseDir, String testClass, Set<String> deps) {
 		Path outFile = baseDir.resolve(testClass + ".deps");
 		try {
-			Files.write(outFile, deps.stream().sorted().toList());
+			Files.write(outFile, new ArrayList<>(deps));
 		} catch (IOException e) {
 			AgentLogger.error("Failed to write deps file: " + outFile, e);
 		}
@@ -445,7 +541,7 @@ public class UsageStore {
 			try {
 				List<String> lines = new ArrayList<>(entry.getValue().size() + 1);
 				lines.add("# " + entry.getKey());
-				entry.getValue().stream().sorted().forEach(lines::add);
+				lines.addAll(entry.getValue());
 				Files.write(outFile, lines);
 			} catch (IOException e) {
 				AgentLogger.error("Failed to write mdeps file: " + outFile, e);
@@ -461,7 +557,7 @@ public class UsageStore {
 		for (var entry : memberDeps.entrySet()) {
 			Path outFile = baseDir.resolve(entry.getKey() + ".members");
 			try {
-				Files.write(outFile, entry.getValue().stream().sorted().toList());
+				Files.write(outFile, new ArrayList<>(entry.getValue()));
 			} catch (IOException e) {
 				AgentLogger.error("Failed to write members file: " + outFile, e);
 			}
@@ -479,7 +575,7 @@ public class UsageStore {
 			try {
 				List<String> lines = new ArrayList<>(entry.getValue().size() + 1);
 				lines.add("# " + entry.getKey());
-				entry.getValue().stream().sorted().forEach(lines::add);
+				lines.addAll(entry.getValue());
 				Files.write(outFile, lines);
 			} catch (IOException e) {
 				AgentLogger.error("Failed to write mmembers file: " + outFile, e);

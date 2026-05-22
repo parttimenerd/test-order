@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
@@ -108,27 +107,22 @@ public final class ChangeAnalysis {
 			state = new TestOrderState();
 		}
 
-		// ── Change detection (parallel) ─────────────────────────────
-		CompletableFuture<Set<String>> changedFuture = CompletableFuture
+		// ── Change detection ────────────────────────────────────────
+		// Parallelize production and test source detection (independent git operations)
+		var prodChangeFuture = java.util.concurrent.CompletableFuture
 				.supplyAsync(() -> ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(),
 						ctx.projectRoot(), ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log()));
+		var testChangeFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+			try {
+				return ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
+						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log());
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
 
-		CompletableFuture<Set<String>> changedTestsFuture = CompletableFuture.supplyAsync(
-				() -> ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
-						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log()));
-
-		CompletableFuture<Set<String>> changedMethodsFuture;
-		if (opts.includeMethodChanges() && ctx.methodOrderingEnabled() && ctx.methodHashFile() != null
-				&& ctx.testSourceRoot() != null) {
-			changedMethodsFuture = CompletableFuture.supplyAsync(() -> ChangeDetectionOps
-					.detectChangedMethods(ctx.testSourceRoot(), ctx.methodHashFile(), ctx.log()));
-		} else {
-			changedMethodsFuture = CompletableFuture.completedFuture(Set.of());
-		}
-
-		Set<String> changed = changedFuture.join();
-		Set<String> changedTests = changedTestsFuture.join();
-		Set<String> changedMethods = changedMethodsFuture.join();
+		Set<String> changed = prodChangeFuture.join();
+		Set<String> changedTests = testChangeFuture.join();
 
 		if (opts.filterToModule() && ctx.testClassesDir() != null && Files.isDirectory(ctx.testClassesDir())) {
 			Set<String> moduleTests = TestClassDiscovery.scanTestClasses(ctx.testClassesDir());
@@ -136,6 +130,13 @@ public final class ChangeAnalysis {
 				changedTests = changedTests.stream().filter(moduleTests::contains)
 						.collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
 			}
+		}
+
+		Set<String> changedMethods = Set.of();
+		if (opts.includeMethodChanges() && ctx.methodOrderingEnabled() && ctx.methodHashFile() != null
+				&& ctx.testSourceRoot() != null) {
+			changedMethods = ChangeDetectionOps.detectChangedMethods(ctx.testSourceRoot(), ctx.methodHashFile(),
+					ctx.log());
 		}
 
 		// ── Weight resolution ───────────────────────────────────────

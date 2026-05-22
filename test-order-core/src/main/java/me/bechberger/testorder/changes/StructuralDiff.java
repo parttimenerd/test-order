@@ -148,7 +148,12 @@ public class StructuralDiff {
 		for (String relPath : relevantPaths) {
 			Path absFile = gitRoot.resolve(relPath).normalize();
 			String oldSource = oldSources.get(relPath);
-			String newSource = Files.exists(absFile) ? Files.readString(absFile) : null;
+			String newSource;
+			try {
+				newSource = Files.readString(absFile);
+			} catch (java.nio.file.NoSuchFileException e) {
+				newSource = null;
+			}
 			if (oldSource == null && newSource == null)
 				continue;
 			pairs.add(new FilePair(absFile, oldSource != null ? oldSource : "", newSource != null ? newSource : ""));
@@ -403,7 +408,8 @@ public class StructuralDiff {
 			List<SourceFileModel.MethodNode> methods) {
 		Map<String, List<SourceFileModel.MethodNode>> map = new LinkedHashMap<>();
 		for (var m : methods) {
-			map.computeIfAbsent(m.enclosingFqcn() + "#" + m.name(), k -> new ArrayList<>()).add(m);
+			String key = m.enclosingFqcn() + "#" + m.name();
+			map.computeIfAbsent(key, k -> new ArrayList<>()).add(m);
 		}
 		return map;
 	}

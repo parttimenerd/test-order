@@ -9,7 +9,7 @@ The data feeds the ordering/scoring engine to prioritise tests covering recently
 2. **Bootstrap** — `Agent.premain` extracts `test-order-runtime.jar` into a temp file and
    adds it to the bootstrap classpath so `UsageStore` is visible to all classloaders.
 3. **Instrument** — `ClassTransformer` (Javassist) injects `UsageStore.recordUsageIdFast(id)`
-   at every method/constructor entry. `FULL`/`FULL_METHOD`/`FULL_MEMBER` modes also track
+   at every method/constructor entry. `CLASS`/`METHOD`/`MEMBER` modes also track
    field accesses.
 4. **Track** — `UsageStore` holds a volatile `ActiveTrackers` reference. Recording is a
    no-op until the active tracker is set.
@@ -37,15 +37,14 @@ appropriate listener JAR to the test classpath yourself.**
 
 | Mode               | Field tracking                      | Overhead |
 |--------------------|-------------------------------------|----------|
-| `METHOD_ENTRY`     | None                                | ~66%     |
-| `FULL` *(default)* | Static only                         | ~66%     |
-| `FULL_METHOD`      | Static only + per-method deps       | ~68%     |
-| `FULL_MEMBER`      | Instance + static + per-method deps | ~121%    |
+| `CLASS` *(default)* | Static only                         | ~66%     |
+| `METHOD`           | Static only + per-method deps       | ~68%     |
+| `MEMBER`           | Instance + static + per-method deps | ~121%    |
 
 ## Agent arguments
 
 ```
--javaagent:/path/to/test-order-agent.jar=outputDir=target/test-order-deps,mode=FULL,indexFile=test-dependencies.lz4,includePackages=com.example;org.app
+-javaagent:/path/to/test-order-agent.jar=outputDir=target/test-order-deps,mode=CLASS,indexFile=test-dependencies.lz4,includePackages=com.example;org.app
 ```
 
 | Option                 | Default                  | Description                                          |

@@ -55,18 +55,18 @@ class FieldsMethodsWorkflowIT {
 
 	@Test
 	@Order(1)
-	@DisplayName("Learn FULL_MEMBER: captures member-level dependencies in the binary index")
+	@DisplayName("Learn MEMBER: captures member-level dependencies in the binary index")
 	void learnFullMemberCapturesMemberDependencies() {
 		project.cleanAll();
 
 		MavenResult result = project.maven().run("clean", "test", "-Dtestorder.mode=learn",
-				"-Dtestorder.instrumentation.mode=FULL_MEMBER");
+				"-Dtestorder.instrumentation.mode=MEMBER");
 		assertThat(result).succeeded().outputContains("Tests run:");
 
 		DependencyMap depMap = project.loadIndex();
 		assertThat(depMap).isLoaded().hasSize(16);
 		org.assertj.core.api.Assertions.assertThat(depMap.hasMemberDeps())
-				.as("FULL_MEMBER learn mode should persist member-level dependencies").isTrue();
+				.as("MEMBER learn mode should persist member-level dependencies").isTrue();
 
 		Set<String> itemMembers = depMap.getMemberDeps(ITEM_METHODS_TEST);
 		Set<String> metadataMembers = depMap.getMemberDeps(METADATA_METHODS_TEST);
@@ -85,7 +85,7 @@ class FieldsMethodsWorkflowIT {
 		project.cleanAll();
 
 		MavenResult learn = project.maven().run("clean", "test", "-Dtestorder.mode=learn",
-				"-Dtestorder.instrumentation.mode=FULL_MEMBER");
+				"-Dtestorder.instrumentation.mode=MEMBER");
 		assertThat(learn).succeeded();
 
 		MavenResult snapshot = project.maven().snapshot();

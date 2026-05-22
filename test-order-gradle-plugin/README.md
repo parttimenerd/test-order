@@ -144,11 +144,10 @@ testOrder {
     mode = "auto"
 
     // Agent instrumentation depth:
-    //   METHOD_ENTRY — only records method entries (fastest, least precise)
-    //   FULL         — method entries + field accesses (default, good balance)
-    //   FULL_METHOD  — like FULL but records per-method dependencies
-    //   FULL_MEMBER  — most detailed: per-method deps + field accesses
-    instrumentationMode = "FULL"
+    //   CLASS   — method entries + field accesses (default, good balance)
+    //   METHOD  — like CLASS but records per-method dependencies
+    //   MEMBER  — most detailed: per-method deps + field accesses
+    instrumentationMode = "CLASS"
 
     // Comma-separated package prefixes to instrument.
     // Auto-detected from src/main/java if left empty.

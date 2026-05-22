@@ -30,16 +30,11 @@ public class HelpMojo extends AbstractMojo {
 	public void execute() throws MojoExecutionException {
 		StringBuilder sb = new StringBuilder();
 		sb.append("\ntest-order-maven-plugin — Test prioritisation and selection for Maven\n\n");
-		sb.append("Quick start:\n");
-		sb.append("  1) First run:  mvn clean test\n");
-		sb.append("  2) Inspect:    mvn test-order:show\n");
-		sb.append("  3) Dashboard:  mvn test-order:dashboard\n");
-		sb.append("  CI fast path:  mvn test-order:select test && mvn test-order:run-remaining test\n");
-		sb.append("\n");
 		sb.append("Goals:\n");
 		sb.append("  prepare          Configure Surefire for learn or order mode (bound to process-test-classes)\n");
 		sb.append("  auto             Auto local dev mode: learn if needed, then run selected subset\n");
 		sb.append("  learn            Explicitly run in learn mode: instrument tests and build dependency index\n");
+		sb.append("  instrument       Offline instrumentation: transform classes at build time (no agent needed)\n");
 		sb.append("  select           Select a fast CI subset (top-n + random diverse fast tests)\n");
 		sb.append("  run-remaining    Run the tests deferred by a previous select invocation\n");
 		sb.append("  tiered-select    Select tests into tier1/tier2/tier3 CI phases\n");
@@ -66,7 +61,7 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  -Dtestorder.mode=<mode>          auto (default), learn, order, skip\n");
 		sb.append(
 				"  -Dtestorder.changeMode=<mode>    uncommitted (default), since-last-run, since-last-commit, explicit\n");
-		sb.append("  -Dtestorder.instrumentation.mode=<m>  FULL (default), METHOD_ENTRY, FULL_METHOD, FULL_MEMBER\n");
+		sb.append("  -Dtestorder.instrumentation.mode=<m>  CLASS (default), METHOD, MEMBER\n");
 		sb.append(
 				"  -Dtestorder.select.topN=<n>      Number of top-scored tests to select (default: -1, all affected)\n");
 		sb.append("  -Dtestorder.select.randomM=<m>   Random fast tests for coverage diversity (default: 10)\n");
@@ -119,7 +114,7 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  CLI system properties (-D) always override POM <configuration> values.\n");
 		sb.append("  Example: -Dtestorder.mode=learn overrides <mode>order</mode> in your POM.\n");
 		sb.append("\nTypical usage:\n");
-		sb.append("  First run:   mvn clean test                    (auto-learns dependency index)\n");
+		sb.append("  Quick start: mvn clean test                    (auto-learns dependency index)\n");
 		sb.append("  Next runs:   mvn clean test                    (auto-orders by priority)\n");
 		sb.append("  CI fast:     mvn test-order:select test        (run only high-priority subset)\n");
 		sb.append("  CI rest:     mvn test-order:run-remaining test (run deferred tests)\n");
@@ -127,7 +122,7 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("               mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2\n");
 		sb.append("               mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3\n");
 		sb.append("  Dashboard:   mvn test-order:dashboard          (generate HTML report)\n");
-		sb.append("  Show report: mvn test-order:show               (class/method/ML view)\n");
+		sb.append("  Show report: mvn test-order:show               (unified class/method/health view)\n");
 		sb.append("  Diagnose:    mvn test-order:diagnose           (check setup health)\n");
 		sb.append("  Detect OD:  mvn test-order:detect-dependencies  (find order-dependent tests)\n");
 		sb.append("  Coverage:    mvn test-order:coverage           (writes to target/coverage-reports/)\n");

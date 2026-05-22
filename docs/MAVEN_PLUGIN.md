@@ -232,13 +232,12 @@ Collect dependency data:
 mvn test -Dtestorder.mode=learn
 ```
 
-By default this uses `FULL` instrumentation.
+By default this uses `CLASS` instrumentation.
 To use a different instrumentation mode:
 
 ```bash
-mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=METHOD_ENTRY
-mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=FULL_METHOD
-mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=FULL_MEMBER
+mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=METHOD
+mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=MEMBER
 ```
 
 This run writes/updates `.test-order/test-dependencies.lz4` directly.
@@ -471,7 +470,7 @@ jobs:
 | `depsDir` | `testorder.depsDir` | `${project.build.directory}/test-order-deps` | Directory for `.deps` files |
 | `includePackages` | `testorder.includePackages` | — | Additional comma-separated package prefixes to instrument |
 | `filterByGroupId` | `testorder.filterByGroupId` | `true` | Fall back to groupId when no source packages are detected |
-| `instrumentationMode` | `testorder.instrumentation.mode` | `FULL` | `FULL`, `METHOD_ENTRY`, `FULL_METHOD`, or `FULL_MEMBER` |
+| `instrumentationMode` | `testorder.instrumentation.mode` | `CLASS` | `CLASS`, `METHOD`, or `MEMBER` |
 | `changeMode` | `testorder.changeMode` | `uncommitted` | `auto`, `since-last-run`, `since-last-commit`, `uncommitted`, `explicit` |
 | `changedClasses` | `testorder.changed.classes` | — | Explicit changed class FQCNs |
 | `hashFile` | `testorder.hashFile` | `${project.basedir}/.test-order/hashes.lz4` | LZ4-compressed hash store |
@@ -569,7 +568,7 @@ java -javaagent:test-order-agent.jar=outputDir=target/test-order-deps,includePac
 |---|---|---|
 | `outputDir` | `target/test-order-deps` | Directory for `.deps` files |
 | `includePackages` | — | Semicolon-separated package prefixes to instrument |
-| `mode` | `FULL` | `FULL`, `METHOD_ENTRY`, `FULL_METHOD`, or `FULL_MEMBER` |
+| `mode` | `CLASS` | `CLASS`, `METHOD`, or `MEMBER` |
 
 ## CLI Tool
 

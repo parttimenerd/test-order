@@ -10,34 +10,34 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
-class ClassTransformerTest {
+class AsmClassTransformerTest {
 
-	private ClassTransformer createTransformer(String... includePackages) {
+	private AsmClassTransformer createTransformer(String... includePackages) {
 		Agent agent = Agent.parse((includePackages.length == 0
 				? "autoDetectPackages=false"
 				: "includePackages=" + String.join(";", includePackages)));
-		return new ClassTransformer(agent);
+		return new AsmClassTransformer(agent);
 	}
 
-	private ClassTransformer createTransformerWithMode(Agent.InstrumentationMode mode) {
+	private AsmClassTransformer createTransformerWithMode(Agent.InstrumentationMode mode) {
 		Agent agent = Agent.parse("mode=" + mode.name() + ",includePackages=com.example.app");
-		return new ClassTransformer(agent);
+		return new AsmClassTransformer(agent);
 	}
 
 	// ── shouldInstrument: always-skip prefixes ─────────────────────────────────
 
 	@Test
 	void skipsJdkClasses() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		byte[] input = new byte[]{1, 2, 3};
-		assertSame(input, t.transform(null, null, "java/lang/String", null, null, input));
-		assertSame(input, t.transform(null, null, "sun/misc/Unsafe", null, null, input));
-		assertSame(input, t.transform(null, null, "jdk/internal/misc/Unsafe", null, null, input));
+		assertNull(t.transform(null, null, "java/lang/String", null, null, input));
+		assertNull(t.transform(null, null, "sun/misc/Unsafe", null, null, input));
+		assertNull(t.transform(null, null, "jdk/internal/misc/Unsafe", null, null, input));
 	}
 
 	@Test
 	void skipsComSunClasses() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		// com/sun/** are JDK internal classes and must never be instrumented
 		assertFalse(t.shouldInstrument("com/sun/crypto/provider/AESCipher"));
 		assertFalse(t.shouldInstrument("com/sun/net/httpserver/HttpsConfigurator"));
@@ -45,24 +45,24 @@ class ClassTransformerTest {
 
 	@Test
 	void skipsJavaxAndJakartaClasses() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		assertFalse(t.shouldInstrument("javax/sql/DataSource"));
 		assertFalse(t.shouldInstrument("jakarta/persistence/Entity"));
 	}
 
 	@Test
 	void skipsOwnAgentClasses() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		byte[] input = new byte[]{1, 2, 3};
-		assertSame(input, t.transform(null, null, "me/bechberger/testorder/agent/Agent", null, null, input));
-		assertFalse(t.shouldInstrument("me/bechberger/testorder/agent/ClassTransformer"));
+		assertNull(t.transform(null, null, "me/bechberger/testorder/agent/Agent", null, null, input));
+		assertFalse(t.shouldInstrument("me/bechberger/testorder/agent/AsmClassTransformer"));
 	}
 
 	// ── shouldInstrument: generated / synthetic classes ───────────────────────
 
 	@Test
 	void skipsGeneratedClasses() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		assertFalse(t.shouldInstrument("com/example/MyService$$EnhancerBySpringCGLIB"));
 		assertFalse(t.shouldInstrument("com/example/MyService$Proxy42"));
 		assertFalse(t.shouldInstrument("com/example/MyRepo$$MockitoMock"));
@@ -72,7 +72,7 @@ class ClassTransformerTest {
 
 	@Test
 	void skipsModuleInfo() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		// module-info is a pseudo-class descriptor, not instrumentable
 		assertFalse(t.shouldInstrument("module-info"));
 		assertFalse(t.shouldInstrument("com/example/module-info"));
@@ -80,7 +80,7 @@ class ClassTransformerTest {
 
 	@Test
 	void doesNotSkipFrameworkClasses() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		// plain framework classes (no generated markers) are candidates
 		assertTrue(t.shouldInstrument("org/springframework/beans/BeanUtils"));
 		assertTrue(t.shouldInstrument("org/hibernate/Session"));
@@ -88,7 +88,7 @@ class ClassTransformerTest {
 
 	@Test
 	void doesNotSkipLegitimateInnerClasses() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		// inner classes with $ in the name are valid source-compiled classes
 		assertTrue(t.shouldInstrument("com/example/Outer$Inner"));
 		assertTrue(t.shouldInstrument("com/example/Builder$Step1"));
@@ -98,31 +98,33 @@ class ClassTransformerTest {
 
 	@Test
 	void skipsNullClassName() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		byte[] input = new byte[]{1, 2, 3};
-		assertSame(input, t.transform(null, null, null, null, null, input));
+		assertNull(t.transform(null, null, null, null, null, input));
 	}
 
 	// ── shouldInstrument: includePackages filter ───────────────────────────────
 
 	@Test
 	void includePackagesFilterAllowsMatchingClass() {
-		ClassTransformer t = createTransformer("com.example");
+		AsmClassTransformer t = createTransformer("com.example");
+		// class passes the filter (matching package)
+		assertTrue(t.shouldInstrument("com/example/MyClass"));
+		// with invalid bytecode, transform catches error and returns null
 		byte[] input = new byte[]{1, 2, 3};
-		// attempt to instrument — invalid bytecode → falls back to original
-		assertSame(input, t.transform(null, null, "com/example/MyClass", null, null, input));
+		assertNull(t.transform(null, null, "com/example/MyClass", null, null, input));
 	}
 
 	@Test
 	void includePackagesFilterRejectsNonMatchingClass() {
-		ClassTransformer t = createTransformer("com.example");
+		AsmClassTransformer t = createTransformer("com.example");
 		byte[] input = new byte[]{1, 2, 3};
-		assertSame(input, t.transform(null, null, "org/other/MyClass", null, null, input));
+		assertNull(t.transform(null, null, "org/other/MyClass", null, null, input));
 	}
 
 	@Test
 	void multipleIncludePackagesAllowAnyMatch() {
-		ClassTransformer t = createTransformer("com.example", "org.myapp");
+		AsmClassTransformer t = createTransformer("com.example", "org.myapp");
 		assertTrue(t.shouldInstrument("com/example/Foo"));
 		assertTrue(t.shouldInstrument("org/myapp/Bar"));
 		assertFalse(t.shouldInstrument("net/other/Baz"));
@@ -130,28 +132,28 @@ class ClassTransformerTest {
 
 	@Test
 	void withoutIncludePackagesAllUserClassesAreCandidate() {
-		ClassTransformer t = createTransformer();
+		AsmClassTransformer t = createTransformer();
 		assertTrue(t.shouldInstrument("com/myapp/SomeClass"));
 		assertTrue(t.shouldInstrument("org/springframework/beans/BeanUtils"));
 	}
 
 	@Test
 	void includePackagesStillSkipsJdkClasses() {
-		ClassTransformer t = createTransformer("java.lang");
+		AsmClassTransformer t = createTransformer("java.lang");
 		// JDK classes are always skipped, even if they match includePackages
 		assertFalse(t.shouldInstrument("java/lang/String"));
 	}
 
 	@Test
 	void includePackagesStillSkipsGeneratedClasses() {
-		ClassTransformer t = createTransformer("com.example");
+		AsmClassTransformer t = createTransformer("com.example");
 		// generated markers take priority over includePackages
 		assertFalse(t.shouldInstrument("com/example/MyService$$EnhancerBySpringCGLIB"));
 	}
 
 	@Test
 	void transformsLoadableApplicationClassBytes() throws IOException {
-		ClassTransformer t = createTransformer("com.example.app");
+		AsmClassTransformer t = createTransformer("com.example.app");
 		byte[] input;
 		try (InputStream in = com.example.app.SampleAppClass.class.getResourceAsStream("SampleAppClass.class")) {
 			assertNotNull(in);
@@ -167,37 +169,37 @@ class ClassTransformerTest {
 
 	@Test
 	void defaultModeIsFull() {
-		ClassTransformer t = createTransformer();
-		// default Agent mode is FULL — verifiable via transform behaviour:
-		// a matching class with invalid bytecode still returns the input unchanged
+		AsmClassTransformer t = createTransformer();
+		// default Agent mode is FULL — class passes filter but invalid bytecode
+		// triggers error → null
 		byte[] input = new byte[]{1, 2, 3};
-		assertSame(input, t.transform(null, null, "com/myapp/Foo", null, null, input));
+		assertTrue(t.shouldInstrument("com/myapp/Foo"));
+		assertNull(t.transform(null, null, "com/myapp/Foo", null, null, input));
 	}
 
 	@Test
 	void allModesCreateTransformer() {
 		// just verify the transformer can be instantiated for each mode
-		assertDoesNotThrow(() -> createTransformerWithMode(Agent.InstrumentationMode.METHOD_ENTRY));
-		assertDoesNotThrow(() -> createTransformerWithMode(Agent.InstrumentationMode.FULL));
+		assertDoesNotThrow(() -> createTransformerWithMode(Agent.InstrumentationMode.CLASS));
+		assertDoesNotThrow(() -> createTransformerWithMode(Agent.InstrumentationMode.METHOD));
+		assertDoesNotThrow(() -> createTransformerWithMode(Agent.InstrumentationMode.MEMBER));
 	}
 
 	@Test
 	void fieldTrackingModeMatchesInstrumentationMode() {
-		assertEquals(ClassTransformer.FieldTrackingMode.NONE,
-				ClassTransformer.fieldTrackingModeFor(Agent.InstrumentationMode.METHOD_ENTRY));
-		assertEquals(ClassTransformer.FieldTrackingMode.STATIC_ONLY,
-				ClassTransformer.fieldTrackingModeFor(Agent.InstrumentationMode.FULL));
-		assertEquals(ClassTransformer.FieldTrackingMode.STATIC_ONLY,
-				ClassTransformer.fieldTrackingModeFor(Agent.InstrumentationMode.FULL_METHOD));
-		assertEquals(ClassTransformer.FieldTrackingMode.ALL,
-				ClassTransformer.fieldTrackingModeFor(Agent.InstrumentationMode.FULL_MEMBER));
+		assertEquals(AsmClassTransformer.FieldTrackingMode.STATIC_ONLY,
+				AsmClassTransformer.fieldTrackingModeFor(Agent.InstrumentationMode.CLASS));
+		assertEquals(AsmClassTransformer.FieldTrackingMode.STATIC_ONLY,
+				AsmClassTransformer.fieldTrackingModeFor(Agent.InstrumentationMode.METHOD));
+		assertEquals(AsmClassTransformer.FieldTrackingMode.STATIC_ONLY,
+				AsmClassTransformer.fieldTrackingModeFor(Agent.InstrumentationMode.MEMBER));
 	}
 
 	// ── bytecode instrumentation: constructors ─────────────────────────────────
 
 	@Test
 	void transformsClassWithConstructors() throws IOException {
-		ClassTransformer t = createTransformer("com.example.app");
+		AsmClassTransformer t = createTransformer("com.example.app");
 		byte[] input = loadClassBytes(com.example.app.SampleWithConstructor.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleWithConstructor",
 				null, null, input);
@@ -208,7 +210,7 @@ class ClassTransformerTest {
 
 	@Test
 	void transformedConstructorClassIsLoadable() throws Exception {
-		ClassTransformer t = createTransformer("com.example.app");
+		AsmClassTransformer t = createTransformer("com.example.app");
 		byte[] input = loadClassBytes(com.example.app.SampleWithConstructor.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleWithConstructor",
 				null, null, input);
@@ -225,7 +227,7 @@ class ClassTransformerTest {
 
 	@Test
 	void transformsClassWithStaticInitializer() throws IOException {
-		ClassTransformer t = createTransformer("com.example.app");
+		AsmClassTransformer t = createTransformer("com.example.app");
 		byte[] input = loadClassBytes(com.example.app.SampleWithStaticInit.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleWithStaticInit",
 				null, null, input);
@@ -235,7 +237,7 @@ class ClassTransformerTest {
 
 	@Test
 	void transformedStaticInitClassIsLoadable() throws Exception {
-		ClassTransformer t = createTransformer("com.example.app");
+		AsmClassTransformer t = createTransformer("com.example.app");
 		byte[] input = loadClassBytes(com.example.app.SampleWithStaticInit.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleWithStaticInit",
 				null, null, input);
@@ -248,7 +250,7 @@ class ClassTransformerTest {
 
 	@Test
 	void transformsClassWithFieldAccesses() throws IOException {
-		ClassTransformer t = createTransformerWithMode(Agent.InstrumentationMode.FULL);
+		AsmClassTransformer t = createTransformerWithMode(Agent.InstrumentationMode.CLASS);
 		byte[] input = loadClassBytes(com.example.app.SampleWithFields.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleWithFields", null,
 				null, input);
@@ -258,7 +260,7 @@ class ClassTransformerTest {
 
 	@Test
 	void transformedFieldAccessClassIsLoadable() throws Exception {
-		ClassTransformer t = createTransformerWithMode(Agent.InstrumentationMode.FULL);
+		AsmClassTransformer t = createTransformerWithMode(Agent.InstrumentationMode.CLASS);
 		byte[] input = loadClassBytes(com.example.app.SampleWithFields.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleWithFields", null,
 				null, input);
@@ -274,7 +276,7 @@ class ClassTransformerTest {
 
 	@Test
 	void transformsClassImplementingInterface() throws IOException {
-		ClassTransformer t = createTransformer("com.example.app");
+		AsmClassTransformer t = createTransformer("com.example.app");
 		byte[] input = loadClassBytes(com.example.app.SampleImplementation.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleImplementation",
 				null, null, input);
@@ -284,7 +286,7 @@ class ClassTransformerTest {
 
 	@Test
 	void transformedInterfaceImplIsLoadable() throws Exception {
-		ClassTransformer t = createTransformer("com.example.app");
+		AsmClassTransformer t = createTransformer("com.example.app");
 		byte[] input = loadClassBytes(com.example.app.SampleImplementation.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleImplementation",
 				null, null, input);
@@ -298,7 +300,7 @@ class ClassTransformerTest {
 	@ParameterizedTest
 	@EnumSource(Agent.InstrumentationMode.class)
 	void allModesProduceValidBytecodeForSimpleClass(Agent.InstrumentationMode mode) throws Exception {
-		ClassTransformer t = createTransformerWithMode(mode);
+		AsmClassTransformer t = createTransformerWithMode(mode);
 		byte[] input = loadClassBytes(com.example.app.SampleAppClass.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleAppClass", null,
 				null, input);
@@ -312,7 +314,7 @@ class ClassTransformerTest {
 	@ParameterizedTest
 	@EnumSource(Agent.InstrumentationMode.class)
 	void allModesProduceValidBytecodeForConstructorClass(Agent.InstrumentationMode mode) throws Exception {
-		ClassTransformer t = createTransformerWithMode(mode);
+		AsmClassTransformer t = createTransformerWithMode(mode);
 		byte[] input = loadClassBytes(com.example.app.SampleWithConstructor.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleWithConstructor",
 				null, null, input);
@@ -325,7 +327,7 @@ class ClassTransformerTest {
 	@ParameterizedTest
 	@EnumSource(Agent.InstrumentationMode.class)
 	void allModesProduceValidBytecodeForFieldsClass(Agent.InstrumentationMode mode) throws Exception {
-		ClassTransformer t = createTransformerWithMode(mode);
+		AsmClassTransformer t = createTransformerWithMode(mode);
 		byte[] input = loadClassBytes(com.example.app.SampleWithFields.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleWithFields", null,
 				null, input);
@@ -338,7 +340,7 @@ class ClassTransformerTest {
 	@ParameterizedTest
 	@EnumSource(Agent.InstrumentationMode.class)
 	void allModesProduceValidBytecodeForInterfaceImpl(Agent.InstrumentationMode mode) throws Exception {
-		ClassTransformer t = createTransformerWithMode(mode);
+		AsmClassTransformer t = createTransformerWithMode(mode);
 		byte[] input = loadClassBytes(com.example.app.SampleImplementation.class);
 		byte[] transformed = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleImplementation",
 				null, null, input);
@@ -351,29 +353,29 @@ class ClassTransformerTest {
 	// ── bytecode instrumentation: size increase correctness ────────────────────
 
 	@Test
-	void fullMemberModeProducesLargerBytecodeThanMethodEntry() throws IOException {
+	void fullMemberModeProducesLargerBytecodeThanFull() throws IOException {
 		byte[] input = loadClassBytes(com.example.app.SampleWithFields.class);
-		ClassTransformer methodEntry = createTransformerWithMode(Agent.InstrumentationMode.METHOD_ENTRY);
-		ClassTransformer fullMember = createTransformerWithMode(Agent.InstrumentationMode.FULL_MEMBER);
-		byte[] transformedMethodEntry = methodEntry.transform(null, getClass().getClassLoader(),
-				"com/example/app/SampleWithFields", null, null, input);
+		AsmClassTransformer full = createTransformerWithMode(Agent.InstrumentationMode.CLASS);
+		AsmClassTransformer fullMember = createTransformerWithMode(Agent.InstrumentationMode.MEMBER);
+		byte[] transformedFull = full.transform(null, getClass().getClassLoader(), "com/example/app/SampleWithFields",
+				null, null, input);
 		byte[] transformedFullMember = fullMember.transform(null, getClass().getClassLoader(),
 				"com/example/app/SampleWithFields", null, null, input);
-		// FULL_MEMBER instruments field accesses too, so should be larger
-		assertTrue(transformedFullMember.length >= transformedMethodEntry.length,
-				"FULL_MEMBER should produce equal or larger bytecode than METHOD_ENTRY");
+		// MEMBER instruments field accesses too, so should be larger
+		assertTrue(transformedFullMember.length >= transformedFull.length,
+				"MEMBER should produce equal or larger bytecode than CLASS");
 	}
 
 	// ── bytecode instrumentation: redefinition is skipped ──────────────────────
 
 	@Test
 	void skipsClassRedefinition() throws IOException {
-		ClassTransformer t = createTransformer("com.example.app");
+		AsmClassTransformer t = createTransformer("com.example.app");
 		byte[] input = loadClassBytes(com.example.app.SampleAppClass.class);
 		// Pass a non-null classBeingRedefined to simulate hot-swap
 		byte[] result = t.transform(null, getClass().getClassLoader(), "com/example/app/SampleAppClass",
 				com.example.app.SampleAppClass.class, null, input);
-		assertSame(input, result, "Redefinition should return original bytes unchanged");
+		assertNull(result, "Redefinition should return null (no transformation)");
 	}
 
 	// ── helpers ────────────────────────────────────────────────────────────────

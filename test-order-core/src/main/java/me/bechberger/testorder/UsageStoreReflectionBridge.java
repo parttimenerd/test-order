@@ -38,7 +38,7 @@ public final class UsageStoreReflectionBridge {
 	 */
 	public void init() {
 		try {
-			Class<?> usageStoreClass = Class.forName("me.bechberger.testorder.agent.runtime.UsageStore", true, null);
+			Class<?> usageStoreClass = resolveUsageStoreClass();
 			Object instance = usageStoreClass.getMethod("getInstance").invoke(null);
 			Method startClass = usageStoreClass.getMethod("startTestClass", String.class);
 			Method endClass = usageStoreClass.getMethod("endTestClass", String.class);
@@ -53,6 +53,27 @@ public final class UsageStoreReflectionBridge {
 		} catch (Exception e) {
 			usageStoreInstance = null; // ensure bridge reports as unavailable on partial failure
 			TestOrderLogger.error("Failed to initialize UsageStore reflection: {}", e.getMessage());
+		}
+	}
+
+	/**
+	 * Resolves the UsageStore class. In online (agent) mode, it's on the bootstrap
+	 * classloader. In offline mode, it's on the regular test classpath.
+	 */
+	private static Class<?> resolveUsageStoreClass() throws ClassNotFoundException {
+		try {
+			// Online mode: agent places runtime jar on bootstrap classpath
+			return Class.forName("me.bechberger.testorder.agent.runtime.UsageStore", true, null);
+		} catch (ClassNotFoundException e) {
+			// Offline mode: runtime jar on test classpath (context or system classloader)
+			ClassLoader cl = Thread.currentThread().getContextClassLoader();
+			if (cl != null) {
+				try {
+					return Class.forName("me.bechberger.testorder.agent.runtime.UsageStore", true, cl);
+				} catch (ClassNotFoundException ignored) {
+				}
+			}
+			return Class.forName("me.bechberger.testorder.agent.runtime.UsageStore");
 		}
 	}
 

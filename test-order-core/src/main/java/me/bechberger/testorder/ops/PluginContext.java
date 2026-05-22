@@ -253,7 +253,7 @@ public final class PluginContext {
 		private Long seed;
 		private Path selectedFile;
 		private Path remainingFile;
-		private String instrumentationMode = "FULL";
+		private String instrumentationMode = "CLASS";
 		private String includePackages;
 		private boolean filterByGroupId = true;
 		private String groupId;

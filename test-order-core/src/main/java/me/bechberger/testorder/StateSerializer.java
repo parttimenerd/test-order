@@ -28,9 +28,8 @@ final class StateSerializer {
 				Files.createDirectories(parent);
 			}
 			Path tempFile = PersistenceSupport.temporarySibling(file);
-			try (var writer = new java.io.OutputStreamWriter(
-					LZ4Support.blockOutputStream(Files.newOutputStream(tempFile), 1 << 16, LZ4Support.fastCompressor()),
-					StandardCharsets.UTF_8)) {
+			try (var writer = new java.io.OutputStreamWriter(LZ4Support.blockOutputStream(
+					Files.newOutputStream(tempFile), 1 << 16, LZ4Support.highCompressor(9)), StandardCharsets.UTF_8)) {
 				writer.write(PrettyPrinter.compactPrint(state.toPersistedRoot()));
 			}
 			PersistenceSupport.moveIntoPlace(tempFile, file);

@@ -1,6 +1,7 @@
 package me.bechberger.testorder.ops;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -31,10 +32,16 @@ public final class ShowOrderOperation {
 	 * Checks whether a compiled {@code .class} file looks like a JUnit test class
 	 * by scanning the constant pool for JUnit test annotation descriptors.
 	 */
+	/**
+	 * Read at most 16 KB — annotation descriptors live in the constant pool near
+	 * the file start.
+	 */
+	private static final int CLASS_SCAN_LIMIT = 16 * 1024;
+
 	public static boolean looksLikeTestClass(Path classFile) {
-		try {
-			byte[] bytes = Files.readAllBytes(classFile);
-			String content = new String(bytes, StandardCharsets.ISO_8859_1);
+		try (InputStream in = Files.newInputStream(classFile)) {
+			byte[] buf = in.readNBytes(CLASS_SCAN_LIMIT);
+			String content = new String(buf, StandardCharsets.ISO_8859_1);
 			return content.contains("Lorg/junit/jupiter/api/Test;")
 					|| content.contains("Lorg/junit/jupiter/api/TestFactory;")
 					|| content.contains("Lorg/junit/jupiter/api/RepeatedTest;")
@@ -116,12 +123,15 @@ public final class ShowOrderOperation {
 		allTests.addAll(changedTests);
 		if (testClassesDir != null && Files.isDirectory(testClassesDir)) {
 			try (var walk = Files.walk(testClassesDir)) {
-				walk.filter(p -> p.toString().endsWith(".class") && !p.toString().contains("$"))
-						.filter(ShowOrderOperation::looksLikeTestClass).forEach(p -> {
-							String relative = testClassesDir.relativize(p).toString();
-							String fqcn = relative.replace('/', '.').replace('\\', '.').replaceAll("\\.class$", "");
-							allTests.add(fqcn);
-						});
+				walk.filter(p -> {
+					String name = p.toString();
+					return name.endsWith(".class") && !name.contains("$");
+				}).filter(ShowOrderOperation::looksLikeTestClass).forEach(p -> {
+					String relative = testClassesDir.relativize(p).toString();
+					// We know it ends with ".class" (6 chars) from the filter above
+					String fqcn = relative.substring(0, relative.length() - 6).replace('/', '.').replace('\\', '.');
+					allTests.add(fqcn);
+				});
 			} catch (IOException e) {
 				// best effort
 			}

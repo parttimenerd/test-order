@@ -223,27 +223,6 @@ class EndToEndServiceIT {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
-	// 7. METHOD_ENTRY INSTRUMENTATION
-	// ═══════════════════════════════════════════════════════════════════
-
-	@Test
-	@Order(40)
-	@DisplayName("Learn with METHOD_ENTRY: still captures method-level dependencies")
-	void learnMethodEntryMode() {
-		project.cleanAll();
-
-		MavenResult result = project.maven().learnMethodEntry();
-		assertThat(result).succeeded();
-
-		DependencyMap depMap = project.loadIndex();
-		assertThat(depMap).isLoaded().hasSize(8);
-
-		// METHOD_ENTRY should still capture constructor/method calls
-		assertThat(depMap).hasDependency(ORDER_SERVICE_TEST, ORDER_SERVICE)
-				.hasDependency(ORDER_SERVICE_TEST, USER_SERVICE).hasDependency(USER_TEST, USER);
-	}
-
-	// ═══════════════════════════════════════════════════════════════════
 	// 8. IDEMPOTENT LEARN
 	// ═══════════════════════════════════════════════════════════════════
 

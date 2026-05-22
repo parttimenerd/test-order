@@ -158,6 +158,7 @@ public final class MLFeatureExtractor {
 	public static List<TrainingExample> extractTrainingExamples(List<MLRunRecord> history, DependencyMap depMap) {
 		List<TrainingExample> examples = new ArrayList<>();
 		Map<String, TestStats> incrementalStats = new HashMap<>();
+		Map<String, String> statsPackageCache = new HashMap<>();
 		CoFailureTracker incrementalCoFailure = new CoFailureTracker();
 
 		for (MLRunRecord run : history) {
@@ -167,11 +168,12 @@ public final class MLFeatureExtractor {
 
 			for (MLTestOutcome outcome : run.outcomes()) {
 				double[] features = extract(outcome.testClass(), depMap, incrementalCoFailure, changedClasses,
-						changedTestClasses, incrementalStats);
+						changedTestClasses, incrementalStats, statsPackageCache);
 				examples.add(new TrainingExample(features, outcome.failed()));
 
 				// Update stats AFTER extraction (temporal correctness)
 				updateStats(incrementalStats, outcome);
+				statsPackageCache.putIfAbsent(outcome.testClass(), extractPackage(outcome.testClass()));
 				if (outcome.failed()) {
 					failedInRun.add(outcome.testClass());
 				}
@@ -211,6 +213,12 @@ public final class MLFeatureExtractor {
 	 */
 	public static double[] extract(String testClass, DependencyMap depMap, CoFailureTracker coFailure,
 			Set<String> changedClasses, Set<String> changedTestClasses, Map<String, TestStats> stats) {
+		return extract(testClass, depMap, coFailure, changedClasses, changedTestClasses, stats, null);
+	}
+
+	static double[] extract(String testClass, DependencyMap depMap, CoFailureTracker coFailure,
+			Set<String> changedClasses, Set<String> changedTestClasses, Map<String, TestStats> stats,
+			Map<String, String> statsPackageCache) {
 		double[] features = new double[FEATURE_COUNT];
 
 		// For inner classes (e.g. ValidateTest$NotNull), history data is stored
@@ -346,11 +354,17 @@ public final class MLFeatureExtractor {
 		int pkgTestCount = 0;
 		double pkgFailRateSum = 0;
 		for (var entry : stats.entrySet()) {
-			if (!entry.getKey().equals(testClass) && extractPackage(entry.getKey()).equals(testPkg)) {
-				TestStats other = entry.getValue();
-				if (other.totalRuns > 0) {
-					pkgFailRateSum += (double) other.totalFailures / other.totalRuns;
-					pkgTestCount++;
+			String key = entry.getKey();
+			if (!key.equals(testClass)) {
+				String entryPkg = statsPackageCache != null
+						? statsPackageCache.getOrDefault(key, extractPackage(key))
+						: extractPackage(key);
+				if (entryPkg.equals(testPkg)) {
+					TestStats other = entry.getValue();
+					if (other.totalRuns > 0) {
+						pkgFailRateSum += (double) other.totalFailures / other.totalRuns;
+						pkgTestCount++;
+					}
 				}
 			}
 		}

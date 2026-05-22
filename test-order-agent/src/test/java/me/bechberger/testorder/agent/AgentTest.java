@@ -29,7 +29,7 @@ class AgentTest {
 		Agent agent = Agent.parse("  ");
 
 		assertEquals(Path.of("target/test-order-deps"), agent.getOutputDir());
-		assertEquals(Agent.InstrumentationMode.FULL, agent.getMode());
+		assertEquals(Agent.InstrumentationMode.CLASS, agent.getMode());
 		assertTrue(agent.getIncludePackages().isEmpty());
 		assertTrue(agent.isAutoDetectPackages());
 		assertNull(agent.getVerboseFile());
@@ -38,12 +38,12 @@ class AgentTest {
 	@Test
 	void parseValidArgsBindsProperties() {
 		Agent agent = Agent.parse(
-				"outputDir=build/deps,includePackages=com.example;org.demo,excludePackages=org.skip,mode=FULL_MEMBER,autoDetectPackages=false,skipTestClasses=false,useHeuristics=false,projectRoot=workspace,indexFile=deps.lz4,verboseFile=verbose.log");
+				"outputDir=build/deps,includePackages=com.example;org.demo,excludePackages=org.skip,mode=MEMBER,autoDetectPackages=false,skipTestClasses=false,useHeuristics=false,projectRoot=workspace,indexFile=deps.lz4,verboseFile=verbose.log");
 
 		assertEquals(Path.of("build/deps"), agent.getOutputDir());
 		assertEquals(List.of("com.example", "org.demo"), agent.getIncludePackages());
 		assertEquals(List.of("org.skip"), agent.getExcludePackages());
-		assertEquals(Agent.InstrumentationMode.FULL_MEMBER, agent.getMode());
+		assertEquals(Agent.InstrumentationMode.MEMBER, agent.getMode());
 		assertFalse(agent.isAutoDetectPackages());
 		assertFalse(agent.isSkipTestClasses());
 		assertFalse(agent.isUseHeuristics());

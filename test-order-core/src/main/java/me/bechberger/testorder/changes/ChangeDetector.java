@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import me.bechberger.testorder.TestOrderLogger;
 
@@ -142,7 +143,7 @@ public class ChangeDetector {
 	 * reactor build, so we cache it per projectRoot to avoid repeated subprocess
 	 * calls.
 	 */
-	private static final Map<Path, Path> gitRootCache = Collections.synchronizedMap(new HashMap<>());
+	private static final ConcurrentHashMap<Path, Path> gitRootCache = new ConcurrentHashMap<>();
 
 	private static Path findGitRoot(Path projectRoot) {
 		Path normalized = projectRoot.toAbsolutePath().normalize();
@@ -155,23 +156,28 @@ public class ChangeDetector {
 			pb.directory(projectRoot.toFile());
 			pb.redirectErrorStream(true);
 			Process process = pb.start();
-			String output;
-			try (var is = process.getInputStream()) {
-				output = new String(is.readAllBytes()).trim();
-			}
-			if (!process.waitFor(GitTimeout.seconds(), java.util.concurrent.TimeUnit.SECONDS)) {
+			try {
+				String output;
+				try (var is = process.getInputStream()) {
+					output = new String(is.readAllBytes()).trim();
+				}
+				if (!process.waitFor(GitTimeout.seconds(), java.util.concurrent.TimeUnit.SECONDS)) {
+					process.destroyForcibly();
+					return projectRoot.toAbsolutePath().normalize();
+				}
+				if (process.exitValue() == 0 && !output.isEmpty()) {
+					return Path.of(output).toAbsolutePath().normalize();
+				}
+			} catch (IOException e) {
 				process.destroyForcibly();
+				// fall through to default
+			} catch (InterruptedException e) {
+				process.destroyForcibly();
+				Thread.currentThread().interrupt();
 				return projectRoot.toAbsolutePath().normalize();
-			}
-			if (process.exitValue() == 0 && !output.isEmpty()) {
-				return Path.of(output).toAbsolutePath().normalize();
 			}
 		} catch (IOException e) {
 			// fall through to default
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			// Thread was interrupted — exit early
-			return projectRoot.toAbsolutePath().normalize();
 		}
 		return projectRoot.toAbsolutePath().normalize();
 	}

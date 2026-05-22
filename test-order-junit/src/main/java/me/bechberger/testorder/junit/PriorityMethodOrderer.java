@@ -198,6 +198,8 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			} else if (prio == TestOrder.Priority.LAST) {
 				pinLastMethods.add(md);
 				pinLastSet.add(md);
+				if (delta != 0)
+					effectiveScores.merge(md.getMethod().getName(), delta, Double::sum);
 			} else {
 				if (prio == TestOrder.Priority.HIGH)
 					delta += TestOrder.Priority.BOOST;
@@ -246,10 +248,25 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			return true;
 		}
 		// Check for @Order on any test method
+		boolean hasOrderAnnotation = false;
 		for (org.junit.jupiter.api.MethodDescriptor md : context.getMethodDescriptors()) {
 			if (md.getMethod().isAnnotationPresent(org.junit.jupiter.api.Order.class)) {
-				return true;
+				hasOrderAnnotation = true;
+				break;
 			}
+		}
+		if (hasOrderAnnotation) {
+			// Warn if @Order is used without
+			// @TestMethodOrder(MethodOrderer.OrderAnnotation)
+			// because JUnit will not respect @Order without it — the ordering is undefined.
+			boolean hasOrderAnnotationClass = tmo != null
+					&& org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class.equals(tmo.value());
+			if (!hasOrderAnnotationClass) {
+				TestOrderLogger.warn("[method-order] {}: @Order annotation on test methods will be ignored by JUnit — "
+						+ "add @TestMethodOrder(MethodOrderer.OrderAnnotation.class) to the class for @Order to take effect.",
+						context.getTestClass().getName());
+			}
+			return true;
 		}
 		return false;
 	}

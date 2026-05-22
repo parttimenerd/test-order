@@ -29,7 +29,7 @@ public final class PackageDetectorSupport {
 	 */
 	public static List<String> detectSourcePackages(Path sourceRoot) {
 		List<String> result = new ArrayList<>();
-		if (!Files.isDirectory(sourceRoot))
+		if (sourceRoot == null || !Files.isDirectory(sourceRoot))
 			return result;
 		try (Stream<Path> topDirs = Files.list(sourceRoot)) {
 			topDirs.filter(Files::isDirectory).forEach(dir -> {

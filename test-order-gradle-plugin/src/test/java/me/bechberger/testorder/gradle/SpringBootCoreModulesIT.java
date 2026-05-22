@@ -194,7 +194,7 @@ class SpringBootCoreModulesIT {
     @Order(7)
     @DisplayName("Spring Boot test module supports all instrumentation modes")
     void coreTestModuleSupportsAllInstrumentationModes() throws IOException {
-        for (String mode : List.of("METHOD_ENTRY", "FULL", "FULL_METHOD", "FULL_MEMBER")) {
+        for (String mode : List.of("CLASS", "METHOD", "MEMBER")) {
             cleanGeneratedArtifacts(coreTestModuleDir);
             CommandResult result = runSpringBoot(springBootDir,
                     "--rerun-tasks",
@@ -212,7 +212,7 @@ class SpringBootCoreModulesIT {
             assertTrackedDependency(coreTestModuleDir, CORE_TEST_MODULE_TESTS.get(1), CORE_TEST_MODULE_CHANGED_CLASS);
 
             DependencyMap aggregated = aggregateDependencyMapFromDeps(coreTestModuleDir);
-            if ("FULL_METHOD".equals(mode) || "FULL_MEMBER".equals(mode)) {
+            if ("METHOD".equals(mode) || "MEMBER".equals(mode)) {
                 assertTrue(aggregated.hasMethodDeps(),
                         "Expected per-method dependency data for instrumentation mode " + mode);
             }

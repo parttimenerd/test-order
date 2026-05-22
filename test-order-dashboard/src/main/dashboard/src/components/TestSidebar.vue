@@ -41,7 +41,7 @@ watch(() => d.focusedTestIndex.value, (idx: number) => {
           <span v-if="d.selectedTests.value.size > 1" style="color:var(--accent-light)"> · {{ d.selectedTests.value.size }} selected</span>
         </span>
         <span v-if="d.hasMethodData.value" style="font-size:.6rem;color:var(--accent-light)" title="Method-level data available">⚙ methods</span>
-        <span v-else style="font-size:.6rem;color:var(--text-muted);cursor:help;border-bottom:1px dotted var(--text-muted)" title="Method-level data requires FULL_METHOD or FULL_MEMBER instrumentation mode.">no methods</span>
+        <span v-else style="font-size:.6rem;color:var(--text-muted);cursor:help;border-bottom:1px dotted var(--text-muted)" title="Method-level data requires METHOD or MEMBER instrumentation mode.">no methods</span>
       </div>
       <div style="display:flex;gap:3px;flex-wrap:wrap">
         <button

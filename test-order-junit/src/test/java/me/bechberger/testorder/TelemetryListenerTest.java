@@ -86,7 +86,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".test-order-state");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "METHOD_ENTRY");
+		System.setProperty("testorder.instrumentation.mode", "FULL");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -112,7 +112,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".test-order-state");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "METHOD_ENTRY");
+		System.setProperty("testorder.instrumentation.mode", "FULL");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -222,7 +222,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".test-order-state");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -303,7 +303,7 @@ class TelemetryListenerTest {
 	void durationRecordedIsNeverNegative() throws IOException {
 		Path stateFile = tempDir.resolve(".test-order-state-nonneg");
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "METHOD_ENTRY");
+		System.setProperty("testorder.instrumentation.mode", "FULL");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -366,7 +366,7 @@ class TelemetryListenerTest {
 	void agentUnavailableInLearnModeStillPersistsFailures() throws IOException {
 		Path stateFile = tempDir.resolve(".state-agent-fail");
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "METHOD_ENTRY");
+		System.setProperty("testorder.instrumentation.mode", "FULL");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -434,7 +434,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".test-order-state");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "METHOD_ENTRY");
+		System.setProperty("testorder.instrumentation.mode", "FULL");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -469,7 +469,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".state-param-durations");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -498,7 +498,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".state-param-failure");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -538,7 +538,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".state-multi-param");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -634,7 +634,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".state-param-both");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -677,7 +677,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".state-param-all-pass");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -706,7 +706,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".state-nested-param");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -749,7 +749,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".state-param-aborted");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -792,7 +792,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".state-interleaved-param");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();
@@ -838,7 +838,7 @@ class TelemetryListenerTest {
 		Path stateFile = tempDir.resolve(".state-single-param");
 
 		System.setProperty("testorder.learn", "true");
-		System.setProperty("testorder.instrumentation.mode", "FULL_METHOD");
+		System.setProperty("testorder.instrumentation.mode", "METHOD");
 		System.setProperty("testorder.state.path", stateFile.toString());
 
 		TelemetryListener listener = new TelemetryListener();

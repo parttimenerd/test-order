@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import me.bechberger.testorder.DependencyMap;
@@ -15,6 +16,8 @@ import me.bechberger.testorder.DependencyMap;
  * TestOrderPlugin.
  */
 public final class TestClassDiscovery {
+
+	private static final Pattern ANONYMOUS_INNER_CLASS = Pattern.compile(".*\\$\\d+.*");
 
 	private TestClassDiscovery() {
 	}
@@ -51,7 +54,7 @@ public final class TestClassDiscovery {
 			return true;
 		}
 		// Exclude anonymous/local inner classes such as Outer$1 and Outer$1Inner.
-		if (className.matches(".*\\$\\d+.*")) {
+		if (ANONYMOUS_INNER_CLASS.matcher(className).matches()) {
 			return false;
 		}
 		// Exclude synthetic lambda implementation classes.
@@ -110,11 +113,18 @@ public final class TestClassDiscovery {
 	/**
 	 * Identifies test classes present in the compiled output but not in the
 	 * dependency index (i.e. new tests).
+	 *
+	 * Excludes nested/inner classes (containing {@code $}) because they are
+	 * discovered and run as part of their enclosing outer class, and are never
+	 * recorded as top-level entries in the dependency index.
 	 */
 	public static Set<String> findNewTestClasses(DependencyMap depMap, Path testClassesDir, PluginLog log) {
 		Set<String> moduleTests = scanTestClasses(testClassesDir);
 		Set<String> newTests = new LinkedHashSet<>();
 		for (String tc : moduleTests) {
+			if (tc.contains("$")) {
+				continue; // nested/inner class — runs via enclosing class
+			}
 			if (!depMap.testClasses().contains(tc)) {
 				newTests.add(tc);
 			}

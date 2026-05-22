@@ -4,113 +4,126 @@ import java.io.*;
 import java.lang.instrument.Instrumentation;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.Callable;
 import java.util.jar.JarFile;
-
-import me.bechberger.femtocli.FemtoCli;
-import me.bechberger.femtocli.annotations.Command;
-import me.bechberger.femtocli.annotations.Option;
 
 /**
  * Java agent entry point for test dependency recording. Instruments class
  * initializers/methods to track which classes are used during test execution.
  * <p>
  * Example agent string:
- * {@code outputDir=target/test-order-deps,includePackages=com.example;org.app,mode=METHOD_ENTRY}
+ * {@code outputDir=target/test-order-deps,includePackages=com.example;org.app,mode=FULL}
  */
-@Command(name = "test-order-agent", description = "Java agent for test dependency recording", version = "0.1.0", mixinStandardHelpOptions = true)
-public class Agent implements Callable<Integer> {
+public class Agent {
 
 	public enum InstrumentationMode {
 		/**
-		 * Records which classes each test enters (method/constructor calls only, no
-		 * field tracking). Lowest overhead (~66%), but only captures class-level
-		 * dependencies.
+		 * Tracks which classes each test exercises. Records method/constructor entry
+		 * and foreign static-field access. This is the default and cheapest mode — all
+		 * dependency data is at per-test-class granularity.
 		 */
-		METHOD_ENTRY,
+		CLASS,
 		/**
-		 * Records method/constructor entries plus foreign static-field accesses.
-		 * Default mode. Keeps the low overhead of METHOD_ENTRY while still capturing
-		 * class-level dependencies that happen via shared/static state.
+		 * Extends CLASS with per-test-method tracking. Each individual test method gets
+		 * its own dependency set (setup/teardown excluded). Enables method-level
+		 * ordering via dependency-overlap scoring. Moderate overhead (~68%).
 		 */
-		FULL,
+		METHOD,
 		/**
-		 * Like FULL, but additionally tracks dependencies per test method instead of
-		 * per test class. Setup/teardown calls are excluded — only the test method's
-		 * own calls are captured. Enables method-level ordering via dependency overlap
-		 * scoring. Overhead ~68%.
+		 * Extends METHOD with member-level dependencies ({@code class#method},
+		 * {@code class#field}). Enables precise impact analysis: a test that never
+		 * calls the actually-changed method won't be selected. Highest overhead (~121%)
+		 * and largest index, but best precision for affected-test selection.
 		 */
-		FULL_METHOD,
+		MEMBER;
+
 		/**
-		 * Like FULL_METHOD, but also records member-level dependencies
-		 * ({@code class#method}, {@code class#field}) so scoring can pinpoint which
-		 * specific members a test touches. Unlike FULL/FULL_METHOD, this mode
-		 * instruments both instance and static foreign-field access. Enables precise
-		 * impact analysis: a test that never calls the changed method won't be scored
-		 * as affected. Highest overhead (~121%).
+		 * Parses a mode string. Case-insensitive. Accepts legacy names (FULL,
+		 * FULL_METHOD, FULL_MEMBER) as aliases for CLASS, METHOD, MEMBER.
 		 */
-		FULL_MEMBER
+		public static InstrumentationMode fromString(String value) {
+			return switch (value.toUpperCase()) {
+				case "CLASS", "FULL" -> CLASS;
+				case "METHOD", "FULL_METHOD", "METHOD_ENTRY" -> METHOD;
+				case "MEMBER", "FULL_MEMBER" -> MEMBER;
+				default -> throw new IllegalArgumentException(
+						"Unknown instrumentation mode: '" + value + "'. Valid values: CLASS, METHOD, MEMBER");
+			};
+		}
 	}
 
-	@Option(names = "--outputDir", description = "Directory for .deps files (default: ${DEFAULT-VALUE})", defaultValue = "target/test-order-deps")
 	private Path outputDir = Path.of("target/test-order-deps");
-
-	@Option(names = "--includePackages", description = "Semicolon-separated package prefixes to instrument", split = ";")
 	private List<String> includePackages;
-
-	@Option(names = "--excludePackages", description = "Semicolon-separated package prefixes to skip (optional)", split = ";")
 	private List<String> excludePackages;
-
-	@Option(names = "--filterStrategy", description = "Class filter strategy: WHITELIST, BLACKLIST, SMART, or WHITELIST_SMART (default: ${DEFAULT-VALUE})", defaultValue = "SMART")
 	private IntelligentClassFilter.Strategy filterStrategy = IntelligentClassFilter.Strategy.SMART;
-
-	@Option(names = "--skipTestClasses", description = "Skip instrumenting test classes (default: ${DEFAULT-VALUE})", defaultValue = "true")
 	private boolean skipTestClasses = true;
-
-	@Option(names = "--useHeuristics", description = "Use heuristics to skip generated/synthetic classes (default: ${DEFAULT-VALUE})", defaultValue = "true")
 	private boolean useHeuristics = true;
-
-	@Option(names = "--autoDetectPackages", description = "Automatically detect user packages from Maven/Gradle (default: ${DEFAULT-VALUE})", defaultValue = "true")
 	private boolean autoDetectPackages = true;
-
-	@Option(names = "--projectRoot", description = "Project root directory for auto-detection (default: current directory)")
 	private Path projectRoot = Path.of(System.getProperty("user.dir"));
-
-	@Option(names = "--mode", description = "Instrumentation mode: METHOD_ENTRY, FULL, FULL_METHOD, or FULL_MEMBER (default: ${DEFAULT-VALUE})", defaultValue = "FULL")
-	private InstrumentationMode mode = InstrumentationMode.FULL;
-
-	@Option(names = "--indexFile", description = "Binary dependency index file path (default: ${DEFAULT-VALUE})", defaultValue = "test-dependencies.lz4")
+	private InstrumentationMode mode = InstrumentationMode.CLASS;
 	private Path indexFile = Path.of("test-dependencies.lz4");
-
-	@Option(names = "--verboseFile", description = "File path for verbose agent logging (disabled if not set)")
 	private Path verboseFile;
-
-	@Override
-	public Integer call() {
-		return 0;
-	}
+	private Path runtimeJarPath;
 
 	// ── Option parsing ────────────────────────────────────────────────
 
+	/**
+	 * Fast direct parser for agent args. Supports both formats:
+	 * <ul>
+	 * <li>{@code key=value,key=value} (from Maven/Gradle plugin)</li>
+	 * <li>{@code --key=value,--key=value} (from manual invocation)</li>
+	 * </ul>
+	 */
 	public static Agent parse(String agentArgs) {
 		Agent agent = new Agent();
 		if (agentArgs == null || agentArgs.isBlank()) {
 			return agent;
 		}
 		try {
-			int exitCode = FemtoCli.runAgent(agent, agentArgs);
-			if (exitCode != 0) {
-				throw new IllegalArgumentException("Invalid agent arguments: " + agentArgs);
+			for (String part : agentArgs.split(",")) {
+				String kv = part.startsWith("--") ? part.substring(2) : part;
+				int eq = kv.indexOf('=');
+				if (eq < 0)
+					continue;
+				String key = kv.substring(0, eq);
+				String value = kv.substring(eq + 1);
+				switch (key) {
+					case "outputDir" -> agent.outputDir = Path.of(value);
+					case "includePackages" -> agent.includePackages = splitList(value);
+					case "excludePackages" -> agent.excludePackages = splitList(value);
+					case "filterStrategy" ->
+						agent.filterStrategy = IntelligentClassFilter.Strategy.valueOf(value.toUpperCase());
+					case "skipTestClasses" -> agent.skipTestClasses = Boolean.parseBoolean(value);
+					case "useHeuristics" -> agent.useHeuristics = Boolean.parseBoolean(value);
+					case "autoDetectPackages" -> agent.autoDetectPackages = Boolean.parseBoolean(value);
+					case "projectRoot" -> agent.projectRoot = Path.of(value);
+					case "mode" -> agent.mode = InstrumentationMode.fromString(value);
+					case "indexFile" -> agent.indexFile = Path.of(value);
+					case "verboseFile" -> agent.verboseFile = Path.of(value);
+					case "runtimeJarPath" -> agent.runtimeJarPath = Path.of(value);
+					default -> {
+					} // ignore unknown keys for forward compatibility
+				}
 			}
 		} catch (IllegalArgumentException e) {
-			throw e;
-		} catch (RuntimeException e) {
 			throw new IllegalArgumentException("Invalid agent arguments: " + agentArgs, e);
 		}
 		return agent;
+	}
+
+	private static List<String> splitList(String value) {
+		if (value == null || value.isEmpty())
+			return Collections.emptyList();
+		List<String> result = new ArrayList<>();
+		for (String s : value.split(";")) {
+			if (!s.isEmpty())
+				result.add(s);
+		}
+		return result;
 	}
 
 	public Path getOutputDir() {
@@ -157,6 +170,10 @@ public class Agent implements Callable<Integer> {
 		return verboseFile;
 	}
 
+	public Path getRuntimeJarPath() {
+		return runtimeJarPath;
+	}
+
 	// ── Agent entry point ─────────────────────────────────────────────
 
 	public static void premain(String agentArgs, Instrumentation inst) {
@@ -177,7 +194,7 @@ public class Agent implements Callable<Integer> {
 
 		// extract and add runtime jar to bootstrap classpath
 		try {
-			appendRuntimeJarToBootstrap(inst, Agent.class.getClassLoader());
+			appendRuntimeJarToBootstrap(inst, Agent.class.getClassLoader(), options.getRuntimeJarPath());
 		} catch (IOException e) {
 			throw new RuntimeException("Failed to add runtime jar to bootstrap classpath", e);
 		}
@@ -193,20 +210,15 @@ public class Agent implements Callable<Integer> {
 		}
 
 		// configure UsageStore via reflection (now on bootstrap classpath)
-		ClassTransformer transformer = new ClassTransformer(options);
+		AsmClassTransformer transformer = new AsmClassTransformer(options);
 		try {
 			Class<?> usageStoreClass = Class.forName("me.bechberger.testorder.agent.runtime.UsageStore", true, null);
 			Object instance = usageStoreClass.getMethod("getInstance").invoke(null);
-			usageStoreClass.getMethod("setOutputDir", String.class).invoke(instance,
-					outputDir.toAbsolutePath().toString());
-			usageStoreClass.getMethod("setIndexFile", String.class).invoke(instance,
-					options.getIndexFile().toAbsolutePath().toString());
-			boolean methodLevel = options.getMode() == InstrumentationMode.FULL_METHOD
-					|| options.getMode() == InstrumentationMode.FULL_MEMBER;
-			usageStoreClass.getMethod("setMethodLevelRecordingEnabled", boolean.class).invoke(instance, methodLevel);
-			// Register callback to release transformation caches when first test starts
-			usageStoreClass.getMethod("setOnFirstTestClassCallback", Runnable.class).invoke(instance,
-					(Runnable) transformer::releaseTransformationCaches);
+			boolean methodLevel = options.getMode() == InstrumentationMode.METHOD
+					|| options.getMode() == InstrumentationMode.MEMBER;
+			usageStoreClass.getMethod("configure", String.class, String.class, boolean.class, Runnable.class).invoke(
+					instance, outputDir.toAbsolutePath().toString(), options.getIndexFile().toAbsolutePath().toString(),
+					methodLevel, (Runnable) transformer::releaseTransformationCaches);
 		} catch (ReflectiveOperationException e) {
 			throw new RuntimeException("Failed to configure UsageStore", e);
 		}
@@ -219,21 +231,89 @@ public class Agent implements Callable<Integer> {
 		loggerClass.getMethod("setVerboseFile", String.class).invoke(null, verboseFile.toAbsolutePath().toString());
 	}
 
+	static Path appendRuntimeJarToBootstrap(Instrumentation inst, ClassLoader resourceLoader, Path preExtractedJar)
+			throws IOException {
+		Path jarPath;
+		if (preExtractedJar != null && Files.exists(preExtractedJar) && Files.size(preExtractedJar) > 0) {
+			jarPath = preExtractedJar;
+		} else {
+			jarPath = extractRuntimeJar(resourceLoader);
+		}
+		inst.appendToBootstrapClassLoaderSearch(new JarFile(jarPath.toFile()));
+		return jarPath;
+	}
+
+	// Keep no-arg overload for tests
 	static Path appendRuntimeJarToBootstrap(Instrumentation inst, ClassLoader resourceLoader) throws IOException {
-		Path extractedJar = extractRuntimeJar(resourceLoader);
-		inst.appendToBootstrapClassLoaderSearch(new JarFile(extractedJar.toFile()));
-		return extractedJar;
+		return appendRuntimeJarToBootstrap(inst, resourceLoader, null);
 	}
 
 	static Path extractRuntimeJar(ClassLoader resourceLoader) throws IOException {
+		// Use the agent jar's own location + size as a fast cache key, avoiding
+		// the need to read and hash the full runtime jar on every fork.
+		Path cacheDir = Paths.get(System.getProperty("java.io.tmpdir"));
+		String cacheKey = computeCacheKey(resourceLoader);
+		Path cachedJar = cacheDir.resolve("test-order-runtime-" + cacheKey + ".jar");
+
+		if (Files.exists(cachedJar) && Files.size(cachedJar) > 0) {
+			return cachedJar.toAbsolutePath();
+		}
+
+		// Cache miss — extract the runtime jar
 		try (InputStream in = resourceLoader.getResourceAsStream("test-order-runtime.jar")) {
 			if (in == null) {
 				throw new RuntimeException("Could not find test-order-runtime.jar");
 			}
-			File file = File.createTempFile("test-order-runtime", ".jar");
-			file.deleteOnExit();
-			Files.copy(in, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-			return file.toPath().toAbsolutePath();
+			byte[] jarContent = in.readAllBytes();
+
+			// Atomic write: write to temp file then rename to prevent parallel forks
+			// from reading a partially-written jar ("zip file is empty" errors)
+			Path tempFile = Files.createTempFile(cacheDir, "test-order-runtime-", ".tmp");
+			try {
+				Files.write(tempFile, jarContent);
+				Files.move(tempFile, cachedJar, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+			} catch (IOException e) {
+				// Another fork may have beaten us to it — that's fine
+				Files.deleteIfExists(tempFile);
+				if (Files.exists(cachedJar) && Files.size(cachedJar) > 0) {
+					return cachedJar.toAbsolutePath();
+				}
+				throw e;
+			}
+			return cachedJar.toAbsolutePath();
 		}
+	}
+
+	private static String computeCacheKey(ClassLoader resourceLoader) {
+		// Derive cache key from the agent jar's identity (location + size + mtime)
+		// so we never re-read the embedded resource when the cached file already exists
+		try {
+			java.net.URL agentUrl = resourceLoader.getResource("test-order-runtime.jar");
+			if (agentUrl != null) {
+				String path = agentUrl.getPath();
+				// URL is like "file:/path/to/agent.jar!/test-order-runtime.jar"
+				int bangIdx = path.indexOf('!');
+				if (bangIdx > 0) {
+					String jarPath = path.startsWith("file:") ? path.substring(5, bangIdx) : path.substring(0, bangIdx);
+					Path agentJarPath = Paths.get(jarPath);
+					if (Files.exists(agentJarPath)) {
+						long size = Files.size(agentJarPath);
+						long mtime = Files.getLastModifiedTime(agentJarPath).toMillis();
+						return Long.toHexString(size) + "-" + Long.toHexString(mtime);
+					}
+				}
+			}
+		} catch (Exception ignored) {
+			// Fall through to content-hash approach
+		}
+		// Fallback: read content and hash (first fork pays this cost, subsequent forks
+		// use the cached file)
+		try (InputStream in = resourceLoader.getResourceAsStream("test-order-runtime.jar")) {
+			if (in != null) {
+				return Integer.toHexString(java.util.Arrays.hashCode(in.readAllBytes()));
+			}
+		} catch (IOException ignored) {
+		}
+		return "unknown";
 	}
 }

@@ -124,18 +124,31 @@ class ClassNameTrie {
 	// ---- serialization ----
 
 	void writeTo(DataOutputStream out) throws IOException {
-		writeNode(out, root);
+		// Use a reusable byte buffer to reduce GC pressure from getBytes() calls
+		java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(512);
+		java.nio.charset.CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder();
+		writeNode(out, root, buffer, encoder);
 	}
 
-	private void writeNode(DataOutputStream out, Node node) throws IOException {
-		byte[] labelBytes = node.label.getBytes(StandardCharsets.UTF_8);
-		writeVarInt(out, labelBytes.length);
-		out.write(labelBytes);
+	private void writeNode(DataOutputStream out, Node node, java.nio.ByteBuffer buffer,
+			java.nio.charset.CharsetEncoder encoder) throws IOException {
+		// Encode label into reusable buffer
+		buffer.clear();
+		encoder.reset();
+		java.nio.CharBuffer charBuf = java.nio.CharBuffer.wrap(node.label);
+		java.nio.charset.CoderResult result = encoder.encode(charBuf, buffer, true);
+		encoder.flush(buffer);
+
+		int labelLen = buffer.position();
+		writeVarInt(out, labelLen);
+		buffer.flip();
+		out.write(buffer.array(), 0, labelLen);
+
 		// encode terminal: 0 = not terminal, otherwise classId + 1
 		writeVarInt(out, node.terminal ? node.classId + 1 : 0);
 		writeVarInt(out, node.children.size());
 		for (Node child : node.children.values()) {
-			writeNode(out, child);
+			writeNode(out, child, buffer, encoder);
 		}
 	}
 

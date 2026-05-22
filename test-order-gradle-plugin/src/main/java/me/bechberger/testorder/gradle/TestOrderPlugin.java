@@ -14,7 +14,6 @@ import me.bechberger.testorder.ops.DashboardServerOperation;
 import me.bechberger.testorder.ops.DumpOperation;
 import me.bechberger.testorder.ops.ExportJsonOperation;
 import me.bechberger.testorder.ops.HashSnapshotOperation;
-import me.bechberger.testorder.ops.HomeStorageResolver;
 import me.bechberger.testorder.ops.JUnitPlatformValidator;
 import me.bechberger.testorder.ops.ModeResolverOperation;
 import me.bechberger.testorder.ops.OptimizeOperation;
@@ -66,9 +65,6 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     static final String EXTENSION_NAME = "testOrder";
     static final String AGENT_CONFIG_NAME = "testOrderAgent";
-    /** Guards against repeating the JUnit 4 warning for every subproject. */
-    private static final java.util.Set<String> junit4WarnedProjects = java.util.Collections.newSetFromMap(
-            new java.util.concurrent.ConcurrentHashMap<>());
     /** Group and version for the test-order artifacts. Must match the build. */
     static final String GROUP_ID = "me.bechberger";
     static final String VERSION = "0.0.1-SNAPSHOT";
@@ -240,21 +236,18 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private void warnJUnit4Unsupported(Project project) {
-        if (!isJUnit4OnTestClasspath(project)) return;
-        // Only warn once per root project to avoid spamming multi-module builds
-        String rootPath = project.getRootProject().getProjectDir().getAbsolutePath();
-        if (!junit4WarnedProjects.add(rootPath)) return;
-
-        if (isJUnit5OnTestClasspath(project)) {
-            project.getLogger().warn("[test-order] JUnit 4 dependency detected alongside JUnit 5. "
-                    + "test-order only supports JUnit 5 (Jupiter) and TestNG — "
-                    + "JUnit 4 tests will not be reordered or tracked. "
-                    + "Consider migrating to JUnit 5 or using the JUnit Vintage engine.");
-        } else {
-            project.getLogger().warn("[test-order] JUnit 4 dependency detected but no JUnit 5 (Jupiter) found. "
-                    + "test-order does NOT support JUnit 4 — tests will not be reordered or tracked. "
-                    + "Please migrate to JUnit 5 or add the JUnit Vintage engine with "
-                    + "junit-jupiter-engine on the test classpath.");
+        if (isJUnit4OnTestClasspath(project)) {
+            if (isJUnit5OnTestClasspath(project)) {
+                project.getLogger().warn("[test-order] JUnit 4 dependency detected alongside JUnit 5. "
+                        + "test-order only supports JUnit 5 (Jupiter) and TestNG — "
+                        + "JUnit 4 tests will not be reordered or tracked. "
+                        + "Consider migrating to JUnit 5 or using the JUnit Vintage engine.");
+            } else {
+                project.getLogger().warn("[test-order] JUnit 4 dependency detected but no JUnit 5 (Jupiter) found. "
+                        + "test-order does NOT support JUnit 4 — tests will not be reordered or tracked. "
+                        + "Please migrate to JUnit 5 or add the JUnit Vintage engine with "
+                        + "junit-jupiter-engine on the test classpath.");
+            }
         }
     }
 
@@ -356,11 +349,8 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         warnJUnit4Unsupported(project);
 
-        // Redirect extension file properties to home storage if configured
-        applyHomeStorageRedirect(project, ext);
-
         // Clean up stale temp files from interrupted writes (parity with Maven)
-        Path baseDir = ext.getIndexFile().get().getAsFile().toPath().getParent();
+        Path baseDir = project.getRootProject().getProjectDir().toPath().resolve(".test-order");
         me.bechberger.testorder.PersistenceSupport.cleanupStaleTemps(baseDir);
 
         // Validate cache directory is writable (clear message vs cryptic AccessDeniedException)
@@ -475,6 +465,13 @@ public class TestOrderPlugin implements Plugin<Project> {
             instrMode = propInstrMode;
         }
 
+        // Resolve instrumentation strategy: offline (default) or online
+        String instrStrategy = ext.getInstrumentation().get();
+        String propInstrStrategy = gradleOrSystemProperty(project, "testorder.instrumentation");
+        if (propInstrStrategy != null && !propInstrStrategy.isBlank()) {
+            instrStrategy = propInstrStrategy;
+        }
+
         // System properties for the forked test JVM
         testTask.systemProperty("testorder.learn", "true");
         testTask.systemProperty("testorder.instrumentation.mode", instrMode.toUpperCase());
@@ -487,9 +484,34 @@ public class TestOrderPlugin implements Plugin<Project> {
             testTask.systemProperty("junit.jupiter.extensions.autodetection.enabled", "true");
         }
 
-        // Attach agent lazily via CommandLineArgumentProvider (configuration-cache safe)
-        testTask.getJvmArgumentProviders().add(
-                new AgentArgumentProvider(project, ext, agentConf, instrMode.toUpperCase()));
+        if ("offline".equalsIgnoreCase(instrStrategy)) {
+            configureOfflineLearnMode(project, ext, testTask, instrMode.toUpperCase());
+        } else {
+            // Attach agent lazily via CommandLineArgumentProvider (configuration-cache safe)
+            testTask.getJvmArgumentProviders().add(
+                    new AgentArgumentProvider(project, ext, agentConf, instrMode.toUpperCase()));
+
+            // Start IndexCollectorServer for socket-based dep collection (agent mode)
+            testTask.doFirst("testOrderStartCollector", t -> {
+                try {
+                    // Set compression level for IndexCollectorServer merge
+                    String compressionLevel = ext.getCompression().getOrElse("fast");
+                    System.setProperty("testorder.compression", compressionLevel);
+
+                    java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
+                    me.bechberger.testorder.IndexCollectorServer collector =
+                            new me.bechberger.testorder.IndexCollectorServer(indexFilePath);
+                    testTask.systemProperty("testorder.collector.port",
+                            String.valueOf(collector.getPort()));
+                    testTask.getExtensions().getExtraProperties().set("testOrderCollector", collector);
+                    project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
+                            collector.getPort());
+                } catch (java.io.IOException ex) {
+                    project.getLogger().warn("[test-order] Failed to start IndexCollectorServer: {}",
+                            ex.getMessage());
+                }
+            });
+        }
 
         // Snapshot source and test hashes before tests run, so that future
         // SINCE_LAST_RUN change detection has a baseline to compare against.
@@ -497,8 +519,129 @@ public class TestOrderPlugin implements Plugin<Project> {
             snapshotHashes(project, ext);
         });
         testTask.doLast("aggregateDeps", t -> {
+            // Stop IndexCollectorServer if running (agent mode)
+            Object collectorObj = testTask.getExtensions().getExtraProperties().has("testOrderCollector")
+                    ? testTask.getExtensions().getExtraProperties().get("testOrderCollector")
+                    : null;
+            if (collectorObj instanceof me.bechberger.testorder.IndexCollectorServer collector) {
+                int merged = collector.stopAndMerge();
+                if (merged > 0) {
+                    project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
+                            merged);
+                }
+            }
             aggregateDependencyFiles(project, ext, false);
         });
+    }
+
+    /**
+     * Configures offline learn mode: instruments classes at build time (no agent),
+     * then passes the mapping file path to the test JVM via system properties.
+     */
+    private void configureOfflineLearnMode(Project project, TestOrderExtension ext,
+                                           Test testTask, String instrMode) {
+        project.getLogger().lifecycle("[test-order] Offline learn mode: no agent, using build-time instrumentation");
+
+        // Resolve source packages
+        String includePackages = ext.getIncludePackages().get();
+        if (includePackages.isEmpty()) {
+            Path sourceRoot = resolveMainSourceRoot(project);
+            includePackages = PackageDetector.resolveIncludePackages(
+                    null, ext.getFilterByGroupId().get(),
+                    String.valueOf(project.getGroup()), sourceRoot, project.getLogger());
+        }
+        final String effectivePackages = includePackages;
+
+        // doFirst: instrument classes before tests run
+        testTask.doFirst("testOrderOfflineInstrument", t -> {
+            SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
+            SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+            Path classesDir = mainSourceSet.getOutput().getClassesDirs().getFiles().iterator().next().toPath();
+
+            if (!Files.isDirectory(classesDir)) {
+                project.getLogger().warn("[test-order] No classes directory at {} — skipping offline instrumentation",
+                        classesDir);
+                return;
+            }
+
+            List<String> includes = effectivePackages.isBlank()
+                    ? List.of() : List.of(effectivePackages.split(","));
+            me.bechberger.testorder.agent.Agent.InstrumentationMode mode =
+                    me.bechberger.testorder.agent.Agent.InstrumentationMode.fromString(instrMode);
+            me.bechberger.testorder.agent.OfflineInstrumentor instrumentor =
+                    new me.bechberger.testorder.agent.OfflineInstrumentor(mode, includes, List.of());
+            try {
+                Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
+                Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
+                me.bechberger.testorder.agent.runtime.ClassIdMapping mapping = instrumentor.instrument(classesDir,
+                        backupDir);
+                Path mappingDir = buildDir.resolve(".test-order");
+                Path mappingFile = mappingDir.resolve("class-id-map.bin");
+                mapping.save(mappingFile);
+                project.getLogger().lifecycle("[test-order] Instrumented {} classes (skipped {}), mapping: {}",
+                        instrumentor.getTransformedCount(), instrumentor.getSkippedCount(), mappingFile);
+
+                // Set system properties for the forked test JVM
+                testTask.systemProperty("testorder.offline.mapping", mappingFile.toAbsolutePath().toString());
+                testTask.systemProperty("testorder.offline.output",
+                        ext.getDepsDir().get().getAsFile().getAbsolutePath());
+                testTask.systemProperty("testorder.offline.indexFile",
+                        ext.getIndexFile().get().getAsFile().getAbsolutePath());
+                testTask.systemProperty("testorder.offline.backupDir", backupDir.toAbsolutePath().toString());
+
+                // Start IndexCollectorServer for socket-based dep collection
+                try {
+                    // Set compression level for IndexCollectorServer merge
+                    String compressionLevel = ext.getCompression().getOrElse("fast");
+                    System.setProperty("testorder.compression", compressionLevel);
+
+                    java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
+                    me.bechberger.testorder.IndexCollectorServer collector =
+                            new me.bechberger.testorder.IndexCollectorServer(indexFilePath);
+                    testTask.systemProperty("testorder.collector.port",
+                            String.valueOf(collector.getPort()));
+                    // Store server reference for doLast cleanup
+                    testTask.getExtensions().getExtraProperties().set("testOrderCollector", collector);
+                    project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
+                            collector.getPort());
+                } catch (IOException ex) {
+                    project.getLogger().warn("[test-order] Failed to start IndexCollectorServer: {}",
+                            ex.getMessage());
+                }
+            } catch (IOException e) {
+                throw new GradleException("[test-order] Offline instrumentation failed: " + e.getMessage(), e);
+            }
+        });
+
+        // doLast: restore original classes after tests complete
+        testTask.doLast("testOrderOfflineRestore", t -> {
+            Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
+            Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
+            try {
+                if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir)) {
+                    project.getLogger().lifecycle("[test-order] Restored original classes (instrumentation reverted).");
+                }
+            } catch (IOException e) {
+                project.getLogger().warn("[test-order] Failed to restore classes: {}", e.getMessage());
+            }
+            // Stop IndexCollectorServer and merge (if it was started)
+            Object collectorObj = testTask.getExtensions().getExtraProperties().has("testOrderCollector")
+                    ? testTask.getExtensions().getExtraProperties().get("testOrderCollector")
+                    : null;
+            if (collectorObj instanceof me.bechberger.testorder.IndexCollectorServer collector) {
+                int merged = collector.stopAndMerge();
+                if (merged > 0) {
+                    project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
+                            merged);
+                }
+            }
+        });
+
+        // Add runtime jar to test classpath (UsageStore accessible without agent)
+        Configuration runtimeConf = createHiddenConfiguration(project, "testOrderOfflineRuntime", false);
+        project.getDependencies().add(runtimeConf.getName(),
+                GROUP_ID + ":test-order-agent:" + VERSION);
+        testTask.setClasspath(testTask.getClasspath().plus(runtimeConf));
     }
 
     /**
@@ -554,7 +697,9 @@ public class TestOrderPlugin implements Plugin<Project> {
 
             String agentArgs = me.bechberger.testorder.AgentArgsBuilder.buildArgs(
                     Path.of(depsDirPath), instrumentationMode,
-                    Path.of(indexFilePath), includePackages, verboseFile);
+                    Path.of(indexFilePath), includePackages, verboseFile, true,
+                    me.bechberger.testorder.AgentArgsBuilder.preExtractRuntimeJar(
+                            agentJar.toPath(), agentJar.toPath().getParent()));
 
             return List.of(
                     "-javaagent:" + quoteIfNeeded(agentJar.getAbsolutePath()) + "=" + agentArgs);
@@ -724,21 +869,6 @@ public class TestOrderPlugin implements Plugin<Project> {
             } catch (IOException e) {
                 throw new GradleException("Failed to set up test ordering", e);
             }
-
-            // ── Startup banner: show users what test-order will do ──
-            Set<String> changedSet = pctx.changedClasses() != null && !pctx.changedClasses().isBlank()
-                    ? Set.of(pctx.changedClasses().split(",")) : Set.of();
-            Set<String> changedTestSet = pctx.changedTestClasses() != null && !pctx.changedTestClasses().isBlank()
-                    ? Set.of(pctx.changedTestClasses().split(",")) : Set.of();
-            int totalChanged = changedSet.size() + changedTestSet.size();
-            String changeSummary = totalChanged == 0 ? "no changes detected"
-                    : totalChanged + " changed " + (totalChanged == 1 ? "class" : "classes");
-            String plan = totalChanged > 0
-                    ? "tests exercising changed code will run first"
-                    : "using historical failure data and speed for ordering";
-            project.getLogger().lifecycle("[test-order] ─── Order mode | {} | {} ───",
-                    ext.getChangeMode().get(), changeSummary);
-            project.getLogger().lifecycle("[test-order]   → {}", plan);
 
             // Save state if it was modified (e.g., runsSinceLearn reset by fingerprint change) (R7-8)
             try {
@@ -1591,7 +1721,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("");
                 log.lifecycle("CONFIGURATION (build.gradle testOrder { ... }):");
                 log.lifecycle("  mode                    auto | learn | order | optimize | skip");
-                log.lifecycle("  instrumentationMode     FULL | METHOD_ENTRY | FULL_METHOD | FULL_MEMBER");
+                log.lifecycle("  instrumentationMode     CLASS | METHOD | MEMBER");
                 log.lifecycle("  changeMode              auto | since-last-run | since-last-commit | uncommitted | explicit");
                 log.lifecycle("  includePackages         Additional package prefixes to instrument");
                 log.lifecycle("  methodOrderingEnabled   Enable method-level reordering (default: false)");
@@ -1664,43 +1794,6 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     // -----------------------------------------------------------------------
-    // Home storage redirect
-    // -----------------------------------------------------------------------
-
-    /**
-     * When {@code testorder.storage=home} is configured, update the extension
-     * file properties (indexFile, stateFile, hashFile, etc.) to point to the
-     * home directory ({@code ~/.test-order/<project-hash>/}) instead of the
-     * default local {@code .test-order/} directory.  This ensures all methods
-     * that read {@code ext.getIndexFile()} etc. use the correct home paths.
-     */
-    private static void applyHomeStorageRedirect(Project project, TestOrderExtension ext) {
-        String storageMode = gradleOrSystemProperty(project, "testorder.storage");
-        if (storageMode == null || storageMode.isBlank()) {
-            storageMode = ext.getStorage().getOrElse("local");
-        }
-        if (!"home".equalsIgnoreCase(storageMode)) {
-            return;
-        }
-        Path rootDir = project.getRootProject().getProjectDir().toPath().toAbsolutePath();
-        String projectName = project.getRootProject().getName();
-        HomeStorageResolver resolver = new HomeStorageResolver();
-        Path homeDir;
-        try {
-            homeDir = resolver.resolve(rootDir, projectName, wrapLog(project));
-        } catch (java.io.IOException e) {
-            throw new GradleException(
-                    "Failed to resolve home storage for project '" + projectName + "'", e);
-        }
-        project.getLogger().lifecycle("[test-order] Storing data in home directory: {}", homeDir);
-        ext.getIndexFile().set(homeDir.resolve("test-dependencies.lz4").toFile());
-        ext.getStateFile().set(homeDir.resolve("state.lz4").toFile());
-        ext.getHashFile().set(homeDir.resolve("hashes.lz4").toFile());
-        ext.getTestHashFile().set(homeDir.resolve("test-hashes.lz4").toFile());
-        ext.getMethodHashFile().set(homeDir.resolve("method-hashes.lz4").toFile());
-    }
-
-    // -----------------------------------------------------------------------
     // PluginContext builder
     // -----------------------------------------------------------------------
 
@@ -1731,15 +1824,6 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
             }
         }
-
-        // Extension properties already reflect home storage if configured
-        // (via applyHomeStorageRedirect in configureTestTasks)
-        Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
-        Path stateFile = ext.getStateFile().get().getAsFile().toPath();
-        Path depsDir = ext.getDepsDir().get().getAsFile().toPath();
-        Path hashFile = ext.getHashFile().get().getAsFile().toPath();
-        Path testHashFile = ext.getTestHashFile().get().getAsFile().toPath();
-        Path methodHashFile = ext.getMethodHashFile().get().getAsFile().toPath();
 
         String weightsFile = ext.getWeightsFile().get();
         Map<String, Integer> scoreOverrides = WeightResolverOperation.buildScoreOverrides(
@@ -1774,12 +1858,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .testSourceRoot(testSourceRoot)
                 .additionalSourceRoots(additionalSourceRoots)
                 .testClassesDir(resolveTestClassesDir(project))
-                .indexFile(indexFile)
-                .stateFile(stateFile)
-                .depsDir(depsDir)
-                .hashFile(hashFile)
-                .testHashFile(testHashFile)
-                .methodHashFile(methodHashFile)
+                .indexFile(ext.getIndexFile().get().getAsFile().toPath())
+                .stateFile(ext.getStateFile().get().getAsFile().toPath())
+                .depsDir(ext.getDepsDir().get().getAsFile().toPath())
+                .hashFile(ext.getHashFile().get().getAsFile().toPath())
+                .testHashFile(ext.getTestHashFile().get().getAsFile().toPath())
+                .methodHashFile(ext.getMethodHashFile().get().getAsFile().toPath())
                 .changeMode(resolveChangeMode(project, ext))
                 .changedClasses(changedClasses)
                 .changedTestClasses(changedTestClasses)
@@ -1989,6 +2073,16 @@ public class TestOrderPlugin implements Plugin<Project> {
                                                     boolean failIfMissing) {
         Path depsDir = ext.getDepsDir().get().getAsFile().toPath();
         Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
+
+        // Process any fallback payload file from a previous run's failed shutdown hook
+        try {
+            if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(indexFile)) {
+                project.getLogger().lifecycle("[test-order] Processed fallback collector payloads from previous run");
+            }
+        } catch (IOException e) {
+            project.getLogger().warn("[test-order] Failed to process fallback payloads: {}", e.getMessage());
+        }
+
         if (!Files.isDirectory(depsDir)) {
             if (failIfMissing) {
                 throw new GradleException("[test-order] No deps directory at " + depsDir

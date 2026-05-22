@@ -54,11 +54,27 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	private boolean filterByGroupId;
 
 	/**
-	 * Instrumentation mode: FULL (default), METHOD_ENTRY, FULL_METHOD, or
-	 * FULL_MEMBER
+	 * Instrumentation mode: CLASS (default), METHOD, or MEMBER
 	 */
-	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "FULL")
+	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "CLASS")
 	private String instrumentationMode;
+
+	/**
+	 * Instrumentation strategy: "offline" (default, build-time — faster, no
+	 * per-fork agent overhead) or "online" (agent-based, instruments at class load
+	 * time in each fork).
+	 */
+	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION, defaultValue = "offline")
+	private String instrumentation;
+
+	/**
+	 * LZ4 compression level for index writes: "fast" (default — 10-50x faster
+	 * writes, ~5-15% larger files) or "hc" (high compression, smallest files). The
+	 * setting is passed as a system property so that the IndexCollectorServer in
+	 * the build process uses it when writing the final index.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.COMPRESSION, defaultValue = "fast")
+	private String compression;
 
 	/**
 	 * In auto mode, forces a full re-learn after this many consecutive order-mode
@@ -83,29 +99,28 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	private int autoCompactEvery;
 
 	private static final Set<String> VALID_MODES = Set.of("auto", "learn", "order", "skip");
-	private static final Set<String> VALID_INSTR_MODES = Set.of("METHOD_ENTRY", "FULL", "FULL_METHOD", "FULL_MEMBER");
+	private static final Set<String> VALID_INSTR_MODES = Set.of("CLASS", "METHOD", "MEMBER");
 
 	@Override
 	public void execute() throws MojoExecutionException {
 		initContext();
+		// Always restore previously instrumented classes (even when skip=true)
+		// to prevent NoClassDefFoundError from stale instrumented bytecode.
+		restoreInstrumentedClasses();
 		if (skip)
 			return;
-		// Ensure the argLine property is defined (even if empty) so that
-		// Surefire's @{argLine} late-binding resolves to "" rather than the
 		// POM-packaging modules (reactor parents) have no tests — skip silently
 		if ("pom".equals(project.getPackaging())) {
 			getLog().debug("[test-order] Skipping prepare — POM module.");
 			return;
 		}
 		if (hasCliWorkflowGoal()) {
+			// Still perform deferred offline instrumentation if needed
+			if ("true".equals(project.getProperties().getProperty("testorder.offline.pending"))) {
+				performDeferredOfflineInstrumentation();
+			}
 			getLog().debug("[test-order] Skipping prepare — CLI test-order workflow already configured Surefire.");
 			return;
-		}
-
-		// literal string "@{argLine}" when no agent is attached. This removes
-		// the need for users to declare <argLine/> in their POM <properties>.
-		if (project.getProperties().getProperty("argLine") == null) {
-			project.getProperties().setProperty("argLine", "");
 		}
 
 		// Allow CLI system property to override POM-level <configuration><mode>
@@ -121,6 +136,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 		// Skip if a CLI goal (auto, select, run-remaining) already configured Surefire
 		if ("true".equals(project.getProperties().getProperty("testorder.auto.active"))) {
+			// But still perform deferred offline instrumentation if needed
+			if ("true".equals(project.getProperties().getProperty("testorder.offline.pending"))) {
+				performDeferredOfflineInstrumentation();
+			}
 			getLog().debug("[test-order] Skipping prepare — CLI goal already configured Surefire.");
 			return;
 		}
@@ -153,10 +172,22 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		}
 
 		// For both "order" and "auto": ensure we have an aggregated index if only .deps
-		// files exist
+		// files exist, or if a fallback payload file was written by a previous run's
+		// shutdown hook (offline mode with classloader teardown before merge).
 		if (!Files.exists(idxPath)) {
+			// Always check for fallback payload file — written by IndexCollectorServer
+			// when the Maven JVM shuts down before stopAndMerge can complete.
+			try {
+				if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
+					getLog().info(
+							"[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
+				}
+			} catch (IOException e) {
+				getLog().warn("[test-order] Failed to process collector fallback payloads: " + e.getMessage());
+			}
+
 			Path depsDirPath = ctx.resolveDepsDir(depsDir);
-			if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
+			if (!Files.exists(idxPath) && Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
 				try {
 					getLog().info("[test-order] No index found but .deps files exist — auto-aggregating.");
 					autoAggregate(depsDirPath, idxPath);
@@ -225,10 +256,6 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				// R9-10: If this module has never been learned (no test hash),
 				// suppress the alarming message — it's just a first-run scenario.
 				if (!Files.exists(testHash)) {
-					Path statePath = ctx.resolveStateFile(stateFile);
-					if (!Files.exists(statePath)) {
-						getLog().info("[test-order] State file missing — re-learning to rebuild scoring data.");
-					}
 					getLog().debug("[test-order] First learn for this module — " + newTests.size()
 							+ " test class(es) not yet in index.");
 				} else {
@@ -270,35 +297,103 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		return false;
 	}
 
+	/**
+	 * Restores class files that were previously instrumented by offline learn mode.
+	 * This prevents NoClassDefFoundError when subsequent runs (order, skip,
+	 * baseline) encounter instrumented bytecode without UsageStore on the
+	 * classpath.
+	 */
+	private void restoreInstrumentedClasses() {
+		String buildDir = project.getBuild().getDirectory();
+		if (buildDir == null) {
+			return;
+		}
+		Path targetDir = Path.of(buildDir);
+		Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
+		try {
+			if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir)) {
+				getLog().info("[test-order] Restored original classes from backup (offline instrumentation reverted).");
+			}
+		} catch (IOException e) {
+			getLog().warn("[test-order] Failed to restore instrumented classes: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Performs offline instrumentation that was deferred by a CLI goal (which runs
+	 * before compile). At process-test-classes phase, classes are guaranteed to
+	 * exist.
+	 */
+	private void performDeferredOfflineInstrumentation() throws MojoExecutionException {
+		Path targetDir = Path.of(project.getBuild().getDirectory());
+		Path mappingFile = targetDir.resolve(".test-order").resolve("class-id-map.bin");
+
+		if (java.nio.file.Files.exists(mappingFile)) {
+			getLog().debug("[test-order] Mapping file already exists — skipping deferred instrumentation.");
+			project.getProperties().remove("testorder.offline.pending");
+			return;
+		}
+
+		Path classesDir = Path.of(project.getBuild().getOutputDirectory());
+		if (!java.nio.file.Files.isDirectory(classesDir)) {
+			getLog().warn("[test-order] Classes still not found at " + classesDir
+					+ " during deferred instrumentation — tests may fail to record dependencies.");
+			return;
+		}
+
+		String instrMode = project.getProperties().getProperty("testorder.offline.instrMode", "CLASS");
+		String includes = project.getProperties().getProperty("testorder.offline.includePackages", "");
+
+		getLog().info("[test-order] Performing deferred offline instrumentation: " + classesDir);
+		try {
+			me.bechberger.testorder.agent.Agent.InstrumentationMode iMode = me.bechberger.testorder.agent.Agent.InstrumentationMode
+					.fromString(instrMode);
+			List<String> includeList = includes.isBlank() ? List.of() : List.of(includes.split(","));
+			me.bechberger.testorder.agent.OfflineInstrumentor instrumentor = new me.bechberger.testorder.agent.OfflineInstrumentor(
+					iMode, includeList, List.of());
+			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
+			me.bechberger.testorder.agent.runtime.ClassIdMapping mapping = instrumentor.instrument(classesDir,
+					backupDir);
+			if (instrumentor.getTransformedCount() == 0 && instrumentor.getSkippedCount() > 0) {
+				getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
+				instrumentor = new me.bechberger.testorder.agent.OfflineInstrumentor(iMode, includeList, List.of());
+				instrumentor.setIgnoreMarker(true);
+				mapping = instrumentor.instrument(classesDir, backupDir);
+			}
+			mapping.save(mappingFile);
+			getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes" + " (skipped "
+					+ instrumentor.getSkippedCount() + ")");
+		} catch (IOException e) {
+			throw new MojoExecutionException("[test-order] Deferred offline instrumentation failed", e);
+		}
+		project.getProperties().remove("testorder.offline.pending");
+	}
+
 	private void switchToLearnMode() throws MojoExecutionException {
-		String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
-		getLog().info("[test-order] ─── Learn mode ───────────────────────────────────────────");
-		getLog().info("[test-order]   module:          " + project.getArtifactId());
-		getLog().info("[test-order]   instrumentation: " + instrumentationMode);
-		getLog().info("[test-order]   changeMode:      " + changeMode);
-		getLog().info("[test-order]   packages:        "
-				+ (effectiveInclude != null && !effectiveInclude.isEmpty() ? effectiveInclude : "(all)"));
-		getLog().info("[test-order] ─────────────────────────────────────────────────────────────");
 		SurefireHelper.rejectClassLevelParallelForLearn(project, getLog());
 		SurefireHelper.warnForkCountInLearnMode(project, getLog());
 		SurefireHelper.warnReuseForksFalseInLearnMode(project, getLog());
 		SurefireHelper.warnRerunFailingTestsInLearnMode(project, getLog());
 		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
-		configureLearnMode(instrumentationMode, effectiveInclude, true);
+		String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
+
+		// Set compression level as a system property for IndexCollectorServer merge
+		if (compression != null && !compression.isBlank()) {
+			System.setProperty(MavenPluginConfigKeys.COMPRESSION, compression.strip());
+		}
+
+		if ("offline".equalsIgnoreCase(instrumentation)) {
+			configureOfflineLearnMode(instrumentationMode, effectiveInclude);
+		} else {
+			configureLearnMode(instrumentationMode, effectiveInclude, true);
+		}
+
 		TestOrderState state = loadState();
 		state.resetRunsSinceLearn();
 		try {
 			state.save(ctx.resolveStateFile(stateFile));
 		} catch (IOException e) {
 			getLog().warn("[test-order] Could not reset runsSinceLearn: " + e.getMessage());
-		}
-
-		// ML predictions are orthogonal to dependency learning — generate them
-		// even in learn mode so that tests with high historical failure
-		// probability are prioritised from the start.
-		if (isMLEnabled()) {
-			appendMLEnabledToConfig();
-			generateMLPredictions(Set.of(), Set.of());
 		}
 	}
 
@@ -317,10 +412,6 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		// Detect which test framework is on the classpath to print correct class name
 		String frameworkName = isTestNGOnTestClasspath() ? "TestNGPriorityInterceptor" : "PriorityClassOrderer";
 		getLog().info("[test-order] Order mode: injecting " + frameworkName);
-
-		// Write the change-detection.logged flag so PriorityClassOrderer
-		// (running in the forked Surefire JVM) can suppress duplicate info.
-		// (config property will be written later via writeOrdererConfig)
 
 		// Warn if topN was explicitly set — it only applies to select/auto-select, not
 		// pure order mode
@@ -371,9 +462,6 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		String mergedChangedCsv = mergedChanged.isEmpty() ? null : String.join(",", mergedChanged);
 		String mergedChangedTestsCsv = mergedChangedTests.isEmpty() ? null : String.join(",", mergedChangedTests);
 
-		// ── Startup banner: show users what test-order will do ──
-		logOrderModeBanner(mergedChanged, mergedChangedTests);
-
 		TestOrderState state = loadState();
 		OrderWorkflow.OrderSetupResult result;
 		try {
@@ -400,10 +488,6 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 									.changedTestClasses(mergedChangedTestsCsv).build(), state);
 							writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 									buildScoreOverrides());
-							if (isMLEnabled()) {
-								appendMLEnabledToConfig();
-								generateMLPredictions(result.changedClasses(), result.changedTests());
-							}
 							return;
 						}
 					} catch (IOException rebuildEx) {
@@ -418,10 +502,6 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 								.changedTestClasses(mergedChangedTestsCsv).build(), state);
 						writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 								buildScoreOverrides());
-						if (isMLEnabled()) {
-							appendMLEnabledToConfig();
-							generateMLPredictions(result.changedClasses(), result.changedTests());
-						}
 						return;
 					} catch (IOException retryEx) {
 						getLog().debug("[test-order] Recovered index still unreadable: " + retryEx.getMessage());
@@ -445,18 +525,11 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 				buildScoreOverrides());
 
-		// ML: Always write ml.enabled to config when opt-in is active, so that
-		// TelemetryListener in the forked Surefire JVM can record ML history
-		// even before the first predictions are generated (bootstrap phase).
-		if (isMLEnabled()) {
-			appendMLEnabledToConfig();
-			generateMLPredictions(result.changedClasses(), result.changedTests());
-		}
-
 		// R17-12: Mark that prepare already ran to prevent duplicate execution
 		// when 'mvn test-order:prepare test' triggers both CLI and lifecycle invocation
 		project.getProperties().setProperty("testorder.auto.active", "true");
 	}
+
 	private boolean isRecoverableIndexLoadFailure(IOException e) {
 		for (Throwable t = e; t != null; t = t.getCause()) {
 			String msg = t.getMessage();
@@ -513,45 +586,5 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			}
 		}
 		return false;
-	}
-
-	/**
-	 * Logs a one-line startup banner summarizing mode, change detection, and plan.
-	 */
-	private void logOrderModeBanner(Set<String> changedClasses, Set<String> changedTests) {
-		int totalChanged = changedClasses.size() + changedTests.size();
-		String changeSummary;
-		if (totalChanged == 0) {
-			changeSummary = "no changes detected";
-		} else {
-			StringBuilder sb = new StringBuilder();
-			if (!changedClasses.isEmpty()) {
-				sb.append(changedClasses.size()).append(" changed source");
-				sb.append(changedClasses.size() == 1 ? " class" : " classes");
-			}
-			if (!changedTests.isEmpty()) {
-				if (sb.length() > 0)
-					sb.append(", ");
-				sb.append(changedTests.size()).append(" changed test");
-				sb.append(changedTests.size() == 1 ? " class" : " classes");
-			}
-			changeSummary = sb.toString();
-		}
-
-		String plan;
-		if (totalChanged > 0) {
-			plan = "tests exercising changed code will run first";
-		} else {
-			plan = "using historical failure data and speed for ordering";
-		}
-
-		getLog().info("[test-order] ─── Order mode | " + changeMode + " | " + changeSummary + " ───");
-		getLog().info("[test-order]   → " + plan);
-		if (!changedClasses.isEmpty() && changedClasses.size() <= 5) {
-			getLog().info("[test-order]   Changed: " + String.join(", ", changedClasses));
-		} else if (changedClasses.size() > 5) {
-			String first5 = changedClasses.stream().sorted().limit(5).reduce((a, b) -> a + ", " + b).orElse("");
-			getLog().info("[test-order]   Changed: " + first5 + " (+" + (changedClasses.size() - 5) + " more)");
-		}
 	}
 }

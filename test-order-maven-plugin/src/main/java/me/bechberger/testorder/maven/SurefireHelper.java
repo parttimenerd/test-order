@@ -555,9 +555,19 @@ final class SurefireHelper {
 		if (tests.isEmpty())
 			return;
 
+		// Normalize inner/nested class names (e.g. OuterTest$InnerTests) to their
+		// top-level enclosing class. Surefire's -Dtest parameter does not support
+		// the '$' inner-class notation; @Nested classes run as part of their outer
+		// class when Surefire includes the outer class in the test run.
+		java.util.LinkedHashSet<String> normalizedTests = new java.util.LinkedHashSet<>();
+		for (String tc : tests) {
+			int dollar = tc.indexOf('$');
+			normalizedTests.add(dollar > 0 ? tc.substring(0, dollar) : tc);
+		}
+
 		// Build comma-separated list of FQCNs for Surefire's test parameter
 		StringBuilder testParam = new StringBuilder();
-		for (String tc : tests) {
+		for (String tc : normalizedTests) {
 			if (!testParam.isEmpty())
 				testParam.append(",");
 			testParam.append(tc);
@@ -575,10 +585,5 @@ final class SurefireHelper {
 		Plugin surefire = requireSurefirePlugin(project);
 		Xpp3Dom config = getOrCreateConfiguration(surefire);
 		setChild(config, "test", project.getProperties().getProperty("test"));
-
-		// Prevent Surefire from failing when no tests match the filter (e.g. empty
-		// tier, renamed classes). Users should not have to pass
-		// -Dsurefire.failIfNoSpecifiedTests=false manually.
-		project.getProperties().setProperty("surefire.failIfNoSpecifiedTests", "false");
 	}
 }

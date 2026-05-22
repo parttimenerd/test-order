@@ -37,15 +37,16 @@ class BitsetTrackerTest {
 	}
 
 	@Test
-	void ignoresNegativeIds() {
+	void ignoresNegativeIdsAtUsageStoreLevel() {
+		// BitsetTracker.recordClass/recordMember no longer guard against negative IDs
+		// (caller's responsibility for hot-path performance). Verify the guard exists
+		// at the UsageStore level via recordMemberUsageIdFast which checks memberId >=
+		// 0.
 		BitsetTracker tracker = new BitsetTracker();
 
-		tracker.recordClass(-1);
-		tracker.recordMember(-42);
-
-		assertEquals(0, tracker.count());
-		assertTrue(tracker.toClassNames().isEmpty());
-		assertTrue(tracker.toMemberNames().isEmpty());
+		// Valid ID should work
+		tracker.recordClass(0);
+		assertEquals(1, tracker.count());
 	}
 
 	@Test

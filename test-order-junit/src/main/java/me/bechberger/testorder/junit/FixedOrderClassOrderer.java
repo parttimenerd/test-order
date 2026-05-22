@@ -78,17 +78,17 @@ public class FixedOrderClassOrderer implements ClassOrderer {
 		List<ClassDescriptor> sorted = new ArrayList<>(descriptors);
 		sorted.sort(Comparator.comparingInt(d -> {
 			String name = d.getTestClass().getName();
-			// If the exact name (including $) is listed, use its position directly.
-			if (positionMap.containsKey(name)) {
-				return positionMap.get(name);
-			}
-			// Fallback: normalize inner/nested classes (e.g., "OuterTest$InnerTest") to
-			// their top-level class so they inherit the parent's position from the order
-			// file.
+			// First check exact match (handles explicitly listed nested classes)
+			Integer pos = positionMap.get(name);
+			if (pos != null)
+				return pos;
+			// Fall back to top-level enclosing class (first $) position
 			int dollar = name.indexOf('$');
 			if (dollar > 0) {
 				String topLevel = name.substring(0, dollar);
-				return positionMap.getOrDefault(topLevel, Integer.MAX_VALUE);
+				pos = positionMap.get(topLevel);
+				if (pos != null)
+					return pos;
 			}
 			return Integer.MAX_VALUE;
 		}));

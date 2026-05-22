@@ -190,7 +190,7 @@ Recommended defaults:
 
 | Property | Default | Notes |
 |---|---|---|
-| `testorder.instrumentation.mode` | `FULL` | `METHOD_ENTRY`, `FULL`, `FULL_METHOD`, `FULL_MEMBER` |
+| `testorder.instrumentation.mode` | `CLASS` | `CLASS`, `METHOD`, `MEMBER` |
 | `testorder.includePackages` | unset | Restricts instrumentation scope |
 | `testorder.filterByGroupId` | `true` | Falls back to project groupId when package detection is empty |
 | `testorder.methodOrder.enabled` | `false` | Experimental method ordering |
@@ -377,7 +377,7 @@ Behaviour:
 - `testorder.changed.classes` is required when `changeMode=explicit`.
 - `testorder.select.topN` must be `>= -1` (`-1` = all affected, `0` = none, `>0` = exact count).
 - `testorder.select.randomM` must be `>= 0`.
-- `testorder.instrumentation.mode` must be one of: `METHOD_ENTRY`, `FULL`, `FULL_METHOD`, `FULL_MEMBER`.
+- `testorder.instrumentation.mode` must be one of: `CLASS`, `METHOD`, `MEMBER`.
 - `testorder.coverage.threshold` must be `>= 1` (minimum number of exercising tests for a class to be "well-tested").
 
 ## Notes on Property Names

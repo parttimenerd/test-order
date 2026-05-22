@@ -8,7 +8,7 @@ import java.util.Set;
 /**
  * Dependency-based coverage metrics for a single production class. Records how
  * many test classes exercise this class and which ones, plus member-level
- * coverage when available (FULL_MEMBER instrumentation mode).
+ * coverage when available (MEMBER instrumentation mode).
  */
 public final class ClassCoverage implements Comparable<ClassCoverage> {
 

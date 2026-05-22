@@ -21,6 +21,9 @@ dependencies {
     // for change detection, aggregation, and show-order tasks
     implementation("me.bechberger:test-order-core:${version}")
 
+    // Agent module — needed for offline instrumentation at build time
+    implementation("me.bechberger:test-order-agent:${version}")
+
     // CI artifact downloading (GitHub Actions, GitLab CI, HTTP)
     implementation("me.bechberger:test-order-ci:${version}")
 

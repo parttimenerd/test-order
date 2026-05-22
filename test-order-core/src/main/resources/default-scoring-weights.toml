@@ -104,7 +104,7 @@ value = 1.0
 range = [0.0, 10.0]
 
 # Method-level bonus for dependency overlap with changed classes
-# Requires FULL_METHOD instrumentation mode for per-method dependency tracking.
+# Requires METHOD instrumentation mode for per-method dependency tracking.
 # Score = min(overlap / sqrt(totalMethodDeps) × weight, weight)
 [method-scores.depOverlap]
 value = 2.0

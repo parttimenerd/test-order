@@ -140,6 +140,7 @@ class AbstractTestOrderMojoTest {
 
 		Build build = new Build();
 		build.setTestOutputDirectory(tempDir.resolve("target/test-classes").toString());
+		build.setDirectory(tempDir.resolve("target").toString());
 
 		MavenProject project = mock(MavenProject.class);
 		when(project.getBuildPlugins()).thenReturn(List.of(surefire));
@@ -167,7 +168,7 @@ class AbstractTestOrderMojoTest {
 		mojo.methodHashFile = tempDir.resolve("method-hashes.lz4").toString();
 
 		mojo.initContext();
-		mojo.configureLearnModeForTest("FULL", null, false);
+		mojo.configureLearnModeForTest("CLASS", null, false);
 
 		assertThat(userProps.getProperty("maven.surefire.debug")).isEqualTo("SESSION-GLOBAL");
 		String moduleDebug = projectProps.getProperty("maven.surefire.debug");

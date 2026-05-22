@@ -1,0 +1,634 @@
+package me.bechberger.testorder;
+
+import java.io.*;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * TCP server that collects dependency data from forked test JVMs via socket.
+ * <p>
+ * Runs in the build tool process (Maven plugin / Gradle plugin) and accepts
+ * connections from {@code IndexCollectorClient} instances in each forked JVM.
+ * After all tests complete, call {@link #stopAndMerge(Path)} to write the final
+ * index.
+ * <p>
+ * This eliminates:
+ * <ul>
+ * <li>Writing hundreds of .deps files per fork</li>
+ * <li>File locking for concurrent index merge</li>
+ * <li>Reflective DependencyMap access in forked JVMs (classloader issues)</li>
+ * </ul>
+ */
+public class IndexCollectorServer implements AutoCloseable {
+
+	private static final int MAGIC = 0x54_4F_44_50; // "TODP"
+	private static final byte PROTOCOL_VERSION_V1 = 1;
+	private static final byte PROTOCOL_VERSION_V2 = 2;
+	private static final int MEMBER_ID_OFFSET = 8_000_000;
+
+	private final ServerSocket serverSocket;
+	private final Thread acceptThread;
+	private final AtomicBoolean running = new AtomicBoolean(true);
+	private final Path indexFile;
+	private final Path mappingFile; // ClassIdMapping file for v2 protocol
+	private volatile String[] classNames; // lazily loaded from mappingFile
+	private volatile String[] memberNames; // lazily loaded from mappingFile
+	private final Thread shutdownHook;
+
+	// Shared maps for incremental merge — ConcurrentHashMap for lock-free access
+	private final ConcurrentHashMap<String, Set<String>> mergedClassDeps = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<String, Set<String>> mergedMethodDeps = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<String, Set<String>> mergedMemberDeps = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<String, Set<String>> mergedMethodMemberDeps = new ConcurrentHashMap<>();
+	private final AtomicInteger receivedCount = new AtomicInteger();
+
+	/**
+	 * Start the collector server on a random available port on localhost.
+	 *
+	 * @param indexFile
+	 *            path to the binary dependency index; used by the shutdown hook to
+	 *            auto-merge if {@link #stopAndMerge} isn't called explicitly.
+	 */
+	public IndexCollectorServer(Path indexFile) throws IOException {
+		this(indexFile, null);
+	}
+
+	/**
+	 * Start the collector server with ClassIdMapping support for v2 binary
+	 * protocol.
+	 *
+	 * @param indexFile
+	 *            path to the binary dependency index
+	 * @param mappingFile
+	 *            path to the class-id-map.bin file (for v2 protocol); null to
+	 *            disable v2 support
+	 */
+	public IndexCollectorServer(Path indexFile, Path mappingFile) throws IOException {
+		this.indexFile = indexFile;
+		this.mappingFile = mappingFile;
+		// Pre-load classes needed by stopAndMerge so they're available even if
+		// the plugin classloader is torn down before the shutdown hook fires.
+		// Without this, Maven's classloader cleanup causes NoClassDefFoundError.
+		preloadMergeClasses();
+
+		serverSocket = new ServerSocket();
+		serverSocket.setReuseAddress(true);
+		serverSocket.bind(new InetSocketAddress("127.0.0.1", 0));
+		serverSocket.setSoTimeout(500); // 500ms accept timeout for responsive shutdown
+
+		acceptThread = new Thread(this::acceptLoop, "test-order-index-collector");
+		acceptThread.setDaemon(true);
+		acceptThread.start();
+
+		// Safety net: merge on JVM shutdown if not explicitly stopped.
+		// If the plugin classloader is already torn down, writes a fallback file
+		// that the next build run can pick up.
+		shutdownHook = new Thread(() -> {
+			if (running.get()) {
+				try {
+					stopAndMerge();
+				} catch (NoClassDefFoundError | Exception e) {
+					System.err.println("[test-order] IndexCollectorServer: merge failed in shutdown hook ("
+							+ e.getClass().getSimpleName() + ": " + e.getMessage() + "), writing fallback file");
+					writeFallbackPayloads();
+				}
+			}
+		}, "test-order-collector-shutdown");
+		Runtime.getRuntime().addShutdownHook(shutdownHook);
+	}
+
+	/**
+	 * Eagerly load all classes needed by the merge path so they survive classloader
+	 * teardown during JVM shutdown.
+	 */
+	private static void preloadMergeClasses() {
+		try {
+			DependencyMap.preloadSaveClasses();
+		} catch (NoClassDefFoundError | Exception e) {
+			// Non-fatal: if classes aren't on the classpath, the
+			// explicit stopAndMerge call from the plugin will handle it.
+		}
+	}
+
+	/**
+	 * Returns the port the server is listening on. Pass this to forked JVMs via
+	 * {@code -Dtestorder.collector.port=<port>}.
+	 */
+	public int getPort() {
+		return serverSocket.getLocalPort();
+	}
+
+	/**
+	 * Returns the number of payloads received so far.
+	 */
+	public int getReceivedCount() {
+		return receivedCount.get();
+	}
+
+	/**
+	 * Stop accepting connections and merge all received data into the index file.
+	 *
+	 * @return the number of test classes merged
+	 */
+	public int stopAndMerge() {
+		return stopAndMerge(this.indexFile);
+	}
+
+	/**
+	 * Stop accepting connections and merge all received data into the given index
+	 * file.
+	 *
+	 * @param targetIndexFile
+	 *            path to the binary dependency index (test-dependencies.lz4)
+	 * @return the number of test classes merged
+	 */
+	public int stopAndMerge(Path targetIndexFile) {
+		if (!running.compareAndSet(true, false)) {
+			return 0; // already stopped
+		}
+		try {
+			acceptThread.join(5000);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+		closeServerSocket();
+		unregisterShutdownHook();
+
+		if (mergedClassDeps.isEmpty()) {
+			return 0;
+		}
+
+		// Write the already-merged index
+		try {
+			DependencyMap.mergeFromAgent(targetIndexFile, mergedClassDeps, mergedMethodDeps, mergedMemberDeps,
+					mergedMethodMemberDeps);
+		} catch (IOException e) {
+			System.err.println("[test-order] IndexCollectorServer: failed to write index: " + e.getMessage());
+			return 0;
+		}
+		return mergedClassDeps.size();
+	}
+
+	/**
+	 * Stop the server without merging (e.g., on build failure).
+	 */
+	@Override
+	public void close() {
+		running.set(false);
+		closeServerSocket();
+		unregisterShutdownHook();
+		try {
+			acceptThread.join(2000);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	private void unregisterShutdownHook() {
+		try {
+			Runtime.getRuntime().removeShutdownHook(shutdownHook);
+		} catch (IllegalStateException ignored) {
+			// JVM already shutting down
+		}
+	}
+
+	private void closeServerSocket() {
+		try {
+			serverSocket.close();
+		} catch (IOException ignored) {
+		}
+	}
+
+	private void acceptLoop() {
+		while (running.get()) {
+			try {
+				Socket client = serverSocket.accept();
+				Thread handler = new Thread(() -> handleClient(client), "test-order-collector-handler");
+				handler.setDaemon(true);
+				handler.start();
+			} catch (SocketTimeoutException e) {
+				// Normal: accept timed out, loop back to check running flag
+			} catch (IOException e) {
+				if (running.get()) {
+					System.err.println("[test-order] IndexCollectorServer accept error: " + e.getMessage());
+				}
+			}
+		}
+	}
+
+	private void handleClient(Socket client) {
+		try (client;
+				DataInputStream in = new DataInputStream(new BufferedInputStream(client.getInputStream(), 65536));
+				OutputStream rawOut = client.getOutputStream()) {
+			client.setSoTimeout(30_000); // 30s read timeout per client
+			// Read and validate header
+			int magic = in.readInt();
+			if (magic != MAGIC) {
+				System.err.println("[test-order] IndexCollectorServer: invalid magic from client");
+				rawOut.write(0); // NACK
+				return;
+			}
+			byte version = in.readByte();
+			if (version == PROTOCOL_VERSION_V2) {
+				handleBinaryPayload(in);
+			} else if (version == PROTOCOL_VERSION_V1) {
+				handleStringPayload(in);
+			} else {
+				System.err.println("[test-order] IndexCollectorServer: unsupported protocol version " + version);
+				rawOut.write(0); // NACK
+				return;
+			}
+			receivedCount.incrementAndGet();
+
+			// Send ACK
+			rawOut.write(1);
+			rawOut.flush();
+		} catch (IOException e) {
+			System.err.println("[test-order] IndexCollectorServer: error reading from client: " + e.getMessage());
+		}
+	}
+
+	private void handleStringPayload(DataInputStream in) throws IOException {
+		Map<String, Set<String>> classDeps = readMap(in);
+		Map<String, Set<String>> methodDeps = readMap(in);
+		Map<String, Set<String>> memberDeps = readMap(in);
+		Map<String, Set<String>> methodMemberDeps = readMap(in);
+
+		// Merge into concurrent maps
+		mergeMaps(mergedClassDeps, classDeps);
+		mergeMaps(mergedMethodDeps, methodDeps);
+		mergeMaps(mergedMemberDeps, memberDeps);
+		mergeMaps(mergedMethodMemberDeps, methodMemberDeps);
+	}
+
+	private void handleBinaryPayload(DataInputStream in) throws IOException {
+		String[] cn = ensureClassNames();
+		String[] mn = ensureMemberNames();
+		if (cn == null) {
+			// No mapping loaded — can't decode v2. Read and discard.
+			System.err.println("[test-order] IndexCollectorServer: v2 payload received but no ClassIdMapping loaded");
+			return;
+		}
+
+		// Read test-class trackers
+		int testCount = in.readInt();
+		for (int i = 0; i < testCount; i++) {
+			String key = readString(in);
+			long[] classWords = readLongArray(in);
+			long[] memberWords = readLongArray(in);
+			Set<String> classDeps = resolveClassIds(classWords, cn);
+			Set<String> memberDeps = resolveMemberIds(memberWords, mn);
+			if (!classDeps.isEmpty()) {
+				mergedClassDeps.merge(key, classDeps, (existing, incoming) -> {
+					synchronized (existing) {
+						existing.addAll(incoming);
+					}
+					return existing;
+				});
+			}
+			if (!memberDeps.isEmpty()) {
+				mergedMemberDeps.merge(key, memberDeps, (existing, incoming) -> {
+					synchronized (existing) {
+						existing.addAll(incoming);
+					}
+					return existing;
+				});
+			}
+		}
+
+		// Read method trackers
+		int methodCount = in.readInt();
+		for (int i = 0; i < methodCount; i++) {
+			String key = readString(in);
+			long[] classWords = readLongArray(in);
+			long[] memberWords = readLongArray(in);
+			Set<String> classDeps = resolveClassIds(classWords, cn);
+			Set<String> memberDeps = resolveMemberIds(memberWords, mn);
+			if (!classDeps.isEmpty()) {
+				mergedMethodDeps.merge(key, classDeps, (existing, incoming) -> {
+					synchronized (existing) {
+						existing.addAll(incoming);
+					}
+					return existing;
+				});
+			}
+			if (!memberDeps.isEmpty()) {
+				mergedMethodMemberDeps.merge(key, memberDeps, (existing, incoming) -> {
+					synchronized (existing) {
+						existing.addAll(incoming);
+					}
+					return existing;
+				});
+			}
+		}
+	}
+
+	private static final long[] EMPTY_LONGS = new long[0];
+
+	/**
+	 * Per-handler-thread scratch buffer for decoding longs and strings from the
+	 * wire. Starts at 512 bytes and grows on demand. Shared between
+	 * {@link #readLongArray} and {@link #readString} — both are always called
+	 * sequentially on the same thread, so sharing is safe.
+	 */
+	private static final ThreadLocal<byte[]> READ_BUF = ThreadLocal.withInitial(() -> new byte[512]);
+
+	private long[] readLongArray(DataInputStream in) throws IOException {
+		int len = in.readInt();
+		if (len == 0)
+			return EMPTY_LONGS;
+		if (len < 0 || len > 1_000_000)
+			throw new IOException("Invalid long array length: " + len);
+		long[] arr = new long[len];
+		int needed = len * 8;
+		byte[] buf = READ_BUF.get();
+		if (buf.length < needed) {
+			buf = new byte[needed];
+			READ_BUF.set(buf);
+		}
+		in.readFully(buf, 0, needed);
+		for (int i = 0, off = 0; i < len; i++, off += 8) {
+			arr[i] = ((long) (buf[off] & 0xFF) << 56) | ((long) (buf[off + 1] & 0xFF) << 48)
+					| ((long) (buf[off + 2] & 0xFF) << 40) | ((long) (buf[off + 3] & 0xFF) << 32)
+					| ((long) (buf[off + 4] & 0xFF) << 24) | ((long) (buf[off + 5] & 0xFF) << 16)
+					| ((long) (buf[off + 6] & 0xFF) << 8) | ((long) (buf[off + 7] & 0xFF));
+		}
+		return arr;
+	}
+
+	private Set<String> resolveClassIds(long[] words, String[] names) {
+		if (words.length == 0)
+			return Set.of();
+		int estimated = 0;
+		for (long w : words)
+			estimated += Long.bitCount(w);
+		Set<String> result = new HashSet<>(estimated + (estimated >>> 2));
+		for (int wi = 0; wi < words.length; wi++) {
+			long word = words[wi];
+			if (word == 0)
+				continue;
+			int baseId = wi << 6;
+			for (long bits = word; bits != 0; bits &= bits - 1) {
+				int id = baseId + Long.numberOfTrailingZeros(bits);
+				if (id < names.length && names[id] != null) {
+					result.add(names[id]);
+				}
+			}
+		}
+		return result;
+	}
+
+	private Set<String> resolveMemberIds(long[] words, String[] names) {
+		if (words.length == 0 || names == null)
+			return Set.of();
+		int estimated = 0;
+		for (long w : words)
+			estimated += Long.bitCount(w);
+		Set<String> result = new HashSet<>(estimated + (estimated >>> 2));
+		for (int wi = 0; wi < words.length; wi++) {
+			long word = words[wi];
+			if (word == 0)
+				continue;
+			int baseAdj = wi << 6;
+			for (long bits = word; bits != 0; bits &= bits - 1) {
+				int adj = baseAdj + Long.numberOfTrailingZeros(bits);
+				if (adj < names.length && names[adj] != null) {
+					result.add(names[adj]);
+				}
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Lazily load class names from the mapping file. Thread-safe via volatile +
+	 * double-check.
+	 */
+	private String[] ensureClassNames() {
+		String[] cn = classNames;
+		if (cn != null)
+			return cn;
+		if (mappingFile == null || !java.nio.file.Files.exists(mappingFile))
+			return null;
+		synchronized (this) {
+			cn = classNames;
+			if (cn != null)
+				return cn;
+			loadMapping();
+			return classNames;
+		}
+	}
+
+	private String[] ensureMemberNames() {
+		String[] mn = memberNames;
+		if (mn != null)
+			return mn;
+		if (mappingFile == null || !java.nio.file.Files.exists(mappingFile))
+			return null;
+		synchronized (this) {
+			mn = memberNames;
+			if (mn != null)
+				return mn;
+			loadMapping();
+			return memberNames;
+		}
+	}
+
+	private void loadMapping() {
+		try {
+			// Use reflection to avoid compile-time dependency on agent module
+			// ClassIdMapping is in test-order-agent which may not be on our classpath
+			// directly; but in the Maven plugin's classpath it usually is.
+			var mappingClass = Class.forName("me.bechberger.testorder.agent.runtime.ClassIdMapping");
+			var loadMethod = mappingClass.getMethod("load", java.nio.file.Path.class);
+			Object mapping = loadMethod.invoke(null, mappingFile);
+
+			var classCountMethod = mappingClass.getMethod("classCount");
+			int classCount = (int) classCountMethod.invoke(mapping);
+			var getClassNameMethod = mappingClass.getMethod("getClassName", int.class);
+			String[] cn = new String[classCount];
+			for (int i = 0; i < classCount; i++) {
+				cn[i] = (String) getClassNameMethod.invoke(mapping, i);
+			}
+			classNames = cn;
+
+			var memberCountMethod = mappingClass.getMethod("memberCount");
+			int memberCount = (int) memberCountMethod.invoke(mapping);
+			var getMemberNameMethod = mappingClass.getMethod("getMemberName", int.class);
+			String[] mn = new String[memberCount];
+			for (int i = 0; i < memberCount; i++) {
+				mn[i] = (String) getMemberNameMethod.invoke(mapping, i + MEMBER_ID_OFFSET);
+			}
+			memberNames = mn;
+		} catch (Exception e) {
+			System.err.println("[test-order] IndexCollectorServer: failed to load ClassIdMapping from " + mappingFile
+					+ ": " + e.getMessage());
+			classNames = new String[0];
+			memberNames = new String[0];
+		}
+	}
+
+	/** Maximum number of entries allowed in a single map (safety limit). */
+	private static final int MAX_MAP_ENTRIES = 500_000;
+	/** Maximum string length in the wire protocol (64 KB). */
+	private static final int MAX_STRING_LENGTH = 65535;
+
+	private static Map<String, Set<String>> readMap(DataInputStream in) throws IOException {
+		int entryCount = in.readInt();
+		if (entryCount == 0) {
+			return Map.of();
+		}
+		if (entryCount < 0 || entryCount > MAX_MAP_ENTRIES) {
+			throw new IOException("Invalid map entry count: " + entryCount);
+		}
+		Map<String, Set<String>> map = new HashMap<>(entryCount);
+		for (int i = 0; i < entryCount; i++) {
+			String key = readString(in);
+			int valueCount = in.readInt();
+			if (valueCount < 0 || valueCount > MAX_MAP_ENTRIES) {
+				throw new IOException("Invalid value set size: " + valueCount);
+			}
+			Set<String> values = new HashSet<>(valueCount);
+			for (int j = 0; j < valueCount; j++) {
+				values.add(readString(in));
+			}
+			map.put(key, values);
+		}
+		return map;
+	}
+
+	private static String readString(DataInputStream in) throws IOException {
+		int len = in.readUnsignedShort();
+		if (len > MAX_STRING_LENGTH) {
+			throw new IOException("String length exceeds maximum: " + len);
+		}
+		byte[] buf = READ_BUF.get();
+		if (buf.length < len) {
+			buf = new byte[Math.max(len, 512)];
+			READ_BUF.set(buf);
+		}
+		in.readFully(buf, 0, len);
+		return new String(buf, 0, len, StandardCharsets.UTF_8);
+	}
+
+	private static void mergeMaps(ConcurrentHashMap<String, Set<String>> target, Map<String, Set<String>> source) {
+		for (var entry : source.entrySet()) {
+			target.merge(entry.getKey(), entry.getValue(), (existing, incoming) -> {
+				synchronized (existing) {
+					existing.addAll(incoming);
+				}
+				return existing;
+			});
+		}
+	}
+
+	// ── Fallback file support ───────────────────────────────────────────
+
+	/**
+	 * Suffix for fallback payload files written when the shutdown hook can't merge.
+	 */
+	private static final String FALLBACK_SUFFIX = ".collector-fallback";
+
+	/**
+	 * Write raw payloads to a fallback file next to the index file using only JDK
+	 * classes. This is the last-resort path when the plugin classloader is torn
+	 * down. Format: line-based text, "K\tV1\tV2\t..." per entry, sections separated
+	 * by "---".
+	 */
+	private void writeFallbackPayloads() {
+		if (mergedClassDeps.isEmpty() || indexFile == null) {
+			return;
+		}
+		Path fallbackFile = indexFile.resolveSibling(indexFile.getFileName() + FALLBACK_SUFFIX);
+		try {
+			java.nio.file.Files.createDirectories(fallbackFile.getParent());
+			try (java.io.PrintWriter pw = new java.io.PrintWriter(
+					java.nio.file.Files.newBufferedWriter(fallbackFile, StandardCharsets.UTF_8))) {
+				writeMapText(pw, mergedClassDeps);
+				pw.println("---");
+				writeMapText(pw, mergedMethodDeps);
+				pw.println("---");
+				writeMapText(pw, mergedMemberDeps);
+				pw.println("---");
+				writeMapText(pw, mergedMethodMemberDeps);
+				pw.println("===");
+			}
+			System.err.println("[test-order] Wrote fallback payloads to " + fallbackFile
+					+ " — will be processed on next build run");
+		} catch (IOException e) {
+			System.err.println("[test-order] Failed to write fallback payloads: " + e.getMessage());
+		}
+	}
+
+	private static void writeMapText(java.io.PrintWriter pw, Map<String, Set<String>> map) {
+		for (var entry : map.entrySet()) {
+			pw.print(entry.getKey());
+			for (String val : entry.getValue()) {
+				pw.print('\t');
+				pw.print(val);
+			}
+			pw.println();
+		}
+	}
+
+	/**
+	 * Load and process any fallback payload file for the given index, then delete
+	 * it. Called by the Maven/Gradle plugin during aggregation.
+	 *
+	 * @param indexFile
+	 *            the index file path (fallback file is sibling with
+	 *            {@code .collector-fallback} suffix)
+	 * @return true if a fallback file was found and processed
+	 */
+	public static boolean processFallbackFile(Path indexFile) throws IOException {
+		Path fallbackFile = indexFile.resolveSibling(indexFile.getFileName() + FALLBACK_SUFFIX);
+		if (!java.nio.file.Files.exists(fallbackFile)) {
+			return false;
+		}
+		List<String> lines = java.nio.file.Files.readAllLines(fallbackFile, StandardCharsets.UTF_8);
+		Map<String, Set<String>> classDeps = new HashMap<>();
+		Map<String, Set<String>> methodDeps = new HashMap<>();
+		Map<String, Set<String>> memberDeps = new HashMap<>();
+		Map<String, Set<String>> methodMemberDeps = new HashMap<>();
+
+		// Parse: 4 maps per payload, separated by "---", payloads separated by "==="
+		int mapIndex = 0;
+		Map<String, Set<String>> current = classDeps;
+		for (String line : lines) {
+			if ("===".equals(line)) {
+				mapIndex = 0;
+				current = classDeps;
+				continue;
+			}
+			if ("---".equals(line)) {
+				mapIndex++;
+				current = switch (mapIndex) {
+					case 1 -> methodDeps;
+					case 2 -> memberDeps;
+					case 3 -> methodMemberDeps;
+					default -> current;
+				};
+				continue;
+			}
+			String[] parts = line.split("\t");
+			if (parts.length >= 1 && !parts[0].isEmpty()) {
+				Set<String> values = current.computeIfAbsent(parts[0], k -> new HashSet<>());
+				for (int i = 1; i < parts.length; i++) {
+					values.add(parts[i]);
+				}
+			}
+		}
+
+		DependencyMap.mergeFromAgent(indexFile, classDeps, methodDeps, memberDeps, methodMemberDeps);
+		java.nio.file.Files.deleteIfExists(fallbackFile);
+		return true;
+	}
+}

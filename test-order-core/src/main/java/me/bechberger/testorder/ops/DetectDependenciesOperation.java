@@ -112,10 +112,10 @@ public final class DetectDependenciesOperation {
 		if (needsLearn && runner.supportsLearnPhase()) {
 			String reason = depMap == null
 					? "no dependency index found"
-					: "dependency index lacks method-level data (need FULL_MEMBER mode)";
+					: "dependency index lacks method-level data (need MEMBER mode)";
 			log.info("Auto-learn triggered: " + reason);
-			log.info("Running learn phase with FULL_MEMBER instrumentation...");
-			boolean learnOk = runner.runLearnPhase("FULL_MEMBER");
+			log.info("Running learn phase with MEMBER instrumentation...");
+			boolean learnOk = runner.runLearnPhase("MEMBER");
 			if (learnOk && config.indexFile() != null && Files.exists(config.indexFile())) {
 				depMap = DependencyMap.load(config.indexFile());
 				log.info("Reloaded dependency map after learn: " + depMap.testClasses().size() + " test classes, "

@@ -43,20 +43,21 @@ public final class ParameterValidator {
 	}
 
 	/**
-	 * Validates instrumentationMode parameter value. Valid values: METHOD_ENTRY,
-	 * FULL, FULL_METHOD, FULL_MEMBER
+	 * Validates instrumentationMode parameter value. Valid values: CLASS, METHOD,
+	 * MEMBER (and legacy aliases FULL, FULL_METHOD, FULL_MEMBER, METHOD_ENTRY)
 	 */
 	public void validateInstrumentationMode(String instrumentationMode) {
 		if (instrumentationMode == null || instrumentationMode.isBlank()) {
 			return; // null is OK, will use default
 		}
 
-		Set<String> validModes = Set.of("METHOD_ENTRY", "FULL", "FULL_METHOD", "FULL_MEMBER");
+		Set<String> validModes = Set.of("CLASS", "METHOD", "MEMBER", "FULL", "FULL_METHOD", "FULL_MEMBER",
+				"METHOD_ENTRY");
 
 		if (!validModes.contains(instrumentationMode.toUpperCase())) {
 			throw new IllegalArgumentException(
 					String.format("[test-order] Invalid instrumentationMode '%s'. Valid values are: %s",
-							instrumentationMode, String.join(", ", validModes)));
+							instrumentationMode, "CLASS, METHOD, MEMBER"));
 		}
 	}
 
@@ -145,16 +146,19 @@ public final class ParameterValidator {
 	 * Validates select-mode parameters (topN and randomM).
 	 *
 	 * @throws IllegalArgumentException
-	 *             if both topN and randomM are 0 (no tests would be selected)
+	 *             if topN is 0 (ambiguous — use -1 for all, or a positive number
+	 *             for a specific count), or if both topN and randomM would select
+	 *             no tests
 	 */
 	public void validateSelectParameters(int topN, int randomM) {
 		validateMinValue(topN, -1, "selectTopN");
 		validateNonNegative(randomM, "selectRandomM");
 
-		if (topN == 0 && randomM == 0) {
+		if (topN == 0) {
 			throw new IllegalArgumentException(
-					"[test-order] Both selectTopN and selectRandomM are 0 — no tests would be selected. "
-							+ "Set selectTopN to at least 1, or use selectTopN=-1 to include all change-affected tests.");
+					"[test-order] selectTopN=0 is not valid — it selects no top-scored tests and may produce "
+							+ "unexpected results with randomM. Use selectTopN=-1 to select all change-affected tests, "
+							+ "or a positive number (e.g. selectTopN=10) to select a specific count.");
 		}
 	}
 

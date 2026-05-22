@@ -48,36 +48,25 @@ public class PriorityClassOrderer implements ClassOrderer {
 	 */
 	private static final AtomicBoolean changeDetectionLogged = new AtomicBoolean(false);
 	private static final AtomicBoolean mlPredictionsLogged = new AtomicBoolean(false);
-	private static final AtomicBoolean negativeWeightsWarned = new AtomicBoolean(false);
+
+	/** Reset static state between tests. */
+	public static void resetForTesting() {
+		changeDetectionLogged.set(false);
+		mlPredictionsLogged.set(false);
+	}
 
 	/** Shared config resolver (system props + classpath properties). */
-	private static volatile TestOrderConfigResolver config;
+	private volatile TestOrderConfigResolver config;
 
 	/**
 	 * Cached setup result — avoids repeated load attempts (and error logs) on every
-	 * orderClasses() call. Static + volatile because JUnit may create a new
-	 * ClassOrderer instance per orderClasses() call.
+	 * orderClasses() call. Volatile to ensure visibility across threads.
 	 */
-	private static volatile ClassOrderingEngine.SetupResult cachedSetup;
-	private static volatile boolean setupAttempted;
+	private volatile ClassOrderingEngine.SetupResult cachedSetup;
+	private volatile boolean setupAttempted;
 
 	/** Lock for one-time setup initialization. */
-	private static final Object setupLock = new Object();
-
-	/**
-	 * Resets all static cached state so that the next {@code orderClasses()} call
-	 * re-runs setup from scratch. Intended for test isolation only.
-	 */
-	public static void resetForTesting() {
-		synchronized (setupLock) {
-			config = null;
-			cachedSetup = null;
-			setupAttempted = false;
-		}
-		changeDetectionLogged.set(false);
-		mlPredictionsLogged.set(false);
-		negativeWeightsWarned.set(false);
-	}
+	private final Object setupLock = new Object();
 
 	@Override
 	public void orderClasses(ClassOrdererContext context) {
@@ -107,10 +96,8 @@ public class PriorityClassOrderer implements ClassOrderer {
 		if (effectiveWeights.newTest() < 0 || effectiveWeights.changedTest() < 0 || effectiveWeights.maxFailure() < 0
 				|| effectiveWeights.speed() < 0 || effectiveWeights.depOverlap() < 0
 				|| effectiveWeights.changeComplexity() < 0) {
-			if (negativeWeightsWarned.compareAndSet(false, true)) {
-				TestOrderLogger.warn("One or more scoring weights are negative — "
-						+ "this inverts the scoring for those components.");
-			}
+			TestOrderLogger.warn(
+					"One or more scoring weights are negative — " + "this inverts the scoring for those components.");
 		}
 
 		// set up run-quality tracking
@@ -295,27 +282,16 @@ public class PriorityClassOrderer implements ClassOrderer {
 
 		// Write the computed order back into the original list so JUnit sees it.
 		// JUnit's ClassOrderer contract requires in-place modification.
-		try {
-			@SuppressWarnings("unchecked")
-			List<ClassDescriptor> originalList = (List<ClassDescriptor>) descriptors;
-			originalList.clear();
-			originalList.addAll(mutableDescriptors);
-		} catch (UnsupportedOperationException e) {
-			// JUnit returned an unmodifiable list — fall back to reflection
-			try {
-				java.lang.reflect.Field field = context.getClass().getDeclaredField("classDescriptors");
-				field.setAccessible(true);
-				field.set(context, new java.util.ArrayList<>(mutableDescriptors));
-			} catch (ReflectiveOperationException ex) {
-				TestOrderLogger.error("Failed to set class order: {}", ex.getMessage());
-			}
-		}
+		@SuppressWarnings("unchecked")
+		List<ClassDescriptor> originalList = (List<ClassDescriptor>) descriptors;
+		originalList.clear();
+		originalList.addAll(mutableDescriptors);
 
-		if (s.debug() && mutableDescriptors.size() > 1) {
+		if (s.debug() && originalList.size() > 1) {
 			TestOrderLogger.debug("Final order:");
-			for (int i = 0; i < mutableDescriptors.size(); i++) {
-				TestOrderLogger.debug("  {}. {} (score={})", i + 1, mutableDescriptors.get(i).getTestClass().getName(),
-						scores.getOrDefault(mutableDescriptors.get(i), 0));
+			for (int i = 0; i < originalList.size(); i++) {
+				TestOrderLogger.debug("  {}. {} (score={})", i + 1, originalList.get(i).getTestClass().getName(),
+						scores.getOrDefault(originalList.get(i), 0));
 			}
 		}
 	}

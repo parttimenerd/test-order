@@ -88,7 +88,7 @@ public final class MLHistoryPersistence {
 		Files.createDirectories(historyFile.getParent());
 		Path tempFile = historyFile.resolveSibling(historyFile.getFileName() + ".tmp");
 		try (OutputStream fos = Files.newOutputStream(tempFile);
-				OutputStream lz4 = LZ4Support.frameOutputStream(fos);
+				OutputStream lz4 = LZ4Support.frameOutputStreamHC(fos);
 				DataOutputStream out = new DataOutputStream(lz4)) {
 			out.write(FORMAT_MAGIC);
 			out.writeShort(FORMAT_VERSION);

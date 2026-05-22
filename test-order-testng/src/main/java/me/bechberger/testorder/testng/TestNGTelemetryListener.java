@@ -69,7 +69,7 @@ public class TestNGTelemetryListener implements ITestListener {
 
 		learnMode = "true".equals(System.getProperty(TestOrderConfig.LEARN));
 		String instrumentationMode = System.getProperty(TestOrderConfig.INSTRUMENTATION_MODE);
-		fullMethodMode = "FULL_METHOD".equals(instrumentationMode) || "FULL_MEMBER".equals(instrumentationMode);
+		fullMethodMode = "METHOD".equals(instrumentationMode) || "MEMBER".equals(instrumentationMode);
 
 		// L17: Detect debug mode — skip duration recording to avoid inflated EMA values
 		debugMode = isDebugMode();
@@ -85,6 +85,11 @@ public class TestNGTelemetryListener implements ITestListener {
 		statePath = configResolver.getConfig(TestOrderConfig.STATE_PATH);
 
 		if (learnMode) {
+			// Check for offline mode: if mapping file is set, bootstrap from it
+			String offlineMappingPath = System.getProperty(TestOrderConfig.OFFLINE_MAPPING);
+			if (offlineMappingPath != null && !offlineMappingPath.isBlank()) {
+				bootstrapOfflineRuntime(offlineMappingPath);
+			}
 			bridge = new UsageStoreReflectionBridge(fullMethodMode);
 			bridge.init();
 		}
@@ -385,5 +390,43 @@ public class TestNGTelemetryListener implements ITestListener {
 		long hours = minutes / 60;
 		long remainingMinutes = minutes % 60;
 		return String.format("%dh %02dm %02ds", hours, remainingMinutes, remainingSeconds);
+	}
+
+	/**
+	 * Bootstraps the offline instrumentation runtime by loading the class-id
+	 * mapping file and configuring UsageStore. Called when
+	 * {@code testorder.offline.mapping} system property is set.
+	 */
+	private void bootstrapOfflineRuntime(String mappingPath) {
+		try {
+			String outputDir = System.getProperty(TestOrderConfig.OFFLINE_OUTPUT, "");
+			String indexFile = System.getProperty(TestOrderConfig.OFFLINE_INDEX_FILE, "");
+			Class<?> bootstrapClass = resolveClass("me.bechberger.testorder.agent.runtime.OfflineRuntimeBootstrap");
+			java.lang.reflect.Method initMethod = bootstrapClass.getMethod("init", java.nio.file.Path.class,
+					String.class, String.class, boolean.class);
+			initMethod.invoke(null, java.nio.file.Path.of(mappingPath), outputDir, indexFile, fullMethodMode);
+			TestOrderLogger.info("[telemetry] Offline runtime bootstrapped from: " + mappingPath);
+		} catch (Exception e) {
+			TestOrderLogger.error("Failed to bootstrap offline runtime: {}", e.getMessage());
+		}
+	}
+
+	/**
+	 * Resolves a class by name, trying bootstrap classloader first (online mode)
+	 * then context/system classloader (offline mode).
+	 */
+	private static Class<?> resolveClass(String className) throws ClassNotFoundException {
+		try {
+			return Class.forName(className, true, null);
+		} catch (ClassNotFoundException e) {
+			ClassLoader contextCL = Thread.currentThread().getContextClassLoader();
+			if (contextCL != null) {
+				try {
+					return Class.forName(className, true, contextCL);
+				} catch (ClassNotFoundException ignored) {
+				}
+			}
+			return Class.forName(className);
+		}
 	}
 }

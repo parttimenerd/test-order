@@ -51,13 +51,17 @@ public final class HashSnapshotOperation {
 		snapshotSingle(testSourceRoot, testHashFile, "test source", log, warn);
 
 		// Also snapshot Kotlin sibling directories if they exist
-		Path kotlinMain = sourceRoot.resolveSibling("kotlin");
-		if (Files.isDirectory(kotlinMain)) {
-			snapshotSingle(kotlinMain, kotlinHashFile(hashFile), "Kotlin source", log, warn);
+		if (sourceRoot != null) {
+			Path kotlinMain = sourceRoot.resolveSibling("kotlin");
+			if (Files.isDirectory(kotlinMain)) {
+				snapshotSingle(kotlinMain, kotlinHashFile(hashFile), "Kotlin source", log, warn);
+			}
 		}
-		Path kotlinTest = testSourceRoot.resolveSibling("kotlin");
-		if (Files.isDirectory(kotlinTest)) {
-			snapshotSingle(kotlinTest, kotlinHashFile(testHashFile), "Kotlin test source", log, warn);
+		if (testSourceRoot != null) {
+			Path kotlinTest = testSourceRoot.resolveSibling("kotlin");
+			if (Files.isDirectory(kotlinTest)) {
+				snapshotSingle(kotlinTest, kotlinHashFile(testHashFile), "Kotlin test source", log, warn);
+			}
 		}
 	}
 

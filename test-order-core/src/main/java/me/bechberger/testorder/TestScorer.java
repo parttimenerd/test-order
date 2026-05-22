@@ -120,6 +120,11 @@ public class TestScorer {
 	 * score()).
 	 */
 	private final Map<String, Integer> cachedOverlapCounts;
+	/**
+	 * Cached overlap classes per test (avoids recomputing in score() and
+	 * explain()).
+	 */
+	private final Map<String, Set<String>> cachedOverlapClasses;
 
 	/**
 	 * Builder for {@link TestScorer} to avoid constructor overload ambiguity.
@@ -239,6 +244,7 @@ public class TestScorer {
 		this.failureScores = state.getFailureScores();
 		this.medianDuration = computeMedianDuration(state, testClassNames);
 		this.cachedOverlapCounts = new HashMap<>();
+		this.cachedOverlapClasses = new HashMap<>();
 
 		// Build effective changed set: production classes + test utility classes.
 		// This ensures that tests depending on changed test helpers get a depOverlap
@@ -269,19 +275,44 @@ public class TestScorer {
 		if (effectiveChangedForOverlap.isEmpty() || weight <= 0)
 			return Map.of();
 
-		// Build coverage map: test -> set of changed classes it covers
-		Map<String, Set<String>> coverage = new LinkedHashMap<>();
+		// Build inverted index: changed class -> set of tests that depend on it
+		Map<String, Set<String>> changedClassToTests = new HashMap<>(
+				(int) (effectiveChangedForOverlap.size() / 0.75f) + 1);
+		for (String changedClass : effectiveChangedForOverlap) {
+			changedClassToTests.put(changedClass, new HashSet<>());
+		}
+
+		// Pre-scan to find which tests touch any changed class
+		Set<String> affectedTests = new HashSet<>();
 		for (String test : testClassNames) {
+			Set<String> deps = depMap.get(test);
+			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(test) : null;
+			for (String changedClass : effectiveChangedForOverlap) {
+				if ((deps != null && deps.contains(changedClass))
+						|| (memberDeps != null && memberDeps.contains(changedClass))) {
+					affectedTests.add(test);
+					changedClassToTests.get(changedClass).add(test);
+					break; // test touches at least one changed class, no need to check further
+				}
+			}
+		}
+
+		// Build coverage map only for affected tests
+		Map<String, Set<String>> coverage = new LinkedHashMap<>();
+		for (String test : affectedTests) {
 			Set<String> deps = depMap.get(test);
 			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(test) : null;
 			Set<String> covered = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
 					effectiveChangedForOverlap);
-			// cache overlap count to avoid re-calling computeOverlapClasses in score()
+			// cache both overlap count and classes to avoid re-calling
+			// computeOverlapClasses in score() and explain()
 			cachedOverlapCounts.put(test, covered.size());
+			cachedOverlapClasses.put(test, new HashSet<>(covered));
 			if (!covered.isEmpty()) {
 				coverage.put(test, new HashSet<>(covered));
 			}
 		}
+
 		Map<String, Integer> bonuses = new HashMap<>();
 		int bonus = weight;
 
@@ -435,9 +466,8 @@ public class TestScorer {
 				int overlap = cachedOverlapCounts.getOrDefault(testClassName, 0);
 				setCoverPts = setCoverBonuses.getOrDefault(testClassName, 0);
 				totalScore += setCoverPts;
-				// rebuild overlap classes for display
-				overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
-						effectiveChangedForOverlap);
+				// reuse cached overlap classes instead of recomputing
+				overlapClasses = cachedOverlapClasses.getOrDefault(testClassName, Set.of());
 			} else {
 				overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
 						effectiveChangedForOverlap);

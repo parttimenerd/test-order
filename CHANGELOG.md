@@ -45,9 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-## [0.0.1] - 2026-04-13
-
-Initial alpha release.
+## [0.1.0] - 2026-04-13
 
 ### Added
 - Java agent for recording test class dependencies via bytecode instrumentation (javassist)

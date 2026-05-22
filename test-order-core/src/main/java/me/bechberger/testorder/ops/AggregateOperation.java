@@ -17,7 +17,7 @@ public final class AggregateOperation {
 	}
 
 	/** Result of an aggregation attempt. */
-	public record Result(int testClassCount, boolean written) {
+	public record Result(int depsFileCount, int testClassCount, boolean written) {
 	}
 
 	/**
@@ -38,6 +38,11 @@ public final class AggregateOperation {
 	 */
 	public static Result aggregate(Path depsDir, Path indexPath, PluginLog log) throws IOException {
 		log.info("[test-order] Aggregating test dependencies...");
+		int depsFileCount = 0;
+		try (java.util.stream.Stream<java.nio.file.Path> files = Files.list(depsDir)) {
+			depsFileCount = (int) files.filter(f -> f.getFileName().toString().endsWith(".deps")).count();
+		} catch (IOException ignored) {
+		}
 		DependencyMap map = DependencyMap.aggregate(depsDir, log);
 		if (map.size() == 0) {
 			if (Files.exists(indexPath)) {
@@ -45,7 +50,7 @@ public final class AggregateOperation {
 			} else {
 				log.warn("[test-order] No .deps files found — no index to write.");
 			}
-			return new Result(0, false);
+			return new Result(0, 0, false);
 		}
 		if (Files.exists(indexPath)) {
 			log.debug("[test-order] Overwriting existing index at " + indexPath);
@@ -55,6 +60,6 @@ public final class AggregateOperation {
 			return null;
 		});
 		log.info("[test-order] Aggregated " + map.size() + " test classes → " + indexPath);
-		return new Result(map.size(), true);
+		return new Result(depsFileCount, map.size(), true);
 	}
 }

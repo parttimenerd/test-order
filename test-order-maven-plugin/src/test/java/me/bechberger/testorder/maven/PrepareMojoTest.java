@@ -49,7 +49,7 @@ class PrepareMojoTest {
 
 		inject(mojo, "project", project);
 		inject(mojo, "mode", "auto");
-		inject(mojo, "instrumentationMode", "FULL");
+		inject(mojo, "instrumentationMode", "CLASS");
 		inject(mojo, "changeMode", "auto");
 		inject(mojo, "indexFile", tempDir.resolve("test-dependencies.lz4").toString());
 		inject(mojo, "stateFile", tempDir.resolve(".test-order-state").toString());

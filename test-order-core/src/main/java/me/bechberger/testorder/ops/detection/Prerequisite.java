@@ -4,7 +4,7 @@ package me.bechberger.testorder.ops.detection;
 public enum Prerequisite {
 	/** test-dependencies.lz4 exists */
 	DEPENDENCY_MAP,
-	/** FULL_MEMBER mode data available (field-level) */
+	/** MEMBER mode data available (field-level) */
 	MEMBER_DEPS,
 	/** At least 1 historical run in state */
 	RUN_HISTORY,

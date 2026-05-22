@@ -26,9 +26,6 @@ import me.bechberger.testorder.TestOrderConfigResolver;
 import me.bechberger.testorder.TestOrderLogger;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.UsageStoreReflectionBridge;
-import me.bechberger.testorder.ml.MLHistoryPersistence;
-import me.bechberger.testorder.ml.MLRunRecord;
-import me.bechberger.testorder.ml.MLTestOutcome;
 
 /**
  * JUnit Platform TestExecutionListener that:
@@ -70,17 +67,6 @@ public class TelemetryListener implements TestExecutionListener {
 	private final Set<String> failedMethodNames = ConcurrentHashMap.newKeySet();
 	private final Set<String> warnedConcurrentClasses = ConcurrentHashMap.newKeySet();
 	private final AtomicBoolean warnedGlobalParallel = new AtomicBoolean(false);
-	/**
-	 * Cached lookup of org.junit.jupiter.api.parallel.Execution; null means not yet
-	 * resolved, ABSENT means not on classpath
-	 */
-	private volatile Class<? extends java.lang.annotation.Annotation> cachedExecutionAnnotation;
-	private static final Class<? extends java.lang.annotation.Annotation> ABSENT = java.lang.annotation.Retention.class; // sentinel
-
-	// ML history: maps test class → failure exception class name (for the most
-	// recent failure in this run)
-	private final Map<String, String> failureTypeMap = new ConcurrentHashMap<>();
-	private boolean mlEnabled;
 
 	// Tracks method keys (className#methodName) that are currently being tracked
 	// via a container node (e.g., @ParameterizedTest template). Child invocations
@@ -98,7 +84,8 @@ public class TelemetryListener implements TestExecutionListener {
 	public void testPlanExecutionStarted(TestPlan testPlan) {
 		learnMode = "true".equals(System.getProperty(TestOrderConfig.LEARN));
 		String instrumentationMode = System.getProperty(TestOrderConfig.INSTRUMENTATION_MODE);
-		fullMethodMode = "FULL_METHOD".equals(instrumentationMode) || "FULL_MEMBER".equals(instrumentationMode);
+		fullMethodMode = "METHOD".equalsIgnoreCase(instrumentationMode)
+				|| "MEMBER".equalsIgnoreCase(instrumentationMode);
 
 		// M3: Detect dry-run mode — skip all recording
 		dryRunMode = "true".equalsIgnoreCase(System.getProperty("junit.platform.execution.dryRun.enabled"));
@@ -115,6 +102,11 @@ public class TelemetryListener implements TestExecutionListener {
 		}
 
 		if (learnMode) {
+			// Check for offline mode: if mapping file is set, bootstrap from it
+			String offlineMappingPath = System.getProperty(TestOrderConfig.OFFLINE_MAPPING);
+			if (offlineMappingPath != null && !offlineMappingPath.isBlank()) {
+				bootstrapOfflineRuntime(offlineMappingPath);
+			}
 			bridge = new UsageStoreReflectionBridge(fullMethodMode);
 			bridge.init();
 		}
@@ -134,9 +126,6 @@ public class TelemetryListener implements TestExecutionListener {
 		finishedNormally = false;
 		shutdownHook = new Thread(this::emergencySave, "test-order-emergency-save");
 		Runtime.getRuntime().addShutdownHook(shutdownHook);
-
-		// ML history: check if ML is enabled (opt-in)
-		mlEnabled = "true".equalsIgnoreCase(configResolver.getConfig(TestOrderConfig.ML_ENABLED));
 	}
 
 	/**
@@ -152,70 +141,102 @@ public class TelemetryListener implements TestExecutionListener {
 		return false;
 	}
 
+	/**
+	 * Bootstraps the offline instrumentation runtime by loading the class-id
+	 * mapping file and configuring UsageStore. Called when
+	 * {@code testorder.offline.mapping} system property is set.
+	 */
+	private void bootstrapOfflineRuntime(String mappingPath) {
+		try {
+			String outputDir = System.getProperty(TestOrderConfig.OFFLINE_OUTPUT, "");
+			String indexFile = System.getProperty(TestOrderConfig.OFFLINE_INDEX_FILE, "");
+			Class<?> bootstrapClass = resolveClass("me.bechberger.testorder.agent.runtime.OfflineRuntimeBootstrap");
+			java.lang.reflect.Method initMethod = bootstrapClass.getMethod("init", java.nio.file.Path.class,
+					String.class, String.class, boolean.class);
+			initMethod.invoke(null, java.nio.file.Path.of(mappingPath), outputDir, indexFile, fullMethodMode);
+			TestOrderLogger.info("[telemetry] Offline runtime bootstrapped from: " + mappingPath);
+		} catch (Exception e) {
+			TestOrderLogger.error("Failed to bootstrap offline runtime: {}", e.getMessage());
+		}
+	}
+
+	/**
+	 * Resolves a class by name, trying bootstrap classloader first (online mode)
+	 * then context/system classloader (offline mode).
+	 */
+	private static Class<?> resolveClass(String className) throws ClassNotFoundException {
+		try {
+			return Class.forName(className, true, null);
+		} catch (ClassNotFoundException e) {
+			ClassLoader cl = Thread.currentThread().getContextClassLoader();
+			if (cl != null) {
+				try {
+					return Class.forName(className, true, cl);
+				} catch (ClassNotFoundException ignored) {
+				}
+			}
+			return Class.forName(className);
+		}
+	}
+
 	@Override
 	public void executionStarted(TestIdentifier testIdentifier) {
 		if (dryRunMode || isSuiteEngineNode(testIdentifier)) {
 			return;
 		}
-		TestSource source = testIdentifier.getSource().orElse(null);
-		if (source == null) {
-			return;
-		}
-		if (source instanceof ClassSource classSource) {
-			String name = classSource.getClassName();
-			if (name == null)
-				return; // guard against pathological custom engines
-
-			// Only warn about concurrent execution in learn mode (irrelevant otherwise)
-			if (learnMode) {
+		testIdentifier.getSource().ifPresent(source -> {
+			if (source instanceof ClassSource classSource) {
+				String name = classSource.getClassName();
+				if (name == null)
+					return; // guard against pathological custom engines
 				maybeWarnConcurrentExecution(name);
-			}
 
-			// track start time for duration (local map operation, very fast)
-			if (!debugMode) {
-				classStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
-			}
-
-			// track execution order for run quality (O(1) dedup with HashSet)
-			// Normalize to top-level class so inner/nested classes are attributed
-			// to the same class used by failedClassNames (also normalized).
-			String topLevel = TestOrderConfigResolver.toTopLevelClassName(name);
-			if (executionOrderSet.add(topLevel)) {
-				executionOrder.add(topLevel);
-			}
-
-			// In learn mode: call agent to record per-test-class boundary
-			// Do this AFTER timing starts so agent overhead isn't counted
-			if (learnMode && bridge.isAvailable()) {
-				bridge.callStartTestClass(name);
-			}
-		} else if (source instanceof MethodSource methodSource) {
-			if (methodSource.getClassName() == null || methodSource.getMethodName() == null)
-				return;
-			// track method-level start time
-			String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
-			if (!debugMode) {
-				methodStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
-			}
-
-			// In FULL_METHOD and FULL_MEMBER modes: start per-method dependency recording.
-			// For @ParameterizedTest and @TestTemplate (type=CONTAINER), start tracking
-			// on the container node so we capture @MethodSource provider calls and
-			// argument resolution which happen BEFORE individual invocations fire.
-			// For regular @Test (type=TEST), start as before.
-			// Skip child invocations of a container (they share the parent's tracker).
-			if (fullMethodMode && learnMode && bridge.isAvailable()) {
-				if (!testIdentifier.getType().isTest()) {
-					// Container node (e.g., @ParameterizedTest template) — start tracking early
-					containerTrackedMethods.add(methodKey);
-					bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
-				} else if (!containerTrackedMethods.contains(methodKey)) {
-					// Regular @Test (not a child of a container) — start tracking normally
-					bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
+				// track start time for duration (local map operation, very fast)
+				if (!debugMode) {
+					classStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
 				}
-				// else: child invocation of a container — skip, parent already tracks
+
+				// track execution order for run quality (O(1) dedup with HashSet)
+				// Normalize to top-level class so inner/nested classes are attributed
+				// to the same class used by failedClassNames (also normalized).
+				String topLevel = TestOrderConfigResolver.toTopLevelClassName(name);
+				if (executionOrderSet.add(topLevel)) {
+					executionOrder.add(topLevel);
+				}
+
+				// In learn mode: call agent to record per-test-class boundary
+				// Do this AFTER timing starts so agent overhead isn't counted
+				if (learnMode && bridge.isAvailable()) {
+					bridge.callStartTestClass(name);
+				}
+			} else if (source instanceof MethodSource methodSource) {
+				if (methodSource.getClassName() == null || methodSource.getMethodName() == null)
+					return;
+				// track method-level start time
+				String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
+				if (!debugMode) {
+					methodStartTimes.put(testIdentifier.getUniqueId(), System.nanoTime());
+				}
+
+				// In METHOD and MEMBER modes: start per-method dependency recording.
+				// For @ParameterizedTest and @TestTemplate (type=CONTAINER), start tracking
+				// on the container node so we capture @MethodSource provider calls and
+				// argument resolution which happen BEFORE individual invocations fire.
+				// For regular @Test (type=TEST), start as before.
+				// Skip child invocations of a container (they share the parent's tracker).
+				if (fullMethodMode && learnMode && bridge.isAvailable()) {
+					if (!testIdentifier.getType().isTest()) {
+						// Container node (e.g., @ParameterizedTest template) — start tracking early
+						containerTrackedMethods.add(methodKey);
+						bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
+					} else if (!containerTrackedMethods.contains(methodKey)) {
+						// Regular @Test (not a child of a container) — start tracking normally
+						bridge.callStartTestMethod(methodSource.getClassName(), methodSource.getMethodName());
+					}
+					// else: child invocation of a container — skip, parent already tracks
+				}
 			}
-		}
+		});
 	}
 
 	@Override
@@ -245,21 +266,13 @@ public class TelemetryListener implements TestExecutionListener {
 				}
 				if (className != null) {
 					// Record class-level failure under the top-level enclosing class
-					// so that @Nested class failures are attributed to the outer class.
-					// TestScorer has a fallback that checks the top-level name when
-					// no failure is found for the exact (nested) class name.
-					String topLevel = TestOrderConfigResolver.toTopLevelClassName(className);
-					failedClassNames.add(topLevel);
+					// so that @Nested class failures are attributed to the outer class
+					// (PriorityClassOrderer looks up scores by top-level class name)
+					failedClassNames.add(TestOrderConfigResolver.toTopLevelClassName(className));
 					// Record method-level failure (preserves nested class for method scoring)
 					if (methodName != null) {
 						String methodKey = className + "#" + methodName;
 						failedMethodNames.add(methodKey);
-					}
-					// ML: capture failure exception type
-					if (mlEnabled) {
-						result.getThrowable().ifPresent(throwable -> {
-							failureTypeMap.put(topLevel, throwable.getClass().getName());
-						});
 					}
 				}
 			});
@@ -271,15 +284,15 @@ public class TelemetryListener implements TestExecutionListener {
 				if (start != null) {
 					long duration = elapsedMillis(start);
 					pendingDurations.computeIfAbsent(classSource.getClassName(),
-							ignored -> Collections.synchronizedList(new ArrayList<>())).add(duration);
+							ignored -> Collections.synchronizedList(new ArrayList<>(1))).add(duration);
 				}
 			} else if (source instanceof MethodSource methodSource) {
-				// In FULL_METHOD and FULL_MEMBER modes: end per-method dependency recording.
+				// In METHOD and MEMBER modes: end per-method dependency recording.
 				// Only end tracking for the same node that started it: either the container
 				// node (@ParameterizedTest/@TestTemplate) or a leaf @Test method.
 				// Skip end for child invocations since they didn't start their own tracker.
+				String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
 				if (fullMethodMode && learnMode && bridge.isAvailable()) {
-					String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
 					if (!testIdentifier.getType().isTest()) {
 						// Container node finishing — end tracking and remove from tracked set
 						containerTrackedMethods.remove(methodKey);
@@ -291,7 +304,6 @@ public class TelemetryListener implements TestExecutionListener {
 					// else: child invocation finishing — skip, container will end tracking
 				}
 
-				String methodKey = methodSource.getClassName() + "#" + methodSource.getMethodName();
 				Long start = methodStartTimes.remove(testIdentifier.getUniqueId());
 				if (start != null) {
 					long duration = elapsedMillis(start);
@@ -299,7 +311,7 @@ public class TelemetryListener implements TestExecutionListener {
 						// Record duration for actual test invocations (leaf @Test,
 						// @ParameterizedTest invocations, @RepeatedTest invocations).
 						pendingMethodDurations
-								.computeIfAbsent(methodKey, ignored -> Collections.synchronizedList(new ArrayList<>()))
+								.computeIfAbsent(methodKey, ignored -> Collections.synchronizedList(new ArrayList<>(1)))
 								.add(duration);
 					} else if (!pendingMethodDurations.containsKey(methodKey)) {
 						// Container with no child durations recorded (e.g. @TestFactory whose
@@ -307,7 +319,7 @@ public class TelemetryListener implements TestExecutionListener {
 						// so this method gets speed scoring and stops receiving the perpetual
 						// "new method" bonus.
 						pendingMethodDurations
-								.computeIfAbsent(methodKey, ignored -> Collections.synchronizedList(new ArrayList<>()))
+								.computeIfAbsent(methodKey, ignored -> Collections.synchronizedList(new ArrayList<>(1)))
 								.add(duration);
 					}
 					// else: Container with child durations (@ParameterizedTest/@RepeatedTest)
@@ -370,7 +382,6 @@ public class TelemetryListener implements TestExecutionListener {
 		}
 
 		boolean resetPending = false;
-		boolean stateSaved = false;
 		if (effectiveStatePath != null && !effectiveStatePath.isEmpty()) {
 			Path stateFile = Path.of(effectiveStatePath);
 			try {
@@ -388,78 +399,92 @@ public class TelemetryListener implements TestExecutionListener {
 							lockedState.incrementRunsSinceLearn();
 						}
 						if (record.totalFailures() > 0) {
-							TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
-									String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
-									record.firstFailurePosition() + 1, record.totalTests());
-							// Estimate time saved: compare cumulative duration before first
-							// failure in default (alphabetical) order vs. prioritized order
-							if (!isLearnRun) {
-								logTimeSaved(lockedState, record);
+							String timeSavedMsg = formatTimeSaved(executionOrder, failedClassNames, pendingDurations,
+									lockedState);
+							if (timeSavedMsg != null) {
+								TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{}) — {}",
+										String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
+										record.firstFailurePosition() + 1, record.totalTests(), timeSavedMsg);
+							} else {
+								TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
+										String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
+										record.firstFailurePosition() + 1, record.totalTests());
 							}
 						} else if (!isLearnRun && record.totalTests() > 1) {
-							// All tests passed — still show useful info about ordering effectiveness
-							long totalDuration = 0;
-							for (String tc : executionOrder) {
-								List<Long> measured = pendingDurations.get(tc);
-								if (measured != null) {
-									totalDuration += sumDurations(measured);
-								}
-							}
-							if (totalDuration > 1000) {
-								TestOrderLogger.info("{} tests ran in priority order — all passed ({})",
-										record.totalTests(), formatDuration(totalDuration));
-							} else {
-								TestOrderLogger.info("{} tests ran in priority order — all passed",
-										record.totalTests());
-							}
+							TestOrderLogger.info("{} tests ran in priority order — all passed", record.totalTests());
 						}
 					}
-					finishedNormally = true;
 					lockedState.save(stateFile);
 					return lockedState;
 				});
-				stateSaved = true;
 				resetPending = TestOrderState.hasPendingData();
 			} catch (IOException e) {
 				TestOrderLogger.error("Failed to save state: {}", e.getMessage());
 			}
-
-			// ML history: persist run data for failure prediction model (opt-in)
-			if (mlEnabled && !executionOrder.isEmpty()) {
-				writeMLHistory(effectiveStatePath);
-			}
+		}
+		if (resetPending) {
+			TestOrderState.resetPending();
+		}
+		// Guard against NoClassDefFoundError on JUnit 4/Vintage where
+		// org.junit.jupiter.api.MethodOrderer (imported by PriorityMethodOrderer) is
+		// absent.
+		try {
+			PriorityMethodOrderer.clearPendingState();
+		} catch (NoClassDefFoundError ignored) {
+			// JUnit Jupiter method orderer API not available (e.g. JUnit 4 / Vintage
+			// engine)
 		}
 
-		// Only clear data and remove the shutdown hook if state was saved.
-		// If the save failed, keep data in memory so the shutdown hook can
-		// attempt an emergency recovery save.
-		if (stateSaved) {
+		// Mark normal completion BEFORE clearing maps so the emergency-save shutdown
+		// hook cannot observe cleared maps and save empty telemetry if it races here.
+		finishedNormally = true;
 
-			if (resetPending) {
-				TestOrderState.resetPending();
-			}
-
-			// Clear accumulated data after persisting to prevent double-counting
-			// when Surefire re-runs the test plan (rerunFailingTestsCount > 0).
-			// Without this, a rerun plan execution would re-apply all durations and
-			// failures from the original plan.
-			pendingDurations.clear();
-			pendingMethodDurations.clear();
-			failedClassNames.clear();
-			failedMethodNames.clear();
-			failureTypeMap.clear();
-			executionOrder.clear();
-			executionOrderSet.clear();
-		}
-
-		// Always clear method ordering state — it's JVM-level state that should
-		// not leak between test plan executions regardless of save outcome.
-		PriorityMethodOrderer.clearPendingState();
+		// Clear accumulated data after persisting to prevent double-counting
+		// when Surefire re-runs the test plan (rerunFailingTestsCount > 0).
+		// Without this, a rerun plan execution would re-apply all durations and
+		// failures from the original plan.
+		pendingDurations.clear();
+		pendingMethodDurations.clear();
+		failedClassNames.clear();
+		failedMethodNames.clear();
+		executionOrder.clear();
+		executionOrderSet.clear();
 		if (shutdownHook != null) {
 			try {
 				Runtime.getRuntime().removeShutdownHook(shutdownHook);
 			} catch (IllegalStateException ignored) {
 				/* JVM already shutting down */ }
+		}
+
+		// Offline mode: restore original (uninstrumented) class files from backup
+		// so that subsequent builds/tools don't encounter instrumented bytecode.
+		restoreOfflineBackupIfPresent();
+	}
+
+	/**
+	 * If offline instrumentation was used, restore original class files from the
+	 * backup directory. This prevents stale instrumented bytecode from causing
+	 * {@code NoClassDefFoundError} in subsequent non-learn runs.
+	 */
+	private void restoreOfflineBackupIfPresent() {
+		String backupDirPath = System.getProperty(TestOrderConfig.OFFLINE_BACKUP_DIR);
+		if (backupDirPath == null || backupDirPath.isBlank()) {
+			return;
+		}
+		try {
+			Path backupDir = Path.of(backupDirPath);
+			// Use reflection to call OfflineInstrumentor.restore(Path) since the agent
+			// module may not be on the test classpath in all configurations.
+			Class<?> instrumentorClass = resolveClass("me.bechberger.testorder.agent.OfflineInstrumentor");
+			java.lang.reflect.Method restoreMethod = instrumentorClass.getMethod("restore", Path.class);
+			Object restored = restoreMethod.invoke(null, backupDir);
+			if (Boolean.TRUE.equals(restored)) {
+				TestOrderLogger.info("[telemetry] Restored original classes from offline backup.");
+			}
+		} catch (ClassNotFoundException e) {
+			// OfflineInstrumentor not on classpath — skip silently (online mode agent)
+		} catch (Exception e) {
+			TestOrderLogger.warn("[telemetry] Failed to restore offline backup: {}", e.getMessage());
 		}
 	}
 
@@ -481,183 +506,6 @@ public class TelemetryListener implements TestExecutionListener {
 		Map<String, List<Long>> methDurSnap = snapshotMapOfLists(pendingMethodDurations);
 		Set<String> methFailSnap = new java.util.HashSet<>(failedMethodNames);
 		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methDurSnap, methFailSnap);
-	}
-
-	/**
-	 * Calculates and logs the estimated time saved by prioritized ordering.
-	 * Compares the cumulative duration of tests that ran before the first failure
-	 * in the prioritized order against what would have run in the default
-	 * (alphabetical) order.
-	 */
-	private void logTimeSaved(TestOrderState lockedState, TestOrderState.RunRecord record) {
-		if (record.firstFailurePosition() < 0 || executionOrder.size() <= 1) {
-			return;
-		}
-
-		// Find the first failed test class
-		String firstFailedClass = null;
-		for (int i = 0; i < executionOrder.size(); i++) {
-			if (failedClassNames.contains(executionOrder.get(i))) {
-				firstFailedClass = executionOrder.get(i);
-				break;
-			}
-		}
-		if (firstFailedClass == null) {
-			return;
-		}
-
-		// Default order: alphabetical by class name
-		List<String> defaultOrder = new ArrayList<>(executionOrder);
-		defaultOrder.sort(String.CASE_INSENSITIVE_ORDER);
-		int defaultFailPos = defaultOrder.indexOf(firstFailedClass);
-		if (defaultFailPos < 0) {
-			return;
-		}
-
-		// No improvement — first failure already at same or worse position
-		if (record.firstFailurePosition() >= defaultFailPos) {
-			return;
-		}
-
-		// Compute duration for each test class: use actual measurement from this run,
-		// fall back to EMA from state
-		java.util.function.Function<String, Long> durationOf = tc -> {
-			List<Long> measured = pendingDurations.get(tc);
-			if (measured != null) {
-				return sumDurations(measured);
-			}
-			// Check nested class durations (Outer$Inner stored under Outer)
-			long nested = 0;
-			for (var entry : pendingDurations.entrySet()) {
-				if (entry.getKey().startsWith(tc + "$")) {
-					nested += sumDurations(entry.getValue());
-				}
-			}
-			if (nested > 0) {
-				return nested;
-			}
-			return lockedState.getDuration(tc, 0);
-		};
-
-		// Cumulative duration before first failure in prioritized (actual) order
-		long prioritizedDurationBeforeFailure = 0;
-		for (int i = 0; i < record.firstFailurePosition(); i++) {
-			prioritizedDurationBeforeFailure += durationOf.apply(executionOrder.get(i));
-		}
-
-		// Cumulative duration before first failure in default order
-		long defaultDurationBeforeFailure = 0;
-		for (int i = 0; i < defaultFailPos; i++) {
-			defaultDurationBeforeFailure += durationOf.apply(defaultOrder.get(i));
-		}
-
-		long savedMs = defaultDurationBeforeFailure - prioritizedDurationBeforeFailure;
-		int positionsEarlier = defaultFailPos - record.firstFailurePosition();
-		if (savedMs > 0) {
-			TestOrderLogger.info("\u23f1\ufe0f  Estimated time saved: {} (based on default execution order)",
-					formatDuration(savedMs));
-		} else {
-			// Position improved but durations are zero/unknown
-			TestOrderLogger.info("\u23f1\ufe0f  First failure surfaced {} positions earlier than default order",
-					positionsEarlier);
-		}
-	}
-
-	private static String formatDuration(long ms) {
-		if (ms < 1000) {
-			return ms + "ms";
-		}
-		long seconds = ms / 1000;
-		if (seconds < 60) {
-			return seconds + "s";
-		}
-		long minutes = seconds / 60;
-		long remainingSeconds = seconds % 60;
-		if (minutes < 60) {
-			return String.format("%dm %02ds", minutes, remainingSeconds);
-		}
-		long hours = minutes / 60;
-		long remainingMinutes = minutes % 60;
-		return String.format("%dh %02dm %02ds", hours, remainingMinutes, remainingSeconds);
-	}
-
-	/**
-	 * Writes ML run history for failure prediction. Resolves the ML history
-	 * directory from config (defaults to {@code .test-order-ml/} next to the state
-	 * file) and appends a run record.
-	 */
-	private void writeMLHistory(String effectiveStatePath) {
-		try {
-			Path stateDir = Path.of(effectiveStatePath).getParent();
-			TestOrderConfigResolver mlConfig = new TestOrderConfigResolver(
-					Thread.currentThread().getContextClassLoader());
-			String historyDirStr = mlConfig.getConfig(TestOrderConfig.ML_HISTORY_DIR);
-			Path historyDir = historyDirStr != null
-					? Path.of(historyDirStr)
-					: (stateDir != null ? stateDir.resolve("ml") : Path.of(".test-order-ml"));
-			Path historyFile = historyDir.resolve("history.lz4");
-			int maxRuns = 2000;
-			String maxRunsStr = mlConfig.getConfig(TestOrderConfig.ML_HISTORY_MAX_RUNS);
-			if (maxRunsStr != null) {
-				try {
-					maxRuns = Integer.parseInt(maxRunsStr.trim());
-				} catch (NumberFormatException ignored) {
-				}
-			}
-
-			// Resolve changed classes from config (set by PrepareMojo)
-			List<String> changedClasses = parseCSV(mlConfig.getConfig(TestOrderConfig.CHANGED_CLASSES));
-			List<String> changedTestClasses = parseCSV(mlConfig.getConfig(TestOrderConfig.CHANGED_TEST_CLASSES));
-
-			// Build ML outcomes from execution data.
-			// pendingDurations is keyed by raw class name (e.g. "Outer$Inner")
-			// but executionOrder contains top-level class names (e.g. "Outer").
-			// Aggregate durations from both the top-level name and any nested
-			// class variants so nested class test durations are not lost.
-			List<MLTestOutcome> outcomes = new java.util.ArrayList<>();
-			for (String testClass : executionOrder) {
-				boolean failed = failedClassNames.contains(testClass);
-				long durationMs = sumDurations(pendingDurations.get(testClass));
-				// Also collect durations stored under nested class names (Outer$...)
-				for (var durEntry : pendingDurations.entrySet()) {
-					String rawName = durEntry.getKey();
-					if (!rawName.equals(testClass) && rawName.startsWith(testClass + "$")) {
-						durationMs += sumDurations(durEntry.getValue());
-					}
-				}
-				String failureType = failed ? failureTypeMap.get(testClass) : null;
-				outcomes.add(new MLTestOutcome(testClass, failed, durationMs, failureType));
-			}
-
-			int totalFailures = (int) outcomes.stream().filter(MLTestOutcome::failed).count();
-			MLRunRecord record = new MLRunRecord(System.currentTimeMillis(), changedClasses, changedTestClasses,
-					outcomes.size(), totalFailures, outcomes);
-			MLHistoryPersistence.append(historyFile, record, maxRuns);
-			TestOrderLogger.debug("[ml] Saved ML history ({} outcomes, {} failures) to {}", outcomes.size(),
-					totalFailures, historyFile);
-		} catch (Exception e) {
-			TestOrderLogger.warn("[ml] Failed to write ML history: {}", e.getMessage());
-		}
-	}
-
-	private static long sumDurations(List<Long> durations) {
-		if (durations == null) {
-			return 0;
-		}
-		long total = 0;
-		synchronized (durations) {
-			for (Long d : durations) {
-				total += d;
-			}
-		}
-		return total;
-	}
-
-	private static List<String> parseCSV(String csv) {
-		if (csv == null || csv.isBlank()) {
-			return List.of();
-		}
-		return java.util.Arrays.stream(csv.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
 	}
 
 	private static Map<String, List<Long>> snapshotMapOfLists(Map<String, List<Long>> source) {
@@ -692,7 +540,7 @@ public class TelemetryListener implements TestExecutionListener {
 	 */
 	private static boolean isSuiteEngineNode(TestIdentifier testIdentifier) {
 		String uniqueId = testIdentifier.getUniqueId();
-		return uniqueId.contains("[engine:junit-platform-suite]");
+		return uniqueId.startsWith("[engine:junit-platform-suite]");
 	}
 
 	private static long elapsedMillis(long startNanos) {
@@ -712,39 +560,104 @@ public class TelemetryListener implements TestExecutionListener {
 								+ "mode.default=concurrent); learn-mode dependency tracking may be inaccurate");
 			}
 		}
-		// Resolve the @Execution annotation class once
-		Class<? extends java.lang.annotation.Annotation> execAnnotation = cachedExecutionAnnotation;
-		if (execAnnotation == null) {
-			try {
-				@SuppressWarnings("unchecked")
-				Class<? extends java.lang.annotation.Annotation> found = (Class<? extends java.lang.annotation.Annotation>) Class
-						.forName("org.junit.jupiter.api.parallel.Execution");
-				execAnnotation = found;
-			} catch (ClassNotFoundException e) {
-				execAnnotation = ABSENT;
-			}
-			cachedExecutionAnnotation = execAnnotation;
-		}
-		if (execAnnotation == ABSENT) {
-			return; // Jupiter parallel API not on classpath
-		}
 		if (!warnedConcurrentClasses.add(className)) {
 			return;
 		}
 		try {
-			// Use initialize=false to avoid triggering expensive static initializers
-			Class<?> testClass = Class.forName(className, false, Thread.currentThread().getContextClassLoader());
-			Object execution = testClass.getAnnotation(execAnnotation);
+			Class<?> testClass = Class.forName(className);
+			// Use reflection to avoid hard dependency on jupiter-api parallel classes
+			// (which may not be on the classpath for Vintage-only projects)
+			Class<?> executionClass = Class.forName("org.junit.jupiter.api.parallel.Execution");
+			Object execution = testClass
+					.getAnnotation(executionClass.asSubclass(java.lang.annotation.Annotation.class));
 			if (execution != null) {
-				Object mode = execAnnotation.getMethod("value").invoke(execution);
+				Object mode = executionClass.getMethod("value").invoke(execution);
 				if ("CONCURRENT".equals(mode.toString())) {
 					TestOrderLogger.warn(
 							"Test class {} uses @Execution(CONCURRENT); learn-mode dependency tracking may be inaccurate",
 							className);
 				}
 			}
+		} catch (ClassNotFoundException ignored) {
+			warnedConcurrentClasses.remove(className);
 		} catch (ReflectiveOperationException ignored) {
-			// annotation not present or method not accessible
+			// Jupiter parallel API not available or annotation not present
 		}
+	}
+
+	/**
+	 * Calculates estimated time saved by running the first failing test earlier.
+	 * Compares actual execution time to reach the first failure vs. the time that
+	 * would have been needed in default (alphabetical) order. Returns null if
+	 * insufficient data or no time is saved.
+	 */
+	private static String formatTimeSaved(List<String> executionOrder, Set<String> failedClassNames,
+			Map<String, List<Long>> pendingDurations, TestOrderState state) {
+		if (executionOrder.isEmpty() || failedClassNames.isEmpty()) {
+			return null;
+		}
+
+		// Find the first failure in actual execution order
+		String firstFailed = null;
+		for (String tc : executionOrder) {
+			if (failedClassNames.contains(tc)) {
+				firstFailed = tc;
+				break;
+			}
+		}
+		if (firstFailed == null) {
+			return null;
+		}
+
+		// Build duration lookup: prefer measured durations, fall back to EMA
+		java.util.function.Function<String, long[]> getDuration = tc -> {
+			List<Long> measured = pendingDurations.get(tc);
+			if (measured != null && !measured.isEmpty()) {
+				long sum = 0;
+				for (long d : measured)
+					sum += d;
+				return new long[]{sum / measured.size()};
+			}
+			long ema = state != null ? state.getDuration(tc, -1) : -1;
+			return new long[]{ema};
+		};
+
+		// Time in actual order (up to and including the first failed test)
+		long actualTimeMs = 0;
+		for (String tc : executionOrder) {
+			long[] d = getDuration.apply(tc);
+			if (d[0] > 0)
+				actualTimeMs += d[0];
+			if (tc.equals(firstFailed))
+				break;
+		}
+
+		// Time in default (alphabetical) order to reach the first failure
+		List<String> alphabetical = new java.util.ArrayList<>(executionOrder);
+		java.util.Collections.sort(alphabetical);
+		long alphabeticalTimeMs = 0;
+		for (String tc : alphabetical) {
+			long[] d = getDuration.apply(tc);
+			if (d[0] > 0)
+				alphabeticalTimeMs += d[0];
+			if (tc.equals(firstFailed))
+				break;
+		}
+
+		long savedMs = alphabeticalTimeMs - actualTimeMs;
+		if (savedMs <= 0) {
+			return null;
+		}
+
+		// Format the time saved in human-readable form
+		String timeStr;
+		if (savedMs < 1000) {
+			timeStr = savedMs + "ms";
+		} else if (savedMs < 60_000) {
+			timeStr = String.format(java.util.Locale.US, "%.1fs", savedMs / 1000.0);
+		} else {
+			timeStr = String.format(java.util.Locale.US, "%dm %ds", savedMs / 60_000, (savedMs % 60_000) / 1000);
+		}
+		return "~" + timeStr + " faster than default order";
 	}
 }

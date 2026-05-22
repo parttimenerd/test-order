@@ -82,13 +82,10 @@
                             </transformers>
                             <relocations>
                                 <relocation>
-                                    <pattern>javassist</pattern>
-                                    <shadedPattern>me.bechberger.testorder.agent.shaded.javassist</shadedPattern>
+                                    <pattern>org.objectweb.asm</pattern>
+                                    <shadedPattern>me.bechberger.testorder.agent.shaded.org.objectweb.asm</shadedPattern>
                                 </relocation>
-                                <relocation>
-                                    <pattern>me.bechberger.util.femtocli</pattern>
-                                    <shadedPattern>me.bechberger.testorder.agent.shaded.me.bechberger.util.femtocli</shadedPattern>
-                                </relocation>
+
                             </relocations>
                         </configuration>
                     </execution>
@@ -102,15 +99,11 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.javassist</groupId>
-            <artifactId>javassist</artifactId>
-            <version>${javassist.version}</version>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>9.7.1</version>
         </dependency>
-        <dependency>
-            <groupId>me.bechberger.util</groupId>
-            <artifactId>femtocli</artifactId>
-            <version>${femtocli.version}</version>
-        </dependency>
+
 
         <!-- test -->
         <dependency>

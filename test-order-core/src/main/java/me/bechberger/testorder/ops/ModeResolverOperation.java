@@ -140,7 +140,7 @@ public final class ModeResolverOperation {
 			try {
 				AggregateOperation.Result agg = AggregateOperation.aggregate(config.depsDir(), config.indexPath(), log);
 				if (agg.written()) {
-					log.debug(StructuredLog.autoAggregation(agg.testClassCount(), agg.testClassCount(), java.util.Map
+					log.debug(StructuredLog.autoAggregation(agg.depsFileCount(), agg.testClassCount(), java.util.Map
 							.of("index_path", config.indexPath().toString(), "deps_dir", config.depsDir().toString())));
 				}
 			} catch (IOException e) {

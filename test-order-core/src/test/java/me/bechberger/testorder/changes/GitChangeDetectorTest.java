@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
@@ -171,12 +173,13 @@ class GitChangeDetectorTest {
 	}
 
 	@Test
-	void readFileFromGitReturnsNullWhenCommitRefMissing() throws Exception {
-		Method method = GitChangeDetector.class.getDeclaredMethod("readFileFromGit", Path.class, String.class,
-				String.class);
+	void readFilesFromGitBatchReturnsEmptyForEmptyFileList() throws Exception {
+		Method method = GitChangeDetector.class.getDeclaredMethod("readFilesFromGitBatch", Path.class, String.class,
+				List.class);
 		method.setAccessible(true);
 
-		Object result = method.invoke(null, tempDir, null, "src/main/java/com/example/Foo.java");
-		assertNull(result);
+		@SuppressWarnings("unchecked")
+		Map<String, String> result = (Map<String, String>) method.invoke(null, tempDir, "HEAD", List.of());
+		assertTrue(result.isEmpty());
 	}
 }

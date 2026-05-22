@@ -12,8 +12,8 @@ import java.util.*;
  * <li><b>Speed relative to class median:</b> Fast/slow compared to other
  * methods in the same class.</li>
  * <li><b>Dependency overlap:</b> Methods whose per-method deps overlap more
- * with changed classes get a higher score (available with FULL_METHOD and
- * FULL_MEMBER instrumentation modes).</li>
+ * with changed classes get a higher score (available with METHOD and MEMBER
+ * instrumentation modes).</li>
  * <li><b>New method:</b> Methods with no telemetry history get a bonus
  * (untested = risky).</li>
  * <li><b>Changed method:</b> Methods whose source code changed get a
@@ -152,12 +152,9 @@ public class MethodScorer {
 			Set<String> methodDeps = depMap.getMethodDeps(methodKey);
 			if (methodDeps == null || methodDeps.isEmpty())
 				continue;
-			Set<String> covered = new HashSet<>();
-			for (String dep : methodDeps) {
-				if (changedClasses.contains(dep))
-					covered.add(dep);
-			}
-			if (!covered.isEmpty()) {
+			if (methodDeps.stream().anyMatch(changedClasses::contains)) {
+				Set<String> covered = methodDeps.stream().filter(changedClasses::contains)
+						.collect(java.util.stream.Collectors.toUnmodifiableSet());
 				coverage.put(methodKey, covered);
 			}
 		}

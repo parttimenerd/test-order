@@ -89,9 +89,11 @@
 - **Impact**: Typo produces unhandled `NumberFormatException` with raw stack trace, no actionable message.
 - **Fix**: Wrap in try/catch → `throw new GradleException("[test-order] Invalid testorder.dashboard.port value '...' — must be a number")`.
 
-### ~~R7-3: Maven `TieredSelectMojo` runs change analysis twice~~ [FIXED]
-- **File**: `TieredSelectMojo.java`
-- **Status**: Fixed — uses already-computed `analysis` results with `OrdererConfigOperation.buildConfig()` instead of re-running change detection via `OrderWorkflow.setup()`.
+### R7-3: Maven `TieredSelectMojo` runs change analysis twice
+- **File**: `TieredSelectMojo.java` ~L155
+- **Current**: Calls `ChangeAnalysis.analyze()` for tiered selection, then `OrderWorkflow.setup()` which internally re-runs `ChangeAnalysis.analyze()`.
+- **Impact**: Tiered-select takes ~2× as long on large projects (doubled git/hash I/O).
+- **Fix**: Build orderer config map directly from already-computed `analysis.changedClasses()` using `OrdererConfigOperation.buildConfig()`.
 
 ### R7-4: Gradle `testOrderRunTier` doesn't set `testorder.index.path` system property [CRITICAL]
 - **File**: `TestOrderPlugin.java` ~L1106
@@ -99,9 +101,11 @@
 - **Impact**: Tier 2/3 tests filtered correctly but run *unordered* — PriorityClassOrderer can't find index.
 - **Fix**: In `doFirst` block, add `((Test) t).systemProperty("testorder.index.path", ...)` and state path.
 
-### ~~R7-5: Maven `RunTierMojo` passes empty changed-class sets to orderer config~~ [FIXED]
-- **File**: `RunTierMojo.java`
-- **Status**: Fixed — `RunTierMojo` now calls `detectChangedClasses()` and `detectChangedTestClasses()` and passes the results to `writeOrdererConfig()`.
+### R7-5: Maven `RunTierMojo` passes empty changed-class sets to orderer config [CRITICAL]
+- **File**: `RunTierMojo.java` ~L96
+- **Current**: Calls `writeOrdererConfig(Set.of(), Set.of())` — empty changed-class sets mean PriorityClassOrderer can't score change-affected tests.
+- **Impact**: Within-tier ordering ignores code changes, becomes duration-only.
+- **Fix**: Persist changed-class sets during `tiered-select` so `run-tier` can read and pass them to orderer config.
 
 ### R7-6: `DependencyMap.aggregate()` is not atomic — concurrent writes corrupt index
 - **File**: `DependencyMap.java` ~L660
@@ -145,9 +149,11 @@
 - **Impact**: Raw `NumberFormatException` on typo.
 - **Fix**: Wrap in try/catch → `throw new GradleException("[test-order] Invalid coverage.threshold — must be a positive integer")`.
 
-### ~~R7-13: Maven `SelectMojo` runs change detection twice~~ [FIXED]
-- **File**: `SelectMojo.java`
-- **Status**: Fixed — `SelectWorkflow.selectWithAnalysis()` returns both the selection and the change analysis; `SelectMojo` reuses the analysis for `OrdererConfigOperation.buildConfig()`.
+### R7-13: Maven `SelectMojo` runs change detection twice
+- **File**: `SelectMojo.java` ~L104
+- **Current**: `SelectWorkflow.select(pctx)` runs change analysis, then `OrderWorkflow.setup(pctx, loadState())` re-runs it.
+- **Impact**: Doubled git/hash I/O.
+- **Fix**: Have `SelectWorkflow.select()` return change analysis results; pass directly to `OrdererConfigOperation.buildConfig()`.
 
 ### R7-14: Gradle `testOrderAggregateAll` may fail in multi-project builds
 - **File**: `TestOrderPlugin.java` ~L137
@@ -1164,12 +1170,12 @@ The following issues were reviewed but require larger architectural changes or w
 
 1. **R18-4**: Corrupt state file produces 12× repeated error messages → requires caching/deduplication logic
 2. **R18-10**: Dashboard embeds absolute local filesystem paths → requires path relativization
-3. ~~**R18-13**: autoRunRemaining property doesn't auto-run~~ [FIXED]
+3. **R18-13**: autoRunRemaining property doesn't auto-run → requires invoking second Surefire execution
 4. **R18-12**: show-order cross-framework ranking misleading → requires per-module display or disclaimer
 5. **R12-2/R8-1**: Multi-Release JAR agent compatibility → requires deeper agent architecture redesign
 6. **R8-2**: Classpath injection conflicts with existing Surefire config → requires detecting and merging XML
 7. **R11-1/R11-2**: README documentation inconsistencies → primarily documentation fixes
-8. ~~**R7-3/R7-13**: Double change-detection runs~~ [FIXED]
+8. **R7-3/R7-13**: Double change-detection runs → requires refactoring SelectWorkflow
 9. **R10-2**: Git timeout inconsistency → requires making timeout configurable
 10. **R10-3**: Stale lock threshold too short → requires lock strategy redesign
 
@@ -1261,9 +1267,14 @@ Issues requiring larger architectural changes or deeper refactoring:
    - Would require path relativization throughout dashboard generation
    - Complexity: Medium
 
-3. ~~**R18-13**: autoRunRemaining property doesn't auto-run~~ [FIXED]
+3. **R18-13**: autoRunRemaining property doesn't auto-run
+   - Would require invoking second Surefire execution
+   - Complexity: High
 
-4. ~~**R7-3/R7-13**: Double change detection runs~~ [FIXED]
+4. **R7-3/R7-13**: Double change detection runs
+   - SelectMojo and TieredSelectMojo each run change analysis independently
+   - Would require refactoring shared workflow
+   - Complexity: High
 
 5. **R12-2/R8-1**: Multi-Release JAR agent compatibility
    - Would require deeper agent architecture changes

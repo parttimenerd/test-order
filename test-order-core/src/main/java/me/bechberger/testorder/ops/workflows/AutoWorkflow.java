@@ -129,12 +129,11 @@ public final class AutoWorkflow {
 		var alwaysRun = ctx.testClassesDir() != null ? AlwaysRunScanner.scan(ctx.testClassesDir()) : Set.<String>of();
 
 		SelectOperation.SelectResult selectResult;
-		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0) {
+		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0 && ctx.randomM() < 0) {
 			var allTests = new ArrayList<>(a.depMap().testClasses());
 			selectResult = new SelectOperation.SelectResult(new TestSelector.Selection(allTests, java.util.List.of()),
 					true);
-			ctx.log()
-					.info("[test-order] No changed classes detected — running all tests without change-bonus scoring.");
+			ctx.log().info("[test-order] No changed classes detected — running tests in default order.");
 		} else {
 			if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {
 				ctx.log().info("[test-order] No changed classes detected — applying topN/randomM selection only.");
@@ -157,16 +156,10 @@ public final class AutoWorkflow {
 				ctx.sourceRoot() != null ? ctx.sourceRoot().toAbsolutePath().toString() : null, ctx.changeMode()));
 
 		if (!a.changedClasses().isEmpty()) {
-			ctx.log().info("[test-order] Detected " + a.changedClasses().size() + " changed source classes: "
-					+ String.join(", ", new java.util.TreeSet<>(a.changedClasses())));
-			Set<String> boosted = a.depMap().getAffectedTests(a.changedClasses());
-			if (!boosted.isEmpty()) {
-				ctx.log().info("[test-order]   \u2192 boosting " + boosted.size() + " tests that depend on them");
-			}
+			ctx.log().info("[test-order] Detected " + a.changedClasses().size() + " changed classes");
 		}
 		if (!a.changedTests().isEmpty()) {
-			ctx.log().info("[test-order] Detected " + a.changedTests().size() + " changed test classes: "
-					+ String.join(", ", new java.util.TreeSet<>(a.changedTests())));
+			ctx.log().info("[test-order] Detected " + a.changedTests().size() + " changed test classes");
 		}
 
 		// ── 3. Periodic weight optimisation ─────────────────────────

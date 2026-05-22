@@ -34,10 +34,15 @@ public final class WeightResolverOperation {
 					log.warn("[test-order] Weights file " + weightsFile + " contains no recognized weight keys. "
 							+ "Ensure TOML file uses bare key names (e.g. 'speed = 200', not 'testorder.score.speed = 200').");
 				}
+				log.info("[test-order] Loaded scoring weights from: " + weightsFile);
 				return loaded;
 			} catch (IOException e) {
-				log.warn("[test-order] Failed to load weights file: " + e.getMessage());
+				log.warn("[test-order] Failed to load weights file " + weightsFile + ": " + e.getMessage()
+						+ " — using defaults.");
 			}
+		} else if (weightsFile != null) {
+			log.warn("[test-order] Weights file does not exist: " + weightsFile.toAbsolutePath()
+					+ " — using defaults. Check the path specified by -Dtestorder.weightsFile.");
 		}
 		TestOrderState.ScoringWeights sw = state.weights();
 		return new TestOrderState.LoadedWeights(sw, TestOrderState.WEIGHT_DEFS, state.failureDecay(),

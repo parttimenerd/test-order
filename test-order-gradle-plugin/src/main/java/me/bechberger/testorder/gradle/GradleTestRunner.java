@@ -125,7 +125,7 @@ class GradleTestRunner implements TestRunner {
 
         boolean runAll = testOrder.size() == 1 && "*".equals(testOrder.get(0));
 
-        Process process = null;
+        Process proc = null;
         try {
             // Write the order file for FixedOrderClassOrderer to read
             Path orderFile = writeOrderFile(testOrder);
@@ -164,12 +164,12 @@ class GradleTestRunner implements TestRunner {
             pb.directory(projectDir.toFile());
             pb.redirectErrorStream(true);
 
-            process = pb.start();
-            final Process proc = process;
+            proc = pb.start();
+            final Process runProc = proc;
 
             // Capture output in a background thread (so main thread can enforce deadline)
             Thread outputDrainer = new Thread(() -> {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(runProc.getInputStream()))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
                         captureOutputLine(line);
@@ -185,7 +185,7 @@ class GradleTestRunner implements TestRunner {
             int exitCode;
             long remaining = deadlineMillis - System.currentTimeMillis();
             if (remaining <= 0) {
-                process.destroyForcibly();
+                proc.destroyForcibly();
                 outputDrainer.join(2000);
                 if (!deadlineKillWarningShown) {
                     deadlineKillWarningShown = true;
@@ -193,9 +193,9 @@ class GradleTestRunner implements TestRunner {
                 }
                 return new TestRunResult(testOrder, Set.of(), new HashSet<>(testOrder));
             }
-            boolean finished = process.waitFor(remaining, TimeUnit.MILLISECONDS);
+            boolean finished = proc.waitFor(remaining, TimeUnit.MILLISECONDS);
             if (!finished) {
-                process.destroyForcibly();
+                proc.destroyForcibly();
                 outputDrainer.join(2000);
                 if (!deadlineKillWarningShown) {
                     deadlineKillWarningShown = true;
@@ -204,7 +204,7 @@ class GradleTestRunner implements TestRunner {
                 }
                 return new TestRunResult(testOrder, Set.of(), new HashSet<>(testOrder));
             }
-            exitCode = process.exitValue();
+            exitCode = proc.exitValue();
             outputDrainer.join(2000);
 
             if (exitCode != 0) {
@@ -227,9 +227,7 @@ class GradleTestRunner implements TestRunner {
 
             return parseResults(runAll ? List.of() : testOrder);
         } catch (InterruptedException e) {
-            if (process != null) {
-                process.destroyForcibly();
-            }
+            proc.destroyForcibly();
             Thread.currentThread().interrupt();
             return new TestRunResult(testOrder, Set.of(), new HashSet<>(testOrder));
         } catch (IOException e) {

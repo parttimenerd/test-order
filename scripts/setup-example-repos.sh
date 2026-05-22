@@ -49,9 +49,14 @@ clone_or_pull() {
 }
 
 # ── Repos ──────────────────────────────────────────────────────────────────
-clone_or_pull spring-ai      https://github.com/spring-projects/spring-ai
-clone_or_pull spring-boot     https://github.com/spring-projects/spring-boot
+clone_or_pull spring-ai        https://github.com/spring-projects/spring-ai
+clone_or_pull spring-boot      https://github.com/spring-projects/spring-boot
 clone_or_pull spring-petclinic https://github.com/spring-projects/spring-petclinic
+
+# ── Benchmark repos ───────────────────────────────────────────────────────
+clone_or_pull guava            https://github.com/google/guava
+clone_or_pull logging-log4j2   https://github.com/apache/logging-log4j2
+clone_or_pull netty            https://github.com/netty/netty
 
 echo
 ok "All repos ready in $TARGET"

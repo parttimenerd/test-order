@@ -31,8 +31,11 @@ public class AutoMojo extends AbstractTestOrderMojo {
 	@Parameter(property = MavenPluginConfigKeys.FILTER_BY_GROUP_ID, defaultValue = "true")
 	private boolean filterByGroupId;
 
-	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "FULL")
+	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "CLASS")
 	private String instrumentationMode;
+
+	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION, defaultValue = "offline")
+	private String instrumentation;
 
 	@Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "-1")
 	private int topN;
@@ -80,22 +83,14 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			return;
 		}
 
-		// Warn if 'test' phase is likely not going to run (standalone CLI goal
-		// invocation)
-		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
-				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
-			getLog().warn("[test-order] The 'auto' goal configures test selection but does not execute tests."
-					+ " Include the test phase: mvn test-order:auto test");
-		}
-
 		if (isPrepareGoalBound()) {
-			getLog().debug("[test-order] Skipping POM-bound 'prepare' (CLI goal takes precedence).");
+			getLog().info("[test-order] The 'prepare' goal is bound in your POM."
+					+ " The CLI goal takes precedence; 'prepare' will detect this and skip.");
 		}
 
 		validateAutoMojoParameters();
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
 		SurefireHelper.warnConflictingRunOrder(project, getLog());
-		SurefireHelper.warnConflictingOrderers(project, getLog());
 		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
 
 		// Resolve effective mode: CLI property override wins
@@ -143,14 +138,12 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			SurefireHelper.warnReuseForksFalseInLearnMode(project, getLog());
 			SurefireHelper.warnRerunFailingTestsInLearnMode(project, getLog());
 			String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
-			configureLearnMode(instrumentationMode, effectiveInclude, true);
-			project.getProperties().setProperty("testorder.auto.active", "true");
-
-			// ML predictions are orthogonal to dependency learning
-			if (isMLEnabled()) {
-				appendMLEnabledToConfig();
-				generateMLPredictions(java.util.Set.of(), java.util.Set.of());
+			if ("offline".equalsIgnoreCase(instrumentation)) {
+				configureOfflineLearnMode(instrumentationMode, effectiveInclude);
+			} else {
+				configureLearnMode(instrumentationMode, effectiveInclude, true);
 			}
+			project.getProperties().setProperty("testorder.auto.active", "true");
 
 		} else if (result instanceof AutoWorkflow.Result.OrderSelect os) {
 			SurefireHelper.warnForkCountInOrderMode(project, getLog());
@@ -174,12 +167,6 @@ public class AutoMojo extends AbstractTestOrderMojo {
 
 			writeOrdererConfig(os.changedClasses(), os.changedTests(), os.changedMethods(), buildScoreOverrides());
 
-			// ML: record history and generate predictions
-			if (isMLEnabled()) {
-				appendMLEnabledToConfig();
-				generateMLPredictions(os.changedClasses(), os.changedTests());
-			}
-
 			String remainingPath = Path.of(remainingFile).toAbsolutePath().toString();
 			project.getProperties().setProperty(MavenPluginConfigKeys.SELECT_REMAINING_FILE, remainingPath);
 			project.getProperties().setProperty("testorder.remaining.file", remainingPath);
@@ -195,22 +182,12 @@ public class AutoMojo extends AbstractTestOrderMojo {
 	private void validateAutoMojoParameters() throws MojoExecutionException {
 		ParameterValidator validator = new ParameterValidator(getLog());
 		validator.validateInstrumentationMode(instrumentationMode);
-		if (topN < -1)
-			throw new MojoExecutionException("[test-order] selectTopN cannot be less than -1: " + topN);
-		if (randomM < 0)
-			throw new MojoExecutionException("[test-order] selectRandomM cannot be negative: " + randomM);
-		if (topN == 0 && randomM == 0)
-			throw new MojoExecutionException(
-					"[test-order] Both selectTopN and selectRandomM are 0 — no tests would be selected. "
-							+ "Set selectTopN to at least 1, or use selectTopN=-1 to include all change-affected tests.");
+		validator.validateSelectParameters(topN, randomM);
 		if (optimizeEvery < 0)
 			throw new MojoExecutionException("[test-order] optimizeEvery cannot be negative: " + optimizeEvery);
 		if (autoLearnRunThreshold < 0)
 			throw new MojoExecutionException(
 					"[test-order] autoLearnRunThreshold cannot be negative: " + autoLearnRunThreshold);
-		if (autoLearnDiffThreshold < 0)
-			throw new MojoExecutionException(
-					"[test-order] autoLearnDiffThreshold cannot be negative: " + autoLearnDiffThreshold);
 	}
 
 	private boolean isPrepareGoalBound() {

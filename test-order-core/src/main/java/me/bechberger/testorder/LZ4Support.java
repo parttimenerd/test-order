@@ -19,6 +19,37 @@ import net.jpountz.xxhash.XXHashFactory;
  */
 public final class LZ4Support {
 
+	/**
+	 * Compression level for LZ4 frame output streams.
+	 * <ul>
+	 * <li>{@link #FAST} — fastest writes, ~10-20% larger files. Ideal for
+	 * learn-mode where the index is rewritten frequently.</li>
+	 * <li>{@link #MEDIUM} — LZ4 HC level 4, ~2-3x slower than FAST but ~10-15%
+	 * smaller. Good default for learn-mode on large indices.</li>
+	 * <li>{@link #HC} — high compression (level 9), smallest files, much slower
+	 * writes. Ideal for archival or CI where read speed matters more.</li>
+	 * </ul>
+	 */
+	public enum Compression {
+		/** LZ4 fast compressor — optimized for write speed. */
+		FAST,
+		/** LZ4 HC level 4 — balanced speed/size. */
+		MEDIUM,
+		/** LZ4 HC level 9 — optimized for compression ratio. */
+		HC;
+
+		/** Parse from user-facing string (case-insensitive). */
+		public static Compression fromString(String s) {
+			if (s == null || s.isBlank())
+				return MEDIUM;
+			return switch (s.strip().toLowerCase(java.util.Locale.ROOT)) {
+				case "hc", "high" -> HC;
+				case "fast", "low" -> FAST;
+				default -> MEDIUM;
+			};
+		}
+	}
+
 	private static final LZ4Factory FACTORY = LZ4Factory.safeInstance();
 	private static final XXHashFactory HASH_FACTORY = XXHashFactory.safeInstance();
 
@@ -47,6 +78,46 @@ public final class LZ4Support {
 	public static LZ4FrameOutputStream frameOutputStream(OutputStream out) throws IOException {
 		return new LZ4FrameOutputStream(out, LZ4FrameOutputStream.BLOCKSIZE.SIZE_4MB, -1L, FACTORY.fastCompressor(),
 				HASH_FACTORY.hash32(), LZ4FrameOutputStream.FLG.Bits.BLOCK_INDEPENDENCE);
+	}
+
+	/**
+	 * Creates an LZ4 frame output stream with high compression for archival writes
+	 * (e.g. dependency index) where write speed is less important than file size.
+	 */
+	public static LZ4FrameOutputStream frameOutputStreamHC(OutputStream out) throws IOException {
+		return new LZ4FrameOutputStream(out, LZ4FrameOutputStream.BLOCKSIZE.SIZE_4MB, -1L, FACTORY.highCompressor(9),
+				HASH_FACTORY.hash32(), LZ4FrameOutputStream.FLG.Bits.BLOCK_INDEPENDENCE);
+	}
+
+	/**
+	 * Creates an LZ4 frame output stream with fast compression for write-heavy
+	 * paths (e.g. learn-mode index writes where speed matters more than size).
+	 * Typically 10-50x faster than HC with only ~5-15% larger output.
+	 */
+	public static LZ4FrameOutputStream frameOutputStreamFast(OutputStream out) throws IOException {
+		return new LZ4FrameOutputStream(out, LZ4FrameOutputStream.BLOCKSIZE.SIZE_4MB, -1L, FACTORY.fastCompressor(),
+				HASH_FACTORY.hash32(), LZ4FrameOutputStream.FLG.Bits.BLOCK_INDEPENDENCE);
+	}
+
+	/**
+	 * Creates an LZ4 frame output stream with medium compression (HC level 4) —
+	 * ~10-15% smaller than FAST with only ~2-3x write overhead. Default for
+	 * learn-mode index writes.
+	 */
+	public static LZ4FrameOutputStream frameOutputStreamMedium(OutputStream out) throws IOException {
+		return new LZ4FrameOutputStream(out, LZ4FrameOutputStream.BLOCKSIZE.SIZE_4MB, -1L, FACTORY.highCompressor(4),
+				HASH_FACTORY.hash32(), LZ4FrameOutputStream.FLG.Bits.BLOCK_INDEPENDENCE);
+	}
+
+	/**
+	 * Creates an LZ4 frame output stream with the given compression level.
+	 */
+	public static LZ4FrameOutputStream frameOutputStream(OutputStream out, Compression compression) throws IOException {
+		return switch (compression) {
+			case HC -> frameOutputStreamHC(out);
+			case MEDIUM -> frameOutputStreamMedium(out);
+			default -> frameOutputStreamFast(out);
+		};
 	}
 
 	/**

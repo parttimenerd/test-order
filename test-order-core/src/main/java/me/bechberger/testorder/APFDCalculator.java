@@ -151,7 +151,6 @@ final class APFDCalculator {
 		for (int i = 0; i < n; i++) {
 			scores[i] = scoreOutcome(outcomes.get(i), weights);
 		}
-		// Sort indices by descending score using a simple parallel array approach
 		Integer[] indices = new Integer[n];
 		for (int i = 0; i < n; i++)
 			indices[i] = i;

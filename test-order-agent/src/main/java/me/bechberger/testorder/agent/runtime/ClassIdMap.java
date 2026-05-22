@@ -3,6 +3,7 @@ package me.bechberger.testorder.agent.runtime;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
  * Maps class FQCNs and member names to small integer IDs for efficient
@@ -71,7 +72,7 @@ public class ClassIdMap {
 	// rehash below that.
 	private static final int INITIAL_CLASS_MAP_CAPACITY = 4_096 * 2;
 	// Lazy member map: only allocated on first member registration to save ~8MB in
-	// non-FULL_MEMBER modes.
+	// non-MEMBER modes.
 	private static final int INITIAL_MEMBER_MAP_CAPACITY = 4_096;
 
 	private final ConcurrentHashMap<String, Integer> classToId;
@@ -79,11 +80,14 @@ public class ClassIdMap {
 	private final VarHandleIntCounter nextClassId;
 	private final VarHandleIntCounter nextMemberId;
 
-	// Reverse maps built lazily on first lookup (flush time only).
-	// Using plain String[] arrays indexed by ID avoids Integer autoboxing
-	// and is faster than ConcurrentHashMap<Integer, String>.
-	private volatile String[] reverseClassNames;
-	private volatile String[] reverseMemberNames;
+	// AtomicReferenceArray reverse maps: written at registration time, O(1) lookup
+	// with no rebuild. Grows by doubling when capacity is exceeded.
+	private volatile AtomicReferenceArray<String> reverseClassNames;
+	private volatile AtomicReferenceArray<String> reverseMemberNames;
+
+	// Maps (memberId - MEMBER_ID_OFFSET) → classId. Populated at registration
+	// time so flush can derive class bits from member bits without string parsing.
+	private volatile int[] memberIdToClassId;
 
 	private ClassIdMap() {
 		this.classToId = new ConcurrentHashMap<>(INITIAL_CLASS_MAP_CAPACITY);
@@ -91,6 +95,8 @@ public class ClassIdMap {
 		this.memberToId = null;
 		this.nextClassId = createCounter(0);
 		this.nextMemberId = createCounter(MEMBER_ID_OFFSET);
+		this.reverseClassNames = new AtomicReferenceArray<>(INITIAL_CLASS_MAP_CAPACITY);
+		this.reverseMemberNames = null;
 	}
 
 	public static ClassIdMap getInstance() {
@@ -118,10 +124,36 @@ public class ClassIdMap {
 				AgentLogger.log("[ClassIdMap] WARNING: Class ID capacity exceeded: " + k);
 				return null; // don't store; caller gets -1
 			}
-			reverseClassNames = null; // invalidate cached reverse array
+			setReverseClass(newId, k);
 			return newId;
 		});
 		return id != null ? id : -1;
+	}
+
+	private void setReverseClass(int id, String name) {
+		AtomicReferenceArray<String> arr = reverseClassNames;
+		if (id < arr.length()) {
+			arr.set(id, name);
+		} else {
+			growAndSetReverseClass(id, name);
+		}
+	}
+
+	private synchronized void growAndSetReverseClass(int id, String name) {
+		AtomicReferenceArray<String> arr = reverseClassNames;
+		if (id < arr.length()) {
+			arr.set(id, name);
+			return;
+		}
+		int newLen = Math.max(arr.length() * 2, id + 64);
+		AtomicReferenceArray<String> grown = new AtomicReferenceArray<>(newLen);
+		for (int i = 0; i < arr.length(); i++) {
+			String v = arr.get(i);
+			if (v != null)
+				grown.set(i, v);
+		}
+		grown.set(id, name);
+		reverseClassNames = grown;
 	}
 
 	/**
@@ -146,86 +178,189 @@ public class ClassIdMap {
 				AgentLogger.log("[ClassIdMap] WARNING: Member ID capacity exceeded: " + k);
 				return null;
 			}
-			reverseMemberNames = null; // invalidate cached reverse array
+			// Populate memberIdToClassId mapping
+			int hashIdx = k.indexOf('#');
+			if (hashIdx > 0) {
+				String className = k.substring(0, hashIdx);
+				int classId = getOrRegisterClass(className);
+				if (classId >= 0) {
+					ensureMemberToClassCapacity(newId - MEMBER_ID_OFFSET);
+					memberIdToClassId[newId - MEMBER_ID_OFFSET] = classId;
+				}
+			}
+			setReverseMember(newId - MEMBER_ID_OFFSET, k);
 			return newId;
 		});
 		return id != null ? id : -1;
 	}
 
+	private synchronized void ensureMemberToClassCapacity(int index) {
+		int[] arr = memberIdToClassId;
+		if (arr == null) {
+			arr = new int[Math.max(INITIAL_MEMBER_MAP_CAPACITY, index + 64)];
+			java.util.Arrays.fill(arr, -1);
+			memberIdToClassId = arr;
+		} else if (index >= arr.length) {
+			int newLen = Math.max(arr.length * 2, index + 64);
+			int[] grown = java.util.Arrays.copyOf(arr, newLen);
+			java.util.Arrays.fill(grown, arr.length, newLen, -1);
+			memberIdToClassId = grown;
+		}
+	}
+
+	private void setReverseMember(int adjustedId, String name) {
+		AtomicReferenceArray<String> arr = reverseMemberNames;
+		if (arr != null && adjustedId < arr.length()) {
+			arr.set(adjustedId, name);
+		} else {
+			growAndSetReverseMember(adjustedId, name);
+		}
+	}
+
+	private synchronized void growAndSetReverseMember(int adjustedId, String name) {
+		AtomicReferenceArray<String> arr = reverseMemberNames;
+		if (arr != null && adjustedId < arr.length()) {
+			arr.set(adjustedId, name);
+			return;
+		}
+		int newLen = arr == null
+				? Math.max(INITIAL_MEMBER_MAP_CAPACITY, adjustedId + 64)
+				: Math.max(arr.length() * 2, adjustedId + 64);
+		AtomicReferenceArray<String> grown = new AtomicReferenceArray<>(newLen);
+		if (arr != null) {
+			for (int i = 0; i < arr.length(); i++) {
+				String v = arr.get(i);
+				if (v != null)
+					grown.set(i, v);
+			}
+		}
+		grown.set(adjustedId, name);
+		reverseMemberNames = grown;
+	}
+
 	/**
-	 * Get the class name for an ID via lazy reverse array. The reverse array is
-	 * built on first call and invalidated when new classes register.
+	 * Get the class name for an ID. O(1) lookup via the incrementally maintained
+	 * reverse array — no rebuild needed.
 	 */
 	public String getClassNameForId(int id) {
 		if (id < 0 || id >= MEMBER_ID_OFFSET) {
 			return null;
 		}
-		String[] rc = reverseClassNames;
-		if (rc == null || id >= rc.length) {
-			rc = rebuildClassReverse();
-		}
-		return (id < rc.length) ? rc[id] : null;
-	}
-
-	private synchronized String[] rebuildClassReverse() {
-		// Double-check: another thread may have rebuilt while we waited
-		String[] existing = reverseClassNames;
-		if (existing != null && nextClassId.get() <= existing.length) {
-			return existing;
-		}
-		// Add safety margin: a concurrent registration may have incremented
-		// nextClassId after we snapshot the map, so over-size the array.
-		int size = nextClassId.get() + 64;
-		String[] arr = new String[size];
-		for (var e : classToId.entrySet()) {
-			int idx = e.getValue();
-			if (idx >= 0 && idx < size)
-				arr[idx] = e.getKey();
-		}
-		reverseClassNames = arr;
-		return arr;
+		AtomicReferenceArray<String> rc = reverseClassNames;
+		return (id < rc.length()) ? rc.get(id) : null;
 	}
 
 	/**
-	 * Get the member name for an ID via lazy reverse array.
+	 * Get the member name for an ID. O(1) lookup via the incrementally maintained
+	 * reverse array — no rebuild needed.
 	 */
 	public String getMemberNameForId(int id) {
 		if (id < MEMBER_ID_OFFSET) {
 			return null;
 		}
-		ConcurrentHashMap<String, Integer> map = memberToId;
-		if (map == null) {
+		AtomicReferenceArray<String> rm = reverseMemberNames;
+		if (rm == null) {
 			return null;
 		}
 		int adjusted = id - MEMBER_ID_OFFSET;
-		String[] rm = reverseMemberNames;
-		if (rm == null || adjusted >= rm.length) {
-			rm = rebuildMemberReverse();
-		}
-		return (adjusted < rm.length) ? rm[adjusted] : null;
+		return (adjusted < rm.length()) ? rm.get(adjusted) : null;
 	}
 
-	private synchronized String[] rebuildMemberReverse() {
-		// Double-check: another thread may have rebuilt while we waited
-		String[] existing = reverseMemberNames;
-		int currentCount = nextMemberId.get() - MEMBER_ID_OFFSET;
-		if (existing != null && currentCount <= existing.length) {
-			return existing;
+	/**
+	 * Pre-load class→id mapping from offline instrumentation. This bulk-loads all
+	 * entries into the map and advances the next-ID counter past the highest loaded
+	 * ID. Must be called before any tests run (single-threaded startup).
+	 */
+	public void bulkLoadClasses(java.util.Map<String, Integer> mapping) {
+		int maxId = -1;
+		for (var entry : mapping.entrySet()) {
+			classToId.put(entry.getKey(), entry.getValue());
+			setReverseClass(entry.getValue(), entry.getKey());
+			if (entry.getValue() > maxId) {
+				maxId = entry.getValue();
+			}
 		}
-		int size = currentCount + 64; // safety margin for concurrent registrations
-		if (size <= 0)
-			return new String[0];
+		// Advance counter past highest loaded ID (called once at startup, so loop is
+		// fine)
+		if (maxId >= 0) {
+			while (nextClassId.get() <= maxId) {
+				nextClassId.getAndIncrement();
+			}
+		}
+	}
+
+	/**
+	 * Pre-load member→id mapping from offline instrumentation.
+	 */
+	public void bulkLoadMembers(java.util.Map<String, Integer> mapping) {
+		if (mapping.isEmpty())
+			return;
+		// Ensure memberToId is allocated
 		ConcurrentHashMap<String, Integer> map = memberToId;
-		if (map == null)
-			return new String[0];
-		String[] arr = new String[size];
-		for (var e : map.entrySet()) {
-			int idx = e.getValue() - MEMBER_ID_OFFSET;
-			if (idx >= 0 && idx < size)
-				arr[idx] = e.getKey();
+		if (map == null) {
+			synchronized (this) {
+				map = memberToId;
+				if (map == null) {
+					map = new ConcurrentHashMap<>(mapping.size() * 2);
+					memberToId = map;
+				}
+			}
 		}
-		reverseMemberNames = arr;
-		return arr;
+		int maxId = MEMBER_ID_OFFSET - 1;
+		for (var entry : mapping.entrySet()) {
+			map.put(entry.getKey(), entry.getValue());
+			if (entry.getValue() > maxId) {
+				maxId = entry.getValue();
+			}
+		}
+		// Advance counter past highest loaded ID
+		int target = maxId + 1;
+		int current;
+		while ((current = nextMemberId.get()) < target) {
+			nextMemberId.getAndIncrement();
+		}
+		// Populate memberIdToClassId for all bulk-loaded members
+		for (var entry : mapping.entrySet()) {
+			int memberId = entry.getValue();
+			String memberKey = entry.getKey();
+			setReverseMember(memberId - MEMBER_ID_OFFSET, memberKey);
+			int hashIdx = memberKey.indexOf('#');
+			if (hashIdx > 0) {
+				String className = memberKey.substring(0, hashIdx);
+				int classId = getOrRegisterClass(className);
+				if (classId >= 0) {
+					ensureMemberToClassCapacity(memberId - MEMBER_ID_OFFSET);
+					memberIdToClassId[memberId - MEMBER_ID_OFFSET] = classId;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Get the classId that owns a given memberId. Returns -1 if not mapped. Used at
+	 * flush time to derive class bits from member bits.
+	 */
+	public int getClassIdForMember(int memberId) {
+		int[] arr = memberIdToClassId;
+		if (arr == null)
+			return -1;
+		int idx = memberId - MEMBER_ID_OFFSET;
+		if (idx < 0 || idx >= arr.length)
+			return -1;
+		return arr[idx];
+	}
+
+	/**
+	 * Reset the map (for testing). Clears all registrations and resets counters.
+	 */
+	public void reset() {
+		classToId.clear();
+		if (memberToId != null) {
+			memberToId.clear();
+		}
+		reverseClassNames = new AtomicReferenceArray<>(INITIAL_CLASS_MAP_CAPACITY);
+		reverseMemberNames = null;
+		memberIdToClassId = null;
 	}
 
 }

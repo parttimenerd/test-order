@@ -938,36 +938,25 @@ public class TestOrderState {
 		// config — new decay-based params, with backward compat for old keys
 		if (root.containsKey("config")) {
 			Map<String, Object> cm = safeMap(root.get("config"), "config");
-			if (cm.containsKey("failureDecay"))
-				state.setFailureDecay(
-						clamp01(safeDouble(cm.get("failureDecay"), state.failureDecay(), "config.failureDecay")));
-			if (cm.containsKey("methodFailureDecay"))
-				state.setMethodFailureDecay(clamp01(safeDouble(cm.get("methodFailureDecay"), state.methodFailureDecay(),
-						"config.methodFailureDecay")));
-			if (cm.containsKey("durationAlpha"))
-				state.setDurationAlpha(
-						clamp01(safeDouble(cm.get("durationAlpha"), state.durationAlpha(), "config.durationAlpha")));
-			if (cm.containsKey("methodDurationAlpha"))
-				state.setMethodDurationAlpha(clamp01(safeDouble(cm.get("methodDurationAlpha"),
-						state.methodDurationAlpha(), "config.methodDurationAlpha")));
-			if (cm.containsKey("failurePruneThreshold"))
-				state.setFailurePruneThreshold(clamp01(safeDouble(cm.get("failurePruneThreshold"),
-						state.failurePruneThreshold(), "config.failurePruneThreshold")));
-			if (cm.containsKey("emaVarianceThreshold"))
-				state.setEmaVarianceThreshold(safeDouble(cm.get("emaVarianceThreshold"), state.emaVarianceThreshold(),
-						"config.emaVarianceThreshold"));
-			if (cm.containsKey("historyMaxRuns"))
-				state.setHistoryMaxRuns(
-						safeInt(cm.get("historyMaxRuns"), state.historyMaxRuns(), "config.historyMaxRuns"));
-			if (cm.containsKey("runsSinceLearn"))
-				state.config.setRunsSinceLearn(safeInt(cm.get("runsSinceLearn"), 0, "config.runsSinceLearn"));
-			if (cm.containsKey("dependencyFingerprint") && cm.get("dependencyFingerprint") instanceof String fp)
+			state.setFailureDecay(safeDouble(cm.get("failureDecay"), state.failureDecay(), "config.failureDecay"));
+			state.setMethodFailureDecay(
+					safeDouble(cm.get("methodFailureDecay"), state.methodFailureDecay(), "config.methodFailureDecay"));
+			state.setDurationAlpha(safeDouble(cm.get("durationAlpha"), state.durationAlpha(), "config.durationAlpha"));
+			state.setMethodDurationAlpha(safeDouble(cm.get("methodDurationAlpha"), state.methodDurationAlpha(),
+					"config.methodDurationAlpha"));
+			state.setFailurePruneThreshold(safeDouble(cm.get("failurePruneThreshold"), state.failurePruneThreshold(),
+					"config.failurePruneThreshold"));
+			state.setEmaVarianceThreshold(safeDouble(cm.get("emaVarianceThreshold"), state.emaVarianceThreshold(),
+					"config.emaVarianceThreshold"));
+			state.setHistoryMaxRuns(safeInt(cm.get("historyMaxRuns"), state.historyMaxRuns(), "config.historyMaxRuns"));
+			state.config.setRunsSinceLearn(safeInt(cm.get("runsSinceLearn"), 0, "config.runsSinceLearn"));
+			if (cm.get("dependencyFingerprint") instanceof String fp)
 				state.config.setDependencyFingerprint(fp);
 		}
 
 		// weights
-		if (root.containsKey("weights")) {
-			Map<String, Object> wm = safeMap(root.get("weights"), "weights");
+		Map<String, Object> wm = safeMap(root.get("weights"), "weights");
+		if (!wm.isEmpty()) {
 			Map<String, Integer> weightMap = new LinkedHashMap<>(ScoringWeights.DEFAULT.toMap());
 			for (var e : wm.entrySet()) {
 				weightMap.put(e.getKey(),
@@ -977,68 +966,50 @@ public class TestOrderState {
 		}
 
 		// durations
-		if (root.containsKey("durations")) {
-			Map<String, Object> dm = safeMap(root.get("durations"), "durations");
-			for (var e : dm.entrySet()) {
-				state.durationTracker.putClassDuration(e.getKey(),
-						safeLong(e.getValue(), 0L, "durations." + e.getKey()));
-			}
+		for (var e : safeMap(root.get("durations"), "durations").entrySet()) {
+			state.durationTracker.putClassDuration(e.getKey(), safeLong(e.getValue(), 0L, "durations." + e.getKey()));
 		}
-		if (root.containsKey("durationVariances")) {
-			Map<String, Object> dvm = safeMap(root.get("durationVariances"), "durationVariances");
-			for (var e : dvm.entrySet()) {
-				state.durationTracker.putClassDurationVariance(e.getKey(),
-						safeDouble(e.getValue(), 0.0, "durationVariances." + e.getKey()));
-			}
+		for (var e : safeMap(root.get("durationVariances"), "durationVariances").entrySet()) {
+			state.durationTracker.putClassDurationVariance(e.getKey(),
+					safeDouble(e.getValue(), 0.0, "durationVariances." + e.getKey()));
 		}
 
 		// failure scores: map of class→score
-		if (root.containsKey("failureScores")) {
-			Map<String, Object> fsm = safeMap(root.get("failureScores"), "failureScores");
-			for (var e : fsm.entrySet()) {
-				state.failureHistory.loadFailureScore(e.getKey(),
-						safeDouble(e.getValue(), 0.0, "failureScores." + e.getKey()));
-			}
+		for (var e : safeMap(root.get("failureScores"), "failureScores").entrySet()) {
+			state.failureHistory.loadFailureScore(e.getKey(),
+					safeDouble(e.getValue(), 0.0, "failureScores." + e.getKey()));
 		}
 
 		// runs
-		if (root.containsKey("runs")) {
-			for (Object item : safeList(root.get("runs"), "runs")) {
-				Map<String, Object> runMap = safeMap(item, "runs[]");
-				if (!runMap.isEmpty()) {
-					state.runHistory.addRaw(mapToRunRecord(runMap));
-				}
+		for (Object item : safeList(root.get("runs"), "runs")) {
+			Map<String, Object> runMap = safeMap(item, "runs[]");
+			if (!runMap.isEmpty()) {
+				state.runHistory.addRaw(mapToRunRecord(runMap));
 			}
 		}
 
 		// method durations
-		if (root.containsKey("methodDurations")) {
-			Map<String, Object> mdMap = safeMap(root.get("methodDurations"), "methodDurations");
-			for (var classEntry : mdMap.entrySet()) {
-				Map<String, Object> methods = safeMap(classEntry.getValue(), "methodDurations." + classEntry.getKey());
-				for (var methodEntry : methods.entrySet()) {
-					state.durationTracker.putMethodDuration(classEntry.getKey(), methodEntry.getKey(),
-							safeDouble(methodEntry.getValue(), 0.0,
-									"methodDurations." + classEntry.getKey() + "." + methodEntry.getKey()));
-				}
+		for (var classEntry : safeMap(root.get("methodDurations"), "methodDurations").entrySet()) {
+			Map<String, Object> methods = safeMap(classEntry.getValue(), "methodDurations." + classEntry.getKey());
+			for (var methodEntry : methods.entrySet()) {
+				state.durationTracker.putMethodDuration(classEntry.getKey(), methodEntry.getKey(),
+						safeDouble(methodEntry.getValue(), 0.0,
+								"methodDurations." + classEntry.getKey() + "." + methodEntry.getKey()));
 			}
 		}
-		if (root.containsKey("methodDurationVariances")) {
-			Map<String, Object> mdvMap = safeMap(root.get("methodDurationVariances"), "methodDurationVariances");
-			for (var classEntry : mdvMap.entrySet()) {
-				Map<String, Object> methods = safeMap(classEntry.getValue(),
-						"methodDurationVariances." + classEntry.getKey());
-				for (var methodEntry : methods.entrySet()) {
-					state.durationTracker.putMethodDurationVariance(classEntry.getKey(), methodEntry.getKey(),
-							safeDouble(methodEntry.getValue(), 0.0,
-									"methodDurationVariances." + classEntry.getKey() + "." + methodEntry.getKey()));
-				}
+		for (var classEntry : safeMap(root.get("methodDurationVariances"), "methodDurationVariances").entrySet()) {
+			Map<String, Object> methods = safeMap(classEntry.getValue(),
+					"methodDurationVariances." + classEntry.getKey());
+			for (var methodEntry : methods.entrySet()) {
+				state.durationTracker.putMethodDurationVariance(classEntry.getKey(), methodEntry.getKey(),
+						safeDouble(methodEntry.getValue(), 0.0,
+								"methodDurationVariances." + classEntry.getKey() + "." + methodEntry.getKey()));
 			}
 		}
 
 		// method scoring weights
-		if (root.containsKey("methodWeights")) {
-			Map<String, Object> mwm = safeMap(root.get("methodWeights"), "methodWeights");
+		Map<String, Object> mwm = safeMap(root.get("methodWeights"), "methodWeights");
+		if (!mwm.isEmpty()) {
 			Map<String, Double> doubleMap = new LinkedHashMap<>();
 			for (var e : mwm.entrySet()) {
 				doubleMap.put(e.getKey(), safeDouble(e.getValue(), 0.0, "methodWeights." + e.getKey()));
@@ -1047,12 +1018,9 @@ public class TestOrderState {
 		}
 
 		// method failure scores: map of "class#method"→score
-		if (root.containsKey("methodFailureScores")) {
-			Map<String, Object> mfs = safeMap(root.get("methodFailureScores"), "methodFailureScores");
-			for (var e : mfs.entrySet()) {
-				state.failureHistory.loadMethodFailureScore(e.getKey(),
-						safeDouble(e.getValue(), 0.0, "methodFailureScores." + e.getKey()));
-			}
+		for (var e : safeMap(root.get("methodFailureScores"), "methodFailureScores").entrySet()) {
+			state.failureHistory.loadMethodFailureScore(e.getKey(),
+					safeDouble(e.getValue(), 0.0, "methodFailureScores." + e.getKey()));
 		}
 
 		state.runHistory.trimToMax(state.config.historyMaxRuns());
@@ -1061,11 +1029,8 @@ public class TestOrderState {
 	}
 
 	private static RunRecord mapToRunRecord(Map<String, Object> rm) {
-		List<TestOutcome> outcomes = rm.containsKey("outcomes")
-				? safeList(rm.get("outcomes"), "runs[].outcomes").stream()
-						.map(obj -> StateRecordCodec.compactToOutcome(obj, LOG)).filter(java.util.Objects::nonNull)
-						.toList()
-				: List.of();
+		List<TestOutcome> outcomes = safeList(rm.get("outcomes"), "runs[].outcomes").stream()
+				.map(obj -> StateRecordCodec.compactToOutcome(obj, LOG)).filter(java.util.Objects::nonNull).toList();
 		// firstFailurePosition: -1 means "no failures", 0 means "first test failed".
 		// Old state files may omit this field; default to -1 (no failures) rather than
 		// 0 which would incorrectly imply the first test failed.
@@ -1130,11 +1095,6 @@ public class TestOrderState {
 			LOG.warning("Invalid double for " + label + ": " + o);
 			return defaultValue;
 		}
-	}
-
-	/** Clamps a value to the [0, 1] range. */
-	private static double clamp01(double v) {
-		return Math.max(0.0, Math.min(1.0, v));
 	}
 
 	private static int toInt(Object o) {

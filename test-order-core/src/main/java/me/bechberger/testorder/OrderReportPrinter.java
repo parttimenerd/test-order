@@ -7,7 +7,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.StringJoiner;
-import java.util.TreeSet;
 
 /**
  * Shared formatting and ranking helpers for show-order style reports.
@@ -46,10 +45,12 @@ public final class OrderReportPrinter {
 			Set<String> changedTests, boolean includeTags, boolean showDepTotals, boolean fullNames) {
 		out.println();
 		if (!changed.isEmpty()) {
-			out.println("Changed classes: " + String.join(", ", new TreeSet<>(changed)));
+			out.println(
+					"Changed classes: " + changed.stream().sorted().collect(java.util.stream.Collectors.joining(", ")));
 		}
 		if (!changedTests.isEmpty()) {
-			out.println("Changed test classes: " + String.join(", ", new TreeSet<>(changedTests)));
+			out.println("Changed test classes: "
+					+ changedTests.stream().sorted().collect(java.util.stream.Collectors.joining(", ")));
 		}
 		out.println();
 
@@ -91,13 +92,12 @@ public final class OrderReportPrinter {
 					tags.add("[SLOW]");
 				}
 				out.printf(fmt, (i + 1) + ".", displayName, score.score(), deps,
-						score.failScore() > 0 ? String.format(java.util.Locale.US, "%.1f", score.failScore()) : "",
-						score.isChanged() ? "yes" : "", entry.durationMs() >= 0 ? entry.durationMs() + "ms" : "",
-						tags.toString());
+						score.failScore() > 0 ? formatFailScore(score.failScore()) : "", score.isChanged() ? "yes" : "",
+						entry.durationMs() >= 0 ? entry.durationMs() + "ms" : "", tags.toString());
 			} else {
 				out.printf(fmt, (i + 1) + ".", displayName, score.score(), deps,
-						score.failScore() > 0 ? String.format(java.util.Locale.US, "%.1f", score.failScore()) : "",
-						score.isChanged() ? "yes" : "", entry.durationMs() >= 0 ? entry.durationMs() + "ms" : "");
+						score.failScore() > 0 ? formatFailScore(score.failScore()) : "", score.isChanged() ? "yes" : "",
+						entry.durationMs() >= 0 ? entry.durationMs() + "ms" : "");
 			}
 		}
 
@@ -131,10 +131,12 @@ public final class OrderReportPrinter {
 			Set<String> changed, Set<String> changedTests, TestOrderState.ScoringWeights weights) {
 		out.println();
 		if (!changed.isEmpty()) {
-			out.println("Changed classes: " + String.join(", ", new TreeSet<>(changed)));
+			out.println(
+					"Changed classes: " + changed.stream().sorted().collect(java.util.stream.Collectors.joining(", ")));
 		}
 		if (!changedTests.isEmpty()) {
-			out.println("Changed test classes: " + String.join(", ", new TreeSet<>(changedTests)));
+			out.println("Changed test classes: "
+					+ changedTests.stream().sorted().collect(java.util.stream.Collectors.joining(", ")));
 		}
 		out.printf("Median duration: %dms%n", scorer.medianDuration());
 		out.printf(
@@ -148,6 +150,12 @@ public final class OrderReportPrinter {
 			out.print(entry.format());
 			out.println();
 		}
+	}
+
+	private static String formatFailScore(double score) {
+		int whole = (int) score;
+		int frac = (int) Math.round((score - whole) * 10);
+		return whole + "." + frac;
 	}
 
 	private static String formatDeps(int overlap, int total, boolean showDepTotals) {

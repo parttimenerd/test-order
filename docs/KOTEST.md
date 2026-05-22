@@ -14,7 +14,7 @@
 ## Limitations
 
 - 🔶 **Method-level ordering**: Kotest's DSL-based test definitions map to a single test spec class; method-level ordering may not align with test case structure.
-- 🔶 **Inline functions**: Kotlin `inline fun` calls are erased by the compiler (bytecode is copied into the call site). In `FULL_MEMBER` mode, the agent cannot track the inlined call, so dependency precision is reduced. Use `FULL` mode (the default) for Kotlin projects — it tracks at class level and is not affected by inlining.
+- 🔶 **Inline functions**: Kotlin `inline fun` calls are erased by the compiler (bytecode is copied into the call site). In `MEMBER` mode, the agent cannot track the inlined call, so dependency precision is reduced. Use `CLASS` mode (the default) for Kotlin projects — it tracks at class level and is not affected by inlining.
 - 🔶 **Tested with**: Kotest 5.9.1 + JUnit Platform runner. Other Kotest configurations may behave differently.
 - 🔶 **Not supported**: Kotest tests run directly (without JUnit Platform runner) will not be reordered.
 

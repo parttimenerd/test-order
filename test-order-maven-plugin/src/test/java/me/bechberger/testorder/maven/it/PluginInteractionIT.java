@@ -304,26 +304,6 @@ class PluginInteractionIT {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
-	// METHOD_ENTRY INSTRUMENTATION MODE
-	// ═══════════════════════════════════════════════════════════════════
-
-	@Test
-	@Order(80)
-	@DisplayName("Learn with METHOD_ENTRY mode produces valid index (lower overhead)")
-	void learnMethodEntryProducesValidIndex() {
-		shopProject.cleanAll();
-		MavenResult result = shopProject.maven().learnMethodEntry();
-		assertThat(result).succeeded();
-
-		DependencyMap depMap = shopProject.loadIndex();
-		assertThat(depMap).isLoaded().hasSize(3);
-
-		// Restore full-mode index for other tests
-		shopProject.cleanAll();
-		shopProject.maven().learn();
-	}
-
-	// ═══════════════════════════════════════════════════════════════════
 	// SHOW-ORDER AFTER ORDER MODE (STATE-AWARE SCORING)
 	// ═══════════════════════════════════════════════════════════════════
 
