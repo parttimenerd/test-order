@@ -312,3 +312,43 @@ The following scenarios were NOT tested (due to time constraints or complexity):
 
 ---
 
+
+## Testing Session Summary
+
+This comprehensive dog-fooding exercise was conducted to discover bugs and edge cases in test-order by using it extensively in real-world scenarios.
+
+### Testing Approach:
+1. **Manual scenario testing**: Created dozens of test files with various patterns and configurations
+2. **Command-line exploration**: Tested all major Maven plugin commands (select, run-remaining, detect-dependencies, diagnose, coverage, metrics, dashboard, show, tiered-select, snapshot)
+3. **Configuration variations**: Tested different modes (learn, order, skip), change detection modes, storage modes, and feature flags
+4. **Edge case exploration**: Tested unusual but valid test configurations
+
+### Bugs Found: 7 Real Bugs + 1 Missing Feature
+- **7 confirmed real bugs** ranging from high to low severity
+- **1 documented but unimplemented feature**
+- **3 false alarms** that were determined to be working as designed
+
+### Scenarios Tested: 50+ Total
+- 40+ verified as working correctly
+- 10+ verified to fail or have issues
+
+### Key Findings:
+1. **Offline instrumentation mode doesn't create dependency index** - blocks select/dashboard/show commands
+2. **Method reordering can break order-dependent tests** - tests with implicit order dependencies fail
+3. **JUnit 4 Vintage engine throws ClassNotFoundException** - for JUnit 5 APIs
+4. **Nested test classes detected but not executed** - @Nested tests disappear
+5. **Invalid configuration silently ignored** - weights files not validated
+6. **@Order annotation needs @TestMethodOrder** - design issue/documentation gap
+7. **topN=0 boundary condition bug** - selects 11 tests instead of 0
+
+### No Issues Found In:
+- Parameterized tests, repeated tests, inheritance hierarchies
+- Unicode and special characters in display names
+- Timeout handling, exception handling, test assumptions
+- Tag filtering, method pattern filtering
+- State recovery after clean, snapshot generation
+- Multi-mode testing (learn, order, skip, explicit change mode)
+- Parallel execution support
+- Long-running tests and timeouts
+- Tests that throw exceptions during setup
+
