@@ -73,16 +73,49 @@
 
 ---
 
-## Bug #5: Test Classes with Only @Disabled Methods Now Working
-**Status**: FALSE ALARM / Working as Designed
-**Severity**: N/A
+## Bug #6: Method-Level Reordering Can Break Order-Dependent Tests
+**Status**: CONFIRMED - Real Bug
+**Severity**: High (breaks order-dependent tests)
 **Details**:
-- Initial test class was created as package-private, which is why it wasn't picked up
-- Once made public, the class is correctly recognized and executed
-- Disabled methods are properly handled by JUnit - test class runs, disabled methods are skipped
-- Example output: `Tests run: 3, Failures: 0, Errors: 0, Skipped: 2`
+- When method-level ordering is enabled or when test methods are reordered, tests with implicit order dependencies fail
+- Example: Test class with `testSetCounter()` and `testCheckCounter()` where the latter expects the former to run first
+- With random reordering, `testCheckCounter()` runs first and fails because `counter` is 0 instead of expected 42
+- Even when test class uses static shared state, test-order will reorder methods and break the dependency
+- **Reproduction**:
+  1. Create SharedStateTest with two methods that depend on execution order
+  2. Run `mvn test -Dtestorder.methodOrder.enabled=true`
+  3. Test fails because order is randomized
 
-**Status Resolution**: This is working correctly. Test framework (JUnit) handles @Disabled methods properly and test-order respects that.
+**Expected**: Tests with order dependencies should either:
+- Be detected and run in dependency order, OR
+- Be flagged as requiring explicit @Order annotation
+
+**Actual**: Tests are randomly reordered and fail silently on first run, detection doesn't catch same-class dependencies
+
+**Related**: detect-dependencies fails to find order-dependent tests within the same class
+
+---
+
+## Bug #7: Invalid or Missing Weights File Silently Ignored
+**Status**: CONFIRMED - Real Bug  
+**Severity**: Medium (silent failure)
+**Details**:
+- When passing `-Dtestorder.weightsFile=/path/to/file.toml`, if the file is:
+  - Non-existent (doesn't exist)
+  - Invalid TOML syntax  
+  - Empty or malformed
+- The tool silently ignores it and uses default weights with NO error/warning
+- User has no way to know if their custom weights were actually loaded
+- **Reproduction**:
+  1. `mvn test -Dtestorder.weightsFile=/nonexistent/file.toml` → silently uses defaults
+  2. `mvn test -Dtestorder.weightsFile=/tmp/malformed.toml` (with bad TOML) → silently uses defaults
+
+**Expected**: Tool should warn or fail when:
+- Weights file path is specified but doesn't exist
+- Weights file cannot be parsed
+- At minimum, log which weights file was actually loaded
+
+**Actual**: No error, warning, or confirmation message - silently ignores
 
 ---
 
