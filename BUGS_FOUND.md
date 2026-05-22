@@ -1,7 +1,7 @@
 # Bugs Found While Dog-Fooding test-order
 
 ## Quick Summary
-- **4 Confirmed Real Bugs** needing fixes
+- **5 Confirmed Real Bugs** needing fixes
 - **1 Missing Feature** (documented but not implemented)  
 - **3 False Alarms** (working as designed)
 
@@ -10,7 +10,8 @@
 2. **Bug #4** (High): JUnit 4 Vintage engine ClassNotFoundException  
 3. **Bug #8** (High): Nested test classes not executed
 4. **Bug #7** (Medium): Invalid weights file silently ignored
-5. **Bug #1** (Low): Missing time estimate in APFD message
+5. **Bug #9** (Medium): @Order annotation requires @TestMethodOrder to be respected
+6. **Bug #1** (Low): Missing time estimate in APFD message
 
 ---
 
@@ -191,4 +192,29 @@ The following scenarios were NOT tested (due to time constraints or complexity):
 10. Parameterized tests with test-order
 11. Spring test slices
 12. Nested test classes in modern JUnit
+
+
+## Bug #9: @Order Annotation Without @TestMethodOrder Not Respected
+**Status**: CONFIRMED - Design/Documentation Issue
+**Severity**: Medium (usability/documentation)
+**Details**:
+- When using `@Order` annotation alone (without `@TestMethodOrder`), test-order reorders tests anyway
+- Developers may expect `@Order` to enforce execution order by itself
+- test-order correctly respects ordering when `@TestMethodOrder(MethodOrderer.OrderAnnotation.class)` is added
+- **Reproduction**:
+  1. Create test class with `@Test @Order(1)`, `@Test @Order(2)`, `@Test @Order(3)`
+  2. DON'T add `@TestMethodOrder(MethodOrderer.OrderAnnotation.class)` to class
+  3. Run tests - they execute in random order (test-order reorders them)
+  4. Add `@TestMethodOrder` annotation to class
+  5. Now ordering is properly respected
+
+**Expected**: `@Order` annotation alone should enforce method execution order
+
+**Actual**: `@TestMethodOrder` must be explicitly specified for order to be respected
+
+**Impact**: Tests with order dependencies may fail silently if only `@Order` is used
+
+**Note**: This is a design/documentation issue rather than a code bug. test-order's behavior (reordering) is correct by design, but it should be documented that `@TestMethodOrder` is required for the annotation to have effect.
+
+---
 
