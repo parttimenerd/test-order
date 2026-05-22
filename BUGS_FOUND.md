@@ -216,6 +216,20 @@ The following scenarios were NOT tested (due to time constraints or complexity):
 - ✓ Missing remaining file handling
 - ✓ Corrupted state file detection via diagnose command
 - ✓ Deleted .test-order directory recovery
+- ✓ @RepeatedTest annotation (correct count of repeated tests)
+- ✓ Test inheritance from base class in different package
+- ✓ Tests reading missing resources (NoSuchFileException properly reported)
+- ✓ Timeout annotations with various values
+- ✓ Tests with constructor side effects
+- ✓ detect-dependencies command on projects with no OD bugs
+- ✓ snapshot command for creating hash snapshots
+- ✓ Non-existent test method patterns (0 tests run, no error)
+- ✓ All tests disabled in a class (@Disabled at class level)
+- ✓ Inner classes with @Test (JUnit warning, tests not run unless @Nested)
+- ✓ Tests with many assertions in a single test method
+- ✓ Display names with special characters and Unicode (!@#$%^&*(), 你好世界 🎉)
+- ✓ metrics command generates valid JSON
+- ✓ After clean, tests rebuild and run correctly
 
 ---
 ## Bug #9: @Order Annotation Without @TestMethodOrder Not Respected
