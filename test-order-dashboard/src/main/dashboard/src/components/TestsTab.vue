@@ -248,11 +248,13 @@ watch(() => d.lw, () => {
       <div v-if="d.runs.length > 1" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
         <div class="card">
           <div class="card-label">Score over runs</div>
-          <div class="test-detail__canvas-wrap test-detail__canvas-wrap--trend"><canvas id="hs-main"></canvas></div>
+          <div v-if="d.testOutcomes.value.every(o => !o.present)" style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:.68rem">No outcome data in run history</div>
+          <div v-else class="test-detail__canvas-wrap test-detail__canvas-wrap--trend"><canvas id="hs-main"></canvas></div>
         </div>
         <div class="card">
           <div class="card-label">Run position (lower = earlier)</div>
-          <div class="test-detail__canvas-wrap test-detail__canvas-wrap--trend"><canvas id="hp-main"></canvas></div>
+          <div v-if="d.testOutcomes.value.every(o => !o.present)" style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:.68rem">No outcome data in run history</div>
+          <div v-else class="test-detail__canvas-wrap test-detail__canvas-wrap--trend"><canvas id="hp-main"></canvas></div>
         </div>
       </div>
 

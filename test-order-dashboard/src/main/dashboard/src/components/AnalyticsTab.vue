@@ -30,7 +30,7 @@ function initTimeline() {
   destroyCharts(...TL_IDS)
   const labels = d.runs.map(r => {
     const dt = new Date(r.timestamp)
-    return `${dt.getMonth() + 1}/${dt.getDate()} ${dt.getHours()}:${String(dt.getMinutes()).padStart(2, '0')}`
+    return `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
   })
 
   mkChart('tl-apfd', {
@@ -203,7 +203,7 @@ onMounted(initAll)
 
 <template>
   <div v-if="d.activeTab.value === 'analytics'">
-    <div v-if="d.runs.length === 0 && !d.hasCoverage" style="height:180px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">No run history yet</div>
+    <div v-if="d.runs.length === 0 && !d.hasCoverage && !d.tests.length" style="height:180px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">No run history yet</div>
     <div v-else>
       <!-- Timeline -->
       <div v-if="d.runs.length" style="margin-bottom:12px">
@@ -218,8 +218,8 @@ onMounted(initAll)
         </div>
       </div>
 
-      <!-- Distributions -->
-      <div v-if="d.runs.length" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <!-- Distributions (always shown when there are tests) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
         <div class="card"><div class="card-label">Score distribution</div><div class="analytics__canvas analytics__canvas--dist"><canvas id="d-score"></canvas></div></div>
         <div class="card"><div class="card-label">Duration distribution (log buckets)</div><div class="analytics__canvas analytics__canvas--dist"><canvas id="d-dur"></canvas></div></div>
         <div class="card"><div class="card-label">Dependency count distribution</div><div class="analytics__canvas analytics__canvas--dist"><canvas id="d-deps"></canvas></div></div>

@@ -438,7 +438,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       const params = new URLSearchParams(h)
       if (params.has('tab')) {
         const tab = params.get('tab')!
-        if (['tests', 'analytics', 'weights'].includes(tab)) activeTab.value = tab
+        if (['tests', 'analytics', 'weights', 'ml'].includes(tab)) activeTab.value = tab
       }
       if (params.has('test')) {
         const tName = params.get('test')!
