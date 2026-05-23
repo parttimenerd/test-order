@@ -45,6 +45,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Gradle plugin for JUnit test class priority ordering based on runtime dependency telemetry.
@@ -817,7 +818,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 try {
                     DependencyMap depMap = DependencyMap.load(pctx.indexFile());
                     Set<String> changed = pctx.changedClasses() != null
-                            ? Set.of(pctx.changedClasses().split(","))
+                            ? splitClasses(pctx.changedClasses())
                             : Set.of();
                     new ParameterValidator(wrapLog(project))
                             .warnUnknownChangedClasses(changed, depMap, ext.getChangeMode().get());
@@ -2261,6 +2262,12 @@ public class TestOrderPlugin implements Plugin<Project> {
         } catch (NumberFormatException e) {
             throw new GradleException("[test-order] Invalid integer for " + paramName + ": " + value);
         }
+    }
+
+    private static Set<String> splitClasses(String csv) {
+        if (csv == null || csv.isBlank()) return Set.of();
+        return Arrays.stream(csv.split(",")).map(String::trim).filter(s -> !s.isEmpty())
+                .collect(Collectors.toSet());
     }
 
     private static Long parseLongOrNull(String value, String paramName) {

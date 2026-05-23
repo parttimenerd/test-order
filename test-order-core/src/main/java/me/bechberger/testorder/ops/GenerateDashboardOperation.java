@@ -107,7 +107,10 @@ public final class GenerateDashboardOperation {
 
 		String html = gen.injectIntoTemplate(htmlTemplate, data);
 
-		Files.createDirectories(outputPath.getParent());
+		Path outputParent = outputPath.toAbsolutePath().getParent();
+		if (outputParent != null) {
+			Files.createDirectories(outputParent);
+		}
 		Files.writeString(outputPath, html, StandardCharsets.UTF_8);
 
 		log.info("[test-order] Dashboard written to: " + outputPath);

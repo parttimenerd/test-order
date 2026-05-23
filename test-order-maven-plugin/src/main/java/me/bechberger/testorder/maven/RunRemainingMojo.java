@@ -26,10 +26,8 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 	@Override
 	public void execute() throws MojoExecutionException {
 		initContext();
-		if (skip) {
-			getLog().info("[test-order] Skipping — testorder.skip=true");
+		if (skip)
 			return;
-		}
 		if ("pom".equals(project.getPackaging())) {
 			getLog().debug("[test-order] Skipping run-remaining — POM module.");
 			return;

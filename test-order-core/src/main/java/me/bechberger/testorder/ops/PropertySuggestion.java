@@ -15,14 +15,13 @@ public final class PropertySuggestion {
 
 	/** All canonical testorder.* property keys accepted by the plugins. */
 	public static final Set<String> KNOWN_KEYS = Set.of("testorder.mode", "testorder.skip", "testorder.debug",
-			"testorder.learn", "testorder.verbose", "testorder.instrumentation.mode", "testorder.changeMode",
-			"testorder.includePackages", "testorder.filterByGroupId", "testorder.methodOrder.enabled",
-			"testorder.methodOrder", "testorder.weightsFile", "testorder.weights.file", "testorder.changed.classes",
-			"testorder.changed.test.classes", "testorder.changed.methods", "testorder.changed.classes.file",
-			"testorder.index.path", "testorder.state.path", "testorder.source.root", "testorder.project.root",
-			"testorder.autoLearnRunThreshold", "testorder.autoLearnDiffThreshold", "testorder.auto.optimizeEvery",
-			"testorder.autoCompactEvery", "testorder.auto.runRemaining", "testorder.auto.active",
-			"testorder.select.topN", "testorder.select.randomM", "testorder.select.seed",
+			"testorder.learn", "testorder.instrumentation.mode", "testorder.changeMode", "testorder.includePackages",
+			"testorder.filterByGroupId", "testorder.methodOrder.enabled", "testorder.weights.file",
+			"testorder.changed.classes", "testorder.changed.test.classes", "testorder.changed.methods",
+			"testorder.changed.classes.file", "testorder.index.path", "testorder.state.path", "testorder.source.root",
+			"testorder.project.root", "testorder.autoLearnRunThreshold", "testorder.autoLearnDiffThreshold",
+			"testorder.auto.optimizeEvery", "testorder.autoCompactEvery", "testorder.auto.runRemaining",
+			"testorder.auto.active", "testorder.select.topN", "testorder.select.randomM", "testorder.select.seed",
 			"testorder.select.remainingFile", "testorder.select.selectedFile", "testorder.tiered.tier2Fraction",
 			"testorder.tiered.weightByDuration", "testorder.tiered.tier1File", "testorder.tiered.tier2File",
 			"testorder.tiered.tier3File", "testorder.tiered.currentTier", "testorder.showOrder.explain",
@@ -30,19 +29,32 @@ public final class PropertySuggestion {
 			"testorder.score.changedTest", "testorder.score.maxFailure", "testorder.score.speed",
 			"testorder.score.speedPenalty", "testorder.score.depOverlap", "testorder.score.changeComplexity",
 			"testorder.score.staticFieldBonus", "testorder.score.coverageBonus",
-			"testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold", "testorder.dump.output",
-			"testorder.exportJson.output", "testorder.dashboard.output", "testorder.dashboard.open",
-			"testorder.dashboard.port", "testorder.serve.port", "testorder.dashboard.serveSeconds",
-			"testorder.dashboard.regenerate", "testorder.dashboard.separateAssets", "testorder.metrics.output",
-			"testorder.history.maxRuns", "testorder.remaining.file", "testorder.failOnError",
-			"testorder.coverage.threshold", "testorder.coverage.outputDir", "testorder.coverage.failOnViolation",
-			"coverage.threshold", "coverage.outputDir", "testorder.git.timeout.seconds", "testorder.lock.stale.minutes",
+			"testorder.score.springContextGrouping", "testorder.dump.output", "testorder.exportJson.output",
+			"testorder.dashboard.output", "testorder.dashboard.open", "testorder.dashboard.port",
+			"testorder.serve.port", "testorder.dashboard.serveSeconds", "testorder.dashboard.regenerate",
+			"testorder.dashboard.separateAssets", "testorder.metrics.output", "testorder.history.maxRuns",
+			"testorder.remaining.file", "testorder.failOnError", "testorder.coverage.threshold",
+			"testorder.coverage.outputDir", "testorder.coverage.failOnViolation", "coverage.threshold",
+			"coverage.outputDir", "testorder.git.timeout.seconds", "testorder.lock.stale.minutes",
 			"testorder.change.complexity", "testorder.method.score.failureRecency", "testorder.method.score.fast",
 			"testorder.method.score.slow", "testorder.method.score.depOverlap", "testorder.method.score.newMethod",
 			"testorder.method.score.changedMethod", "testorder.method.score.coverageBonus", "testorder.tdd",
-			"testorder.ml.enabled", "testorder.ml.historyDir", "testorder.ml.history.maxRuns",
-			"testorder.ml.predictions.file", "testorder.instrumentation", "testorder.offline.mapping",
-			"testorder.offline.output", "testorder.offline.indexFile");
+			"testorder.ml.enabled", "testorder.ml.predictions.file", "testorder.instrumentation",
+			"testorder.offline.mapping", "testorder.offline.output", "testorder.offline.indexFile",
+			"testorder.offline.backupDir", "testorder.collector.port",
+			// File path aliases and additional keys
+			"testorder.index", "testorder.stateFile", "testorder.sourceRoot", "testorder.hashFile",
+			"testorder.testHashFile", "testorder.methodHashFile", "testorder.testSourceRoot", "testorder.depsDir",
+			"testorder.methodOrderingEnabled", "testorder.structuralDiff.enabled", "testorder.compression",
+			"testorder.verboseFile", "testorder.dashboard.coverageDir",
+			// detect-dependencies keys
+			"testorder.detect.algorithm", "testorder.detect.timeBudget", "testorder.detect.stopOnFirst",
+			"testorder.detect.seed", "testorder.detect.failOnDetection",
+			// show goal keys
+			"testorder.show.classes", "testorder.show.methods", "testorder.show.ml", "testorder.show.all",
+			"testorder.show.format", "testorder.show.filter",
+			// reactor ordering keys
+			"testorder.reactor.suggest", "testorder.reactor.topN");
 
 	/**
 	 * Find the closest known key to the given unknown key using case-insensitive
@@ -51,6 +63,8 @@ public final class PropertySuggestion {
 	 * @return the closest key, or {@code null} if no good match
 	 */
 	public static String findClosest(String unknown) {
+		if (unknown == null || unknown.isBlank())
+			return null;
 		String unknownLower = unknown.toLowerCase();
 
 		// Common alias typo: testorder.changed.tests
@@ -66,8 +80,8 @@ public final class PropertySuggestion {
 			return "testorder.dashboard.serveSeconds";
 		}
 
-		// Dot-normalized match: handle legacy dotted variants like
-		// testorder.ml.history.dir → testorder.ml.historyDir
+		// Dot-normalized match: handle camelCase vs. dotted variants (e.g.
+		// testorder.changeMode vs testorder.change.mode)
 		for (String known : KNOWN_KEYS) {
 			String knownNorm = known.toLowerCase().replace(".", "");
 			String unknownNorm = unknownLower.replace(".", "");
@@ -154,6 +168,8 @@ public final class PropertySuggestion {
 		if (keys == null)
 			return warnings;
 		for (String key : keys) {
+			if (key == null)
+				continue;
 			// Detect common prefix mistakes: test-order.* or test_order.* instead of
 			// testorder.*
 			if (key.startsWith("test-order.") || key.startsWith("test_order.")) {
@@ -187,6 +203,10 @@ public final class PropertySuggestion {
 
 	/** Standard Levenshtein edit distance. */
 	public static int levenshtein(String a, String b) {
+		if (a == null)
+			a = "";
+		if (b == null)
+			b = "";
 		int n = a.length(), m = b.length();
 		int[] prev = new int[m + 1];
 		int[] curr = new int[m + 1];

@@ -113,7 +113,7 @@ Legend:
                 <version>${test-order.version}</version>
                 <configuration>
                     <!-- All modules inherit this config -->
-                    <instrumentationMode>FULL</instrumentationMode>
+                    <instrumentationMode>CLASS</instrumentationMode>
                     <changeMode>uncommitted</changeMode>
                     <scoreNewTest>100</scoreNewTest>
                 </configuration>
@@ -273,7 +273,7 @@ subprojects {
     // Shared test-order configuration
     testOrder {
         mode = 'auto'
-        instrumentationMode = 'FULL'
+        instrumentationMode = 'CLASS'
         changeMode = 'uncommitted'
         scoreNewTest = 100
         autoLearnRunThreshold = 10
@@ -539,11 +539,11 @@ mvn test-order:diagnose
 
 **Solution**:
 ```bash
-# Increase lock timeout (default 30 seconds)
-mvn test -Dtestorder.hash.lockTimeout=60
+# Reduce stale-lock threshold (default 120 minutes); lock files older than this are removed
+mvn test -Dtestorder.lock.stale.minutes=5
 
 # For Gradle
-./gradlew test -Dtestorder.hash.lockTimeout=60
+./gradlew test -Dtestorder.lock.stale.minutes=5
 
 # Disable parallel execution temporarily
 mvn test -T 1  # Maven: serial

@@ -30,7 +30,7 @@ public class AggregateMojo extends AbstractTestOrderMojo {
 		try {
 			AggregateOperation.aggregate(depsDirPath, resolveIndexPath(), pluginLog());
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to aggregate deps", e);
+			throw new MojoExecutionException("Failed to aggregate deps: " + e.getMessage(), e);
 		}
 	}
 }

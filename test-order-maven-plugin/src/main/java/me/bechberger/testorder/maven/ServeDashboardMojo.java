@@ -79,13 +79,25 @@ public class ServeDashboardMojo extends DashboardMojo {
 					"[test-order] " + MavenPluginConfigKeys.DASHBOARD_SERVE_SECONDS + " must be >= 0");
 		}
 
+		// Warn early if serveSeconds=0 will block the build indefinitely
+		if (serveSeconds == 0 && session != null && session.getGoals() != null && session.getGoals().size() > 1) {
+			getLog().warn("[test-order] WARNING: serveSeconds=0 blocks the build — "
+					+ "subsequent goals will NOT execute while the server is running. "
+					+ "Use -Dtestorder.dashboard.serveSeconds=30 for bounded serving.");
+		}
+
 		Path htmlPath = resolveOutputPath();
 		String regenerateMode = regenerate == null ? "auto" : regenerate.trim().toLowerCase(Locale.ROOT);
 
 		boolean shouldGenerate = switch (regenerateMode) {
 			case "true", "yes", "always" -> true;
 			case "false", "no", "never" -> false;
-			default -> !Files.exists(htmlPath); // "auto"
+			case "auto" -> !Files.exists(htmlPath);
+			default -> {
+				getLog().warn("[test-order] Unrecognized " + MavenPluginConfigKeys.DASHBOARD_REGENERATE + " value '"
+						+ regenerate + "' — valid values: auto, true, false. Falling back to 'auto'.");
+				yield !Files.exists(htmlPath);
+			}
 		};
 
 		if (shouldGenerate) {
@@ -108,11 +120,6 @@ public class ServeDashboardMojo extends DashboardMojo {
 		try {
 			if (serveSeconds == 0) {
 				getLog().info("[test-order] Server running indefinitely. Press Ctrl+C to stop.");
-				if (session != null && session.getGoals() != null && session.getGoals().size() > 1) {
-					getLog().warn("[test-order] WARNING: serveSeconds=0 blocks the build — "
-							+ "subsequent goals will NOT execute while the server is running. "
-							+ "Use -Dtestorder.dashboard.serveSeconds=30 for bounded serving.");
-				}
 			}
 			boundPort = DashboardServerOperation.start(htmlPath, ctx.resolveStateFile(stateFile), port, pluginLog(),
 					p -> this.boundPort = p, serveSeconds, openBrowser);

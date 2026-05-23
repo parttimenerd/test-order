@@ -117,9 +117,9 @@ final class MavenPluginConfigKeys {
 			TIERED_CURRENT_TIER, LEGACY_INDEX, LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE,
 			LEGACY_TEST_HASH_FILE, LEGACY_METHOD_HASH_FILE, LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT,
 			LEGACY_VERBOSE_FILE, LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip",
-			"testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file", "testorder.methodOrder",
-			"testorder.score.springContextGrouping", "testorder.score.ema.varianceThreshold", "testorder.auto.active",
-			"testorder.remaining.file", "testorder.metrics.output", SERVE_PORT_ALIAS);
+			"testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file",
+			"testorder.score.springContextGrouping", "testorder.auto.active", "testorder.remaining.file",
+			"testorder.metrics.output", SERVE_PORT_ALIAS);
 
 	/**
 	 * Find the closest known key to the given unknown key. Delegates to

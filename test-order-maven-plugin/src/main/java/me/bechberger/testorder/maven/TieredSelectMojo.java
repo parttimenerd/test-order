@@ -136,6 +136,8 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 
 		// Configure Surefire to run only tier 1
 		SurefireHelper.warnSelectModeFilters(project, getLog());
+		boolean tier2RanInline = false;
+		boolean tier3RanInline = false;
 		if (!selection.tier1().isEmpty()) {
 			SurefireHelper.configureIncludes(project, selection.tier1(), true);
 			getLog().info("[test-order] Tier 1: running " + selection.tier1().size() + " change-affected tests");
@@ -147,11 +149,13 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 				getLog().info("[test-order] Running " + selection.tier2().size() + " tier-2 tests directly");
 				// Clear the tier 2 file so downstream CI steps don't re-run these tests
 				clearTierFile(Path.of(tier2File));
+				tier2RanInline = true;
 			} else if (!selection.tier3().isEmpty()) {
 				SurefireHelper.configureIncludes(project, selection.tier3(), true);
 				getLog().info("[test-order] Running " + selection.tier3().size() + " tier-3 tests directly");
 				// Clear the tier 3 file so downstream CI steps don't re-run these tests
 				clearTierFile(Path.of(tier3File));
+				tier3RanInline = true;
 			} else {
 				getLog().info("[test-order] No tests to run.");
 				project.getProperties().setProperty("skipTests", "true");
@@ -185,8 +189,10 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 
 		getLog().info("[test-order] Tier files written:");
 		getLog().info("[test-order]   Tier 1 (" + selection.tier1().size() + " tests): " + tier1File);
-		getLog().info("[test-order]   Tier 2 (" + selection.tier2().size() + " tests): " + tier2File);
-		getLog().info("[test-order]   Tier 3 (" + selection.tier3().size() + " tests): " + tier3File);
+		getLog().info("[test-order]   Tier 2 (" + selection.tier2().size() + " tests"
+				+ (tier2RanInline ? ", already run" : "") + "): " + tier2File);
+		getLog().info("[test-order]   Tier 3 (" + selection.tier3().size() + " tests"
+				+ (tier3RanInline ? ", already run" : "") + "): " + tier3File);
 		// Only suggest tier 2 hint if tier 1 is not empty (meaning tier 2 hasn't
 		// already run inline)
 		if (!selection.tier1().isEmpty() && (!selection.tier2().isEmpty() || !selection.tier3().isEmpty())) {
@@ -197,7 +203,7 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 			if (!selection.tier3().isEmpty()) {
 				getLog().info("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");
 			}
-		} else if (selection.tier1().isEmpty() && !selection.tier3().isEmpty()) {
+		} else if (selection.tier1().isEmpty() && tier2RanInline && !selection.tier3().isEmpty()) {
 			// Tier 2 ran inline — remind user that tier 3 still needs a separate run
 			getLog().info("[test-order] Next step:");
 			getLog().info("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");

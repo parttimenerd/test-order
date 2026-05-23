@@ -1798,7 +1798,13 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			repoPath = session.getLocalRepository().getBasedir();
 		}
 		if (repoPath == null || repoPath.isBlank()) {
-			repoPath = System.getProperty("user.home") + "/.m2/repository";
+			String userHome = System.getProperty("user.home");
+			if (userHome == null || userHome.isBlank()) {
+				throw new MojoExecutionException(
+						"[test-order] Cannot resolve Maven local repository: session.getLocalRepository() is null "
+								+ "and 'user.home' system property is not set.");
+			}
+			repoPath = userHome + "/.m2/repository";
 		}
 		Path localRepo = Path.of(repoPath);
 

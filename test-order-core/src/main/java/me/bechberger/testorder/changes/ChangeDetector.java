@@ -23,7 +23,16 @@ public class ChangeDetector {
 		public static Mode parse(String value) {
 			if (value == null || value.isBlank())
 				return SINCE_LAST_RUN;
-			return valueOf(value.toUpperCase().replace('-', '_'));
+			String normalized = value.toUpperCase().replace('-', '_');
+			try {
+				return valueOf(normalized);
+			} catch (IllegalArgumentException e) {
+				String hint = "AUTO".equals(normalized)
+						? " (note: 'auto' is resolved by the Maven/Gradle plugin layer and is not available in the standalone CLI)"
+						: "";
+				throw new IllegalArgumentException("Invalid change detection mode '" + value + "'. Valid modes: "
+						+ "since-last-run, since-last-commit, uncommitted, explicit" + hint);
+			}
 		}
 	}
 
@@ -122,8 +131,14 @@ public class ChangeDetector {
 		try {
 			relative = gitRoot.relativize(absoluteSource.toAbsolutePath().normalize());
 		} catch (IllegalArgumentException e) {
-			// Fallback: if git root and source are on different roots
-			relative = sourceRoot.isAbsolute() ? projectRoot.relativize(sourceRoot) : sourceRoot;
+			// Fallback: if git root and source are on different roots (e.g. different
+			// Windows drives)
+			try {
+				relative = sourceRoot.isAbsolute() ? projectRoot.relativize(sourceRoot) : sourceRoot;
+			} catch (IllegalArgumentException e2) {
+				// Last resort: use sourceRoot as-is
+				relative = sourceRoot;
+			}
 		}
 		String prefix = relative.toString().replace('\\', '/');
 		if (prefix.isBlank()) {
@@ -184,6 +199,9 @@ public class ChangeDetector {
 
 	private static Set<String> detectSinceLastRun(Path absoluteSourceRoot, Path hashFile, boolean updateSnapshot)
 			throws IOException {
+		if (hashFile == null) {
+			throw new IOException("since-last-run mode requires a hash file path (--hash-file / testorder.hashFile)");
+		}
 		FileHashStore current = FileHashStore.scan(absoluteSourceRoot);
 		Set<String> changed;
 		if (Files.exists(hashFile)) {

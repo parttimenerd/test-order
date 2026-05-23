@@ -33,6 +33,8 @@ mvn test-order:show
 | `show` | Unified view: class order, method order, ML health (auto-detects available data) | Debug prioritization |
 | `show-order` | _(deprecated → use `show`)_ Prints ranking/order and score breakdown | Debug prioritization |
 | `show-method-order` | _(deprecated → use `show`)_ Prints method-level priority order within each test class | Debug method ordering |
+| `analyze` | _(deprecated → use `show -Dtestorder.show.ml=true`)_ ML test health report | ML analysis |
+| `reactor-order` | Computes optimal module execution order for multi-module builds | Multi-module CI optimization |
 | `dashboard` | Generates HTML dashboard | Visual analysis |
 | `serve` | Serves dashboard via local HTTP server | Browser compatibility / sharing |
 | `optimize` | Re-optimizes scoring weights from run history | Periodic tuning |
@@ -45,7 +47,7 @@ mvn test-order:show
 | `clean` | Removes all test-order state, indexes, and hash files | Start fresh |
 | `download` | Downloads dependency index from CI artifact store | CI warm-start |
 | `coverage` | Generates least-tested / coverage reports | Coverage gap analysis |
-| `detect-dependencies` | Detect order-dependent (flaky) tests via reordering | Flaky test detection |
+| `detect-dependencies` | Detect order-dependent (flaky) tests via reordering | Flaky test detection (see [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md)) |
 | `metrics` | Exports test-order metrics as JSON | CI/CD reporting, dashboards |
 | `help` | Displays all goals and common properties | Quick reference |
 
@@ -76,6 +78,8 @@ mvn test-order:auto test -Dtestorder.mode=skip
 
 ## Change Detection Modes
 
+Controls which production code changes are used to select and prioritize tests. Pass via `-Dtestorder.changeMode=<value>` or set in POM configuration.
+
 | Mode | Best for | Summary |
 |---|---|---|
 | `auto` | Most projects | Selects the best available strategy for current environment |
@@ -84,7 +88,67 @@ mvn test-order:auto test -Dtestorder.mode=skip
 | `uncommitted` | Rapid local iteration | Uses working-tree/staged changes in current repository |
 | `explicit` | Controlled CI pipelines | Caller passes exact class list via `testorder.changed.classes` |
 
-Recommended defaults:
+### Mode Details and Trade-offs
+
+#### `auto` (default for Maven plugin)
+Automatically selects the best available strategy: `uncommitted` if in a git repo, `since-last-run` otherwise.
+
+**Pros:** Works out-of-the-box with no configuration; adapts to environment (git vs. no git).  
+**Cons:** Non-deterministic across machines; the selected strategy can change if the git repo is unavailable. If you need reproducible CI results, prefer an explicit mode.
+
+---
+
+#### `uncommitted`
+Detects Java source files with working-tree or staged-but-not-committed changes (`git diff` + `git diff --cached`).
+
+**Pros:** Very fast (single git subprocess); catches changes you haven't committed yet, which is ideal during active development. No hash files needed.  
+**Cons:** Requires git. Does not capture changes introduced by earlier commits that are already committed but not yet tested. If a colleague's commit broke something, only the committer would see it.
+
+**Use when:** Local dev loop where you want to test only what you're actively editing.
+
+---
+
+#### `since-last-commit`
+Detects classes changed between the previous commit and HEAD (`git diff HEAD~1..HEAD`), then merges in any uncommitted changes on top.
+
+**Pros:** Suitable for CI on pull requests — captures exactly what this PR changed. Works with most CI systems' shallow-clone setups (needs `fetch-depth: 2` at minimum).  
+**Cons:** Requires git with at least one prior commit (`HEAD~1` must exist). The first commit on a new branch may report no changes. Cannot detect changes that span multiple commits without configuring a base ref.
+
+**Use when:** PR/CI validation where you want to test what changed on the branch.
+
+---
+
+#### `since-last-run`
+Compares current file hashes against a snapshot saved by the previous test run. Identifies any source files that changed between the two runs.
+
+**Pros:** Works without git; portable across VCS-agnostic environments. Captures any file changes regardless of commit history. Automatically updates the snapshot after each run.  
+**Cons:** Hash file must exist at `testorder.hashFile` path (defaults to `.test-order/hashes.lz4`). First run with no snapshot treats all files as changed. Hash files must be preserved between runs (may need to be committed or cached in CI).
+
+**Use when:** Non-git environments, or when you want to test "what changed since last time I ran the test suite."
+
+---
+
+#### `explicit`
+The caller provides the exact set of changed production class FQCNs via `testorder.changed.classes`.
+
+**Pros:** Fully deterministic and reproducible — no dependency on git or file timestamps. Easy to integrate with external diff tools, artifact version comparisons, or custom CI scripts. No file I/O needed at detection time.  
+**Cons:** Requires the caller to know and supply the changed class list. If the list is wrong or stale, test selection will be wrong. Useful only in scripted/automated pipelines.
+
+**Use when:** Scripted CI pipelines where you already know the changed classes from a build system, artifact comparison, or external diff tool.
+
+```bash
+mvn test-order:auto test \
+  -Dtestorder.changeMode=explicit \
+  -Dtestorder.changed.classes=com.example.Service,com.example.Repository
+```
+
+---
+
+### Fallback Behavior
+
+If `uncommitted` or `since-last-commit` fails (e.g., git not available or no prior commit), test-order automatically falls back to `since-last-run` if a hash file is present. If no hash file exists, the failure is propagated.
+
+### Recommended Defaults
 
 - Local developer loop: `uncommitted`
 - Pull request / CI checks: `since-last-commit`
@@ -105,8 +169,8 @@ Recommended defaults:
 
 | Property | Default |
 |---|---|
-| `testorder.index` | `${project.basedir}/.test-order/test-dependencies.lz4` |
-| `testorder.stateFile` | `${project.basedir}/.test-order/state.lz4` |
+| `testorder.index.path` (alias: `testorder.index`) | `${project.basedir}/.test-order/test-dependencies.lz4` |
+| `testorder.state.path` (alias: `testorder.stateFile`) | `${project.basedir}/.test-order/state.lz4` |
 | `testorder.depsDir` | `${project.build.directory}/test-order-deps` |
 | `testorder.hashFile` | `${project.basedir}/.test-order/hashes.lz4` |
 | `testorder.testHashFile` | `${project.basedir}/.test-order/test-hashes.lz4` |
@@ -118,7 +182,10 @@ Recommended defaults:
 |---|---|---|
 | `testorder.mode` | `auto` | `auto`, `learn`, `order`, `skip` — controls `auto` goal behaviour |
 | `testorder.changeMode` | `uncommitted` | `auto`, `since-last-run`, `since-last-commit`, `uncommitted`, `explicit` |
-| `testorder.changed.classes` | unset | Required in `explicit` mode |
+| `testorder.changed.classes` | unset | Required in `explicit` mode; comma-separated FQCNs |
+| `testorder.changed.classes.file` | unset | Path to file of changed class FQCNs (one per line); merged with `testorder.changed.classes` |
+| `testorder.changed.test.classes` | unset | Comma-separated changed test class FQCNs |
+| `testorder.changed.methods` | unset | Comma-separated changed methods in `className#methodName` format |
 | `testorder.select.topN` | `-1` | Top-ranked tests to include (`-1` = all affected) |
 | `testorder.select.randomM` | `10` | Diversity sampling |
 | `testorder.select.seed` | unset | Reproducible random selection |
@@ -154,17 +221,17 @@ Recommended defaults:
 | `testorder.show.methods` | `auto` | Include method-level order (`true`/`false`/`auto` = show if data exists) |
 | `testorder.show.ml` | `auto` | Include ML health analysis (`true`/`false`/`auto` = show if history exists) |
 | `testorder.show.all` | `false` | Force all sections on (equivalent to classes+methods+ml) |
-| `testorder.show.explain` | `false` | Show per-test scoring breakdown |
-| `testorder.show.fullNames` | `false` | Use fully qualified class names |
+| `testorder.showOrder.explain` | `false` | Show per-test scoring breakdown |
+| `testorder.showOrder.fullNames` | `false` | Use fully qualified class names |
 | `testorder.show.format` | `text` | Output format: `text` or `json` |
-| `testorder.show.filter` | unset | Glob pattern to restrict output. Supports `*` and `?` wildcards, comma-separated patterns with OR semantics (e.g. `*Service*,*Controller*`). Matching is case-insensitive. |
+| `testorder.show.filter` | unset | Glob pattern to restrict output. Matches the full FQCN — use `*` to match any prefix (e.g. `*Service*,*Controller*`). Comma-separated patterns use OR semantics. Matching is case-insensitive. |
 
-### Show-Order (deprecated)
+### Reactor Order
 
 | Property | Default | Notes |
 |---|---|---|
-| `testorder.showOrder.explain` | `false` | Show per-test scoring breakdown |
-| `testorder.showOrder.fullNames` | `false` | Use fully qualified class names |
+| `testorder.reactor.suggest` | `false` | Output only the `-pl` argument (machine-parseable for scripts) |
+| `testorder.reactor.topN` | `5` | Number of top tests to display per module |
 
 ### Dashboard
 
@@ -172,8 +239,9 @@ Recommended defaults:
 |---|---|---|
 | `testorder.dashboard.output` | `${project.build.directory}/test-order-dashboard/index.html` | Output path for static dashboard |
 | `testorder.dashboard.port` | `0` (auto) | Port for `serve` goal (`0` = ephemeral) |
+| `testorder.serve.port` | — | Alias for `testorder.dashboard.port` (accepted for convenience) |
 | `testorder.dashboard.open` | `false` | Open browser automatically after dashboard generation |
-| `testorder.dashboard.regenerate` | `auto` | Force dashboard regeneration for `serve` goal |
+| `testorder.dashboard.regenerate` | `auto` | Force dashboard regeneration for `serve` goal (`auto`, `true`, `false`) |
 | `testorder.dashboard.serveSeconds` | `0` | Stop `serve` automatically after N seconds (`0` = wait until interrupted) |
 
 ### Advanced
@@ -184,7 +252,7 @@ Recommended defaults:
 | `testorder.autoCompactEvery` | `50` | Rebuild index from `.deps` files every N order-mode runs (`0` = disabled) |
 | `testorder.structuralDiff.enabled` | `true` | Use structural diff for change complexity scoring |
 | `testorder.score.springContextGrouping` | `false` | Group tests sharing a Spring context |
-| `testorder.score.ema.varianceThreshold` | `0.35` | EMA variance threshold for adaptive smoothing (`0` = no adaptation) |
+| `testorder.score.ema.varianceThreshold` | `0.35` | EMA variance threshold for adaptive smoothing — stored in state file only; setting via `-D` has no effect |
 
 ### Instrumentation and Filtering
 
@@ -200,8 +268,6 @@ Recommended defaults:
 | Property | Default | Notes |
 |---|---|---|
 | `testorder.ml.enabled` | `false` | Enable ML history collection during test runs |
-| `testorder.ml.historyDir` | `.test-order/ml/` | Directory for ML history data |
-| `testorder.ml.history.maxRuns` | `2000` | Maximum runs retained in history ring buffer |
 | `testorder.ml.predictions.file` | auto | Intermediate predictions file consumed by test JVM |
 
 When enabled, test-order records per-test outcomes (pass/fail, duration, exception type) after each run. With 5+ recorded runs, the ML layer can:
@@ -215,18 +281,18 @@ ML data is shown in:
 
 ### Scoring Overrides
 
-| Property | Default |
-|---|---|
-| `testorder.score.newTest` | `15` |
-| `testorder.score.changedTest` | `9` |
-| `testorder.score.maxFailure` | `5` |
-| `testorder.score.speed` | `1` |
-| `testorder.score.speedPenalty` | `1` |
-| `testorder.score.depOverlap` | `5` |
-| `testorder.score.changeComplexity` | `2` |
-| `testorder.score.staticFieldBonus` | `0` |
-| `testorder.score.coverageBonus` | `0` |
-| `testorder.weights.file` | unset |
+| Property | Default | Description |
+|---|---|---|
+| `testorder.score.newTest` | `15` | Bonus for test classes not in the dependency index |
+| `testorder.score.changedTest` | `9` | Bonus for changed test sources |
+| `testorder.score.maxFailure` | `5` | Cap on failure-based bonus |
+| `testorder.score.speed` | `1` | Bonus for fast tests (full at 1/8× median) |
+| `testorder.score.speedPenalty` | `1` | Penalty for slow tests (full at 8× median) |
+| `testorder.score.depOverlap` | `5` | Max score from dependency overlap (sqrt-normalized) |
+| `testorder.score.changeComplexity` | `2` | Complexity-weighted overlap using compressed diff size |
+| `testorder.score.staticFieldBonus` | `0` | Fixed bonus for tests overlapping a changed static field (requires `MEMBER` mode) |
+| `testorder.score.coverageBonus` | `0` | Greedy set-cover bonus; when >0 replaces `depOverlap`+`changeComplexity` |
+| `testorder.weights.file` | unset | Path to TOML weights file; overrides all `testorder.score.*` properties when set |
 
 ## Common Recipes
 
@@ -371,11 +437,67 @@ Behaviour:
 - **New test method passes without prior failure**: artificially failed (only when method-level data exists in state).
 - **Test that already fails**: not flagged — TDD discipline is satisfied.
 
+## Standalone CLI Tool
+
+The `test-order-core` module ships a standalone CLI jar:
+
+```bash
+java -jar test-order-core-jar-with-dependencies.jar <command> [options]
+```
+
+All commands support `--help` for detailed option descriptions.
+
+**Exit codes:** All CLI commands return `0` on success and `1` on failure. Failures include: missing index file, invalid arguments (out-of-range threshold, bad mode string), index is empty when content is required (`dump`, `aggregate`), missing source root directory (`hash-snapshot`), and I/O errors. The `changed` command returns `0` even when no changes are detected — check stdout for `"No changes detected."` instead.
+
+| Command | Args | Description |
+|---|---|---|
+| `aggregate` | `<depsDir> -o <output>` | Merge `.deps` files into a dependency index |
+| `affected` | `<indexFile> -c <classes>` | List test classes affected by a set of changed class FQCNs |
+| `stats` | `<indexFile>` | Print dependency index statistics (class count, unique deps, avg deps) |
+| `dump` | `<indexFile> [-o file]` | Dump index as human-readable text (stdout or file) |
+| `export-json` | `<indexFile> [-o file]` | Export dependency index (and optionally state history) as JSON |
+| `select` | `<indexFile>` | Select a prioritized subset: new tests + top-N scored + M diverse fast tests |
+| `optimize` | `[stateFile]` | Analyze run history and optimize scoring weights |
+| `hash-snapshot` | `[-s sourceRoot] [-o hashFile]` | Scan source tree and save file hash snapshot (for `since-last-run`) |
+| `changed` | `[--mode M] [--classes C]` | Detect changed production classes using the specified mode |
+| `run` | `<indexFile> [--mode M]` | Detect changes and print the affected test classes |
+| `struct-diff` | `[files…] [--ref ref]` | Structural diff of Java files (types, methods, fields) against git |
+| `advise` | `<indexFile> [--threshold T]` | Identify test classes with low method cohesion — candidates for splitting |
+
+### `advise` — Test Class Split Analysis
+
+Requires per-method dependency data (collected when `testorder.instrumentation.mode=METHOD` or `MEMBER`). Analyzes the pairwise Jaccard similarity of each test method's dependency set within a class. Classes whose methods cover largely disjoint production code are split candidates — breaking them up lets test-order schedule them independently and improves prioritization precision.
+
+```bash
+java -jar test-order-core.jar advise .test-order/test-dependencies.lz4
+java -jar test-order-core.jar advise .test-order/test-dependencies.lz4 --threshold 0.4 --verbose
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--threshold` | `0.3` | Similarity threshold in [0,1]; classes below this value are flagged |
+| `--verbose` / `-v` | false | Print per-class details including suggested split groups |
+
+### `struct-diff` — Structural Change Analysis
+
+Shows which Java types, methods, and fields have been added, changed, or removed in your source tree — without running a full build.
+
+```bash
+# Show uncommitted structural changes
+java -jar test-order-core.jar struct-diff
+
+# Show changes in the last commit
+java -jar test-order-core.jar struct-diff --since-last-commit
+
+# Diff specific files against a git ref
+java -jar test-order-core.jar struct-diff src/main/java/com/example/Service.java --ref HEAD~3
+```
+
 ## Validation Rules (High Impact)
 
 - `testorder.changeMode` must be one of the supported modes.
-- `testorder.changed.classes` is required when `changeMode=explicit`.
-- `testorder.select.topN` must be `>= -1` (`-1` = all affected, `0` = none, `>0` = exact count).
+- `testorder.changed.classes` is required when `changeMode=explicit`. If omitted, a warning is printed and the empty set is returned (no tests selected beyond new and `@AlwaysRun` tests).
+- `testorder.select.topN` must be `>= -1` (`-1` = all affected, positive = exact count, `0` = no top-scored tests but new and `@AlwaysRun` tests still run — a warning is emitted).
 - `testorder.select.randomM` must be `>= 0`.
 - `testorder.instrumentation.mode` must be one of: `CLASS`, `METHOD`, `MEMBER`.
 - `testorder.coverage.threshold` must be `>= 1` (minimum number of exercising tests for a class to be "well-tested").

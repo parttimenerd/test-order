@@ -386,7 +386,7 @@ Run `mvn test-order:diagnose` first — it checks everything automatically.
 | Stale ordering after refactor | Re-learn: `mvn test -Dtestorder.mode=learn` |
 | No index despite sources | Set `-Dtestorder.includePackages=com.yourcompany` |
 | `Could not resolve artifact` | Plugin not published to Maven Central yet — build from source (see [Development](#development)) |
-| Agent attachment warning on Java 21+ | Add `--add-opens` flags or use `-Dtestorder.agent.dynamic=false` |
+| Agent attachment warning on Java 21+ | Add `--add-opens` flags to the Surefire `<argLine>` (see the [JVM flags section](https://maven.apache.org/surefire/maven-surefire-plugin/)) |
 
 Nuclear option: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 
@@ -445,13 +445,15 @@ Yes. JaCoCo and test-order chain automatically with no configuration. Only if yo
 <details>
 <summary><strong>How do I survive <code>git clean</code>?</strong></summary>
 
-By default, test-order stores data in `.test-order/` inside your project, which `git clean -fdx` will delete. To store data in your home directory instead:
+By default, test-order stores data in `.test-order/` inside your project, which `git clean -fdx` will delete. To persist across cleans, commit the `.test-order/` directory to version control (add it to `.gitignore` exceptions), or configure the paths to point outside the project tree:
 
-```bash
-mvn test -Dtestorder.storage=home
+```xml
+<!-- pom.xml — store index and state outside the working tree -->
+<configuration>
+  <indexFile>${user.home}/.test-order/${project.artifactId}/test-dependencies.lz4</indexFile>
+  <stateFile>${user.home}/.test-order/${project.artifactId}/state.lz4</stateFile>
+</configuration>
 ```
-
-This stores data in `~/.test-order/<project-name>-<hash>/`. It survives `git clean`, fresh clones, and even project moves (test-order will detect the move and relink automatically). Works with both Maven and Gradle (`-Dtestorder.storage=home` or in the DSL).
 
 </details>
 

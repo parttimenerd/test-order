@@ -38,7 +38,9 @@ public class CompactionMojo extends AbstractTestOrderMojo {
 				getLog().info("  Added:   " + result.addedTests() + " test classes");
 				getLog().info("  Removed: " + result.removedTests() + " test classes");
 			}
-			getLog().info("  Index Size: " + result.newIndexSize() + " bytes");
+			if (result.newIndexSize() > 0) {
+				getLog().info("  Index Size: " + result.newIndexSize() + " bytes");
+			}
 			getLog().info("");
 			getLog().info("═══════════════════════════════════════════════════════════");
 

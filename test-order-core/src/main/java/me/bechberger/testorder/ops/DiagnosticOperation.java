@@ -180,6 +180,8 @@ public final class DiagnosticOperation {
 			missing.add("source");
 		if (!Files.exists(config.testHashFile()))
 			missing.add("test");
+		// methodHashFile is only created when method-level ordering is enabled;
+		// do not report it as missing for users who have not enabled that feature.
 
 		if (!missing.isEmpty()) {
 			return DiagnosticResult.info(ErrorCode.HASH_FILE_STALE,
@@ -190,7 +192,7 @@ public final class DiagnosticOperation {
 							"If using git-based change detection, these files are optional"));
 		}
 
-		return DiagnosticResult.success("Hash files are present and up-to-date");
+		return DiagnosticResult.success("Hash files are present");
 	}
 
 	private static DiagnosticResult checkPermissions(DiagnosticConfig config) {

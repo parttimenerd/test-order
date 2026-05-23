@@ -42,6 +42,8 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  show             Unified view: class order, method order, and ML health\n");
 		sb.append("  show-order       (deprecated) Use 'show' instead\n");
 		sb.append("  show-method-order  (deprecated) Use 'show' instead\n");
+		sb.append("  analyze          (deprecated) Use 'show -Dtestorder.show.ml=true' instead\n");
+		sb.append("  reactor-order    Compute optimal module execution order for multi-module builds\n");
 		sb.append("  dashboard        Generate an interactive HTML dashboard\n");
 		sb.append("  serve            Generate dashboard and serve it via a local HTTP server\n");
 		sb.append("  optimize         Optimise scoring weights via hill-climbing over run history\n");

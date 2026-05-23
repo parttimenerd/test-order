@@ -62,9 +62,10 @@ class MavenTestRunner implements TestRunner {
 	public boolean runLearnPhase(String instrumentationMode) {
 		log.info("[test-order] Running learn phase with instrumentation mode: " + instrumentationMode);
 
-		List<String> command = new ArrayList<>(List.of("mvn", "me.bechberger:test-order-maven-plugin:learn", "test",
-				"-Dtestorder.instrumentation.mode=" + instrumentationMode, "-Dspotless.check.skip=true",
-				"--batch-mode"));
+		List<String> command = new ArrayList<>(
+				List.of(findMavenExecutable(), "me.bechberger:test-order-maven-plugin:learn", "test",
+						"-Dtestorder.instrumentation.mode=" + instrumentationMode, "-Dspotless.check.skip=true",
+						"--batch-mode"));
 		command.addAll(PLUGIN_SKIP_FLAGS);
 
 		File workDir;
@@ -145,8 +146,8 @@ class MavenTestRunner implements TestRunner {
 			}
 
 			// Build the maven command — use surefire:test to skip pre-test plugins
-			List<String> command = new ArrayList<>(List.of("mvn", "surefire:test", "-DfailIfNoTests=false",
-					"-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
+			List<String> command = new ArrayList<>(List.of(findMavenExecutable(), "surefire:test",
+					"-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
 					// Pass the order file path to the forked JVM via argLine (quote for spaces)
 					"-DargLine=-Dtestorder.fixed.order.file=\"" + orderFile.toAbsolutePath() + "\"",
 					// Add runtime dir to test classpath for junit-platform.properties
@@ -233,10 +234,13 @@ class MavenTestRunner implements TestRunner {
 			// Build the maven command
 			// Use FQCN for -Dtest to avoid collisions with same-named classes in
 			// different packages. Quote the method order file path for spaces.
-			List<String> command = new ArrayList<>(List.of("mvn", "surefire:test", "-Dtest=" + testClass,
-					"-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
-					"-DargLine=-Dtestorder.fixed.method.order.file=\"" + methodOrderFile.toAbsolutePath() + "\"",
-					"-Dmaven.test.additionalClasspath=" + runtimeDir.toAbsolutePath(), "--batch-mode", "--quiet"));
+			List<String> command = new ArrayList<>(
+					List.of(findMavenExecutable(), "surefire:test", "-Dtest=" + testClass, "-DfailIfNoTests=false",
+							"-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
+							"-DargLine=-Dtestorder.fixed.method.order.file=\"" + methodOrderFile.toAbsolutePath()
+									+ "\"",
+							"-Dmaven.test.additionalClasspath=" + runtimeDir.toAbsolutePath(), "--batch-mode",
+							"--quiet"));
 			command.addAll(PLUGIN_SKIP_FLAGS);
 
 			File workDir;
@@ -492,5 +496,21 @@ class MavenTestRunner implements TestRunner {
 			}
 			lastOutputLines.addLast(line);
 		}
+	}
+
+	/**
+	 * Resolves the Maven executable, preferring MAVEN_HOME/M2_HOME over the bare
+	 * {@code mvn} on PATH. Falls back to {@code mvn} if neither env var is set.
+	 */
+	static String findMavenExecutable() {
+		String mavenHome = System.getenv("MAVEN_HOME");
+		if (mavenHome == null)
+			mavenHome = System.getenv("M2_HOME");
+		if (mavenHome != null) {
+			Path mvn = Path.of(mavenHome, "bin", "mvn");
+			if (mvn.toFile().canExecute())
+				return mvn.toString();
+		}
+		return "mvn";
 	}
 }

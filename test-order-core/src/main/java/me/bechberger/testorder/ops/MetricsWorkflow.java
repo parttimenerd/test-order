@@ -102,7 +102,10 @@ public final class MetricsWorkflow {
 	 * as needed.
 	 */
 	public static void writeToFile(TestMetricsExport metrics, Path outputFile, PluginLog log) throws IOException {
-		Files.createDirectories(outputFile.getParent());
+		Path parent = outputFile.toAbsolutePath().getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
 		Files.writeString(outputFile, metrics.toJson());
 		log.info("[test-order] Metrics written to " + outputFile);
 	}

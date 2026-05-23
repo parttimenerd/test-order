@@ -70,7 +70,10 @@ public final class IndexCompactionOperation {
 		}
 
 		// Write new index
-		Files.createDirectories(outputFile.getParent());
+		Path parentDir = outputFile.toAbsolutePath().getParent();
+		if (parentDir != null) {
+			Files.createDirectories(parentDir);
+		}
 		mergedMap.save(outputFile);
 		long afterSize = Files.size(outputFile);
 

@@ -195,9 +195,15 @@ public class TieredTestSelector {
 		// Estimate unknown durations as the average of known ones (R12-5)
 		long knownCount = remaining.stream().filter(s -> s.duration() != Long.MAX_VALUE).count();
 		long avgDuration = knownCount > 0 ? totalDuration / knownCount : 0;
-		// Include estimated durations for unknown tests in the budget base
+		// Include estimated durations for unknown tests in the budget base.
+		// Guard against overflow: cap the unknown-duration estimate.
 		long unknownCount = remaining.size() - knownCount;
-		long estimatedTotal = totalDuration + unknownCount * avgDuration;
+		long estimatedUnknown = (unknownCount > 0 && avgDuration > 0 && unknownCount <= Long.MAX_VALUE / avgDuration)
+				? unknownCount * avgDuration
+				: (unknownCount > 0 ? Long.MAX_VALUE - totalDuration : 0);
+		long estimatedTotal = (estimatedUnknown <= Long.MAX_VALUE - totalDuration)
+				? totalDuration + estimatedUnknown
+				: Long.MAX_VALUE;
 		long budget = (long) (estimatedTotal * config.tier2Fraction());
 		for (ScoredTest s : remaining) {
 			long dur = s.duration() != Long.MAX_VALUE ? s.duration() : avgDuration;

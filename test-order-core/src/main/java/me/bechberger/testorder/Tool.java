@@ -3,10 +3,12 @@ package me.bechberger.testorder;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 import me.bechberger.femtocli.FemtoCli;
 import me.bechberger.femtocli.annotations.Command;
@@ -37,6 +39,27 @@ public class Tool implements Runnable {
 		System.exit(FemtoCli.run(new Tool(), args));
 	}
 
+	/**
+	 * Splits a comma-separated class list, trimming whitespace and ignoring
+	 * empty/duplicate entries.
+	 */
+	private static Set<String> splitClasses(String csv) {
+		return Arrays.stream(csv.split(",")).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet());
+	}
+
+	/**
+	 * Checks that an index file exists; prints a helpful error and returns false if
+	 * not.
+	 */
+	private static boolean checkIndexExists(Path indexFile) {
+		if (!Files.exists(indexFile)) {
+			System.err.println("Error: dependency index not found: " + indexFile);
+			System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
+			return false;
+		}
+		return true;
+	}
+
 	@Command(name = "aggregate", description = "Aggregate .deps files into a dependency index", mixinStandardHelpOptions = true)
 	static class Aggregate implements Callable<Integer> {
 		@Parameters(description = "Directory containing .deps files")
@@ -49,16 +72,22 @@ public class Tool implements Runnable {
 		@Override
 		public Integer call() {
 			try {
+				if (!Files.isDirectory(depsDir)) {
+					System.err.println("Error: deps directory does not exist or is not a directory: " + depsDir);
+					System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
+					return 1;
+				}
 				DependencyMap map = DependencyMap.aggregate(depsDir);
 				if (map.size() == 0) {
 					if (Files.exists(output)) {
 						System.err.println("No .deps files found — refusing to overwrite existing index at " + output);
 						System.err.println("If you intended to clear the index, delete " + output + " manually.");
+						return 1;
 					} else {
 						System.err.println("No .deps files found — no index to write.");
 						System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
+						return 1;
 					}
-					return 0;
 				}
 				map.save(output);
 				System.out.printf("Aggregated %d test classes → %s%n", map.size(), output);
@@ -81,8 +110,10 @@ public class Tool implements Runnable {
 		@Override
 		public Integer call() {
 			try {
+				if (!checkIndexExists(indexFile))
+					return 1;
 				DependencyMap map = DependencyMap.load(indexFile);
-				Set<String> changed = Set.of(changedClasses.split(","));
+				Set<String> changed = splitClasses(changedClasses);
 				Set<String> affected = map.getAffectedTests(changed);
 				if (affected.isEmpty()) {
 					System.out.println("No affected test classes found.");
@@ -105,6 +136,8 @@ public class Tool implements Runnable {
 		@Override
 		public Integer call() {
 			try {
+				if (!checkIndexExists(indexFile))
+					return 1;
 				DependencyMap map = DependencyMap.load(indexFile);
 				System.out.printf("Test classes:          %d%n", map.size());
 				System.out.printf("Unique app classes:    %d%n", map.totalUniqueClasses());
@@ -130,6 +163,11 @@ public class Tool implements Runnable {
 		@Override
 		public Integer call() {
 			try {
+				if (!Files.isDirectory(sourceRoot)) {
+					System.err.println("Error: source root directory does not exist: " + sourceRoot);
+					System.err.println("Use --source-root to specify the correct path.");
+					return 1;
+				}
 				FileHashStore store = FileHashStore.scan(sourceRoot);
 				store.save(hashFile);
 				System.out.printf("Snapshot: %d files → %s%n", store.getHashes().size(), hashFile);
@@ -166,6 +204,10 @@ public class Tool implements Runnable {
 		public Integer call() {
 			try {
 				ChangeDetector.Mode mode = ChangeDetector.Mode.parse(modeStr);
+				if (mode == ChangeDetector.Mode.EXPLICIT && (classes == null || classes.isBlank())) {
+					System.err.println(
+							"Warning: --mode=explicit requires --classes/-c to specify changed class FQCNs. No classes provided — returning empty result.");
+				}
 				Set<String> changed = ChangeDetector.detect(mode, projectRoot, sourceRoot, hashFile, classes);
 				if (changed.isEmpty()) {
 					System.out.println("No changes detected.");
@@ -173,6 +215,9 @@ public class Tool implements Runnable {
 					changed.stream().sorted().forEach(System.out::println);
 				}
 				return 0;
+			} catch (IllegalArgumentException e) {
+				System.err.println("Error: " + e.getMessage());
+				return 1;
 			} catch (IOException e) {
 				System.err.println("Error: " + e.getMessage());
 				return 1;
@@ -207,7 +252,13 @@ public class Tool implements Runnable {
 		@Override
 		public Integer call() {
 			try {
+				if (!checkIndexExists(indexFile))
+					return 1;
 				ChangeDetector.Mode mode = ChangeDetector.Mode.parse(modeStr);
+				if (mode == ChangeDetector.Mode.EXPLICIT && (classes == null || classes.isBlank())) {
+					System.err.println(
+							"Warning: --mode=explicit requires --classes/-c to specify changed class FQCNs. No classes provided — returning empty result.");
+				}
 				Set<String> changed = ChangeDetector.detect(mode, projectRoot, sourceRoot, hashFile, classes);
 				if (changed.isEmpty()) {
 					System.out.println("No changes detected → all tests run in default order.");
@@ -225,6 +276,9 @@ public class Tool implements Runnable {
 					affected.stream().sorted().forEach(t -> System.out.println("  " + t));
 				}
 				return 0;
+			} catch (IllegalArgumentException e) {
+				System.err.println("Error: " + e.getMessage());
+				return 1;
 			} catch (IOException e) {
 				System.err.println("Error: " + e.getMessage());
 				return 1;
@@ -243,22 +297,24 @@ public class Tool implements Runnable {
 		@Override
 		public Integer call() {
 			try {
+				if (!checkIndexExists(indexFile))
+					return 1;
 				DependencyMap map = DependencyMap.load(indexFile);
 				if (map.size() == 0) {
 					System.err.println("Dependency index is empty: " + indexFile);
 					System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
-					return 0;
+					return 1;
 				}
 				if (output != null) {
 					map.saveText(output);
 					System.out.printf("Dumped %d test classes → %s%n", map.size(), output);
 				} else {
-					// write to stdout
-					for (String tc : map.testClasses()) {
+					// write to stdout, sorted for reproducible output
+					map.testClasses().stream().sorted().forEach(tc -> {
 						System.out.print(tc);
 						System.out.print('\t');
-						System.out.println(String.join(",", map.get(tc)));
-					}
+						System.out.println(String.join(",", map.get(tc).stream().sorted().toList()));
+					});
 				}
 				return 0;
 			} catch (IOException e) {
@@ -282,6 +338,8 @@ public class Tool implements Runnable {
 		@Override
 		public Integer call() {
 			try {
+				if (!checkIndexExists(indexFile))
+					return 1;
 				PluginLog log = new PluginLog() {
 					@Override
 					public void info(String message) {
@@ -310,7 +368,9 @@ public class Tool implements Runnable {
 				}
 				if (output != null) {
 					ExportJsonOperation.export(indexFile, resolvedState, output, log);
-					System.out.printf("Exported dependency index as JSON → %s%n", output);
+					if (java.nio.file.Files.exists(output)) {
+						System.out.printf("Exported dependency index as JSON → %s%n", output);
+					}
 				} else {
 					ExportJsonOperation.export(indexFile, resolvedState, System.out, log);
 				}
@@ -330,6 +390,11 @@ public class Tool implements Runnable {
 		@Override
 		public Integer call() {
 			try {
+				if (!Files.exists(stateFile)) {
+					System.err.println("Error: state file not found: " + stateFile);
+					System.err.println("Run tests in order mode first to generate state data.");
+					return 1;
+				}
 				TestOrderState state = TestOrderState.load(stateFile);
 				java.util.List<TestOrderState.RunRecord> runs = state.runs();
 				if (runs.isEmpty()) {
@@ -420,27 +485,50 @@ public class Tool implements Runnable {
 
 		@Override
 		public Integer call() {
+			if (topN < -1) {
+				System.err.println("Error: --top-n must be >= -1 (got " + topN + "). Use -1 for all affected tests.");
+				return 1;
+			}
+			if (randomM < 0) {
+				System.err.println("Error: --random-m must be >= 0 (got " + randomM + ").");
+				return 1;
+			}
+			if (topN == 0) {
+				System.err.println(
+						"Warning: --top-n=0 selects no top-scored tests. New tests and @AlwaysRun tests are still included. "
+								+ "Use --top-n=-1 to select all change-affected tests.");
+			}
 			try {
+				if (!java.nio.file.Files.exists(indexFile)) {
+					System.err.println("Error: dependency index not found: " + indexFile);
+					System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
+					return 1;
+				}
 				DependencyMap depMap = DependencyMap.load(indexFile);
-				TestOrderState state = java.nio.file.Files.exists(stateFile)
-						? TestOrderState.load(stateFile)
+				Path effectiveStateFile = stateFile != null ? stateFile : Path.of(".test-order-state");
+				Path effectiveSelectedFile = selectedFile != null ? selectedFile : Path.of("test-order-selected.txt");
+				Path effectiveRemainingFile = remainingFile != null
+						? remainingFile
+						: Path.of("test-order-remaining.txt");
+				TestOrderState state = java.nio.file.Files.exists(effectiveStateFile)
+						? TestOrderState.load(effectiveStateFile)
 						: new TestOrderState();
 
 				java.util.Set<String> changed = changedClasses != null
-						? java.util.Set.of(changedClasses.split(","))
+						? splitClasses(changedClasses)
 						: java.util.Set.of();
 				java.util.Set<String> changedTests = changedTestClasses != null
-						? java.util.Set.of(changedTestClasses.split(","))
+						? splitClasses(changedTestClasses)
 						: java.util.Set.of();
 
 				TestSelector.Selection sel = new TestSelector(depMap, state, changed, changedTests, state.weights(),
 						new TestSelector.Config(topN, randomM, seed)).select();
 
-				TestSelector.writeTestList(sel.selected(), selectedFile);
-				TestSelector.writeTestList(sel.remaining(), remainingFile);
+				TestSelector.writeTestList(sel.selected(), effectiveSelectedFile);
+				TestSelector.writeTestList(sel.remaining(), effectiveRemainingFile);
 
-				System.out.printf("Selected %d tests → %s%n", sel.selected().size(), selectedFile);
-				System.out.printf("Remaining %d tests → %s%n", sel.remaining().size(), remainingFile);
+				System.out.printf("Selected %d tests → %s%n", sel.selected().size(), effectiveSelectedFile);
+				System.out.printf("Remaining %d tests → %s%n", sel.remaining().size(), effectiveRemainingFile);
 				for (String tc : sel.selected()) {
 					System.out.println("  + " + tc);
 				}
@@ -518,7 +606,13 @@ public class Tool implements Runnable {
 
 		@Override
 		public Integer call() {
+			if (threshold < 0.0 || threshold > 1.0) {
+				System.err.println("Error: --threshold must be in [0.0, 1.0] (got " + threshold + ").");
+				return 1;
+			}
 			try {
+				if (!checkIndexExists(indexFile))
+					return 1;
 				DependencyMap depMap = DependencyMap.load(indexFile);
 
 				if (!depMap.hasMethodDeps()) {

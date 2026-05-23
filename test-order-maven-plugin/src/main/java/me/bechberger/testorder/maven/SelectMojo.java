@@ -26,12 +26,18 @@ public class SelectMojo extends AbstractTestOrderMojo {
 
 	/**
 	 * Number of top-scored test classes to always include. Use -1 (default) to
-	 * include all change-affected tests. Must be -1 or a positive number.
+	 * include all change-affected tests. Must be >= -1. A value of 0 selects no
+	 * top-scored tests (new and @AlwaysRun tests are still included) but emits a
+	 * warning.
 	 */
 	@Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "-1")
 	private int topN;
 
-	/** Number of random fast tests to include for coverage diversity. */
+	/**
+	 * Number of random fast tests to include for coverage diversity. Use 0 to
+	 * disable random selection. If both topN=0 and randomM=0, only new tests and
+	 * {@code @AlwaysRun} tests are selected.
+	 */
 	@Parameter(property = MavenPluginConfigKeys.SELECT_RANDOM_M, defaultValue = "10")
 	private int randomM;
 

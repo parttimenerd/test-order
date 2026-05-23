@@ -118,6 +118,34 @@ class ToolTest {
 	}
 
 	@Test
+	void hashSnapshotMissingSourceRootExitsWithError() {
+		Path missing = tempDir.resolve("nonexistent-src");
+		Path hashFile = tempDir.resolve("snapshot.lz4");
+
+		String stderr = captureStderr(() -> {
+			int code = runTool("hash-snapshot", "--source-root", missing.toString(), "--output", hashFile.toString());
+			assertEquals(1, code, "Should exit 1 when source root does not exist");
+		});
+
+		assertFalse(Files.exists(hashFile), "Should not create hash file when source root is missing");
+		assertTrue(stderr.contains("does not exist"), "Error message should mention the missing directory: " + stderr);
+	}
+
+	@Test
+	void exportJsonCreatesParentDirectoriesAutomatically() throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo"));
+		Path idx = tempDir.resolve("deps.idx");
+		map.save(idx);
+		Path out = tempDir.resolve("nested/deep/output.json");
+
+		int exit = runTool("export-json", idx.toString(), "--output", out.toString());
+
+		assertEquals(0, exit);
+		assertTrue(Files.exists(out), "Output file should be created in nested directory");
+	}
+
+	@Test
 	void changedExplicitMode() {
 		String stdout = captureStdout(
 				() -> runTool("changed", "--mode", "EXPLICIT", "--classes", "com.example.Foo,com.example.Bar"));
@@ -169,7 +197,10 @@ class ToolTest {
 		Path idx = tempDir.resolve("empty.idx");
 		empty.save(idx);
 
-		String stderr = captureStderr(() -> runTool("dump", idx.toString()));
+		String stderr = captureStderr(() -> {
+			int code = runTool("dump", idx.toString());
+			assertEquals(1, code, "dump on empty index should exit with code 1");
+		});
 
 		assertTrue(stderr.contains("empty"), "Should indicate the index is empty: " + stderr);
 	}
@@ -219,6 +250,18 @@ class ToolTest {
 		assertTrue(json.contains("com.example.FooTest"));
 	}
 
+	@Test
+	void exportJsonWithEmptyIndexDoesNotPrintSuccessMessage() throws IOException {
+		Path idx = tempDir.resolve("empty.idx");
+		new DependencyMap().save(idx);
+		Path out = tempDir.resolve("out.json");
+
+		String stdout = captureStdout(() -> runTool("export-json", idx.toString(), "--output", out.toString()));
+
+		assertFalse(java.nio.file.Files.exists(out), "Output file should not be written for an empty index");
+		assertFalse(stdout.contains("Exported"), "Should not print success for empty index: " + stdout);
+	}
+
 	// ═══════════════════════════════════════════════════════════════════
 	// Regression: CLI aggregate refuses to overwrite valid index
 	// (BUG_REPORT_2 #4: aggregate destroys valid index)
@@ -237,7 +280,10 @@ class ToolTest {
 		Path depsDir = tempDir.resolve("empty-deps");
 		Files.createDirectories(depsDir);
 
-		String stderr = captureStderr(() -> runTool("aggregate", depsDir.toString(), "--output", output.toString()));
+		String stderr = captureStderr(() -> {
+			int code = runTool("aggregate", depsDir.toString(), "--output", output.toString());
+			assertEquals(1, code, "Should exit with code 1 when refusing to overwrite");
+		});
 
 		// Index should NOT have been overwritten
 		assertEquals(sizeBefore, Files.size(output), "Existing index should not have been overwritten");
@@ -308,5 +354,140 @@ class ToolTest {
 
 		assertEquals(1, exit, "Running Tool without subcommand should exit with status 1");
 		assertTrue(output.contains("Specify a subcommand"), "Expected missing-subcommand message, got: " + output);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// Regression: CLI aggregate with non-existent depsDir should give helpful error
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void aggregateNonExistentDirExitsWithError() {
+		Path nonExistent = tempDir.resolve("does-not-exist");
+		Path output = tempDir.resolve("out.idx");
+
+		String stderr = captureStderr(() -> {
+			int code = runTool("aggregate", nonExistent.toString(), "--output", output.toString());
+			assertEquals(1, code, "Should exit with code 1 for missing deps dir");
+		});
+
+		assertFalse(Files.exists(output), "No output file should be created");
+		assertTrue(stderr.contains("does not exist") || stderr.contains("Error"),
+				"Should print helpful error message: " + stderr);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// Regression: CLI select with topN=0 should warn (new/always-run tests still
+	// selected)
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void selectTopNZeroWarns() throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo"));
+		Path idx = tempDir.resolve("deps.idx");
+		map.save(idx);
+		Path sel = tempDir.resolve("sel.txt");
+		Path rem = tempDir.resolve("rem.txt");
+
+		String stderr = captureStderr(() -> runTool("select", idx.toString(), "--top-n", "0", "--random-m", "0",
+				"--selected-file", sel.toString(), "--remaining-file", rem.toString()));
+
+		assertTrue(stderr.contains("Warning") || stderr.contains("top-n"),
+				"topN=0 should produce a warning: " + stderr);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// Regression: CLI changed with explicit mode but no --classes should warn
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void changedExplicitModeWithoutClassesWarns() {
+		String stderr = captureStderr(() -> runTool("changed", "--mode", "explicit"));
+
+		assertTrue(stderr.contains("explicit") || stderr.contains("--classes") || stderr.contains("Warning"),
+				"Should warn about missing --classes for explicit mode: " + stderr);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// Regression: duplicate class names in --classes should not crash
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void affectedDuplicateClassesDoesNotCrash() throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo"));
+		Path idx = tempDir.resolve("test.idx");
+		map.save(idx);
+
+		String stdout = captureStdout(
+				() -> runTool("affected", idx.toString(), "--classes", "com.example.Foo,com.example.Foo"));
+
+		assertTrue(stdout.contains("com.example.FooTest"), "Duplicate classes should still find affected test");
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// Regression: run command gives helpful error when index missing
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void runCommandMissingIndexGivesHelpfulError() {
+		Path nonExistent = tempDir.resolve("no.idx");
+
+		String stderr = captureStderr(
+				() -> runTool("run", nonExistent.toString(), "--mode", "explicit", "--classes", "com.example.Foo"));
+
+		assertTrue(stderr.contains("dependency index not found") || stderr.contains("Error"),
+				"run with nonexistent index should give helpful error: " + stderr);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// Regression: advise --threshold out of [0,1] should error
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void adviseInvalidThresholdExitsWithError() throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo"));
+		Path idx = tempDir.resolve("test.idx");
+		map.save(idx);
+
+		String stderr = captureStderr(() -> {
+			int code = runTool("advise", idx.toString(), "--threshold", "1.5");
+			assertEquals(1, code, "advise with threshold > 1 should exit with code 1");
+		});
+
+		assertTrue(stderr.contains("threshold") || stderr.contains("Error"),
+				"Should report invalid threshold: " + stderr);
+	}
+
+	@Test
+	void adviseNegativeThresholdExitsWithError() throws IOException {
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo"));
+		Path idx = tempDir.resolve("test.idx");
+		map.save(idx);
+
+		String stderr = captureStderr(() -> {
+			int code = runTool("advise", idx.toString(), "--threshold", "-0.1");
+			assertEquals(1, code, "advise with negative threshold should exit with code 1");
+		});
+
+		assertTrue(stderr.contains("threshold") || stderr.contains("Error"),
+				"Should report invalid threshold: " + stderr);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// Regression: invalid change mode should give helpful error (not stack trace)
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void changedInvalidModeGivesHelpfulError() {
+		String stderr = captureStderr(() -> {
+			int code = runTool("changed", "--mode", "bogus-mode");
+			assertEquals(1, code, "Invalid mode should exit with code 1");
+		});
+
+		assertTrue(stderr.contains("Invalid") || stderr.contains("bogus") || stderr.contains("Valid modes"),
+				"Should give helpful error for invalid mode: " + stderr);
 	}
 }

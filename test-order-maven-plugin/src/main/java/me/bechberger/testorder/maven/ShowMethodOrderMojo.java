@@ -45,6 +45,9 @@ public class ShowMethodOrderMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
+		getLog().warn(
+				"[test-order] DEPRECATED: 'test-order:show-method-order' has been replaced by 'test-order:show -Dtestorder.show.methods=true'."
+						+ " Please update your scripts and POM configurations.");
 
 		Path idxPath = resolveIndexPath();
 

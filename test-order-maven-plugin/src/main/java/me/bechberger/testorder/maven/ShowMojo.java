@@ -75,7 +75,10 @@ public class ShowMojo extends AbstractTestOrderMojo {
 	@Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "-1")
 	private int topN;
 
-	/** Number of random fast tests to include for coverage diversity. */
+	/**
+	 * Number of random fast tests to include for coverage diversity. Use 0 to
+	 * disable random selection.
+	 */
 	@Parameter(property = MavenPluginConfigKeys.SELECT_RANDOM_M, defaultValue = "10")
 	private int randomM;
 

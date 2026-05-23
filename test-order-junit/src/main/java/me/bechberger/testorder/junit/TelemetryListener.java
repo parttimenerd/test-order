@@ -519,20 +519,6 @@ public class TelemetryListener implements TestExecutionListener {
 		return snapshot;
 	}
 
-	private Set<String> extractTestClassNames(TestPlan testPlan) {
-		java.util.Set<String> names = new java.util.LinkedHashSet<>();
-		for (TestIdentifier root : testPlan.getRoots()) {
-			for (TestIdentifier child : testPlan.getChildren(root)) {
-				child.getSource().ifPresent(source -> {
-					if (source instanceof ClassSource classSource) {
-						names.add(classSource.getClassName());
-					}
-				});
-			}
-		}
-		return names;
-	}
-
 	/**
 	 * Returns true if this test identifier originates from the JUnit Platform Suite
 	 * engine. Suite-engine tests are duplicates of directly-discovered tests —

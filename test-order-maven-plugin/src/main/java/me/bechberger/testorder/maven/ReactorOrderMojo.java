@@ -71,7 +71,11 @@ public class ReactorOrderMojo extends AbstractTestOrderMojo {
 		Map<String, Path> moduleTestDirs = new LinkedHashMap<>();
 		Map<String, String> moduleIdToRelativePath = new LinkedHashMap<>();
 
-		List<MavenProject> projects = session.getProjects();
+		List<MavenProject> projects = session != null ? session.getProjects() : null;
+		if (projects == null || projects.isEmpty()) {
+			getLog().info("[test-order] No reactor projects found.");
+			return;
+		}
 		for (MavenProject p : projects) {
 			if ("pom".equals(p.getPackaging())) {
 				continue;
@@ -91,7 +95,12 @@ public class ReactorOrderMojo extends AbstractTestOrderMojo {
 			// Compute relative path from reactor root for -pl suggestion
 			Path reactorRoot = session.getTopLevelProject().getBasedir().toPath();
 			Path moduleDir = p.getBasedir().toPath();
-			String relativePath = reactorRoot.relativize(moduleDir).toString();
+			String relativePath;
+			try {
+				relativePath = reactorRoot.relativize(moduleDir).toString();
+			} catch (IllegalArgumentException e) {
+				relativePath = moduleDir.toString();
+			}
 			if (relativePath.isEmpty()) {
 				relativePath = ".";
 			}
@@ -193,12 +202,12 @@ public class ReactorOrderMojo extends AbstractTestOrderMojo {
 				? "uncommitted"
 				: changeMode;
 		Set<String> result = new LinkedHashSet<>();
+		if (session == null || session.getProjects() == null)
+			return result;
 		for (MavenProject p : session.getProjects()) {
-			if ("pom".equals(p.getPackaging()))
-				continue;
-			List<String> roots = p.getCompileSourceRoots();
-			Path srcRoot = (roots != null && !roots.isEmpty())
-					? Path.of(roots.get(0))
+			List<String> compileRoots = p.getCompileSourceRoots();
+			Path srcRoot = (compileRoots != null && !compileRoots.isEmpty())
+					? Path.of(compileRoots.get(0))
 					: p.getBasedir().toPath().resolve("src/main/java");
 			if (!Files.isDirectory(srcRoot))
 				continue;
@@ -229,6 +238,8 @@ public class ReactorOrderMojo extends AbstractTestOrderMojo {
 				? "uncommitted"
 				: changeMode;
 		Set<String> result = new LinkedHashSet<>();
+		if (session == null || session.getProjects() == null)
+			return result;
 		for (MavenProject p : session.getProjects()) {
 			if ("pom".equals(p.getPackaging()))
 				continue;

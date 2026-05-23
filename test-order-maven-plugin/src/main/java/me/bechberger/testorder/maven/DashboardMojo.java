@@ -58,7 +58,10 @@ public class DashboardMojo extends AbstractTestOrderMojo {
 
 		Path outPath = Path.of(dashboardOutput);
 		try {
-			Files.createDirectories(outPath.getParent());
+			Path outParent = outPath.toAbsolutePath().getParent();
+			if (outParent != null) {
+				Files.createDirectories(outParent);
+			}
 
 			// Compute ML health data if available
 			java.util.Map<String, Double> mlPredictions = null;

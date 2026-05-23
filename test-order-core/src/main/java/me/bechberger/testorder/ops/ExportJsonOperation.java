@@ -63,6 +63,10 @@ public final class ExportJsonOperation {
 		}
 		TestOrderState state = loadStateIfPresent(statePath, log);
 		String json = toJson(map, state);
+		Path parent = outputPath.toAbsolutePath().getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
 		Files.writeString(outputPath, json, StandardCharsets.UTF_8);
 		log.info("[test-order] Exported " + map.size() + " test classes as JSON → " + outputPath);
 	}

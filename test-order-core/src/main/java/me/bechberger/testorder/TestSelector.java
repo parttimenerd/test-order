@@ -215,7 +215,10 @@ public class TestSelector {
 
 	/** Writes one test class name per line. */
 	public static void writeTestList(List<String> tests, Path file) throws IOException {
-		Files.createDirectories(file.getParent());
+		Path parent = file.toAbsolutePath().getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
 		try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(file))) {
 			for (String tc : tests) {
 				pw.println(tc);
@@ -258,6 +261,6 @@ public class TestSelector {
 				intersection++;
 		}
 		int union = a.size() + b.size() - intersection;
-		return union == 0 ? 1.0 : 1.0 - (double) intersection / union;
+		return 1.0 - (double) intersection / union;
 	}
 }

@@ -42,7 +42,7 @@ public final class WeightResolverOperation {
 			}
 		} else if (weightsFile != null) {
 			log.warn("[test-order] Weights file does not exist: " + weightsFile.toAbsolutePath()
-					+ " — using defaults. Check the path specified by -Dtestorder.weightsFile.");
+					+ " — using defaults. Check the path specified by -Dtestorder.weights.file.");
 		}
 		TestOrderState.ScoringWeights sw = state.weights();
 		return new TestOrderState.LoadedWeights(sw, TestOrderState.WEIGHT_DEFS, state.failureDecay(),

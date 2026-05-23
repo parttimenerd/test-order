@@ -55,9 +55,9 @@ public final class ParameterValidator {
 				"METHOD_ENTRY");
 
 		if (!validModes.contains(instrumentationMode.toUpperCase())) {
-			throw new IllegalArgumentException(
-					String.format("[test-order] Invalid instrumentationMode '%s'. Valid values are: %s",
-							instrumentationMode, "CLASS, METHOD, MEMBER"));
+			throw new IllegalArgumentException(String.format(
+					"[test-order] Invalid instrumentationMode '%s'. Valid values are: %s", instrumentationMode,
+					"CLASS, METHOD, MEMBER (legacy aliases: FULL, FULL_METHOD, FULL_MEMBER, METHOD_ENTRY)"));
 		}
 	}
 
@@ -146,19 +146,16 @@ public final class ParameterValidator {
 	 * Validates select-mode parameters (topN and randomM).
 	 *
 	 * @throws IllegalArgumentException
-	 *             if topN is 0 (ambiguous — use -1 for all, or a positive number
-	 *             for a specific count), or if both topN and randomM would select
-	 *             no tests
+	 *             if topN is less than -1 or if randomM is negative
 	 */
 	public void validateSelectParameters(int topN, int randomM) {
 		validateMinValue(topN, -1, "selectTopN");
 		validateNonNegative(randomM, "selectRandomM");
 
 		if (topN == 0) {
-			throw new IllegalArgumentException(
-					"[test-order] selectTopN=0 is not valid — it selects no top-scored tests and may produce "
-							+ "unexpected results with randomM. Use selectTopN=-1 to select all change-affected tests, "
-							+ "or a positive number (e.g. selectTopN=10) to select a specific count.");
+			log.warn("[test-order] selectTopN=0 selects no top-scored tests. "
+					+ "New tests and @AlwaysRun tests are still included. "
+					+ "Use selectTopN=-1 to select all change-affected tests.");
 		}
 	}
 

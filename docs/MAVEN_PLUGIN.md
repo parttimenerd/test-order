@@ -65,6 +65,8 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:show` | Unified view: class order, method order, ML health (auto-detects) |
 | `test-order:show-order` | _(deprecated → use `show`)_ Print ranking and score breakdown |
 | `test-order:show-method-order` | _(deprecated → use `show`)_ Print method-level priority order |
+| `test-order:analyze` | _(deprecated → use `show -Dtestorder.show.ml=true`)_ ML test health report |
+| `test-order:reactor-order` | Compute optimal module execution order for multi-module builds |
 | `test-order:dashboard` | Generate interactive HTML dashboard |
 | `test-order:serve` | Serve dashboard via local HTTP server |
 | `test-order:optimize` | Re-optimise scoring weights from run history |
@@ -103,15 +105,15 @@ mvn test-order:show -Dtestorder.show.format=json
 | Property | Default | Description |
 |---|---|---|
 | `testorder.show.classes` | `true` | Show class-level priority order |
-| `testorder.show.methods` | `true` | Show method-level priority order |
+| `testorder.show.methods` | `auto` | Show method-level priority order (`auto` = show if method telemetry exists) |
 | `testorder.show.ml` | `auto` | ML health section: `auto` (show if history exists), `true`, `false` |
-| `testorder.show.explain` | `false` | Show per-test score breakdown |
-| `testorder.show.fullNames` | `false` | Print fully-qualified class names |
+| `testorder.showOrder.explain` | `false` | Show per-test score breakdown |
+| `testorder.showOrder.fullNames` | `false` | Print fully-qualified class names |
 | `testorder.show.format` | `text` | Output format: `text` or `json` |
-| `testorder.show.filter` | — | Regex filter for test class names |
-| `testorder.show.topN` | `-1` | Show only top N tests (`-1` = all) |
-| `testorder.show.randomM` | `0` | Include M random diverse tests |
-| `testorder.show.seed` | — | Random seed for `randomM` |
+| `testorder.show.filter` | — | Glob filter for test class names — matches the full FQCN; use `*` as wildcard (e.g. `*Service*,*Repository`) |
+| `testorder.select.topN` | `-1` | Show only top N tests (`-1` = all) |
+| `testorder.select.randomM` | `10` | Include M random diverse tests |
+| `testorder.select.seed` | — | Random seed for `randomM` |
 | `testorder.show.all` | `false` | Enable all sections (classes + methods + ML) |
 
 ## Plugin Prefix Resolution
@@ -186,6 +188,24 @@ skips re-testing known victims. This makes repeated runs cheaper.
 The goal automatically iterates reactor modules that have `src/test/java`. Each module
 runs detection independently. The build fails if any module has findings (when
 `failOnDetection=true`).
+
+## Reactor Module Order
+
+The `reactor-order` goal analyzes which modules contain the highest-priority tests and
+recommends a `-pl` argument for running the most urgent modules first.
+
+```bash
+# Show recommended module order
+mvn test-order:reactor-order
+
+# Get a machine-readable -pl argument
+mvn test-order:reactor-order -Dtestorder.reactor.suggest=true
+```
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.reactor.suggest` | `false` | Output only the `-pl` argument (machine-parseable for scripts) |
+| `testorder.reactor.topN` | `5` | Number of top tests to show per module in detailed output |
 
 ## TDD Enforcement
 
@@ -269,8 +289,6 @@ When enabled, the `TelemetryListener` records per-test outcomes (pass/fail, dura
 | Property | Default | Description |
 |---|---|---|
 | `testorder.ml.enabled` | `false` | Enable ML history collection and predictions |
-| `testorder.ml.historyDir` | `.test-order/ml/` | Directory for ML history data |
-| `testorder.ml.history.maxRuns` | `2000` | Max runs retained in history ring buffer |
 | `testorder.ml.predictions.file` | _(auto)_ | Intermediate predictions file consumed by the test JVM |
 
 ### How It Works
@@ -314,6 +332,17 @@ The `dashboard` goal automatically detects ML history and includes:
 - **P(fail) column** — in the main tests table, showing predicted failure probability
 
 No extra flags needed; if `.test-order/ml/history.lz4` exists with sufficient data, the dashboard renders ML insights.
+
+### Dashboard Properties
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.dashboard.output` | `target/test-order-dashboard/index.html` | Output path for the generated HTML file |
+| `testorder.dashboard.open` | `false` | Open the dashboard in the default browser after generation |
+| `testorder.dashboard.port` | `0` | TCP port for `test-order:serve` (`0` = pick a free port automatically) |
+| `testorder.serve.port` | — | Alias for `testorder.dashboard.port` (accepted for convenience) |
+| `testorder.dashboard.regenerate` | `auto` | When to regenerate before serving: `auto` (only if missing), `true` (always), `false` (never — fail if missing) |
+| `testorder.dashboard.serveSeconds` | `0` | Bounded server lifetime for `test-order:serve`. `0` = run until interrupted (Ctrl+C). Set to a positive number for CI use |
 
 ### CI Integration
 
@@ -401,7 +430,7 @@ All other classes go to `target/test-order-remaining.txt`.
 
 | Parameter | Property | Default | Description |
 |---|---|---|---|
-| `topN` | `testorder.select.topN` | `-1` | Number of top-scored affected tests to include (`-1` = all affected) |
+| `topN` | `testorder.select.topN` | `-1` | Number of top-scored affected tests to include (`-1` = all affected, positive = exact count, `0` = no top-scored tests; new and `@AlwaysRun` tests still included, a warning is emitted). |
 | `randomM` | `testorder.select.randomM` | `10` | Number of random fast tests for coverage diversity |
 | `seed` | `testorder.select.seed` | — | Random seed for reproducible selection |
 | `remainingFile` | `testorder.select.remainingFile` | `target/test-order-remaining.txt` | File for deferred test classes |
@@ -466,7 +495,7 @@ jobs:
 |---|---|---|---|
 | `skip` | `testorder.skip` | `false` | Skip the plugin entirely |
 | `mode` | `testorder.mode` | `auto` | `auto`, `learn`, `order`, or `skip` |
-| `indexFile` | `testorder.index` | `${project.basedir}/.test-order/test-dependencies.lz4` | Dependency index path |
+| `indexFile` | `testorder.index.path` (alias: `testorder.index`) | `${project.basedir}/.test-order/test-dependencies.lz4` | Dependency index path |
 | `depsDir` | `testorder.depsDir` | `${project.build.directory}/test-order-deps` | Directory for `.deps` files |
 | `includePackages` | `testorder.includePackages` | — | Additional comma-separated package prefixes to instrument |
 | `filterByGroupId` | `testorder.filterByGroupId` | `true` | Fall back to groupId when no source packages are detected |
@@ -475,7 +504,7 @@ jobs:
 | `changedClasses` | `testorder.changed.classes` | — | Explicit changed class FQCNs |
 | `hashFile` | `testorder.hashFile` | `${project.basedir}/.test-order/hashes.lz4` | LZ4-compressed hash store |
 | `testHashFile` | `testorder.testHashFile` | `${project.basedir}/.test-order/test-hashes.lz4` | Hash store for test sources |
-| `stateFile` | `testorder.stateFile` | `${project.basedir}/.test-order/state.lz4` | Unified state file |
+| `stateFile` | `testorder.state.path` (alias: `testorder.stateFile`) | `${project.basedir}/.test-order/state.lz4` | Unified state file |
 | `weightsFile` | `testorder.weights.file` | — | Optional scoring weights file |
 | `scoreNewTest` | `testorder.score.newTest` | `15` | Bonus for new test classes |
 | `scoreChangedTest` | `testorder.score.changedTest` | `9` | Bonus for changed test sources |
@@ -511,7 +540,7 @@ Beyond the standard plugin parameters, these system properties control advanced 
 |---|---|---|
 | `testorder.score.coverageBonus` | `0` (disabled) | Set-cover algorithm bonus for coverage diversity |
 | `testorder.score.springContextGrouping` | — | Bonus for Spring-annotated tests sharing context |
-| `testorder.score.ema.varianceThreshold` | — | EMA variance threshold for duration stability |
+| `testorder.score.ema.varianceThreshold` | — | EMA variance threshold for duration stability — stored in state file only; setting via `-D` has no effect |
 
 ### Runtime Properties
 
@@ -522,8 +551,8 @@ Beyond the standard plugin parameters, these system properties control advanced 
 | `testorder.source.root` | Custom source root (overrides auto-detected `src/main/java`) |
 | `testorder.history.maxRuns` | Maximum run history entries (default: 50) |
 | `testorder.structuralDiff.enabled` | Enable/disable structural change analysis (default: true) |
-| `testorder.changed.classes.file` | Read changed classes from a file |
-| `testorder.changed.methods` | Explicit changed methods list |
+| `testorder.changed.classes.file` | Read changed classes from a file (one fully-qualified class name per line; blank lines ignored) |
+| `testorder.changed.methods` | Explicit changed production methods in `className#methodName` format (comma-separated). Affects method-level scoring; use with `changeMode=explicit` to restrict scoring to specific changed methods (e.g. `com.example.Foo#doWork,com.example.Bar#process`) |
 
 ## Coverage Analysis
 
@@ -590,3 +619,5 @@ java -jar test-order-core-jar-with-dependencies.jar <command>
 - `hash-snapshot` — scan source tree and save LZ4-compressed file hashes
 - `changed` — detect changed source files (supports `--mode`)
 - `run <indexFile>` — detect changes and print affected tests
+- `struct-diff` — structural diff of Java files (types, methods, fields) against git
+- `advise <indexFile>` — analyse per-method dependency overlap and suggest test classes to split

@@ -76,11 +76,12 @@ public class DetectDependenciesMojo extends AbstractTestOrderMojo {
 					+ "this project uses JUnit 4 but test-order requires JUnit 5 (Jupiter).\n"
 					+ "  To fix, add the JUnit Vintage engine so JUnit 4 tests run under the JUnit 5 platform:\n" + "\n"
 					+ "    <dependency>\n" + "      <groupId>org.junit.vintage</groupId>\n"
-					+ "      <artifactId>junit-vintage-engine</artifactId>\n" + "      <version>5.10.2</version>\n"
-					+ "      <scope>test</scope>\n" + "    </dependency>\n" + "    <dependency>\n"
-					+ "      <groupId>org.junit.jupiter</groupId>\n"
-					+ "      <artifactId>junit-jupiter-engine</artifactId>\n" + "      <version>5.10.2</version>\n"
-					+ "      <scope>test</scope>\n" + "    </dependency>\n" + "\n"
+					+ "      <artifactId>junit-vintage-engine</artifactId>\n"
+					+ "      <version>${junit.version}</version>\n" + "      <scope>test</scope>\n"
+					+ "    </dependency>\n" + "    <dependency>\n" + "      <groupId>org.junit.jupiter</groupId>\n"
+					+ "      <artifactId>junit-jupiter-engine</artifactId>\n"
+					+ "      <version>${junit.version}</version>\n" + "      <scope>test</scope>\n"
+					+ "    </dependency>\n" + "\n" + "  Replace ${junit.version} with your project's JUnit 5 version.\n"
 					+ "  Alternatively, migrate your tests to JUnit 5.";
 			throw new MojoExecutionException(msg);
 		}
@@ -95,7 +96,6 @@ public class DetectDependenciesMojo extends AbstractTestOrderMojo {
 		}
 
 		int totalFindings = 0;
-		Path lastReportPath = null;
 
 		for (MavenProject moduleProject : projectsToAnalyze) {
 			int findings = runDetectionForModule(moduleProject);
@@ -120,8 +120,8 @@ public class DetectDependenciesMojo extends AbstractTestOrderMojo {
 	private void runReactorInstall() throws MojoExecutionException {
 		getLog().info(
 				"[test-order] Multi-module project: running reactor install to resolve cross-module dependencies...");
-		List<String> command = new ArrayList<>(
-				List.of("mvn", "install", "-DskipTests", "-Dspotless.check.skip=true", "--batch-mode", "--quiet"));
+		List<String> command = new ArrayList<>(List.of(MavenTestRunner.findMavenExecutable(), "install", "-DskipTests",
+				"-Dspotless.check.skip=true", "--batch-mode", "--quiet"));
 		command.addAll(
 				List.of("-Drat.skip=true", "-Dcheckstyle.skip=true", "-Dspotbugs.skip=true", "-Denforcer.skip=true",
 						"-Dpmd.skip=true", "-Djacoco.skip=true", "-Dlicense.skip=true", "-Danimal.sniffer.skip=true"));
