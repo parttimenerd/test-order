@@ -2,7 +2,9 @@ package me.bechberger.testorder;
 
 import java.io.*;
 import java.nio.file.*;
+import java.nio.file.attribute.FileTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -32,6 +34,17 @@ public class DependencyMap {
 
 	/** Current binary format version. */
 	public static final short FORMAT_VERSION = 1;
+
+	// ── H12: per-JVM load cache keyed by (absolutePath, mtime, size) ─────────
+	// Avoids re-deserializing the same index file N times in a Maven reactor or
+	// multi-command CLI session. Invalidated whenever save() rewrites the file.
+	// IMPORTANT: callers that mutate the returned instance (e.g. mergeWith) must
+	// call save() immediately after — save() evicts the stale cache entry so the
+	// next load() picks up the updated file. Do not hold a reference to a cached
+	// instance across a save() call.
+	private record CacheKey(Path path, long mtime, long size) {
+	}
+	private static final ConcurrentHashMap<CacheKey, DependencyMap> LOAD_CACHE = new ConcurrentHashMap<>();
 
 	// ── Section type constants ────────────────────────────────────────
 
@@ -461,6 +474,14 @@ public class DependencyMap {
 			writePayload(out);
 		}
 		PersistenceSupport.moveIntoPlace(tempFile, indexFile);
+		// Invalidate any cached entry for this path so the next load() re-reads it.
+		evictCache(indexFile);
+	}
+
+	/** Removes all cache entries for the given path (any mtime/size). */
+	static void evictCache(Path indexFile) {
+		Path abs = indexFile.toAbsolutePath();
+		LOAD_CACHE.keySet().removeIf(k -> k.path().equals(abs));
 	}
 
 	/**
@@ -649,11 +670,11 @@ public class DependencyMap {
 		}
 		Path tempFile = PersistenceSupport.temporarySibling(indexFile);
 		try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(tempFile))) {
-			for (var entry : dependencies.entrySet()) {
+			dependencies.entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(entry -> {
 				pw.print(entry.getKey());
 				pw.print('\t');
-				pw.println(String.join(",", entry.getValue()));
-			}
+				pw.println(entry.getValue().stream().sorted().collect(java.util.stream.Collectors.joining(",")));
+			});
 		}
 		PersistenceSupport.moveIntoPlace(tempFile, indexFile);
 	}
@@ -661,10 +682,24 @@ public class DependencyMap {
 	/**
 	 * Loads a binary dependency index. Validates LZ4 framing and the inner
 	 * {@code TORD} magic + version header.
+	 * <p>
+	 * Results are cached by (absolutePath, lastModifiedTime, fileSize). The cache
+	 * is invalidated whenever {@link #save} rewrites the file, so re-reading after
+	 * a write always returns a fresh instance.
 	 */
 	public static DependencyMap load(Path indexFile) throws IOException {
 		Path loadPath = PersistenceSupport.resolveLoadPath(indexFile);
 		validateCompressedFileSize(loadPath);
+
+		// H12: check the mtime/size cache before doing any decompression
+		FileTime mtime = Files.getLastModifiedTime(loadPath);
+		long size = Files.size(loadPath);
+		CacheKey key = new CacheKey(loadPath.toAbsolutePath(), mtime.toMillis(), size);
+		DependencyMap cached = LOAD_CACHE.get(key);
+		if (cached != null) {
+			return cached;
+		}
+
 		int magic;
 		try (DataInputStream peek = new DataInputStream(Files.newInputStream(loadPath))) {
 			magic = peek.readInt();
@@ -674,7 +709,9 @@ public class DependencyMap {
 		if (magic != LZ4_MAGIC) {
 			throw new IOException("Not a valid binary index (wrong magic bytes): " + loadPath);
 		}
-		return loadBinary(loadPath);
+		DependencyMap result = loadBinary(loadPath);
+		LOAD_CACHE.put(key, result);
+		return result;
 	}
 
 	/** Helper to load index or create fresh if corrupt */
@@ -919,7 +956,8 @@ public class DependencyMap {
 				try {
 					if (fileName.endsWith(".deps")) {
 						String testClass = fileName.substring(0, fileName.length() - 5); // strip .deps
-						Set<String> deps = Files.readAllLines(file).stream().map(String::trim).filter(s -> !s.isEmpty())
+						Set<String> deps = Files.readAllLines(file).stream().map(String::trim)
+								.filter(s -> !s.isEmpty() && !s.startsWith("#"))
 								.collect(Collectors.toCollection(HashSet::new));
 						map.put(testClass, deps);
 					} else if (fileName.endsWith(".mdeps")) {
@@ -1016,7 +1054,10 @@ public class DependencyMap {
 			});
 		}
 
-		Files.createDirectories(indexFile.getParent());
+		Path indexParent = indexFile.toAbsolutePath().getParent();
+		if (indexParent != null) {
+			Files.createDirectories(indexParent);
+		}
 		// Use configured compression (system property), defaulting to FAST for
 		// learn-mode
 		LZ4Support.Compression compression = LZ4Support.Compression
@@ -1145,12 +1186,13 @@ public class DependencyMap {
 				if (entry != null) {
 					Set<String> existing = map.dependencies.get(entry.getKey());
 					if (existing == null) {
-						map.dependencies.put(entry.getKey(), entry.getValue());
+						map.dependencies.put(entry.getKey(),
+								Collections.unmodifiableSet(new HashSet<>(entry.getValue())));
 					} else {
 						// existing may be an unmodifiable set from loadBinary — copy into mutable set
 						Set<String> merged = new HashSet<>(existing);
 						merged.addAll(entry.getValue());
-						map.dependencies.put(entry.getKey(), merged);
+						map.dependencies.put(entry.getKey(), Collections.unmodifiableSet(merged));
 					}
 					depCount++;
 				}
@@ -1196,7 +1238,7 @@ public class DependencyMap {
 					// existing may be an unmodifiable set from loadBinary — copy into mutable set
 					Set<String> existing = new HashSet<>(map.methodDependencies.getOrDefault(entry.getKey(), Set.of()));
 					existing.addAll(entry.getValue());
-					map.methodDependencies.put(entry.getKey(), existing);
+					map.methodDependencies.put(entry.getKey(), Collections.unmodifiableSet(existing));
 					methodDepCount++;
 				}
 			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {
@@ -1228,7 +1270,7 @@ public class DependencyMap {
 					// existing may be an unmodifiable set from loadBinary — copy into mutable set
 					Set<String> existing = new HashSet<>(map.memberDependencies.getOrDefault(entry.getKey(), Set.of()));
 					existing.addAll(entry.getValue());
-					map.memberDependencies.put(entry.getKey(), existing);
+					map.memberDependencies.put(entry.getKey(), Collections.unmodifiableSet(existing));
 					memberDepCount++;
 				}
 			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {
@@ -1273,7 +1315,7 @@ public class DependencyMap {
 					Set<String> existing = new HashSet<>(
 							map.methodMemberDependencies.getOrDefault(entry.getKey(), Set.of()));
 					existing.addAll(entry.getValue());
-					map.methodMemberDependencies.put(entry.getKey(), existing);
+					map.methodMemberDependencies.put(entry.getKey(), Collections.unmodifiableSet(existing));
 					methodMemberDepCount++;
 				}
 			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {
@@ -1283,7 +1325,10 @@ public class DependencyMap {
 
 		// Save aggregated index under file lock (R7-6: prevent corruption in concurrent
 		// -T N builds)
-		Files.createDirectories(indexFile.getParent());
+		Path aggParent = indexFile.toAbsolutePath().getParent();
+		if (aggParent != null) {
+			Files.createDirectories(aggParent);
+		}
 		PersistenceSupport.withFileLock(indexFile, () -> {
 			map.save(indexFile);
 			return null;

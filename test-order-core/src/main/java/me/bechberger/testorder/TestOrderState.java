@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -29,6 +30,14 @@ public class TestOrderState {
 
 	static final Logger LOG = Logger.getLogger(TestOrderState.class.getName());
 	private static final int CURRENT_SCHEMA_VERSION = 1;
+
+	// ── H16: per-JVM load cache keyed by (absolutePath, mtime, size) ─────────
+	// Avoids re-parsing the state file for each CLI sub-command or repeated Maven
+	// module load within the same JVM. Invalidated whenever save() rewrites it.
+	// Callers that mutate the instance must call save() immediately after.
+	private record StateCacheKey(Path path, long mtime, long size) {
+	}
+	private static final ConcurrentHashMap<StateCacheKey, TestOrderState> STATE_LOAD_CACHE = new ConcurrentHashMap<>();
 
 	// ── Scoring weights ───────────────────────────────────────────────
 
@@ -327,7 +336,10 @@ public class TestOrderState {
 		 * ranges).
 		 */
 		public void saveToFile(Path file, List<WeightDef> defs) throws IOException {
-			Files.createDirectories(file.getParent());
+			Path parent = file.toAbsolutePath().getParent();
+			if (parent != null) {
+				Files.createDirectories(parent);
+			}
 			CommentedConfig config = CommentedConfig.inMemory();
 			Map<String, Integer> values = toMap();
 			for (WeightDef wd : defs) {
@@ -735,6 +747,9 @@ public class TestOrderState {
 
 	public void save(Path file) throws IOException {
 		StateSerializer.save(file, this);
+		// Invalidate cache so the next load() re-reads the updated file.
+		Path abs = file.toAbsolutePath();
+		STATE_LOAD_CACHE.keySet().removeIf(k -> k.path().equals(abs));
 	}
 
 	Map<String, Object> toPersistedRoot() {
@@ -901,8 +916,27 @@ public class TestOrderState {
 		return m;
 	}
 
+	/**
+	 * Loads state from disk. Results are cached by (absolutePath, mtime, size)
+	 * within the JVM to avoid redundant parsing for repeated CLI invocations or
+	 * Maven multi-module reactor passes. The cache is invalidated by {@link #save}.
+	 * If the file does not exist, returns a fresh default state (not cached).
+	 */
 	public static TestOrderState load(Path file) throws IOException {
-		return StateSerializer.load(file);
+		Path abs = file.toAbsolutePath();
+		if (!Files.exists(abs)) {
+			return StateSerializer.load(file);
+		}
+		long mtime = Files.getLastModifiedTime(abs).toMillis();
+		long size = Files.size(abs);
+		StateCacheKey key = new StateCacheKey(abs, mtime, size);
+		TestOrderState cached = STATE_LOAD_CACHE.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		TestOrderState result = StateSerializer.load(file);
+		STATE_LOAD_CACHE.put(key, result);
+		return result;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -948,7 +982,8 @@ public class TestOrderState {
 					"config.failurePruneThreshold"));
 			state.setEmaVarianceThreshold(safeDouble(cm.get("emaVarianceThreshold"), state.emaVarianceThreshold(),
 					"config.emaVarianceThreshold"));
-			state.setHistoryMaxRuns(safeInt(cm.get("historyMaxRuns"), state.historyMaxRuns(), "config.historyMaxRuns"));
+			state.setHistoryMaxRuns(
+					Math.max(1, safeInt(cm.get("historyMaxRuns"), state.historyMaxRuns(), "config.historyMaxRuns")));
 			state.config.setRunsSinceLearn(safeInt(cm.get("runsSinceLearn"), 0, "config.runsSinceLearn"));
 			if (cm.get("dependencyFingerprint") instanceof String fp)
 				state.config.setDependencyFingerprint(fp);

@@ -99,6 +99,9 @@ public final class TestOrderConfigResolver {
 				} catch (IOException e) {
 					TestOrderLogger.error("Failed to read changed classes file: {}", e.getMessage());
 				}
+			} else {
+				TestOrderLogger.warn("[test-order] Changed classes file not found (testorder.changed.classes.file={})",
+						filePath);
 			}
 		}
 		return result;
@@ -171,6 +174,9 @@ public final class TestOrderConfigResolver {
 				} catch (IOException e) {
 					TestOrderLogger.error("Failed to load weights file: {}", e.getMessage());
 				}
+			} else {
+				TestOrderLogger.warn("[test-order] Weights file not found: {} — using defaults. "
+						+ "Check the path specified by -Dtestorder.weights.file.", wf.toAbsolutePath());
 			}
 		}
 		return sw;

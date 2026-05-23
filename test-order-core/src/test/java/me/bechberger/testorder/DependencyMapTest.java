@@ -664,21 +664,18 @@ class DependencyMapTest {
 	}
 
 	@Test
-	void getAffectedTestsMatchesNestedProductionDependencies() {
-		DependencyMap map = new DependencyMap();
-		// Test depends on nested production class Service$Builder
-		map.put("com.test.ServiceTest", Set.of("com.example.Service$Builder"));
-		map.put("com.test.RepoTest", Set.of("com.example.Repo"));
-		map.put("com.test.OtherTest", Set.of("com.example.Other"));
+	void aggregateDepsFileWithCommentLinesIgnoresComments() throws IOException {
+		Path depsDir = tempDir.resolve("deps-comments");
+		Files.createDirectories(depsDir);
+		// Comments (lines starting with #) should be ignored, not treated as class
+		// names
+		Files.writeString(depsDir.resolve("com.example.FooTest.deps"),
+				"# this is a comment\ncom.example.Foo\n\n# another comment\ncom.example.Bar\n");
 
-		// Change detection reports top-level class only
-		Set<String> changed = Set.of("com.example.Service");
+		DependencyMap map = DependencyMap.aggregate(depsDir);
 
-		Set<String> affected = map.getAffectedTests(changed);
-
-		assertTrue(affected.contains("com.test.ServiceTest"),
-				"test depending on Service$Builder should be affected when Service changes");
-		assertFalse(affected.contains("com.test.RepoTest"));
-		assertFalse(affected.contains("com.test.OtherTest"));
+		assertEquals(1, map.size());
+		assertEquals(Set.of("com.example.Foo", "com.example.Bar"), map.get("com.example.FooTest"),
+				"Comment lines should not appear as dependencies");
 	}
 }

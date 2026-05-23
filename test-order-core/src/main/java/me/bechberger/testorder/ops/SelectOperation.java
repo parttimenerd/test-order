@@ -61,8 +61,19 @@ public final class SelectOperation {
 		if (config.selectedFile() != null) {
 			TestSelector.writeTestList(selection.selected(), config.selectedFile());
 		}
-		if (config.remainingFile() != null && !selection.remaining().isEmpty()) {
-			TestSelector.writeTestList(selection.remaining(), config.remainingFile());
+		if (config.remainingFile() != null) {
+			if (!selection.remaining().isEmpty()) {
+				TestSelector.writeTestList(selection.remaining(), config.remainingFile());
+			} else {
+				// Delete stale remaining file from a previous run to prevent run-remaining
+				// from re-executing deferred tests that are no longer relevant.
+				try {
+					java.nio.file.Files.deleteIfExists(config.remainingFile());
+				} catch (IOException e) {
+					config.log().warn("[test-order] Could not delete stale remaining file " + config.remainingFile()
+							+ ": " + e.getMessage());
+				}
+			}
 		}
 
 		boolean allSelected = selection.remaining().isEmpty();

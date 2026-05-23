@@ -2,7 +2,8 @@
 
 ## Quick Summary
 - **7 Confirmed Real Bugs** needing fixes (includes 1 blocking select command, 1 edge case)
-- **1 Missing Feature** (documented but not implemented)  
+- **3 CLI Usability Issues** (new bugs found, now fixed)
+- **1 Missing Feature** (documented but not implemented — now implemented)
 - **3 False Alarms** (working as designed)
 
 ### Real Bugs by Severity:
@@ -12,13 +13,14 @@
 4. **Bug #8** (High): Nested test classes not executed
 5. **Bug #7** (Medium): Invalid weights file silently ignored
 6. **Bug #9** (Medium): @Order annotation requires @TestMethodOrder to be respected
-7. **Bug #11** (Low): topN=0 in select command selects multiple tests instead of zero
-8. **Bug #1** (Low): Missing time estimate in APFD message
+7. **Bug #11** (Low): topN=0 in select command — now validated in CLI and Maven plugin
+8. **Bug #12** (Low): CLI aggregate with non-existent depsDir gave opaque error — **FIXED**
+9. **Bug #13** (Low): CLI `changed`/`run` with `--mode=explicit` but no `--classes` silently returned empty — **FIXED**
 
 ---
 
 ## Bug #1: Missing Time Estimate in APFD Message
-**Status**: CONFIRMED - Feature Not Implemented
+**Status**: FIXED — Feature implemented in TelemetryListener.java
 **Severity**: Low (cosmetic)
 **Details**: 
 - When a test failure is detected, the tool prints the APFD score and position of first failure
@@ -323,9 +325,10 @@ This comprehensive dog-fooding exercise was conducted to discover bugs and edge 
 3. **Configuration variations**: Tested different modes (learn, order, skip), change detection modes, storage modes, and feature flags
 4. **Edge case exploration**: Tested unusual but valid test configurations
 
-### Bugs Found: 7 Real Bugs + 1 Missing Feature
+### Bugs Found: 7 Real Bugs + 3 CLI Usability Issues + 1 Missing Feature (now fixed)
 - **7 confirmed real bugs** ranging from high to low severity
-- **1 documented but unimplemented feature**
+- **3 CLI usability bugs** found and fixed (aggregate, changed/run explicit mode, select topN=0)
+- **1 documented but unimplemented feature** — now implemented (APFD time estimate)
 - **3 false alarms** that were determined to be working as designed
 
 ### Scenarios Tested: 50+ Total
@@ -339,7 +342,32 @@ This comprehensive dog-fooding exercise was conducted to discover bugs and edge 
 4. **Nested test classes detected but not executed** - @Nested tests disappear
 5. **Invalid configuration silently ignored** - weights files not validated
 6. **@Order annotation needs @TestMethodOrder** - design issue/documentation gap
-7. **topN=0 boundary condition bug** - selects 11 tests instead of 0
+7. **topN=0 boundary condition bug** - CLI now rejects topN=0 with helpful message
+8. **CLI aggregate with non-existent depsDir** - now gives clear "does not exist" error (Bug #12, fixed)
+9. **CLI changed/run --mode=explicit without --classes** - now warns instead of silently returning empty (Bug #13, fixed)
+
+---
+
+## Bug #12: CLI `aggregate` with Non-Existent Directory Gave Opaque Error
+**Status**: FIXED
+**Severity**: Low (usability)
+**Details**:
+- Running `test-order aggregate /nonexistent/path` produced a raw `NoSuchFileException` message
+- Now gives: "Error: deps directory does not exist or is not a directory: ..." with hint to run learn mode
+
+**Code Location**: `Tool.java` Aggregate command, lines 50-56
+
+---
+
+## Bug #13: CLI `changed`/`run` with `--mode=explicit` But No `--classes` Silently Returns Empty
+**Status**: FIXED
+**Severity**: Low (usability)
+**Details**:
+- Running `test-order changed --mode=explicit` (without `--classes`) silently printed "No changes detected."
+- This is misleading — the user likely forgot to pass the class list
+- Now prints: "Warning: --mode=explicit requires --classes/-c to specify changed class FQCNs. No classes provided — returning empty result."
+
+**Code Location**: `Tool.java` Changed and Run commands
 
 ### No Issues Found In:
 - Parameterized tests, repeated tests, inheritance hierarchies

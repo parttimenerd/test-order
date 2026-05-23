@@ -125,6 +125,8 @@ public final class ModeResolverOperation {
 		String explicit = normalizeMode(config.requestedMode());
 		if (explicit != null) {
 			if ("order".equals(explicit) && !Files.exists(config.indexPath())) {
+				log.warn("[test-order] mode=order but no dependency index found at " + config.indexPath()
+						+ ". Run 'mvn test -Dtestorder.mode=learn' first to build the index.");
 				return new ModeDecision("skip", "No dependency index found and mode is 'order'", false);
 			}
 			return new ModeDecision(explicit, "Explicit mode: " + explicit, false);
@@ -132,7 +134,11 @@ public final class ModeResolverOperation {
 
 		// 2. Auto-detect: try CI download
 		if (config.ciDownloadCallback() != null) {
-			config.ciDownloadCallback().run();
+			try {
+				config.ciDownloadCallback().run();
+			} catch (Exception e) {
+				log.warn("[test-order] CI download callback failed (ignored): " + e.getMessage());
+			}
 		}
 
 		// 3. Auto-aggregation from .deps files
