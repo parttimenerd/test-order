@@ -1021,6 +1021,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		// test classpath
 		injectTestClasspath(resolveOrdererClasspath());
 		injectTestClasspath(runtimeDir);
+		injectOfflineRuntimeJarIfPresent();
 		ensureListenerServiceFile(runtimeDir);
 		if (isTestNGOnTestClasspath()) {
 			ensureTestNGListenerServiceFile(runtimeDir);
@@ -1074,6 +1075,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		removeStaleTestClassesConfig();
 		injectTestClasspath(resolveOrdererClasspath());
 		injectTestClasspath(runtimeDir);
+		injectOfflineRuntimeJarIfPresent();
 		ensureListenerServiceFile(runtimeDir);
 		if (isTestNGOnTestClasspath()) {
 			ensureTestNGListenerServiceFile(runtimeDir);
@@ -1250,28 +1252,27 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				project.getProperties().setProperty("testorder.offline.includePackages",
 						includePackages == null ? "" : includePackages);
 			} else {
-				getLog().info("[test-order] Auto-instrumenting classes for offline learn mode: " + classesDir);
-				try {
-					Agent.InstrumentationMode iMode = Agent.InstrumentationMode.fromString(instrumentationMode);
-					List<String> includes = includePackages == null || includePackages.isBlank()
-							? List.of()
-							: List.of(includePackages.split(","));
-					OfflineInstrumentor instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
-					Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
-					ClassIdMapping mapping = instrumentor.instrument(classesDir, backupDir);
-					if (instrumentor.getTransformedCount() == 0 && instrumentor.getSkippedCount() > 0) {
-						// All classes have stale marker from prior instrumentation without
-						// a matching mapping. Force re-instrument by ignoring the marker.
-						getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
-						instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
-						instrumentor.setIgnoreMarker(true);
-						mapping = instrumentor.instrument(classesDir, backupDir);
+				runOfflineInstrumentation(instrumentationMode, includePackages, classesDir, targetDir, mappingFile);
+			}
+		} else {
+			// Mapping file exists from a prior learn run. Check if backup is present;
+			// if not, the classes may be stale-instrumented (from a benchmark or previous
+			// run) without a restore path. Re-instrument to create a fresh backup so
+			// restoreInstrumentedClasses() can cleanly undo the instrumentation after
+			// this learn run completes.
+			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
+			if (!java.nio.file.Files.isDirectory(backupDir)) {
+				Path classesDir = Path.of(project.getBuild().getOutputDirectory());
+				if (java.nio.file.Files.isDirectory(classesDir)) {
+					getLog().info(
+							"[test-order] Re-instrumenting for offline learn mode (no backup found): " + classesDir);
+					try {
+						// Delete stale mapping so re-instrumentation starts fresh
+						java.nio.file.Files.deleteIfExists(mappingFile);
+					} catch (IOException e) {
+						getLog().warn("[test-order] Could not delete stale mapping: " + e.getMessage());
 					}
-					mapping.save(mappingFile);
-					getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes"
-							+ " (skipped " + instrumentor.getSkippedCount() + ")");
-				} catch (IOException e) {
-					throw new MojoExecutionException("[test-order] Offline instrumentation failed", e);
+					runOfflineInstrumentation(instrumentationMode, includePackages, classesDir, targetDir, mappingFile);
 				}
 			}
 		}
@@ -1353,6 +1354,33 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 
 		snapshotHashes();
+	}
+
+	private void runOfflineInstrumentation(String instrumentationMode, String includePackages, Path classesDir,
+			Path targetDir, Path mappingFile) throws MojoExecutionException {
+		getLog().info("[test-order] Auto-instrumenting classes for offline learn mode: " + classesDir);
+		try {
+			Agent.InstrumentationMode iMode = Agent.InstrumentationMode.fromString(instrumentationMode);
+			List<String> includes = includePackages == null || includePackages.isBlank()
+					? List.of()
+					: List.of(includePackages.split(","));
+			OfflineInstrumentor instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
+			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
+			ClassIdMapping mapping = instrumentor.instrument(classesDir, backupDir);
+			if (instrumentor.getTransformedCount() == 0 && instrumentor.getSkippedCount() > 0) {
+				// All classes have stale marker from prior instrumentation without
+				// a matching mapping. Force re-instrument by ignoring the marker.
+				getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
+				instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
+				instrumentor.setIgnoreMarker(true);
+				mapping = instrumentor.instrument(classesDir, backupDir);
+			}
+			mapping.save(mappingFile);
+			getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes" + " (skipped "
+					+ instrumentor.getSkippedCount() + ")");
+		} catch (IOException e) {
+			throw new MojoExecutionException("[test-order] Offline instrumentation failed", e);
+		}
 	}
 
 	/**
@@ -1720,6 +1748,30 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * {@code target/test-order-runtime/}, so stale files there silently shadow the
 	 * fresh config and cause the orderer to use wrong paths or no ordering at all.
 	 */
+	/**
+	 * Injects the offline runtime jar
+	 * ({@code target/.test-order/test-order-runtime.jar}) onto the Surefire test
+	 * classpath when it exists.
+	 *
+	 * <p>
+	 * This is needed in apply mode when classes were previously instrumented by
+	 * offline learn mode and the backup/restore cycle left them in an instrumented
+	 * state (e.g. because the mapping file existed from a prior run and
+	 * re-instrumentation was skipped, so no backup was created for this run).
+	 * Instrumented bytecode directly invokes
+	 * {@code me.bechberger.testorder.agent.runtime.UsageStore} — if that class
+	 * isn't on the classpath, every test throws {@code NoClassDefFoundError}.
+	 */
+	protected void injectOfflineRuntimeJarIfPresent() throws MojoExecutionException {
+		String buildDir = project.getBuild().getDirectory();
+		if (buildDir == null)
+			return;
+		Path runtimeJar = Path.of(buildDir).resolve(".test-order").resolve("test-order-runtime.jar");
+		if (Files.exists(runtimeJar)) {
+			injectTestClasspath(runtimeJar);
+		}
+	}
+
 	protected void removeStaleTestClassesConfig() {
 		String testClassesDir = project.getBuild().getTestOutputDirectory();
 		if (testClassesDir == null || testClassesDir.isBlank())
