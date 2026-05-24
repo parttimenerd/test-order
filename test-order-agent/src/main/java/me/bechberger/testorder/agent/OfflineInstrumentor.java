@@ -5,9 +5,7 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.objectweb.asm.*;
@@ -51,9 +49,6 @@ public class OfflineInstrumentor {
 	private Path backupDir;
 	private Path classesDir;
 	private boolean ignoreMarker;
-	// Cache of already-created backup directories to avoid repeated
-	// createDirectories calls
-	private final Set<Path> createdDirs = Collections.synchronizedSet(new HashSet<>());
 
 	/**
 	 * Create an offline instrumentor.
@@ -124,7 +119,6 @@ public class OfflineInstrumentor {
 		maxMemberId.set(0);
 		this.backupDir = backupDir;
 		this.classesDir = classesDir;
-		createdDirs.clear();
 
 		if (!Files.isDirectory(classesDir)) {
 			return ClassIdMapping.fromClassIdMap(classIdMap, 0, 0);
@@ -315,11 +309,17 @@ public class OfflineInstrumentor {
 			if (backupDir != null) {
 				Path relative = this.classesDir.relativize(classFile);
 				Path backupFile = backupDir.resolve(relative);
-				Path parentDir = backupFile.getParent();
-				if (createdDirs.add(parentDir)) {
-					Files.createDirectories(parentDir);
+				// createDirectories is idempotent — safe to call from parallel threads
+				// without the old createdDirs guard, which had a race: thread A adds to
+				// the set but hasn't finished createDirectories when thread B skips
+				// the call and writes to a not-yet-created directory.
+				Files.createDirectories(backupFile.getParent());
+				// Only write if no backup exists yet — the first (original, pre-instrumentation)
+				// bytes are the true backup; subsequent re-instrumentation should not
+				// overwrite them with already-instrumented bytes.
+				if (!Files.exists(backupFile)) {
+					Files.write(backupFile, original);
 				}
-				Files.write(backupFile, original);
 			}
 			// Write to temp file then atomic-move to avoid corrupted .class on kill
 			Path tmpFile = classFile.resolveSibling(classFile.getFileName() + ".tmp");

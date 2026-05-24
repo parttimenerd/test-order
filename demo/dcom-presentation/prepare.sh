@@ -76,7 +76,16 @@ fi
 echo ""
 echo "▶ Building cloud-sdk-java (skip tests)..."
 cd "$SDK_DIR"
-mvn install -DskipTests -q
+# Ensure test-order is OFF during the plain install — instrumented bytecode must
+# not end up in the installed JARs (the odata-generator module is used as a
+# Maven plugin and would fail to load UsageStore at plugin boot time).
+cd "$SCRIPT_DIR"
+./toggle-test-order.sh off 2>/dev/null || true
+cd "$SDK_DIR"
+# Purge any previously installed SNAPSHOT JARs that may contain instrumented
+# bytecode from an earlier (buggy) run — mvn clean install won't purge m2 cache.
+find ~/.m2/repository/com/sap/cloud/sdk -name "*-5.31.0-SNAPSHOT.jar" -delete 2>/dev/null || true
+mvn clean install -DskipTests -q
 echo "  ✓ cloud-sdk-java built"
 
 # 4. Enable test-order and run learn pass (if no index)
@@ -117,6 +126,16 @@ echo "▶ Setting up cap-sflight..."
 
 # 7. Build cap-sflight
 cd "$CAP_DIR"
+# The CDS Maven plugin downloads its own Node.js. We need to make sure the
+# bundled npm is available before syncing the lock file. Run a minimal Maven
+# goal first to trigger the download, then sync with the bundled npm, then do
+# the real install.
+mvn cds:install-node -pl srv -Denforcer.skip=true -q 2>/dev/null || true
+BUNDLED_NPM=$(find ~/.m2/repository/com/sap/cds/cds-maven-plugin/cache -name "npm" -type f 2>/dev/null | head -1)
+if [[ -x "$BUNDLED_NPM" ]]; then
+    "$BUNDLED_NPM" install --silent 2>/dev/null || true
+    git add package-lock.json package.json && git commit -m "Sync package-lock.json" --allow-empty -q 2>/dev/null || true
+fi
 mvn install -DskipTests -Denforcer.skip=true -q 2>/dev/null || mvn install -DskipTests -Denforcer.skip=true
 echo "  ✓ cap-sflight built"
 
