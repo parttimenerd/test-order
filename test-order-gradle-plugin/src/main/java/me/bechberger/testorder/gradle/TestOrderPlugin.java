@@ -236,6 +236,14 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .anyMatch(d -> "org.junit.jupiter".equals(d.getGroup()));
     }
 
+    static boolean isJUnitVintageOnTestClasspath(Project project) {
+        return project.getConfigurations().stream()
+                .filter(c -> c.getName().toLowerCase().contains("test"))
+                .flatMap(c -> c.getDependencies().stream())
+                .anyMatch(d -> "org.junit.vintage".equals(d.getGroup())
+                        && "junit-vintage-engine".equals(d.getName()));
+    }
+
     private void warnJUnit4Unsupported(Project project) {
         if (isJUnit4OnTestClasspath(project)) {
             if (isJUnit5OnTestClasspath(project)) {
