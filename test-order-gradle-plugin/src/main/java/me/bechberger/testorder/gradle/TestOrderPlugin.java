@@ -606,7 +606,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
                     java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
                     me.bechberger.testorder.IndexCollectorServer collector =
-                            new me.bechberger.testorder.IndexCollectorServer(indexFilePath);
+                            new me.bechberger.testorder.IndexCollectorServer(indexFilePath, mappingFile);
                     testTask.systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
                     // Store server reference for doLast cleanup

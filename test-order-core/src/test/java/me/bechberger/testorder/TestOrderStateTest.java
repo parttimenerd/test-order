@@ -293,10 +293,10 @@ class TestOrderStateTest {
 
 	@Test
 	void compactOutcomeRoundTrip() {
-		// All fields zero except flags → still full 7-element list
+		// All fields zero except flags → 8-element list (index 7 = totalScore)
 		var outcome = new TestOrderState.TestOutcome("X", 99, true, false, 0, 0, 0.0, true, false, true, 0.0);
 		List<Object> compact = StateRecordCodec.outcomeToCompact(outcome);
-		assertEquals(7, compact.size());
+		assertEquals(8, compact.size());
 		assertEquals("X", compact.get(0));
 		// flags: isNew=1, isFast=4, failed=16 → 21
 		assertEquals(21, compact.get(1));
@@ -305,6 +305,7 @@ class TestOrderStateTest {
 		assertEquals(0.0, compact.get(4)); // failScore
 		assertEquals(0.0, compact.get(5)); // complexityOverlap
 		assertEquals(0.0, compact.get(6)); // speedRatio
+		assertEquals(99, compact.get(7)); // totalScore
 
 		TestOrderState.TestOutcome restored = StateRecordCodec.compactToOutcome(compact, LOG);
 		assertEquals("X", restored.testClass());
@@ -315,6 +316,7 @@ class TestOrderStateTest {
 		assertTrue(restored.failed());
 		assertEquals(0, restored.depOverlap());
 		assertEquals(0.0, restored.failScore());
+		assertEquals(99, restored.totalScore());
 	}
 
 	@Test
@@ -322,7 +324,7 @@ class TestOrderStateTest {
 		// All fields populated
 		var outcome = new TestOrderState.TestOutcome("Y", 7, false, true, 3, 5, 1.5, false, true, false, 0.0);
 		List<Object> compact = StateRecordCodec.outcomeToCompact(outcome);
-		assertEquals(7, compact.size());
+		assertEquals(8, compact.size());
 		assertEquals("Y", compact.get(0));
 
 		TestOrderState.TestOutcome restored = StateRecordCodec.compactToOutcome(compact, LOG);
@@ -335,6 +337,7 @@ class TestOrderStateTest {
 		assertFalse(restored.isFast());
 		assertTrue(restored.isSlow());
 		assertFalse(restored.failed());
+		assertEquals(7, restored.totalScore());
 	}
 
 	@Test

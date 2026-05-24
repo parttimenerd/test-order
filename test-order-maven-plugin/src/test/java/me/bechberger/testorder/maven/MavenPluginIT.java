@@ -90,15 +90,22 @@ class MavenPluginIT {
 	}
 
 	@Test
-	void reactorLearnModeUsesSharedReactorDirectory() {
+	void reactorLearnModeUsesSharedReactorDirectory() throws IOException {
 		Path projectDir = itProjectsDir.resolve("reactor-learn-mode");
 		assertThat(Files.exists(projectDir)).isTrue();
 
-		Path sharedDepsDir = projectDir.resolve(".test-order/deps");
-		assertThat(Files.isDirectory(sharedDepsDir)).withFailMessage("shared deps dir should exist: " + sharedDepsDir)
-				.isTrue();
-		assertThat(sharedDepsDir.resolve("me.bechberger.it.modulea.LibraryTest.deps")).exists();
-		assertThat(sharedDepsDir.resolve("me.bechberger.it.moduleb.ServiceTest.deps")).exists();
+		// In socket-collection mode the collector merges directly into the shared index
+		// file at reactor-root/.test-order/test-dependencies.lz4 (or writes a fallback
+		// payload file that is picked up on the next build). Either the index or the
+		// fallback must exist to prove the shared reactor directory is being used.
+		Path sharedDir = projectDir.resolve(".test-order");
+		assertThat(Files.isDirectory(sharedDir))
+				.withFailMessage("shared .test-order dir should exist: " + sharedDir).isTrue();
+
+		Path indexFile = sharedDir.resolve("test-dependencies.lz4");
+		Path fallbackFile = sharedDir.resolve("test-dependencies.lz4.collector-fallback");
+		assertThat(Files.exists(indexFile) || Files.exists(fallbackFile))
+				.withFailMessage("shared index or fallback file should exist under: " + sharedDir).isTrue();
 
 		assertThat(Files.isDirectory(projectDir.resolve("module-a/target/surefire-reports"))).isTrue();
 		assertThat(Files.isDirectory(projectDir.resolve("module-b/target/surefire-reports"))).isTrue();
