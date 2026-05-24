@@ -33,6 +33,21 @@ public final class TestOrderConfig {
 
 	/** Port of the IndexCollectorServer for socket-based dependency collection */
 	public static final String COLLECTOR_PORT = "testorder.collector.port";
+
+	/**
+	 * Build session identifier shared by all forked JVMs in the same Maven test
+	 * run. When set, TelemetryListener writes per-fork partial run records to
+	 * {@code .test-order/pending-runs/} instead of the state file directly, and the
+	 * Maven plugin merges them into a single per-build RunRecord after all forks
+	 * complete.
+	 */
+	public static final String BUILD_ID = "testorder.build.id";
+
+	/**
+	 * Directory (relative to .test-order/) where per-fork partial run records are
+	 * staged.
+	 */
+	public static final String PENDING_RUNS_DIR = "testorder.pending.runs.dir";
 	public static final String CHANGED_CLASSES = "testorder.changed.classes";
 	public static final String CHANGED_CLASSES_FILE = "testorder.changed.classes.file";
 	public static final String CHANGED_TEST_CLASSES = "testorder.changed.test.classes";

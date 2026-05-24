@@ -17,7 +17,7 @@ final class StateRecordCodec {
 		int flags = (o.isNew() ? 1 : 0) | (o.isChanged() ? 2 : 0) | (o.isFast() ? 4 : 0) | (o.isSlow() ? 8 : 0)
 				| (o.failed() ? 16 : 0) | (o.hasStaticFieldOverlap() ? 32 : 0);
 		return List.of(o.testClass(), flags, o.depOverlap(), o.depTotal(), o.failScore(), o.complexityOverlap(),
-				o.speedRatio());
+				o.speedRatio(), o.totalScore());
 	}
 
 	static TestOrderState.TestOutcome compactToOutcome(Object obj, Logger log) {
@@ -34,7 +34,8 @@ final class StateRecordCodec {
 		try {
 			String tc = (String) arr.get(0);
 			int flags = toInt(arr.get(1));
-			return new TestOrderState.TestOutcome(tc, 0, (flags & 1) != 0, (flags & 2) != 0,
+			int totalScore = arr.size() > 7 ? toInt(arr.get(7)) : 0;
+			return new TestOrderState.TestOutcome(tc, totalScore, (flags & 1) != 0, (flags & 2) != 0,
 					Math.max(0, arr.size() > 2 ? toInt(arr.get(2)) : 0),
 					Math.max(0, arr.size() > 3 ? toInt(arr.get(3)) : 0),
 					Math.max(0.0, arr.size() > 4 ? toDouble(arr.get(4)) : 0.0), (flags & 4) != 0, (flags & 8) != 0,

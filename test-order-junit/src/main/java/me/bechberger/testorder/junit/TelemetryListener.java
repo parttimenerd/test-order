@@ -19,6 +19,7 @@ import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.TestPlan;
 
+import me.bechberger.testorder.PartialRunAggregator;
 import me.bechberger.testorder.PersistenceSupport;
 import me.bechberger.testorder.TelemetryPersistence;
 import me.bechberger.testorder.TestOrderConfig;
@@ -53,6 +54,9 @@ public class TelemetryListener implements TestExecutionListener {
 	// state tracking (active when state path is set)
 	private TestOrderState state;
 	private String statePath;
+	// build-session aggregation: when set, per-fork records go to pending-runs dir
+	private String buildId;
+	private String pendingRunsDir;
 	private final Map<String, Long> classStartTimes = new ConcurrentHashMap<>();
 	private final Map<String, Long> methodStartTimes = new ConcurrentHashMap<>();
 
@@ -119,6 +123,11 @@ public class TelemetryListener implements TestExecutionListener {
 		TestOrderConfigResolver configResolver = new TestOrderConfigResolver(
 				Thread.currentThread().getContextClassLoader());
 		statePath = configResolver.getConfig(TestOrderConfig.STATE_PATH);
+
+		// Build-session aggregation: when buildId is set, write per-fork partial
+		// records to pending-runs/ instead of writing directly to the state file.
+		buildId = configResolver.getConfig(TestOrderConfig.BUILD_ID);
+		pendingRunsDir = configResolver.getConfig(TestOrderConfig.PENDING_RUNS_DIR);
 
 		// Register a JVM shutdown hook so accumulated durations/failures are not
 		// lost when the JVM terminates abnormally (e.g. OOM, kill signal) before
@@ -384,39 +393,62 @@ public class TelemetryListener implements TestExecutionListener {
 		boolean resetPending = false;
 		if (effectiveStatePath != null && !effectiveStatePath.isEmpty()) {
 			Path stateFile = Path.of(effectiveStatePath);
+			boolean isLearnRun = Boolean.parseBoolean(System.getProperty(TestOrderConfig.LEARN, "false"));
 			try {
-				state = PersistenceSupport.withFileLock(stateFile, () -> {
-					TestOrderState lockedState = TelemetryPersistence.loadStateOrEmpty(stateFile);
-					TelemetryPersistence.applyHistoryMaxRuns(lockedState);
-					TelemetryPersistence.applyPendingTelemetry(lockedState, pendingDurations, failedClassNames,
-							pendingMethodDurations, failedMethodNames);
-					if (!executionOrder.isEmpty()) {
-						TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder,
-								failedClassNames);
-						lockedState.addRunRecord(record);
-						boolean isLearnRun = Boolean.parseBoolean(System.getProperty(TestOrderConfig.LEARN, "false"));
-						if (!isLearnRun) {
-							lockedState.incrementRunsSinceLearn();
-						}
-						if (record.totalFailures() > 0) {
-							String timeSavedMsg = formatTimeSaved(executionOrder, failedClassNames, pendingDurations,
-									lockedState);
-							if (timeSavedMsg != null) {
-								TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{}) — {}",
-										String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
-										record.firstFailurePosition() + 1, record.totalTests(), timeSavedMsg);
-							} else {
-								TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
-										String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
-										record.firstFailurePosition() + 1, record.totalTests());
-							}
-						} else if (!isLearnRun && record.totalTests() > 1) {
-							TestOrderLogger.info("{} tests ran in priority order — all passed", record.totalTests());
-						}
+				if (buildId != null && !buildId.isBlank() && pendingRunsDir != null && !pendingRunsDir.isBlank()
+						&& !executionOrder.isEmpty()) {
+					// Build-session aggregation mode: write partial record to staging dir.
+					// The Maven plugin will merge all per-fork records after all forks complete.
+					TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder, failedClassNames);
+					try {
+						PartialRunAggregator.writePartial(Path.of(pendingRunsDir), buildId, record, isLearnRun);
+					} catch (IOException e) {
+						TestOrderLogger.warn("[telemetry] Could not write partial run record: {}", e.getMessage());
 					}
-					lockedState.save(stateFile);
-					return lockedState;
-				});
+					// Still apply duration/failure telemetry to state under lock
+					state = PersistenceSupport.withFileLock(stateFile, () -> {
+						TestOrderState lockedState = TelemetryPersistence.loadStateOrEmpty(stateFile);
+						TelemetryPersistence.applyHistoryMaxRuns(lockedState);
+						TelemetryPersistence.applyPendingTelemetry(lockedState, pendingDurations, failedClassNames,
+								pendingMethodDurations, failedMethodNames);
+						lockedState.save(stateFile);
+						return lockedState;
+					});
+				} else {
+					// Normal (non-aggregated) mode: write RunRecord directly to state.
+					state = PersistenceSupport.withFileLock(stateFile, () -> {
+						TestOrderState lockedState = TelemetryPersistence.loadStateOrEmpty(stateFile);
+						TelemetryPersistence.applyHistoryMaxRuns(lockedState);
+						TelemetryPersistence.applyPendingTelemetry(lockedState, pendingDurations, failedClassNames,
+								pendingMethodDurations, failedMethodNames);
+						if (!executionOrder.isEmpty()) {
+							TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder,
+									failedClassNames);
+							lockedState.addRunRecord(record);
+							if (!isLearnRun) {
+								lockedState.incrementRunsSinceLearn();
+							}
+							if (record.totalFailures() > 0) {
+								String timeSavedMsg = formatTimeSaved(executionOrder, failedClassNames,
+										pendingDurations, lockedState);
+								if (timeSavedMsg != null) {
+									TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{}) — {}",
+											String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
+											record.firstFailurePosition() + 1, record.totalTests(), timeSavedMsg);
+								} else {
+									TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
+											String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
+											record.firstFailurePosition() + 1, record.totalTests());
+								}
+							} else if (!isLearnRun && record.totalTests() > 1) {
+								TestOrderLogger.info("{} tests ran in priority order — all passed",
+										record.totalTests());
+							}
+						}
+						lockedState.save(stateFile);
+						return lockedState;
+					});
+				}
 				resetPending = TestOrderState.hasPendingData();
 			} catch (IOException e) {
 				TestOrderLogger.error("Failed to save state: {}", e.getMessage());

@@ -2,14 +2,18 @@
 import { inject, watch, onMounted, nextTick, ref as vueRef } from 'vue'
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
-import { sn, esc, GRAPH } from '../utils'
+import { esc, GRAPH } from '../utils'
 import type { TestEntry, MethodEntry } from '../types'
+import { useClassHover } from '../composables/useClassInfo'
+import ClassInfoCard from './ClassInfoCard.vue'
 
 const props = defineProps<{
   label?: string
 }>()
 
 const d = inject<DashboardState>('dashboard')!
+
+const classHover = useClassHover()
 
 interface GNode extends d3.SimulationNodeDatum {
   id: string; type: string; changed: boolean; shortLabel: string; depCount: number
@@ -19,14 +23,61 @@ interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean }
 
 const searchText = vueRef('')
 let liveNodeSel: d3.Selection<SVGGElement, GNode, SVGGElement, unknown> | null = null
+let liveLinkSel: d3.Selection<SVGLineElement, GLink, SVGGElement, unknown> | null = null
+let liveGraphLinks: GLink[] = []
+let liveZoom: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null
+let liveSvg: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null
+const nodeCount = vueRef(0)
+const edgeCount = vueRef(0)
+
+function resetZoom() {
+  if (!liveSvg || !liveZoom) return
+  // Re-fit to the current node layout
+  const container = document.getElementById('dg-wrap')
+  const cW = container?.clientWidth || 700, cH = container?.clientHeight || 420
+  const allNodes = liveGraphLinks.length
+    ? [...new Set([...liveGraphLinks.map(l => l.source as GNode), ...liveGraphLinks.map(l => l.target as GNode)])]
+    : []
+  // Fall back to identity if no nodes
+  if (!allNodes.length || !allNodes[0].x) { liveSvg.transition().duration(300).call(liveZoom.transform, d3.zoomIdentity); return }
+  const pad = 40
+  const xs = allNodes.map(n => n.x!), ys = allNodes.map(n => n.y!)
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad
+  const x1 = Math.max(...xs) + pad, y1 = Math.max(...ys) + pad
+  const bw = x1 - x0, bh = y1 - y0
+  if (bw <= 0 || bh <= 0) { liveSvg.transition().duration(300).call(liveZoom.transform, d3.zoomIdentity); return }
+  const scale = Math.min(0.95, Math.min(cW / bw, cH / bh))
+  const tx = (cW - bw * scale) / 2 - x0 * scale
+  const ty = (cH - bh * scale) / 2 - y0 * scale
+  liveSvg.transition().duration(300).call(liveZoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale))
+}
 
 function applySearch(q: string) {
   if (!liveNodeSel) return
   const lower = q.toLowerCase()
+  if (!q) {
+    liveNodeSel.selectAll<SVGCircleElement, GNode>('circle').attr('opacity', 1)
+    liveNodeSel.selectAll<SVGTextElement, GNode>('text').attr('opacity', 1)
+    if (liveLinkSel) liveLinkSel.attr('opacity', 0.6)
+    return
+  }
+  // Find matching nodes and their direct neighbors
+  const matchingIds = new Set<string>()
+  liveGraphLinks.forEach(l => {
+    const srcId = (l.source as GNode).id ?? l.source as string
+    const tgtId = (l.target as GNode).id ?? l.target as string
+    if (srcId.toLowerCase().includes(lower)) { matchingIds.add(srcId); matchingIds.add(tgtId) }
+    if (tgtId.toLowerCase().includes(lower)) { matchingIds.add(srcId); matchingIds.add(tgtId) }
+  })
   liveNodeSel.selectAll<SVGCircleElement, GNode>('circle')
-    .attr('opacity', (n: GNode) => !q || n.id.toLowerCase().includes(lower) ? 1 : 0.12)
+    .attr('opacity', (n: GNode) => n.id.toLowerCase().includes(lower) ? 1 : matchingIds.has(n.id) ? 0.55 : 0.1)
   liveNodeSel.selectAll<SVGTextElement, GNode>('text')
-    .attr('opacity', (n: GNode) => !q || n.id.toLowerCase().includes(lower) ? 1 : 0.12)
+    .attr('opacity', (n: GNode) => n.id.toLowerCase().includes(lower) ? 1 : matchingIds.has(n.id) ? 0.5 : 0.08)
+  if (liveLinkSel) liveLinkSel.attr('opacity', (l: GLink) => {
+    const srcId = (l.source as GNode).id ?? l.source as string
+    const tgtId = (l.target as GNode).id ?? l.target as string
+    return (matchingIds.has(srcId) && matchingIds.has(tgtId)) ? 0.8 : 0.05
+  })
 }
 
 watch(searchText, q => applySearch(q))
@@ -36,7 +87,11 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
   const nodeMap: Record<string, GNode> = {}
   const links: GLink[] = []
   function addNode(id: string, type: string, changed: boolean) {
-    if (!nodeMap[id]) nodeMap[id] = { id, type, changed: !!changed, shortLabel: sn(id), depCount: 0 }
+    if (!nodeMap[id]) {
+      const dot = id.lastIndexOf('.')
+      const simpleLabel = dot >= 0 ? id.substring(dot + 1) : id
+      nodeMap[id] = { id, type, changed: !!changed, shortLabel: simpleLabel, depCount: 0 }
+    }
   }
 
   if (d.selectedTest.value && d.selectedMethod.value) {
@@ -105,20 +160,32 @@ function initGraph() {
   try {
   d3.select(container).selectAll('*').remove()
   const { nodes, links } = buildGraphData()
+  liveGraphLinks = links
+  nodeCount.value = nodes.length
+  edgeCount.value = links.length
+  liveZoom = null
+  liveSvg = null
   if (!nodes.length) {
     container.innerHTML = '<div class="dep-graph__empty">No dependency data for current selection</div>'
     return
   }
   const W = container.clientWidth || 700, H = container.clientHeight || 400
   const svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
+  liveSvg = svg as unknown as d3.Selection<SVGSVGElement, unknown, null, undefined>
   const g = svg.append('g')
-  svg.call(d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.1, 4]).on('zoom', e => g.attr('transform', e.transform)))
+  liveZoom = d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.1, 4]).on('zoom', e => g.attr('transform', e.transform))
+  svg.call(liveZoom)
 
   const maxDeps = Math.max(...nodes.map(n => n.depCount || 0), 1)
-  nodes.forEach(n => {
+  nodes.forEach((n, i) => {
     n.mass = n.type === 'test' || n.type === 'method' ? 2 + 3 * (n.depCount || 0) / maxDeps : n.changed ? 0.5 : 1
     const dotIdx = n.id.lastIndexOf('.')
     n.pkg = dotIdx > 0 ? n.id.substring(0, dotIdx) : '(default)'
+    // Spread nodes in a circle around center so force sim starts centered
+    const angle = (i / nodes.length) * 2 * Math.PI
+    const r = Math.min(W, H) * 0.25
+    n.x = W / 2 + r * Math.cos(angle)
+    n.y = H / 2 + r * Math.sin(angle)
   })
 
   const pkgMap: Record<string, GNode[]> = {}
@@ -138,6 +205,7 @@ function initGraph() {
 
   const link = g.append('g').selectAll('line').data(links).join('line')
     .attr('stroke', l => l.changed ? '#f59e0b' : '#334155').attr('stroke-width', 1.5).attr('stroke-opacity', 0.6)
+  liveLinkSel = link as unknown as d3.Selection<SVGLineElement, GLink, SVGGElement, unknown>
 
   const node = g.append('g').selectAll<SVGGElement, GNode>('g').data(nodes).join('g')
     .call(d3.drag<SVGGElement, GNode>()
@@ -148,20 +216,31 @@ function initGraph() {
   liveNodeSel = node as unknown as d3.Selection<SVGGElement, GNode, SVGGElement, unknown>
 
   node.append('circle')
-    .attr('r', n => { const base = n.type === 'test' || n.type === 'method' ? 9 : 6; return base + 1.5 * (n.mass || 1) })
+    .attr('r', n => { const base = n.type === 'test' || n.type === 'method' ? 10 : 7; return base + 1.5 * (n.mass || 1) })
     .attr('fill', n => n.type === 'test' || n.type === 'method' ? '#3b82f6' : n.changed ? '#ef4444' : '#64748b')
-    .attr('stroke', '#0f172a').attr('stroke-width', 1.5)
+    .attr('stroke', n => n.type === 'test' || n.type === 'method' ? '#1d4ed8' : n.changed ? '#b91c1c' : '#334155')
+    .attr('stroke-width', 1.5)
 
   const nodeLabel = node.append('text').attr('text-anchor', 'middle').attr('dy', n => n.type === 'test' ? 24 : 18)
-    .attr('font-size', '9px').attr('fill', '#94a3b8').text(n => n.shortLabel)
+    .attr('font-size', '9.5px').attr('fill', '#e2e8f0').attr('font-weight', '600')
+    .attr('paint-order', 'stroke').attr('stroke', 'rgba(0,0,0,0.85)').attr('stroke-width', '3px').attr('stroke-linejoin', 'round')
+    .text(n => n.shortLabel)
 
   nodeLabel.append('title').text(n => n.id)
 
   const tip = d3.select(container).append('div').attr('class', 'dep-graph__tooltip')
+  const testNames = new Set(d.tests.map(t => t.name))
   node.on('mouseover', (e, n) => {
-    tip.style('opacity', '1').html(`<strong>${esc(n.id)}</strong><br><span style="color:#64748b">${n.type === 'test' ? n.depCount + ' deps' : 'dep · ' + (n.changed ? '<span style=color:#ef4444>changed</span>' : 'unchanged')}</span><br><span style="color:#475569;font-size:9px">pkg: ${esc(n.pkg)}</span>`)
-  }).on('mousemove', e => tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'))
-    .on('mouseout', () => tip.style('opacity', '0'))
+    const isNavigable = n.type === 'dep' && testNames.has(n.id)
+    tip.style('opacity', '1').html(`<strong>${esc(n.id)}</strong><br><span style="color:#64748b">${n.type === 'test' ? n.depCount + ' deps' : 'dep · ' + (n.changed ? '<span style=color:#ef4444>changed</span>' : 'unchanged')}</span><br><span style="color:#475569;font-size:9px">pkg: ${esc(n.pkg)}</span>${isNavigable ? '<br><span style="color:#818cf8;font-size:9px">click → go to test</span>' : ''}`)
+    classHover.show(n.id, e)
+  }).on('mousemove', e => { tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'); classHover.move(e) })
+    .on('mouseout', () => { tip.style('opacity', '0'); classHover.hide() })
+    .on('click', (_e, n) => {
+      if (n.type === 'test' || n.type === 'method' || testNames.has(n.id)) {
+        d.navigateToTestFromCov(n.id)
+      }
+    })
 
   function updateBubbles() {
     const entries = Object.entries(pkgMap).filter(([, m]) => m.length >= 2)
@@ -183,7 +262,8 @@ function initGraph() {
     const labels = bubbleGroup.selectAll<SVGTextElement, [string, GNode[]]>('text')
       .data(entries, ([pkg]) => pkg)
     labels.exit().remove()
-    const enterL = labels.enter().append('text').attr('font-size', '8px').attr('fill', '#64748b').attr('font-weight', '600')
+    const enterL = labels.enter().append('text').attr('font-size', '8.5px').attr('fill', '#94a3b8').attr('font-weight', '700')
+      .attr('paint-order', 'stroke').attr('stroke', 'rgba(0,0,0,0.7)').attr('stroke-width', '2px').attr('stroke-linejoin', 'round')
     enterL.merge(labels).each(function([pkg, members]) {
       const xs = members.map(n => n.x!), ys = members.map(n => n.y!)
       const pad = GRAPH.BUBBLE_PAD
@@ -202,7 +282,24 @@ function initGraph() {
       .attr('x2', l => (l.target as GNode).x!).attr('y2', l => (l.target as GNode).y!)
     node.attr('transform', n => `translate(${n.x},${n.y})`)
     if (++tickCount % GRAPH.BUBBLE_TICK_INTERVAL === 0) updateBubbles()
-  }).on('end', () => { updateBubbles(); applySearch(searchText.value) })
+  }).on('end', () => {
+    updateBubbles()
+    applySearch(searchText.value)
+    // Auto-fit: zoom+pan so all nodes fill the view with padding
+    if (nodes.length && liveSvg && liveZoom) {
+      const pad = 40
+      const xs = nodes.map(n => n.x!), ys = nodes.map(n => n.y!)
+      const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad
+      const x1 = Math.max(...xs) + pad, y1 = Math.max(...ys) + pad
+      const bw = x1 - x0, bh = y1 - y0
+      if (bw > 0 && bh > 0) {
+        const scale = Math.min(0.95, Math.min(W / bw, H / bh))
+        const tx = (W - bw * scale) / 2 - x0 * scale
+        const ty = (H - bh * scale) / 2 - y0 * scale
+        liveSvg.call(liveZoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale))
+      }
+    }
+  })
   } catch (e) { console.error('[dashboard] Dep graph failed:', e) }
 }
 
@@ -218,7 +315,7 @@ defineExpose({ initGraph })
 <template>
   <div style="margin-top:12px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-      <span style="font-size:.73rem;color:var(--text-dim)">
+      <span style="font-size:.73rem;color:var(--text-sec)">
         {{ label || 'Dependency Graph' }}<span v-if="d.selectedMethod.value" style="color:var(--accent-light)"> ({{ d.selectedMethod.value.name }})</span>:
       </span>
       <button
@@ -239,14 +336,17 @@ defineExpose({ initGraph })
         />
         <button v-if="searchText" class="dep-graph__search-clear" @click="searchText = ''" title="Clear search">×</button>
       </div>
+      <button class="dep-graph__btn" @click="resetZoom()" title="Reset zoom and pan to default">⊙ Reset</button>
+      <span v-if="nodeCount > 0" style="margin-left:4px;font-size:.62rem;color:var(--text-muted)">{{ nodeCount }} nodes · {{ edgeCount }} edges</span>
       <span style="margin-left:auto;font-size:.68rem;color:var(--text-muted);display:flex;gap:10px">
         <span><span class="dep-graph__dot" style="background:#3b82f6"></span>test</span>
         <span><span class="dep-graph__dot" style="background:#ef4444"></span>changed</span>
-        <span><span class="dep-graph__dot" style="background:var(--text-dim)"></span>dep</span>
+        <span><span class="dep-graph__dot" style="background:var(--text-sec)"></span>dep</span>
       </span>
     </div>
-    <div id="dg-wrap" style="height:350px;background:var(--bg-card);border-radius:var(--radius);overflow:hidden;position:relative"></div>
+    <div id="dg-wrap" style="height:420px;background:var(--bg-card);border-radius:var(--radius);overflow:hidden;position:relative"></div>
   </div>
+  <ClassInfoCard v-if="classHover.visible.value" :info="classHover.info.value" :x="classHover.x.value" :y="classHover.y.value" />
 </template>
 
 <style scoped>

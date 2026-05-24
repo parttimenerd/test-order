@@ -20,11 +20,25 @@ export const DIST = {
   SET_COVER_DECAY: 0.8,
 } as const
 
-/** Shorten a FQCN to Package.ClassName */
+/** Shorten a FQCN to abbreviated form: com.example.util.MyClass → c.e.u.MyClass */
 export function sn(fqcn: string): string {
   if (!fqcn) return '(unknown)'
   const p = fqcn.split('.')
-  return p.length <= 2 ? fqcn : p[p.length - 2] + '.' + p[p.length - 1]
+  if (p.length <= 2) return fqcn
+  // Keep last segment (class name) intact, abbreviate all package segments
+  const cls = p[p.length - 1]
+  const pkg = p.slice(0, -1).map(s => s.charAt(0)).join('.')
+  return pkg + '.' + cls
+}
+
+/** Show p.k.g.ClassName style with last 2 segments kept fully readable */
+export function snMed(fqcn: string): string {
+  if (!fqcn) return '(unknown)'
+  const p = fqcn.split('.')
+  if (p.length <= 3) return fqcn
+  const last2 = p.slice(-2).join('.')
+  const prefix = p.slice(0, -2).map(s => s.charAt(0)).join('.')
+  return prefix + '.' + last2
 }
 
 /** Escape HTML special characters to prevent XSS when inserting into .html() */

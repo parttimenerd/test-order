@@ -315,12 +315,27 @@ The time-saved estimate compares the actual (prioritized) order against alphabet
 
 | Feature | Command | Details |
 |---|---|---|
-| **Dashboard** | `mvn test-order:dashboard` | Interactive HTML report with test explorer and weight simulator |
+| **Dashboard** | `mvn test-order:dashboard` / `mvn test-order:serve` | Interactive HTML report — test explorer, run history analytics, weight simulator, and more. See [Dashboard docs](test-order-dashboard/README.md) |
 | **ML predictions** | `mvn test -Dtestorder.ml.enabled=true` | Failure probability predictions using logistic regression on test history |
 | **Detect flaky tests** | `mvn test-order:detect-dependencies` | Find order-dependent tests. See [docs/DETECT_DEPENDENCIES.md](docs/DETECT_DEPENDENCIES.md) |
 | **Coverage analysis** | `mvn test-order:coverage` | Identify least-tested production classes |
 | **Method-level ordering** | `mvn test -Dtestorder.methodOrder.enabled=true` | Reorder methods within each class |
 | **Annotations** | `@AlwaysRun` | Pin critical tests to always run first |
+
+<details>
+<summary><strong>Dashboard screenshots</strong></summary>
+
+**Tests tab** — ranked list with score breakdown, run history sparklines, and per-test detail panel:
+
+![Dashboard Tests tab](docs/dashboard-overview.png)
+
+**Analytics tab** — APFD timeline, per-run drill-down, rank heatmap, failure correlation, and 15+ analysis panels:
+
+![Dashboard Analytics tab](docs/dashboard-analytics.png)
+
+Full feature reference: [test-order-dashboard/README.md](test-order-dashboard/README.md)
+
+</details>
 
 <details>
 <summary><strong>Annotations</strong></summary>

@@ -65,6 +65,7 @@ export interface TestEntry {
 
 export interface TestOutcome {
   testClass: string
+  score: number
   depOverlap: number
   depTotal: number
   failScore: number
@@ -203,5 +204,5 @@ export interface RunDiffEntry {
   rankDelta: number
   prevFailed: boolean
   currFailed: boolean
-  status: 'improved' | 'regressed' | 'recovered' | 'newly-failed' | 'new' | 'removed' | 'unchanged'
+  status: 'improved' | 'regressed' | 'recovered' | 'newly-failed' | 'new' | 'absent' | 'unchanged'
 }

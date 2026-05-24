@@ -36,6 +36,7 @@ export interface DashboardState {
   scoreModalOpen: Ref<boolean>
   scoreModalTitle: Ref<string>
   scoreModalBody: Ref<string>
+  analyticsSelectedRunIdx: Ref<number | null>
 
   // Constants
   TABS: ComputedRef<TabDef[]>
@@ -51,6 +52,9 @@ export interface DashboardState {
   selectedTestObjects: ComputedRef<TestEntry[]>
   latestRun: ComputedRef<RunRecord | null>
   avgApfd: ComputedRef<number | null>
+  testHistoryMap: ComputedRef<Map<string, { pass: number; fail: number; last8: boolean[] }>>
+  testRankHistoryMap: ComputedRef<Map<string, number[]>>
+  flakyTests: ComputedRef<Set<string>>
   fastestTest: ComputedRef<TestEntry | null>
   slowestTest: ComputedRef<TestEntry | null>
   totalNodes: ComputedRef<number>
@@ -69,6 +73,7 @@ export interface DashboardState {
 
   // Actions
   selectTest: (t: TestEntry, event: MouseEvent | null) => void
+  selectAllVisible: () => void
   drillDown: (t: TestEntry) => void
   selectMethod: (m: MethodEntry, event: MouseEvent | null) => void
   sortBy: (key: string) => void
@@ -78,9 +83,12 @@ export interface DashboardState {
   setTab: (id: string) => void
   setBadgeFilter: (filter: string | null) => void
   navigateTest: (dir: 'up' | 'down') => void
+  navigateTestDetail: (dir: 'prev' | 'next') => void
   activateFocusedTest: () => void
   clearSelection: () => void
   navigateToTestFromCov: (testName: string) => void
+  navigateToCovClass: (className: string) => void
+  navigateToRun: (runIdx: number) => void
   exportCsv: () => void
   getScoreBreakdown: (testName: string, mode: ScoreMode) => string
   openScoreModal: (testName: string, mode: ScoreMode, sourceLabel?: string) => void
@@ -128,6 +136,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const scoreModalOpen = ref(false)
   const scoreModalTitle = ref('')
   const scoreModalBody = ref('')
+  const analyticsSelectedRunIdx = ref<number | null>(null)
   let lastClickedTestIndex = -1
   let lastClickedMethodIndex = -1
 
@@ -179,6 +188,8 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     { key: 'name', label: 'Name' },
     { key: 'score', label: 'Score' },
     { key: 'duration', label: 'Dur' },
+    { key: 'failScore', label: 'Fails' },
+    { key: 'depOverlap', label: 'Overlap' },
   ]
   const GMODES: GraphMode[] = [
     { id: 'focus', label: 'Focus' },
@@ -206,6 +217,21 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     tests.filter(t => selectedTests.value.has(t.name)).sort((a, b) => a.rank - b.rank),
   )
 
+  // Flaky tests = have both passes and failures across all runs
+  const flakyTests = computed<Set<string>>(() => {
+    const s = new Set<string>()
+    if (!runs.length) return s
+    for (const t of tests) {
+      let pass = 0, fail = 0
+      for (const r of runs) {
+        const o = (r.outcomes || []).find(o => o.testClass === t.name)
+        if (o) { o.failed ? fail++ : pass++ }
+      }
+      if (pass > 0 && fail > 0) s.add(t.name)
+    }
+    return s
+  })
+
   const filteredTests = computed(() => {
     let arr = [...tests]
     if (searchQ.value) {
@@ -215,7 +241,17 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     if (badgeFilter.value === 'changed') arr = arr.filter(t => t.isChanged)
     else if (badgeFilter.value === 'new') arr = arr.filter(t => t.isNew)
     else if (badgeFilter.value === 'failing') arr = arr.filter(t => t.failScore > 0)
+    else if (badgeFilter.value === 'flaky') arr = arr.filter(t => flakyTests.value.has(t.name))
     else if (badgeFilter.value === 'static') arr = arr.filter(t => t.hasStaticFieldOverlap)
+    else if (badgeFilter.value === 'slow') arr = arr.filter(t => t.isSlow)
+    else if (badgeFilter.value === 'depoverlap') arr = arr.filter(t => t.depOverlap > 0)
+    else if (badgeFilter.value === 'fast') arr = arr.filter(t => t.isFast)
+    else if (badgeFilter.value === 'dur-0') arr = arr.filter(t => t.duration >= 0 && t.duration < 10)
+    else if (badgeFilter.value === 'dur-1') arr = arr.filter(t => t.duration >= 10 && t.duration < 100)
+    else if (badgeFilter.value === 'dur-2') arr = arr.filter(t => t.duration >= 100 && t.duration < 1000)
+    else if (badgeFilter.value === 'dur-3') arr = arr.filter(t => t.duration >= 1000 && t.duration < 5000)
+    else if (badgeFilter.value === 'dur-4') arr = arr.filter(t => t.duration >= 5000)
+    else if (badgeFilter.value === 'variance') arr = arr.filter(t => t.durationVariance >= (dd.config.emaVarianceThreshold ?? 0.5))
     arr.sort((a, b) => {
       let av: string | number = (a as unknown as Record<string, string | number>)[sortKey.value]
       let bv: string | number = (b as unknown as Record<string, string | number>)[sortKey.value]
@@ -227,7 +263,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     return arr
   })
 
-  const latestRun = computed(() => (runs.length ? runs[runs.length - 1] : null))
+  const latestRun = computed(() => (runs.length ? runs[0] : null))
   const avgApfd = computed(() => (runs.length ? runs.reduce((s, r) => s + r.apfd, 0) / runs.length : null))
   const fastestTest = computed(() => {
     const w = tests.filter(t => t.duration >= 0)
@@ -352,8 +388,8 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   // ── Run diff (compare last 2 runs) ──────────────────────────
   const runDiff = computed<RunDiffEntry[]>(() => {
     if (runs.length < 2) return []
-    const prev = runs[runs.length - 2]
-    const curr = runs[runs.length - 1]
+    const prev = runs[1]
+    const curr = runs[0]
     const prevScored = (prev.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB), failed: o.failed }))
     const currScored = (curr.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB), failed: o.failed }))
     prevScored.sort((a, b) => b.score - a.score)
@@ -374,7 +410,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       const delta = pr !== null && cr !== null ? cr - pr : 0
       let status: RunDiffEntry['status'] = 'unchanged'
       if (pr === null) status = 'new'
-      else if (cr === null) status = 'removed'
+      else if (cr === null) status = 'absent'
       else if (!pf && cf) status = 'newly-failed'
       else if (pf && !cf) status = 'recovered'
       else if (delta < -3) status = 'improved'
@@ -382,7 +418,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       entries.push({ name, prevRank: pr, currRank: cr, rankDelta: delta, prevFailed: pf, currFailed: cf, status })
     }
     entries.sort((a, b) => {
-      const order: Record<string, number> = { 'newly-failed': 0, 'recovered': 1, 'new': 2, 'removed': 3, 'improved': 4, 'regressed': 5, 'unchanged': 6 }
+      const order: Record<string, number> = { 'newly-failed': 0, 'recovered': 1, 'new': 2, 'absent': 3, 'improved': 4, 'regressed': 5, 'unchanged': 6 }
       return (order[a.status] ?? 9) - (order[b.status] ?? 9) || a.rankDelta - b.rankDelta
     })
     return entries
@@ -390,7 +426,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
 
   // ── Simulated APFD (replay last run with current slider weights) ──
   const simApfd = computed<number | null>(() => {
-    const lastRun = runs.length ? runs[runs.length - 1] : null
+    const lastRun = runs.length ? runs[0] : null
     if (!lastRun?.outcomes?.length) return null
     const bonuses = simSetCoverBonuses.value
     const scored = lastRun.outcomes.map(o => ({ ...o, simScore: computeScore(o, lw as unknown as ScoringWeights, bonuses) }))
@@ -398,10 +434,50 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     return computeApfd(scored)
   })
 
+  // ── Per-test run history lookup (last 8 runs + totals) ──────
+  const testHistoryMap = computed<Map<string, { pass: number; fail: number; last8: boolean[] }>>(() => {
+    const m = new Map<string, { pass: number; fail: number; last8: boolean[] }>()
+    if (!runs.length) return m
+    // runs is newest-first; take newest 8, reverse to oldest-first for left→right display
+    const last8 = runs.slice(0, 8).reverse()
+    for (const t of tests) {
+      let pass = 0, fail = 0
+      for (const r of runs) {
+        const o = (r.outcomes || []).find(o => o.testClass === t.name)
+        if (o) { o.failed ? fail++ : pass++ }
+      }
+      const last8arr = last8.map(r => {
+        const o = (r.outcomes || []).find(o => o.testClass === t.name)
+        return o ? o.failed : null
+      }).filter(x => x !== null) as boolean[]
+      m.set(t.name, { pass, fail, last8: last8arr })
+    }
+    return m
+  })
+
+  const testRankHistoryMap = computed<Map<string, number[]>>(() => {
+    const m = new Map<string, number[]>()
+    if (runs.length < 2) return m
+    // runs is newest-first; take newest 8, reverse to oldest-first for chronological order
+    const last8 = runs.slice(0, 8).reverse()
+    const rankMaps = last8.map(r => {
+      const sorted = [...(r.outcomes || [])].sort((a, b) => b.score - a.score)
+      const rm = new Map<string, number>()
+      sorted.forEach((o, i) => rm.set(o.testClass, i + 1))
+      return { rm, total: sorted.length }
+    })
+    for (const t of tests) {
+      const ranks = rankMaps.map(({ rm }) => rm.get(t.name) ?? null).filter(r => r !== null) as number[]
+      if (ranks.length >= 2) m.set(t.name, ranks)
+    }
+    return m
+  })
+
   // ── Coverage search ─────────────────────────────────────────
   const filteredCovClasses = computed<CoverageClass[]>(() => {
     if (!dd.coverage?.classes) return []
     if (!covSearchQ.value) return dd.coverage.classes
+    if (covSearchQ.value === '__uncovered__') return dd.coverage.classes.filter(c => c.testCount === 0)
     const q = covSearchQ.value.toLowerCase()
     return dd.coverage.classes.filter(c => c.name.toLowerCase().includes(q) || c.package.toLowerCase().includes(q))
   })
@@ -500,6 +576,16 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     }
   }
 
+  function selectAllVisible() {
+    const list = filteredTests.value
+    if (!list.length) return
+    const newSet = new Set(list.map(t => t.name))
+    selectedTests.value = newSet
+    selectedTest.value = list[0]
+    selectedMethod.value = null
+    selectedMethods.value = new Set()
+  }
+
   function drillDown(t: TestEntry) {
     if (!t.methods?.length) return
     selectedTest.value = t
@@ -585,6 +671,21 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     }
   }
 
+  function navigateTestDetail(dir: 'prev' | 'next') {
+    const t = selectedTest.value
+    if (!t || selectedTests.value.size !== 1) return
+    const list = filteredTests.value
+    const idx = list.findIndex(x => x.name === t.name)
+    if (idx < 0) return
+    const nextIdx = dir === 'next' ? idx + 1 : idx - 1
+    if (nextIdx < 0 || nextIdx >= list.length) return
+    const next = list[nextIdx]
+    selectedTest.value = next
+    selectedTests.value = new Set([next.name])
+    selectedMethod.value = null
+    selectedMethods.value = new Set()
+  }
+
   function activateFocusedTest() {
     const list = filteredTests.value
     const idx = focusedTestIndex.value
@@ -611,6 +712,31 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     selectedMethods.value = new Set()
   }
 
+  function navigateToCovClass(className: string) {
+    const cls = dd.coverage?.classes?.find(c => c.name === className)
+    activeTab.value = 'analytics'
+    if (cls) {
+      covSelectedClass.value = cls
+      if (typeof window !== 'undefined') {
+        setTimeout(() => {
+          document.querySelector('.detail-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }, 80)
+      }
+    } else {
+      covSearchQ.value = className.split('.').pop() ?? className
+    }
+  }
+
+  function navigateToRun(runIdx: number) {
+    analyticsSelectedRunIdx.value = runIdx
+    activeTab.value = 'analytics'
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        document.querySelector('.detail-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 120)
+    }
+  }
+
   function exportCsvFn() {
     const csv = exportTestsCsv(filteredTests.value)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -629,17 +755,21 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     showChangedPanel, simSortKey, simSortDir, badgeFilter,
     focusedTestIndex, covSearchQ,
     scoreModalOpen, scoreModalTitle, scoreModalBody,
+    analyticsSelectedRunIdx,
     TABS, SIDEBAR_SORT_COLS, GMODES,
     tests, runs, changedSet, hasMethodData,
     filteredTests, selectedTestObjects, latestRun, avgApfd,
+    testHistoryMap, testRankHistoryMap,
+    flakyTests,
     fastestTest, slowestTest, totalNodes, scoreComps, testOutcomes,
     simResults, covPackages, covAvgTests, covPercent, selectionCoverage,
     origSCB, simSetCoverBonuses, runDiff, simApfd, filteredCovClasses,
-    selectTest, drillDown, selectMethod,
+    selectTest, selectAllVisible, drillDown, selectMethod,
     sortBy, simSortBy: simSortByFn, resetWeights, setGraphMode, setTab, setBadgeFilter,
-    navigateTest, activateFocusedTest, clearSelection, navigateToTestFromCov,
+    navigateTest, navigateTestDetail, activateFocusedTest, clearSelection,
     getScoreBreakdown, openScoreModal, closeScoreModal,
     exportCsv: exportCsvFn,
+    navigateToTestFromCov, navigateToCovClass, navigateToRun,
     serverConnected, optimizing, optimizeError, optimizeResult,
     optimizeWeights: optimizeWeightsFn,
   }

@@ -231,6 +231,7 @@ public class DashboardGenerator {
 			for (TestOrderState.TestOutcome o : rr.outcomes()) {
 				Map<String, Object> oc = new LinkedHashMap<>();
 				oc.put("testClass", o.testClass());
+				oc.put("score", o.totalScore());
 				oc.put("depOverlap", o.depOverlap());
 				oc.put("depTotal", o.depTotal());
 				oc.put("failScore", o.failScore());

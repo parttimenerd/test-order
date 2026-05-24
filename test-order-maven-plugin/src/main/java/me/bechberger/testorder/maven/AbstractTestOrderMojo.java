@@ -51,6 +51,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 */
 	static final ConcurrentHashMap<Path, me.bechberger.testorder.IndexCollectorServer> activeCollectors = new ConcurrentHashMap<>();
 
+	/**
+	 * Pending partial-run aggregation entries: maps build session ID to the
+	 * corresponding (pendingRunsDir, stateFile) pair. Populated when the plugin
+	 * passes a build ID to forked JVMs; consumed by
+	 * {@link CollectorLifecycleParticipant} after the Maven session ends.
+	 */
+	record PendingAggregation(Path pendingRunsDir, Path stateFile) {
+	}
+
+	static final ConcurrentHashMap<String, PendingAggregation> pendingAggregations = new ConcurrentHashMap<>();
+
 	@Parameter(defaultValue = "${project}", readonly = true, required = true)
 	protected MavenProject project;
 
@@ -1041,6 +1052,15 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						project.getBasedir().toPath().toAbsolutePath().toString(),
 						resolvedSourceRoot.toAbsolutePath().toString(), changeMode));
 
+		// Add build session ID so all forked JVMs write partial records to the same
+		// pending-runs dir, enabling post-run aggregation into one RunRecord.
+		String buildId = getOrCreateBuildId();
+		Path pendingRunsDir = ctx.resolveBaseDir().resolve("pending-runs");
+		configMap = new java.util.LinkedHashMap<>(configMap);
+		configMap.put(me.bechberger.testorder.TestOrderConfig.BUILD_ID, buildId);
+		configMap.put(me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR,
+				pendingRunsDir.toAbsolutePath().toString());
+
 		try {
 			Files.createDirectories(runtimeDir);
 			Path propsFile = runtimeDir.resolve("junit-platform.properties");
@@ -1080,6 +1100,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (isTestNGOnTestClasspath()) {
 			ensureTestNGListenerServiceFile(runtimeDir);
 		}
+
+		// Inject build session ID for per-fork partial record aggregation
+		String buildId = getOrCreateBuildId();
+		Path pendingRunsDir = ctx.resolveBaseDir().resolve("pending-runs");
+		configMap = new java.util.LinkedHashMap<>(configMap);
+		configMap.put(me.bechberger.testorder.TestOrderConfig.BUILD_ID, buildId);
+		configMap.put(me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR,
+				pendingRunsDir.toAbsolutePath().toString());
 
 		try {
 			Files.createDirectories(runtimeDir);
@@ -1166,6 +1194,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		String sysProps = " -D" + MavenPluginConfigKeys.LEARN + "=true" + " -D"
 				+ MavenPluginConfigKeys.INSTRUMENTATION_MODE + "=" + instrumentationMode.toUpperCase() + " -D"
 				+ MavenPluginConfigKeys.STATE_PATH + "=" + statPathStr + collectorPortProp;
+		String buildId = getOrCreateBuildId();
+		Path pendingRunsDir = ctx.resolveBaseDir().resolve("pending-runs");
+		sysProps += " -D" + me.bechberger.testorder.TestOrderConfig.BUILD_ID + "=" + buildId + " -D"
+				+ me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR + "=" + pendingRunsDir.toAbsolutePath();
 
 		if (hasHardcodedSurefireArgLine || hasCliArgLine) {
 			// The Surefire argLine is a hardcoded literal with no Maven property
@@ -1295,12 +1327,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 
 		// Build system properties for forked JVMs
+		String buildId = getOrCreateBuildId();
+		Path pendingRunsDir = ctx.resolveBaseDir().resolve("pending-runs");
 		String sysProps = " -D" + MavenPluginConfigKeys.LEARN + "=true" + " -D"
 				+ MavenPluginConfigKeys.INSTRUMENTATION_MODE + "=" + instrumentationMode.toUpperCase() + " -D"
 				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_MAPPING + "=" + mappingFile.toAbsolutePath() + " -D"
 				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_OUTPUT + "=" + depsDir.toAbsolutePath() + " -D"
 				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_INDEX_FILE + "=" + indexFile.toAbsolutePath() + " -D"
-				+ MavenPluginConfigKeys.STATE_PATH + "=" + statPathStr + collectorPortProp;
+				+ MavenPluginConfigKeys.STATE_PATH + "=" + statPathStr + collectorPortProp + " -D"
+				+ me.bechberger.testorder.TestOrderConfig.BUILD_ID + "=" + buildId + " -D"
+				+ me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR + "=" + pendingRunsDir.toAbsolutePath();
 
 		// Inject system props into argLine (same strategy as online mode but without
 		// agent)
@@ -1770,6 +1806,38 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.exists(runtimeJar)) {
 			injectTestClasspath(runtimeJar);
 		}
+	}
+
+	/**
+	 * Returns a stable build session ID for this Maven invocation. The ID is
+	 * generated once per Maven JVM process and stored in a session-scoped project
+	 * property so all modules in the same reactor share it.
+	 * <p>
+	 * Also registers the (pendingRunsDir, stateFile) pair in
+	 * {@link #pendingAggregations} so the {@link CollectorLifecycleParticipant} can
+	 * merge partial records after all forks complete.
+	 */
+	protected String getOrCreateBuildId() {
+		// Use the top-level project (reactor root) to store the shared build ID
+		// across all modules so all modules in one reactor build share the same ID.
+		org.apache.maven.project.MavenProject rootProject = session != null && session.getTopLevelProject() != null
+				? session.getTopLevelProject()
+				: project;
+
+		String buildId = rootProject.getProperties().getProperty("testorder.internal.buildId");
+		if (buildId == null || buildId.isBlank()) {
+			buildId = java.util.UUID.randomUUID().toString();
+			rootProject.getProperties().setProperty("testorder.internal.buildId", buildId);
+		}
+
+		// Register this module's pending-runs dir + state file for post-merge
+		Path baseDir = ctx.resolveBaseDir();
+		Path pendingRunsDir = baseDir.resolve("pending-runs");
+		Path stateFilePath = ctx.resolveStateFile(stateFile);
+		pendingAggregations.put(buildId + "|" + stateFilePath.toAbsolutePath().normalize(),
+				new PendingAggregation(pendingRunsDir, stateFilePath));
+
+		return buildId;
 	}
 
 	protected void removeStaleTestClassesConfig() {

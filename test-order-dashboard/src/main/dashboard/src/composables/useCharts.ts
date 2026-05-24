@@ -17,12 +17,11 @@ export function mkChart(id: string, cfg: ChartConfiguration): Chart | null {
   try {
     CI[id] = new Chart(el, cfg)
   } catch (e) {
-    console.error(`[dashboard] Chart '${id}' init failed:`, e)
-    const ctx = el.getContext('2d')
-    if (ctx) {
-      ctx.fillStyle = '#64748b'
-      ctx.font = '11px sans-serif'
-      ctx.fillText('Chart error — see console', 8, 20)
+    // Silently ignore layout-not-ready errors (getBoundingClientRect on null)
+    // which occur when a canvas is conditionally rendered and not yet laid out.
+    const msg = e instanceof Error ? e.message : String(e)
+    if (!msg.includes('getBoundingClientRect')) {
+      console.error(`[dashboard] Chart '${id}' init failed:`, e)
     }
     return null
   }

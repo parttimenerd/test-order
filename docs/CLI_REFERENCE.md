@@ -235,6 +235,8 @@ If `uncommitted` or `since-last-commit` fails (e.g., git not available or no pri
 
 ### Dashboard
 
+The dashboard is an interactive HTML report with three tabs: **Tests** (ranked list, per-test score breakdown, run history), **Analytics** (APFD timeline, per-run drill-down, rank heatmap, failure correlation, and 15+ analysis panels), and **Weights** (interactive weight tuning with live rank preview). See [test-order-dashboard/README.md](../test-order-dashboard/README.md) for a full feature reference.
+
 | Property | Default | Notes |
 |---|---|---|
 | `testorder.dashboard.output` | `${project.build.directory}/test-order-dashboard/index.html` | Output path for static dashboard |

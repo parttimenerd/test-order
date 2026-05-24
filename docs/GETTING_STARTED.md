@@ -170,7 +170,10 @@ mvn test-order:show
 Generate an interactive HTML report:
 
 ```bash
-# Maven
+# Maven — live server (recommended; auto-reloads on each test run)
+mvn test-order:serve
+
+# Maven — write static file
 mvn test-order:dashboard
 open target/test-order-dashboard/index.html
 
@@ -179,7 +182,17 @@ open target/test-order-dashboard/index.html
 open build/test-order-dashboard/index.html
 ```
 
-The dashboard shows test dependencies, scoring breakdown, run history, and (with ML enabled) failure predictions.
+![Dashboard overview](dashboard-overview.png)
+
+The dashboard has three tabs:
+
+- **Tests** — ranked list of all test classes with score breakdown, run history sparklines, and a detail panel showing per-run pass/fail, position history, similar tests, and source dependencies.
+- **Analytics** — APFD timeline across all runs, per-run drill-down (failures, rank changes, diffs vs previous run), rank heatmap, failure correlation matrix, time budget optimizer, and 15+ further analysis panels. Use `←`/`→` to navigate between runs.
+- **Weights** — tune the five scoring components and instantly preview how ranks change. Share configurations via URL hash.
+
+The **KPI bar** at the top shows APFD, latest failures, pass streak, clean-run count, at-risk tests, estimated time savings, and a suite health grade (A–F). The run history sparkline lets you browse past runs without leaving the page.
+
+Full feature reference: [../test-order-dashboard/README.md](../test-order-dashboard/README.md)
 
 ---
 

@@ -3,6 +3,8 @@ package me.bechberger.testorder.maven;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 import org.apache.maven.plugin.MojoExecutionException;
@@ -121,10 +123,44 @@ public class ServeDashboardMojo extends DashboardMojo {
 			if (serveSeconds == 0) {
 				getLog().info("[test-order] Server running indefinitely. Press Ctrl+C to stop.");
 			}
+			List<Path> sourceRoots = buildSourceRoots();
 			boundPort = DashboardServerOperation.start(htmlPath, ctx.resolveStateFile(stateFile), port, pluginLog(),
-					p -> this.boundPort = p, serveSeconds, openBrowser);
+					p -> this.boundPort = p, serveSeconds, openBrowser, sourceRoots);
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to bind HTTP server on port " + port, e);
+		}
+	}
+
+	private List<Path> buildSourceRoots() {
+		List<Path> roots = new ArrayList<>();
+		// Collect source roots from all reactor modules (multi-module support)
+		java.util.List<org.apache.maven.project.MavenProject> projects = (session != null
+				&& session.getAllProjects() != null) ? session.getAllProjects() : java.util.List.of(project);
+		for (org.apache.maven.project.MavenProject p : projects) {
+			addRootsFromProject(p, roots);
+		}
+		// Fallback: single-project source roots
+		if (roots.isEmpty()) {
+			Path main = resolveSourceRoot();
+			if (main != null && Files.isDirectory(main))
+				roots.add(main);
+			Path test = resolveTestSourceRoot();
+			if (test != null && Files.isDirectory(test) && !roots.contains(test))
+				roots.add(test);
+		}
+		return roots;
+	}
+
+	private void addRootsFromProject(org.apache.maven.project.MavenProject p, List<Path> roots) {
+		for (String r : p.getCompileSourceRoots()) {
+			Path path = Path.of(r);
+			if (Files.isDirectory(path) && !roots.contains(path))
+				roots.add(path);
+		}
+		for (String r : p.getTestCompileSourceRoots()) {
+			Path path = Path.of(r);
+			if (Files.isDirectory(path) && !roots.contains(path))
+				roots.add(path);
 		}
 	}
 
