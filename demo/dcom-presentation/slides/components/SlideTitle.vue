@@ -14,7 +14,7 @@
       </div>
       <div v-click class="mt-10 flex items-center justify-center gap-10">
         <div class="flex flex-col items-center gap-2">
-          <img src="/sapmachine.jpg" class="w-12 h-12 object-contain rounded-lg opacity-80" alt="SapMachine" />
+          <img src="/sapmachine.svg" class="w-12 h-12 object-contain rounded-lg opacity-80" alt="SapMachine" />
           <span class="text-xs text-gray-500 font-medium">SapMachine</span>
         </div>
         <div class="flex flex-col items-center gap-2">
