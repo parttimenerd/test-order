@@ -1273,8 +1273,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		if (!java.nio.file.Files.exists(mappingFile)) {
 			// Auto-instrument: run offline instrumentation inline
-			Path classesDir = Path.of(project.getBuild().getOutputDirectory());
-			if (!java.nio.file.Files.isDirectory(classesDir)) {
+			Path classesDir = resolveClassesDir();
+			if (classesDir == null) {
 				// Classes not compiled yet (CLI goal runs before compile phase).
 				// Defer instrumentation to the 'prepare' mojo at process-test-classes.
 				getLog().info("[test-order] Classes not yet compiled — deferring offline instrumentation to "
@@ -1294,8 +1294,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			// this learn run completes.
 			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
 			if (!java.nio.file.Files.isDirectory(backupDir)) {
-				Path classesDir = Path.of(project.getBuild().getOutputDirectory());
-				if (java.nio.file.Files.isDirectory(classesDir)) {
+				Path classesDir = resolveClassesDir();
+				if (classesDir != null) {
 					getLog().info(
 							"[test-order] Re-instrumenting for offline learn mode (no backup found): " + classesDir);
 					try {
@@ -1390,6 +1390,23 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 
 		snapshotHashes();
+	}
+
+	/**
+	 * Returns the directory to instrument for offline learn mode: main classes if
+	 * they exist, otherwise test classes (for test-only modules with no src/main).
+	 * Returns null if neither directory exists yet (classes not compiled).
+	 */
+	protected Path resolveClassesDir() {
+		Path mainClasses = Path.of(project.getBuild().getOutputDirectory());
+		if (java.nio.file.Files.isDirectory(mainClasses)) {
+			return mainClasses;
+		}
+		Path testClasses = Path.of(project.getBuild().getTestOutputDirectory());
+		if (java.nio.file.Files.isDirectory(testClasses)) {
+			return testClasses;
+		}
+		return null;
 	}
 
 	private void runOfflineInstrumentation(String instrumentationMode, String includePackages, Path classesDir,

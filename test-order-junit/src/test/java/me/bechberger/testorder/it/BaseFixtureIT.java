@@ -204,7 +204,8 @@ public abstract class BaseFixtureIT {
 		Path hashes = stateDir.resolve("hashes.lz4");
 		assertTrue(Files.exists(hashes), ".test-order/hashes.lz4 not found");
 		Path dependencies = stateDir.resolve("test-dependencies.lz4");
-		assertTrue(Files.exists(dependencies), ".test-order/test-dependencies.lz4 not found");
+		Path fallback = stateDir.resolve("test-dependencies.lz4.collector-fallback");
+		assertTrue(Files.exists(dependencies) || Files.exists(fallback), ".test-order/test-dependencies.lz4 not found");
 	}
 
 	/**

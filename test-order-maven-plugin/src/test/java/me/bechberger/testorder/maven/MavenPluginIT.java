@@ -99,8 +99,8 @@ class MavenPluginIT {
 		// payload file that is picked up on the next build). Either the index or the
 		// fallback must exist to prove the shared reactor directory is being used.
 		Path sharedDir = projectDir.resolve(".test-order");
-		assertThat(Files.isDirectory(sharedDir))
-				.withFailMessage("shared .test-order dir should exist: " + sharedDir).isTrue();
+		assertThat(Files.isDirectory(sharedDir)).withFailMessage("shared .test-order dir should exist: " + sharedDir)
+				.isTrue();
 
 		Path indexFile = sharedDir.resolve("test-dependencies.lz4");
 		Path fallbackFile = sharedDir.resolve("test-dependencies.lz4.collector-fallback");

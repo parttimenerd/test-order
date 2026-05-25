@@ -334,10 +334,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			return;
 		}
 
-		Path classesDir = Path.of(project.getBuild().getOutputDirectory());
-		if (!java.nio.file.Files.isDirectory(classesDir)) {
-			getLog().warn("[test-order] Classes still not found at " + classesDir
-					+ " during deferred instrumentation — tests may fail to record dependencies.");
+		Path classesDir = resolveClassesDir();
+		if (classesDir == null) {
+			getLog().warn("[test-order] Classes still not found during deferred instrumentation"
+					+ " — tests may fail to record dependencies.");
 			return;
 		}
 
