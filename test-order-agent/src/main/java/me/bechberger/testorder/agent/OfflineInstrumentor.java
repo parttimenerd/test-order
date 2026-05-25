@@ -314,7 +314,8 @@ public class OfflineInstrumentor {
 				// the set but hasn't finished createDirectories when thread B skips
 				// the call and writes to a not-yet-created directory.
 				Files.createDirectories(backupFile.getParent());
-				// Only write if no backup exists yet — the first (original, pre-instrumentation)
+				// Only write if no backup exists yet — the first (original,
+				// pre-instrumentation)
 				// bytes are the true backup; subsequent re-instrumentation should not
 				// overwrite them with already-instrumented bytes.
 				if (!Files.exists(backupFile)) {

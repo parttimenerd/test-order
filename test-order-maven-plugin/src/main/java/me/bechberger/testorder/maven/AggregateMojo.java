@@ -23,6 +23,11 @@ public class AggregateMojo extends AbstractTestOrderMojo {
 			return;
 		Path depsDirPath = ctx.resolveDepsDir(depsDir);
 		if (!Files.isDirectory(depsDirPath)) {
+			Path indexPath = resolveIndexPath();
+			if (Files.exists(indexPath)) {
+				getLog().info("[test-order] No deps directory — index already written by collector at " + indexPath);
+				return;
+			}
 			throw new MojoExecutionException("Deps directory does not exist: " + depsDirPath
 					+ ". Run tests first with: mvn test-order:auto test");
 		}

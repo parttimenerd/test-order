@@ -72,6 +72,7 @@ class TestOrderPluginTest {
         TestOrderPlugin plugin = new TestOrderPlugin();
         TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
         extension.applyDefaults(project);
+        extension.getInstrumentation().set("online");
         extension.getVerboseFile().set(tempDir.resolve("verbose.log").toString());
         Files.createDirectories(tempDir.resolve("src/main/java/com/example/app"));
         Files.writeString(tempDir.resolve("src/main/java/com/example/app/App.java"), "class App {}\n");

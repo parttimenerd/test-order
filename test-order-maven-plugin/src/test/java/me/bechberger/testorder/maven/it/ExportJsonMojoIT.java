@@ -49,7 +49,10 @@ class ExportJsonMojoIT {
 	@DisplayName("learn mode creates index for export-json")
 	void learnCreatesIndex() {
 		project.cleanAll();
-		MavenResult learn = project.maven().learn();
+		// sample-basic has ResourceTest.testMissingResource which always fails — ignore
+		// test failures so the index is still built
+		MavenResult learn = project.maven().run("clean", "test", "-Dtestorder.mode=learn",
+				"-Dmaven.test.failure.ignore=true");
 		assertThat(learn).succeeded();
 		assertThat(project.loadIndex()).isNotNull();
 	}
