@@ -25,7 +25,7 @@
     </div>
     <div v-click class="relative z-10 mt-12">
       <p class="text-xl text-gray-500 text-center italic">
-        Now imagine an AI agent doing this ten times in a row...
+        Now imagine a Copilot agent doing this — making a mistake, catching it, fixing it.
       </p>
     </div>
   </div>

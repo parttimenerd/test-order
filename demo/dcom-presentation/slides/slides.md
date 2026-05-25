@@ -23,12 +23,15 @@ fonts:
 <!--
 PRESENTER CHECKLIST:
 - Terminal font: 20pt+ (test on projector!)
-- Have sample project ready with pre-built index
+- Have cloud-sdk-java ready with pre-built index (./prepare.sh)
+- Have cap-sflight open in a separate VS Code window (./toggle-test-order-cap.sh on)
 - No Wi-Fi needed (all local)
-- Timing: Title 20s → Pain 90s → Reorder Anim 20s → Magic 75s → Results 10s → Transition 20s → Agentic 15s → AgenticDemo 75s → Close 30s = ~6min
+- Timing: Title 20s → Pain 90s → HowItWorks 20s → Magic 30s → Results 15s → AgenticDemo 75s → AgenticLoop 20s → Kicker 15s → Close 15s = ~5min
 
 [click] subtitle appears
 [click] show the four ecosystems we support — Java, JUnit 5, Maven, Gradle
+
+→ Immediately to terminal for the pain demo.
 -->
 
 ---
@@ -51,31 +54,15 @@ flowchart LR
 </SlideHowItWorks>
 
 <!--
-"What if we could know which tests are affected by a change?"
-"Learn a dependency graph once, then select on every commit."
+[AFTER the pain demo — audience just watched 90s of tests run]
 
-→ Immediately to terminal for the pain demo (3 min full run).
--->
+"That's what CI does on every push. Every PR. Every iteration."
+"What if Maven knew which tests actually exercise the code you touched?"
+"Learn the dependency graph once. Then select on every commit."
 
----
-transition: fade
-clicks: 4
-layout: full
----
-
-<SlideTestSelection />
-
-<!--
-Click through:
-1. Show the changed file (code diff)
-2. Show which tests are connected to that code
-3. Show the "3 instead of 8" label
-4. Swap to reordered list (affected first, rest skipped)
-
-"The plugin learned which tests exercise which code.
-When you change DestinationService, it knows exactly which 3 tests to run."
-
-→ Back to terminal for the magic 17-second demo.
+→ Run the magic demo now.
+  cd cloud-sdk-java
+  mvn test-order:select test -pl cloudplatform/connectivity-destination-service
 -->
 
 ---
@@ -86,56 +73,13 @@ layout: full
 <SlideResults />
 
 <!--
-"You just saw it. Same change, same results, ten times faster."
-"But this is just one developer. What about an AI agent iterating in a loop?"
+[BUILD SUCCESS just appeared — ~17 seconds]
 
-→ Next slide sets up the agentic demo.
--->
+"Seven test classes. 17 seconds. Same confidence."
+"No clean rebuild. No guessing. It knows."
 
----
-transition: fade
-layout: full
----
-
-<SlideTransition />
-
-<!--
-Breathe. Let the contrast land.
-"3 minutes per loop is death by a thousand cuts — for you, and for an AI agent."
-"test-order turns that into 17 seconds. Same confidence, 10× the throughput."
-
-→ Next slide: the agentic loop diagram.
--->
-
----
-transition: slide-left
-clicks: 3
-layout: full
----
-
-<SlideAgentic>
-
-```mermaid {theme: 'dark', scale: 1.2}
-flowchart LR
-    A["🤖 <b>AI Agent</b><br/><small>generates code</small>"] --> B["⚡ <b>test-order</b><br/><small>17 seconds</small>"]
-    B --> C{Pass?}
-    C -->|"green"| D["✅ <b>Ship it</b>"]
-    C -->|"red"| A
-
-    style A fill:#1e3a5f,stroke:#3b82f6,color:#93c5fd
-    style B fill:#1a3d2e,stroke:#10b981,color:#6ee7b7
-    style C fill:#3d2f0a,stroke:#f59e0b,color:#fcd34d
-    style D fill:#1a3d2e,stroke:#10b981,color:#6ee7b7
-```
-
-</SlideAgentic>
-
-<!--
-"An agent iterates: generate, test, fix, retry."
-"3 minutes per loop kills the workflow. 17 seconds keeps it flowing."
-"Let me show you — with a real AI making a real mistake."
-
-→ Switch to VS Code for live agentic demo, then come back to next slide.
+→ Next: show this working with an AI agent making a mistake.
+  Switch to VS Code with cap-sflight open.
 -->
 
 ---
@@ -147,37 +91,29 @@ layout: full
 <SlideAgenticLoop />
 
 <!--
-→ Switch to VS Code with cap-sflight open. Show copilot-instructions.md.
+[Back from VS Code — audience just watched Copilot edit, fail, fix, go green]
 
-[click 1] "The AI makes a change — adding a discount validation."
-[click 2] "Copilot runs test-order:select automatically — copilot-instructions.md told it to."
-[click 3] "17 seconds later: a test fails. The validation is wrong — it rejects 50% instead of above 50%."
-[click 4] "Copilot reads the failure, fixes the off-by-one."
+Click through to recap what they just saw:
+[click 1] "The AI made a change."
+[click 2] "Copilot ran test-order:select — copilot-instructions.md told it to."
+[click 3] "17 seconds: a test failed. Off-by-one on the boundary."
+[click 4] "Copilot read the failure and fixed it."
 [click 5] "17 seconds again. Green."
-[click 6] "Edit → caught → fixed → green. Under 40 seconds total."
-[click 7] "One instructions file. That's the only integration."
+[click 6] "Edit → caught → fixed → green. Under 40 seconds."
+[click 7] "One instructions file. That's the entire integration."
 
 LIVE PROMPT for Copilot chat:
   "Add max discount validation to DeductDiscountHandler.
    Discounts above 50% should be rejected with an error message.
    After the change, run the tests using the project's test instructions."
 
-Watch Copilot:
-  1. Edit DeductDiscountHandler.java (introduce > 50 OR use >= 50 — either breaks a test)
-  2. Run mvn test-order:select test -pl srv -Denforcer.skip=true
-  3. DeductDiscountHandlerTest fails (17s)
-  4. Copilot reads failure, fixes boundary condition
-  5. Re-runs test-order:select — green (17s)
-
-FALLBACK if Copilot doesn't auto-run tests:
-  Show copilot-instructions.md — point to the mvn command — then run manually.
-
-FALLBACK if Copilot succeeds first try (no bug):
-  Say "it got it right — let me show what it looks like when it doesn't"
-  then: sed -i '' 's/>= 50/> 50/' srv/src/main/java/.../DeductDiscountHandler.java
-  then: mvn test-order:select test -pl srv -Denforcer.skip=true  (red, 17s)
-  then: git diff  (show Copilot the diff)
-  then: let Copilot fix it
+FALLBACK if Copilot gets it right first try:
+  sed -i '' 's/discount > 50/discount >= 50/' \
+    srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
+  mvn test-order:select test -pl srv -Denforcer.skip=true   # red
+  sed -i '' 's/discount >= 50/discount > 50/' \
+    srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
+  mvn test-order:select test -pl srv -Denforcer.skip=true   # green
 -->
 
 ---

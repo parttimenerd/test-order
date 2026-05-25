@@ -21,15 +21,14 @@ Terminal font: **20pt+**. Test on projector.
 | Time  | What                          | Where    |
 |-------|-------------------------------|----------|
 | 0:00  | Slide 1 — Title               | Slides   |
-| 0:15  | The Pain                      | Terminal |
-| 2:00  | Slide 2 — How It Works        | Slides   |
-| 2:15  | The Magic Moment              | Terminal |
-| 3:30  | Slide 3 — What You Just Saw   | Slides   |
-| 3:45  | Slide 4 — Agentic Multiplier  | Slides   |
-| 4:00  | Agentic Demo (VS Code)        | VS Code  |
-| 4:45  | Slide 5 — AI Feedback Loop    | Slides   |
-| 5:15  | Slide 6 — Closing Line        | Slides   |
-| 5:30  | Slide 7 — Links               | Slides   |
+| 0:20  | The Pain                      | Terminal |
+| 1:50  | Slide 2 — How It Works        | Slides   |
+| 2:10  | The Magic Moment              | Terminal |
+| 2:40  | Slide 3 — What You Just Saw   | Slides   |
+| 2:55  | Agentic Demo (VS Code)        | VS Code  |
+| 4:10  | Slide 4 — AI Feedback Loop    | Slides   |
+| 4:30  | Slide 5 — Closing Line        | Slides   |
+| 4:45  | Slide 6 — Links               | Slides   |
 
 ---
 
