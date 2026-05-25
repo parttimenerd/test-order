@@ -23,10 +23,5 @@
         <span class="font-bold bg-gradient-to-r from-yellow-300 to-amber-400 bg-clip-text text-transparent">20× faster.</span>
       </p>
     </div>
-    <div v-click class="relative z-10 mt-12">
-      <p class="text-xl text-gray-500 text-center italic">
-        Now imagine a Copilot agent doing this — making a mistake, catching it, fixing it.
-      </p>
-    </div>
   </div>
 </template>

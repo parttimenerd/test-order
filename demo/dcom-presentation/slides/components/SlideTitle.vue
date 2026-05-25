@@ -11,23 +11,23 @@
         <p class="text-2xl text-gray-400 leading-relaxed tracking-wide">
           Predictive Test Ordering for<br>Faster Feedback &amp; Agentic Development
         </p>
-      </div>
-      <div v-click class="mt-10 flex items-center justify-center gap-10">
-        <div class="flex flex-col items-center gap-2">
-          <img src="/sapmachine.svg" class="w-12 h-12 object-contain rounded-lg opacity-80" alt="SapMachine" />
-          <span class="text-xs text-gray-500 font-medium">SapMachine</span>
-        </div>
-        <div class="flex flex-col items-center gap-2">
-          <img src="/junit5.png" class="w-12 h-12 object-contain opacity-80" alt="JUnit 5" />
-          <span class="text-xs text-gray-500 font-medium">JUnit 5</span>
-        </div>
-        <div class="flex flex-col items-center gap-2">
-          <img src="/maven.png" class="h-10 w-24 object-contain opacity-80" alt="Maven" />
-          <span class="text-xs text-gray-500 font-medium">Maven</span>
-        </div>
-        <div class="flex flex-col items-center gap-2">
-          <img src="/gradle.png" class="w-12 h-12 object-contain opacity-80" alt="Gradle" />
-          <span class="text-xs text-gray-500 font-medium">Gradle</span>
+        <div class="mt-8 flex items-center justify-center gap-10">
+          <div class="flex flex-col items-center gap-2">
+            <img src="/sapmachine.svg" class="w-12 h-12 object-contain rounded-lg opacity-80" alt="SapMachine" />
+            <span class="text-xs text-gray-500 font-medium">SapMachine</span>
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <img src="/junit5.png" class="w-12 h-12 object-contain opacity-80" alt="JUnit 5" />
+            <span class="text-xs text-gray-500 font-medium">JUnit 5</span>
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <img src="/maven.png" class="h-10 w-24 object-contain opacity-80" alt="Maven" />
+            <span class="text-xs text-gray-500 font-medium">Maven</span>
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <img src="/gradle.png" class="w-12 h-12 object-contain opacity-80" alt="Gradle" />
+            <span class="text-xs text-gray-500 font-medium">Gradle</span>
+          </div>
         </div>
       </div>
     </div>

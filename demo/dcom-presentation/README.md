@@ -21,18 +21,18 @@ Terminal font: **20pt+**. Test on projector.
 
 ## Timing
 
-| Time  | What                          | Where    |
-|-------|-------------------------------|----------|
-| 0:00  | Slide 1 — Title               | Slides   |
-| 0:20  | The Pain                      | Terminal |
-| 1:50  | Slide 2 — How It Works        | Slides   |
-| 2:10  | make-change + Magic Moment    | Terminal |
-| 2:40  | Slide 3 — What You Just Saw   | Slides   |
-| 2:50  | Dashboard live (browser)      | Browser  |
-| 2:55  | Agentic Demo (VS Code)        | VS Code  |
-| 4:10  | Slide 4 — AI Feedback Loop    | Slides   |
-| 4:30  | Slide 5 — Closing Line        | Slides   |
-| 4:45  | Slide 6 — Links               | Slides   |
+| Time  | What                             | Where    |
+|-------|----------------------------------|----------|
+| 0:00  | Slide 1 — Title                  | Slides   |
+| 0:20  | The Pain (mvn clean test, killed) | Terminal |
+| 1:50  | toggle on + make-change + select  | Terminal |
+| 2:20  | Slide 2 — Results (5:00→17s)     | Slides   |
+| 2:35  | Slide 3 — How It Works           | Slides   |
+| 3:00  | Dashboard live (browser)         | Browser  |
+| 3:10  | Agentic Demo (VS Code)           | VS Code  |
+| 4:25  | Slide 4 — AI Feedback Loop       | Slides   |
+| 4:50  | Slide 5 — Closing Line           | Slides   |
+| 5:05  | Slide 6 — Links                  | Slides   |
 
 ---
 
@@ -67,20 +67,11 @@ This takes **5+ minutes** total. Talk over it while tests compile and scroll:
 
 > "Over a minute gone. This would run for another four. I haven't seen a single test result."
 
-### The Magic Moment (2:15–2:45)
+### The Magic Moment (1:50–2:20)
 
 ```sh
 cd /Users/i560383_1/code/experiments/test-order/demo/dcom-presentation
 ./toggle-test-order.sh on
-```
-
-The script prints the pom.xml diff — one plugin added.
-
-> "One plugin. No annotation changes. No test rewrites.
->  It learned the dependency graph during the previous test run."
-
-Now introduce the bug and run select mode:
-```sh
 ./make-change.sh     # inverts the tenant-routing check in DestinationRetrievalStrategyResolver
 cd cloud-sdk-java
 mvn test-order:select test
@@ -96,25 +87,25 @@ BUILD FAILURE
 Total time: 17s
 ```
 
-> "7 test classes. 17 seconds. It found a bug — logic inversion in tenant routing."
->
-> "No clean rebuild. No guessing. It knows exactly which tests exercise this code."
+> "Seven test classes. 17 seconds. Build failure."
 
-### Dashboard Demo (2:45–2:55)
+→ Switch to slides (SlideResults).
 
-Switch to browser tab at **localhost:8080** (already running).
+### Dashboard Demo (3:00–3:10)
+
+Switch to browser tab at **localhost:8080** (already running). 10 seconds max.
 
 Point at:
-1. **Tests tab** — ranked order, which 7 tests just ran
-2. **Analytics** — 6 runs from history cycles, pass/fail alternation visible
-3. **Coverage** — which source classes each test covers
+1. **Tests tab** — ranked order with scores, which 7 ran
+2. **Analytics** — APFD trend, 6 runs of pass/fail history
+3. Quick mention: flakiness tracking, co-failure patterns
 
-> "It didn't just run the right tests — it's been tracking every run.
->  You can see which tests are most valuable. Observability over your test suite."
+> "It's been tracking every run. Which tests are your best early-warning signals.
+>  Which ones are flaky. How early bugs surface — that's APFD."
 
-**Keep it under 10 seconds.** Switch back to Slide 3 immediately after.
+Switch back to slides immediately.
 
-### Agentic Demo (2:55–4:10)
+### Agentic Demo (3:10–4:25)
 
 Switch to **VS Code** with cloud-sdk-java open. Show `.github/copilot-instructions.md` tab.
 
@@ -174,21 +165,18 @@ mvn test-order:select test   # green, ~17s
 | 0:00 | "The most expensive thing in software delivery is waiting for feedback." |
 | 0:15 | "SAP Cloud SDK for Java. 65 modules. I changed one file." |
 | 0:30 | "Clean build, full test suite. This is what CI does on every push." |
-| 1:15 | *(kill mvn)* "Over a minute gone. Four more to go. No feedback yet." |
-| 2:00 | "What if Maven knew which tests actually exercise the code you touched?" |
-| 2:10 | "You run a learn pass once. The plugin instruments your bytecode — records, for every test, every production class it touches. No annotations. No JaCoCo. No cloud." |
-| 2:20 | "The result is a dependency graph. Test → set of production classes. Stored locally, compressed, survives across builds." |
-| 2:25 | "On every commit: git diff tells us what changed. We intersect with the graph. Tests that overlap score higher. Tests that recently failed score higher. Fast tests first among ties." |
-| 2:30 | "One plugin. It learned the dependency graph. Then it selects." |
-| 2:45 | *(BUILD FAILURE ~17s)* "Seven test classes. 17 seconds. It found a bug." |
-| 2:50 | *(browser)* "It's been tracking every run. You can see which tests caught failures first. Which ones are flaky. APFD — how early in the run bugs are detected." |
-| 3:00 | "One instructions file. The agent gets results in 17 seconds, not 5 minutes." |
-| 3:10 | "As a Gradle DevRel once put it: 2× slower feedback → 4× slower developer. An agent waiting 5 minutes makes 18× fewer iterations per hour than one getting feedback in 17 seconds." |
-| 3:20 | *(Copilot runs tests — red ~17s)* "There's the bug. Logic inversion on the tenant check." |
-| 3:30 | *(Copilot fixes, re-runs ~17s)* "Fixed. Green. Under 40 seconds, start to finish." |
-| 4:00 | "Maven and Gradle. JUnit 5, JUnit 4, TestNG, Kotest. Zero configuration. The plugin auto-detects your packages." |
-| 5:15 | "Maybe your test suite isn't too large." |
-| 5:25 | "Maybe you're just running the wrong tests first." |
+| 1:15 | *(kill mvn)* "Over a minute gone. Four more to go. Zero signal. I don't know if anything's broken." |
+| 1:50 | *(toggle on + make-change + select running)* "One plugin. It learned the dependency graph." |
+| 2:10 | *(BUILD FAILURE ~17s)* "Seven test classes. 17 seconds." |
+| 2:20 | *(SlideResults)* "5 minutes. 17 seconds. Same change. Same confidence. Twenty times faster." |
+| 2:35 | *(SlideHowItWorks)* "Learn the dependency graph once — one pass, 12% overhead, then you're done. git diff on every commit. Intersect. Score. Select." |
+| 2:50 | "One learn run. Every commit after that: signal in seconds." |
+| 3:00 | *(browser)* "It's been tracking every run. Which tests are your best early-warning signals. Which ones are flaky." |
+| 3:10 | "One instructions file. That's the entire AI integration." |
+| 3:20 | "As a Gradle DevRel once put it: 2× slower feedback → 4× slower developer." |
+| 3:30 | *(Copilot runs tests — red ~17s)* "There's the bug. 17 seconds." |
+| 4:10 | *(Copilot fixes, re-runs ~17s)* "Green. Under 40 seconds, start to finish." |
+| 4:50 | "Maybe your test suite isn't too large." *(pause)* "Maybe you're just running the wrong tests first." |
 
 ---
 
