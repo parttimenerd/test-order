@@ -178,7 +178,7 @@ cd cap-sflight
 # Bug is already planted — just show the failure
 mvn test-order:select test -pl srv -Denforcer.skip=true   # red, ~17s
 # Fix it
-sed -i '' 's/discount >= 50/discount > 50/' srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
+sed -i '' 's/percent >= 50/percent > 50/' srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
 # Verify
 mvn test-order:select test -pl srv -Denforcer.skip=true   # green, ~17s
 ```
@@ -222,7 +222,7 @@ mvn test-order:select test -pl srv -Denforcer.skip=true   # green, ~17s
 3. Have `.github/copilot-instructions.md` visible in a tab
 4. The bug is already planted (`>= 50` in `DeductDiscountHandler`) — confirm with:
    ```sh
-   grep "discount.*50" cap-sflight/srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
+   grep "percent.*50" cap-sflight/srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
    ```
 5. Pre-stage Copilot prompt (copy it so you can paste quickly):
    ```

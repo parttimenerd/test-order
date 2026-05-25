@@ -58,13 +58,15 @@ if [[ -d "$BAKE_DIR/cap-sflight" ]]; then
     echo "  ✓ cap-sflight .test-order restored from baked snapshot"
 fi
 
-# Re-plant the bug (git checkout restores the clean file)
+# Re-plant the off-by-one bug (git checkout restores the clean file with > 50)
 HANDLER="$CAP_DIR/srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java"
-if grep -q "discount > 50" "$HANDLER" 2>/dev/null; then
-    sed -i '' 's/discount > 50/discount >= 50/g' "$HANDLER"
-    echo "  ✓ Reset (plugin on, bug planted: >= 50)"
+if grep -q "percent > 50" "$HANDLER" 2>/dev/null; then
+    sed -i '' 's/percent > 50/percent >= 50/g' "$HANDLER"
+    echo "  ✓ Reset (plugin on, bug planted: percent >= 50)"
+elif grep -q "percent >= 50" "$HANDLER" 2>/dev/null; then
+    echo "  ✓ Reset (plugin on, bug already planted)"
 else
-    echo "  ✓ Reset (plugin on)"
+    echo "  ⚠ Could not plant bug — check $HANDLER manually"
 fi
 
 echo ""

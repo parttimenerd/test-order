@@ -97,6 +97,8 @@ if [[ ! -f "$SDK_DIR/$MODULE/.test-order/test-dependencies.lz4" ]]; then
     echo "▶ Running learn pass for cloud-sdk-java..."
     cd "$SDK_DIR"
     mvn test -pl "$MODULE" -Dtestorder.mode=learn -q 2>/dev/null || true
+    # Merge the fallback file into the index (socket collector writes a fallback on Spring Boot / reuseForks=false)
+    mvn test-order:aggregate -pl "$MODULE" -q 2>/dev/null || true
     echo "  ✓ Learn pass complete — index built"
 else
     echo "▶ cloud-sdk-java index already exists — skipping learn"
@@ -186,6 +188,8 @@ if [[ ! -f "$CAP_DIR/srv/.test-order/test-dependencies.lz4" ]]; then
     echo "▶ Running learn pass for cap-sflight..."
     cd "$CAP_DIR"
     mvn test -pl srv -Dtestorder.mode=learn -Denforcer.skip=true -q 2>/dev/null || true
+    # Merge the fallback file (Spring Boot forked JVM writes collector-fallback instead of direct merge)
+    mvn test-order:aggregate -pl srv -Denforcer.skip=true -q 2>/dev/null || true
     echo "  ✓ Learn pass complete — index built"
 else
     echo "▶ cap-sflight index already exists — skipping learn"
@@ -201,14 +205,14 @@ git commit -m "Add test-order setup and tests" --allow-empty -q 2>/dev/null || t
 echo ""
 echo "▶ Pre-planting off-by-one bug in cap-sflight DeductDiscountHandler..."
 HANDLER="$CAP_DIR/srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java"
-if grep -q "discount > 50" "$HANDLER" 2>/dev/null; then
-    sed -i '' 's/discount > 50/discount >= 50/g' "$HANDLER"
+if grep -q "percent > 50" "$HANDLER" 2>/dev/null; then
+    sed -i '' 's/percent > 50/percent >= 50/g' "$HANDLER"
     git add "$HANDLER" && git commit -m "Pre-plant off-by-one bug" -q 2>/dev/null || true
-    echo "  ✓ Bug planted (>= 50 instead of > 50)"
-elif grep -q "discount >= 50" "$HANDLER" 2>/dev/null; then
+    echo "  ✓ Bug planted (percent >= 50 instead of > 50)"
+elif grep -q "percent >= 50" "$HANDLER" 2>/dev/null; then
     echo "  ✓ Bug already planted"
 else
-    echo "  ⚠ Could not find discount check — check $HANDLER manually"
+    echo "  ⚠ Could not find percent check — check $HANDLER manually"
 fi
 
 # 11. Bake the history so reset-demo.sh can restore it instantly
