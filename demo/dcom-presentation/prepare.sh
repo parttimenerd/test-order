@@ -109,6 +109,45 @@ cd "$SDK_DIR"
 git add -f .test-order "$MODULE/.test-order" "$MODULE/pom.xml" 2>/dev/null || true
 git commit -m "Add test-order index" --allow-empty -q 2>/dev/null || true
 
+# 5b. Accumulate run history for dashboard using real bug-introduce-fix cycles
+# Each cycle: introduce a real bug → commit → select+test (red run) → fix → commit → select+test (green run)
+# This builds meaningful pass/fail alternation in the dashboard history.
+echo ""
+echo "▶ Building dashboard history (real bug-fix cycles)..."
+cd "$SDK_DIR"
+
+RESOLVER="$MODULE/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivity/DestinationRetrievalStrategyResolver.java"
+AUTH_PROVIDER="$MODULE/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivity/AuthTokenHeaderProvider.java"
+SERVICE="$MODULE/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivity/DestinationService.java"
+
+# Cycle 1: flip currentTenantIsProvider — breaks tenant-based routing tests
+sed -i '' 's/return Objects.equals(currentTenantId, providerTenantId);/return !Objects.equals(currentTenantId, providerTenantId);/' "$RESOLVER"
+git add "$RESOLVER" && git commit -m "bug: invert tenant check" -q 2>/dev/null || true
+mvn test-order:select test -pl "$MODULE" -Dmaven.test.failure.ignore=true -q 2>/dev/null || true
+sed -i '' 's/return !Objects.equals(currentTenantId, providerTenantId);/return Objects.equals(currentTenantId, providerTenantId);/' "$RESOLVER"
+git add "$RESOLVER" && git commit -m "fix: restore tenant check" -q 2>/dev/null || true
+mvn test-order:select test -pl "$MODULE" -q 2>/dev/null || true
+
+# Cycle 2: flip XSUAA attributes guard — forces FORWARD_USER_TOKEN when LOOKUP is correct
+sed -i '' 's/if( attributes == null || !JWT_ATTR_XSUAA/if( attributes != null \&\& JWT_ATTR_XSUAA/' "$RESOLVER"
+git add "$RESOLVER" && git commit -m "bug: invert XSUAA attribute check" -q 2>/dev/null || true
+mvn test-order:select test -pl "$MODULE" -Dmaven.test.failure.ignore=true -q 2>/dev/null || true
+sed -i '' 's/if( attributes != null \&\& JWT_ATTR_XSUAA/if( attributes == null || !JWT_ATTR_XSUAA/' "$RESOLVER"
+git add "$RESOLVER" && git commit -m "fix: restore XSUAA attribute check" -q 2>/dev/null || true
+mvn test-order:select test -pl "$MODULE" -q 2>/dev/null || true
+
+# Cycle 3: flip auth token presence check — always throws instead of building header
+sed -i '' 's/if( !tokens.isEmpty() ) {/if( tokens.isEmpty() ) {/' "$AUTH_PROVIDER"
+git add "$AUTH_PROVIDER" && git commit -m "bug: invert token presence check" -q 2>/dev/null || true
+mvn test-order:select test -pl "$MODULE" -Dmaven.test.failure.ignore=true -q 2>/dev/null || true
+sed -i '' 's/if( tokens.isEmpty() ) {/if( !tokens.isEmpty() ) {/' "$AUTH_PROVIDER"
+git add "$AUTH_PROVIDER" && git commit -m "fix: restore token presence check" -q 2>/dev/null || true
+mvn test-order:select test -pl "$MODULE" -q 2>/dev/null || true
+
+git checkout -- . 2>/dev/null || true
+git add -A && git commit -m "Restore after history cycles" --allow-empty -q 2>/dev/null || true
+echo "  ✓ Dashboard history built (3 bug-fix cycles = 6 runs)"
+
 # 6. Disable test-order (demo starts with "before" state)
 echo ""
 echo "▶ Resetting cloud-sdk-java pom for demo start..."
@@ -158,6 +197,20 @@ git add -f srv/.test-order srv/pom.xml .github/copilot-instructions.md 2>/dev/nu
 git add -f srv/src/test/ 2>/dev/null || true
 git commit -m "Add test-order setup and tests" --allow-empty -q 2>/dev/null || true
 
+# 10. Pre-plant the off-by-one bug in DeductDiscountHandler (live Copilot demo target)
+echo ""
+echo "▶ Pre-planting off-by-one bug in cap-sflight DeductDiscountHandler..."
+HANDLER="$CAP_DIR/srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java"
+if grep -q "discount > 50" "$HANDLER" 2>/dev/null; then
+    sed -i '' 's/discount > 50/discount >= 50/g' "$HANDLER"
+    git add "$HANDLER" && git commit -m "Pre-plant off-by-one bug" -q 2>/dev/null || true
+    echo "  ✓ Bug planted (>= 50 instead of > 50)"
+elif grep -q "discount >= 50" "$HANDLER" 2>/dev/null; then
+    echo "  ✓ Bug already planted"
+else
+    echo "  ⚠ Could not find discount check — check $HANDLER manually"
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " ✅ Ready!"
@@ -166,6 +219,8 @@ echo ""
 echo " Pre-demo checklist:"
 echo "   ☐ Terminal font 20pt+"
 echo "   ☐ Slides running: cd slides && npm run dev"
+echo "   ☐ Dashboard running: cd cloud-sdk-java && mvn test-order:serve -pl $MODULE"
+echo "   ☐ Browser tab open at localhost:8080 (dashboard pre-loaded)"
 echo "   ☐ VS Code open on cap-sflight/"
 echo "   ☐ copilot-instructions.md visible in tab"
 echo "   ☐ Run: ./reset-demo.sh"

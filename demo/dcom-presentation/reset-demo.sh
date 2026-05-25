@@ -35,7 +35,15 @@ cd "$CAP_DIR"
 git checkout -- .
 cd "$SCRIPT_DIR"
 ./toggle-test-order-cap.sh on 2>/dev/null || true
-echo "  ✓ Reset (plugin on, no code changes)"
+
+# Re-plant the bug (git checkout restores the clean file)
+HANDLER="$CAP_DIR/srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java"
+if grep -q "discount > 50" "$HANDLER" 2>/dev/null; then
+    sed -i '' 's/discount > 50/discount >= 50/g' "$HANDLER"
+    echo "  ✓ Reset (plugin on, bug planted: >= 50)"
+else
+    echo "  ✓ Reset (plugin on)"
+fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

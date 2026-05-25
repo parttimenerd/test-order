@@ -10,6 +10,9 @@ export JAVA_HOME=/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21
 ./toggle-test-order-cap.sh on   # enable test-order in cap-sflight
 ./reset-demo.sh       # ensures clean state
 cd slides && npm run dev   # starts slides at localhost:3030
+# In separate terminal tab:
+cd cloud-sdk-java && mvn test-order:serve -pl cloudplatform/connectivity-destination-service
+# Open browser at localhost:8080 (keep tab open, it shows history from prepare.sh)
 ```
 
 Terminal font: **20pt+**. Test on projector.
@@ -25,6 +28,7 @@ Terminal font: **20pt+**. Test on projector.
 | 1:50  | Slide 2 — How It Works        | Slides   |
 | 2:10  | The Magic Moment              | Terminal |
 | 2:40  | Slide 3 — What You Just Saw   | Slides   |
+| 2:50  | Dashboard live (browser)      | Browser  |
 | 2:55  | Agentic Demo (VS Code)        | VS Code  |
 | 4:10  | Slide 4 — AI Feedback Loop    | Slides   |
 | 4:30  | Slide 5 — Closing Line        | Slides   |
@@ -104,6 +108,29 @@ Total time: 17s
 >
 > "No clean rebuild. No guessing which module. From 3 minutes to 17 seconds."
 
+### Dashboard Demo (2:45–2:55)
+
+After BUILD SUCCESS at 17s — while still in terminal:
+
+```sh
+# In separate tab (already running from pre-demo setup):
+# mvn test-order:serve -pl cloudplatform/connectivity-destination-service
+# → localhost:8080
+```
+
+Switch to browser tab (pre-opened). Point at:
+
+1. **Tests tab** — ranked order, which tests ran in this 17-second pass
+2. **Analytics** — 6 runs from the bug-fix cycles, pass/fail alternation visible
+3. **Coverage** — which source classes each test covers
+
+> "It didn't just run the right tests — it's been tracking every run.
+>  You can see which tests are most valuable. You know what your test suite is actually doing."
+
+Keep it under 10 seconds. Switch back to Slide 3 immediately after.
+
+---
+
 ### Agentic Demo (4:00–4:45)
 
 Switch to **VS Code** with cap-sflight open. Show `.github/copilot-instructions.md` tab first.
@@ -111,36 +138,27 @@ Switch to **VS Code** with cap-sflight open. Show `.github/copilot-instructions.
 > "One file. It tells the agent: after every change, run test-order select.
 >  The agent gets a result in 17 seconds — not 3 minutes."
 
+The bug is already in the code — `>= 50` instead of `> 50` in `DeductDiscountHandler.java`.
+This was planted by `prepare.sh`. Copilot's job: read the failure and fix it.
+
 **Live prompt to Copilot** (type in chat):
 ```
-Add max discount validation to DeductDiscountHandler.
-Discounts above 50% should be rejected with an error message.
-After the change, run the tests using the project's test instructions.
+The tests are failing. Read the failure output and fix the bug.
+After the fix, run the tests using the project's test instructions.
 ```
 
 **What should happen** (the demo you want):
-1. Copilot edits `DeductDiscountHandler.java` — likely uses `>= 50` (off-by-one bug)
-2. Copilot runs `mvn test-order:select test -pl srv -Denforcer.skip=true` (~17s)
-3. `DeductDiscountHandlerTest` fails — boundary case at exactly 50% caught
-4. Copilot reads the failure, fixes `>= 50` → `> 50`
-5. Copilot re-runs test-order:select — green (~17s)
+1. Copilot runs `mvn test-order:select test -pl srv -Denforcer.skip=true` (~17s)
+2. `DeductDiscountHandlerTest` fails — boundary case at exactly 50% fails
+3. Copilot reads the failure, fixes `>= 50` → `> 50`
+4. Copilot re-runs test-order:select — green (~17s)
 
-> "The agent introduced a bug. The tests caught it in 17 seconds.
+> "The agent had a bug. test-order caught it in 17 seconds.
 >  The agent fixed it. Green in another 17 seconds.
->  Full loop: edit → catch → fix → done. Under a minute."
+>  Full loop: catch → fix → done. Under 40 seconds."
 
-**If Copilot gets it right first try** (no bug):
-
-> "It got it right — but let me show what it looks like when it doesn't."
-
-```sh
-# Manually introduce the off-by-one
-cd cap-sflight
-grep -n "50" srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
-# Change > 50 to >= 50 in the handler
-```
-
-Then show Copilot the failure and let it fix it.
+> "As a Gradle DevRel once said: when your feedback loop takes twice as long,
+>  you don't slow down 2x — you slow down 4x. Context switches are expensive."
 
 **If Copilot doesn't auto-run tests** (narrate instead):
 
@@ -148,6 +166,7 @@ Then show Copilot the failure and let it fix it.
 >  Let me run it manually to show the speed."
 
 ```sh
+cd cap-sflight
 mvn test-order:select test -pl srv -Denforcer.skip=true
 ```
 
@@ -156,9 +175,7 @@ Point at the failure output, then let Copilot fix it, then re-run.
 **Full manual fallback** (if Copilot doesn't cooperate at all):
 ```sh
 cd cap-sflight
-# Introduce bug
-sed -i '' 's/discount > 50/discount >= 50/' srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
-# Catch it
+# Bug is already planted — just show the failure
 mvn test-order:select test -pl srv -Denforcer.skip=true   # red, ~17s
 # Fix it
 sed -i '' 's/discount >= 50/discount > 50/' srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
@@ -190,9 +207,9 @@ mvn test-order:select test -pl srv -Denforcer.skip=true   # green, ~17s
 | 3:30 | "No clean rebuild. No guessing. It knows." |
 | 4:00 | "Now multiply this by an AI agent iterating 10 times." |
 | 4:10 | "One instructions file. Fast feedback every loop." |
-| 4:20 | *(Copilot introduces bug)* "The agent made a mistake — off-by-one on the boundary." |
-| 4:30 | *(test-order catches it ~17s)* "17 seconds. It knows exactly which test to run." |
-| 4:40 | *(Copilot fixes, re-runs ~17s)* "Fixed. Green. Under a minute, start to finish." |
+| 4:20 | *(Copilot runs tests — red ~17s)* "There's a bug. The off-by-one on the boundary — exactly 50% passes when it should fail." |
+| 4:30 | *(Copilot fixes, re-runs ~17s)* "Fixed. Green. Under 40 seconds, start to finish." |
+| 4:40 | "As a Gradle DevRel once said: when feedback takes 2x longer, you slow down 4x. Context switches compound." |
 | 5:15 | "Maybe your test suite isn't too large." |
 | 5:25 | "Maybe you're just running the wrong tests first." |
 
@@ -203,13 +220,16 @@ mvn test-order:select test -pl srv -Denforcer.skip=true   # green, ~17s
 1. Open `cap-sflight/` as a **separate VS Code window**
 2. Run `./toggle-test-order-cap.sh on` (already done in `./prepare.sh`)
 3. Have `.github/copilot-instructions.md` visible in a tab
-4. Pre-stage Copilot prompt (copy it so you can paste quickly):
+4. The bug is already planted (`>= 50` in `DeductDiscountHandler`) — confirm with:
+   ```sh
+   grep "discount.*50" cap-sflight/srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
    ```
-   Add max discount validation to DeductDiscountHandler.
-   Discounts above 50% should be rejected with an error message.
-   After the change, run the tests using the project's test instructions.
+5. Pre-stage Copilot prompt (copy it so you can paste quickly):
    ```
-5. Know the manual fallback commands — sometimes Copilot gets it right first try
+   The tests are failing. Read the failure output and fix the bug.
+   After the fix, run the tests using the project's test instructions.
+   ```
+6. Know the manual fallback — the bug is already there, just run tests manually if Copilot won't
 
 ---
 
