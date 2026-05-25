@@ -133,9 +133,51 @@ flowchart LR
 <!--
 "An agent iterates: generate, test, fix, retry."
 "3 minutes per loop kills the workflow. 17 seconds keeps it flowing."
-"Let me show you."
+"Let me show you — with a real AI making a real mistake."
 
-→ Switch to VS Code for live agentic demo.
+→ Switch to VS Code for live agentic demo, then come back to next slide.
+-->
+
+---
+transition: fade
+clicks: 7
+layout: full
+---
+
+<SlideAgenticLoop />
+
+<!--
+→ Switch to VS Code with cap-sflight open. Show copilot-instructions.md.
+
+[click 1] "The AI makes a change — adding a discount validation."
+[click 2] "Copilot runs test-order:select automatically — copilot-instructions.md told it to."
+[click 3] "17 seconds later: a test fails. The validation is wrong — it rejects 50% instead of above 50%."
+[click 4] "Copilot reads the failure, fixes the off-by-one."
+[click 5] "17 seconds again. Green."
+[click 6] "Edit → caught → fixed → green. Under 40 seconds total."
+[click 7] "One instructions file. That's the only integration."
+
+LIVE PROMPT for Copilot chat:
+  "Add max discount validation to DeductDiscountHandler.
+   Discounts above 50% should be rejected with an error message.
+   After the change, run the tests using the project's test instructions."
+
+Watch Copilot:
+  1. Edit DeductDiscountHandler.java (introduce > 50 OR use >= 50 — either breaks a test)
+  2. Run mvn test-order:select test -pl srv -Denforcer.skip=true
+  3. DeductDiscountHandlerTest fails (17s)
+  4. Copilot reads failure, fixes boundary condition
+  5. Re-runs test-order:select — green (17s)
+
+FALLBACK if Copilot doesn't auto-run tests:
+  Show copilot-instructions.md — point to the mvn command — then run manually.
+
+FALLBACK if Copilot succeeds first try (no bug):
+  Say "it got it right — let me show what it looks like when it doesn't"
+  then: sed -i '' 's/>= 50/> 50/' srv/src/main/java/.../DeductDiscountHandler.java
+  then: mvn test-order:select test -pl srv -Denforcer.skip=true  (red, 17s)
+  then: git diff  (show Copilot the diff)
+  then: let Copilot fix it
 -->
 
 ---

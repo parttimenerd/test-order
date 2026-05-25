@@ -1,12 +1,13 @@
 # SAP DCOM Demo Jam — "You Are Running the Wrong Tests First"
 
-6-minute Demo Jam. 4 slides. Everything else: real commands in a real terminal.
+6-minute Demo Jam. 5 slides. Everything else: real commands in a real terminal.
 
 ## Before the talk
 
 ```sh
 export JAVA_HOME=/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home
 ./prepare.sh          # builds everything, runs learn pass (~10 min first time)
+./toggle-test-order-cap.sh on   # enable test-order in cap-sflight
 ./reset-demo.sh       # ensures clean state
 cd slides && npm run dev   # starts slides at localhost:3030
 ```
@@ -17,17 +18,18 @@ Terminal font: **20pt+**. Test on projector.
 
 ## Timing
 
-| Time  | What                        | Where    |
-|-------|-----------------------------|----------|
-| 0:00  | Slide 1 — Title             | Slides   |
-| 0:15  | The Pain                    | Terminal |
-| 2:00  | Slide 2 — How It Works      | Slides   |
-| 2:15  | The Magic Moment            | Terminal |
-| 3:30  | Slide 3 — What You Just Saw | Slides   |
-| 3:45  | Slide 4 — Agentic Multiplier| Slides   |
-| 4:00  | Agentic Demo                | VS Code  |
-| 5:15  | Slide 5 — Closing Line      | Slides   |
-| 5:30  | Slide 6 — Links             | Slides   |
+| Time  | What                          | Where    |
+|-------|-------------------------------|----------|
+| 0:00  | Slide 1 — Title               | Slides   |
+| 0:15  | The Pain                      | Terminal |
+| 2:00  | Slide 2 — How It Works        | Slides   |
+| 2:15  | The Magic Moment              | Terminal |
+| 3:30  | Slide 3 — What You Just Saw   | Slides   |
+| 3:45  | Slide 4 — Agentic Multiplier  | Slides   |
+| 4:00  | Agentic Demo (VS Code)        | VS Code  |
+| 4:45  | Slide 5 — AI Feedback Loop    | Slides   |
+| 5:15  | Slide 6 — Closing Line        | Slides   |
+| 5:30  | Slide 7 — Links               | Slides   |
 
 ---
 
@@ -107,35 +109,66 @@ Total time: 17s
 >
 > "No clean rebuild. No guessing which module. From 3 minutes to 17 seconds."
 
-### Agentic Demo (4:15–5:30)
+### Agentic Demo (4:00–4:45)
 
-Switch to **VS Code** with cap-sflight open.
+Switch to **VS Code** with cap-sflight open. Show `.github/copilot-instructions.md` tab first.
 
-> "But where this really changes the game: AI coding agents.
->  An agent that generates code and waits 3 minutes for feedback?
->  That's expensive tokens doing nothing."
-
-**Show `.github/copilot-instructions.md`** (tab already open):
-
-> "One file tells the agent: after changes, run test-order select.
->  The agent gets fast feedback every iteration."
+> "One file. It tells the agent: after every change, run test-order select.
+>  The agent gets a result in 17 seconds — not 3 minutes."
 
 **Live prompt to Copilot** (type in chat):
 ```
-Add max discount validation to DeductDiscountHandler — reject discounts above 50%
+Add max discount validation to DeductDiscountHandler.
+Discounts above 50% should be rejected with an error message.
+After the change, run the tests using the project's test instructions.
 ```
 
-Watch Copilot modify code and run tests. If it works — great. If slow, narrate:
+**What should happen** (the demo you want):
+1. Copilot edits `DeductDiscountHandler.java` — likely uses `>= 50` (off-by-one bug)
+2. Copilot runs `mvn test-order:select test -pl srv -Denforcer.skip=true` (~17s)
+3. `DeductDiscountHandlerTest` fails — boundary case at exactly 50% caught
+4. Copilot reads the failure, fixes `>= 50` → `> 50`
+5. Copilot re-runs test-order:select — green (~17s)
 
-> "The agent makes its change, runs only affected tests, gets green in seconds.
->  Not because the test suite is small — it's 469 tests.
->  Because the agent knows which tests matter for THIS change."
+> "The agent introduced a bug. The tests caught it in 17 seconds.
+>  The agent fixed it. Green in another 17 seconds.
+>  Full loop: edit → catch → fix → done. Under a minute."
 
-**Fallback** (if Copilot doesn't cooperate, type manually):
+**If Copilot gets it right first try** (no bug):
+
+> "It got it right — but let me show what it looks like when it doesn't."
+
+```sh
+# Manually introduce the off-by-one
+cd cap-sflight
+grep -n "50" srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
+# Change > 50 to >= 50 in the handler
+```
+
+Then show Copilot the failure and let it fix it.
+
+**If Copilot doesn't auto-run tests** (narrate instead):
+
+> "The instructions file tells Copilot which command to run.
+>  Let me run it manually to show the speed."
+
+```sh
+mvn test-order:select test -pl srv -Denforcer.skip=true
+```
+
+Point at the failure output, then let Copilot fix it, then re-run.
+
+**Full manual fallback** (if Copilot doesn't cooperate at all):
 ```sh
 cd cap-sflight
-sed -i '' '1s/^/\/\/ added max discount validation\n/' srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
-mvn test-order:select test -pl srv -Denforcer.skip=true
+# Introduce bug
+sed -i '' 's/discount > 50/discount >= 50/' srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
+# Catch it
+mvn test-order:select test -pl srv -Denforcer.skip=true   # red, ~17s
+# Fix it
+sed -i '' 's/discount >= 50/discount > 50/' srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
+# Verify
+mvn test-order:select test -pl srv -Denforcer.skip=true   # green, ~17s
 ```
 
 ### Close (5:30)
@@ -161,18 +194,27 @@ mvn test-order:select test -pl srv -Denforcer.skip=true
 | 3:15 | *(BUILD SUCCESS ~17s)* "Seven test classes. Seventeen seconds." |
 | 3:30 | "No clean rebuild. No guessing. It knows." |
 | 4:00 | "Now multiply this by an AI agent iterating 10 times." |
-| 4:15 | "One instructions file. Fast feedback every loop." |
-| 5:30 | "Maybe your test suite isn't too large." |
-| 5:40 | "Maybe you're just running the wrong tests first." |
+| 4:10 | "One instructions file. Fast feedback every loop." |
+| 4:20 | *(Copilot introduces bug)* "The agent made a mistake — off-by-one on the boundary." |
+| 4:30 | *(test-order catches it ~17s)* "17 seconds. It knows exactly which test to run." |
+| 4:40 | *(Copilot fixes, re-runs ~17s)* "Fixed. Green. Under a minute, start to finish." |
+| 5:15 | "Maybe your test suite isn't too large." |
+| 5:25 | "Maybe you're just running the wrong tests first." |
 
 ---
 
 ## Setup for Agentic Demo
 
 1. Open `cap-sflight/` as a **separate VS Code window**
-2. Ensure test-order plugin is enabled: `./toggle-test-order-cap.sh on`
+2. Run `./toggle-test-order-cap.sh on` (already done in `./prepare.sh`)
 3. Have `.github/copilot-instructions.md` visible in a tab
-4. Pre-stage Copilot prompt: "Add max discount validation to DeductDiscountHandler — reject discounts above 50%"
+4. Pre-stage Copilot prompt (copy it so you can paste quickly):
+   ```
+   Add max discount validation to DeductDiscountHandler.
+   Discounts above 50% should be rejected with an error message.
+   After the change, run the tests using the project's test instructions.
+   ```
+5. Know the manual fallback commands — sometimes Copilot gets it right first try
 
 ---
 
@@ -181,8 +223,9 @@ mvn test-order:select test -pl srv -Denforcer.skip=true
 - **Select says "no index"**: Run `./prepare.sh` again (learn pass needed)
 - **Tests take too long**: Make sure `JAVA_HOME` is JDK 21
 - **Plugin not found**: `cd ../../ && mvn install -DskipTests -pl test-order-maven-plugin -am`
-- **Copilot doesn't run tests**: Use fallback command from README
-- **Nuclear reset**: `./reset-demo.sh`
+- **Copilot doesn't run tests**: Narrate + run manually: `mvn test-order:select test -pl srv -Denforcer.skip=true`
+- **Copilot gets it right first time**: Use manual fallback to introduce the off-by-one bug
+- **Nuclear reset**: `./reset-demo.sh && ./toggle-test-order-cap.sh on`
 
 ---
 
@@ -190,6 +233,9 @@ mvn test-order:select test -pl srv -Denforcer.skip=true
 
 ```sh
 ./reset-demo.sh
+./toggle-test-order-cap.sh on
+# In cap-sflight, restore DeductDiscountHandler if you touched it:
+cd cap-sflight && git checkout srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
 ```
 
 ---
@@ -197,4 +243,4 @@ mvn test-order:select test -pl srv -Denforcer.skip=true
 ## Slides
 
 Served by Slidev at `localhost:3030`. Advance with arrow keys.
-Only 4 slides — the terminal does the talking.
+5 slides — the terminal and VS Code do most of the talking.
