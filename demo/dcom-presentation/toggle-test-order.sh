@@ -34,7 +34,7 @@ enable() {
                  . "                        <artifactId>test-order-maven-plugin</artifactId>\n"
                  . "                        <version>0.0.1-SNAPSHOT</version>\n"
                  . "                        <configuration>\n"
-                 . "                                <topN>5</topN>\n"
+                 . "                                <topN>7</topN>\n"
                  . "                                <seed>42</seed>\n"
                  . "                        </configuration>\n"
                  . "                        <executions>\n"

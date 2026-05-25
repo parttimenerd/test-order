@@ -19,7 +19,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "▶ cloud-sdk-java..."
 cd "$SDK_DIR"
-git checkout -- .
+# Restore the specific demo file to its clean state (no negation bug)
+# This handles both uncommitted edits AND previously committed bugs
+RESOLVER="$MODULE/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivity/DestinationRetrievalStrategyResolver.java"
+sed -i '' 's/return !Objects.equals(currentTenantId, providerTenantId);/return Objects.equals(currentTenantId, providerTenantId);/' "$RESOLVER" 2>/dev/null || true
+git checkout -- . 2>/dev/null || true
 cd "$SCRIPT_DIR"
 # Plugin is committed as ON — turn it off for the pain demo
 ./toggle-test-order.sh off 2>/dev/null || true
