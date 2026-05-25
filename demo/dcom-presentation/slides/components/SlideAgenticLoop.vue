@@ -77,7 +77,7 @@
         <div class="bg-white/5 border border-white/10 rounded-xl px-8 py-3 text-center">
           <span class="text-gray-400 text-sm">Edit → catch → fix → green: </span>
           <span class="text-emerald-400 font-bold text-lg">under 40 seconds</span>
-          <span class="text-gray-500 text-sm ml-2">vs 6 minutes with full mvn test</span>
+          <span class="text-gray-500 text-sm ml-2">vs 5+ minutes with full mvn test</span>
         </div>
       </div>
     </div>

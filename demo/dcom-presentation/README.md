@@ -36,13 +36,11 @@ Terminal font: **20pt+**. Test on projector.
 
 | Command | What happens | Wall time |
 |---------|-------------|-----------|
-| `mvn clean test -pl ... -am` | Recompile all upstream + run 469 tests | **3:03** |
-| `mvn test -pl ...` | Just tests (warm cache) | 20s |
-| `mvn test-order:select test -pl ...` (topN=5) | 7 affected test classes (86 tests) | **17s** |
+| `mvn clean test` | Full clean build + all 469 tests | **5:00+** |
+| `mvn test-order:select test -pl cloudplatform/connectivity-destination-service` | 7 affected test classes (86 tests) | **17s** |
 | cap-sflight `mvn test-order:select test -pl srv` | Spring Boot startup + 18 tests | 50s |
 
-**Key insight**: The "pain" must use `clean -am` to be dramatic (3 min vs 17s).
-If you skip `clean -am`, it's only 20s — not enough contrast.
+**Key insight**: The "pain" uses `mvn clean test` from the repo root — full clean rebuild of all 65 modules. Takes 5+ minutes total. Kill after ~90 seconds. The contrast is what you waited vs 17 seconds.
 
 ---
 
@@ -59,20 +57,18 @@ cd cloud-sdk-java
 ./make-change.sh     # (or add comment in IDE)
 ```
 
-**Run the traditional way** (full clean rebuild + tests):
+**Run the traditional way** (full clean rebuild + all tests):
 ```sh
-mvn clean test -pl cloudplatform/connectivity-destination-service -am
+mvn clean test
 ```
 
-This takes **3 minutes**. Talk over it while tests compile and scroll:
+This takes **5+ minutes** total. Talk over it while tests compile and scroll:
 
-> "Clean build. 469 tests. Because I touched one file.
->  On CI this is every single push. Every pull request. Every iteration."
+> "Clean build. All 65 modules. Every test in the repo. This is what CI does on every push."
 
-**Kill after ~60–90 seconds** (Ctrl+C):
+**Kill after ~90 seconds** (Ctrl+C):
 
-> "I've been waiting over a minute. It needs two more.
->  I haven't even gotten feedback on my change yet."
+> "Over a minute gone. This would run for another four. I haven't seen a single test result."
 
 ### The Magic Moment (2:15–4:00)
 
@@ -86,7 +82,7 @@ The script prints the pom.xml diff — one plugin added, configured with `topN=5
 > "One plugin. No annotation changes. No test rewrites.
 >  It learned the dependency graph during the previous test run."
 
-Now run select mode (no `clean`, no `-am` — just the module):
+Now run select mode (no `clean`, no full rebuild — just the affected module):
 ```sh
 cd cloud-sdk-java
 mvn test-order:select test -pl cloudplatform/connectivity-destination-service
@@ -187,7 +183,7 @@ mvn test-order:select test -pl srv -Denforcer.skip=true   # green, ~17s
 | 0:00 | "The most expensive thing in software delivery is waiting for feedback." |
 | 0:15 | "SAP Cloud SDK for Java. 65 modules. I changed one file." |
 | 0:30 | "Clean build, full test suite. This is what CI does on every push." |
-| 1:15 | *(kill mvn)* "Over a minute gone. Two more to go. No feedback yet." |
+| 1:15 | *(kill mvn)* "Over a minute gone. Four more to go. No feedback yet." |
 | 2:00 | "What if Maven knew which tests exercise the code you touched?" |
 | 2:30 | "One plugin. It learned the dependency graph. Then it selects." |
 | 3:15 | *(BUILD SUCCESS ~17s)* "Seven test classes. Seventeen seconds." |
