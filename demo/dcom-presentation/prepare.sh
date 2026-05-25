@@ -211,6 +211,12 @@ else
     echo "  ⚠ Could not find discount check — check $HANDLER manually"
 fi
 
+# 11. Bake the history so reset-demo.sh can restore it instantly
+echo ""
+echo "▶ Baking .test-order snapshots for fast reset..."
+cd "$SCRIPT_DIR"
+./bake-history.sh
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " ✅ Ready!"
