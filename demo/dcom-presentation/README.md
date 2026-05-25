@@ -21,18 +21,18 @@ Terminal font: **20pt+**. Test on projector.
 
 ## Timing
 
-| Time  | What                             | Where    |
-|-------|----------------------------------|----------|
-| 0:00  | Slide 1 — Title                  | Slides   |
-| 0:20  | The Pain (mvn clean test, killed) | Terminal |
-| 1:50  | toggle on + make-change + select  | Terminal |
-| 2:20  | Slide 2 — Results (5:00→17s)     | Slides   |
-| 2:35  | Slide 3 — How It Works           | Slides   |
-| 3:00  | Dashboard live (browser)         | Browser  |
-| 3:10  | Agentic Demo (VS Code)           | VS Code  |
-| 4:25  | Slide 4 — AI Feedback Loop       | Slides   |
-| 4:50  | Slide 5 — Closing Line           | Slides   |
-| 5:05  | Slide 6 — Links                  | Slides   |
+| Time  | What                                  | Where    |
+|-------|---------------------------------------|----------|
+| 0:00  | Slide 1 — Title                       | Slides   |
+| 0:20  | The Pain — mvn clean test (killed)    | VS Code  |
+| 2:20  | toggle on + make-change + select      | Terminal |
+| 3:00  | Slide 2 — Results (5:00→17s)         | Slides   |
+| 3:20  | Slide 3 — How It Works               | Slides   |
+| 3:50  | Dashboard live (browser)              | Browser  |
+| 4:05  | copilot-instructions.md + Copilot     | VS Code  |
+| 5:25  | Slide 4 — AI Feedback Loop            | Slides   |
+| 5:50  | Slide 5 — Kicker (with pause)         | Slides   |
+| 6:10  | Slide 6 — Close                       | Slides   |
 
 ---
 
@@ -48,36 +48,47 @@ Terminal font: **20pt+**. Test on projector.
 
 ## Live Commands (what you actually type)
 
-### The Pain (0:15–2:00)
+### The Pain (0:20–2:20)
 
-> "SAP Cloud SDK for Java. The real thing. 65 Maven modules.
->  I changed one file in DestinationService. Maven has to rebuild everything
->  that depends on it — that's 65 modules — and run 469 tests."
+Switch to **VS Code** (already open on cloud-sdk-java). Terminal is visible and fullscreen.
+
+> "SAP Cloud SDK for Java. The real thing. 65 modules."
+> "I changed one file in DestinationService. Let's see what that costs."
 
 ```sh
 cd cloud-sdk-java
 mvn clean test
 ```
 
-This takes **5+ minutes** total. Talk over it while tests compile and scroll:
+Talk over it while tests compile and modules scroll:
 
-> "Clean build. All 65 modules. Every test in the repo. This is what CI does on every push."
+> "Clean build. 65 modules. Every test in the repo."
+> "This is what CI does on every push. Every PR. Every time."
+> *(~60s in)* "We're still compiling. Haven't run a single test yet."
+> *(~90s in)* "Some tests starting now — but we don't know if the change I made is breaking anything."
 
-**Kill after ~90 seconds** (Ctrl+C):
+**Kill at ~2:00** (Ctrl+C):
 
-> "Over a minute gone. This would run for another four. I haven't seen a single test result."
+> "Over two minutes. Three more to go. Zero signal. I don't know if my change broke anything."
+> "This is the thing nobody talks about — it's not just slow. You're flying blind the whole time."
 
-### The Magic Moment (1:50–2:20)
+### The Magic Moment (2:20–3:00)
 
 ```sh
 cd /Users/i560383_1/code/experiments/test-order/demo/dcom-presentation
-./toggle-test-order.sh on
-./make-change.sh     # inverts the tenant-routing check in DestinationRetrievalStrategyResolver
+./toggle-test-order.sh on    # prints the pom.xml diff — one plugin added
+./make-change.sh             # inverts the tenant-routing check, commits it
 cd cloud-sdk-java
 mvn test-order:select test
 ```
 
-Expected output (~17 seconds total):
+**While select is running** (~17s), narrate:
+
+> "One plugin. No annotation changes. No test rewrites."
+> "It learned the dependency graph. It knows which tests exercise the code I just touched."
+> "Watch — it's not running all 469 tests. It selected 7."
+
+Expected output:
 ```
 [test-order] Selected 7 tests, deferred 10
 Running ... DestinationRetrievalStrategyResolverTest
@@ -87,7 +98,7 @@ BUILD FAILURE
 Total time: 17s
 ```
 
-> "Seven test classes. 17 seconds. Build failure."
+> "Seven test classes. Seventeen seconds. Build failure."
 
 → Switch to slides (SlideResults).
 
@@ -105,48 +116,31 @@ Point at:
 
 Switch back to slides immediately.
 
-### Agentic Demo (3:10–4:25)
+### Agentic Demo (4:05–5:25)
 
-Switch to **VS Code** with cloud-sdk-java open. Show `.github/copilot-instructions.md` tab.
+Still in **VS Code**. Show `.github/copilot-instructions.md` tab — read it aloud, close it.
 
-> "One file. It tells the agent: after every change, run test-order select.
->  The agent gets a result in 17 seconds — not 5 minutes."
->
-> "As a Gradle DevRel once put it: when your feedback loop takes twice as long,
->  you don't slow down 2× — you slow down 4×. Context switches compound."
+> "After every code change, run: mvn test-order:select test. That's it."
+> "The agent gets a result in 17 seconds. Not 5 minutes."
+> "As a Gradle DevRel once put it: 2× slower feedback → 4× slower developer.
+>  An agent waiting 5 minutes makes 18× fewer fix attempts per hour."
 
-The bug is already in the code from `./make-change.sh`. Copilot's job: read the failure and fix it.
+The bug is already in the code from `./make-change.sh`. Type the prompt in Copilot chat:
 
-**Live prompt to Copilot** (type in chat):
 ```
 The tests are failing. Read the failure output and fix the bug.
 After the fix, run the tests using the project's test instructions.
 ```
 
-**What should happen**:
-1. Copilot runs `mvn test-order:select test` (~17s)
+**What happens** (let it run, narrate lightly):
+1. Copilot runs `mvn test-order:select test` (~17s) — red
 2. `DestinationRetrievalStrategyResolverTest` fails — logic inversion in `currentTenantIsProvider()`
-3. Copilot reads the failure, fixes `!Objects.equals(...)` → `Objects.equals(...)`
-4. Copilot re-runs test-order:select — green (~17s)
+3. Copilot reads the stack trace, fixes `!Objects.equals(...)` → `Objects.equals(...)`
+4. Copilot re-runs — green (~17s)
 
-> "The agent read the failure. Fixed it. 17 seconds to catch, 17 seconds to verify.
->  Under 40 seconds, start to finish."
+> "It read the failure. Fixed it. 17 seconds to catch, 17 seconds to verify."
 
-**If Copilot doesn't auto-run tests** (narrate instead):
-```sh
-cd cloud-sdk-java
-mvn test-order:select test
-```
-
-Point at the failure output, let Copilot fix it, then re-run.
-
-**Full manual fallback**:
-```sh
-cd /Users/i560383_1/code/experiments/test-order/demo/dcom-presentation
-./fix-change.sh    # removes the negation: !Objects.equals → Objects.equals
-cd cloud-sdk-java
-mvn test-order:select test   # green, ~17s
-```
+→ Switch to slides (SlideAgenticLoop).
 
 ### Close (5:30)
 
@@ -163,20 +157,25 @@ mvn test-order:select test   # green, ~17s
 | When | Say |
 |------|-----|
 | 0:00 | "The most expensive thing in software delivery is waiting for feedback." |
-| 0:15 | "SAP Cloud SDK for Java. 65 modules. I changed one file." |
-| 0:30 | "Clean build, full test suite. This is what CI does on every push." |
-| 1:15 | *(kill mvn)* "Over a minute gone. Four more to go. Zero signal. I don't know if anything's broken." |
-| 1:50 | *(toggle on + make-change + select running)* "One plugin. It learned the dependency graph." |
-| 2:10 | *(BUILD FAILURE ~17s)* "Seven test classes. 17 seconds." |
-| 2:20 | *(SlideResults)* "5 minutes. 17 seconds. Same change. Same confidence. Twenty times faster." |
-| 2:35 | *(SlideHowItWorks)* "Learn the dependency graph once — one pass, 12% overhead, then you're done. git diff on every commit. Intersect. Score. Select." |
-| 2:50 | "One learn run. Every commit after that: signal in seconds." |
-| 3:00 | *(browser)* "It's been tracking every run. Which tests are your best early-warning signals. Which ones are flaky." |
-| 3:10 | "One instructions file. That's the entire AI integration." |
-| 3:20 | "As a Gradle DevRel once put it: 2× slower feedback → 4× slower developer." |
-| 3:30 | *(Copilot runs tests — red ~17s)* "There's the bug. 17 seconds." |
-| 4:10 | *(Copilot fixes, re-runs ~17s)* "Green. Under 40 seconds, start to finish." |
-| 4:50 | "Maybe your test suite isn't too large." *(pause)* "Maybe you're just running the wrong tests first." |
+| 0:20 | *(VS Code terminal)* "SAP Cloud SDK for Java. The real thing. 65 modules. I changed one file." |
+| 0:30 | "Clean build. 65 modules. Every test in the repo. This is what CI does on every push." |
+| 1:00 | "Still compiling. Haven't run a single test yet." |
+| 1:30 | "Some tests starting — but I still don't know if my change broke anything." |
+| 2:00 | *(kill)* "Two minutes. Three more to go. Zero signal. Flying blind." |
+| 2:20 | *(toggle + make-change running)* "One plugin. It learned the dependency graph." |
+| 2:35 | *(select running)* "Not 469 tests. It selected 7. Watch." |
+| 2:52 | *(BUILD FAILURE)* "Seven test classes. Seventeen seconds. Build failure." |
+| 3:00 | *(SlideResults)* "Five minutes. Seventeen seconds. Same change. Same confidence. Twenty times faster." |
+| 3:20 | *(SlideHowItWorks)* "One learn pass. 12% overhead. Then every commit: git diff → intersect graph → score → select." |
+| 3:45 | "Maven, Gradle, JUnit 5, JUnit 4, TestNG, Kotest. Zero config." |
+| 3:50 | *(browser — 15s)* "Tracking every run. APFD — how early bugs surface. Which tests are your best signals." |
+| 4:05 | *(VS Code, copilot-instructions.md)* "One file. Three lines. The entire AI integration." |
+| 4:15 | "2× slower feedback → 4× slower developer. An agent waiting 5 minutes makes 18× fewer fix attempts per hour." |
+| 4:30 | *(Copilot runs — red ~17s)* "There's the bug." |
+| 5:05 | *(Copilot fixes, re-runs — green ~17s)* "Fixed. 17 seconds to catch, 17 to verify." |
+| 5:25 | *(SlideAgenticLoop)* "Edit → caught → fixed → green. Under 40 seconds. One instructions file." |
+| 5:50 | *(SlideKicker)* "Maybe your test suite isn't too large." *(3s pause)* |
+| 5:56 | *(click)* "Maybe you're just running the wrong tests first." |
 
 ---
 
