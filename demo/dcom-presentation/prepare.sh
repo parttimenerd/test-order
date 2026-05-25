@@ -2,8 +2,9 @@
 # =============================================================================
 # DCOM Demo Jam — Preparation Script
 # =============================================================================
-# Run this ONCE before going on stage. Builds both demo projects, runs learn
-# passes (if index is missing), and resets for live demo.
+# Run this ONCE before going on stage. Builds cloud-sdk-java, runs the learn
+# pass (if index is missing), runs 3 bug-fix cycles to build dashboard history,
+# then bakes the .test-order snapshot for fast resets.
 #
 # Prerequisites:
 #   - JDK 21 installed
@@ -15,7 +16,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SDK_DIR="$SCRIPT_DIR/cloud-sdk-java"
-CAP_DIR="$SCRIPT_DIR/cap-sflight"
 MODULE="cloudplatform/connectivity-destination-service"
 
 export JAVA_HOME="${JAVA_HOME:-/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home}"
@@ -97,30 +97,28 @@ if [[ ! -f "$SDK_DIR/$MODULE/.test-order/test-dependencies.lz4" ]]; then
     echo "▶ Running learn pass for cloud-sdk-java..."
     cd "$SDK_DIR"
     mvn test -pl "$MODULE" -Dtestorder.mode=learn -q 2>/dev/null || true
-    # Merge the fallback file into the index (socket collector writes a fallback on Spring Boot / reuseForks=false)
+    # Merge the fallback file into the index (socket collector writes a fallback on reuseForks=false)
     mvn test-order:aggregate -pl "$MODULE" -q 2>/dev/null || true
     echo "  ✓ Learn pass complete — index built"
 else
     echo "▶ cloud-sdk-java index already exists — skipping learn"
 fi
 
-# 5. Commit the learned index so git change detection works
+# 5. Commit the copilot-instructions and learned index so git change detection works
 echo ""
-echo "▶ Setting up git state for change detection..."
+echo "▶ Setting up git state..."
 cd "$SDK_DIR"
-git add -f .test-order "$MODULE/.test-order" "$MODULE/pom.xml" 2>/dev/null || true
-git commit -m "Add test-order index" --allow-empty -q 2>/dev/null || true
+git add -f .github/copilot-instructions.md .test-order "$MODULE/.test-order" "$MODULE/pom.xml" 2>/dev/null || true
+git commit -m "Add test-order index and copilot instructions" --allow-empty -q 2>/dev/null || true
 
-# 5b. Accumulate run history for dashboard using real bug-introduce-fix cycles
+# 5b. Accumulate run history for dashboard using real bug-fix cycles
 # Each cycle: introduce a real bug → commit → select+test (red run) → fix → commit → select+test (green run)
-# This builds meaningful pass/fail alternation in the dashboard history.
 echo ""
 echo "▶ Building dashboard history (real bug-fix cycles)..."
 cd "$SDK_DIR"
 
 RESOLVER="$MODULE/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivity/DestinationRetrievalStrategyResolver.java"
 AUTH_PROVIDER="$MODULE/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivity/AuthTokenHeaderProvider.java"
-SERVICE="$MODULE/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivity/DestinationService.java"
 
 # Cycle 1: flip currentTenantIsProvider — breaks tenant-based routing tests
 sed -i '' 's/return Objects.equals(currentTenantId, providerTenantId);/return !Objects.equals(currentTenantId, providerTenantId);/' "$RESOLVER"
@@ -152,72 +150,15 @@ echo "  ✓ Dashboard history built (3 bug-fix cycles = 6 runs)"
 
 # 6. Disable test-order (demo starts with "before" state)
 echo ""
-echo "▶ Resetting cloud-sdk-java pom for demo start..."
+echo "▶ Resetting pom for demo start..."
 cd "$SCRIPT_DIR"
 ./toggle-test-order.sh off 2>/dev/null || true
 cd "$SDK_DIR"
 git add -A && git commit -m "Reset pom" --allow-empty -q 2>/dev/null || true
 
-# ═══════════════════════════════════════════════════
-# CAP-SFLIGHT (agentic demo)
-# ═══════════════════════════════════════════════════
-
+# 7. Bake the history so reset-demo.sh can restore it instantly
 echo ""
-echo "▶ Setting up cap-sflight..."
-
-# 7. Build cap-sflight
-cd "$CAP_DIR"
-# The CDS Maven plugin downloads its own Node.js. We need to make sure the
-# bundled npm is available before syncing the lock file. Run a minimal Maven
-# goal first to trigger the download, then sync with the bundled npm, then do
-# the real install.
-mvn cds:install-node -pl srv -Denforcer.skip=true -q 2>/dev/null || true
-BUNDLED_NPM=$(find ~/.m2/repository/com/sap/cds/cds-maven-plugin/cache -name "npm" -type f 2>/dev/null | head -1)
-if [[ -x "$BUNDLED_NPM" ]]; then
-    "$BUNDLED_NPM" install --silent 2>/dev/null || true
-    git add package-lock.json package.json && git commit -m "Sync package-lock.json" --allow-empty -q 2>/dev/null || true
-fi
-mvn install -DskipTests -Denforcer.skip=true -q 2>/dev/null || mvn install -DskipTests -Denforcer.skip=true
-echo "  ✓ cap-sflight built"
-
-# 8. Enable test-order and run learn pass (if no index)
-cd "$SCRIPT_DIR"
-./toggle-test-order-cap.sh on 2>/dev/null || true
-
-if [[ ! -f "$CAP_DIR/srv/.test-order/test-dependencies.lz4" ]]; then
-    echo "▶ Running learn pass for cap-sflight..."
-    cd "$CAP_DIR"
-    mvn test -pl srv -Dtestorder.mode=learn -Denforcer.skip=true -q 2>/dev/null || true
-    # Merge the fallback file (Spring Boot forked JVM writes collector-fallback instead of direct merge)
-    mvn test-order:aggregate -pl srv -Denforcer.skip=true -q 2>/dev/null || true
-    echo "  ✓ Learn pass complete — index built"
-else
-    echo "▶ cap-sflight index already exists — skipping learn"
-fi
-
-# 9. Commit index
-cd "$CAP_DIR"
-git add -f srv/.test-order srv/pom.xml .github/copilot-instructions.md 2>/dev/null || true
-git add -f srv/src/test/ 2>/dev/null || true
-git commit -m "Add test-order setup and tests" --allow-empty -q 2>/dev/null || true
-
-# 10. Pre-plant the off-by-one bug in DeductDiscountHandler (live Copilot demo target)
-echo ""
-echo "▶ Pre-planting off-by-one bug in cap-sflight DeductDiscountHandler..."
-HANDLER="$CAP_DIR/srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java"
-if grep -q "percent > 50" "$HANDLER" 2>/dev/null; then
-    sed -i '' 's/percent > 50/percent >= 50/g' "$HANDLER"
-    git add "$HANDLER" && git commit -m "Pre-plant off-by-one bug" -q 2>/dev/null || true
-    echo "  ✓ Bug planted (percent >= 50 instead of > 50)"
-elif grep -q "percent >= 50" "$HANDLER" 2>/dev/null; then
-    echo "  ✓ Bug already planted"
-else
-    echo "  ⚠ Could not find percent check — check $HANDLER manually"
-fi
-
-# 11. Bake the history so reset-demo.sh can restore it instantly
-echo ""
-echo "▶ Baking .test-order snapshots for fast reset..."
+echo "▶ Baking .test-order snapshot for fast reset..."
 cd "$SCRIPT_DIR"
 ./bake-history.sh
 
@@ -231,7 +172,7 @@ echo "   ☐ Terminal font 20pt+"
 echo "   ☐ Slides running: cd slides && npm run dev"
 echo "   ☐ Dashboard running: cd cloud-sdk-java && mvn test-order:serve -pl $MODULE"
 echo "   ☐ Browser tab open at localhost:8080 (dashboard pre-loaded)"
-echo "   ☐ VS Code open on cap-sflight/"
-echo "   ☐ copilot-instructions.md visible in tab"
+echo "   ☐ VS Code open on cloud-sdk-java/"
+echo "   ☐ copilot-instructions.md visible in tab (.github/copilot-instructions.md)"
 echo "   ☐ Run: ./reset-demo.sh"
 echo ""

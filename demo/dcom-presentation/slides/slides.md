@@ -23,10 +23,11 @@ fonts:
 <!--
 PRESENTER CHECKLIST:
 - Terminal font: 20pt+ (test on projector!)
-- Have cloud-sdk-java ready with pre-built index (./prepare.sh)
-- Have cap-sflight open in a separate VS Code window (./toggle-test-order-cap.sh on)
+- cloud-sdk-java built and index ready (./prepare.sh)
+- VS Code open on cloud-sdk-java/, .github/copilot-instructions.md visible in a tab
+- Dashboard tab open at localhost:8080 (mvn test-order:serve -pl cloudplatform/connectivity-destination-service)
 - No Wi-Fi needed (all local)
-- Timing: Title 20s → Pain 90s → HowItWorks 20s → Magic 30s → Results 15s → AgenticDemo 75s → AgenticLoop 20s → Kicker 15s → Close 15s = ~5min
+- Timing: Title 20s → Pain 90s → HowItWorks 20s → Magic 30s → Results 15s → Dashboard 10s → AgenticDemo 75s → AgenticLoop 20s → Kicker 15s → Close 15s = ~5min
 
 [click] subtitle appears
 [click] show the four ecosystems we support — Java, JUnit 5, Maven, Gradle
@@ -62,7 +63,10 @@ flowchart LR
 
 → Run the magic demo now.
   cd cloud-sdk-java
+  ./make-change.sh      ← introduces the tenant-routing bug + commits
+  ./toggle-test-order.sh on
   mvn test-order:select test -pl cloudplatform/connectivity-destination-service
+  → RED in ~17s
 -->
 
 ---
@@ -73,13 +77,20 @@ layout: full
 <SlideResults />
 
 <!--
-[BUILD SUCCESS just appeared — ~17 seconds]
+[Tests failed — ~17 seconds]
 
-"Seven test classes. 17 seconds. Same confidence."
-"No clean rebuild. No guessing. It knows."
+"Seven test classes. 17 seconds. It found a bug."
+"No clean rebuild. No guessing. It knows exactly which tests exercise this code."
 
-→ Next: show this working with an AI agent making a mistake.
-  Switch to VS Code with cap-sflight open.
+→ Brief dashboard moment here (10s max):
+  Switch to browser tab at localhost:8080
+  "It didn't just run the right tests — it's been tracking every run.
+   You can see which tests are most valuable. Observability over your test suite."
+  Switch back immediately.
+
+→ Now show Copilot fixing it. Stay in terminal or switch to VS Code.
+  Show .github/copilot-instructions.md tab.
+  "One file. It tells the agent: after every change, run test-order select."
 -->
 
 ---
@@ -91,29 +102,24 @@ layout: full
 <SlideAgenticLoop />
 
 <!--
-[Back from VS Code — audience just watched Copilot edit, fail, fix, go green]
+[Back from VS Code — audience just watched Copilot read failure, fix, go green]
 
 Click through to recap what they just saw:
-[click 1] "The AI made a change."
-[click 2] "Copilot ran test-order:select — copilot-instructions.md told it to."
-[click 3] "17 seconds: a test failed. Off-by-one on the boundary."
-[click 4] "Copilot read the failure and fixed it."
+[click 1] "The AI made a change — and introduced a bug."
+[click 2] "test-order:select ran. The instructions file told Copilot to."
+[click 3] "17 seconds: a test failed. Logic inversion in tenant routing."
+[click 4] "Copilot read the failure and fixed the negation."
 [click 5] "17 seconds again. Green."
 [click 6] "Edit → caught → fixed → green. Under 40 seconds."
 [click 7] "One instructions file. That's the entire integration."
 
 LIVE PROMPT for Copilot chat:
-  "Add max discount validation to DeductDiscountHandler.
-   Discounts above 50% should be rejected with an error message.
-   After the change, run the tests using the project's test instructions."
+  "The tests are failing. Read the failure output and fix the bug.
+   After the fix, run the tests using the project's test instructions."
 
-FALLBACK if Copilot gets it right first try:
-  sed -i '' 's/discount > 50/discount >= 50/' \
-    srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
-  mvn test-order:select test -pl srv -Denforcer.skip=true   # red
-  sed -i '' 's/discount >= 50/discount > 50/' \
-    srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java
-  mvn test-order:select test -pl srv -Denforcer.skip=true   # green
+FALLBACK if Copilot doesn't cooperate:
+  ./fix-change.sh                                                         # fix the negation
+  mvn test-order:select test   # green ~17s
 -->
 
 ---

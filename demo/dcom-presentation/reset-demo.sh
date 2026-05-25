@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
-# reset-demo.sh — Reset both projects for a fresh demo run
+# reset-demo.sh — Reset cloud-sdk-java for a fresh demo run
 # =============================================================================
 # Use between practice runs or if something goes wrong on stage.
-# If .baked-history/ exists (created by bake-history.sh), restores .test-order
-# from snapshot instantly. Otherwise resets git state and pom.xml only.
+# Restores .test-order from .baked-history/ snapshot (instant).
 # =============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SDK_DIR="$SCRIPT_DIR/cloud-sdk-java"
-CAP_DIR="$SCRIPT_DIR/cap-sflight"
 MODULE="cloudplatform/connectivity-destination-service"
 BAKE_DIR="$SCRIPT_DIR/.baked-history"
 
@@ -18,7 +16,6 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo " Resetting demo state..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Reset cloud-sdk-java
 echo ""
 echo "▶ cloud-sdk-java..."
 cd "$SDK_DIR"
@@ -38,44 +35,16 @@ else
     echo "  ⚠ No baked history found — run bake-history.sh after prepare.sh"
 fi
 
-# Commit the "off" state so make-change creates a clean diff
+# Commit the "off" state so make-change.sh creates a clean diff
 git add -A && git commit -m "Reset for demo" --allow-empty -q 2>/dev/null || true
-echo "  ✓ Reset (plugin off, index present, no code changes)"
-
-# Reset cap-sflight
-echo ""
-echo "▶ cap-sflight..."
-cd "$CAP_DIR"
-git checkout -- .
-cd "$SCRIPT_DIR"
-./toggle-test-order-cap.sh on 2>/dev/null || true
-
-# Restore cap-sflight .test-order from baked snapshot (fast path)
-if [[ -d "$BAKE_DIR/cap-sflight" ]]; then
-    rm -rf "$CAP_DIR/srv/.test-order"
-    mkdir -p "$CAP_DIR/srv/.test-order"
-    cp -r "$BAKE_DIR/cap-sflight/." "$CAP_DIR/srv/.test-order/"
-    echo "  ✓ cap-sflight .test-order restored from baked snapshot"
-fi
-
-# Re-plant the off-by-one bug (git checkout restores the clean file with > 50)
-HANDLER="$CAP_DIR/srv/src/main/java/com/sap/cap/sflight/processor/DeductDiscountHandler.java"
-if grep -q "percent > 50" "$HANDLER" 2>/dev/null; then
-    sed -i '' 's/percent > 50/percent >= 50/g' "$HANDLER"
-    echo "  ✓ Reset (plugin on, bug planted: percent >= 50)"
-elif grep -q "percent >= 50" "$HANDLER" 2>/dev/null; then
-    echo "  ✓ Reset (plugin on, bug already planted)"
-else
-    echo "  ⚠ Could not plant bug — check $HANDLER manually"
-fi
+echo "  ✓ Reset (plugin off, index present, source clean)"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " ✅ Ready for demo!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo " cloud-sdk-java: plugin OFF (show pain first)"
-echo " cap-sflight:    plugin ON  (ready for agentic)"
+echo " cloud-sdk-java: plugin OFF — show pain first"
 if [[ -d "$BAKE_DIR" ]]; then
 echo " history:        restored from .baked-history/"
 else

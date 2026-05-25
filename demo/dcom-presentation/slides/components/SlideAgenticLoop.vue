@@ -18,7 +18,7 @@
           <div class="w-full bg-white/5 border border-blue-500/30 rounded-xl px-4 py-4 text-center">
             <div class="text-2xl mb-1">🤖</div>
             <div class="text-sm font-semibold text-blue-300">AI edits code</div>
-            <div class="text-xs text-gray-500 mt-1">adds discount validation</div>
+            <div class="text-xs text-gray-500 mt-1">inverts tenant check</div>
           </div>
         </div>
 
@@ -88,7 +88,7 @@
         <div class="text-gray-400 text-xs font-mono flex-shrink-0">.github/copilot-instructions.md</div>
         <div class="w-px h-4 bg-white/20 flex-shrink-0"></div>
         <div class="text-gray-300 text-xs font-mono truncate">
-          After changes: <span class="text-emerald-400">mvn test-order:select test -pl srv</span>
+          After changes: <span class="text-emerald-400">mvn test-order:select test</span>
         </div>
       </div>
     </div>
