@@ -175,14 +175,18 @@ mvn test-order:select test   # green, ~17s
 | 0:15 | "SAP Cloud SDK for Java. 65 modules. I changed one file." |
 | 0:30 | "Clean build, full test suite. This is what CI does on every push." |
 | 1:15 | *(kill mvn)* "Over a minute gone. Four more to go. No feedback yet." |
-| 2:00 | "What if Maven knew which tests exercise the code you touched?" |
+| 2:00 | "What if Maven knew which tests actually exercise the code you touched?" |
+| 2:10 | "You run a learn pass once. The plugin instruments your bytecode — records, for every test, every production class it touches. No annotations. No JaCoCo. No cloud." |
+| 2:20 | "The result is a dependency graph. Test → set of production classes. Stored locally, compressed, survives across builds." |
+| 2:25 | "On every commit: git diff tells us what changed. We intersect with the graph. Tests that overlap score higher. Tests that recently failed score higher. Fast tests first among ties." |
 | 2:30 | "One plugin. It learned the dependency graph. Then it selects." |
 | 2:45 | *(BUILD FAILURE ~17s)* "Seven test classes. 17 seconds. It found a bug." |
-| 2:50 | *(browser)* "It's been tracking every run. You can see which tests matter." |
+| 2:50 | *(browser)* "It's been tracking every run. You can see which tests caught failures first. Which ones are flaky. APFD — how early in the run bugs are detected." |
 | 3:00 | "One instructions file. The agent gets results in 17 seconds, not 5 minutes." |
-| 3:10 | "As a Gradle DevRel once put it: 2× slower feedback → 4× slower developer." |
+| 3:10 | "As a Gradle DevRel once put it: 2× slower feedback → 4× slower developer. An agent waiting 5 minutes makes 18× fewer iterations per hour than one getting feedback in 17 seconds." |
 | 3:20 | *(Copilot runs tests — red ~17s)* "There's the bug. Logic inversion on the tenant check." |
 | 3:30 | *(Copilot fixes, re-runs ~17s)* "Fixed. Green. Under 40 seconds, start to finish." |
+| 4:00 | "Maven and Gradle. JUnit 5, JUnit 4, TestNG, Kotest. Zero configuration. The plugin auto-detects your packages." |
 | 5:15 | "Maybe your test suite isn't too large." |
 | 5:25 | "Maybe you're just running the wrong tests first." |
 
