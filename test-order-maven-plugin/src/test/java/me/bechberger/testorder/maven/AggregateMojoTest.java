@@ -56,8 +56,8 @@ class AggregateMojoTest {
 	@Test
 	void missingDepsDirectoryFailsWithHelpfulMessage() {
 		MojoExecutionException ex = assertThrows(MojoExecutionException.class, mojo::execute);
-		assertTrue(ex.getMessage().contains("Deps directory does not exist"));
-		assertTrue(ex.getMessage().contains("mvn test-order:auto test"));
+		assertTrue(ex.getMessage().contains("No dependency data found"), "Message: " + ex.getMessage());
+		assertTrue(ex.getMessage().contains("mvn test -Dtestorder.mode=learn"), "Message: " + ex.getMessage());
 	}
 
 	@Test

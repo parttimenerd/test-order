@@ -135,11 +135,9 @@ mvn test-order:select -Dtestorder.select.maxTests=10
 "did you mean" suggestion (`testorder.select.selectedFile`) is unrelated and unhelpful — it should
 suggest `testorder.select.topN` instead.
 
-**Severity**: CONFUSING
+**Severity**: CONFUSING — **FIXED** (added `maxTests`/`limit`/`count` as aliases mapping to `testorder.select.topN`)
 
----
-
-### B06 — `tiered-select` prints warning about not executing tests BEFORE failing on missing index
+--- — `tiered-select` prints warning about not executing tests BEFORE failing on missing index
 
 **Command**:
 ```
@@ -157,11 +155,7 @@ fails due to missing index. The user's first impression is the misleading warnin
 **Expected**: Check for missing index first (fail fast); only emit the "include test phase" warning
 after successfully selecting tests.
 
-**Severity**: CONFUSING
-
----
-
-### B07 — `select` goal emits "non-deterministic" warning even when no subset is selected
+**Severity**: CONFUSING — **FIXED** (index check now runs before the "include test phase" warning) — `select` goal emits "non-deterministic" warning even when no subset is selected
 
 **Command**:
 ```
@@ -178,9 +172,7 @@ irrelevant — there's only one possible selection.
 **Expected**: Suppress the non-determinism warning when `topN >= total test count` (i.e., all
 tests are selected).
 
-**Severity**: MINOR/CONFUSING
-
----
+**Severity**: MINOR/CONFUSING — **FIXED** (warning suppressed when all tests are selected)
 
 ### B08 — `show-order` goal is deprecated but documentation/help text may still reference it
 
@@ -459,11 +451,7 @@ stale data.
 **Expected**: `test-order:clean` should remove the entire `.test-order/` directory tree including
 `pending-runs/` and `detection/`.
 
-**Severity**: WRONG
-
----
-
-### B21 — `detect-dependencies` reports "No order-dependent tests detected" even when reference run fails entirely
+**Severity**: WRONG — **FIXED** (clean goal now also removes `pending-runs/` and `detection/` dirs) — `detect-dependencies` reports "No order-dependent tests detected" even when reference run fails entirely
 
 **Projects**: Apache Commons Collections
 **Command**:
@@ -483,11 +471,7 @@ The only indication of failure was `[WARNING] Subprocess exited with code 1`.
 immediately with an error. Detecting "0 order-dependent tests" from a run where 90% of tests were
 missing is a dangerous false negative.
 
-**Severity**: WRONG (false-negative detection result)
-
----
-
-### B22 — `detect-dependencies` permanently overwrites production `test-dependencies.lz4` with MEMBER-mode data
+**Severity**: WRONG (false-negative detection result) — **FIXED** (aborts when >50% of reference run test classes fail) — `detect-dependencies` permanently overwrites production `test-dependencies.lz4` with MEMBER-mode data
 
 **Projects**: Apache Commons Collections
 **Command**:
@@ -530,7 +514,7 @@ miss 98% coverage without any WARNING.
 "X tests in tier-3 were NOT run — build does not represent full coverage. Run:
 `mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3`"
 
-**Severity**: CONFUSING
+**Severity**: CONFUSING — **FIXED** (tier-3 skip now emits a WARNING instead of silent INFO)
 
 ---
 
@@ -576,11 +560,7 @@ The phrase "all change-affected tests" implies filtering is occurring when the f
 **Expected**: Message should say: "topN=-1 (default) runs all tests in priority order (no subset
 selection). To run only the top N, set -Dtestorder.select.topN=N."
 
-**Severity**: CONFUSING
-
----
-
-### B26 — `detect-dependencies` exceeds time budget with no `[WARNING]`
+**Severity**: CONFUSING — **FIXED** (message now accurately describes topN=-1 behavior) — `detect-dependencies` exceeds time budget with no `[WARNING]`
 
 **Command**:
 ```
@@ -595,21 +575,15 @@ also at INFO level.
 "Detection run exceeded time budget (69s > 60s). Results may be incomplete. Set
 `-Dtestorder.detect.timeBudget=70` to ensure a full run."
 
-**Severity**: MINOR
-
----
-
-
-
-| ID  | Severity | Area                  | Description                                              |
+**Severity**: MINOR — **FIXED** (now emits a WARNING when actual run time exceeds the budget) Severity | Area                  | Description                                              |
 |-----|----------|-----------------------|----------------------------------------------------------|
 | B01 | CRASH    | detect-dependencies   | NoClassDefFoundError UsageStore in learn phase           |
 | B02 | WRONG    | learn mode            | reuseForks=false: index only gets 1 test class           |
 | B03 | WRONG    | learn mode            | Spring context teardown causes merge failure             |
 | B04 | CONFUSING| export-json           | JSON mixed with Maven log lines; tip order wrong         |
-| B05 | CONFUSING| select                | maxTests → wrong "did you mean" suggestion               |
-| B06 | CONFUSING| tiered-select         | Warning about test phase shown before missing-index error|
-| B07 | MINOR    | select                | Non-determinism warning when all tests are selected      |
+| B05 | CONFUSING| select                | maxTests → wrong "did you mean" suggestion — FIXED (alias added) |
+| B06 | CONFUSING| tiered-select         | Warning about test phase shown before missing-index error — FIXED |
+| B07 | MINOR    | select                | Non-determinism warning when all tests are selected — FIXED |
 | B08 | MINOR    | show-order            | show-order still referenced in docs after deprecation    |
 | B09 | CONFUSING| detect-dependencies   | Index not persisted after detect-deps — FIXED (now copies to production) |
 | B10 | CONFUSING| select                | False-alarm warning about <excludes> override            |
@@ -622,10 +596,10 @@ also at INFO level.
 | B17 | MINOR    | tiered-select         | Expected degradation from B02 (graceful)                 |
 | B18 | MINOR    | detect-dependencies   | hashes.lz4 not saved by detect-deps learn phase          |
 | B19 | CRASH    | learn mode            | pending-runs files accumulate, O(n²) slowdown — FIXED (cleanStalePartials now called) |
-| B20 | WRONG    | clean                 | clean goal does not remove pending-runs directory        |
-| B21 | WRONG    | detect-dependencies   | "0 findings" reported when reference run catastrophically fails |
+| B20 | WRONG    | clean                 | clean goal does not remove pending-runs directory — FIXED |
+| B21 | WRONG    | detect-dependencies   | "0 findings" reported when reference run catastrophically fails — FIXED |
 | B22 | WRONG    | detect-dependencies   | detect-deps overwrites production index — FIXED (uses detection/detection-deps.lz4) |
-| B23 | CONFUSING| tiered-select         | Tier-3 tests silently skipped with no warning            |
+| B23 | CONFUSING| tiered-select         | Tier-3 tests silently skipped with no warning — FIXED (upgraded to WARNING) |
 | B24 | CONFUSING| show                  | Abstract test classes shown as [NEW] indefinitely        |
-| B25 | CONFUSING| select                | topN=-1 message says "change-affected" but means "all"   |
-| B26 | MINOR    | detect-dependencies   | Time budget exceeded with no WARNING                     |
+| B25 | CONFUSING| select                | topN=-1 message says "change-affected" but means "all" — FIXED |
+| B26 | MINOR    | detect-dependencies   | Time budget exceeded with no WARNING — FIXED             |

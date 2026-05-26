@@ -105,16 +105,14 @@ public final class ChangeDetectionSupport {
 	public static Set<String> detectChangedClasses(String changeMode, Path projectRoot, Path sourceRoot, Path hashFile,
 			String changedClasses, boolean readOnly) throws IOException {
 		String normalized = normalizeMode(changeMode);
-		// In auto mode, explicit changedClasses take precedence over detection
-		if ("auto".equals(normalized) && changedClasses != null && !changedClasses.isBlank()) {
+		// Explicit classes always take precedence over git/hash-based detection,
+		// regardless of changeMode. This lets users override detection in any mode.
+		if (changedClasses != null && !changedClasses.isBlank()) {
 			return parseExplicitClasses(changedClasses);
 		}
 		ChangeDetector.Mode mode = resolveMode(normalized, hashFile);
 		if (mode == ChangeDetector.Mode.EXPLICIT) {
-			if (changedClasses == null || changedClasses.isBlank()) {
-				return Set.of();
-			}
-			return parseExplicitClasses(changedClasses);
+			return Set.of();
 		}
 		return invoke(mode, projectRoot, sourceRoot, hashFile, changedClasses, readOnly);
 	}

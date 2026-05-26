@@ -31,7 +31,7 @@ class DiagnosticOperationTest {
 		DiagnosticOperation.DiagnosticReport report = DiagnosticOperation.diagnose(config);
 
 		assertEquals(6, report.results().size());
-		assertTrue(report.results().stream().anyMatch(r -> r.code() == ErrorCode.INDEX_NOT_FOUND));
+		assertTrue(report.results().stream().anyMatch(r -> r.code() == ErrorCode.NOT_INITIALIZED_INDEX));
 		assertTrue(report.results().stream().anyMatch(r -> r.code() == ErrorCode.DEPS_NOT_FOUND));
 		assertTrue(report.results().stream().anyMatch(r -> r.code() == ErrorCode.TEST_SOURCE_ROOT_ABSENT));
 	}

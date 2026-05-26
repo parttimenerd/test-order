@@ -48,6 +48,12 @@ test-order-dashboard/src/main/dashboard/node/
 *.swp
 *.swo
 *.lz4
+*.bak
+
+# Screenshot testing artifacts (Playwright, manual test screenshots)
+*.png
+!docs/*.png
+!demo/**/*.png
 *.out
 
 # External repos cloned for demos and benchmarks
