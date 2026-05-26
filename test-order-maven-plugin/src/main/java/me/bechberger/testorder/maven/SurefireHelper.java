@@ -428,8 +428,9 @@ final class SurefireHelper {
 
 	/**
 	 * Warns when {@code reuseForks=false} in learn mode. Each test class runs in a
-	 * fresh JVM, so the agent's shutdown hook races against JVM exit and dependency
-	 * data is frequently lost. Learn mode is unreliable with this configuration.
+	 * fresh JVM. Dependency data is written to individual {@code .deps} files on
+	 * JVM exit, so collection still works correctly — but spawning a new JVM per
+	 * test class significantly increases total learn-phase duration.
 	 */
 	static void warnReuseForksFalseInLearnMode(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -441,9 +442,9 @@ final class SurefireHelper {
 		String reuseForks = childValue(config, "reuseForks");
 		if ("false".equalsIgnoreCase(reuseForks != null ? reuseForks.trim() : null)) {
 			log.warn("[test-order] Surefire <reuseForks>false</reuseForks> — "
-					+ "each test class runs in a new JVM. Learn mode is unreliable: "
-					+ "dependency data is sent via a shutdown hook that may be lost before the JVM exits. "
-					+ "Consider setting <reuseForks>true</reuseForks> for accurate dependency tracking.");
+					+ "each test class runs in a new JVM. Learn mode works correctly but is significantly slower "
+					+ "due to per-class JVM startup overhead. Consider setting "
+					+ "<reuseForks>true</reuseForks> to speed up the learn phase.");
 		}
 	}
 

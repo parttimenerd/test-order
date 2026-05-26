@@ -49,6 +49,22 @@ public interface TestRunner {
 	 * @return true if the learn phase succeeded
 	 */
 	default boolean runLearnPhase(String instrumentationMode) {
+		return runLearnPhase(instrumentationMode, null);
+	}
+
+	/**
+	 * Run a learn phase to collect dependency data at the specified instrumentation
+	 * level, writing the resulting index to {@code targetIndexFile} instead of the
+	 * project's default location. Use this when the caller needs to isolate the
+	 * detect-dependencies learn pass from the production index (B22).
+	 *
+	 * @param instrumentationMode
+	 *            the instrumentation mode to use (e.g. "MEMBER")
+	 * @param targetIndexFile
+	 *            if non-null, redirect the written index to this path
+	 * @return true if the learn phase succeeded
+	 */
+	default boolean runLearnPhase(String instrumentationMode, java.nio.file.Path targetIndexFile) {
 		throw new UnsupportedOperationException("Learn phase not supported by this runner");
 	}
 

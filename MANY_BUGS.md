@@ -54,8 +54,14 @@ After a full `mvn test` run across 244 test classes, only 1 test class ends up i
 Each subsequent `mvn test` invocation processes only the most recent fallback batch (the last
 JVM's data), never accumulating the full index.
 
+**Note (2026-05-26)**: In offline mode (the default), `UsageStore.flush()` writes `.deps` files
+directly to `outputDir` on JVM shutdown — not via TCP/socket. The `merge failed in shutdown hook`
+message comes from `IndexCollectorServer`, which is only used in **online/agent mode**. The issue
+in B02 may only affect online mode or may have been fixed by the introduction of `PartialRunAggregator`
+which specifically handles `reuseForks=false` run records. Needs re-testing.
+
 **Reproducer**:
-1. Project must have `<reuseForks>false</reuseForks>` in Surefire config
+1. Project must have `<reuseForks>false</reuseForks>` in Surefire config and online/agent instrumentation
 2. Run `mvn test` (learn mode)
 3. Run `mvn test-order:export-json` — observe `testClassCount` is 1 or very low
 
@@ -64,10 +70,9 @@ JVM's data), never accumulating the full index.
 **Root cause**: The `IndexCollectorServer` TCP server approach only keeps one fallback from the last
 dying JVM; earlier JVMs' payloads overwrite each other (or get lost) when the server dies with each fork.
 
-**Workaround**: Run `mvn test` multiple times (N runs for N test classes) — impractical for large
-projects. Alternatively set `<reuseForks>true</reuseForks>` if the project allows it.
+**Workaround**: Use offline mode (default) or set `<reuseForks>true</reuseForks>`.
 
-**Severity**: WRONG (learn mode silently produces an incomplete index)
+**Severity**: WRONG (learn mode silently produces an incomplete index — if reproducible in offline mode)
 
 ---
 
@@ -298,21 +303,27 @@ should include a note that the plugin must be in `<build><plugins>`, not `<plugi
 
 ---
 
-### B13 — `reuseForks=false` warning appears even if learn mode is perfectly functional
+### B13 — `reuseForks=false` warning was inaccurate (misleading severity)
 
 **Command**: `mvn test` (learn mode, project with `reuseForks=false`)
-**Symptom**:
+**Original warning** (before fix):
 ```
 [WARNING] [test-order] Surefire <reuseForks>false</reuseForks> — each test class runs in a new JVM. Learn mode works but is slower and may miss cross-class static dependencies.
 ```
-The warning says "learn mode works" but as documented in B02, it does NOT reliably collect data
-for all test classes. The warning is misleading — it downplays the severity.
+**Mistakenly strengthened** (during a prior fix attempt) to say "unreliable / shutdown hook may be
+lost" — but that was wrong. In offline mode, `UsageStore.flush()` writes `.deps` files directly to
+`outputDir` on JVM exit; there's no socket/race condition. Each fork JVM writes its own `.deps`
+files which are then aggregated normally. The issue in B02 (index only getting 1 test class) was a
+different problem.
 
-**Expected**: The warning should say: "Learn mode is unreliable with `reuseForks=false` — dependency
-data from each JVM is sent via a shutdown hook and may be lost. Consider setting `<reuseForks>true</reuseForks>`
-for accurate dependency tracking."
+**Fixed warning**:
+```
+[WARNING] [test-order] Surefire <reuseForks>false</reuseForks> — each test class runs in a new JVM.
+Learn mode works correctly but is significantly slower due to per-class JVM startup overhead.
+Consider setting <reuseForks>true</reuseForks> to speed up the learn phase.
+```
 
-**Severity**: CONFUSING (understates a critical issue)
+**Severity**: CONFUSING (warning text was inaccurate, now corrected)
 
 ---
 
@@ -485,11 +496,15 @@ After detect-dependencies triggered its internal MEMBER-mode re-learn phase, the
 replaced with 1.4 MB of MEMBER-mode data. This is incompatible with the CLASS-mode instrumentation
 still in `target/classes`, and corrupts subsequent plugin operations.
 
-**Expected**: `detect-dependencies` should use a temporary/isolated copy of the dependency index
-for its internal re-learn, leaving the production index untouched when done. Or at minimum warn
-that the index was replaced.
+**Root cause**: `DetectDependenciesOperation.runLearnPhase()` called `runner.runLearnPhase("MEMBER")`
+without redirecting the output. `MavenTestRunner.runLearnPhase()` runs `test-order:learn test`
+which writes to the standard `.test-order/test-dependencies.lz4`.
 
-**Severity**: WRONG (data corruption)
+**Fix**: `runLearnPhase()` now accepts an optional `targetIndexFile` parameter. Detection passes
+`<outputDir>/detection-deps.lz4`, redirecting the learn output to `detection/` without touching the
+production index. The production index is preserved.
+
+**Severity**: WRONG (data corruption) — **FIXED**
 
 ---
 
@@ -597,7 +612,7 @@ also at INFO level.
 | B10 | CONFUSING| select                | False-alarm warning about <excludes> override            |
 | B11 | WRONG    | diagnose              | 100% healthy despite incomplete index                   |
 | B12 | MINOR    | docs                  | pluginManagement vs build/plugins confusion              |
-| B13 | CONFUSING| learn mode            | reuseForks warning understates the severity              |
+| B13 | CONFUSING| learn mode            | reuseForks warning was inaccurate (fixed: slower not unreliable) |
 | B14 | MINOR    | learn mode            | No hashes.lz4 for source-less projects                   |
 | B15 | WRONG    | export-json           | Consequence of B02: testClassCount=1 after full learn    |
 | B16 | MINOR    | docs                  | @{argLine} interaction not documented                    |
@@ -606,7 +621,7 @@ also at INFO level.
 | B19 | CRASH    | learn mode            | pending-runs files accumulate, O(n²) slowdown            |
 | B20 | WRONG    | clean                 | clean goal does not remove pending-runs directory        |
 | B21 | WRONG    | detect-dependencies   | "0 findings" reported when reference run catastrophically fails |
-| B22 | WRONG    | detect-dependencies   | detect-deps overwrites production index with MEMBER-mode data |
+| B22 | WRONG    | detect-dependencies   | detect-deps overwrites production index — FIXED (uses detection/detection-deps.lz4) |
 | B23 | CONFUSING| tiered-select         | Tier-3 tests silently skipped with no warning            |
 | B24 | CONFUSING| show                  | Abstract test classes shown as [NEW] indefinitely        |
 | B25 | CONFUSING| select                | topN=-1 message says "change-affected" but means "all"   |

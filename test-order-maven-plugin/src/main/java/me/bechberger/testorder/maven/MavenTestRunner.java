@@ -62,13 +62,16 @@ class MavenTestRunner implements TestRunner {
 	}
 
 	@Override
-	public boolean runLearnPhase(String instrumentationMode) {
+	public boolean runLearnPhase(String instrumentationMode, Path targetIndexFile) {
 		log.info("[test-order] Running learn phase with instrumentation mode: " + instrumentationMode);
 
 		List<String> command = new ArrayList<>(
 				List.of(findMavenExecutable(), "me.bechberger:test-order-maven-plugin:learn", "test",
 						"-Dtestorder.instrumentation.mode=" + instrumentationMode, "-Dspotless.check.skip=true",
 						"--batch-mode"));
+		if (targetIndexFile != null) {
+			command.add("-Dtestorder.index.path=" + targetIndexFile.toAbsolutePath());
+		}
 		command.addAll(PLUGIN_SKIP_FLAGS);
 
 		File workDir;

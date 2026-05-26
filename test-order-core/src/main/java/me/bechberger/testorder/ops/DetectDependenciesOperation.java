@@ -115,9 +115,25 @@ public final class DetectDependenciesOperation {
 					: "dependency index lacks method-level data (need MEMBER mode)";
 			log.info("Auto-learn triggered: " + reason);
 			log.info("Running learn phase with MEMBER instrumentation...");
-			boolean learnOk = runner.runLearnPhase("MEMBER");
-			if (learnOk && config.indexFile() != null && Files.exists(config.indexFile())) {
-				depMap = DependencyMap.load(config.indexFile());
+			// Write the detection learn index to outputDir to avoid overwriting the
+			// production index (B22).
+			Path detectionIndexFile = config.outputDir() != null
+					? config.outputDir().resolve("detection-deps.lz4")
+					: config.indexFile();
+			if (detectionIndexFile != null && detectionIndexFile.getParent() != null) {
+				try {
+					Files.createDirectories(detectionIndexFile.getParent());
+				} catch (IOException ignored) {
+				}
+			}
+			boolean learnOk = runner.runLearnPhase("MEMBER", detectionIndexFile);
+			Path learnedIndexFile = (learnOk && detectionIndexFile != null && Files.exists(detectionIndexFile))
+					? detectionIndexFile
+					: (learnOk && config.indexFile() != null && Files.exists(config.indexFile())
+							? config.indexFile()
+							: null);
+			if (learnedIndexFile != null) {
+				depMap = DependencyMap.load(learnedIndexFile);
 				log.info("Reloaded dependency map after learn: " + depMap.testClasses().size() + " test classes, "
 						+ "method deps: " + depMap.hasMethodDeps());
 			} else if (!learnOk) {
