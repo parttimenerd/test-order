@@ -116,6 +116,10 @@ mvn test-order:show -Dtestorder.show.format=json
 | `testorder.select.seed` | — | Random seed for `randomM` |
 | `testorder.show.all` | `false` | Enable all sections (classes + methods + ML) |
 
+> **CamelCase aliases:** `testorder.showOrder.format` is accepted as an alias for `testorder.show.format`,
+> and `testorder.showOrder.topN` is accepted as an alias for `testorder.select.topN`.
+> Both aliases log an info-level message pointing to the canonical name.
+
 ## Plugin Prefix Resolution
 
 If Maven reports `No plugin found for prefix 'test-order'`, use one of these solutions:

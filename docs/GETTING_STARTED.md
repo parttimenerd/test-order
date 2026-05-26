@@ -88,7 +88,7 @@ Then run any Gradle command with `--init-script path/to/test-order-init.gradle`.
 
 ## Step 2: Run tests (learn mode)
 
-On the first run, the plugin automatically enters **learn mode** — it attaches a Java agent that records which application classes each test exercises.
+On the first run, the plugin automatically enters **learn mode** — it pre-instruments your compiled classes (offline CLASS instrumentation, the default) so that each test's application-class dependencies are recorded without needing a Java agent attached at runtime.
 
 ```bash
 # Maven
@@ -101,14 +101,19 @@ mvn test
 **What you'll see:**
 
 ```
-[INFO] [test-order] No dependency index found — entering learn mode
-[INFO] [test-order] Agent attached, recording dependencies...
-...
-[INFO] [test-order] Wrote dependency index: .test-order/test-dependencies.lz4 (42 classes, 8 test classes)
+[INFO] [test-order] Auto-instrumenting classes for offline learn mode: .../target/classes
+[INFO] [test-order] Instrumented 42 classes (skipped 0)
+[INFO] [test-order] Offline learn mode (CLASS): no agent, using pre-instrumented classes
+[INFO] [test-order] IndexCollectorServer started on port 54321 (v2 binary protocol enabled)
+[INFO] [test-order] IndexCollectorServer merged 8 test classes via socket
 [INFO] BUILD SUCCESS
 ```
 
-This creates a `.test-order/` directory with the dependency index. You can gitignore it — the plugin auto-learns on first run for any new checkout.
+After the learn run, the dependency index is written to `.test-order/test-dependencies.lz4`. You can gitignore this directory — the plugin auto-learns on the first run for any new checkout.
+
+> **Instrumentation modes:** The default is `offline` (pre-instrumented bytecode, no agent needed).
+> To use online agent-based instrumentation instead, pass `-Dtestorder.instrumentation=online`.
+> Online mode requires the agent JAR on the command line but avoids modifying bytecode on disk.
 
 ---
 
