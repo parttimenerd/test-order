@@ -182,11 +182,21 @@ public final class DetectDependenciesOperation {
 		}
 		Set<String> passingTests = ptr.passing();
 		referenceOrder = ptr.effectiveOrder();
+		int failedInRef = referenceOrder.size() - passingTests.size();
 		if (passingTests.isEmpty()) {
 			log.warn("No tests pass in reference order — cannot detect OD bugs. " + "All " + referenceOrder.size()
 					+ " test classes had failures. "
 					+ "If only a few methods per class fail, consider using --add-opens "
 					+ "or fixing the failing tests so the class is not excluded entirely.");
+			return new Result(List.of(), List.of(), new OrderConstraintManager(), 0, null, null);
+		}
+		// Abort detection when more than 50% of test classes fail in the reference run:
+		// results would be meaningless false negatives (e.g. due to UsageStore crashes)
+		if (failedInRef > referenceOrder.size() / 2) {
+			log.warn("Reference run failed for " + failedInRef + " of " + referenceOrder.size() + " test classes (>"
+					+ (failedInRef * 100 / referenceOrder.size())
+					+ "%). Detection results would be unreliable — aborting. "
+					+ "Fix the failing tests first, then re-run detect-dependencies.");
 			return new Result(List.of(), List.of(), new OrderConstraintManager(), 0, null, null);
 		}
 
@@ -252,6 +262,14 @@ public final class DetectDependenciesOperation {
 				+ results.stream().filter(r -> r.type() == ODType.BRITTLE).count() + " brittles) " + "in "
 				+ formatDuration(elapsed) + " (budget: "
 				+ (config.timeBudgetSeconds() > 0 ? config.timeBudgetSeconds() + "s" : "unlimited") + ")");
+
+		// Warn when actual run time exceeded the specified budget
+		if (config.timeBudgetSeconds() > 0 && elapsed > config.timeBudgetSeconds() * 1000L) {
+			long actualSecs = elapsed / 1000;
+			log.warn("Detection run exceeded time budget (" + actualSecs + "s > " + config.timeBudgetSeconds()
+					+ "s). Results may be incomplete. To ensure a full run, set " + "-Dtestorder.detect.timeBudget="
+					+ (actualSecs + 5));
+		}
 
 		// Budget recommendation for time-limited runs
 		if (config.timeBudgetSeconds() > 0 && actualRuns > 0) {

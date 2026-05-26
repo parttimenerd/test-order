@@ -84,11 +84,6 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 		}
 		if (skipIfNotExplicitlySelectedReactorProject("tiered-select"))
 			return;
-		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
-				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
-			getLog().warn("[test-order] The 'tiered-select' goal configures Surefire but does not execute tests."
-					+ " Include the test phase: mvn test-order:tiered-select test");
-		}
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
 
 		if (tier2Fraction < 0 || tier2Fraction > 1) {
@@ -100,6 +95,14 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 			autoAggregateOrFail(idxPath);
 		}
 		ensureReadableIndex(idxPath, "tiered-select", false);
+
+		// Warn about test phase only after we know the index is present — otherwise
+		// this misleading message appears before the real "no index" error.
+		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
+				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
+			getLog().warn("[test-order] The 'tiered-select' goal configures Surefire but does not execute tests."
+					+ " Include the test phase: mvn test-order:tiered-select test");
+		}
 
 		if ("explicit".equalsIgnoreCase(changeMode)) {
 			try {
@@ -196,17 +199,20 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 		// Only suggest tier 2 hint if tier 1 is not empty (meaning tier 2 hasn't
 		// already run inline)
 		if (!selection.tier1().isEmpty() && (!selection.tier2().isEmpty() || !selection.tier3().isEmpty())) {
-			getLog().info("[test-order] Next steps:");
+			int skippedCount = selection.tier2().size() + selection.tier3().size();
+			getLog().warn("[test-order] " + skippedCount + " tests in tier 2/3 were NOT run — "
+					+ "this build does not represent full test coverage. Run additional tiers to complete:");
 			if (!selection.tier2().isEmpty()) {
-				getLog().info("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2");
+				getLog().warn("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2");
 			}
 			if (!selection.tier3().isEmpty()) {
-				getLog().info("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");
+				getLog().warn("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");
 			}
 		} else if (selection.tier1().isEmpty() && tier2RanInline && !selection.tier3().isEmpty()) {
 			// Tier 2 ran inline — remind user that tier 3 still needs a separate run
-			getLog().info("[test-order] Next step:");
-			getLog().info("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");
+			getLog().warn("[test-order] " + selection.tier3().size() + " tests in tier 3 were NOT run — "
+					+ "this build does not represent full test coverage. Run:");
+			getLog().warn("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");
 		}
 	}
 

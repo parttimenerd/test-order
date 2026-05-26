@@ -39,6 +39,19 @@ public class CleanMojo extends AbstractTestOrderMojo {
 
 		List<Path> dirs = new ArrayList<>(List.of(ctx.resolveDepsDir(depsDir)));
 
+		// Also clean pending-runs directory (partial-run fallback files that accumulate
+		// when shutdown hooks complete after JVM exit — see B19/B20)
+		Path pendingRunsDir = ctx.resolveBaseDir().resolve("pending-runs");
+		if (Files.isDirectory(pendingRunsDir)) {
+			dirs.add(pendingRunsDir);
+		}
+
+		// Also clean detection directory left behind by detect-dependencies runs
+		Path detectionDir = ctx.resolveBaseDir().resolve("detection");
+		if (Files.isDirectory(detectionDir)) {
+			dirs.add(detectionDir);
+		}
+
 		// Also clean .test-order-precheck-* directories left behind by
 		// assessment/precheck
 		Path baseDir = project.getBasedir().toPath();

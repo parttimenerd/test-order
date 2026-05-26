@@ -83,10 +83,10 @@ public class SelectMojo extends AbstractTestOrderMojo {
 			throw new MojoExecutionException(e.getMessage(), e);
 		}
 
-		// Warn if topN=-1 (default) will select all tests
+		// Inform when topN=-1 (default) will run all tests in priority order
 		if (topN == -1) {
-			getLog().info("[test-order] topN=-1 (default) selects all change-affected tests. "
-					+ "For a true subset, set -Dtestorder.select.topN=N (e.g., topN=10).");
+			getLog().info("[test-order] topN=-1 (default) runs all tests in priority order (no subset selection). "
+					+ "To run only the top N, set -Dtestorder.select.topN=N (e.g., topN=10).");
 		}
 
 		// Warn if 'test' phase is likely not going to run

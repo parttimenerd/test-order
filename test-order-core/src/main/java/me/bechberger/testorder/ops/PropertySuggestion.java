@@ -72,6 +72,13 @@ public final class PropertySuggestion {
 			return "testorder.changed.test.classes";
 		}
 
+		// Common alias: testorder.select.maxTests / testorder.select.limit →
+		// testorder.select.topN
+		if (unknownLower.endsWith(".maxtests") || unknownLower.endsWith(".limit") || unknownLower.endsWith(".max")
+				|| unknownLower.endsWith(".count")) {
+			return "testorder.select.topN";
+		}
+
 		// Common alias: testorder.showOrder.format → testorder.show.format
 		if ("testorder.showorder.format".equals(unknownLower)) {
 			return "testorder.show.format";

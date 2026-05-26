@@ -48,9 +48,15 @@ public final class SelectOperation {
 		// R15-5: Warn if randomM is used without a seed — only when topN is positive
 		// (i.e. actual subsetting is happening), since non-determinism matters only
 		// when a subset is being selected.
+		// Suppress the warning when topN >= total test count: there is only one
+		// possible
+		// selection so non-determinism is irrelevant.
 		if (config.topN() > 0 && config.randomM() > 0 && config.seed() == null) {
-			config.log().warn("[test-order] Selection is non-deterministic (no seed set). "
-					+ "Set testorder.select.seed for reproducible CI runs.");
+			int totalTests = config.depMap().testClasses().size();
+			if (config.topN() < totalTests) {
+				config.log().warn("[test-order] Selection is non-deterministic (no seed set). "
+						+ "Set testorder.select.seed for reproducible CI runs.");
+			}
 		}
 
 		TestSelector.Selection selection = new TestSelector(config.depMap(), config.state(), config.changedClasses(),
