@@ -136,6 +136,19 @@ public final class DetectDependenciesOperation {
 				depMap = DependencyMap.load(learnedIndexFile);
 				log.info("Reloaded dependency map after learn: " + depMap.testClasses().size() + " test classes, "
 						+ "method deps: " + depMap.hasMethodDeps());
+				// Copy the fresh MEMBER-mode index to the production location so that
+				// subsequent show/select/order commands can use it without requiring a
+				// separate explicit learn run (B09).
+				if (config.indexFile() != null && !learnedIndexFile.equals(config.indexFile())) {
+					try {
+						Files.createDirectories(config.indexFile().getParent());
+						Files.copy(learnedIndexFile, config.indexFile(),
+								java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+						log.info("Copied MEMBER-mode index to production location: " + config.indexFile());
+					} catch (IOException e) {
+						log.warn("Could not copy detection index to production location: " + e.getMessage());
+					}
+				}
 			} else if (!learnOk) {
 				log.warn("Learn phase failed — continuing without full dependency data");
 			}

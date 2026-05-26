@@ -214,11 +214,12 @@ running `test-order:show` or `test-order:tiered-select` fails:
 ```
 The `detect-dependencies` goal performs an internal learn phase but discards the resulting index.
 
-**Expected**: The learn phase data collected during `detect-dependencies` should be persisted in
-`.test-order/test-dependencies.lz4` so subsequent ordering goals can use it without requiring a
-separate explicit learn run.
+**Fix**: After the auto-learn phase succeeds, `DetectDependenciesOperation` now copies the resulting
+MEMBER-mode detection index to the production index path (`.test-order/test-dependencies.lz4`).
+Subsequent `show`/`select`/`order` commands can then use it without requiring a separate explicit
+learn run.
 
-**Severity**: CONFUSING (unexpected extra step after running detection)
+**Severity**: CONFUSING (unexpected extra step after running detection) — **FIXED**
 
 ---
 
@@ -608,7 +609,7 @@ also at INFO level.
 | B06 | CONFUSING| tiered-select         | Warning about test phase shown before missing-index error|
 | B07 | MINOR    | select                | Non-determinism warning when all tests are selected      |
 | B08 | MINOR    | show-order            | show-order still referenced in docs after deprecation    |
-| B09 | CONFUSING| detect-dependencies   | Index not persisted after detect-deps run                |
+| B09 | CONFUSING| detect-dependencies   | Index not persisted after detect-deps — FIXED (now copies to production) |
 | B10 | CONFUSING| select                | False-alarm warning about <excludes> override            |
 | B11 | WRONG    | diagnose              | 100% healthy despite incomplete index                   |
 | B12 | MINOR    | docs                  | pluginManagement vs build/plugins confusion              |
