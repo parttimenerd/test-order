@@ -47,6 +47,18 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 
 	@Override
 	public void execute() throws MojoExecutionException {
+		// Accept -Dtestorder.tier=N as a shorthand alias for -Dtestorder.tiered.currentTier=N
+		if (currentTier == 0 && session != null && session.getUserProperties() != null) {
+			String alias = session.getUserProperties().getProperty("testorder.tier");
+			if (alias != null && !alias.isBlank()) {
+				try {
+					currentTier = Integer.parseInt(alias.trim());
+				} catch (NumberFormatException e) {
+					throw new MojoExecutionException(
+							"[test-order] testorder.tier must be an integer, got: " + alias);
+				}
+			}
+		}
 		initContext();
 		if (skip)
 			return;

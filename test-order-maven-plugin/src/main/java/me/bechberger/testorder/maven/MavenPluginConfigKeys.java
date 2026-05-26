@@ -124,7 +124,9 @@ final class MavenPluginConfigKeys {
 			// testorder.showOrder.format → testorder.show.format
 			"testorder.showOrder.format", SHOW_FORMAT,
 			// testorder.showOrder.topN → testorder.select.topN
-			"testorder.showOrder.topN", SELECT_TOP_N);
+			"testorder.showOrder.topN", SELECT_TOP_N,
+			// testorder.tier → testorder.tiered.currentTier (shorthand for run-tier)
+			"testorder.tier", TIERED_CURRENT_TIER);
 
 	/** All known testorder.* property keys (canonical + legacy + aliases). */
 	static final Set<String> ALL_KNOWN_KEYS = Set.of(INDEX_PATH, STATE_PATH, LEARN, INSTRUMENTATION_MODE, CHANGE_MODE,
@@ -147,7 +149,9 @@ final class MavenPluginConfigKeys {
 			// Show goal keys (inline in ShowMojo)
 			SHOW_CLASSES, SHOW_METHODS, SHOW_ML, SHOW_ALL, SHOW_FORMAT, SHOW_FILTER,
 			// CamelCase aliases (silently accepted, see ALIASES map)
-			"testorder.changedClasses", "testorder.showOrder.format", "testorder.showOrder.topN");
+			"testorder.changedClasses", "testorder.showOrder.format", "testorder.showOrder.topN",
+			// Shorthand alias for run-tier (see ALIASES map)
+			"testorder.tier");
 
 	/**
 	 * Find the closest known key to the given unknown key. Delegates to

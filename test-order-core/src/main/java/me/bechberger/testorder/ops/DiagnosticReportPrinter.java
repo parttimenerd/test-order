@@ -35,9 +35,9 @@ public final class DiagnosticReportPrinter {
 
 		for (var result : report.results()) {
 			if (result.isError()) {
-				log.warn("❌ " + result.code() + ": " + result.message());
+				log.error("❌ " + result.code() + ": " + result.message());
 				for (String suggestion : result.suggestions()) {
-					log.warn("   → " + suggestion);
+					log.error("   → " + suggestion);
 				}
 			} else if (result.isInformational()) {
 				log.info("⚠️  " + result.code() + ": " + result.message());

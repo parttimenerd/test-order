@@ -166,7 +166,20 @@ public final class DetectDependenciesOperation {
 		// Determine passing tests (run in reference order)
 		log.info("Running reference test run (" + referenceOrder.size()
 				+ " classes) to determine baseline pass/fail...");
+		long refRunStart = System.currentTimeMillis();
 		PassingTestsResult ptr = determinePassingTests(referenceOrder, runner, log);
+		long perRunMs = System.currentTimeMillis() - refRunStart;
+		log.info("Reference run complete in " + formatDuration(perRunMs) + " — " + ptr.passing().size()
+				+ " of " + referenceOrder.size() + " classes pass");
+		if (config.timeBudgetSeconds() > 0 && perRunMs > 0) {
+			long estimatedRunsHint = Math.max(1,
+					selectAlgorithm(config.algorithm(), log).estimatedRuns(referenceOrder.size(), 0));
+			long suggestedBudgetHint = (perRunMs * estimatedRunsHint) / 1000;
+			if (suggestedBudgetHint > config.timeBudgetSeconds()) {
+				log.info("Each run takes ~" + (perRunMs / 1000) + "s. For full coverage (~" + estimatedRunsHint
+						+ " runs), consider: -Dtestorder.detect.timeBudget=" + suggestedBudgetHint);
+			}
+		}
 		Set<String> passingTests = ptr.passing();
 		referenceOrder = ptr.effectiveOrder();
 		if (passingTests.isEmpty()) {
