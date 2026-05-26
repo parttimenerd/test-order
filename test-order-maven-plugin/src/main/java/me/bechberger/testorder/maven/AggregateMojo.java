@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.*;
 
+import me.bechberger.testorder.IndexCollectorServer;
 import me.bechberger.testorder.ops.AggregateOperation;
 
 /**
@@ -27,6 +28,15 @@ public class AggregateMojo extends AbstractTestOrderMojo {
 			if (Files.exists(indexPath)) {
 				getLog().info("[test-order] No deps directory — index already written by collector at " + indexPath);
 				return;
+			}
+			// Collector shutdown hook may have written a fallback file instead of merging.
+			try {
+				if (IndexCollectorServer.processFallbackFile(indexPath)) {
+					getLog().info("[test-order] Processed collector fallback — index written at " + indexPath);
+					return;
+				}
+			} catch (IOException e) {
+				getLog().warn("[test-order] Failed to process collector fallback: " + e.getMessage());
 			}
 			throw new MojoExecutionException("Deps directory does not exist: " + depsDirPath
 					+ ". Run tests first with: mvn test-order:auto test");

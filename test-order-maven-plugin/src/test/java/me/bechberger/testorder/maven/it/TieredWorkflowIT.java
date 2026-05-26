@@ -60,10 +60,19 @@ class TieredWorkflowIT {
 	void learnPhaseProducesIndex() {
 		project.cleanAll();
 		MavenResult result = project.maven().learn();
-		assertThat(result.isSuccess()).as("learn phase failed").isTrue();
+		assertThat(result.isSuccess())
+				.as("learn phase failed:\n%s", result.output().substring(Math.max(0, result.output().length() - 1000)))
+				.isTrue();
 
-		result = project.maven().aggregate();
-		assertThat(result.isSuccess()).as("aggregate failed").isTrue();
+		// The collector writes the index directly during learn; aggregate() is only
+		// needed as a fallback when .deps files were written instead of socket delivery.
+		boolean indexExists = Files.exists(project.path(".test-order/test-dependencies.lz4"));
+		if (!indexExists) {
+			result = project.maven().aggregate();
+			assertThat(result.isSuccess())
+					.as("aggregate failed:\n%s", result.output().substring(Math.max(0, result.output().length() - 1000)))
+					.isTrue();
+		}
 
 		var index = project.loadIndex();
 		assertThat(index).isNotNull();

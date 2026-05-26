@@ -565,11 +565,14 @@ public class TestOrderPlugin implements Plugin<Project> {
         testTask.doFirst("testOrderOfflineInstrument", t -> {
             SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
             SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-            Path classesDir = mainSourceSet.getOutput().getClassesDirs().getFiles().iterator().next().toPath();
+            Path classesDir = mainSourceSet.getOutput().getClassesDirs().getFiles().stream()
+                    .map(File::toPath)
+                    .filter(Files::isDirectory)
+                    .findFirst()
+                    .orElse(null);
 
-            if (!Files.isDirectory(classesDir)) {
-                project.getLogger().warn("[test-order] No classes directory at {} — skipping offline instrumentation",
-                        classesDir);
+            if (classesDir == null) {
+                project.getLogger().warn("[test-order] No compiled classes directory found — skipping offline instrumentation");
                 return;
             }
 
