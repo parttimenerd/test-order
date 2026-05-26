@@ -171,23 +171,24 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			return;
 		}
 
-		// For both "order" and "auto": ensure we have an aggregated index if only .deps
-		// files exist, or if a fallback payload file was written by a previous run's
-		// shutdown hook (offline mode with classloader teardown before merge).
-		if (!Files.exists(idxPath)) {
-			// Always check for fallback payload file — written by IndexCollectorServer
-			// when the Maven JVM shuts down before stopAndMerge can complete.
-			try {
-				if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
-					getLog().info(
-							"[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
-				}
-			} catch (IOException e) {
-				getLog().warn("[test-order] Failed to process collector fallback payloads: " + e.getMessage());
+		// Always check for fallback payload file — written by IndexCollectorServer
+		// when the Maven JVM shuts down before stopAndMerge can complete.
+		// Process unconditionally: even if index exists, the fallback carries data
+		// from the most recent learn run that failed to merge.
+		try {
+			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
+				getLog().info(
+						"[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
 			}
+		} catch (IOException e) {
+			getLog().warn("[test-order] Failed to process collector fallback payloads: " + e.getMessage());
+		}
 
+		// For both "order" and "auto": ensure we have an aggregated index if only .deps
+		// files exist.
+		if (!Files.exists(idxPath)) {
 			Path depsDirPath = ctx.resolveDepsDir(depsDir);
-			if (!Files.exists(idxPath) && Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
+			if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
 				try {
 					getLog().info("[test-order] No index found but .deps files exist — auto-aggregating.");
 					autoAggregate(depsDirPath, idxPath);

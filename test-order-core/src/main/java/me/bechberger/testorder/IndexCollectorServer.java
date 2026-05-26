@@ -96,8 +96,8 @@ public class IndexCollectorServer implements AutoCloseable {
 				try {
 					stopAndMerge();
 				} catch (NoClassDefFoundError | Exception e) {
-					System.err.println("[test-order] IndexCollectorServer: merge failed in shutdown hook ("
-							+ e.getClass().getSimpleName() + ": " + e.getMessage() + "), writing fallback file");
+					System.err.println(
+							"[test-order] merge failed in shutdown hook (classloader teardown) — writing fallback file; will be merged on next run");
 					writeFallbackPayloads();
 				}
 			}

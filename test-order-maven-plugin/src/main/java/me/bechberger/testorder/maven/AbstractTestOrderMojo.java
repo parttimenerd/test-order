@@ -895,17 +895,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 */
 	protected void autoAggregateOrFail(Path idxPath) throws MojoExecutionException {
 		// Always check for fallback payload file written by IndexCollectorServer
-		// shutdown
-		// hook — this is the normal path for offline learn mode.
-		if (!Files.exists(idxPath)) {
-			try {
-				if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
-					getLog().info(
-							"[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
-				}
-			} catch (IOException e) {
-				getLog().warn("[test-order] Failed to process collector fallback payloads: " + e.getMessage());
+		// shutdown hook — this is the normal path for offline learn mode.
+		// Process unconditionally: even if index exists, the fallback carries data
+		// from the most recent learn run that failed to merge.
+		try {
+			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
+				getLog().info(
+						"[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
 			}
+		} catch (IOException e) {
+			getLog().warn("[test-order] Failed to process collector fallback payloads: " + e.getMessage());
 		}
 		if (Files.exists(idxPath)) {
 			return;

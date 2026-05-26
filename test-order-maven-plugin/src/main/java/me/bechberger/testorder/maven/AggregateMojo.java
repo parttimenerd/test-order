@@ -22,28 +22,31 @@ public class AggregateMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
+		Path indexPath = resolveIndexPath();
+		// Always check for fallback payload file — written by IndexCollectorServer when
+		// the Maven JVM shuts down before stopAndMerge can complete. Process
+		// unconditionally: even if index exists, the fallback carries data from the
+		// most
+		// recent learn run that failed to merge.
+		try {
+			if (IndexCollectorServer.processFallbackFile(indexPath)) {
+				getLog().info("[test-order] Processed collector fallback — merged into index at " + indexPath);
+			}
+		} catch (IOException e) {
+			getLog().warn("[test-order] Failed to process collector fallback: " + e.getMessage());
+		}
 		Path depsDirPath = ctx.resolveDepsDir(depsDir);
 		if (!Files.isDirectory(depsDirPath)) {
-			Path indexPath = resolveIndexPath();
 			if (Files.exists(indexPath)) {
 				getLog().info("[test-order] No deps directory — index already written by collector at " + indexPath);
 				return;
-			}
-			// Collector shutdown hook may have written a fallback file instead of merging.
-			try {
-				if (IndexCollectorServer.processFallbackFile(indexPath)) {
-					getLog().info("[test-order] Processed collector fallback — index written at " + indexPath);
-					return;
-				}
-			} catch (IOException e) {
-				getLog().warn("[test-order] Failed to process collector fallback: " + e.getMessage());
 			}
 			throw new MojoExecutionException("Deps directory does not exist: " + depsDirPath
 					+ ". Run tests first with: mvn test-order:auto test");
 		}
 
 		try {
-			AggregateOperation.aggregate(depsDirPath, resolveIndexPath(), pluginLog());
+			AggregateOperation.aggregate(depsDirPath, indexPath, pluginLog());
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to aggregate deps: " + e.getMessage(), e);
 		}
