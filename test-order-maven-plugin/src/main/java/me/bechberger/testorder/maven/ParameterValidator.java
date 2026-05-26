@@ -96,6 +96,10 @@ public class ParameterValidator {
 		}
 	}
 
+	public void warnChangedClassesFormat(String changedClasses) {
+		delegate.warnChangedClassesFormat(changedClasses);
+	}
+
 	public void warnNegativeWeights(Map<String, Integer> weights) {
 		delegate.warnNegativeWeights(weights);
 	}

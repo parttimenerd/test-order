@@ -164,6 +164,10 @@ public class TelemetryListener implements TestExecutionListener {
 					String.class, String.class, boolean.class);
 			initMethod.invoke(null, java.nio.file.Path.of(mappingPath), outputDir, indexFile, fullMethodMode);
 			TestOrderLogger.info("[telemetry] Offline runtime bootstrapped from: " + mappingPath);
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			// Unwrap the actual exception thrown by OfflineRuntimeBootstrap.init()
+			Throwable cause = e.getCause() != null ? e.getCause() : e;
+			TestOrderLogger.error("Failed to bootstrap offline runtime: {}", cause.getMessage());
 		} catch (Exception e) {
 			TestOrderLogger.error("Failed to bootstrap offline runtime: {}", e.getMessage());
 		}

@@ -30,7 +30,9 @@ public class ExportJsonMojo extends AbstractTestOrderMojo {
 			return;
 		Path idxPath = resolveIndexPath();
 		if (!Files.exists(idxPath)) {
-			throw new MojoExecutionException("Dependency index not found: " + idxPath);
+			throw new MojoExecutionException("Dependency index not found at " + idxPath
+					+ ". Run learn mode first: mvn test -Dtestorder.mode=learn"
+					+ "\n  For more details: mvn test-order:diagnose");
 		}
 
 		Path statePath = ctx.resolveStateFile(stateFile);

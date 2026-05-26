@@ -108,10 +108,10 @@ public class PriorityMethodOrderer implements MethodOrderer {
 		}
 
 		// Respect JUnit's @Order annotation: if any method in the class uses @Order,
-		// the user has declared an explicit ordering — do not override it.
+		// apply it ourselves (JUnit only honours @Order when @TestMethodOrder is also
+		// present; we can emulate it here so the annotation works standalone).
 		if (hasJUnitOrderAnnotation(context)) {
-			TestOrderLogger.debug("[method-order] {}: @Order or @TestMethodOrder detected; skipping reordering",
-					className);
+			applyJUnitOrderAnnotation(context);
 			return;
 		}
 
@@ -235,9 +235,49 @@ public class PriorityMethodOrderer implements MethodOrderer {
 	}
 
 	/**
+	 * Sorts methods by their {@code @Order} value when the class uses {@code @Order}
+	 * on methods without a {@code @TestMethodOrder} annotation.  JUnit itself only
+	 * honours {@code @Order} when {@code @TestMethodOrder(OrderAnnotation.class)} is
+	 * also present; this method emulates that behaviour so the annotation works
+	 * standalone.  If {@code @TestMethodOrder} specifies a different orderer we
+	 * leave the list unchanged (the other orderer handles it).
+	 */
+	private void applyJUnitOrderAnnotation(MethodOrdererContext context) {
+		org.junit.jupiter.api.TestMethodOrder tmo = context.getTestClass()
+				.getAnnotation(org.junit.jupiter.api.TestMethodOrder.class);
+		// Another orderer is configured — don't interfere
+		if (tmo != null && !PriorityMethodOrderer.class.equals(tmo.value())
+				&& !org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class.equals(tmo.value())) {
+			TestOrderLogger.debug("[method-order] {}: @TestMethodOrder specifies another orderer; not applying @Order",
+					context.getTestClass().getName());
+			return;
+		}
+		boolean hasOrderAnnotation = context.getMethodDescriptors().stream()
+				.anyMatch(md -> md.getMethod().isAnnotationPresent(org.junit.jupiter.api.Order.class));
+		if (!hasOrderAnnotation) {
+			return;
+		}
+		boolean missingTestMethodOrder = tmo == null
+				|| !org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class.equals(tmo.value());
+		if (missingTestMethodOrder) {
+			TestOrderLogger.debug(
+					"[method-order] {}: @Order present without @TestMethodOrder — applying order values directly",
+					context.getTestClass().getName());
+		}
+		context.getMethodDescriptors().sort((a, b) -> {
+			org.junit.jupiter.api.Order oa = a.getMethod().getAnnotation(org.junit.jupiter.api.Order.class);
+			org.junit.jupiter.api.Order ob = b.getMethod().getAnnotation(org.junit.jupiter.api.Order.class);
+			int va = oa != null ? oa.value() : org.junit.jupiter.api.Order.DEFAULT;
+			int vb = ob != null ? ob.value() : org.junit.jupiter.api.Order.DEFAULT;
+			return Integer.compare(va, vb);
+		});
+	}
+
+	/**
 	 * Returns {@code true} if any method in the class uses JUnit's {@code @Order}
 	 * annotation or if the class declares {@code @TestMethodOrder} — in which case
-	 * we should not override the user's explicit ordering.
+	 * {@link #applyJUnitOrderAnnotation} will handle the ordering instead of the
+	 * score-based path.
 	 */
 	private boolean hasJUnitOrderAnnotation(MethodOrdererContext context) {
 		// Check for @TestMethodOrder on the class itself — but only if it specifies
@@ -256,16 +296,6 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			}
 		}
 		if (hasOrderAnnotation) {
-			// Warn if @Order is used without
-			// @TestMethodOrder(MethodOrderer.OrderAnnotation)
-			// because JUnit will not respect @Order without it — the ordering is undefined.
-			boolean hasOrderAnnotationClass = tmo != null
-					&& org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class.equals(tmo.value());
-			if (!hasOrderAnnotationClass) {
-				TestOrderLogger.warn("[method-order] {}: @Order annotation on test methods will be ignored by JUnit — "
-						+ "add @TestMethodOrder(MethodOrderer.OrderAnnotation.class) to the class for @Order to take effect.",
-						context.getTestClass().getName());
-			}
 			return true;
 		}
 		return false;

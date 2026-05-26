@@ -112,15 +112,17 @@ public final class DiagnosticOperation {
 		try {
 			if (!Files.exists(config.indexFile())) {
 				return DiagnosticResult.info(ErrorCode.INDEX_NOT_FOUND,
-						"No dependency index found at " + config.indexFile().toAbsolutePath());
+						"No dependency index found at " + config.indexFile().toAbsolutePath(),
+						List.of("Run learn mode to build the index: mvn test -Dtestorder.mode=learn",
+								"The index is created automatically at the end of a learn run"));
 			}
 
 			long size = Files.size(config.indexFile());
 			if (size < 100) {
 				return DiagnosticResult.error(ErrorCode.INDEX_EMPTY,
 						"Index file is suspiciously small (" + size + " bytes)",
-						List.of("Run tests in learn mode to collect test dependencies",
-								"Then run testOrderAggregate to merge .deps files into index"));
+						List.of("Run tests in learn mode to collect test dependencies: mvn test -Dtestorder.mode=learn",
+								"Then run 'mvn test-order:aggregate' to merge .deps files into the index"));
 			}
 
 			// Try to load it
@@ -136,7 +138,7 @@ public final class DiagnosticOperation {
 				if (indexAge > 86400) { // 24 hours
 					return DiagnosticResult.info(ErrorCode.INDEX_NEEDS_REBUILD,
 							"Index is " + (indexAge / 3600) + " hours old",
-							List.of("Consider re-running learn mode to pick up recent changes",
+							List.of("Consider re-running learn mode to pick up recent changes: mvn test -Dtestorder.mode=learn",
 									"Or verify that your build hasn't changed significantly"));
 				}
 
@@ -159,7 +161,8 @@ public final class DiagnosticOperation {
 		try {
 			if (!Files.exists(config.stateFile())) {
 				return DiagnosticResult.info(ErrorCode.STATE_NOT_FOUND,
-						"No state file found (expected after first test run)");
+						"No state file found (created automatically after the first learn run)",
+						List.of("Run learn mode to start collecting test history: mvn test -Dtestorder.mode=learn"));
 			}
 
 			long size = Files.size(config.stateFile());
@@ -263,7 +266,9 @@ public final class DiagnosticOperation {
 	private static DiagnosticResult checkDepsDirectory(DiagnosticConfig config) {
 		try {
 			if (!Files.exists(config.depsDir())) {
-				return DiagnosticResult.info(ErrorCode.DEPS_NOT_FOUND, "No .deps directory found");
+				return DiagnosticResult.info(ErrorCode.DEPS_NOT_FOUND, "No .deps directory found",
+						List.of("Run learn mode to collect per-test dependency data: mvn test -Dtestorder.mode=learn",
+								"The .deps directory is created automatically on the first learn run"));
 			}
 
 			long fileCount;
@@ -273,7 +278,7 @@ public final class DiagnosticOperation {
 
 			if (fileCount == 0) {
 				return DiagnosticResult.info(ErrorCode.DEPS_NOT_FOUND, ".deps directory exists but is empty",
-						List.of("Run tests in learn mode to populate .deps files"));
+						List.of("Run tests in learn mode to populate .deps files: mvn test -Dtestorder.mode=learn"));
 			}
 
 			return DiagnosticResult.success(".deps directory contains " + fileCount + " dependency files");

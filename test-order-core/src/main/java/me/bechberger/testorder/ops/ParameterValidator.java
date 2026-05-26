@@ -200,6 +200,11 @@ public final class ParameterValidator {
 	 * Validates explicitly specified changed classes against the dependency index.
 	 * Logs a warning for each class not found in the index.
 	 *
+	 * <p>
+	 * Also detects common user mistakes such as semicolon-separated class names
+	 * (only commas are the documented separator) and warns about them explicitly.
+	 * </p>
+	 *
 	 * @throws IllegalArgumentException
 	 *             if ALL specified classes are unknown (protects against silently
 	 *             wrong test selection)
@@ -220,13 +225,32 @@ public final class ParameterValidator {
 		}
 		if (!unknown.isEmpty()) {
 			log.warn("[test-order] The following explicitly changed classes are not in the dependency index: "
-					+ String.join(", ", unknown));
+					+ String.join(", ", unknown)
+					+ ". The class may exist in source but have no test coverage yet, or the index"
+					+ " may be out of date (re-run learn mode).");
 			if (unknown.size() == changed.size()) {
 				throw new IllegalArgumentException(
 						"[test-order] None of the explicitly specified changed classes exist in the "
 								+ "dependency index. Check for typos or run learn mode first. " + "Changed classes: "
 								+ String.join(", ", changed));
 			}
+		}
+	}
+
+	/**
+	 * Validates the raw changed-classes string for common mistakes. Should be
+	 * called before parsing the string into a set of class names. Logs a warning if
+	 * semicolons are detected (only commas are the documented separator, though
+	 * semicolons are accepted as a fallback).
+	 */
+	public void warnChangedClassesFormat(String changedClasses) {
+		if (changedClasses == null || changedClasses.isBlank()) {
+			return;
+		}
+		if (!changedClasses.contains(",") && changedClasses.contains(";")) {
+			log.warn("[test-order] testorder.changed.classes uses semicolons as separators, but only commas are"
+					+ " documented. Semicolons are accepted as a fallback. Prefer:"
+					+ " -Dtestorder.changed.classes=" + changedClasses.replace(';', ','));
 		}
 	}
 }

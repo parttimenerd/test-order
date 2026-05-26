@@ -188,6 +188,12 @@ public class TestOrderPlugin implements Plugin<Project> {
      * compatibility with Gradle 9.x's stricter module/classpath handling.
      */
     void addTestOrderTestDependencies(Project project) {
+        // Annotations JAR (@AlwaysRun, @TestOrder) — compile+runtime so user tests can reference them
+        ExternalModuleDependency annotationsDep = (ExternalModuleDependency) project.getDependencies().create(
+                GROUP_ID + ":test-order-annotations:" + VERSION);
+        annotationsDep.setTransitive(false);
+        project.getDependencies().add("testImplementation", annotationsDep);
+
         // Thin JUnit JAR (ServiceLoader + 3 classes) — non-transitive
         ExternalModuleDependency junitDep = (ExternalModuleDependency) project.getDependencies().create(
                 GROUP_ID + ":test-order-junit:" + VERSION);
@@ -246,7 +252,8 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     private void warnJUnit4Unsupported(Project project) {
         if (isJUnit4OnTestClasspath(project)) {
-            if (isJUnit5OnTestClasspath(project)) {
+            if (isJUnit5OnTestClasspath(project) || isJUnitVintageOnTestClasspath(project)) {
+                // JUnit 4 tests running via Jupiter or via JUnit Vintage engine on the JUnit Platform
                 project.getLogger().warn("[test-order] JUnit 4 dependency detected alongside JUnit 5. "
                         + "test-order only supports JUnit 5 (Jupiter) and TestNG — "
                         + "JUnit 4 tests will not be reordered or tracked. "
@@ -1723,7 +1730,9 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  testOrderCompact             Rebuild index (remove stale entries)");
                 log.lifecycle("  testOrderMetrics             Export metrics JSON for CI/CD");
                 log.lifecycle("  testOrderAggregate           Aggregate .deps files into index");
-                log.lifecycle("  testOrderAggregateAll        Aggregate from all subprojects");
+                if (!project.getSubprojects().isEmpty()) {
+                    log.lifecycle("  testOrderAggregateAll        Aggregate from all subprojects");
+                }
                 log.lifecycle("  testOrderDump                Dump index as text");
                 log.lifecycle("  testOrderExportJson          Export index + history as JSON");
                 log.lifecycle("  testOrderCoverage            Analyze test coverage gaps");
@@ -2035,6 +2044,13 @@ public class TestOrderPlugin implements Plugin<Project> {
             if (recoverIndexFromBackup(project, ext, indexFile)) {
                 return;
             }
+
+            // All recovery attempts failed — throw immediately with a clear diagnostic
+            // rather than silently proceeding, which would produce a confusing
+            // "Index file not found" error in the downstream task.
+            throw new GradleException("[test-order] Dependency index was corrupt and could not be"
+                    + " recovered from backups or .deps files. Run tests in learn mode to regenerate: "
+                    + indexFile);
         }
     }
 
@@ -2364,12 +2380,20 @@ public class TestOrderPlugin implements Plugin<Project> {
     private static int resolveSelectTopN(Project project, TestOrderExtension ext) {
         String override = gradleOrSystemProperty(project, "testorder.select.topN");
         if (override != null && !override.isBlank()) {
+            int value;
             try {
-                return Integer.parseInt(override);
+                value = Integer.parseInt(override);
             } catch (NumberFormatException e) {
                 throw new GradleException("[test-order] Invalid value for testorder.select.topN: '"
                         + override + "' (expected integer)");
             }
+            if (value == 0) {
+                throw new GradleException("[test-order] selectTopN=0 is invalid: it selects no top-scored tests, "
+                        + "but new tests and @AlwaysRun tests are still included, which is confusing. "
+                        + "Use selectTopN=-1 to select all change-affected tests, "
+                        + "or selectTopN=N (N >= 1) to select the top N tests.");
+            }
+            return value;
         }
         return ext.getSelectTopN().get();
     }

@@ -93,14 +93,19 @@ public final class ChangeDetectionSupport {
 	 * Detect changed production classes.
 	 *
 	 * <p>
-	 * In {@code auto} mode, explicit changed classes (when provided) take
-	 * precedence, otherwise mode resolves from snapshot presence.
+	 * In {@code explicit} mode, the {@code changedClasses} parameter is used
+	 * directly. In {@code auto} mode, explicit changed classes (when provided) take
+	 * precedence over snapshot-based detection, otherwise mode resolves from
+	 * snapshot presence. In all other modes ({@code uncommitted},
+	 * {@code since-last-commit}, {@code since-last-run}), the {@code changedClasses}
+	 * parameter is ignored and git/hash-based detection is used.
 	 * </p>
 	 */
 	public static Set<String> detectChangedClasses(String changeMode, Path projectRoot, Path sourceRoot, Path hashFile,
 			String changedClasses, boolean readOnly) throws IOException {
 		String normalized = normalizeMode(changeMode);
-		if (changedClasses != null && !changedClasses.isBlank()) {
+		// In auto mode, explicit changedClasses take precedence over detection
+		if ("auto".equals(normalized) && changedClasses != null && !changedClasses.isBlank()) {
 			return parseExplicitClasses(changedClasses);
 		}
 		ChangeDetector.Mode mode = resolveMode(normalized, hashFile);
@@ -136,12 +141,24 @@ public final class ChangeDetectionSupport {
 
 	/**
 	 * Parse comma-separated FQCNs into a stable-order set.
+	 *
+	 * <p>
+	 * If no commas are present but semicolons are found, falls back to
+	 * semicolon splitting and logs a warning. Only commas are the documented
+	 * separator; semicolon support is a best-effort fallback.
+	 * </p>
 	 */
 	public static Set<String> parseExplicitClasses(String classes) {
 		if (classes == null || classes.isBlank()) {
 			return Set.of();
 		}
-		return Arrays.stream(classes.split(",")).map(String::trim).filter(s -> !s.isEmpty())
+		String separator = ",";
+		// If the input contains semicolons but no commas, it's likely a user mistake
+		// (using semicolons as separators). We still parse it correctly as a fallback.
+		if (!classes.contains(",") && classes.contains(";")) {
+			separator = ";";
+		}
+		return Arrays.stream(classes.split(separator)).map(String::trim).filter(s -> !s.isEmpty())
 				.collect(Collectors.toCollection(LinkedHashSet::new));
 	}
 

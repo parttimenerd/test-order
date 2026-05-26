@@ -75,7 +75,8 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 
 		if (!Files.exists(tierFile)) {
 			getLog().info("[test-order] No tier-" + currentTier + " file found at " + tierFile
-					+ " — no tests to run for this tier.");
+					+ " — skipping (no tests assigned to this tier)."
+					+ " If unexpected, run 'mvn test-order:tiered-select test' first to create tier files.");
 			project.getProperties().setProperty("skipTests", "true");
 			return;
 		}

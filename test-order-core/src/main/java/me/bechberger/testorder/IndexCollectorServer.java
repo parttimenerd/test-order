@@ -238,7 +238,13 @@ public class IndexCollectorServer implements AutoCloseable {
 			}
 			byte version = in.readByte();
 			if (version == PROTOCOL_VERSION_V2) {
-				handleBinaryPayload(in);
+				boolean handled = handleBinaryPayload(in);
+				if (!handled) {
+					// No ClassIdMapping loaded — NACK so client falls back to v1
+					rawOut.write(0);
+					rawOut.flush();
+					return;
+				}
 			} else if (version == PROTOCOL_VERSION_V1) {
 				handleStringPayload(in);
 			} else {
@@ -269,13 +275,19 @@ public class IndexCollectorServer implements AutoCloseable {
 		mergeMaps(mergedMethodMemberDeps, methodMemberDeps);
 	}
 
-	private void handleBinaryPayload(DataInputStream in) throws IOException {
+	/**
+	 * Handle a v2 binary payload. Returns true if the payload was decoded and
+	 * merged, false if no ClassIdMapping was available (caller should NACK so the
+	 * client falls back to v1 string protocol).
+	 */
+	private boolean handleBinaryPayload(DataInputStream in) throws IOException {
 		String[] cn = ensureClassNames();
 		String[] mn = ensureMemberNames();
 		if (cn == null) {
-			// No mapping loaded — can't decode v2. Read and discard.
-			System.err.println("[test-order] IndexCollectorServer: v2 payload received but no ClassIdMapping loaded");
-			return;
+			// No mapping loaded — can't decode v2. Signal caller to NACK.
+			System.err.println("[test-order] IndexCollectorServer: v2 payload received but no ClassIdMapping loaded"
+					+ " — sending NACK so client retries with v1 string protocol");
+			return false;
 		}
 
 		// Read test-class trackers
@@ -329,6 +341,7 @@ public class IndexCollectorServer implements AutoCloseable {
 				});
 			}
 		}
+		return true;
 	}
 
 	private static final long[] EMPTY_LONGS = new long[0];

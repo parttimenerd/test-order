@@ -274,6 +274,29 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		validateCacheDirectoryWritable();
 		validateOutputDirectoriesWritable();
 		PersistenceSupport.cleanupStaleTemps(ctx.resolveBaseDir());
+		// Always process any fallback payload file written by IndexCollectorServer
+		// when the Maven JVM shut down before stopAndMerge could complete. This
+		// merges previously-unprocessed test-dependency data into the index so that
+		// show, select, and diagnose mojos see a complete, up-to-date index even when
+		// they are invoked after a learn run that left a fallback file behind.
+		processPendingFallback();
+	}
+
+	/**
+	 * Processes the fallback payload file (if any) written by
+	 * {@link me.bechberger.testorder.IndexCollectorServer} when the Maven JVM shut
+	 * down before {@code stopAndMerge} completed. Called unconditionally in
+	 * {@link #initContext()} so that every mojo sees a complete index.
+	 */
+	private void processPendingFallback() {
+		Path idxPath = ctx.resolveIndexFile(indexFile);
+		try {
+			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
+				getLog().info("[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
+			}
+		} catch (IOException e) {
+			getLog().warn("[test-order] Failed to process collector fallback payloads: " + e.getMessage());
+		}
 	}
 
 	/**
@@ -288,13 +311,18 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		// Validate explicit mode requirements
 		validator.validateExplicitModeRequirements(changeMode, changedClasses, changedTestClasses);
 
+		// Warn about semicolons in changedClasses (semicolons are accepted as a
+		// fallback separator, but commas are the documented format)
+		validator.warnChangedClassesFormat(changedClasses);
+
 		// Validate file paths if provided — weightsFile is an output of 'optimize' that
-		// may not exist yet, so only warn (don't fail) if missing.
+		// may not exist yet, so warn (don't fail) if missing.
 		if (weightsFile != null && !weightsFile.isBlank()) {
 			java.nio.file.Path wPath = java.nio.file.Paths.get(weightsFile);
 			if (!java.nio.file.Files.exists(wPath)) {
-				getLog().info("[test-order] weightsFile not found: " + wPath.toAbsolutePath()
-						+ " — will be created by 'optimize'. Using default weights.");
+				getLog().warn("[test-order] weightsFile not found: " + wPath.toAbsolutePath()
+						+ " — using default weights. Run 'mvn test-order:optimize' to generate it,"
+						+ " or check the path specified by -Dtestorder.weights.file.");
 			} else if (!java.nio.file.Files.isReadable(wPath)) {
 				throw new MojoExecutionException("[test-order] weightsFile is not readable: " + wPath.toAbsolutePath());
 			}
@@ -348,6 +376,13 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			return;
 		}
 		java.util.Properties props = session.getUserProperties();
+
+		// CamelCase alias fallbacks — apply alias value when canonical key is absent.
+		// These match the ALIASES map in MavenPluginConfigKeys; Maven parameter
+		// injection uses the @Parameter(property=...) key exactly, so an alias passed
+		// on the command line never reaches the field unless we copy it here.
+		applyLegacyFallback(props, MavenPluginConfigKeys.CHANGED_CLASSES, "testorder.changedClasses",
+				v -> changedClasses = v);
 
 		// Legacy fallbacks — only apply if the canonical key was NOT explicitly set
 		applyLegacyFallback(props, MavenPluginConfigKeys.INDEX_PATH, MavenPluginConfigKeys.LEGACY_INDEX,
@@ -1723,6 +1758,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						+ "test-order only supports JUnit 5 (Jupiter) and TestNG — "
 						+ "JUnit 4 tests will not be reordered or tracked. "
 						+ "Consider migrating to JUnit 5 or using the JUnit Vintage engine.");
+			} else if (isJUnit4VintageEngineOnTestClasspath()) {
+				// JUnit Vintage engine bridges JUnit 4 tests onto the JUnit Platform —
+				// test-order's TelemetryListener can track them via the platform.
+				getLog().info("[test-order] JUnit 4 + JUnit Vintage engine detected. "
+						+ "JUnit 4 tests will run via the JUnit Platform and will be tracked by test-order.");
 			} else {
 				getLog().warn("[test-order] JUnit 4 dependency detected but no JUnit 5 (Jupiter) found. "
 						+ "test-order does NOT support JUnit 4 — tests will not be reordered or tracked. "
@@ -1730,6 +1770,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						+ "junit-jupiter-engine on the test classpath.");
 			}
 		}
+	}
+
+	/**
+	 * Returns {@code true} when the project declares {@code junit-vintage-engine}
+	 * as a dependency, which allows JUnit 4 tests to run on the JUnit Platform
+	 * where test-order's TelemetryListener can observe them.
+	 */
+	protected boolean isJUnit4VintageEngineOnTestClasspath() {
+		return project.getDependencies().stream().anyMatch(
+				d -> "org.junit.vintage".equals(d.getGroupId()) && "junit-vintage-engine".equals(d.getArtifactId()));
 	}
 
 	/**
