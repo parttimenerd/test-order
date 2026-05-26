@@ -6,8 +6,7 @@
 
     <div class="relative z-10 flex flex-col items-center gap-8">
       <p class="text-2xl text-gray-400 text-center">
-        One plugin. One learn run. Every commit after that:
-        <span class="text-emerald-400 font-semibold">signal in seconds.</span>
+        Drop in the plugin. Tell me how much time you saved.
       </p>
       <div class="bg-white rounded-2xl p-5 shadow-2xl shadow-blue-500/20">
         <img src="/qr-github.svg" class="w-48 h-48" alt="QR code to GitHub repo" />

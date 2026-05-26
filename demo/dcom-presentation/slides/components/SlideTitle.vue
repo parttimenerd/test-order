@@ -7,7 +7,7 @@
       <h1 class="!text-6xl !font-bold !leading-tight bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent">
         You Are Running<br>the Wrong Tests First
       </h1>
-      <div v-click class="mt-10">
+      <div class="mt-10">
         <p class="text-2xl text-gray-400 leading-relaxed tracking-wide">
           Predictive Test Ordering for<br>Faster Feedback &amp; Agentic Development
         </p>

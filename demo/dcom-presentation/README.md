@@ -28,11 +28,13 @@ Terminal font: **20pt+**. Test on projector.
 | 2:20  | toggle on + make-change + select      | Terminal |
 | 3:00  | Slide 2 — Results (5:00→17s)         | Slides   |
 | 3:20  | Slide 3 — How It Works               | Slides   |
-| 3:50  | Dashboard live (browser)              | Browser  |
-| 4:05  | copilot-instructions.md + Copilot     | VS Code  |
+| 3:50  | copilot-instructions.md + Copilot     | VS Code  |
 | 5:25  | Slide 4 — AI Feedback Loop            | Slides   |
 | 5:50  | Slide 5 — Kicker (with pause)         | Slides   |
 | 6:10  | Slide 6 — Close                       | Slides   |
+
+Dashboard at localhost:8080 is **optional** — show it only if you're ahead of pace at 3:45.
+Skip it by default; the main argument doesn't depend on it.
 
 ---
 
@@ -102,47 +104,65 @@ Total time: 17s
 
 → Switch to slides (SlideResults).
 
-### Dashboard Demo (3:00–3:10)
+### Dashboard Demo (optional — only if ahead of pace at 3:45)
 
-Switch to browser tab at **localhost:8080** (already running). 10 seconds max.
+If you finished HowItWorks before 3:45, switch to browser tab at **localhost:8080** (~15s max):
 
-Point at:
-1. **Tests tab** — ranked order with scores, which 7 ran
-2. **Analytics** — APFD trend, 6 runs of pass/fail history
-3. Quick mention: flakiness tracking, co-failure patterns
+> "It's been tracking every run — APFD, flakiness, which tests are your best signals."
 
-> "It's been tracking every run. Which tests are your best early-warning signals.
->  Which ones are flaky. How early bugs surface — that's APFD."
+Switch back to VS Code immediately. If you're at or past 3:45, skip it entirely.
 
-Switch back to slides immediately.
+### Agentic Demo (3:50–5:25)
 
-### Agentic Demo (4:05–5:25)
+Switch to **VS Code**. Show `.github/copilot-instructions.md` tab.
 
-Still in **VS Code**. Show `.github/copilot-instructions.md` tab — read it aloud, close it.
+> "Here's the entire AI integration. One file."
 
-> "After every code change, run: mvn test-order:select test. That's it."
-> "The agent gets a result in 17 seconds. Not 5 minutes."
-> "As a Gradle DevRel once put it: 2× slower feedback → 4× slower developer.
->  An agent waiting 5 minutes makes 18× fewer fix attempts per hour."
-
-The bug is already in the code from `./make-change.sh`. Type the prompt in Copilot chat:
+Type the Copilot prompt:
 
 ```
 The tests are failing. Read the failure output and fix the bug.
 After the fix, run the tests using the project's test instructions.
 ```
 
-**What happens** (let it run, narrate lightly):
-1. Copilot runs `mvn test-order:select test` (~17s) — red
-2. `DestinationRetrievalStrategyResolverTest` fails — logic inversion in `currentTenantIsProvider()`
-3. Copilot reads the stack trace, fixes `!Objects.equals(...)` → `Objects.equals(...)`
-4. Copilot re-runs — green (~17s)
+**While Copilot starts running** (first ~17s wait), narrate over it:
 
-> "It read the failure. Fixed it. 17 seconds to catch, 17 seconds to verify."
+> "Three lines. After every change: mvn test-order:select test."
+> "The agent gets a result in 17 seconds. Not 5 minutes."
+
+**What happens:**
+1. Copilot runs `mvn test-order:select test` (~17s) — red
+   > "There's the bug."
+2. Copilot reads the stack trace, fixes `!Objects.equals(...)` → `Objects.equals(...)`
+3. Copilot re-runs (~17s) — green
+   > "It read the failure. Fixed it. 17 seconds to catch, 17 to verify."
+
+In terminal (~1s to run, ~20s to narrate):
+```sh
+mvn test-order:show -pl cloudplatform/connectivity-destination-service
+```
+
+> "Full ranked list. Score, dependency count, failure rate, duration."
+> "StrategyResolverTest — 12 deps on the class I changed. Failure rate 1.0. That's why it ran."
+
+Scroll down to the **Method Order** section:
+
+> "It also ranks methods within each class. Highest failure signal runs first."
+> "And there's a `detect-dependencies` goal that finds order-dependent tests — tests that only
+>  fail in a specific sequence. The ones that pass in isolation but break each other in CI."
+> "We don't run that live — it reruns the full suite. But it's there."
+> "Everything else deferred — not skipped. Still runs in the nightly pass."
 
 → Switch to slides (SlideAgenticLoop).
 
-### Close (5:30)
+### SlideAgenticLoop (4:59–5:19)
+
+The slide anchors what the audience just watched with two numbers — 34s vs 10min — and the point: the bottleneck is the wait, not the intelligence.
+
+> "34 seconds. Edit, caught, fixed, green."
+> "The bottleneck isn't intelligence. It's the wait."
+
+### Close (5:50)
 
 > "Maybe your test suite isn't too large."
 > *(pause)*
@@ -166,16 +186,18 @@ After the fix, run the tests using the project's test instructions.
 | 2:35 | *(select running)* "Not 469 tests. It selected 7. Watch." |
 | 2:52 | *(BUILD FAILURE)* "Seven test classes. Seventeen seconds. Build failure." |
 | 3:00 | *(SlideResults)* "Five minutes. Seventeen seconds. Same change. Same confidence. Twenty times faster." |
-| 3:20 | *(SlideHowItWorks)* "One learn pass. 12% overhead. Then every commit: git diff → intersect graph → score → select." |
-| 3:45 | "Maven, Gradle, JUnit 5, JUnit 4, TestNG, Kotest. Zero config." |
-| 3:50 | *(browser — 15s)* "Tracking every run. APFD — how early bugs surface. Which tests are your best signals." |
-| 4:05 | *(VS Code, copilot-instructions.md)* "One file. Three lines. The entire AI integration." |
-| 4:15 | "2× slower feedback → 4× slower developer. An agent waiting 5 minutes makes 18× fewer fix attempts per hour." |
-| 4:30 | *(Copilot runs — red ~17s)* "There's the bug." |
-| 5:05 | *(Copilot fixes, re-runs — green ~17s)* "Fixed. 17 seconds to catch, 17 to verify." |
-| 5:25 | *(SlideAgenticLoop)* "Edit → caught → fixed → green. Under 40 seconds. One instructions file." |
-| 5:50 | *(SlideKicker)* "Maybe your test suite isn't too large." *(3s pause)* |
-| 5:56 | *(click)* "Maybe you're just running the wrong tests first." |
+| 3:20 | *(SlideHowItWorks)* "StrategyResolverTest was #1 because it's the only test that touches the class I changed. The graph knew." |
+| 3:30 | "One learn pass. 12% overhead. git diff → intersect → score → select. Maven, Gradle, JUnit 5, zero config." |
+| 3:50 | *(VS Code, copilot-instructions.md visible)* "Here's the entire AI integration. One file." |
+| 3:55 | *(type Copilot prompt, first run starts)* "Three lines. After every change: mvn test-order:select test. 17 seconds, not 5 minutes." |
+| 4:12 | *(Copilot run — red)* "There's the bug." |
+| 4:35 | *(Copilot fixes, second run starts)* "It read the stack trace. Fixed the negation." |
+| 4:52 | *(green)* "17 seconds to catch. 17 to verify." |
+| 4:59 | *(terminal: mvn test-order:show)* "Full ranked list. StrategyResolverTest — 12 deps, failure rate 1.0. Methods ranked within each class too." |
+| 5:00 | *(SlideAgenticLoop)* "An agent at 5 minutes makes 18× fewer fix attempts per hour. One file. That's the integration." |
+| 5:25 | *(SlideKicker)* "Maybe your test suite isn't too large." *(3s pause)* |
+| 5:31 | *(click)* "Maybe you're just running the wrong tests first." *(hold 5s)* |
+| 5:36 | *(SlideClose)* "Star it. Drop in the plugin. Tell me how much time you saved." |
 
 ---
 

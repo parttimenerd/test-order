@@ -983,7 +983,8 @@ class SourceFileModelUtilTest {
 			long avgMs = elapsed / (iterations * 1_000_000);
 
 			// Sanity check: should complete in reasonable time (< 1000ms per parse)
-			// This is a regression guard, not a tight benchmark — threshold is generous for slow CI
+			// This is a regression guard, not a tight benchmark — threshold is generous for
+			// slow CI
 			assertTrue(avgMs < 1000, "Parsing 50 classes x 10 methods should take < 1000ms, took " + avgMs + "ms");
 		}
 
