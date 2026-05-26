@@ -428,13 +428,15 @@ Run 3 (2 pending files): 82 s
 Run 4 (3 pending files): 144 s
 Run 5 (4 pending files): 188 s  (3m 8s total)
 ```
-**Root cause**: Processed pending-run files are not deleted; state reads inside the JUnit orderer
-callback are not cached at the JVM level so each per-class call pays the full deserialization cost.
 
-**Expected**: Pending-run files should be deleted after successful merge. The `PriorityClassOrderer`
-should deserialize the state once per JVM (lazy initialization), not once per test class.
+**Root cause**: `PartialRunAggregator.cleanStalePartials()` existed but was never called. Files
+from previous build IDs (crashed/interrupted runs) accumulated indefinitely because `mergeAndApply`
+only deletes files with the CURRENT build's UUID prefix.
 
-**Severity**: CRASH (makes plugin unusable after a few runs on `reuseForks=false` projects)
+**Fix**: `cleanStalePartials()` is now called in `getOrCreateBuildId()` at the start of each build,
+with a 30-minute cutoff to avoid interfering with concurrent parallel builds.
+
+**Severity**: CRASH (makes plugin unusable after a few runs on `reuseForks=false` projects) — **FIXED**
 
 ---
 
@@ -619,7 +621,7 @@ also at INFO level.
 | B16 | MINOR    | docs                  | @{argLine} interaction not documented                    |
 | B17 | MINOR    | tiered-select         | Expected degradation from B02 (graceful)                 |
 | B18 | MINOR    | detect-dependencies   | hashes.lz4 not saved by detect-deps learn phase          |
-| B19 | CRASH    | learn mode            | pending-runs files accumulate, O(n²) slowdown            |
+| B19 | CRASH    | learn mode            | pending-runs files accumulate, O(n²) slowdown — FIXED (cleanStalePartials now called) |
 | B20 | WRONG    | clean                 | clean goal does not remove pending-runs directory        |
 | B21 | WRONG    | detect-dependencies   | "0 findings" reported when reference run catastrophically fails |
 | B22 | WRONG    | detect-dependencies   | detect-deps overwrites production index — FIXED (uses detection/detection-deps.lz4) |

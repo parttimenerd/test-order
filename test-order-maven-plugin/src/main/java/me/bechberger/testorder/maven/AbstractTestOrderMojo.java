@@ -1914,6 +1914,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		pendingAggregations.put(buildId + "|" + stateFilePath.toAbsolutePath().normalize(),
 				new PendingAggregation(pendingRunsDir, stateFilePath));
 
+		// Clean up stale .part files from previous crashed/interrupted builds (B19).
+		// Use a 30-minute cutoff so we don't remove files from a concurrent parallel
+		// run.
+		me.bechberger.testorder.PartialRunAggregator.cleanStalePartials(pendingRunsDir, 30 * 60 * 1000L);
+
 		return buildId;
 	}
 
