@@ -24,8 +24,8 @@ import me.bechberger.testorder.annotations.TestOrder;
  * <b>Graceful degradation:</b> If no method telemetry is available (first run),
  * methods remain in source order. This is logged, not an error.
  * <p>
- * Methods with explicit {@code @Order} annotations take precedence over
- * score-based ordering.
+ * When the class declares {@code @TestMethodOrder} with a different orderer,
+ * this orderer defers to it and does not reorder methods.
  */
 public class PriorityMethodOrderer implements MethodOrderer {
 
@@ -107,11 +107,12 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			return;
 		}
 
-		// Respect JUnit's @Order annotation: if any method in the class uses @Order,
-		// apply it ourselves (JUnit only honours @Order when @TestMethodOrder is also
-		// present; we can emulate it here so the annotation works standalone).
-		if (hasJUnitOrderAnnotation(context)) {
-			applyJUnitOrderAnnotation(context);
+		// Defer to a different @TestMethodOrder orderer if one is explicitly declared
+		org.junit.jupiter.api.TestMethodOrder tmo = context.getTestClass()
+				.getAnnotation(org.junit.jupiter.api.TestMethodOrder.class);
+		if (tmo != null && !PriorityMethodOrderer.class.equals(tmo.value())) {
+			TestOrderLogger.debug("[method-order] {}: @TestMethodOrder specifies another orderer — not reordering",
+					className);
 			return;
 		}
 
@@ -235,72 +236,6 @@ public class PriorityMethodOrderer implements MethodOrderer {
 	}
 
 	/**
-	 * Sorts methods by their {@code @Order} value when the class uses {@code @Order}
-	 * on methods without a {@code @TestMethodOrder} annotation.  JUnit itself only
-	 * honours {@code @Order} when {@code @TestMethodOrder(OrderAnnotation.class)} is
-	 * also present; this method emulates that behaviour so the annotation works
-	 * standalone.  If {@code @TestMethodOrder} specifies a different orderer we
-	 * leave the list unchanged (the other orderer handles it).
-	 */
-	private void applyJUnitOrderAnnotation(MethodOrdererContext context) {
-		org.junit.jupiter.api.TestMethodOrder tmo = context.getTestClass()
-				.getAnnotation(org.junit.jupiter.api.TestMethodOrder.class);
-		// Another orderer is configured — don't interfere
-		if (tmo != null && !PriorityMethodOrderer.class.equals(tmo.value())
-				&& !org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class.equals(tmo.value())) {
-			TestOrderLogger.debug("[method-order] {}: @TestMethodOrder specifies another orderer; not applying @Order",
-					context.getTestClass().getName());
-			return;
-		}
-		boolean hasOrderAnnotation = context.getMethodDescriptors().stream()
-				.anyMatch(md -> md.getMethod().isAnnotationPresent(org.junit.jupiter.api.Order.class));
-		if (!hasOrderAnnotation) {
-			return;
-		}
-		boolean missingTestMethodOrder = tmo == null
-				|| !org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class.equals(tmo.value());
-		if (missingTestMethodOrder) {
-			TestOrderLogger.debug(
-					"[method-order] {}: @Order present without @TestMethodOrder — applying order values directly",
-					context.getTestClass().getName());
-		}
-		context.getMethodDescriptors().sort((a, b) -> {
-			org.junit.jupiter.api.Order oa = a.getMethod().getAnnotation(org.junit.jupiter.api.Order.class);
-			org.junit.jupiter.api.Order ob = b.getMethod().getAnnotation(org.junit.jupiter.api.Order.class);
-			int va = oa != null ? oa.value() : org.junit.jupiter.api.Order.DEFAULT;
-			int vb = ob != null ? ob.value() : org.junit.jupiter.api.Order.DEFAULT;
-			return Integer.compare(va, vb);
-		});
-	}
-
-	/**
-	 * Returns {@code true} if any method in the class uses JUnit's {@code @Order}
-	 * annotation or if the class declares {@code @TestMethodOrder} — in which case
-	 * {@link #applyJUnitOrderAnnotation} will handle the ordering instead of the
-	 * score-based path.
-	 */
-	private boolean hasJUnitOrderAnnotation(MethodOrdererContext context) {
-		// Check for @TestMethodOrder on the class itself — but only if it specifies
-		// a different orderer (not this one), otherwise we'd skip our own ordering
-		org.junit.jupiter.api.TestMethodOrder tmo = context.getTestClass()
-				.getAnnotation(org.junit.jupiter.api.TestMethodOrder.class);
-		if (tmo != null && !PriorityMethodOrderer.class.equals(tmo.value())) {
-			return true;
-		}
-		// Check for @Order on any test method
-		boolean hasOrderAnnotation = false;
-		for (org.junit.jupiter.api.MethodDescriptor md : context.getMethodDescriptors()) {
-			if (md.getMethod().isAnnotationPresent(org.junit.jupiter.api.Order.class)) {
-				hasOrderAnnotation = true;
-				break;
-			}
-		}
-		if (hasOrderAnnotation) {
-			return true;
-		}
-		return false;
-	}
-
 	/**
 	 * Detects @Execution(CONCURRENT) on the test class or any enclosing class
 	 * (for @Nested classes that inherit the annotation) via reflection to avoid a
