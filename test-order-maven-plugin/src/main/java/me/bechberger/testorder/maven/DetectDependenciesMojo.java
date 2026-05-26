@@ -192,11 +192,23 @@ public class DetectDependenciesMojo extends AbstractTestOrderMojo {
 				moduleProject.getArtifactId(), MavenPluginLog.wrap(getLog()));
 
 		// Resolve test-order-junit and dependencies so the FixedOrderClassOrderer
-		// is available on the forked test classpath
+		// is available on the forked test classpath. Also include the agent runtime
+		// JAR so offline-instrumented test classes can call
+		// UsageStore.recordClassOnly().
 		List<String> ordererClasspath;
 		try {
 			Path[] resolved = resolveOrdererClasspath();
-			ordererClasspath = java.util.Arrays.stream(resolved).map(p -> p.toAbsolutePath().toString()).toList();
+			List<String> cp = new java.util.ArrayList<>(
+					java.util.Arrays.stream(resolved).map(p -> p.toAbsolutePath().toString()).toList());
+			// Add agent runtime (contains UsageStore needed by offline-instrumented
+			// classes)
+			try {
+				Path agentRuntime = resolveArtifact("test-order-agent-runtime");
+				cp.add(agentRuntime.toAbsolutePath().toString());
+			} catch (MojoExecutionException e) {
+				getLog().debug("[test-order] Could not resolve agent runtime JAR: " + e.getMessage());
+			}
+			ordererClasspath = cp;
 		} catch (MojoExecutionException e) {
 			getLog().warn("[test-order] Could not resolve orderer classpath: " + e.getMessage());
 			ordererClasspath = List.of();

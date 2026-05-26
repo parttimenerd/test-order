@@ -47,15 +47,15 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 
 	@Override
 	public void execute() throws MojoExecutionException {
-		// Accept -Dtestorder.tier=N as a shorthand alias for -Dtestorder.tiered.currentTier=N
+		// Accept -Dtestorder.tier=N as a shorthand alias for
+		// -Dtestorder.tiered.currentTier=N
 		if (currentTier == 0 && session != null && session.getUserProperties() != null) {
 			String alias = session.getUserProperties().getProperty("testorder.tier");
 			if (alias != null && !alias.isBlank()) {
 				try {
 					currentTier = Integer.parseInt(alias.trim());
 				} catch (NumberFormatException e) {
-					throw new MojoExecutionException(
-							"[test-order] testorder.tier must be an integer, got: " + alias);
+					throw new MojoExecutionException("[test-order] testorder.tier must be an integer, got: " + alias);
 				}
 			}
 		}
@@ -101,7 +101,9 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 		}
 
 		if (tests.isEmpty()) {
-			getLog().info("[test-order] Tier-" + currentTier + " test list is empty — skipping.");
+			getLog().info("[test-order] Tier-" + currentTier + " test list is empty"
+					+ " — these tests likely already ran inline during 'tiered-select' (when tier-1 was empty)."
+					+ " No further action needed.");
 			project.getProperties().setProperty("skipTests", "true");
 			return;
 		}

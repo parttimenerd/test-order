@@ -292,7 +292,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		Path idxPath = ctx.resolveIndexFile(indexFile);
 		try {
 			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
-				getLog().info("[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
+				getLog().info(
+						"[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
 			}
 		} catch (IOException e) {
 			getLog().warn("[test-order] Failed to process collector fallback payloads: " + e.getMessage());
@@ -714,6 +715,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 	protected Set<String> detectChangedClasses(boolean readOnly) {
 		PluginLog plog = pluginLog();
+		if (changedClasses != null && !changedClasses.isBlank() && !"explicit".equalsIgnoreCase(changeMode)) {
+			getLog().warn("[test-order] testorder.changed.classes is set but changeMode='" + changeMode
+					+ "' — explicit class list is merged with detected changes, not used exclusively."
+					+ " To use only the specified classes, add -Dtestorder.changeMode=explicit");
+		}
 		Set<String> own = ChangeDetectionOps.detectChangedClassesWithKotlin(changeMode, ctx.gitRoot(),
 				resolveSourceRoot(), ctx.resolveHashFile(hashFile), changedClasses, readOnly, plog);
 		ctx.storeChangedClasses(own);

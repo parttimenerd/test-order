@@ -23,6 +23,8 @@ class MavenTestRunner implements TestRunner {
 	private final Log log;
 	private final Path reportDir;
 	private final Path runtimeDir;
+	/** Additional JARs/directories to add to the test classpath for all runs. */
+	private final List<String> extraClasspath;
 
 	/** Circular buffer of last N lines of subprocess output for diagnostics. */
 	private static final int OUTPUT_BUFFER_SIZE = 50;
@@ -46,6 +48,7 @@ class MavenTestRunner implements TestRunner {
 		this.log = log;
 		this.reportDir = Path.of(project.getBuild().getDirectory(), "surefire-reports");
 		this.runtimeDir = Path.of(project.getBuild().getDirectory(), "test-order-detect-runtime");
+		this.extraClasspath = ordererClasspath;
 	}
 
 	@Override
@@ -150,8 +153,8 @@ class MavenTestRunner implements TestRunner {
 					"-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
 					// Pass the order file path to the forked JVM via argLine (quote for spaces)
 					"-DargLine=-Dtestorder.fixed.order.file=\"" + orderFile.toAbsolutePath() + "\"",
-					// Add runtime dir to test classpath for junit-platform.properties
-					"-Dmaven.test.additionalClasspath=" + runtimeDir.toAbsolutePath(), "--batch-mode", "--quiet"));
+					// Add runtime dir and orderer JARs to test classpath
+					"-Dmaven.test.additionalClasspath=" + buildAdditionalClasspath(), "--batch-mode", "--quiet"));
 			command.addAll(PLUGIN_SKIP_FLAGS);
 			if (!runAll) {
 				command.add(2, "-Dtest=" + testList);
@@ -239,7 +242,7 @@ class MavenTestRunner implements TestRunner {
 							"-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
 							"-DargLine=-Dtestorder.fixed.method.order.file=\"" + methodOrderFile.toAbsolutePath()
 									+ "\"",
-							"-Dmaven.test.additionalClasspath=" + runtimeDir.toAbsolutePath(), "--batch-mode",
+							"-Dmaven.test.additionalClasspath=" + buildAdditionalClasspath(), "--batch-mode",
 							"--quiet"));
 			command.addAll(PLUGIN_SKIP_FLAGS);
 
@@ -496,6 +499,19 @@ class MavenTestRunner implements TestRunner {
 			}
 			lastOutputLines.addLast(line);
 		}
+	}
+
+	/**
+	 * Builds the comma-separated additional classpath string for Surefire. Always
+	 * includes the runtime dir (contains junit-platform.properties). Appends any
+	 * extra JARs passed in via the constructor (orderer classpath).
+	 */
+	private String buildAdditionalClasspath() {
+		StringBuilder sb = new StringBuilder(runtimeDir.toAbsolutePath().toString());
+		for (String extra : extraClasspath) {
+			sb.append(',').append(extra);
+		}
+		return sb.toString();
 	}
 
 	/**

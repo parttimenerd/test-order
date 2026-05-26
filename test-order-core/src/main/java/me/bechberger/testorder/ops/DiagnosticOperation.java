@@ -87,11 +87,14 @@ public final class DiagnosticOperation {
 		DiagnosticResult depsCheck = checkDepsDirectory(config);
 		// The agent's tryDirectMerge() writes the index directly without .deps files,
 		// so missing .deps is normal when the index is already valid.
+		// Also skip the penalty when no index exists yet (fresh project — expected
+		// state).
 		if (indexCheck.isSuccess() && depsCheck.isInformational() && !depsCheck.isSuccess()) {
 			depsCheck = DiagnosticResult.success("No .deps files needed (index was written directly by agent)");
 		}
 		results.add(depsCheck);
-		if (depsCheck.isInformational() && !depsCheck.isSuccess() && !indexCheck.isSuccess())
+		boolean freshProject = indexCheck.code() == ErrorCode.NOT_INITIALIZED_INDEX;
+		if (!freshProject && depsCheck.isInformational() && !depsCheck.isSuccess() && !indexCheck.isSuccess())
 			score -= 5;
 
 		// Check 7: Pending collector fallback payloads
@@ -111,8 +114,8 @@ public final class DiagnosticOperation {
 	private static DiagnosticResult checkIndexFile(DiagnosticConfig config) {
 		try {
 			if (!Files.exists(config.indexFile())) {
-				return DiagnosticResult.info(ErrorCode.INDEX_NOT_FOUND,
-						"No dependency index found at " + config.indexFile().toAbsolutePath(),
+				return DiagnosticResult.info(ErrorCode.NOT_INITIALIZED_INDEX,
+						"No dependency index found — this is expected before the first learn run",
 						List.of("Run learn mode to build the index: mvn test -Dtestorder.mode=learn",
 								"The index is created automatically at the end of a learn run"));
 			}
@@ -160,8 +163,8 @@ public final class DiagnosticOperation {
 	private static DiagnosticResult checkStateFile(DiagnosticConfig config) {
 		try {
 			if (!Files.exists(config.stateFile())) {
-				return DiagnosticResult.info(ErrorCode.STATE_NOT_FOUND,
-						"No state file found (created automatically after the first learn run)",
+				return DiagnosticResult.info(ErrorCode.NOT_INITIALIZED_STATE,
+						"No state file found — this is expected before the first learn run",
 						List.of("Run learn mode to start collecting test history: mvn test -Dtestorder.mode=learn"));
 			}
 
@@ -208,9 +211,9 @@ public final class DiagnosticOperation {
 		Path testOrderDir = config.indexFile().getParent();
 		try {
 			if (!Files.exists(testOrderDir)) {
-				return DiagnosticResult.info(ErrorCode.PERMISSION_DENIED, ".test-order directory does not exist yet",
-						List.of("This is normal before the first test run",
-								"The directory will be created automatically on the first learn run"));
+				return DiagnosticResult.info(ErrorCode.NOT_INITIALIZED_DIR,
+						".test-order directory does not exist yet — this is expected before the first learn run",
+						List.of("The directory will be created automatically on the first learn run"));
 			}
 
 			if (!Files.isWritable(testOrderDir)) {
@@ -290,6 +293,10 @@ public final class DiagnosticOperation {
 
 	private static String determineStatus(int score, List<DiagnosticResult> results) {
 		boolean hasErrors = results.stream().anyMatch(DiagnosticResult::isError);
+		boolean freshProject = results.stream().anyMatch(r -> r.code() == ErrorCode.NOT_INITIALIZED_INDEX);
+		if (freshProject && !hasErrors) {
+			return "NOT SET UP (run learn mode first)";
+		}
 		if (hasErrors) {
 			return score >= 70 ? "ISSUES ⚠" : "CRITICAL ✗";
 		}

@@ -61,7 +61,12 @@ public enum ErrorCode {
 											2006,
 											"Test source root not found (expected for POM-only parent modules)"), FALLBACK_PAYLOAD_PENDING(
 													2007,
-													"Unprocessed fallback payloads from a previous learn run exist");
+													"Unprocessed fallback payloads from a previous learn run exist"),
+	// Fresh-project informational codes — expected states before first learn run
+	NOT_INITIALIZED_INDEX(2008,
+			"Dependency index not yet created (expected before first learn run)"), NOT_INITIALIZED_STATE(2009,
+					"State file not yet created (expected before first learn run)"), NOT_INITIALIZED_DIR(2010,
+							"test-order directory not yet created (expected before first learn run)");
 
 	private final int code;
 	private final String message;

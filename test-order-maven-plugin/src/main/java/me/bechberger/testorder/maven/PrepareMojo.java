@@ -108,7 +108,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		// to prevent NoClassDefFoundError from stale instrumented bytecode.
 		// Exception: when the 'learn' CLI goal is active, the learn mojo has already
 		// instrumented the classes at process-test-classes phase. Restoring them here
-		// would undo that instrumentation before tests run, causing class-load failures.
+		// would undo that instrumentation before tests run, causing class-load
+		// failures.
 		boolean learnCliActive = isLearnCliGoal();
 		if (!learnCliActive) {
 			restoreInstrumentedClasses();
@@ -402,6 +403,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		} catch (IOException e) {
 			getLog().warn("[test-order] Could not reset runsSinceLearn: " + e.getMessage());
 		}
+		// Prevent duplicate execution when CLI goal also triggers the POM-bound phase
+		project.getProperties().setProperty("testorder.auto.active", "true");
 	}
 
 	private void executeOrderMode() throws MojoExecutionException {
