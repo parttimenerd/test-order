@@ -100,11 +100,9 @@ public final class ReactorOrderOperation {
 	 */
 	public static ReactorOrderResult compute(ReactorOrderInput input) throws IOException {
 		if (!Files.exists(input.indexFile())) {
-			throw new IOException(
-					"Dependency index not found: " + input.indexFile()
-							+ ". Run learn mode first: mvn test -Dtestorder.mode=learn"
-							+ " or mvn test-order:learn test"
-							+ "\n  For more details: mvn test-order:diagnose");
+			throw new IOException("Dependency index not found: " + input.indexFile()
+					+ ". Run learn mode first: mvn test -Dtestorder.mode=learn" + " or mvn test-order:learn test"
+					+ "\n  For more details: mvn test-order:diagnose");
 		}
 
 		DependencyMap depMap = DependencyMap.load(input.indexFile());

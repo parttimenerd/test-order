@@ -32,10 +32,10 @@ public final class CleanOperation {
 		int deleted = 0;
 		Set<Path> parentDirs = new java.util.LinkedHashSet<>();
 		for (Path file : files) {
-			// Delete the main file plus any sibling lock/temp files left by PersistenceSupport
+			// Delete the main file plus any sibling lock/temp files left by
+			// PersistenceSupport
 			for (String suffix : List.of("", ".lock", ".tmp")) {
-				Path candidate = suffix.isEmpty() ? file
-						: file.resolveSibling(file.getFileName() + suffix);
+				Path candidate = suffix.isEmpty() ? file : file.resolveSibling(file.getFileName() + suffix);
 				try {
 					if (Files.deleteIfExists(candidate)) {
 						log.info("[test-order] Deleted " + candidate);

@@ -236,8 +236,7 @@ public class PriorityMethodOrderer implements MethodOrderer {
 	}
 
 	/**
-	/**
-	 * Detects @Execution(CONCURRENT) on the test class or any enclosing class
+	 * /** Detects @Execution(CONCURRENT) on the test class or any enclosing class
 	 * (for @Nested classes that inherit the annotation) via reflection to avoid a
 	 * hard compile-time dependency on jupiter-api parallel classes.
 	 */

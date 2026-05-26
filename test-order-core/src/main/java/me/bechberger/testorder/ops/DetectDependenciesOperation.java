@@ -169,8 +169,8 @@ public final class DetectDependenciesOperation {
 		long refRunStart = System.currentTimeMillis();
 		PassingTestsResult ptr = determinePassingTests(referenceOrder, runner, log);
 		long perRunMs = System.currentTimeMillis() - refRunStart;
-		log.info("Reference run complete in " + formatDuration(perRunMs) + " — " + ptr.passing().size()
-				+ " of " + referenceOrder.size() + " classes pass");
+		log.info("Reference run complete in " + formatDuration(perRunMs) + " — " + ptr.passing().size() + " of "
+				+ referenceOrder.size() + " classes pass");
 		if (config.timeBudgetSeconds() > 0 && perRunMs > 0) {
 			long estimatedRunsHint = Math.max(1,
 					selectAlgorithm(config.algorithm(), log).estimatedRuns(referenceOrder.size(), 0));
@@ -255,11 +255,11 @@ public final class DetectDependenciesOperation {
 
 		// Budget recommendation for time-limited runs
 		if (config.timeBudgetSeconds() > 0 && actualRuns > 0) {
-			long perRunMs = elapsed / actualRuns;
-			if (perRunMs > 0) {
-				long suggestedBudget = (perRunMs * estimatedRuns) / 1000;
+			long avgPerRunMs = elapsed / actualRuns;
+			if (avgPerRunMs > 0) {
+				long suggestedBudget = (avgPerRunMs * estimatedRuns) / 1000;
 				if (suggestedBudget > config.timeBudgetSeconds()) {
-					log.info("Each detection run takes ~" + (perRunMs / 1000) + "s. " + "For full coverage ("
+					log.info("Each detection run takes ~" + (avgPerRunMs / 1000) + "s. " + "For full coverage ("
 							+ estimatedRuns + " runs), set " + "testorder.detect.timeBudget=" + suggestedBudget);
 				}
 			}

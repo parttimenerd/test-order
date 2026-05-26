@@ -97,8 +97,9 @@ public final class ChangeDetectionSupport {
 	 * directly. In {@code auto} mode, explicit changed classes (when provided) take
 	 * precedence over snapshot-based detection, otherwise mode resolves from
 	 * snapshot presence. In all other modes ({@code uncommitted},
-	 * {@code since-last-commit}, {@code since-last-run}), the {@code changedClasses}
-	 * parameter is ignored and git/hash-based detection is used.
+	 * {@code since-last-commit}, {@code since-last-run}), the
+	 * {@code changedClasses} parameter is ignored and git/hash-based detection is
+	 * used.
 	 * </p>
 	 */
 	public static Set<String> detectChangedClasses(String changeMode, Path projectRoot, Path sourceRoot, Path hashFile,
@@ -143,9 +144,9 @@ public final class ChangeDetectionSupport {
 	 * Parse comma-separated FQCNs into a stable-order set.
 	 *
 	 * <p>
-	 * If no commas are present but semicolons are found, falls back to
-	 * semicolon splitting and logs a warning. Only commas are the documented
-	 * separator; semicolon support is a best-effort fallback.
+	 * If no commas are present but semicolons are found, falls back to semicolon
+	 * splitting and logs a warning. Only commas are the documented separator;
+	 * semicolon support is a best-effort fallback.
 	 * </p>
 	 */
 	public static Set<String> parseExplicitClasses(String classes) {

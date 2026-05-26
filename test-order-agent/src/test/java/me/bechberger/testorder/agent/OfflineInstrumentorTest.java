@@ -277,8 +277,7 @@ class OfflineInstrumentorTest {
 		String outerName = "com/inner/OuterClass";
 		String innerName = "com/inner/OuterClass$Inner";
 		Files.write(classesDir.resolve("com/inner/OuterClass.class"), generateSimpleClass(outerName));
-		Files.write(classesDir.resolve("com/inner/OuterClass$Inner.class"),
-				generateInnerClass(outerName, innerName));
+		Files.write(classesDir.resolve("com/inner/OuterClass$Inner.class"), generateInnerClass(outerName, innerName));
 		ClassIdMap map = ClassIdMap.createForBenchmark();
 		OfflineInstrumentor instrumentor = new OfflineInstrumentor(Agent.InstrumentationMode.CLASS,
 				List.of("com.inner"), List.of(), map);
@@ -292,8 +291,8 @@ class OfflineInstrumentorTest {
 	private byte[] generateInnerClass(String outerName, String innerName) {
 		ClassWriter cw = new ClassWriter(0);
 		cw.visit(Opcodes.V11, Opcodes.ACC_PUBLIC, innerName, null, "java/lang/Object", null);
-		cw.visitField(Opcodes.ACC_FINAL | Opcodes.ACC_SYNTHETIC, "this$0",
-				"L" + outerName + ";", null, null).visitEnd();
+		cw.visitField(Opcodes.ACC_FINAL | Opcodes.ACC_SYNTHETIC, "this$0", "L" + outerName + ";", null, null)
+				.visitEnd();
 		cw.visitInnerClass(innerName, outerName, "Inner", Opcodes.ACC_PUBLIC);
 		String ctorDesc = "(L" + outerName + ";)V";
 		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", ctorDesc, null, null);

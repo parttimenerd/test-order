@@ -249,8 +249,8 @@ public final class ParameterValidator {
 		}
 		if (!changedClasses.contains(",") && changedClasses.contains(";")) {
 			log.warn("[test-order] testorder.changed.classes uses semicolons as separators, but only commas are"
-					+ " documented. Semicolons are accepted as a fallback. Prefer:"
-					+ " -Dtestorder.changed.classes=" + changedClasses.replace(';', ','));
+					+ " documented. Semicolons are accepted as a fallback. Prefer:" + " -Dtestorder.changed.classes="
+					+ changedClasses.replace(';', ','));
 		}
 	}
 }

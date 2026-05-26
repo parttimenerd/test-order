@@ -41,10 +41,10 @@ public class AggregateMojo extends AbstractTestOrderMojo {
 				getLog().info("[test-order] No deps directory — index already written by collector at " + indexPath);
 				return;
 			}
-			throw new MojoExecutionException("No dependency data found: neither the index file ("
-					+ indexPath + ") nor the .deps directory (" + depsDirPath + ") exists."
-					+ " Run learn mode first: mvn test -Dtestorder.mode=learn"
-					+ "\n  For more details: mvn test-order:diagnose");
+			throw new MojoExecutionException(
+					"No dependency data found: neither the index file (" + indexPath + ") nor the .deps directory ("
+							+ depsDirPath + ") exists." + " Run learn mode first: mvn test -Dtestorder.mode=learn"
+							+ "\n  For more details: mvn test-order:diagnose");
 		}
 
 		try {
