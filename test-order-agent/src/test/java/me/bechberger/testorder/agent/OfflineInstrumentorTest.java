@@ -267,6 +267,49 @@ class OfflineInstrumentorTest {
 		return cw.toByteArray();
 	}
 
+	@Test
+	void instrumentsNonStaticInnerClass() throws IOException {
+		// Regression test for BUG-8: offline instrumentor must not corrupt
+		// @Nested inner class constructors (which take the outer instance as
+		// first parameter).
+		Path classesDir = tempDir.resolve("classes");
+		Files.createDirectories(classesDir.resolve("com/inner"));
+		String outerName = "com/inner/OuterClass";
+		String innerName = "com/inner/OuterClass$Inner";
+		Files.write(classesDir.resolve("com/inner/OuterClass.class"), generateSimpleClass(outerName));
+		Files.write(classesDir.resolve("com/inner/OuterClass$Inner.class"),
+				generateInnerClass(outerName, innerName));
+		ClassIdMap map = ClassIdMap.createForBenchmark();
+		OfflineInstrumentor instrumentor = new OfflineInstrumentor(Agent.InstrumentationMode.CLASS,
+				List.of("com.inner"), List.of(), map);
+		ClassIdMapping mapping = instrumentor.instrument(classesDir);
+		assertEquals(2, instrumentor.getTransformedCount(), "both outer and inner should be instrumented");
+		byte[] innerBytes = Files.readAllBytes(classesDir.resolve("com/inner/OuterClass$Inner.class"));
+		assertTrue(OfflineInstrumentor.hasMarkerAttribute(innerBytes),
+				"inner class should carry the instrumentation marker");
+	}
+
+	private byte[] generateInnerClass(String outerName, String innerName) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V11, Opcodes.ACC_PUBLIC, innerName, null, "java/lang/Object", null);
+		cw.visitField(Opcodes.ACC_FINAL | Opcodes.ACC_SYNTHETIC, "this$0",
+				"L" + outerName + ";", null, null).visitEnd();
+		cw.visitInnerClass(innerName, outerName, "Inner", Opcodes.ACC_PUBLIC);
+		String ctorDesc = "(L" + outerName + ";)V";
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", ctorDesc, null, null);
+		mv.visitCode();
+		mv.visitVarInsn(Opcodes.ALOAD, 0);
+		mv.visitVarInsn(Opcodes.ALOAD, 1);
+		mv.visitFieldInsn(Opcodes.PUTFIELD, innerName, "this$0", "L" + outerName + ";");
+		mv.visitVarInsn(Opcodes.ALOAD, 0);
+		mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(2, 2);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
 	/**
 	 * Check if transformed bytecode contains a call to UsageStore.
 	 */

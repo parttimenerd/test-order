@@ -532,39 +532,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 				buildScoreOverrides());
 
-		// Fix @Order without @TestMethodOrder: scan test classes and add
-		// @TestMethodOrder(MethodOrderer.OrderAnnotation.class) to any class that has
-		// @Order on methods but is missing @TestMethodOrder (JUnit silently ignores
-		// @Order without it).
-		applyOrderAnnotationFix();
-
 		// R17-12: Mark that prepare already ran to prevent duplicate execution
 		// when 'mvn test-order:prepare test' triggers both CLI and lifecycle invocation
 		project.getProperties().setProperty("testorder.auto.active", "true");
-	}
-
-	/**
-	 * Applies the @Order-without-@TestMethodOrder fix to test classes. Patches any
-	 * compiled test class that has @Order on methods but lacks @TestMethodOrder on
-	 * the class declaration.
-	 */
-	private void applyOrderAnnotationFix() {
-		Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
-		if (!Files.isDirectory(testClassesDir)) {
-			return;
-		}
-		try {
-			me.bechberger.testorder.agent.OrderAnnotationFixer fixer =
-					new me.bechberger.testorder.agent.OrderAnnotationFixer();
-			int fixed = fixer.fix(testClassesDir);
-			if (fixed > 0) {
-				getLog().warn("[test-order] Added @TestMethodOrder(MethodOrderer.OrderAnnotation.class) to "
-						+ fixed + " test class(es) that used @Order without it. "
-						+ "Without @TestMethodOrder, JUnit silently ignores @Order annotations.");
-			}
-		} catch (IOException e) {
-			getLog().warn("[test-order] Failed to apply @Order annotation fix: " + e.getMessage());
-		}
 	}
 
 	private boolean isRecoverableIndexLoadFailure(IOException e) {
