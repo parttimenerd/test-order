@@ -37,7 +37,7 @@
           <div class="space-y-4 text-gray-300">
             <div class="flex items-start gap-3">
               <span class="text-emerald-400 text-lg mt-0.5">✓</span>
-              <span class="text-base leading-snug">Same edit → feedback in <span class="text-emerald-300 font-semibold">17 seconds</span></span>
+              <span class="text-base leading-snug">Same edit → feedback in <span class="text-emerald-300 font-semibold">~25 seconds</span></span>
             </div>
             <div class="flex items-start gap-3">
               <span class="text-emerald-400 text-lg mt-0.5">✓</span>

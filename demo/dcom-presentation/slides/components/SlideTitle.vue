@@ -5,7 +5,7 @@
     <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-160 h-160 bg-emerald-500/5 rounded-full blur-3xl"></div>
     <div class="relative z-10 text-center">
       <h1 class="!text-6xl !font-bold !leading-tight bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent">
-        You Are Running<br>the Wrong Tests First
+        You're Running<br>the Wrong Tests First
       </h1>
       <div class="mt-10">
         <p class="text-2xl text-gray-400 leading-relaxed tracking-wide">
