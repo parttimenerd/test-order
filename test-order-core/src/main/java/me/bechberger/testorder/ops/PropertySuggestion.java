@@ -72,6 +72,11 @@ public final class PropertySuggestion {
 			return "testorder.changed.test.classes";
 		}
 
+		// Common alias: testorder.showOrder.format → testorder.show.format
+		if ("testorder.showorder.format".equals(unknownLower)) {
+			return "testorder.show.format";
+		}
+
 		// Common alias: testorder.serve.* → testorder.dashboard.*
 		if ("testorder.serve.port".equals(unknownLower)) {
 			return "testorder.dashboard.port";

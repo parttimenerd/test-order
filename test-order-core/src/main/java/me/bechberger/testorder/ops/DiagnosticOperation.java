@@ -94,6 +94,12 @@ public final class DiagnosticOperation {
 		if (depsCheck.isInformational() && !depsCheck.isSuccess() && !indexCheck.isSuccess())
 			score -= 5;
 
+		// Check 7: Pending collector fallback payloads
+		DiagnosticResult fallbackCheck = checkFallbackPayload(config);
+		if (fallbackCheck != null) {
+			results.add(fallbackCheck);
+		}
+
 		score = Math.max(0, Math.min(100, score));
 
 		String status = determineStatus(score, results);
@@ -240,6 +246,18 @@ public final class DiagnosticOperation {
 					List.of("Valid modes: auto, since-last-run, since-last-commit, uncommitted, explicit",
 							"Set via -Dtestorder.changeMode=<mode>"));
 		}
+	}
+
+	private static DiagnosticResult checkFallbackPayload(DiagnosticConfig config) {
+		Path fallbackFile = config.indexFile().resolveSibling(config.indexFile().getFileName() + ".collector-fallback");
+		if (!Files.exists(fallbackFile)) {
+			return null;
+		}
+		return DiagnosticResult.info(me.bechberger.testorder.ErrorCode.FALLBACK_PAYLOAD_PENDING,
+				"Unprocessed fallback payloads from a previous learn run exist at " + fallbackFile.toAbsolutePath(),
+				List.of("These will be merged on the next run that uses the test-order plugin.",
+						"If this file is old, it may indicate learn mode is not working correctly.",
+						"To merge manually: mvn test-order:compact (or run any test-order goal)"));
 	}
 
 	private static DiagnosticResult checkDepsDirectory(DiagnosticConfig config) {

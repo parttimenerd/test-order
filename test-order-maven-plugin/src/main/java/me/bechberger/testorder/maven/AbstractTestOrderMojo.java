@@ -314,6 +314,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			return;
 		}
 		if (session.getUserProperties() != null) {
+			for (String info : MavenPluginConfigKeys.findAliasedProperties(session.getUserProperties())) {
+				if (WARNED_PROPERTIES.add(info)) {
+					getLog().info("[test-order] " + info);
+				}
+			}
 			for (String warning : MavenPluginConfigKeys.findUnknownProperties(session.getUserProperties())) {
 				if (WARNED_PROPERTIES.add(warning)) {
 					getLog().warn("[test-order] " + warning);

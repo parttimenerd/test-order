@@ -37,10 +37,6 @@ public class AnalyzeMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
-		getLog().warn(
-				"[test-order] DEPRECATED: 'test-order:analyze' has been replaced by 'test-order:show -Dtestorder.show.ml=true'."
-						+ " Please update your scripts and POM configurations.");
-
 		if (skipIfNotExplicitlySelectedReactorProject("analyze")) {
 			return;
 		}

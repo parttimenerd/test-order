@@ -58,7 +58,10 @@ public enum ErrorCode {
 					"Index contains stale entries (recommend testOrderCompact)"), HASH_FILE_STALE(2004,
 							"Hash file is stale (snapshots may be outdated)"), DEPS_NOT_FOUND(2005,
 									"No .deps files found (recommend running in learn mode first)"), TEST_SOURCE_ROOT_ABSENT(
-											2006, "Test source root not found (expected for POM-only parent modules)");
+											2006,
+											"Test source root not found (expected for POM-only parent modules)"), FALLBACK_PAYLOAD_PENDING(
+													2007,
+													"Unprocessed fallback payloads from a previous learn run exist");
 
 	private final int code;
 	private final String message;

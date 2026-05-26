@@ -66,9 +66,6 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
-		getLog().warn("[test-order] DEPRECATED: 'test-order:show-order' has been replaced by 'test-order:show'."
-				+ " Please update your scripts and POM configurations.");
-
 		Path idxPath = resolveIndexPath();
 
 		// auto-aggregate if needed

@@ -2,6 +2,7 @@ package me.bechberger.testorder.maven;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -83,6 +84,15 @@ final class MavenPluginConfigKeys {
 	 */
 	static final String SERVE_PORT_ALIAS = "testorder.serve.port";
 
+	// Show goal keys (inline in ShowMojo, listed here for unknown-property
+	// detection)
+	static final String SHOW_CLASSES = "testorder.show.classes";
+	static final String SHOW_METHODS = "testorder.show.methods";
+	static final String SHOW_ML = "testorder.show.ml";
+	static final String SHOW_ALL = "testorder.show.all";
+	static final String SHOW_FORMAT = "testorder.show.format";
+	static final String SHOW_FILTER = "testorder.show.filter";
+
 	// Detect-dependencies goal keys
 	static final String DETECT_ALGORITHM = "testorder.detect.algorithm";
 	static final String DETECT_TIME_BUDGET = "testorder.detect.timeBudget";
@@ -102,7 +112,21 @@ final class MavenPluginConfigKeys {
 	static final String LEGACY_VERBOSE_FILE = "testorder.verboseFile";
 	static final String LEGACY_METHOD_ORDERING_ENABLED = "testorder.methodOrderingEnabled";
 
-	/** All known testorder.* property keys (canonical + legacy). */
+	/**
+	 * CamelCase aliases that users commonly guess. Each alias maps to its canonical
+	 * key. When a user passes an alias, {@link #findUnknownProperties} accepts it
+	 * silently (info-level message) instead of emitting an "unknown property"
+	 * warning.
+	 */
+	static final Map<String, String> ALIASES = Map.of(
+			// testorder.changedClasses → testorder.changed.classes
+			"testorder.changedClasses", CHANGED_CLASSES,
+			// testorder.showOrder.format → testorder.show.format
+			"testorder.showOrder.format", SHOW_FORMAT,
+			// testorder.showOrder.topN → testorder.select.topN
+			"testorder.showOrder.topN", SELECT_TOP_N);
+
+	/** All known testorder.* property keys (canonical + legacy + aliases). */
 	static final Set<String> ALL_KNOWN_KEYS = Set.of(INDEX_PATH, STATE_PATH, LEARN, INSTRUMENTATION_MODE, CHANGE_MODE,
 			PROJECT_ROOT, SOURCE_ROOT, WEIGHTS_FILE, CHANGED_CLASSES, CHANGED_TEST_CLASSES, CHANGED_METHODS,
 			METHOD_ORDER_ENABLED, STRUCTURAL_DIFF_ENABLED, SCORE_NEW_TEST, SCORE_CHANGED_TEST, SCORE_MAX_FAILURE,
@@ -119,7 +143,11 @@ final class MavenPluginConfigKeys {
 			LEGACY_VERBOSE_FILE, LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip",
 			"testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file",
 			"testorder.score.springContextGrouping", "testorder.auto.active", "testorder.remaining.file",
-			"testorder.metrics.output", SERVE_PORT_ALIAS);
+			"testorder.metrics.output", SERVE_PORT_ALIAS,
+			// Show goal keys (inline in ShowMojo)
+			SHOW_CLASSES, SHOW_METHODS, SHOW_ML, SHOW_ALL, SHOW_FORMAT, SHOW_FILTER,
+			// CamelCase aliases (silently accepted, see ALIASES map)
+			"testorder.changedClasses", "testorder.showOrder.format", "testorder.showOrder.topN");
 
 	/**
 	 * Find the closest known key to the given unknown key. Delegates to
@@ -172,5 +200,24 @@ final class MavenPluginConfigKeys {
 			}
 		}
 		return warnings;
+	}
+
+	/**
+	 * Find all testorder.* user properties that are camelCase aliases and return
+	 * info-level messages pointing to the canonical name. Aliases are accepted
+	 * silently (no warning); this method exists so callers can optionally log at
+	 * INFO level.
+	 */
+	static List<String> findAliasedProperties(java.util.Properties userProperties) {
+		List<String> infos = new ArrayList<>();
+		if (userProperties == null)
+			return infos;
+		for (String key : userProperties.stringPropertyNames()) {
+			String canonical = ALIASES.get(key);
+			if (canonical != null) {
+				infos.add("Property '" + key + "' is a camelCase alias — using canonical name '" + canonical + "'.");
+			}
+		}
+		return infos;
 	}
 }
