@@ -43,7 +43,15 @@ public final class DetectDependenciesOperation {
 	 *            logger
 	 */
 	public record Config(Path indexFile, Path stateFile, Path outputDir, String algorithm, int timeBudgetSeconds,
-			boolean stopOnFirst, long randomSeed, String moduleName, PluginLog log) {
+			boolean stopOnFirst, long randomSeed, String moduleName, Path sourceRoot, Path testSourceRoot,
+			Path hashFile, Path testHashFile, PluginLog log) {
+
+		/** Backward-compatible constructor without hash snapshot fields. */
+		public Config(Path indexFile, Path stateFile, Path outputDir, String algorithm, int timeBudgetSeconds,
+				boolean stopOnFirst, long randomSeed, String moduleName, PluginLog log) {
+			this(indexFile, stateFile, outputDir, algorithm, timeBudgetSeconds, stopOnFirst, randomSeed, moduleName,
+					null, null, null, null, log);
+		}
 	}
 
 	/**
@@ -148,6 +156,14 @@ public final class DetectDependenciesOperation {
 					} catch (IOException e) {
 						log.warn("Could not copy detection index to production location: " + e.getMessage());
 					}
+				}
+				// Save source/test hash snapshots so the next prepare run can do
+				// incremental change detection (B18).
+				if (config.sourceRoot() != null || config.testSourceRoot() != null) {
+					HashSnapshotOperation.snapshot(config.sourceRoot(), config.hashFile(), config.testSourceRoot(),
+							config.testHashFile(),
+							(label, path) -> log.info("Snapshotted " + label + " hashes: " + path),
+							(label, msg) -> log.warn("Hash snapshot failed for " + label + ": " + msg));
 				}
 			} else if (!learnOk) {
 				log.warn("Learn phase failed — continuing without full dependency data");

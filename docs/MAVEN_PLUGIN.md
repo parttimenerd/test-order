@@ -63,9 +63,6 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:tiered-select` | Split tests into tier 1/2/3 files and run tier 1 |
 | `test-order:run-tier` | Execute tier 2 or tier 3 from prior tiered selection |
 | `test-order:show` | Unified view: class order, method order, ML health (auto-detects) |
-| `test-order:show-order` | _(deprecated → use `show`)_ Print ranking and score breakdown |
-| `test-order:show-method-order` | _(deprecated → use `show`)_ Print method-level priority order |
-| `test-order:analyze` | _(deprecated → use `show -Dtestorder.show.ml=true`)_ ML test health report |
 | `test-order:reactor-order` | Compute optimal module execution order for multi-module builds |
 | `test-order:dashboard` | Generate interactive HTML dashboard |
 | `test-order:serve` | Serve dashboard via local HTTP server |

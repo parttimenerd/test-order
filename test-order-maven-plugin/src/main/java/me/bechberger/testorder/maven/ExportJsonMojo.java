@@ -44,9 +44,6 @@ public class ExportJsonMojo extends AbstractTestOrderMojo {
 			if (outputFile != null && !outputFile.isBlank()) {
 				ExportJsonOperation.export(idxPath, statePath, Path.of(outputFile), pluginLog());
 			} else {
-				// Print tip to stderr to avoid corrupting JSON on stdout (R18-9)
-				System.err.println(
-						"[test-order] Tip: use -Dtestorder.exportJson.output=<file> to write to a file, or run with -q to suppress Maven log messages from stdout");
 				ExportJsonOperation.export(idxPath, statePath, System.out, pluginLog());
 			}
 		} catch (IOException e) {

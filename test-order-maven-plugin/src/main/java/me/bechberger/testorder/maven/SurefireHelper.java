@@ -536,9 +536,16 @@ final class SurefireHelper {
 		}
 		Xpp3Dom excludes = config.getChild("excludes");
 		if (excludes != null && excludes.getChildCount() > 0) {
-			log.warn("[test-order] Surefire <excludes> is configured but test-order's select mode "
-					+ "overrides it via <test> parameter. Previously excluded tests may run. "
-					+ "Consider using <excludedGroups> (JUnit 5 @Tag) instead for consistent filtering.");
+			StringBuilder patterns = new StringBuilder();
+			for (int i = 0; i < excludes.getChildCount(); i++) {
+				if (i > 0)
+					patterns.append(", ");
+				patterns.append(excludes.getChild(i).getValue());
+			}
+			log.warn("[test-order] Surefire <excludes> is configured (" + patterns
+					+ ") but test-order's select mode overrides it via the <test> parameter. "
+					+ "File-based exclusions of non-test helpers are usually harmless. "
+					+ "Tag-based filtering should use <excludedGroups> (JUnit 5 @Tag) for consistent behaviour.");
 		}
 	}
 

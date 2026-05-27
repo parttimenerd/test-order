@@ -130,7 +130,7 @@ If your learn run is slow (large projects), you can commit `.test-order/test-dep
 
 </details>
 
-### Maven vs Gradle at a glance
+### Maven and Gradle at a glance
 
 | Feature | Maven | Gradle |
 |---|---|---|
@@ -139,7 +139,8 @@ If your learn run is slow (large projects), you can commit `.test-order/test-dep
 | Show ranking | `mvn test-order:show` | `./gradlew testOrderShow` |
 | Dashboard | `mvn test-order:dashboard` | `./gradlew testOrderDashboard` |
 | Diagnose setup | `mvn test-order:diagnose` | `./gradlew testOrderDiagnose` |
-| Select subset | `mvn test-order:select test` | `./gradlew testOrderSelect` |
+| **Select change-affected tests** | `mvn test-order:select test` | `./gradlew testOrderSelect` |
+| Run deferred (remaining) tests | `mvn test-order:run-remaining test` | `./gradlew testOrderRunRemaining` |
 | Detect flaky tests | `mvn test-order:detect-dependencies` | `./gradlew testOrderDetectDependencies` |
 
 For the full CLI reference, see [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).

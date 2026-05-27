@@ -31,9 +31,6 @@ mvn test-order:show
 | `tiered-select` | Splits tests into tier 1/2/3 files and runs tier 1 | Three-phase CI fail-fast workflow |
 | `run-tier` | Executes tier 2 or tier 3 from prior tiered selection | Progressive confidence after tier 1 |
 | `show` | Unified view: class order, method order, ML health (auto-detects available data) | Debug prioritization |
-| `show-order` | _(deprecated → use `show`)_ Prints ranking/order and score breakdown | Debug prioritization |
-| `show-method-order` | _(deprecated → use `show`)_ Prints method-level priority order within each test class | Debug method ordering |
-| `analyze` | _(deprecated → use `show -Dtestorder.show.ml=true`)_ ML test health report | ML analysis |
 | `reactor-order` | Computes optimal module execution order for multi-module builds | Multi-module CI optimization |
 | `dashboard` | Generates HTML dashboard | Visual analysis |
 | `serve` | Serves dashboard via local HTTP server | Browser compatibility / sharing |

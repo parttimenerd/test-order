@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.ErrorCode;
@@ -24,7 +25,15 @@ public final class DiagnosticOperation {
 	 * Configuration for diagnostic checks.
 	 */
 	public record DiagnosticConfig(Path projectRoot, Path indexFile, Path stateFile, Path hashFile, Path testHashFile,
-			Path methodHashFile, Path depsDir, Path testSourceRoot, String changeMode, PluginLog log) {
+			Path methodHashFile, Path depsDir, Path testSourceRoot, String changeMode, Path testClassesDir,
+			PluginLog log) {
+
+		/** Backward-compatible constructor without testClassesDir. */
+		public DiagnosticConfig(Path projectRoot, Path indexFile, Path stateFile, Path hashFile, Path testHashFile,
+				Path methodHashFile, Path depsDir, Path testSourceRoot, String changeMode, PluginLog log) {
+			this(projectRoot, indexFile, stateFile, hashFile, testHashFile, methodHashFile, depsDir, testSourceRoot,
+					changeMode, null, log);
+		}
 	}
 
 	/**
@@ -143,6 +152,18 @@ public final class DiagnosticOperation {
 							"Index is " + (indexAge / 3600) + " hours old",
 							List.of("Consider re-running learn mode to pick up recent changes: mvn test -Dtestorder.mode=learn",
 									"Or verify that your build hasn't changed significantly"));
+				}
+
+				// Check index coverage vs actual compiled test classes (B11)
+				int indexedCount = map.size();
+				int actualCount = countTestClasses(config.testClassesDir());
+				if (actualCount > 0 && indexedCount < actualCount / 10) {
+					return DiagnosticResult.error(ErrorCode.INDEX_EMPTY,
+							"Index covers only " + indexedCount + " of ~" + actualCount
+									+ " test classes (<10%) — learn mode likely did not complete successfully",
+							List.of("Re-run learn mode: mvn test -Dtestorder.mode=learn",
+									"If using reuseForks=false, ensure each forked JVM can write to .test-order/",
+									"Check for errors in the previous learn run output"));
 				}
 
 				return DiagnosticResult.success("Index file is valid (" + map.size() + " test classes)");
@@ -264,6 +285,24 @@ public final class DiagnosticOperation {
 				List.of("These will be merged on the next run that uses the test-order plugin.",
 						"If this file is old, it may indicate learn mode is not working correctly.",
 						"To merge manually: mvn test-order:compact (or run any test-order goal)"));
+	}
+
+	/**
+	 * Counts top-level .class files in the test output directory as a proxy for
+	 * test class count.
+	 */
+	private static int countTestClasses(Path testClassesDir) {
+		if (testClassesDir == null || !Files.isDirectory(testClassesDir))
+			return 0;
+		try (Stream<Path> walk = Files.walk(testClassesDir)) {
+			return (int) walk.filter(p -> {
+				String name = p.getFileName().toString();
+				// Count only top-level test classes (no $ inner classes)
+				return name.endsWith(".class") && !name.contains("$");
+			}).count();
+		} catch (IOException e) {
+			return 0;
+		}
 	}
 
 	private static DiagnosticResult checkDepsDirectory(DiagnosticConfig config) {

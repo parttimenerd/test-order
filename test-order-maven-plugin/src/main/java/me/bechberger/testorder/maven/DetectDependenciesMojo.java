@@ -189,7 +189,8 @@ public class DetectDependenciesMojo extends AbstractTestOrderMojo {
 				+ "). This may take a while...");
 
 		Config config = new Config(indexPath, statePath, outputDir, algorithm, timeBudget, stopOnFirst, randomSeed,
-				moduleProject.getArtifactId(), MavenPluginLog.wrap(getLog()));
+				moduleProject.getArtifactId(), resolveSourceRoot(), resolveTestSourceRoot(),
+				ctx.resolveHashFile(hashFile), ctx.resolveTestHashFile(testHashFile), MavenPluginLog.wrap(getLog()));
 
 		// Resolve test-order-junit and dependencies so the FixedOrderClassOrderer
 		// is available on the forked test classpath. Also include the agent runtime

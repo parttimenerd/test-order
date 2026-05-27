@@ -52,7 +52,7 @@ public final class UsageStoreReflectionBridge {
 			}
 		} catch (Exception e) {
 			usageStoreInstance = null; // ensure bridge reports as unavailable on partial failure
-			TestOrderLogger.error("Failed to initialize UsageStore reflection: {}", e.getMessage());
+			TestOrderLogger.debug("UsageStore not available (no agent): {}", e.getMessage());
 		}
 	}
 

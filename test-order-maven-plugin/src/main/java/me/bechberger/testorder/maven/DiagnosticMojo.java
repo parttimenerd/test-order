@@ -34,7 +34,8 @@ public class DiagnosticMojo extends AbstractTestOrderMojo {
 		DiagnosticConfig config = new DiagnosticConfig(project.getBasedir().toPath().toAbsolutePath(),
 				ctx.resolveIndexFile(indexFile), ctx.resolveStateFile(stateFile), ctx.resolveHashFile(hashFile),
 				ctx.resolveTestHashFile(testHashFile), ctx.resolveMethodHashFile(methodHashFile),
-				ctx.resolveDepsDir(depsDir), resolveTestSourceRoot(), changeMode, MavenPluginLog.wrap(getLog()));
+				ctx.resolveDepsDir(depsDir), resolveTestSourceRoot(), changeMode,
+				Path.of(project.getBuild().getTestOutputDirectory()), MavenPluginLog.wrap(getLog()));
 
 		DiagnosticReport report = DiagnosticOperation.diagnose(config);
 

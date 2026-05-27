@@ -151,8 +151,9 @@ class MavenTestRunner implements TestRunner {
 				}
 			}
 
-			// Build the maven command — use surefire:test to skip pre-test plugins
-			List<String> command = new ArrayList<>(List.of(findMavenExecutable(), "surefire:test",
+			// Build the maven command — use initialize + surefire:test so lifecycle
+			// plugins (JaCoCo etc.) can set argLine before Surefire runs
+			List<String> command = new ArrayList<>(List.of(findMavenExecutable(), "initialize", "surefire:test",
 					"-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
 					// Pass the order file path to the forked JVM via argLine (quote for spaces)
 					"-DargLine=-Dtestorder.fixed.order.file=\"" + orderFile.toAbsolutePath() + "\"",

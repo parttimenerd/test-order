@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.StringJoiner;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.MethodOrderingEngine;
@@ -123,7 +124,18 @@ public final class ShowWorkflow {
 		if (opts.classes()) {
 			try {
 				TestScorer scorer = analysis.buildScorer();
-				List<OrderReportPrinter.RankedTest> ranked = OrderReportPrinter.rankTests(analysis.allTests(), scorer,
+				// Filter out classes that have never been observed running and are not in the
+				// dep map — these are typically abstract base classes or classes excluded by
+				// Surefire that will always appear as [NEW] (B24). Only apply the filter when
+				// at least one class has been observed (i.e., this is not a fresh project).
+				Set<String> allTests = analysis.allTests();
+				if (!analysis.state().getClassDurations().isEmpty()) {
+					allTests = allTests.stream()
+							.filter(cls -> analysis.depMap() != null && analysis.depMap().testClasses().contains(cls)
+									|| analysis.state().getDuration(cls, -1L) >= 0)
+							.collect(Collectors.toSet());
+				}
+				List<OrderReportPrinter.RankedTest> ranked = OrderReportPrinter.rankTests(allTests, scorer,
 						analysis.state());
 				classOrder = new ShowOrderWorkflow.ShowOrderResult(ranked, scorer, analysis.changedClasses(),
 						analysis.changedTests(), analysis.weights(), analysis.state(), analysis.depMap(),
