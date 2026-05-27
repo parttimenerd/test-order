@@ -58,6 +58,11 @@
             <artifactId>test-order-agent</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>me.bechberger</groupId>
+            <artifactId>test-order-junit</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <!-- PIT mutation testing -->
         <dependency>
