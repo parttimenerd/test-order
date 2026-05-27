@@ -142,6 +142,7 @@ If your learn run is slow (large projects), you can commit `.test-order/test-dep
 | **Select change-affected tests** | `mvn test-order:select test` | `./gradlew testOrderSelect` |
 | Run deferred (remaining) tests | `mvn test-order:run-remaining test` | `./gradlew testOrderRunRemaining` |
 | Detect flaky tests | `mvn test-order:detect-dependencies` | `./gradlew testOrderDetectDependencies` |
+| **Mutation testing** | `mvn test-order:analyze-mutations` | `./gradlew testOrderAnalyzeMutations` |
 
 For the full CLI reference, see [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
@@ -297,6 +298,51 @@ All weights are configurable. Run `mvn test-order:optimize` to auto-tune them fo
 
 For the full formula, weight customization (TOML), and tuning guide: **[docs/SCORING.md](docs/SCORING.md)**
 
+## Mutation Testing (optional)
+
+[PIT](https://pitest.org/) mutation testing measures how thoroughly your tests actually detect logic errors — it mutates source code and checks whether any test fails. test-order can use these **kill rates** as an extra scoring signal: tests that historically kill more mutants rank higher.
+
+This is designed as an **occasional background job** (nightly / weekly) rather than something you run on every commit:
+
+```bash
+# Run learn mode first if you haven't already
+mvn test -Dtestorder.mode=learn
+
+# Run PIT scoped to the classes in your dependency index
+mvn test-order:analyze-mutations
+
+# Kill rates are now stored in the state file and used for scoring
+mvn test-order:show    # killRate column now populated
+```
+
+The Gradle equivalent:
+
+```bash
+./gradlew testOrderAnalyzeMutations
+```
+
+**What it produces:**
+- `target/test-mutation-results.json` — per-test kill rate breakdown
+- Updated `.test-order/state.lz4` — kill rates persisted for all future ordering runs
+- Dashboard **Mutation tab** — visual breakdown by kill-rate tier (high / medium / low / none)
+
+**Enable the kill-rate scoring bonus** by setting `killRateBonus` in your scoring weights (default is 0 — no effect until you explicitly opt in):
+
+```bash
+mvn test -Dtestorder.weight.killRateBonus=5
+```
+
+Or persistently in `.test-order/scoring-weights.toml`:
+
+```toml
+[killRateBonus]
+value = 5
+```
+
+**For CI**, add a scheduled workflow so kill rates stay fresh as the codebase evolves. See [`.github/workflows/mutation-testing.yml`](.github/workflows/mutation-testing.yml) for a ready-to-use example that runs weekly and uploads the report as a build artifact.
+
+> **Note:** Mutation analysis is slow on large projects. Scope it to a specific module with `-pl <module>` or limit the target classes with `-Dtestorder.mutations.targetClasses=com.example.*`.
+
 ### Run Quality: APFD
 
 After each test run with failures, test-order reports the **APFD** (Average Percentage of Faults Detected) — a standard metric measuring how early in the test suite failures are surfaced:
@@ -318,6 +364,7 @@ The time-saved estimate compares the actual (prioritized) order against alphabet
 |---|---|---|
 | **Dashboard** | `mvn test-order:dashboard` / `mvn test-order:serve` | Interactive HTML report — test explorer, run history analytics, weight simulator, and more. See [Dashboard docs](test-order-dashboard/README.md) |
 | **ML predictions** | `mvn test -Dtestorder.ml.enabled=true` | Failure probability predictions using logistic regression on test history |
+| **Mutation testing** | `mvn test-order:analyze-mutations` | Run PIT mutation testing scoped to indexed classes; enriches scoring with kill rates (see below) |
 | **Detect flaky tests** | `mvn test-order:detect-dependencies` | Find order-dependent tests. See [docs/DETECT_DEPENDENCIES.md](docs/DETECT_DEPENDENCIES.md) |
 | **Coverage analysis** | `mvn test-order:coverage` | Identify least-tested production classes |
 | **Method-level ordering** | `mvn test -Dtestorder.methodOrder.enabled=true` | Reorder methods within each class |
@@ -537,10 +584,3 @@ Contribution and feedback are encouraged and always welcome.
 ## License
 
 MIT, Copyright 2026 SAP SE or an SAP affiliate company, Johannes Bechberger and contributors
-
-
-
-
-please print how much time test-order saved (estimation) everytime a test failure is detected in order mode. The estimation is based on the cumulative duration of tests that would normally have run before the failed test in the default order. This can be implemented by tracking the execution time of each test and calculating the saved time when a failure occurs. The output can be printed to the console or included in the test reports for easy visibility.
-
-start dog fooding in condensed-data and other projects (especially in TDD mode), maybe promote this mode more as it helps in  AI coding (spec driven development
