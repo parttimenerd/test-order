@@ -46,16 +46,30 @@ else
     echo "  ✓ Plugin block added"
 fi
 
-# ── 2. Download learn index from CI ─────────────────────────────────────────
+# ── 2. Download learn index from CI (fallback: .baked-history/) ─────────────
 
 echo ""
 echo "  Downloading learn index from CI..."
 cd "$SCRIPT_DIR/cloud-sdk-java"
-mvn test-order:download \
+if mvn test-order:download \
     -pl cloudplatform/connectivity-destination-service \
     --batch-mode --no-transfer-progress \
-    -DskipFormatting -Denforcer.skip
-echo "  ✓ Learn data ready"
+    -DskipFormatting -Denforcer.skip 2>/dev/null; then
+    echo "  ✓ Learn data ready (downloaded from CI)"
+else
+    echo "  ⚠  CI download failed — restoring from local backup..."
+    BAKE_DIR="$SCRIPT_DIR/.baked-history/cloud-sdk-java"
+    MODULE_DIR="$SCRIPT_DIR/cloud-sdk-java/cloudplatform/connectivity-destination-service"
+    if [[ -d "$BAKE_DIR" ]]; then
+        rm -rf "$MODULE_DIR/.test-order"
+        mkdir -p "$MODULE_DIR/.test-order"
+        cp -r "$BAKE_DIR/." "$MODULE_DIR/.test-order/"
+        echo "  ✓ Learn data ready (restored from .baked-history/)"
+    else
+        echo "  ✗ No local backup found — run prepare.sh first"
+        exit 1
+    fi
+fi
 
 # ── 3. Show diff ─────────────────────────────────────────────────────────────
 
