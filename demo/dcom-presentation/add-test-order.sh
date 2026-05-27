@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
-# add-test-order.sh — Add test-order plugin to pom.xml + download learn index
+# add-test-order.sh — Add test-order plugin to pom.xml + show diff
 # =============================================================================
 # Run on stage after the "pain" demo.
-# Adds one plugin block to pom.xml, downloads the learn index from CI live,
-# and shows the git diff.
+# 1. Adds plugin block to pom.xml
+# 2. Shows git diff of pom.xml
+#
+# Speaker then types manually:
+#   mvn test-order:download -pl cloudplatform/connectivity-destination-service
+#   (wifi fallback: cp -R .prepared-test-order .test-order)
 # =============================================================================
 set -euo pipefail
 
@@ -46,36 +50,15 @@ else
     echo "  ✓ Plugin block added"
 fi
 
-# ── 2. Download learn index from CI (fallback: .baked-history/) ─────────────
+# ── 2. Show diff ─────────────────────────────────────────────────────────────
 
 echo ""
-echo "  Downloading learn index from CI..."
 cd "$SCRIPT_DIR/cloud-sdk-java"
-if mvn test-order:download \
-    -pl cloudplatform/connectivity-destination-service \
-    --batch-mode --no-transfer-progress \
-    -DskipFormatting -Denforcer.skip 2>/dev/null; then
-    echo "  ✓ Learn data ready (downloaded from CI)"
-else
-    echo "  ⚠  CI download failed — restoring from local backup..."
-    BAKE_DIR="$SCRIPT_DIR/.baked-history/cloud-sdk-java"
-    MODULE_DIR="$SCRIPT_DIR/cloud-sdk-java/cloudplatform/connectivity-destination-service"
-    if [[ -d "$BAKE_DIR" ]]; then
-        rm -rf "$MODULE_DIR/.test-order"
-        mkdir -p "$MODULE_DIR/.test-order"
-        cp -r "$BAKE_DIR/." "$MODULE_DIR/.test-order/"
-        echo "  ✓ Learn data ready (restored from .baked-history/)"
-    else
-        echo "  ✗ No local backup found — run prepare.sh first"
-        exit 1
-    fi
-fi
-
-# ── 3. Show diff ─────────────────────────────────────────────────────────────
-
-echo ""
 git --no-pager diff --color cloudplatform/connectivity-destination-service/pom.xml || true
 
 echo ""
 echo "  That's it. One plugin block. Zero other changes."
+echo ""
+echo "  Now run: mvn test-order:download -pl cloudplatform/connectivity-destination-service"
+echo "  (wifi fallback: cp -R .prepared-test-order .test-order)"
 echo ""

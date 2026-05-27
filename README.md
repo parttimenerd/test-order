@@ -8,6 +8,8 @@
 
 > **New here?** Jump to the [Quick Start](#quick-start) below, or follow the [Getting Started Tutorial](docs/GETTING_STARTED.md) for a hands-on 5-minute walkthrough. Something not working? Run `mvn test-order:diagnose` or see [Troubleshooting](#troubleshooting).
 
+> **SAP DCOM 2026 Demo Jam:** This plugin was demoed live at *"You're Running the Wrong Tests First"*. The demo uses a fork of [SAP Cloud SDK for Java](https://github.com/parttimenerd/cloud-sdk-java) as a real-world sample project with CI-built learn indexes and three-tier test ordering. Slides and scripts live in [`demo/dcom-presentation/`](demo/dcom-presentation/).
+
 ---
 
 ## Requirements

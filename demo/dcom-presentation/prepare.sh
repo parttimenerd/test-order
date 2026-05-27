@@ -205,6 +205,14 @@ cp -r "$SDK_DIR/$MODULE/.test-order/." "$BAKE_DIR/"
 rm -f "$BAKE_DIR/"*.lock
 echo "  ✓ $(du -sh "$BAKE_DIR" | cut -f1) saved to .baked-history/"
 
+# Also bake as .prepared-test-order/ inside the module — wifi fallback on stage:
+#   cp -R .prepared-test-order .test-order
+PREPARED_DIR="$SDK_DIR/$MODULE/.prepared-test-order"
+rm -rf "$PREPARED_DIR"
+cp -r "$SDK_DIR/$MODULE/.test-order" "$PREPARED_DIR"
+rm -f "$PREPARED_DIR/"*.lock
+echo "  ✓ Wifi fallback baked to $MODULE/.prepared-test-order/"
+
 # ── done ──────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -218,4 +226,6 @@ echo "   ☐ Slides running: cd slides && npm run dev"
 echo "   ☐ VS Code open on cloud-sdk-java/"
 echo "   ☐ copilot-instructions.md visible in tab (.github/copilot-instructions.md)"
 echo "   ☐ Run: ./reset.sh"
+echo "   ☐ Wifi fallback ready: .prepared-test-order/ in the module dir"
+echo "     (on stage if no wifi: cp -R .prepared-test-order .test-order)"
 echo ""
