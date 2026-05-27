@@ -229,4 +229,15 @@ class PropertySuggestionTest {
 
 		assertTrue(warnings.isEmpty(), "Internal runtime keys must not warn: " + warnings);
 	}
+
+	@Test
+	void mutationsAndBytecodeKeysAreNotReportedAsUnknown() {
+		List<String> keys = List.of("testorder.mutations.outputFile", "testorder.mutations.timeBudget",
+				"testorder.mutations.targetClasses", "testorder.bytecodeChangeDetection.enabled",
+				"testorder.bytecodeAugmentDependencyMap.enabled", "testorder.bytecodeHashFile");
+
+		List<String> warnings = PropertySuggestion.findUnknownKeys(keys);
+
+		assertTrue(warnings.isEmpty(), () -> "Expected no warnings for mutation/bytecode keys, but got: " + warnings);
+	}
 }

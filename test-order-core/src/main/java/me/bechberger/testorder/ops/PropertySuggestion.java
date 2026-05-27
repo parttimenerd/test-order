@@ -67,7 +67,12 @@ public final class PropertySuggestion {
 			// agent runtime / multi-module coordination keys (passed to surefire JVM)
 			"testorder.moduleId", "testorder.internal.buildId",
 			// auto-mode runtime coordination keys (written to testorder-config.properties)
-			"testorder.build.id", "testorder.pending.runs.dir", "testorder.changeDetection.logged");
+			"testorder.build.id", "testorder.pending.runs.dir", "testorder.changeDetection.logged",
+			// mutation analysis keys (shared with Gradle plugin)
+			"testorder.mutations.outputFile", "testorder.mutations.timeBudget", "testorder.mutations.targetClasses",
+			// bytecode change detection / augmentation keys
+			"testorder.bytecodeChangeDetection.enabled", "testorder.bytecodeAugmentDependencyMap.enabled",
+			"testorder.bytecodeHashFile");
 
 	/**
 	 * Find the closest known key to the given unknown key using case-insensitive
