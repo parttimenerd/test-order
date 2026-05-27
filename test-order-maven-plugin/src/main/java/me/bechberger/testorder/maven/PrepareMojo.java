@@ -324,8 +324,13 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		}
 		Path targetDir = Path.of(buildDir);
 		Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
+		Path testBackupDir = targetDir.resolve(".test-order").resolve("classes-backup-test");
 		try {
-			if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir)) {
+			boolean restored = me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir);
+			if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(testBackupDir)) {
+				restored = true;
+			}
+			if (restored) {
 				getLog().info("[test-order] Restored original classes from backup (offline instrumentation reverted).");
 			}
 		} catch (IOException e) {
@@ -377,6 +382,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			mapping.save(mappingFile);
 			getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes" + " (skipped "
 					+ instrumentor.getSkippedCount() + ")");
+			AbstractTestOrderMojo.pendingRestores.add(backupDir);
 		} catch (IOException e) {
 			throw new MojoExecutionException("[test-order] Deferred offline instrumentation failed", e);
 		}

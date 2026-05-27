@@ -384,7 +384,8 @@ public class UsageStore {
 		if (collectorPort != null && !collectorPort.isEmpty()) {
 			try {
 				int port = Integer.parseInt(collectorPort);
-				if (IndexCollectorClient.sendBinary(port, perTestTrackers, perMethodTrackers)) {
+				boolean sent = IndexCollectorClient.sendBinary(port, perTestTrackers, perMethodTrackers);
+				if (sent) {
 					AgentLogger.log("[flush] Sent binary deps to IndexCollectorServer on port " + port + " ("
 							+ perTestTrackers.size() + " test classes)");
 					return;

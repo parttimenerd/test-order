@@ -14,12 +14,13 @@
 #   - Total .test-order directory size
 #
 # Usage:
-#   ./scripts/bench_learn_modes_multiproject.sh [--quick] [--no-gradle] [--repeat N]
+#   ./scripts/bench_learn_modes_multiproject.sh [--quick] [--no-gradle] [--repeat N] [--member-only]
 #
 # Options:
-#   --quick      Only run cloud-sdk-java with a single module (fast iteration)
-#   --no-gradle  Skip Gradle-based projects (spring-boot)
-#   --repeat N   Run each mode N times (default: 1). Reports min/avg/max.
+#   --quick        Only run cloud-sdk-java with a single module (fast iteration)
+#   --no-gradle    Skip Gradle-based projects (spring-boot)
+#   --repeat N     Run each mode N times (default: 1). Reports min/avg/max.
+#   --member-only  Compare only baseline vs MEMBER (skip CLASS and METHOD)
 
 set -euo pipefail
 
@@ -45,10 +46,12 @@ COMMONS_LANG_DIR="${PROJECT_ROOT}/third-party/commons-lang"
 COMMONS_COLLECTIONS_DIR="${PROJECT_ROOT}/third-party/commons-collections"
 COMMONS_IO_DIR="${PROJECT_ROOT}/third-party/commons-io"
 JAVAPARSER_DIR="${PROJECT_ROOT}/third-party/javaparser"
-GUAVA_DIR="${PROJECT_ROOT}/third-party/guava"
 LOG4J2_DIR="${PROJECT_ROOT}/third-party/logging-log4j2"
-NETTY_DIR="${PROJECT_ROOT}/third-party/netty"
+NETTY_DIR="${PROJECT_ROOT}/third-party/netty"  # excluded from bench: pom enforces strict XML format check that conflicts with plugin injection
 SPRING_BOOT_DIR="${PROJECT_ROOT}/third-party/spring-boot"
+CDS_ATTACHMENTS_DIR="${PROJECT_ROOT}/third-party/cds-feature-attachments"
+AI_SDK_DIR="${PROJECT_ROOT}/third-party/ai-sdk-java"
+NEONBEE_DIR="${PROJECT_ROOT}/third-party/neonbee"
 
 # ── SDKMAN helper ─────────────────────────────────────────────────────────
 # Switch Java version via SDKMAN for a project. Expects SDKMAN to be available.
@@ -78,15 +81,25 @@ sdk_use_java() {
 QUICK=false
 NO_GRADLE=false
 REPEAT=1
+MEMBER_ONLY=false
+NO_BASELINE=false
+declare -a SKIP_PROJECTS=()
+declare -a ONLY_PROJECTS=()
 usage() {
     cat <<'EOF'
 Usage: bench_learn_modes_multiproject.sh [OPTIONS]
 
 Options:
-  --quick        Only run cloud-sdk-java with a single module (fast iteration)
-  --no-gradle    Skip Gradle-based projects (spring-boot)
-  --repeat N     Run each mode N times (default: 1). Reports min/avg/max.
-  -h, --help     Show this help message and exit
+  --quick           Only run cloud-sdk-java with a single module (fast iteration)
+  --no-gradle       Skip Gradle-based projects (spring-boot)
+  --repeat N        Run each mode N times (default: 1). Reports min/avg/max.
+  --member-only     Compare only baseline vs MEMBER (skip CLASS and METHOD)
+  --no-baseline     Skip the baseline (no-instrumentation) run
+  --skip=<name>     Skip a specific project by name (may be repeated)
+  --project=<name>  Run only the named project(s). Substring match on the
+                    project label (e.g. "cloud-sdk", "jackson", "cloud-sdk(core)").
+                    May be repeated, or comma-separated: --project=jackson,commons-lang
+  -h, --help        Show this help message and exit
 EOF
 }
 
@@ -95,9 +108,19 @@ for arg in "$@"; do
         -h|--help) usage; exit 0 ;;
         --quick) QUICK=true ;;
         --no-gradle) NO_GRADLE=true ;;
+        --member-only) MEMBER_ONLY=true ;;
+        --no-baseline) NO_BASELINE=true ;;
+        --skip=*) SKIP_PROJECTS+=("${arg#--skip=}") ;;
+        --project=*)
+            # Allow comma-separated values: --project=jackson,commons-lang
+            IFS=',' read -ra _projs <<< "${arg#--project=}"
+            for p in "${_projs[@]}"; do
+                [[ -n "$p" ]] && ONLY_PROJECTS+=("$p")
+            done
+            ;;
         --repeat=*) REPEAT="${arg#--repeat=}" ;;
         --repeat) ;; # handled below with next arg
-        *) 
+        *)
             # Handle "--repeat N" (two separate args)
             if [[ "${prev_arg:-}" == "--repeat" ]]; then
                 REPEAT="$arg"
@@ -115,7 +138,7 @@ if ! [[ "$REPEAT" =~ ^[0-9]+$ ]] || (( REPEAT < 1 )); then
 fi
 
 # Validate projects exist
-ALL_DIRS=("$CLOUD_SDK_DIR" "$JACKSON_DIR" "$COMMONS_LANG_DIR" "$COMMONS_COLLECTIONS_DIR" "$COMMONS_IO_DIR" "$JAVAPARSER_DIR" "$GUAVA_DIR" "$LOG4J2_DIR" "$NETTY_DIR" "$SPRING_BOOT_DIR")
+ALL_DIRS=("$CLOUD_SDK_DIR" "$JACKSON_DIR" "$COMMONS_LANG_DIR" "$COMMONS_COLLECTIONS_DIR" "$COMMONS_IO_DIR" "$JAVAPARSER_DIR" "$LOG4J2_DIR" "$SPRING_BOOT_DIR" "$CDS_ATTACHMENTS_DIR" "$AI_SDK_DIR" "$NEONBEE_DIR")
 MISSING=false
 for dir in "${ALL_DIRS[@]}"; do
     if [[ ! -d "$dir" ]]; then
@@ -155,21 +178,31 @@ else
         PROJECTS+=("commons-io|${COMMONS_IO_DIR}||maven|21-sapmchn")
     fi
     if [[ -d "$JAVAPARSER_DIR" ]]; then
-        PROJECTS+=("javaparser-core|${JAVAPARSER_DIR}|-pl javaparser-core -am|maven|17.0.18-sapmchn")
-    fi
-    if [[ -d "$GUAVA_DIR" ]]; then
-        PROJECTS+=("guava(full)|${GUAVA_DIR}||maven|21-sapmchn")
-        PROJECTS+=("guava(tests)|${GUAVA_DIR}|-pl guava-tests -am|maven|21-sapmchn")
+        # javaparser-core has no tests; use javaparser-core-testing which has ~247 test files
+        PROJECTS+=("javaparser|${JAVAPARSER_DIR}|-pl javaparser-core-testing -am|maven|17.0.18-sapmchn")
     fi
     if [[ -d "$LOG4J2_DIR" ]]; then
-        PROJECTS+=("log4j2(full)|${LOG4J2_DIR}||maven|21-sapmchn")
+        # log4j2(full) excluded: log4j-core's `generate-plugin-descriptors` annotation processor
+        # loads instrumented log4j-api classes from upstream reactor module; processor classpath
+        # lacks test-order-agent runtime → NoClassDefFoundError on UsageStore.
         PROJECTS+=("log4j-core-test|${LOG4J2_DIR}|-pl log4j-core-test -am|maven|21-sapmchn")
     fi
     if [[ -d "$NETTY_DIR" ]]; then
-        PROJECTS+=("netty|${NETTY_DIR}||maven|21-sapmchn")
+        : # excluded: netty's xml-maven-plugin check-format rejects injected plugin indentation
     fi
     if [[ "$NO_GRADLE" != "true" && -d "$SPRING_BOOT_DIR" ]]; then
         PROJECTS+=("spring-boot|${SPRING_BOOT_DIR}||gradle|25-sapmchn")
+    fi
+    if [[ -d "$CDS_ATTACHMENTS_DIR" ]]; then
+        # cds-feature-attachments main module has ~51 test files; skip integration-tests (require CDS runtime)
+        PROJECTS+=("cds-attachments|${CDS_ATTACHMENTS_DIR}|-pl cds-feature-attachments -am|maven|21-sapmchn")
+    fi
+    if [[ -d "$AI_SDK_DIR" ]]; then
+        # ai-sdk-java core module has ~14 test files; orchestration has ~13
+        PROJECTS+=("ai-sdk(core)|${AI_SDK_DIR}|-pl core -am|maven|21-sapmchn")
+    fi
+    if [[ "$NO_GRADLE" != "true" && -d "$NEONBEE_DIR" ]]; then
+        PROJECTS+=("neonbee|${NEONBEE_DIR}||gradle|21-sapmchn")
     fi
 fi
 
@@ -179,6 +212,9 @@ if [[ ${#PROJECTS[@]} -eq 0 ]]; then
 fi
 
 MODES=("CLASS" "METHOD" "MEMBER")
+if [[ "$MEMBER_ONLY" == "true" ]]; then
+    MODES=("MEMBER")
+fi
 MVN_COMMON="-Dspotless.check.skip=true -Dmaven.test.failure.ignore=true -Dmdep.analyze.skip=true -Denforcer.skip=true -Drat.skip=true -Danimal.sniffer.skip=true -Dsurefire.skipAfterFailureCount=50 -Dexcludes=**/XsuaaSecurityTest.java -q"
 GRADLE_COMMON="--no-daemon -q"
 
@@ -346,6 +382,8 @@ run_mode_maven() {
     local times=()
     for (( iter=1; iter<=REPEAT; iter++ )); do
         find "$project_dir" -name '.test-order' -type d -exec rm -rf {} + 2>/dev/null || true
+        # Clean offline instrumentation artifacts so each run starts fresh
+        find "$project_dir" -path '*/target/.test-order' -type d -exec rm -rf {} + 2>/dev/null || true
 
         local start_ns end_ns elapsed_sec
         start_ns=$(python3 -c 'import time; print(time.time_ns())')
@@ -442,6 +480,8 @@ run_mode_gradle() {
     local times=()
     for (( iter=1; iter<=REPEAT; iter++ )); do
         find "$project_dir" -name '.test-order' -type d -exec rm -rf {} + 2>/dev/null || true
+        # Clean offline instrumentation artifacts so each run starts fresh
+        find "$project_dir" -path '*/build/.test-order' -type d -exec rm -rf {} + 2>/dev/null || true
 
         local start_ns end_ns elapsed_sec
         start_ns=$(python3 -c 'import time; print(time.time_ns())')
@@ -521,6 +561,34 @@ print(f'min={min(t):.2f} avg={statistics.mean(t):.2f} max={max(t):.2f}')
 
 for entry in "${PROJECTS[@]}"; do
     IFS='|' read -r name dir module_flag build_tool java_sdk <<< "$entry"
+
+    # Check if --project filter is set and this one doesn't match
+    if [[ ${#ONLY_PROJECTS[@]} -gt 0 ]]; then
+        match=false
+        for only_name in "${ONLY_PROJECTS[@]}"; do
+            if [[ "$name" == *"$only_name"* ]]; then
+                match=true
+                break
+            fi
+        done
+        if [[ "$match" == "false" ]]; then
+            continue
+        fi
+    fi
+
+    # Check if this project should be skipped
+    skip_this=false
+    for skip_name in "${SKIP_PROJECTS[@]}"; do
+        if [[ "$name" == *"$skip_name"* ]]; then
+            skip_this=true
+            break
+        fi
+    done
+    if [[ "$skip_this" == "true" ]]; then
+        echo "  Skipping $name (--skip=$skip_name)"
+        continue
+    fi
+
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  Project: $name ($build_tool)"
     echo "  Dir:     $dir"
@@ -542,7 +610,7 @@ for entry in "${PROJECTS[@]}"; do
     cd "$dir"
     if [[ "$build_tool" == "gradle" ]]; then
         local_init="${dir}/test-order-init.gradle"
-        local canonical="${PROJECT_ROOT}/test-order-gradle-plugin/test-order-init.gradle"
+        canonical="${PROJECT_ROOT}/test-order-gradle-plugin/test-order-init.gradle"
         if [[ -f "$canonical" ]]; then
             cp "$canonical" "$local_init"
         fi
@@ -558,7 +626,7 @@ for entry in "${PROJECTS[@]}"; do
 
     echo "  Results:"
     if [[ "$build_tool" == "gradle" ]]; then
-        run_baseline_gradle "$name" "$dir" "$module_flag"
+        [[ "$NO_BASELINE" != "true" ]] && run_baseline_gradle "$name" "$dir" "$module_flag"
         for mode in "${MODES[@]}"; do
             run_mode_gradle "$name" "$dir" "$module_flag" "$mode"
         done
@@ -569,7 +637,7 @@ for entry in "${PROJECTS[@]}"; do
         INJECTED_POMS+=("$target_pom")
         echo "  (plugin injected into $(basename "$(dirname "$target_pom")")/pom.xml)"
 
-        run_baseline_maven "$name" "$dir" "$module_flag"
+        [[ "$NO_BASELINE" != "true" ]] && run_baseline_maven "$name" "$dir" "$module_flag"
         for mode in "${MODES[@]}"; do
             run_mode_maven "$name" "$dir" "$module_flag" "$mode"
         done

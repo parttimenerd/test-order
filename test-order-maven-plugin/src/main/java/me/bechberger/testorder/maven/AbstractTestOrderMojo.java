@@ -4,8 +4,11 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -61,6 +64,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	static final ConcurrentHashMap<String, PendingAggregation> pendingAggregations = new ConcurrentHashMap<>();
+
+	/**
+	 * Backup directories of class trees that were offline-instrumented during this
+	 * Maven session. Drained by {@link CollectorLifecycleParticipant} at session
+	 * end so subsequent {@code mvn} invocations (without {@code clean}) see
+	 * pristine bytecode — important for projects that re-process compiled classes
+	 * via annotation processors (e.g. log4j2's {@code generate-plugin-descriptors}
+	 * pass).
+	 */
+	static final java.util.Set<Path> pendingRestores = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	@Parameter(defaultValue = "${project}", readonly = true, required = true)
 	protected MavenProject project;
@@ -1463,21 +1476,84 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					? List.of()
 					: List.of(includePackages.split(","));
 			OfflineInstrumentor instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
-			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
-			ClassIdMapping mapping = instrumentor.instrument(classesDir, backupDir);
+			Path backupRoot = targetDir.resolve(".test-order").resolve("classes-backup");
+			ClassIdMapping mapping = instrumentor.instrument(classesDir, backupRoot);
+			boolean ignoreMarker = false;
 			if (instrumentor.getTransformedCount() == 0 && instrumentor.getSkippedCount() > 0) {
 				// All classes have stale marker from prior instrumentation without
 				// a matching mapping. Force re-instrument by ignoring the marker.
 				getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
 				instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
 				instrumentor.setIgnoreMarker(true);
-				mapping = instrumentor.instrument(classesDir, backupDir);
+				ignoreMarker = true;
+				mapping = instrumentor.instrument(classesDir, backupRoot);
 			}
+			int mainCount = instrumentor.getTransformedCount();
+			int mainSkipped = instrumentor.getSkippedCount();
+
+			// Some build configurations (notably JPMS projects compiling tests on
+			// module-path with --patch-module — e.g. jackson-databind) recompile main
+			// sources into target/test-classes/ during test-compile. Surefire then
+			// loads the test-classes/ copies first, shadowing our instrumented main
+			// classes. Detect and instrument those duplicates too, sharing the same
+			// class/member id map so the runtime sees consistent IDs.
+			Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
+			if (java.nio.file.Files.isDirectory(testClassesDir) && !testClassesDir.equals(classesDir)
+					&& hasShadowingMainClasses(classesDir, testClassesDir)) {
+				Path testBackupDir = backupRoot.resolveSibling("classes-backup-test");
+				getLog().info("[test-order] Detected main classes duplicated in test-classes "
+						+ "(JPMS patch-module build) — also instrumenting: " + testClassesDir);
+				OfflineInstrumentor testInstrumentor = new OfflineInstrumentor(iMode, includes, List.of());
+				if (ignoreMarker) {
+					testInstrumentor.setIgnoreMarker(true);
+				}
+				ClassIdMapping testMapping = testInstrumentor.instrument(testClassesDir, testBackupDir);
+				// Merge: testMapping comes from the same singleton ClassIdMap, so its
+				// class/member maps already include all entries from the main pass.
+				// We only need to keep the latest mapping (it's a snapshot of the singleton).
+				mapping = testMapping;
+				getLog().info("[test-order] Also instrumented " + testInstrumentor.getTransformedCount()
+						+ " classes in test-classes (skipped " + testInstrumentor.getSkippedCount() + ")");
+			}
+
 			mapping.save(mappingFile);
-			getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes" + " (skipped "
-					+ instrumentor.getSkippedCount() + ")");
+			getLog().info("[test-order] Instrumented " + mainCount + " classes" + " (skipped " + mainSkipped + ")");
+			// Register backup dirs so CollectorLifecycleParticipant restores pristine
+			// bytecode at session end. Without this, a subsequent `mvn test` (no clean)
+			// would re-run plugins like log4j2's `generate-plugin-descriptors` against
+			// instrumented classes and fail with NoClassDefFoundError on UsageStore.
+			pendingRestores.add(backupRoot);
+			pendingRestores.add(backupRoot.resolveSibling("classes-backup-test"));
 		} catch (IOException e) {
 			throw new MojoExecutionException("[test-order] Offline instrumentation failed", e);
+		}
+	}
+
+	/**
+	 * Returns true if {@code testClassesDir} contains class files at the same
+	 * relative paths as {@code mainClassesDir}, indicating that the build copied or
+	 * recompiled main sources into test-classes (JPMS patch-module pattern). We
+	 * only need to find a single duplicate to confirm the pattern.
+	 */
+	private static boolean hasShadowingMainClasses(Path mainClassesDir, Path testClassesDir) {
+		try {
+			java.util.concurrent.atomic.AtomicBoolean found = new java.util.concurrent.atomic.AtomicBoolean(false);
+			Files.walkFileTree(mainClassesDir, new SimpleFileVisitor<>() {
+				@Override
+				public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+					if (file.toString().endsWith(".class")) {
+						Path relative = mainClassesDir.relativize(file);
+						if (Files.exists(testClassesDir.resolve(relative))) {
+							found.set(true);
+							return FileVisitResult.TERMINATE;
+						}
+					}
+					return FileVisitResult.CONTINUE;
+				}
+			});
+			return found.get();
+		} catch (IOException e) {
+			return false;
 		}
 	}
 

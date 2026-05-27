@@ -27,6 +27,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	public void afterSessionEnd(MavenSession session) {
 		drainCollectors();
 		mergePartialRunRecords();
+		restoreInstrumentedClasses();
 	}
 
 	private void drainCollectors() {
@@ -78,6 +79,31 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			} catch (Exception e) {
 				System.err.println("[test-order] CollectorLifecycleParticipant: partial run merge failed for "
 						+ agg.stateFile() + ": " + e.getMessage());
+			}
+		}
+	}
+
+	/**
+	 * Restore class trees that were offline-instrumented during this session.
+	 * Without this, a subsequent {@code mvn} invocation (without {@code clean})
+	 * would re-run plugin executions like log4j2's
+	 * {@code generate-plugin-descriptors} against instrumented bytecode and fail
+	 * with {@code NoClassDefFoundError} on {@code UsageStore} — the annotation
+	 * processor classpath does not include the test-order agent jar.
+	 */
+	private void restoreInstrumentedClasses() {
+		java.util.Set<Path> backups = AbstractTestOrderMojo.pendingRestores;
+		if (backups.isEmpty()) {
+			return;
+		}
+		List<Path> snapshot = new ArrayList<>(backups);
+		backups.clear();
+		for (Path backup : snapshot) {
+			try {
+				me.bechberger.testorder.agent.OfflineInstrumentor.restore(backup);
+			} catch (Exception | NoClassDefFoundError e) {
+				System.err
+						.println("[test-order] CollectorLifecycleParticipant: restore failed for " + backup + ": " + e);
 			}
 		}
 	}
