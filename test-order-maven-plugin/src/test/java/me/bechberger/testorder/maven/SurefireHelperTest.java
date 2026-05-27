@@ -542,7 +542,7 @@ class SurefireHelperTest {
 
 		SurefireHelper.warnForkCountInLearnMode(project, log);
 
-		verify(log).warn(contains("forkCount"));
+		verify(log).debug(contains("forkCount"));
 	}
 
 	@Test
@@ -552,7 +552,7 @@ class SurefireHelperTest {
 
 		SurefireHelper.warnForkCountInLearnMode(project, log);
 
-		verify(log).warn(contains("forkCount"));
+		verify(log).debug(contains("forkCount"));
 	}
 
 	@Test
@@ -596,7 +596,7 @@ class SurefireHelperTest {
 
 		SurefireHelper.warnReuseForksFalseInLearnMode(project, log);
 
-		verify(log).warn(contains("reuseForks"));
+		verify(log).debug(contains("reuseForks"));
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

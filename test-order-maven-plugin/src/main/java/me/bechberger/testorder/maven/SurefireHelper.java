@@ -389,7 +389,7 @@ final class SurefireHelper {
 		try {
 			double value = Double.parseDouble(numPart);
 			if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
-				log.warn("[test-order] Surefire <forkCount>" + forkCount
+			log.debug("[test-order] Surefire <forkCount>" + forkCount
 						+ "</forkCount> — multiple forks may write .deps files concurrently in learn mode. "
 						+ "This can corrupt the dependency index. Consider using forkCount=1 for learn runs.");
 			}
@@ -441,7 +441,7 @@ final class SurefireHelper {
 			return;
 		String reuseForks = childValue(config, "reuseForks");
 		if ("false".equalsIgnoreCase(reuseForks != null ? reuseForks.trim() : null)) {
-			log.warn("[test-order] Surefire <reuseForks>false</reuseForks> — "
+			log.debug("[test-order] Surefire <reuseForks>false</reuseForks> — "
 					+ "each test class runs in a new JVM. Learn mode works correctly but is significantly slower "
 					+ "due to per-class JVM startup overhead. Consider setting "
 					+ "<reuseForks>true</reuseForks> to speed up the learn phase.");
