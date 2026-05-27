@@ -204,4 +204,29 @@ class PropertySuggestionTest {
 		List<String> warnings = PropertySuggestion.findUnknownKeys(keys);
 		assertTrue(warnings.isEmpty(), "Null entries should be skipped: " + warnings);
 	}
+
+	@Test
+	void newReactorDownloadAndStaticAnalysisKeysAreNotReportedAsUnknown() {
+		List<String> keys = List.of("testorder.reactorReorder", "testorder.reactorTopN",
+				"testorder.reactorReorder.dryRun", "testorder.download.fallbackToLearn",
+				"testorder.staticAnalysis.enabled", "testorder.staticAnalysis.depth",
+				"testorder.showStaticAnalysis.verbose");
+
+		List<String> warnings = PropertySuggestion.findUnknownKeys(keys);
+
+		assertTrue(warnings.isEmpty(), () -> "Expected no warnings for new keys, but got: " + warnings);
+	}
+
+	@Test
+	void internalRuntimeKeysAreNotReportedAsUnknown() {
+		// Keys written by the plugin to testorder-config.properties or passed as
+		// surefire JVM properties — must not trigger user-facing warnings
+		List<String> keys = List.of("testorder.pendingRestores", "testorder.build.id", "testorder.pending.runs.dir",
+				"testorder.changeDetection.logged", "testorder.moduleId", "testorder.internal.buildId",
+				"testorder.offline.includePackages", "testorder.offline.instrMode", "testorder.offline.pending");
+
+		List<String> warnings = PropertySuggestion.findUnknownKeys(keys);
+
+		assertTrue(warnings.isEmpty(), "Internal runtime keys must not warn: " + warnings);
+	}
 }

@@ -61,7 +61,13 @@ public final class PropertySuggestion {
 			"testorder.download.fallbackToLearn",
 			// static analysis keys
 			"testorder.staticAnalysis.enabled", "testorder.staticAnalysis.depth",
-			"testorder.showStaticAnalysis.verbose");
+			"testorder.showStaticAnalysis.verbose",
+			// offline instrumentation runtime keys (passed to surefire JVM)
+			"testorder.offline.includePackages", "testorder.offline.instrMode", "testorder.offline.pending",
+			// agent runtime / multi-module coordination keys (passed to surefire JVM)
+			"testorder.moduleId", "testorder.internal.buildId",
+			// auto-mode runtime coordination keys (written to testorder-config.properties)
+			"testorder.build.id", "testorder.pending.runs.dir", "testorder.changeDetection.logged");
 
 	/**
 	 * Find the closest known key to the given unknown key using case-insensitive

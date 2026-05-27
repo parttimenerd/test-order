@@ -167,7 +167,13 @@ final class MavenPluginConfigKeys {
 			"testorder.staticAnalysis.enabled", "testorder.staticAnalysis.depth",
 			"testorder.showStaticAnalysis.verbose",
 			// Reactor lifecycle participant keys
-			"testorder.reactorReorder", "testorder.reactorTopN", "testorder.reactorReorder.dryRun");
+			"testorder.reactorReorder", "testorder.reactorTopN", "testorder.reactorReorder.dryRun",
+			// Offline instrumentation runtime keys (passed to surefire JVM)
+			"testorder.offline.includePackages", "testorder.offline.instrMode", "testorder.offline.pending",
+			// Agent runtime / multi-module coordination keys
+			"testorder.moduleId", "testorder.internal.buildId",
+			// Auto-mode runtime coordination keys (written to testorder-config.properties)
+			"testorder.build.id", "testorder.pending.runs.dir", "testorder.changeDetection.logged");
 
 	/**
 	 * Find the closest known key to the given unknown key. Delegates to
