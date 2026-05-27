@@ -54,7 +54,14 @@ public final class PropertySuggestion {
 			"testorder.show.classes", "testorder.show.methods", "testorder.show.ml", "testorder.show.all",
 			"testorder.show.format", "testorder.show.filter",
 			// reactor ordering keys
-			"testorder.reactor.suggest", "testorder.reactor.topN");
+			"testorder.reactor.suggest", "testorder.reactor.topN",
+			// reactor reorder keys (lifecycle participant)
+			"testorder.reactorReorder", "testorder.reactorTopN", "testorder.reactorReorder.dryRun",
+			// download / fallback keys
+			"testorder.download.fallbackToLearn",
+			// static analysis keys
+			"testorder.staticAnalysis.enabled", "testorder.staticAnalysis.depth",
+			"testorder.showStaticAnalysis.verbose");
 
 	/**
 	 * Find the closest known key to the given unknown key using case-insensitive
@@ -200,8 +207,9 @@ public final class PropertySuggestion {
 				continue;
 			if (KNOWN_KEYS.contains(key))
 				continue;
-			// Skip internal reactor-style keys
-			if (key.startsWith("testorder.changed.classes.") || key.startsWith("testorder.changed.test.classes."))
+			// Skip internal reactor-style keys and session-coordination keys
+			if (key.startsWith("testorder.changed.classes.") || key.startsWith("testorder.changed.test.classes.")
+					|| key.equals("testorder.pendingRestores"))
 				continue;
 			String suggestion = findClosest(key);
 			if (suggestion != null) {

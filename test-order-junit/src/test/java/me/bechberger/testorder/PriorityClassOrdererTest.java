@@ -118,8 +118,8 @@ class PriorityClassOrdererTest {
 
 	@Test
 	void noIndexPathDoesNotReorder() {
-		System.clearProperty("testorder.index.path");
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.index.path", "");
+		System.setProperty("testorder.changed.classes", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		orderer.orderClasses(new StubClassOrdererContext(List.of(desc(String.class), desc(Integer.class))));
@@ -128,7 +128,7 @@ class PriorityClassOrdererTest {
 	@Test
 	void missingIndexFileDoesNotReorder() {
 		System.setProperty("testorder.index.path", tempDir.resolve("nonexistent.idx").toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		orderer.orderClasses(new StubClassOrdererContext(List.of(desc(String.class), desc(Integer.class))));
@@ -142,7 +142,7 @@ class PriorityClassOrdererTest {
 		map.save(idx);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 		System.clearProperty("testorder.changed.classes.file");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
@@ -201,7 +201,7 @@ class PriorityClassOrdererTest {
 		Files.writeString(changedFile, "com.X\n");
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 		System.setProperty("testorder.changed.classes.file", changedFile.toString());
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
@@ -220,7 +220,7 @@ class PriorityClassOrdererTest {
 
 		System.setProperty("testorder.index.path", idx.toString());
 		System.setProperty("testorder.changed.classes", "com.X");
-		System.clearProperty("testorder.state.path");
+		System.setProperty("testorder.state.path", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(Integer.class), desc(String.class)));
@@ -280,7 +280,7 @@ class PriorityClassOrdererTest {
 		setupState(state2); // saved: Integer=1.0*0.7=0.7(ceil→1), String=3.0(ceil→3)
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(Integer.class), desc(String.class)));
@@ -298,8 +298,8 @@ class PriorityClassOrdererTest {
 		map.save(idx);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
-		System.clearProperty("testorder.state.path");
+		System.setProperty("testorder.changed.classes", "");
+		System.setProperty("testorder.state.path", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(String.class), desc(Integer.class)));
@@ -464,7 +464,7 @@ class PriorityClassOrdererTest {
 		setupState(state);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(
@@ -517,7 +517,7 @@ class PriorityClassOrdererTest {
 		map.save(idx);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.state.path");
+		System.setProperty("testorder.state.path", "");
 		System.setProperty("testorder.score.newTest", "2");
 		System.setProperty("testorder.score.depOverlap", "1");
 		System.setProperty("testorder.changed.classes", "com.X");
@@ -540,7 +540,7 @@ class PriorityClassOrdererTest {
 
 		System.setProperty("testorder.index.path", idx.toString());
 		System.setProperty("testorder.changed.classes", "com.X");
-		System.clearProperty("testorder.state.path");
+		System.setProperty("testorder.state.path", "");
 		System.setProperty("testorder.score.newTest", "0");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
@@ -560,7 +560,7 @@ class PriorityClassOrdererTest {
 
 		System.setProperty("testorder.index.path", idx.toString());
 		System.setProperty("testorder.changed.classes", "com.X");
-		System.clearProperty("testorder.state.path");
+		System.setProperty("testorder.state.path", "");
 		System.setProperty("testorder.score.changedTest", "50");
 		System.setProperty("testorder.changed.test.classes", Integer.class.getName());
 
@@ -587,7 +587,7 @@ class PriorityClassOrdererTest {
 		setupState(state);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 		System.setProperty("testorder.score.speed", "10");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
@@ -615,7 +615,7 @@ class PriorityClassOrdererTest {
 		setupState(state);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 		System.setProperty("testorder.score.maxFailure", "2");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
@@ -636,7 +636,7 @@ class PriorityClassOrdererTest {
 
 		System.setProperty("testorder.index.path", idx.toString());
 		System.setProperty("testorder.changed.classes", "com.A");
-		System.clearProperty("testorder.state.path");
+		System.setProperty("testorder.state.path", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(String.class), desc(Integer.class)));
@@ -655,8 +655,8 @@ class PriorityClassOrdererTest {
 		map.save(idx);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
-		System.clearProperty("testorder.state.path");
+		System.setProperty("testorder.changed.classes", "");
+		System.setProperty("testorder.state.path", "");
 		System.setProperty("testorder.score.newTest", "not-a-number");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
@@ -722,7 +722,7 @@ class PriorityClassOrdererTest {
 		map.save(idx);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 		System.setProperty(TestOrderConfig.CHANGED_METHODS,
 				"com.svc.Svc#methodA, com.svc.Svc#methodB, com.svc.Svc#methodC");
 
@@ -828,8 +828,8 @@ class PriorityClassOrdererTest {
 		System.clearProperty("testorder.score.speed");
 		System.clearProperty("testorder.score.speedPenalty");
 		System.clearProperty("testorder.score.depOverlap");
-		System.clearProperty("testorder.state.path");
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.state.path", "");
+		System.setProperty("testorder.changed.classes", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(String.class), desc(Integer.class)));
@@ -942,9 +942,9 @@ class PriorityClassOrdererTest {
 		Path idx = dir.resolve("test.idx");
 		map.save(idx);
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.state.path");
-		System.clearProperty("testorder.changed.classes");
-		System.clearProperty("testorder.changed.test.classes");
+		System.setProperty("testorder.state.path", "");
+		System.setProperty("testorder.changed.classes", "");
+		System.setProperty("testorder.changed.test.classes", "");
 	}
 
 	@Test
@@ -1045,8 +1045,8 @@ class PriorityClassOrdererTest {
 		map.save(idx);
 		System.setProperty("testorder.index.path", idx.toString());
 		System.setProperty("testorder.changed.classes", "com.Dep");
-		System.clearProperty("testorder.state.path");
-		System.clearProperty("testorder.changed.test.classes");
+		System.setProperty("testorder.state.path", "");
+		System.setProperty("testorder.changed.test.classes", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(
@@ -1065,8 +1065,8 @@ class PriorityClassOrdererTest {
 		map.save(idx);
 		System.setProperty("testorder.index.path", idx.toString());
 		System.setProperty("testorder.changed.classes", "com.A");
-		System.clearProperty("testorder.state.path");
-		System.clearProperty("testorder.changed.test.classes");
+		System.setProperty("testorder.state.path", "");
+		System.setProperty("testorder.changed.test.classes", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(Integer.class), desc(String.class)));
@@ -1083,8 +1083,8 @@ class PriorityClassOrdererTest {
 		map.save(idx);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
-		System.clearProperty("testorder.changed.test.classes");
+		System.setProperty("testorder.changed.classes", "");
+		System.setProperty("testorder.changed.test.classes", "");
 		System.setProperty(TestOrderConfig.ML_ENABLED, "true");
 		Path predictions = dir.resolve("ml-predictions.properties");
 		Files.writeString(predictions, "# test-order ML predictions\n" + Integer.class.getName() + "=1.0\n"
@@ -1120,7 +1120,7 @@ class PriorityClassOrdererTest {
 		setupState(state);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(
@@ -1203,7 +1203,7 @@ class PriorityClassOrdererTest {
 		setupState(state);
 
 		System.setProperty("testorder.index.path", idx.toString());
-		System.clearProperty("testorder.changed.classes");
+		System.setProperty("testorder.changed.classes", "");
 		// Integer is the changed parameterized test class
 		System.setProperty("testorder.changed.test.classes", Integer.class.getName());
 
@@ -1262,8 +1262,8 @@ class PriorityClassOrdererTest {
 		map.save(idx);
 		System.setProperty("testorder.index.path", idx.toString());
 		System.setProperty("testorder.changed.classes", "com.A,com.B,com.C");
-		System.clearProperty("testorder.state.path");
-		System.clearProperty("testorder.changed.test.classes");
+		System.setProperty("testorder.state.path", "");
+		System.setProperty("testorder.changed.test.classes", "");
 
 		PriorityClassOrderer orderer = new PriorityClassOrderer();
 		List<StubClassDescriptor> descs = new ArrayList<>(List.of(desc(String.class), desc(AlwaysRunTest.class)));

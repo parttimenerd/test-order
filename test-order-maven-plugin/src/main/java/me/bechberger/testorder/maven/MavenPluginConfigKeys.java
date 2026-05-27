@@ -160,7 +160,14 @@ final class MavenPluginConfigKeys {
 			// CamelCase aliases (silently accepted, see ALIASES map)
 			"testorder.changedClasses", "testorder.showOrder.format", "testorder.showOrder.topN",
 			// Shorthand alias for run-tier (see ALIASES map)
-			"testorder.tier");
+			"testorder.tier",
+			// Download goal keys
+			"testorder.download.fallbackToLearn",
+			// Static analysis goal keys
+			"testorder.staticAnalysis.enabled", "testorder.staticAnalysis.depth",
+			"testorder.showStaticAnalysis.verbose",
+			// Reactor lifecycle participant keys
+			"testorder.reactorReorder", "testorder.reactorTopN", "testorder.reactorReorder.dryRun");
 
 	/**
 	 * Find the closest known key to the given unknown key. Delegates to
@@ -202,8 +209,9 @@ final class MavenPluginConfigKeys {
 				continue;
 			if (me.bechberger.testorder.ops.PropertySuggestion.KNOWN_KEYS.contains(key))
 				continue;
-			// Skip internal reactor propagation keys
-			if (key.startsWith(CHANGED_CLASSES + ".") || key.startsWith(CHANGED_TEST_CLASSES + "."))
+			// Skip internal reactor propagation keys and session-coordination keys
+			if (key.startsWith(CHANGED_CLASSES + ".") || key.startsWith(CHANGED_TEST_CLASSES + ".")
+					|| key.equals("testorder.pendingRestores"))
 				continue;
 			String suggestion = findClosestKey(key);
 			if (suggestion != null) {
