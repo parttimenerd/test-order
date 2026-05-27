@@ -14,6 +14,7 @@ export interface DashboardState {
   hasData: boolean
   hasCoverage: boolean
   hasML: boolean
+  hasMutation: boolean
 
   // Reactive UI state
   selectedTest: Ref<TestEntry | null>
@@ -115,6 +116,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const hasData = !!(dd.tests && dd.tests.length > 0)
   const hasCoverage = !!(dd.coverage && dd.coverage.classes && dd.coverage.classes.length)
   const hasML = !!(dd.ml && dd.ml.enabled)
+  const hasMutation = !!(dd.mutation && dd.mutation.enabled)
 
   const selectedTest = ref<TestEntry | null>(null)
   const selectedTests = ref<Set<string>>(new Set())
@@ -203,6 +205,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       { id: 'weights', label: 'Weights' },
     ]
     if (hasML) tabs.push({ id: 'ml', label: 'ML Health' })
+    if (hasMutation) tabs.push({ id: 'mutation', label: 'Mutations' })
     return tabs
   })
 
@@ -514,7 +517,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       const params = new URLSearchParams(h)
       if (params.has('tab')) {
         const tab = params.get('tab')!
-        if (['tests', 'analytics', 'weights', 'ml'].includes(tab)) activeTab.value = tab
+        if (['tests', 'analytics', 'weights', 'ml', 'mutation'].includes(tab)) activeTab.value = tab
       }
       if (params.has('test')) {
         const tName = params.get('test')!
@@ -749,7 +752,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   }
 
   return {
-    dd, parseError, hasData, hasCoverage, hasML,
+    dd, parseError, hasData, hasCoverage, hasML, hasMutation,
     selectedTest, selectedTests, activeTab, lw, searchQ, sortKey, sortDir,
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
     showChangedPanel, simSortKey, simSortDir, badgeFilter,

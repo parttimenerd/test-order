@@ -173,8 +173,11 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		Path idxPath = resolveIndexPath();
 
 		if ("learn".equals(mode)) {
-			// explicit learn mode — always instrument
+			// explicit learn mode — always instrument, and also order if an index exists
 			switchToLearnMode();
+			if (Files.exists(idxPath)) {
+				executeOrderMode();
+			}
 			return;
 		}
 
@@ -234,6 +237,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		// Index exists — check for new test classes and auto-learn thresholds
 		if (shouldSwitchToLearn(idxPath)) {
 			switchToLearnMode();
+			// Index exists (detected new/changed classes against it), so also order using
+			// it
+			executeOrderMode();
 			return;
 		}
 

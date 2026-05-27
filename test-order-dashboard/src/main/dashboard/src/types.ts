@@ -61,6 +61,7 @@ export interface TestEntry {
   memberDeps: string[] | null
   methods: MethodEntry[] | null
   mlPFail: number | null
+  killRate: number | null
 }
 
 export interface TestOutcome {
@@ -130,6 +131,24 @@ export interface MLData {
   hasPredictions: boolean
 }
 
+export interface MutationEntry {
+  testClass: string
+  killRate: number
+}
+
+export interface MutationSummary {
+  high: number
+  medium: number
+  low: number
+  none: number
+}
+
+export interface MutationData {
+  enabled: boolean
+  summary: MutationSummary
+  tests: MutationEntry[]
+}
+
 export interface DashboardData {
   project: ProjectInfo
   weights: ScoringWeights
@@ -142,6 +161,7 @@ export interface DashboardData {
   runs: RunRecord[]
   coverage: CoverageData | null
   ml: MLData | null
+  mutation: MutationData | null
 }
 
 /** Sort column definition for sidebar */

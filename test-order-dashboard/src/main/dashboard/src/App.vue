@@ -12,6 +12,7 @@ import TestsTab from './components/TestsTab.vue'
 import AnalyticsTab from './components/AnalyticsTab.vue'
 import WeightsTab from './components/WeightsTab.vue'
 import MLTab from './components/MLTab.vue'
+import MutationTab from './components/MutationTab.vue'
 import AppFooter from './components/AppFooter.vue'
 import CommandPalette from './components/CommandPalette.vue'
 
@@ -141,6 +142,7 @@ function onKeydown(e: KeyboardEvent) {
     case '2': dashboard.setTab('analytics'); break
     case '3': dashboard.setTab('weights'); break
     case '4': dashboard.setTab('ml'); break
+    case '5': dashboard.setTab('mutation'); break
     case 'f':
       dashboard.setBadgeFilter(dashboard.badgeFilter.value === 'failing' ? null : 'failing')
       break
@@ -227,6 +229,7 @@ function startResize(e: MouseEvent) {
         <AnalyticsTab />
         <WeightsTab />
         <MLTab />
+        <MutationTab />
       </main>
     </div>
     <AppFooter />

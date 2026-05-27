@@ -212,6 +212,12 @@ public class DashboardGenerator {
 				Double pFail = mlPredictions.get(st.name());
 				t.put("mlPFail", pFail != null ? Math.round(pFail * 10000.0) / 10000.0 : null);
 			}
+			// Mutation kill rate (if available)
+			Map<String, Double> killRates = state.getKillRates();
+			if (!killRates.isEmpty()) {
+				Double kr = killRates.get(st.name());
+				t.put("killRate", kr != null ? Math.round(kr * 10000.0) / 10000.0 : null);
+			}
 			tests.add(t);
 		}
 		root.put("tests", tests);
@@ -286,6 +292,46 @@ public class DashboardGenerator {
 			}
 
 			root.put("ml", ml);
+		}
+
+		// Mutation testing section (from state kill rates)
+		Map<String, Double> killRates = state.getKillRates();
+		if (!killRates.isEmpty()) {
+			Map<String, Object> mutation = new LinkedHashMap<>();
+			mutation.put("enabled", true);
+
+			// Summary: count tests by kill-rate tier
+			int high = 0, medium = 0, low = 0, none = 0;
+			int totalKilledByTests = 0;
+			for (double rate : killRates.values()) {
+				if (rate >= 0.15)
+					high++;
+				else if (rate >= 0.05)
+					medium++;
+				else if (rate > 0)
+					low++;
+				else
+					none++;
+				totalKilledByTests += (int) Math.round(rate * 100); // approx, just for display
+			}
+			Map<String, Object> summary = new LinkedHashMap<>();
+			summary.put("high", high);
+			summary.put("medium", medium);
+			summary.put("low", low);
+			summary.put("none", none);
+			mutation.put("summary", summary);
+
+			// Per-test entries sorted descending by kill rate
+			List<Map<String, Object>> mutTests = killRates.entrySet().stream()
+					.sorted((a, b) -> Double.compare(b.getValue(), a.getValue())).map(e -> {
+						Map<String, Object> m = new LinkedHashMap<>();
+						m.put("testClass", e.getKey());
+						m.put("killRate", Math.round(e.getValue() * 10000.0) / 10000.0);
+						return m;
+					}).collect(java.util.stream.Collectors.toList());
+			mutation.put("tests", mutTests);
+
+			root.put("mutation", mutation);
 		}
 
 		return root;

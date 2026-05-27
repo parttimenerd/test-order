@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -66,7 +66,7 @@ jobs:
           print(f\"Overall: {data['totalKilled']}/{data['totalMutants']} ({data['overallKillRate']*100:.1f}%)\")
           print()
           for tc in data.get('testClasses', []):
-              print(f\"  {tc['killRate']*100:5.1f}%  {tc['testClass'].split('.')[-1]}  ({tc['mutationsKilled']}/{tc['mutationsTotal']})\")
+              print(f\"  {tc['killRate']*100:5.1f}%  {tc['testClass'].split('.')[-1]}  (killed {tc['mutationsKilledByTest']})\")
           "
           else
             echo "No mutation report found"

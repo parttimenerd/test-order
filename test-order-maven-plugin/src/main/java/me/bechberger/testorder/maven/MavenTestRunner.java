@@ -152,11 +152,14 @@ class MavenTestRunner implements TestRunner {
 			}
 
 			// Build the maven command — use initialize + surefire:test so lifecycle
-			// plugins (JaCoCo etc.) can set argLine before Surefire runs
+			// plugins (JaCoCo etc.) can set @{argLine} before Surefire runs.
+			// Pass the order file path as a Surefire system property (not via argLine)
+			// so we don't overwrite the @{argLine} value set by JaCoCo etc.
 			List<String> command = new ArrayList<>(List.of(findMavenExecutable(), "initialize", "surefire:test",
 					"-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
-					// Pass the order file path to the forked JVM via argLine (quote for spaces)
-					"-DargLine=-Dtestorder.fixed.order.file=\"" + orderFile.toAbsolutePath() + "\"",
+					// Pass the order file as a forked-JVM system property (not via argLine,
+					// which would lose JaCoCo's --add-opens flags)
+					"-Dtestorder.fixed.order.file=" + orderFile.toAbsolutePath(),
 					// Add runtime dir and orderer JARs to test classpath
 					"-Dmaven.test.additionalClasspath=" + buildAdditionalClasspath(), "--batch-mode", "--quiet"));
 			command.addAll(PLUGIN_SKIP_FLAGS);
@@ -238,16 +241,15 @@ class MavenTestRunner implements TestRunner {
 				}
 			}
 
-			// Build the maven command
-			// Use FQCN for -Dtest to avoid collisions with same-named classes in
-			// different packages. Quote the method order file path for spaces.
-			List<String> command = new ArrayList<>(
-					List.of(findMavenExecutable(), "surefire:test", "-Dtest=" + testClass, "-DfailIfNoTests=false",
-							"-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
-							"-DargLine=-Dtestorder.fixed.method.order.file=\"" + methodOrderFile.toAbsolutePath()
-									+ "\"",
-							"-Dmaven.test.additionalClasspath=" + buildAdditionalClasspath(), "--batch-mode",
-							"--quiet"));
+			// Build the maven command — use initialize + surefire:test so lifecycle
+			// plugins (JaCoCo etc.) can set @{argLine} before Surefire runs.
+			// Pass the method order file as a user property (forwarded to forked JVM)
+			// instead of via -DargLine to preserve @{argLine} (JaCoCo --add-opens etc.)
+			List<String> command = new ArrayList<>(List.of(findMavenExecutable(), "initialize", "surefire:test",
+					"-Dtest=" + testClass, "-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false",
+					"-Dspotless.check.skip=true",
+					"-Dtestorder.fixed.method.order.file=" + methodOrderFile.toAbsolutePath(),
+					"-Dmaven.test.additionalClasspath=" + buildAdditionalClasspath(), "--batch-mode", "--quiet"));
 			command.addAll(PLUGIN_SKIP_FLAGS);
 
 			File workDir;

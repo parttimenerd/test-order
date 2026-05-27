@@ -3,7 +3,9 @@ package me.bechberger.testorder.maven;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
+import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.*;
 
@@ -20,7 +22,7 @@ import me.bechberger.testorder.ops.MutationAnalysisOperation;
  * <p>
  * Usage: {@code mvn test-order:analyze-mutations}
  */
-@Mojo(name = "analyze-mutations", aggregator = true)
+@Mojo(name = "analyze-mutations", aggregator = true, requiresDependencyResolution = ResolutionScope.TEST)
 public class MutationAnalyzeMojo extends AbstractTestOrderMojo {
 
 	/**
@@ -63,9 +65,16 @@ public class MutationAnalyzeMojo extends AbstractTestOrderMojo {
 				? Path.of(outputFile)
 				: projectRoot.resolve("target/test-mutation-results.json");
 
+		List<String> testClasspath;
+		try {
+			testClasspath = project.getTestClasspathElements();
+		} catch (DependencyResolutionRequiredException e) {
+			throw new MojoExecutionException("Failed to resolve test classpath: " + e.getMessage(), e);
+		}
+
 		try {
 			MutationAnalysisOperation.run(new MutationAnalysisOperation.Config(idxPath, statePath, output, projectRoot,
-					targetClasses, timeBudget, pluginLog()));
+					targetClasses, timeBudget, pluginLog(), testClasspath));
 		} catch (IOException e) {
 			throw new MojoExecutionException("Mutation analysis failed: " + e.getMessage(), e);
 		}

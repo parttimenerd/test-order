@@ -2206,4 +2206,101 @@ class DepsAndScoringTest {
 		assertEquals(0, scorer.score("com.test.TestA").score());
 		assertEquals(0, scorer.score("com.test.TestB").score());
 	}
+
+	// ── Kill-rate scoring ─────────────────────────────────────────────────────
+
+	@Test
+	void killRateBonusAddsToScore() {
+		DependencyMap depMap = buildDepMap(Map.of("com.FooTest", Set.of("app.X")));
+		TestOrderState state = new TestOrderState();
+		state.setKillRates(Map.of("com.FooTest", 1.0));
+
+		// killRateBonus = 10, killRate = 1.0 → bonus = round(1.0 * 10) = 10
+		var weights = new TestOrderState.ScoringWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, 10);
+		TestScorer scorer = new TestScorer(weights, depMap, state, Set.of(), Set.of(), depMap.testClasses());
+
+		var result = scorer.score("com.FooTest");
+		assertEquals(10, result.score(), "full kill rate should add killRateBonus points");
+		assertEquals(1.0, result.killRate(), 0.001);
+	}
+
+	@Test
+	void zeroKillRateAddsNoBonus() {
+		DependencyMap depMap = buildDepMap(Map.of("com.WeakTest", Set.of("app.X")));
+		TestOrderState state = new TestOrderState();
+		state.setKillRates(Map.of("com.WeakTest", 0.0));
+
+		var weights = new TestOrderState.ScoringWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, 10);
+		TestScorer scorer = new TestScorer(weights, depMap, state, Set.of(), Set.of(), depMap.testClasses());
+
+		var result = scorer.score("com.WeakTest");
+		assertEquals(0, result.score(), "zero kill rate should add no bonus");
+		assertEquals(0.0, result.killRate(), 0.001);
+	}
+
+	@Test
+	void missingKillRateDataLeavesScoreUnchanged() {
+		DependencyMap depMap = buildDepMap(Map.of("com.FooTest", Set.of("app.X")));
+		TestOrderState state = new TestOrderState(); // no kill rates set
+
+		var weights = new TestOrderState.ScoringWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, 10);
+		TestScorer scorer = new TestScorer(weights, depMap, state, Set.of(), Set.of(), depMap.testClasses());
+
+		var result = scorer.score("com.FooTest");
+		assertEquals(0, result.score(), "missing kill rate data should not affect score");
+		assertEquals(-1.0, result.killRate(), 0.001, "kill rate should be -1 when no data");
+	}
+
+	@Test
+	void killRateZeroBonusWeightAddsNothing() {
+		DependencyMap depMap = buildDepMap(Map.of("com.FooTest", Set.of("app.X")));
+		TestOrderState state = new TestOrderState();
+		state.setKillRates(Map.of("com.FooTest", 1.0));
+
+		// killRateBonus = 0 → no bonus even with kill rate = 1.0
+		var weights = new TestOrderState.ScoringWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		TestScorer scorer = new TestScorer(weights, depMap, state, Set.of(), Set.of(), depMap.testClasses());
+
+		assertEquals(0, scorer.score("com.FooTest").score());
+	}
+
+	@Test
+	void killRateMultiplierScalesDepOverlapScore() {
+		// killRate = 0.0 → multiplier = 0.5 → dep overlap is halved
+		// killRate = 1.0 → multiplier = 1.0 → dep overlap unchanged
+		DependencyMap depMapLow = buildDepMap(Map.of("com.WeakTest", Set.of("app.X")));
+		DependencyMap depMapHigh = buildDepMap(Map.of("com.StrongTest", Set.of("app.X")));
+
+		TestOrderState stateLow = new TestOrderState();
+		stateLow.setKillRates(Map.of("com.WeakTest", 0.0));
+
+		TestOrderState stateHigh = new TestOrderState();
+		stateHigh.setKillRates(Map.of("com.StrongTest", 1.0));
+
+		// Use only depOverlap weight, no killRateBonus
+		var weights = new TestOrderState.ScoringWeights(0, 0, 0, 0, 0, 10, 0, 0, 0, 0);
+		TestScorer scorerLow = new TestScorer(weights, depMapLow, stateLow, Set.of("app.X"), Set.of(),
+				depMapLow.testClasses());
+		TestScorer scorerHigh = new TestScorer(weights, depMapHigh, stateHigh, Set.of("app.X"), Set.of(),
+				depMapHigh.testClasses());
+
+		int scoreLow = scorerLow.score("com.WeakTest").score();
+		int scoreHigh = scorerHigh.score("com.StrongTest").score();
+		assertTrue(scoreHigh >= scoreLow,
+				"high kill rate test should score >= low kill rate test due to multiplier; high=%d low=%d"
+						.formatted(scoreHigh, scoreLow));
+	}
+
+	@Test
+	void killRateStoredInScoreResult() {
+		DependencyMap depMap = buildDepMap(Map.of("com.FooTest", Set.of("app.X")));
+		TestOrderState state = new TestOrderState();
+		state.setKillRates(Map.of("com.FooTest", 0.75));
+
+		var weights = new TestOrderState.ScoringWeights(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		TestScorer scorer = new TestScorer(weights, depMap, state, Set.of(), Set.of(), depMap.testClasses());
+
+		var result = scorer.score("com.FooTest");
+		assertEquals(0.75, result.killRate(), 0.001, "kill rate should be preserved in score result");
+	}
 }

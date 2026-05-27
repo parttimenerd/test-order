@@ -1100,4 +1100,79 @@ class TestOrderStateTest {
 		assertTrue(TestOrderState.DEFAULT_FAILURE_DECAY > 0,
 				"DEFAULT_FAILURE_DECAY should be positive from TOML config");
 	}
+
+	// ── Kill rate persistence ─────────────────────────────────────────────────
+
+	@Test
+	void killRatesRoundTripSaveLoad() throws IOException {
+		TestOrderState state = new TestOrderState();
+		state.setKillRates(Map.of("com.FooTest", 0.75, "com.BarTest", 0.25));
+
+		Path file = tempDir.resolve("state-kr");
+		state.save(file);
+		TestOrderState loaded = TestOrderState.load(file);
+
+		assertEquals(2, loaded.getKillRates().size());
+		assertEquals(0.75, loaded.getKillRates().get("com.FooTest"), 0.0001);
+		assertEquals(0.25, loaded.getKillRates().get("com.BarTest"), 0.0001);
+	}
+
+	@Test
+	void killRatesEmptyByDefault() {
+		TestOrderState state = new TestOrderState();
+		assertTrue(state.getKillRates().isEmpty());
+	}
+
+	@Test
+	void killRatesReturnedAsUnmodifiableView() {
+		TestOrderState state = new TestOrderState();
+		state.setKillRates(Map.of("com.FooTest", 0.5));
+		assertThrows(UnsupportedOperationException.class, () -> state.getKillRates().put("com.Extra", 0.1));
+	}
+
+	@Test
+	void setKillRatesCopiesInput() {
+		TestOrderState state = new TestOrderState();
+		Map<String, Double> rates = new HashMap<>(Map.of("com.FooTest", 0.5));
+		state.setKillRates(rates);
+		rates.put("com.BarTest", 0.9); // mutate original after setting
+		assertFalse(state.getKillRates().containsKey("com.BarTest"), "setKillRates should take a defensive copy");
+	}
+
+	@Test
+	void killRatesNotPersistWhenEmpty() throws IOException {
+		TestOrderState state = new TestOrderState();
+		Path file = tempDir.resolve("state-empty-kr");
+		state.save(file);
+		TestOrderState loaded = TestOrderState.load(file);
+		assertTrue(loaded.getKillRates().isEmpty());
+	}
+
+	@Test
+	void killRatesOtherStateFieldsPreservedAcrossRoundTrip() throws IOException {
+		TestOrderState state = new TestOrderState();
+		state.recordDuration("com.FooTest", 500L);
+		state.recordFailure("com.FooTest");
+		state.setKillRates(Map.of("com.FooTest", 0.8));
+
+		Path file = tempDir.resolve("state-combined");
+		state.save(file);
+		TestOrderState loaded = TestOrderState.load(file);
+
+		assertEquals(500L, loaded.getDuration("com.FooTest", -1));
+		assertEquals(0.8, loaded.getKillRates().get("com.FooTest"), 0.0001);
+	}
+
+	@Test
+	void killRateBonusWeightPersistsSaveLoad() throws IOException {
+		TestOrderState state = new TestOrderState();
+		var weights = new TestOrderState.ScoringWeights(10, 9, 5, 1, 1, 5, 2, 0, 0, 7);
+		state.setWeights(weights);
+
+		Path file = tempDir.resolve("state-krw");
+		state.save(file);
+		TestOrderState loaded = TestOrderState.load(file);
+
+		assertEquals(7, loaded.weights().killRateBonus());
+	}
 }

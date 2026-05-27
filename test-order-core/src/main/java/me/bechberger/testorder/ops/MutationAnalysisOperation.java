@@ -55,9 +55,17 @@ public final class MutationAnalysisOperation {
 	 *            maximum seconds to spend on mutation testing (0 = no limit)
 	 * @param log
 	 *            plugin log
+	 * @param extraClasspath
+	 *            additional classpath entries for the forked test minion (e.g.
+	 *            Maven project test classpath), may be empty or {@code null}
 	 */
 	public record Config(Path indexFile, Path stateFile, Path outputFile, Path projectRoot, String targetClasses,
-			int timeBudgetSeconds, PluginLog log) {
+			int timeBudgetSeconds, PluginLog log, List<String> extraClasspath) {
+
+		public Config(Path indexFile, Path stateFile, Path outputFile, Path projectRoot, String targetClasses,
+				int timeBudgetSeconds, PluginLog log) {
+			this(indexFile, stateFile, outputFile, projectRoot, targetClasses, timeBudgetSeconds, log, List.of());
+		}
 	}
 
 	/**
@@ -127,21 +135,24 @@ public final class MutationAnalysisOperation {
 
 		// Invoke PIT programmatically
 		invokePit(config.projectRoot(), targetClasses, targetTestClasses, targetGlob, testGlob, pitReportDir,
-				config.timeBudgetSeconds(), log);
+				config.timeBudgetSeconds(), config.extraClasspath(), log);
 
 		// Parse PIT XML report
 		Path mutationsXml = findMutationsXml(pitReportDir);
 		Map<String, MutationStats> statsByTest = parseMutationsXml(mutationsXml, testClasses);
 
-		// Compute per-test kill rates
+		// Extract global totals from sentinel entry, then remove it
+		MutationStats globalStats = statsByTest.remove("__total__");
+		int totalMutants = globalStats != null ? globalStats.total : 0;
+		int totalKilled = globalStats != null ? globalStats.killed : 0;
+
+		// Per-test kill rate = fraction of ALL killed mutants that this test killed.
+		// Tests that killed nothing get 0.0; the best test is 1.0 if it killed
+		// everything.
 		Map<String, Double> killRates = new LinkedHashMap<>();
-		int totalMutants = 0;
-		int totalKilled = 0;
 		for (var entry : statsByTest.entrySet()) {
 			MutationStats stats = entry.getValue();
-			totalMutants += stats.total;
-			totalKilled += stats.killed;
-			double rate = stats.total > 0 ? (double) stats.killed / stats.total : 0.0;
+			double rate = totalKilled > 0 ? (double) stats.killed / totalKilled : 0.0;
 			killRates.put(entry.getKey(), rate);
 		}
 
@@ -176,7 +187,7 @@ public final class MutationAnalysisOperation {
 	/**
 	 * Collects production class names from the dep graph, excluding test classes.
 	 */
-	private static Set<String> deriveProductionClasses(DependencyMap depMap, String targetClassesOverride) {
+	static Set<String> deriveProductionClasses(DependencyMap depMap, String targetClassesOverride) {
 		if (targetClassesOverride != null && !targetClassesOverride.isBlank()) {
 			return new LinkedHashSet<>(Arrays.asList(targetClassesOverride.split(",")));
 		}
@@ -193,7 +204,8 @@ public final class MutationAnalysisOperation {
 	}
 
 	private static void invokePit(Path projectRoot, Path classesDir, Path testClassesDir, String targetGlob,
-			String testGlob, Path reportDir, int timeBudgetSeconds, PluginLog log) throws IOException {
+			String testGlob, Path reportDir, int timeBudgetSeconds, List<String> extraClasspath, PluginLog log)
+			throws IOException {
 		// Verify PIT is available on the classpath
 		try {
 			Class.forName("org.pitest.mutationtest.tooling.EntryPoint");
@@ -205,7 +217,7 @@ public final class MutationAnalysisOperation {
 
 		try {
 			// Collect full classpath for PIT (classes + test-classes + all jars)
-			List<String> classpath = buildClasspath(projectRoot, classesDir, testClassesDir);
+			List<String> classpath = buildClasspath(projectRoot, classesDir, testClassesDir, extraClasspath);
 
 			// Redirect PIT's stdout/stderr to suppress verbose output
 			PrintStream originalOut = System.out;
@@ -235,63 +247,90 @@ public final class MutationAnalysisOperation {
 		Class<?> entryPointClass = Class.forName("org.pitest.mutationtest.tooling.EntryPoint");
 		Class<?> reportOptionsClass = Class.forName("org.pitest.mutationtest.config.ReportOptions");
 		Class<?> pluginServicesClass = Class.forName("org.pitest.mutationtest.config.PluginServices");
+		Class<?> verbosityClass = Class.forName("org.pitest.util.Verbosity");
+		Class<?> testGroupConfigClass = Class.forName("org.pitest.testapi.TestGroupConfig");
 
 		Object reportOptions = reportOptionsClass.getDeclaredConstructor().newInstance();
 
-		// targetClasses
-		java.lang.reflect.Method setTargetClasses = reportOptionsClass.getMethod("setTargetClasses", Collection.class);
-		setTargetClasses.invoke(reportOptions, globToCollection(targetGlob));
+		// groupConfig: required in PIT 1.25+, must not be null
+		Object emptyGroupConfig = testGroupConfigClass.getDeclaredConstructor().newInstance();
+		reportOptionsClass.getMethod("setGroupConfig", testGroupConfigClass).invoke(reportOptions, emptyGroupConfig);
 
-		// targetTests
-		java.lang.reflect.Method setTargetTests = reportOptionsClass.getMethod("setTargetTests", Collection.class);
-		setTargetTests.invoke(reportOptions, globToCollection(testGlob));
+		// targetClasses: Collection<String> globs
+		reportOptionsClass.getMethod("setTargetClasses", Collection.class).invoke(reportOptions,
+				globToCollection(targetGlob));
 
-		// sourceDirs
-		java.lang.reflect.Method setSourceDirs = reportOptionsClass.getMethod("setSourceDirs", Collection.class);
-		setSourceDirs.invoke(reportOptions, List.of(projectRoot.resolve("src/main/java").toFile()));
+		// targetTests: Collection<Predicate<String>> — wrap each glob as a prefix
+		// predicate
+		List<java.util.function.Predicate<String>> testPredicates = globToCollection(testGlob).stream()
+				.map(g -> (java.util.function.Predicate<String>) s -> s.startsWith(g.replace("*", "")))
+				.collect(Collectors.toList());
+		reportOptionsClass.getMethod("setTargetTests", Collection.class).invoke(reportOptions, testPredicates);
+
+		// sourceDirs: Collection<Path>
+		Path srcMain = projectRoot.resolve("src/main/java");
+		List<Path> sourceDirs = Files.isDirectory(srcMain) ? List.of(srcMain) : List.of();
+		reportOptionsClass.getMethod("setSourceDirs", Collection.class).invoke(reportOptions, sourceDirs);
 
 		// classpath
-		java.lang.reflect.Method setClassPathElements = reportOptionsClass.getMethod("setClassPathElements",
-				Collection.class);
-		setClassPathElements.invoke(reportOptions, classpath);
+		reportOptionsClass.getMethod("setClassPathElements", Collection.class).invoke(reportOptions, classpath);
 
 		// reportDir
-		java.lang.reflect.Method setReportDir = reportOptionsClass.getMethod("setReportDir", String.class);
-		setReportDir.invoke(reportOptions, reportDir.toAbsolutePath().toString());
+		reportOptionsClass.getMethod("setReportDir", String.class).invoke(reportOptions,
+				reportDir.toAbsolutePath().toString());
 
-		// outputFormats: XML only (no HTML)
-		java.lang.reflect.Method setOutputFormats = reportOptionsClass.getMethod("setOutputFormats", Collection.class);
-		setOutputFormats.invoke(reportOptions, List.of("XML"));
+		// no timestamped subdirs — write directly to reportDir
+		reportOptionsClass.getMethod("setShouldCreateTimestampedReports", boolean.class).invoke(reportOptions, false);
 
-		// verbose: false
-		java.lang.reflect.Method setVerbose = reportOptionsClass.getMethod("setVerbose", boolean.class);
-		setVerbose.invoke(reportOptions, false);
+		// outputFormats: XML only
+		reportOptionsClass.getMethod("addOutputFormats", Collection.class).invoke(reportOptions, List.of("XML"));
 
-		// timeBudget (if set)
+		// verbosity: QUIET for production runs
+		Object quiet = verbosityClass.getField("QUIET").get(null);
+		reportOptionsClass.getMethod("setVerbosity", verbosityClass).invoke(reportOptions, quiet);
+
+		// don't fail when no mutations found
+		reportOptionsClass.getMethod("setFailWhenNoMutations", boolean.class).invoke(reportOptions, false);
+
+		// skip pre-existing test failures — some tests may be flaky/env-dependent
+		reportOptionsClass.getMethod("setSkipFailingTests", boolean.class).invoke(reportOptions, true);
+
+		// timeBudget: use timeout constant (ms)
 		if (timeBudgetSeconds > 0) {
-			try {
-				java.lang.reflect.Method setTimeout = reportOptionsClass.getMethod("setTimeoutFactor", double.class);
-				setTimeout.invoke(reportOptions, 1.0);
-			} catch (NoSuchMethodException ignored) {
-			}
+			reportOptionsClass.getMethod("setTimeoutConstant", long.class).invoke(reportOptions,
+					(long) timeBudgetSeconds * 1000);
 		}
 
-		// Build PluginServices (uses ServiceLoader internally)
-		java.lang.reflect.Method loadDefault = pluginServicesClass.getMethod("makeForContextLoader");
-		Object pluginServices = loadDefault.invoke(null);
+		// Forward JVM args from the parent process to the forked minion so that
+		// module-system flags (--add-opens etc.) and GraalVM options are inherited.
+		List<String> inheritedArgs = java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments()
+				.stream()
+				.filter(a -> a.startsWith("--add-opens") || a.startsWith("--add-exports") || a.startsWith("--add-reads")
+						|| a.startsWith("--enable-native-access") || a.startsWith("-XX:") || a.startsWith("-Djava."))
+				.collect(Collectors.toList());
+		if (!inheritedArgs.isEmpty()) {
+			reportOptionsClass.getMethod("addChildJVMArgs", List.class).invoke(reportOptions, inheritedArgs);
+		}
+
+		// Build PluginServices
+		Object pluginServices = pluginServicesClass.getMethod("makeForContextLoader").invoke(null);
 
 		// Run via EntryPoint
 		Object entryPoint = entryPointClass.getDeclaredConstructor().newInstance();
-		java.lang.reflect.Method launch = entryPointClass.getMethod("execute", java.io.File.class, reportOptionsClass,
-				pluginServicesClass, java.util.HashMap.class);
-		launch.invoke(entryPoint, projectRoot.toFile(), reportOptions, pluginServices, new java.util.HashMap<>());
+		entryPointClass.getMethod("execute", java.io.File.class, reportOptionsClass, pluginServicesClass, Map.class)
+				.invoke(entryPoint, projectRoot.toFile(), reportOptions, pluginServices, new java.util.HashMap<>());
 	}
 
-	private static List<String> buildClasspath(Path projectRoot, Path classesDir, Path testClassesDir)
-			throws IOException {
+	private static List<String> buildClasspath(Path projectRoot, Path classesDir, Path testClassesDir,
+			List<String> extraClasspath) throws IOException {
 		List<String> cp = new ArrayList<>();
 		cp.add(classesDir.toAbsolutePath().toString());
 		cp.add(testClassesDir.toAbsolutePath().toString());
+
+		// Project test dependencies passed explicitly by the build tool (most reliable)
+		if (extraClasspath != null) {
+			cp.addAll(extraClasspath);
+		}
 
 		// Add jars from target/dependency (if Maven copied them there)
 		Path depsDir = projectRoot.resolve("target/dependency");
@@ -302,13 +341,44 @@ public final class MutationAnalysisOperation {
 			}
 		}
 
-		// Also add jars from the current JVM classpath (covers plugin dependencies)
+		// Add jars from the current JVM classpath (covers plugin dependencies)
 		String jvmClasspath = System.getProperty("java.class.path", "");
 		if (!jvmClasspath.isBlank()) {
 			cp.addAll(Arrays.asList(jvmClasspath.split(java.io.File.pathSeparator)));
 		}
 
+		// Also scan classloader URL hierarchy — Maven plugin class-realms do not appear
+		// on java.class.path but their JARs must be visible so PIT can read
+		// HotSwapAgent.class bytes when building the agent JAR.
+		addClassloaderUrls(MutationAnalysisOperation.class.getClassLoader(), cp);
+
 		return cp;
+	}
+
+	private static void addClassloaderUrls(ClassLoader cl, List<String> cp) {
+		if (cl == null)
+			return;
+		if (cl instanceof java.net.URLClassLoader ucl) {
+			for (java.net.URL url : ucl.getURLs()) {
+				if ("file".equals(url.getProtocol())) {
+					cp.add(new java.io.File(url.getFile()).getAbsolutePath());
+				}
+			}
+		} else {
+			// Plexus/Maven class-realm exposes URLs via getURLs() reflectively
+			try {
+				java.lang.reflect.Method getUrls = cl.getClass().getMethod("getURLs");
+				java.net.URL[] urls = (java.net.URL[]) getUrls.invoke(cl);
+				for (java.net.URL url : urls) {
+					if ("file".equals(url.getProtocol())) {
+						cp.add(new java.io.File(url.getFile()).getAbsolutePath());
+					}
+				}
+			} catch (Exception ignored) {
+				// not a URL classloader, skip
+			}
+		}
+		addClassloaderUrls(cl.getParent(), cp);
 	}
 
 	private static Collection<String> globToCollection(String glob) {
@@ -337,48 +407,54 @@ public final class MutationAnalysisOperation {
 		}
 	}
 
-	private static Map<String, MutationStats> parseMutationsXml(Path xmlFile, Set<String> knownTestClasses)
-			throws IOException {
+	static Map<String, MutationStats> parseMutationsXml(Path xmlFile, Set<String> knownTestClasses) throws IOException {
 		Map<String, MutationStats> result = new LinkedHashMap<>();
+		// Initialise all known test classes so they appear in the output even if they
+		// killed no mutants.
+		for (String tc : knownTestClasses) {
+			result.put(tc, new MutationStats());
+		}
+		int totalMutantsGlobal = 0;
 		try {
 			Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(xmlFile.toFile());
 			NodeList mutations = doc.getElementsByTagName("mutation");
 			for (int i = 0; i < mutations.getLength(); i++) {
+				totalMutantsGlobal++;
 				Element mutation = (Element) mutations.item(i);
 				boolean detected = Boolean.parseBoolean(mutation.getAttribute("detected"));
 				String killingTest = getChildText(mutation, "killingTest");
 
-				// Extract test class from "com.example.FooTest/testMethod()" format
+				// PIT JUnit 5 format: "com.example.FooTest.[engine:junit-jupiter]/..."
+				// Strip engine/class/method descriptor, keep only the class name.
 				String testClass = null;
 				if (killingTest != null && !killingTest.isBlank()) {
 					int slash = killingTest.indexOf('/');
 					testClass = slash >= 0 ? killingTest.substring(0, slash) : killingTest;
+					// Strip JUnit-5 engine suffix: "FooTest.[engine:junit-jupiter]" → "FooTest"
+					int dotEngine = testClass.indexOf(".[");
+					if (dotEngine >= 0) {
+						testClass = testClass.substring(0, dotEngine);
+					}
 					// Normalise inner class separator
 					testClass = testClass.replace('$', '.');
-					// Match against known test classes (case-insensitive fallback)
+					// Match against known test classes (fallback for package mismatches)
 					if (!knownTestClasses.contains(testClass)) {
 						testClass = matchKnownClass(testClass, knownTestClasses);
 					}
 				}
 
-				// Attribute each mutant to the killing test (if killed) or to all covering
-				// tests (if survived — count the mutant once for the mutated class)
-				String mutatedClass = getChildText(mutation, "mutatedClass");
-				Set<String> coveringTests = getCoveringTests(mutatedClass, knownTestClasses);
-
 				if (detected && testClass != null) {
 					result.computeIfAbsent(testClass, k -> new MutationStats()).killed++;
-					result.computeIfAbsent(testClass, k -> new MutationStats()).total++;
-				} else {
-					// Survived mutant: charge to all tests that cover this class
-					for (String covering : coveringTests) {
-						result.computeIfAbsent(covering, k -> new MutationStats()).total++;
-					}
+					result.get(testClass).total++;
 				}
+				// Survived mutants: do NOT distribute across all test classes.
+				// Each mutant is counted once in the global total (handled in run()).
 			}
 		} catch (Exception e) {
 			throw new IOException("Failed to parse PIT mutations report: " + e.getMessage(), e);
 		}
+		result.put("__total__",
+				new MutationStats(totalMutantsGlobal, result.values().stream().mapToInt(s -> s.killed).sum()));
 		return result;
 	}
 
@@ -389,7 +465,7 @@ public final class MutationAnalysisOperation {
 		return nodes.item(0).getTextContent();
 	}
 
-	private static String matchKnownClass(String candidate, Set<String> known) {
+	static String matchKnownClass(String candidate, Set<String> known) {
 		// Try simple suffix match (handles package prefix differences)
 		for (String k : known) {
 			if (k.endsWith(candidate) || candidate.endsWith(k)) {
@@ -399,21 +475,17 @@ public final class MutationAnalysisOperation {
 		return candidate; // keep original if no match
 	}
 
-	/**
-	 * Returns test classes that cover the given production class (from dep map
-	 * perspective, we just return all known test classes as a conservative fallback
-	 * for survived mutants since we don't have the reverse index here).
-	 */
-	private static Set<String> getCoveringTests(String mutatedClass, Set<String> testClasses) {
-		// Conservative: attribute survived mutants to all test classes.
-		// This slightly overestimates total mutants per test but keeps kill rates
-		// comparable across tests.
-		return testClasses;
-	}
-
-	private static final class MutationStats {
+	static final class MutationStats {
 		int total = 0;
 		int killed = 0;
+
+		MutationStats() {
+		}
+
+		MutationStats(int total, int killed) {
+			this.total = total;
+			this.killed = killed;
+		}
 	}
 
 	// ── JSON report ───────────────────────────────────────────────────────────
@@ -433,8 +505,7 @@ public final class MutationAnalysisOperation {
 			MutationStats stats = statsByTest.get(entry.getKey());
 			Map<String, Object> tc = new LinkedHashMap<>();
 			tc.put("testClass", entry.getKey());
-			tc.put("mutationsKilled", stats != null ? stats.killed : 0);
-			tc.put("mutationsTotal", stats != null ? stats.total : 0);
+			tc.put("mutationsKilledByTest", stats != null ? stats.killed : 0);
 			tc.put("killRate", entry.getValue());
 			testList.add(tc);
 		}

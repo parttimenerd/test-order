@@ -11,6 +11,8 @@ const EMPTY: DashboardData = {
   tests: [],
   runs: [],
   coverage: null,
+  ml: null,
+  mutation: null,
 }
 
 export function normalizeDashboardData(raw: DashboardData | null): DashboardData {
@@ -26,6 +28,8 @@ export function normalizeDashboardData(raw: DashboardData | null): DashboardData
     tests: raw.tests ?? [],
     runs: raw.runs ?? [],
     coverage: raw.coverage ?? null,
+    ml: raw.ml ?? null,
+    mutation: raw.mutation ?? null,
   }
 }
 
