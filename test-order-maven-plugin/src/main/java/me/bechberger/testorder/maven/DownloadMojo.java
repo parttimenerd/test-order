@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
 
 import me.bechberger.testorder.ci.CiDepDownloadManager;
 
@@ -19,12 +20,25 @@ import me.bechberger.testorder.ci.CiDepDownloadManager;
  * <pre>
  * mvn test-order:download
  * </pre>
+ *
+ * <p>
+ * With {@code -DfallbackToLearn=true}, download failure is not fatal — the
+ * subsequent {@code test} run is automatically redirected into learn mode so a
+ * local index is built instead.
  */
 @Mojo(name = "download", requiresProject = true)
 public class DownloadMojo extends AbstractTestOrderMojo {
 
 	/** Track whether download already ran in this reactor build. */
 	private static volatile boolean downloadedInReactor = false;
+
+	/**
+	 * When {@code true}, a failed download (no config, no artifact, no token) is
+	 * not fatal. The plugin sets {@code testorder.mode=learn} so the next
+	 * {@code test} run builds a local index instead.
+	 */
+	@Parameter(property = "testorder.download.fallbackToLearn", defaultValue = "false")
+	private boolean fallbackToLearn;
 
 	@Override
 	public void execute() throws MojoExecutionException {
@@ -50,6 +64,11 @@ public class DownloadMojo extends AbstractTestOrderMojo {
 		Path indexTarget = resolveIndexPath();
 
 		if (!me.bechberger.testorder.ci.CiConfigParser.configExistsIn(reactorRoot)) {
+			if (fallbackToLearn) {
+				getLog().info("[test-order] No download-config.yml found — falling back to local learn pass.");
+				setLearnFallback();
+				return;
+			}
 			throw new MojoExecutionException("CI download failed: .test-order/download-config.yml not found.\n"
 					+ "  Create it with your CI provider settings, e.g. (GitHub Actions):\n" + "    ci:\n"
 					+ "      github:\n" + "        owner: your-org\n" + "        repo: your-repo\n"
@@ -66,11 +85,22 @@ public class DownloadMojo extends AbstractTestOrderMojo {
 			downloadedInReactor = true;
 			getLog().info("[test-order] CI index written to " + result.get());
 		} else {
+			if (fallbackToLearn) {
+				getLog().info("[test-order] CI download failed — falling back to local learn pass.");
+				setLearnFallback();
+				return;
+			}
 			throw new MojoExecutionException("CI download failed: could not retrieve artifact from your CI provider.\n"
 					+ "  Check:\n" + "    • Is GITHUB_TOKEN / GITLAB_TOKEN set in the environment?\n"
 					+ "    • Does the workflow/artifact exist? (run `gh run list` to verify)\n"
 					+ "    • Is the config in .test-order/download-config.yml correct?\n"
 					+ "  Run with -X for debug logging.");
+		}
+	}
+
+	private void setLearnFallback() {
+		if (session != null && session.getUserProperties() != null) {
+			session.getUserProperties().setProperty(MavenPluginConfigKeys.MODE, "learn");
 		}
 	}
 }
