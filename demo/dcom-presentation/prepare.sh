@@ -113,25 +113,25 @@ cd "$SDK_DIR"
 mvn clean install -DskipTests -q
 echo "  ✓ cloud-sdk-java built"
 
-# ── 4. Learn pass (or download from CI) ──────────────────────────────────────
+# ── 4. Download learn index from CI ──────────────────────────────────────────
 
 echo ""
 pom_enable
 
 INDEX="$SDK_DIR/$MODULE/.test-order/test-dependencies.lz4"
 if [[ -f "$INDEX" ]]; then
-    echo "▶ cloud-sdk-java index already exists — skipping"
+    echo "▶ cloud-sdk-java index already exists — skipping download"
 else
-    echo "▶ Trying to download learn index from CI..."
+    echo "▶ Downloading learn index from CI..."
     cd "$SDK_DIR"
     if mvn test-order:download -pl "$MODULE" --batch-mode --no-transfer-progress \
-        -DskipFormatting -Denforcer.skip -q 2>/dev/null && [[ -f "$INDEX" ]]; then
+        -DskipFormatting -Denforcer.skip && [[ -f "$INDEX" ]]; then
         echo "  ✓ Index downloaded from CI"
     else
-        echo "  ✗ Download failed or no CI artifact yet — running learn pass locally..."
+        echo "  ✗ CI download failed — running learn pass locally as fallback..."
         mvn test -pl "$MODULE" -Dtestorder.mode=learn -q 2>/dev/null || true
         mvn test-order:aggregate -pl "$MODULE" -q 2>/dev/null || true
-        echo "  ✓ Learn pass complete"
+        echo "  ✓ Learn pass complete (local fallback)"
     fi
 fi
 

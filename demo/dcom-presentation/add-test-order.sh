@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # =============================================================================
-# add-test-order.sh — Add test-order plugin to pom.xml + download learn index
+# add-test-order.sh — Add test-order plugin to pom.xml + restore learn index
 # =============================================================================
-# Run on stage after the "pain" demo to show how easy it is to enable the plugin.
-# Adds one plugin block to pom.xml, downloads the pre-built learn index from CI,
-# and shows the git diff.
+# Run on stage after the "pain" demo.
+# Adds one plugin block to pom.xml, copies the pre-downloaded learn index from
+# .baked-history/ (put there by prepare.sh), and shows the git diff.
+# No network needed on stage.
 # =============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 POM="$SCRIPT_DIR/cloud-sdk-java/cloudplatform/connectivity-destination-service/pom.xml"
+BAKE_DIR="$SCRIPT_DIR/.baked-history/cloud-sdk-java"
+MODULE_DIR="$SCRIPT_DIR/cloud-sdk-java/cloudplatform/connectivity-destination-service"
 MARKER="test-order-plugin-start"
-
-export JAVA_HOME="${JAVA_HOME:-/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home}"
-export PATH="$JAVA_HOME/bin:$PATH"
 
 # ── 1. Add plugin to pom.xml ────────────────────────────────────────────────
 
@@ -46,20 +46,23 @@ else
     echo "  ✓ Plugin block added"
 fi
 
-# ── 2. Download learn index from CI ─────────────────────────────────────────
+# ── 2. Restore learn index from .baked-history/ ──────────────────────────────
 
 echo ""
-echo "  Downloading learn index from CI..."
-cd "$SCRIPT_DIR/cloud-sdk-java"
-mvn test-order:download \
-    -pl cloudplatform/connectivity-destination-service \
-    --batch-mode --no-transfer-progress \
-    -DskipFormatting -Denforcer.skip
-echo "  ✓ Learn data ready (downloaded from CI)"
+echo "  Restoring learn index (downloaded from CI by prepare.sh)..."
+if [[ -d "$BAKE_DIR" ]]; then
+    rm -rf "$MODULE_DIR/.test-order"
+    mkdir -p "$MODULE_DIR/.test-order"
+    cp -r "$BAKE_DIR/." "$MODULE_DIR/.test-order/"
+    echo "  ✓ Learn data ready"
+else
+    echo "  ⚠  No baked index found — run prepare.sh first"
+fi
 
 # ── 3. Show diff ─────────────────────────────────────────────────────────────
 
 echo ""
+cd "$SCRIPT_DIR/cloud-sdk-java"
 git --no-pager diff --color cloudplatform/connectivity-destination-service/pom.xml || true
 
 echo ""
