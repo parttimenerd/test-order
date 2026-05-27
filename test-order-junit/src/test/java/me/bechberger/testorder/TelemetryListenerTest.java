@@ -31,6 +31,8 @@ class TelemetryListenerTest {
 	private String originalTestClass;
 	private String originalMode;
 	private String originalStatePath;
+	private String originalBuildId;
+	private String originalPendingRunsDir;
 
 	@BeforeEach
 	void saveProperties() {
@@ -38,6 +40,11 @@ class TelemetryListenerTest {
 		originalTestClass = System.getProperty("testorder.current.testclass");
 		originalMode = System.getProperty("testorder.instrumentation.mode");
 		originalStatePath = System.getProperty("testorder.state.path");
+		originalBuildId = System.getProperty("testorder.build.id");
+		originalPendingRunsDir = System.getProperty("testorder.pending.runs.dir");
+		// Clear build-session aggregation props so tests write directly to state file
+		System.clearProperty("testorder.build.id");
+		System.clearProperty("testorder.pending.runs.dir");
 	}
 
 	@AfterEach
@@ -46,6 +53,8 @@ class TelemetryListenerTest {
 		restoreProp("testorder.current.testclass", originalTestClass);
 		restoreProp("testorder.instrumentation.mode", originalMode);
 		restoreProp("testorder.state.path", originalStatePath);
+		restoreProp("testorder.build.id", originalBuildId);
+		restoreProp("testorder.pending.runs.dir", originalPendingRunsDir);
 		TestOrderState.resetPending();
 	}
 

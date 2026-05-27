@@ -243,7 +243,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	public void afterSessionEnd(MavenSession session) {
 		drainCollectors();
 		mergePartialRunRecords();
-		restoreInstrumentedClasses();
+		restoreInstrumentedClasses(session);
 	}
 
 	private void drainCollectors() {
@@ -307,19 +307,27 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	 * with {@code NoClassDefFoundError} on {@code UsageStore} — the annotation
 	 * processor classpath does not include the test-order agent jar.
 	 */
-	private void restoreInstrumentedClasses() {
-		java.util.Set<Path> backups = AbstractTestOrderMojo.pendingRestores;
-		if (backups.isEmpty()) {
-			return;
-		}
-		List<Path> snapshot = new ArrayList<>(backups);
-		backups.clear();
-		for (Path backup : snapshot) {
-			try {
-				me.bechberger.testorder.agent.OfflineInstrumentor.restore(backup);
-			} catch (Exception | NoClassDefFoundError e) {
-				System.err
-						.println("[test-order] CollectorLifecycleParticipant: restore failed for " + backup + ": " + e);
+	private void restoreInstrumentedClasses(MavenSession session) {
+		// ClassBackupRestorer (in test-order-core, same classloader realm as mojos)
+		// tracks all registered backups and performs the restore with pure JDK I/O.
+		me.bechberger.testorder.ClassBackupRestorer.restoreAll();
+
+		// Also drain any paths registered only via session user properties
+		// (cross-classloader-realm bridge for edge cases).
+		String sessionPaths = session != null
+				? session.getUserProperties().getProperty("testorder.pendingRestores", "")
+				: "";
+		if (!sessionPaths.isBlank()) {
+			session.getUserProperties().remove("testorder.pendingRestores");
+			for (String p : sessionPaths.split("\\|")) {
+				if (!p.isBlank()) {
+					try {
+						me.bechberger.testorder.ClassBackupRestorer.restore(Path.of(p.trim()));
+					} catch (Exception e) {
+						System.err.println("[test-order] CollectorLifecycleParticipant: restore failed for " + p + ": "
+								+ e.getMessage());
+					}
+				}
 			}
 		}
 	}

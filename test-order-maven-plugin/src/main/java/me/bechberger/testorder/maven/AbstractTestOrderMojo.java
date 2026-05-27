@@ -1451,6 +1451,15 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					}
 					runOfflineInstrumentation(instrumentationMode, includePackages, classesDir, targetDir, mappingFile);
 				}
+			} else {
+				// Backup exists from a prior learn run that wasn't cleaned up (e.g. the
+				// previous Maven session ended abnormally or afterSessionEnd ran before
+				// this mojo registered the backup). Register it now so the current
+				// session's afterSessionEnd restores pristine bytecode.
+				pendingRestores.add(backupDir);
+				pendingRestores.add(backupDir.resolveSibling("classes-backup-test"));
+				registerPendingRestoreInSession(backupDir);
+				registerPendingRestoreInSession(backupDir.resolveSibling("classes-backup-test"));
 			}
 		}
 
@@ -1616,9 +1625,39 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			// instrumented classes and fail with NoClassDefFoundError on UsageStore.
 			pendingRestores.add(backupRoot);
 			pendingRestores.add(backupRoot.resolveSibling("classes-backup-test"));
+			// Also register via Maven session user properties so the lifecycle participant
+			// (which runs in a different ClassLoader realm) can read them.
+			registerPendingRestoreInSession(backupRoot);
+			registerPendingRestoreInSession(backupRoot.resolveSibling("classes-backup-test"));
 		} catch (IOException e) {
 			throw new MojoExecutionException("[test-order] Offline instrumentation failed", e);
 		}
+	}
+
+	static final String SESSION_PENDING_RESTORES_KEY = "testorder.pendingRestores";
+
+	/**
+	 * Registers a backup directory path in the Maven session user properties so the
+	 * lifecycle participant (which runs in a different ClassLoader realm) can find
+	 * it and restore pristine bytecode at session end. Also delegates to
+	 * {@link me.bechberger.testorder.ClassBackupRestorer#register(Path)}, which
+	 * installs a JVM shutdown hook using only classes from {@code test-order-core}
+	 * (not the plugin classloader) so the hook reliably fires after Maven shuts
+	 * down.
+	 */
+	void registerPendingRestoreInSession(Path backupDir) {
+		if (session == null) {
+			return;
+		}
+		java.util.Properties props = session.getUserProperties();
+		String existing = props.getProperty(SESSION_PENDING_RESTORES_KEY, "");
+		String path = backupDir.toAbsolutePath().toString();
+		if (!existing.isEmpty()) {
+			props.setProperty(SESSION_PENDING_RESTORES_KEY, existing + "|" + path);
+		} else {
+			props.setProperty(SESSION_PENDING_RESTORES_KEY, path);
+		}
+		me.bechberger.testorder.ClassBackupRestorer.register(backupDir);
 	}
 
 	/**

@@ -46,12 +46,19 @@ class JUnitFeaturesWorkflowTest {
 	private String origLearn;
 	private String origStatePath;
 	private String origMode;
+	private String origBuildId;
+	private String origPendingRunsDir;
 
 	@BeforeEach
 	void saveProperties() {
 		origLearn = System.getProperty("testorder.learn");
 		origStatePath = System.getProperty("testorder.state.path");
 		origMode = System.getProperty("testorder.instrumentation.mode");
+		origBuildId = System.getProperty("testorder.build.id");
+		origPendingRunsDir = System.getProperty("testorder.pending.runs.dir");
+		// Clear build-session aggregation props so tests write directly to state file
+		System.clearProperty("testorder.build.id");
+		System.clearProperty("testorder.pending.runs.dir");
 	}
 
 	@AfterEach
@@ -59,6 +66,8 @@ class JUnitFeaturesWorkflowTest {
 		restoreProp("testorder.learn", origLearn);
 		restoreProp("testorder.state.path", origStatePath);
 		restoreProp("testorder.instrumentation.mode", origMode);
+		restoreProp("testorder.build.id", origBuildId);
+		restoreProp("testorder.pending.runs.dir", origPendingRunsDir);
 		// Clean up any pending state from previous launch
 		TestOrderState.resetPending();
 		PriorityMethodOrderer.clearPendingState();
