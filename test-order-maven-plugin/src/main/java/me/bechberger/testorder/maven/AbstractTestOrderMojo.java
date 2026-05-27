@@ -592,11 +592,13 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		// In multi-module builds, include source roots from all reactor modules
 		// so that changeComplexity can find source files for cross-module classes
-		if (ctx.isMultiModule() && session != null) {
+		if (ctx.isMultiModule() && session != null && session.getProjects() != null) {
 			for (MavenProject p : session.getProjects()) {
 				List<String> roots = p.getCompileSourceRoots();
 				if (roots != null) {
 					for (String root : roots) {
+						if (root == null)
+							continue;
 						Path rootPath = Path.of(root);
 						if (Files.isDirectory(rootPath)) {
 							additionalSourceRoots.add(rootPath);
@@ -675,7 +677,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * reactor modules to produce a stable fingerprint.
 	 */
 	private String computeMavenDependencyFingerprint() {
-		if (ctx.isMultiModule() && session != null) {
+		if (ctx.isMultiModule() && session != null && session.getProjects() != null) {
 			java.security.MessageDigest digest;
 			try {
 				digest = java.security.MessageDigest.getInstance("SHA-256");

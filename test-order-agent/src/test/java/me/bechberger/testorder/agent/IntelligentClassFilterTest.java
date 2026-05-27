@@ -180,4 +180,14 @@ public class IntelligentClassFilterTest {
 		IntelligentClassFilter.CacheStats stats = filter.getCacheStats();
 		assertTrue(stats.currentSize() > 0, "Cache should have entries after clearCache + new lookups");
 	}
+
+	@Test
+	@DisplayName("Empty class name must not throw StringIndexOutOfBoundsException")
+	public void testEmptyClassNameDoesNotCrash() {
+		filter = new IntelligentClassFilter.Builder().strategy(IntelligentClassFilter.Strategy.SMART)
+				.explicitInclude("com.example").build();
+		assertDoesNotThrow(() -> filter.shouldInstrument(""),
+				"empty string must be handled gracefully, not throw SIOOBE");
+		assertFalse(filter.shouldInstrument(""), "empty class name should not be instrumented");
+	}
 }

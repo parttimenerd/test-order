@@ -293,6 +293,8 @@ public class IntelligentClassFilter {
 	 * first-char index so only the relevant subset is tested.
 	 */
 	private static boolean matchesSkipPrefix(String className) {
+		if (className.isEmpty())
+			return false;
 		char c0 = className.charAt(0);
 		if (c0 >= SKIP_PREFIX_INDEX.length)
 			return false;
