@@ -112,6 +112,9 @@ final class MavenPluginConfigKeys {
 	static final String LEGACY_HASH_FILE = "testorder.hashFile";
 	static final String LEGACY_TEST_HASH_FILE = "testorder.testHashFile";
 	static final String LEGACY_METHOD_HASH_FILE = "testorder.methodHashFile";
+	static final String BYTECODE_HASH_FILE = "testorder.bytecodeHashFile";
+	static final String BYTECODE_CHANGE_DETECTION_ENABLED = "testorder.bytecodeChangeDetection.enabled";
+	static final String BYTECODE_AUGMENT_DEPENDENCY_MAP_ENABLED = "testorder.bytecodeAugmentDependencyMap.enabled";
 	static final String LEGACY_SOURCE_ROOT = "testorder.sourceRoot";
 	static final String LEGACY_TEST_SOURCE_ROOT = "testorder.testSourceRoot";
 	static final String LEGACY_VERBOSE_FILE = "testorder.verboseFile";
@@ -146,12 +149,12 @@ final class MavenPluginConfigKeys {
 			DETECT_ALGORITHM, DETECT_TIME_BUDGET, DETECT_STOP_ON_FIRST, DETECT_SEED, DETECT_FAIL_ON_DETECTION,
 			TIERED_TIER2_FRACTION, TIERED_WEIGHT_BY_DURATION, TIERED_TIER1_FILE, TIERED_TIER2_FILE, TIERED_TIER3_FILE,
 			TIERED_CURRENT_TIER, LEGACY_INDEX, LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE,
-			LEGACY_TEST_HASH_FILE, LEGACY_METHOD_HASH_FILE, LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT,
-			LEGACY_VERBOSE_FILE, LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip",
-			"testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file",
-			"testorder.score.springContextGrouping", "testorder.auto.active", "testorder.remaining.file",
-			"testorder.metrics.output", SERVE_PORT_ALIAS, MUTATIONS_OUTPUT_FILE, MUTATIONS_TIME_BUDGET,
-			MUTATIONS_TARGET_CLASSES,
+			LEGACY_TEST_HASH_FILE, LEGACY_METHOD_HASH_FILE, BYTECODE_HASH_FILE, BYTECODE_CHANGE_DETECTION_ENABLED,
+			BYTECODE_AUGMENT_DEPENDENCY_MAP_ENABLED, LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT, LEGACY_VERBOSE_FILE,
+			LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip", "testorder.debug",
+			"testorder.history.maxRuns", "testorder.changed.classes.file", "testorder.score.springContextGrouping",
+			"testorder.auto.active", "testorder.remaining.file", "testorder.metrics.output", SERVE_PORT_ALIAS,
+			MUTATIONS_OUTPUT_FILE, MUTATIONS_TIME_BUDGET, MUTATIONS_TARGET_CLASSES,
 			// Show goal keys (inline in ShowMojo)
 			SHOW_CLASSES, SHOW_METHODS, SHOW_ML, SHOW_ALL, SHOW_FORMAT, SHOW_FILTER,
 			// CamelCase aliases (silently accepted, see ALIASES map)

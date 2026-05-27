@@ -34,8 +34,13 @@ public class IntelligentClassFilter {
 		WHITELIST_SMART
 	}
 
+	// Mirror of
+	// me.bechberger.testorder.changes.ClassNameFilter.ALWAYS_SKIP_INTERNAL_PREFIXES.
+	// Duplicated here because the agent shades its own classpath and cannot depend
+	// on
+	// test-order-core. Keep the two lists in sync.
 	private static final String[] ALWAYS_SKIP_PREFIXES = {"java/", "jdk/", "sun/", "com/sun/", "javax/", "jakarta/",
-			"me/bechberger/testorder/agent/"};
+			"kotlin/", "kotlinx/", "scala/", "me/bechberger/testorder/agent/"};
 
 	/**
 	 * Index from first-char → offsets into ALWAYS_SKIP_PREFIXES that share that

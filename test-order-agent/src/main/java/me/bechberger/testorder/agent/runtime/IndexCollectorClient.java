@@ -52,6 +52,19 @@ public final class IndexCollectorClient {
 	static final int MAGIC = 0x54_4F_44_50; // "TODP"
 	static final byte PROTOCOL_VERSION_V1 = 1;
 	static final byte PROTOCOL_VERSION_V2 = 2;
+	/** v3: v2 binary protocol + UTF-8 moduleId string after the version byte. */
+	static final byte PROTOCOL_VERSION_V3 = 3;
+	/** v4: v1 string protocol + UTF-8 moduleId string after the version byte. */
+	static final byte PROTOCOL_VERSION_V4 = 4;
+
+	/**
+	 * Read the moduleId to stamp on payloads, from the system property
+	 * {@code testorder.moduleId}. Returns the empty string when unset.
+	 */
+	private static String readModuleId() {
+		String mid = System.getProperty("testorder.moduleId", "");
+		return mid != null ? mid : "";
+	}
 
 	private IndexCollectorClient() {
 	}
@@ -79,7 +92,8 @@ public final class IndexCollectorClient {
 						new BufferedOutputStream(socket.getOutputStream(), 65536));
 						DataInputStream in = new DataInputStream(socket.getInputStream())) {
 					out.writeInt(MAGIC);
-					out.writeByte(PROTOCOL_VERSION_V2);
+					out.writeByte(PROTOCOL_VERSION_V3);
+					writeString(out, readModuleId());
 					writeTrackerMap(out, perTestTrackers);
 					writeTrackerMap(out, perMethodTrackers);
 					out.flush();
@@ -175,7 +189,8 @@ public final class IndexCollectorClient {
 						new BufferedOutputStream(socket.getOutputStream(), 65536));
 						DataInputStream in = new DataInputStream(socket.getInputStream())) {
 					out.writeInt(MAGIC);
-					out.writeByte(PROTOCOL_VERSION_V1);
+					out.writeByte(PROTOCOL_VERSION_V4);
+					writeString(out, readModuleId());
 					writeMap(out, classDeps);
 					writeMap(out, methodDeps);
 					writeMap(out, memberDeps);

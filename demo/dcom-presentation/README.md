@@ -1,4 +1,4 @@
-# SAP DCOM Demo Jam — "You Are Running the Wrong Tests First"
+# SAP d-com Mannheim Demo Jam — "You Are Running the Wrong Tests First"
 
 6-minute Demo Jam. Single project: **SAP Cloud SDK for Java** (`cloud-sdk-java`).
 Everything interesting happens in a real terminal and VS Code — slides are just the bookends.

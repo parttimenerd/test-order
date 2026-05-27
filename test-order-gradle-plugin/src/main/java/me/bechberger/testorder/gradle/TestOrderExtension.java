@@ -71,6 +71,15 @@ public abstract class TestOrderExtension {
     /** Per-method hash file. */
     public abstract RegularFileProperty getMethodHashFile();
 
+    /** Compiled-bytecode hash file (per-class + per-method bytecode SHA-256). */
+    public abstract RegularFileProperty getBytecodeHashFile();
+
+    /** Enable bytecode-level change detection at order time. Default: true. */
+    public abstract Property<Boolean> getBytecodeChangeDetectionEnabled();
+
+    /** Augment the recorded dependency map with edges from test bytecode. Default: true. */
+    public abstract Property<Boolean> getBytecodeAugmentDependencyMapEnabled();
+
     // ---- Change Detection ----
 
     /**
@@ -259,6 +268,9 @@ public abstract class TestOrderExtension {
         getHashFile().convention(localDir.file("hashes.lz4"));
         getTestHashFile().convention(localDir.file("test-hashes.lz4"));
         getMethodHashFile().convention(localDir.file("method-hashes.lz4"));
+        getBytecodeHashFile().convention(localDir.file("bytecode-hashes.lz4"));
+        getBytecodeChangeDetectionEnabled().convention(true);
+        getBytecodeAugmentDependencyMapEnabled().convention(true);
         getChangeMode().convention("uncommitted");
         getChangedClasses().convention("");
         getChangedTestClasses().convention("");

@@ -9,8 +9,12 @@ if grep -q "return Objects.equals(currentTenantId, providerTenantId);" "$FILE"; 
     sed -i '' 's/return Objects.equals(currentTenantId, providerTenantId);/return !Objects.equals(currentTenantId, providerTenantId);/' "$FILE"
     echo "  ✏️  Bug introduced in DestinationRetrievalStrategyResolver (inverted tenant check)"
     echo "  ℹ️  Change left uncommitted — test-order will detect it via 'uncommitted' mode"
+    echo ""
+    git -C "$SCRIPT_DIR/cloud-sdk-java" --no-pager diff -- "$FILE"
 elif grep -q "return !Objects.equals(currentTenantId, providerTenantId);" "$FILE"; then
     echo "  ⚠️  Bug already present (already inverted)"
+    echo ""
+    git -C "$SCRIPT_DIR/cloud-sdk-java" --no-pager diff -- "$FILE"
 else
     echo "  ✗ ERROR: could not find tenant check — check $FILE"
     exit 1

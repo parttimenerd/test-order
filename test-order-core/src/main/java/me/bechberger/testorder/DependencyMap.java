@@ -60,6 +60,10 @@ public class DependencyMap {
 	static final short SECTION_MEMBER_DEPS = 5;
 	/** Section type: per-test-method member-level dependencies. */
 	static final short SECTION_METHOD_MEMBER_DEPS = 6;
+	/**
+	 * Section type: per-test-class owning module id (testClass FQCN → moduleId).
+	 */
+	static final short SECTION_TEST_MODULE_MAP = 7;
 
 	private final Map<String, Set<String>> dependencies;
 
@@ -93,11 +97,22 @@ public class DependencyMap {
 	 */
 	private final Map<String, Set<String>> methodMemberDependencies;
 
+	/**
+	 * Per-test-class owning module id: testClass FQCN → "groupId:artifactId" (or
+	 * "artifactId" if groupId is empty). Populated during learn in multi-module
+	 * builds; used by select to filter the index to only the current module's
+	 * tests, avoiding cross-module surefire failures when a single shared index
+	 * sits at the reactor root. Tests with no recorded module are treated as
+	 * unknown and pass through every per-module filter for backward compatibility.
+	 */
+	private final Map<String, String> testToModule;
+
 	public DependencyMap() {
 		this.dependencies = new HashMap<>();
 		this.methodDependencies = new HashMap<>();
 		this.memberDependencies = new HashMap<>();
 		this.methodMemberDependencies = new HashMap<>();
+		this.testToModule = new HashMap<>();
 		this.testClassesView = Collections.unmodifiableSet(dependencies.keySet());
 	}
 
@@ -138,6 +153,7 @@ public class DependencyMap {
 		this.methodDependencies = new HashMap<>();
 		this.memberDependencies = new HashMap<>();
 		this.methodMemberDependencies = new HashMap<>();
+		this.testToModule = new HashMap<>();
 		this.testClassesView = Collections.unmodifiableSet(this.dependencies.keySet());
 	}
 
@@ -292,6 +308,38 @@ public class DependencyMap {
 		methodMemberDependencies.put(methodKey, Collections.unmodifiableSet(new HashSet<>(memberDeps)));
 	}
 
+	// ── Test-class → owning module ───────────────────────────────────
+
+	/**
+	 * Records the owning module of a test class. Used so the index can carry a
+	 * single shared store across a multi-module reactor while still letting each
+	 * module's select goal filter to only its own tests.
+	 */
+	public void putModule(String testClass, String moduleId) {
+		if (testClass == null || moduleId == null || moduleId.isEmpty()) {
+			return;
+		}
+		testToModule.put(testClass, moduleId);
+	}
+
+	/**
+	 * Returns the owning module of {@code testClass}, or {@code null} if no module
+	 * is recorded (e.g. older indexes built before the section existed).
+	 */
+	public String getModule(String testClass) {
+		return testToModule.get(testClass);
+	}
+
+	/** Whether this map carries any test → module mapping. */
+	public boolean hasModuleMap() {
+		return !testToModule.isEmpty();
+	}
+
+	/** Set of all module ids referenced by the test → module map. */
+	public Set<String> modules() {
+		return Collections.unmodifiableSet(new HashSet<>(testToModule.values()));
+	}
+
 	/**
 	 * Merge all entries from another DependencyMap into this one. For each key, the
 	 * dependency sets are unioned (not replaced).
@@ -338,6 +386,14 @@ public class DependencyMap {
 				methodMemberDependencies.put(entry.getKey(), Collections.unmodifiableSet(merged));
 			}
 		}
+		// In a multi-module reactor each test FQCN belongs to exactly one module, so
+		// last-writer-wins is fine. Only overwrite when the incoming entry is
+		// non-empty so a freshly-built empty map can't erase known module data.
+		for (var entry : other.testToModule.entrySet()) {
+			if (entry.getValue() != null && !entry.getValue().isEmpty()) {
+				testToModule.put(entry.getKey(), entry.getValue());
+			}
+		}
 		invertedIndex = null; // invalidate cache
 	}
 
@@ -368,6 +424,45 @@ public class DependencyMap {
 						Collections.emptySet());
 			}
 		}
+		return result;
+	}
+
+	/**
+	 * Returns a new {@code DependencyMap} whose test → prod dependency sets are
+	 * augmented with the supplied {@code extra} edges. For each test class, the
+	 * resulting dependency set is the union of the original set and any extras
+	 * supplied for that test. <b>Augment-only</b>: existing edges are never
+	 * removed; tests not present in {@code extra} are passed through unchanged.
+	 *
+	 * <p>
+	 * Method-level, member-level, and method-member-level dependency maps pass
+	 * through unchanged.
+	 *
+	 * <p>
+	 * Returns {@code this} unchanged when {@code extra} is null or empty.
+	 */
+	public DependencyMap withAugmentation(Map<String, Set<String>> extra) {
+		if (extra == null || extra.isEmpty()) {
+			return this;
+		}
+		DependencyMap result = new DependencyMap();
+		for (var entry : dependencies.entrySet()) {
+			Set<String> existing = entry.getValue();
+			Set<String> add = extra.get(entry.getKey());
+			if (add == null || add.isEmpty()) {
+				result.dependencies.put(entry.getKey(), existing);
+			} else {
+				Set<String> merged = new HashSet<>(existing.size() + add.size());
+				merged.addAll(existing);
+				merged.addAll(add);
+				result.dependencies.put(entry.getKey(), Collections.unmodifiableSet(merged));
+			}
+		}
+		// Carry over the auxiliary maps unchanged. They share the same unmodifiable
+		// references — no defensive copy needed since callers cannot mutate them.
+		result.methodDependencies.putAll(methodDependencies);
+		result.memberDependencies.putAll(memberDependencies);
+		result.methodMemberDependencies.putAll(methodMemberDependencies);
 		return result;
 	}
 
@@ -545,6 +640,8 @@ public class DependencyMap {
 			sectionCount++;
 		if (!methodMemberDependencies.isEmpty())
 			sectionCount++;
+		if (!testToModule.isEmpty())
+			sectionCount++;
 		out.writeInt(sectionCount);
 
 		// ── Section: TRIE ────────────────────────────────────────
@@ -649,6 +746,19 @@ public class DependencyMap {
 			}
 			s.flush();
 			writeSection(out, SECTION_METHOD_MEMBER_DEPS, buf.toByteArray());
+		}
+
+		// ── Section: TEST_MODULE_MAP (optional) ──────────────────
+		if (!testToModule.isEmpty()) {
+			ByteArrayOutputStream buf = new ByteArrayOutputStream(testToModule.size() * 64);
+			DataOutputStream s = new DataOutputStream(buf);
+			s.writeInt(testToModule.size());
+			for (var entry : testToModule.entrySet()) {
+				s.writeUTF(entry.getKey());
+				s.writeUTF(entry.getValue());
+			}
+			s.flush();
+			writeSection(out, SECTION_TEST_MODULE_MAP, buf.toByteArray());
 		}
 	}
 
@@ -903,6 +1013,18 @@ public class DependencyMap {
 							map.methodMemberDependencies.put(methodKey, Collections.unmodifiableSet(members));
 						}
 					}
+					case SECTION_TEST_MODULE_MAP -> {
+						byte[] payload = new byte[sectionLength];
+						in.readFully(payload);
+						DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
+						int entryCount = s.readInt();
+						validateCount(entryCount, "moduleMapEntryCount");
+						for (int i = 0; i < entryCount; i++) {
+							String testClass = s.readUTF();
+							String moduleId = s.readUTF();
+							map.testToModule.put(testClass, moduleId);
+						}
+					}
 					default -> {
 						// Unknown section type — skip for forward compatibility
 						in.skipNBytes(sectionLength);
@@ -943,6 +1065,23 @@ public class DependencyMap {
 	 */
 	public static DependencyMap aggregate(Path depsDir, me.bechberger.testorder.ops.PluginLog log) throws IOException {
 		DependencyMap map = new DependencyMap();
+		// Sidecar: optional module.id file lets the offline learn path stamp every
+		// .deps-derived test class with the owning moduleId, mirroring what the
+		// online IndexCollectorServer path already does for v3/v4 payloads.
+		Path moduleIdFile = depsDir.resolve("module.id");
+		String fileModuleId = null;
+		if (Files.exists(moduleIdFile)) {
+			try {
+				fileModuleId = Files.readString(moduleIdFile, java.nio.charset.StandardCharsets.UTF_8).trim();
+				if (fileModuleId.isEmpty()) {
+					fileModuleId = null;
+				}
+			} catch (IOException e) {
+				if (log != null) {
+					log.warn("[test-order] Could not read " + moduleIdFile + ": " + e.getMessage());
+				}
+			}
+		}
 		try (Stream<Path> files = Files.list(depsDir)) {
 			java.util.List<Path> fileList = files.toList();
 			int totalFiles = fileList.size();
@@ -960,6 +1099,9 @@ public class DependencyMap {
 								.filter(s -> !s.isEmpty() && !s.startsWith("#"))
 								.collect(Collectors.toCollection(HashSet::new));
 						map.put(testClass, deps);
+						if (fileModuleId != null) {
+							map.putModule(testClass, fileModuleId);
+						}
 					} else if (fileName.endsWith(".mdeps")) {
 						List<String> lines = Files.readAllLines(file);
 						if (!lines.isEmpty() && lines.get(0).startsWith("# ")) {
@@ -1014,7 +1156,21 @@ public class DependencyMap {
 	public static void mergeFromAgent(Path indexFile, Map<String, Set<String>> deps,
 			Map<String, Set<String>> methodDeps, Map<String, Set<String>> memberDeps,
 			Map<String, Set<String>> methodMemberDeps) throws IOException {
-		if (deps.isEmpty() && methodDeps.isEmpty() && memberDeps.isEmpty() && methodMemberDeps.isEmpty()) {
+		mergeFromAgent(indexFile, deps, methodDeps, memberDeps, methodMemberDeps, Map.of());
+	}
+
+	/**
+	 * Same as the four-map overload, but also records a
+	 * {@code testFQCN -> moduleId} mapping so the index can later be filtered to
+	 * only the tests owned by the current module. Empty/null moduleIds are ignored.
+	 * Existing module entries are preserved unless overridden by a non-empty
+	 * incoming value.
+	 */
+	public static void mergeFromAgent(Path indexFile, Map<String, Set<String>> deps,
+			Map<String, Set<String>> methodDeps, Map<String, Set<String>> memberDeps,
+			Map<String, Set<String>> methodMemberDeps, Map<String, String> testToModule) throws IOException {
+		if (deps.isEmpty() && methodDeps.isEmpty() && memberDeps.isEmpty() && methodMemberDeps.isEmpty()
+				&& (testToModule == null || testToModule.isEmpty())) {
 			return; // nothing to merge
 		}
 
@@ -1052,6 +1208,14 @@ public class DependencyMap {
 				merged.addAll(incoming);
 				return merged;
 			});
+		}
+
+		if (testToModule != null && !testToModule.isEmpty()) {
+			for (var e : testToModule.entrySet()) {
+				if (e.getKey() != null && e.getValue() != null && !e.getValue().isEmpty()) {
+					map.putModule(e.getKey(), e.getValue());
+				}
+			}
 		}
 
 		Path indexParent = indexFile.toAbsolutePath().getParent();

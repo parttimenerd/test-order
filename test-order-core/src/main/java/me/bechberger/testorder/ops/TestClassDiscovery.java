@@ -105,6 +105,52 @@ public final class TestClassDiscovery {
 				if (depMap.hasMemberDeps()) {
 					filtered.putMemberDeps(testClass, depMap.getMemberDeps(testClass));
 				}
+				String mod = depMap.getModule(testClass);
+				if (mod != null) {
+					filtered.putModule(testClass, mod);
+				}
+			}
+		}
+		return filtered;
+	}
+
+	/**
+	 * Filters a dependency map to only include test classes whose recorded owning
+	 * module matches {@code moduleId}. Tests with no recorded module are treated as
+	 * owned by every module (included in every per-module filter result) — this
+	 * preserves correct behaviour for indexes built before the module-map section
+	 * existed, and for any tests whose ownership wasn't recorded.
+	 *
+	 * <p>
+	 * Returns {@code depMap} unchanged when the map carries no module data at all,
+	 * to avoid silently dropping tests when an old index is loaded.
+	 */
+	public static DependencyMap filterToModuleId(DependencyMap depMap, String moduleId) {
+		if (moduleId == null || moduleId.isEmpty() || !depMap.hasModuleMap()) {
+			return depMap;
+		}
+		DependencyMap filtered = new DependencyMap();
+		for (String testClass : depMap.testClasses()) {
+			String recorded = depMap.getModule(testClass);
+			if (recorded != null && !recorded.equals(moduleId)) {
+				continue;
+			}
+			filtered.put(testClass, depMap.get(testClass));
+			if (depMap.hasMethodDeps()) {
+				for (String methodKey : depMap.methodKeys()) {
+					if (methodKey.startsWith(testClass + "#")) {
+						filtered.putMethodDeps(methodKey, depMap.getMethodDeps(methodKey));
+						if (depMap.hasMemberDeps()) {
+							filtered.putMethodMemberDeps(methodKey, depMap.getMethodMemberDeps(methodKey));
+						}
+					}
+				}
+			}
+			if (depMap.hasMemberDeps()) {
+				filtered.putMemberDeps(testClass, depMap.getMemberDeps(testClass));
+			}
+			if (recorded != null) {
+				filtered.putModule(testClass, recorded);
 			}
 		}
 		return filtered;

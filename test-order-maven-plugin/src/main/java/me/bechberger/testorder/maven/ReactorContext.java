@@ -167,6 +167,13 @@ final class ReactorContext {
 						project.getBasedir().toPath().resolve(".test-order/method-hashes.lz4"));
 	}
 
+	Path resolveBytecodeHashFile(String configured) {
+		return multiModule
+				? sharedDir.resolve("hashes").resolve(moduleId() + "-bytecode-hashes.lz4")
+				: resolveConfiguredPath(configured,
+						project.getBasedir().toPath().resolve(".test-order/bytecode-hashes.lz4"));
+	}
+
 	private Path resolveConfiguredPath(String configured, Path fallback) {
 		if (configured == null || configured.isBlank()) {
 			return fallback;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# DCOM Demo Jam — Preparation Script
+# d-com Mannheim Demo Jam — Preparation Script
 # =============================================================================
 # Run ONCE before going on stage. Builds cloud-sdk-java, runs the learn pass
 # (if index is missing), builds dashboard history via real bug-fix cycles, then
@@ -57,7 +57,7 @@ pom_disable() {
 # ── pre-flight ───────────────────────────────────────────────────────────────
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " DCOM Demo Jam — Setup"
+echo " d-com Mannheim Demo Jam — Setup"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Java: $(java -version 2>&1 | head -1)"
 

@@ -1909,12 +1909,16 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .testSourceRoot(testSourceRoot)
                 .additionalSourceRoots(additionalSourceRoots)
                 .testClassesDir(resolveTestClassesDir(project))
+                .classesDir(resolveClassesDir(project))
                 .indexFile(ext.getIndexFile().get().getAsFile().toPath())
                 .stateFile(ext.getStateFile().get().getAsFile().toPath())
                 .depsDir(ext.getDepsDir().get().getAsFile().toPath())
                 .hashFile(ext.getHashFile().get().getAsFile().toPath())
                 .testHashFile(ext.getTestHashFile().get().getAsFile().toPath())
                 .methodHashFile(ext.getMethodHashFile().get().getAsFile().toPath())
+                .bytecodeHashFile(ext.getBytecodeHashFile().get().getAsFile().toPath())
+                .bytecodeChangeDetectionEnabled(ext.getBytecodeChangeDetectionEnabled().get())
+                .bytecodeAugmentDependencyMapEnabled(ext.getBytecodeAugmentDependencyMapEnabled().get())
                 .changeMode(resolveChangeMode(project, ext))
                 .changedClasses(changedClasses)
                 .changedTestClasses(changedTestClasses)
@@ -2013,6 +2017,28 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
         // Fallback
         return project.getProjectDir().toPath().resolve("build/classes/java/test");
+    }
+
+    /** Resolves the first main classes output directory for the project. */
+    static Path resolveClassesDir(Project project) {
+        SourceSetContainer sourceSets =
+                project.getExtensions().findByType(SourceSetContainer.class);
+        if (sourceSets != null) {
+            SourceSet main = sourceSets.findByName(SourceSet.MAIN_SOURCE_SET_NAME);
+            if (main != null) {
+                for (File dir : main.getOutput().getClassesDirs()) {
+                    if (dir.isDirectory()) return dir.toPath();
+                }
+            }
+        }
+        // No existing classes dir on disk yet (project not compiled, or unusual layout).
+        // Returning null lets ChangeAnalysis skip bytecode detection silently —
+        // see the Files.isDirectory gate at ChangeAnalysis.java:146.
+        project.getLogger().info(
+                "[test-order] no main classes dir found for project '{}'; "
+                        + "bytecode change detection will be skipped this run",
+                project.getName());
+        return null;
     }
 
     /** Quotes a path string if it contains spaces (for javaagent arguments). */

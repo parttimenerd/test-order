@@ -141,6 +141,30 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected String methodHashFile;
 
 	/**
+	 * Path to the hash file for compiled bytecode. Stores per-class and per-method
+	 * SHA-256 fingerprints so source-invisible bytecode changes (annotation
+	 * processors, generated code, dependency-version bumps) are detected.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.BYTECODE_HASH_FILE, defaultValue = "${project.basedir}/.test-order/bytecode-hashes.lz4")
+	protected String bytecodeHashFile;
+
+	/**
+	 * Enable bytecode-level change detection at order time. When enabled, compiled
+	 * .class files are hashed and compared against a persisted snapshot to catch
+	 * source-invisible changes (Lombok regeneration, annotation processors, etc.).
+	 */
+	@Parameter(property = MavenPluginConfigKeys.BYTECODE_CHANGE_DETECTION_ENABLED, defaultValue = "true")
+	protected boolean bytecodeChangeDetectionEnabled = true;
+
+	/**
+	 * Augment the recorded dependency map with edges derived from test bytecode.
+	 * Augment-only: never removes existing edges (which may be from reflection or
+	 * dynamic loading), only adds missing test → prod-class edges.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.BYTECODE_AUGMENT_DEPENDENCY_MAP_ENABLED, defaultValue = "true")
+	protected boolean bytecodeAugmentDependencyMapEnabled = true;
+
+	/**
 	 * Main source root directory. Defaults to the first compile source root from
 	 * the Maven model.
 	 */
@@ -219,6 +243,21 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 */
 	@Parameter(property = "testorder.score.springContextGrouping", defaultValue = "false")
 	protected boolean springContextGrouping;
+
+	/**
+	 * Enable static call-graph analysis at order time. When enabled, the set of
+	 * changed members is expanded transitively via bytecode-level caller lookup so
+	 * that tests which indirectly call a changed method are not missed.
+	 */
+	@Parameter(property = "testorder.staticAnalysis.enabled", defaultValue = "true")
+	protected boolean staticAnalysisEnabled = true;
+
+	/**
+	 * Maximum BFS depth for static call-graph expansion. Depth 1 = direct callers
+	 * only; depth 2 = callers of callers, etc.
+	 */
+	@Parameter(property = "testorder.staticAnalysis.depth", defaultValue = "2")
+	protected int staticAnalysisDepth = 2;
 
 	// ── Score override parameters (shared by auto, select, prepare, show-order) ──
 
@@ -571,14 +610,19 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				.sourceRoot(resolvedSourceRoot).testSourceRoot(resolvedTestSourceRoot)
 				.additionalSourceRoots(additionalSourceRoots)
 				.testClassesDir(Path.of(project.getBuild().getTestOutputDirectory()))
-				.indexFile(ctx.resolveIndexFile(indexFile)).stateFile(ctx.resolveStateFile(stateFile))
-				.depsDir(ctx.resolveDepsDir(depsDir)).hashFile(ctx.resolveHashFile(hashFile))
-				.testHashFile(ctx.resolveTestHashFile(testHashFile))
-				.methodHashFile(ctx.resolveMethodHashFile(methodHashFile)).changeMode(changeMode)
+				.classesDir(Path.of(project.getBuild().getOutputDirectory())).indexFile(ctx.resolveIndexFile(indexFile))
+				.stateFile(ctx.resolveStateFile(stateFile)).depsDir(ctx.resolveDepsDir(depsDir))
+				.hashFile(ctx.resolveHashFile(hashFile)).testHashFile(ctx.resolveTestHashFile(testHashFile))
+				.methodHashFile(ctx.resolveMethodHashFile(methodHashFile))
+				.bytecodeHashFile(ctx.resolveBytecodeHashFile(bytecodeHashFile))
+				.bytecodeChangeDetectionEnabled(bytecodeChangeDetectionEnabled)
+				.bytecodeAugmentDependencyMapEnabled(bytecodeAugmentDependencyMapEnabled).changeMode(changeMode)
 				.changedClasses(changedClasses).changedTestClasses(changedTestClasses)
 				.weightsFile(weightsFile != null && !weightsFile.isBlank() ? Path.of(weightsFile) : null)
 				.scoreOverrides(buildScoreOverrides()).methodOrderingEnabled(methodOrderingEnabled)
-				.springContextGrouping(springContextGrouping).groupId(project.getGroupId())
+				.springContextGrouping(springContextGrouping).staticAnalysisEnabled(staticAnalysisEnabled)
+				.staticAnalysisDepth(staticAnalysisDepth).groupId(project.getGroupId())
+				.currentModuleId(computeCurrentModuleId())
 				.verboseFile(verboseFile != null && !verboseFile.isBlank() ? Path.of(verboseFile) : null)
 				.dependencyFingerprintSupplier(() -> computeMavenDependencyFingerprint())
 				.projectName(project.getArtifactId()).log(pluginLog());
@@ -586,6 +630,42 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 	protected PluginContext buildPluginContext() {
 		return buildPluginContextBuilder().build();
+	}
+
+	/**
+	 * Computes the canonical module id for this project, matching
+	 * {@code ReactorContext.moduleId()}: {@code groupId-artifactId} (dash
+	 * separator). Used to filter the shared dependency index to only this module's
+	 * tests.
+	 */
+	protected String computeCurrentModuleId() {
+		String gid = project.getGroupId();
+		String aid = project.getArtifactId();
+		if (gid == null || gid.isEmpty()) {
+			return aid;
+		}
+		return gid + "-" + aid;
+	}
+
+	/**
+	 * Writes a {@code module.id} sidecar file in the given deps directory so the
+	 * offline learn aggregation path can stamp every test class found there with
+	 * this module's id. The online
+	 * {@link me.bechberger.testorder.IndexCollectorServer} path stamps via the
+	 * v3/v4 wire protocol; this sidecar covers projects that write {@code .deps}
+	 * files instead.
+	 */
+	protected void writeModuleIdSidecar(Path depsDirPath) {
+		String mid = computeCurrentModuleId();
+		if (mid == null || mid.isEmpty() || depsDirPath == null) {
+			return;
+		}
+		try {
+			Files.createDirectories(depsDirPath);
+			Files.writeString(depsDirPath.resolve("module.id"), mid, java.nio.charset.StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			getLog().debug("[test-order] Could not write module.id sidecar in " + depsDirPath + ": " + e.getMessage());
+		}
 	}
 
 	/**
@@ -1236,6 +1316,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		String agentArgs = me.bechberger.testorder.AgentArgsBuilder.buildArgs(ctx.resolveDepsDir(depsDir),
 				instrumentationMode, includeIndexInArgs ? ctx.resolveIndexFile(indexFile) : null, includePackages,
 				verboseFile, true, runtimeJar);
+		writeModuleIdSidecar(ctx.resolveDepsDir(depsDir));
 
 		String statPathStr = ctx.resolveStateFile(stateFile).toAbsolutePath().toString();
 		String agentString = "\"-javaagent:" + agentJar.toAbsolutePath() + "=" + agentArgs + "\"";
@@ -1252,6 +1333,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		String sysProps = " -D" + MavenPluginConfigKeys.LEARN + "=true" + " -D"
 				+ MavenPluginConfigKeys.INSTRUMENTATION_MODE + "=" + instrumentationMode.toUpperCase() + " -D"
 				+ MavenPluginConfigKeys.STATE_PATH + "=" + statPathStr + collectorPortProp;
+		String mid = computeCurrentModuleId();
+		if (mid != null && !mid.isEmpty()) {
+			sysProps += " -Dtestorder.moduleId=" + mid;
+		}
 		String buildId = getOrCreateBuildId();
 		Path pendingRunsDir = ctx.resolveBaseDir().resolve("pending-runs");
 		sysProps += " -D" + me.bechberger.testorder.TestOrderConfig.BUILD_ID + "=" + buildId + " -D"
@@ -1374,6 +1459,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		Path depsDir = ctx.resolveDepsDir(this.depsDir);
 		Path indexFile = ctx.resolveIndexFile(this.indexFile);
 		String statPathStr = ctx.resolveStateFile(stateFile).toAbsolutePath().toString();
+		writeModuleIdSidecar(depsDir);
 
 		// Start IndexCollectorServer for socket-based dep collection (eliminates .deps
 		// file I/O and classloader issues in forked JVMs)
@@ -1395,6 +1481,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				+ MavenPluginConfigKeys.STATE_PATH + "=" + statPathStr + collectorPortProp + " -D"
 				+ me.bechberger.testorder.TestOrderConfig.BUILD_ID + "=" + buildId + " -D"
 				+ me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR + "=" + pendingRunsDir.toAbsolutePath();
+		String mid = computeCurrentModuleId();
+		if (mid != null && !mid.isEmpty()) {
+			sysProps += " -Dtestorder.moduleId=" + mid;
+		}
 
 		// Inject system props into argLine (same strategy as online mode but without
 		// agent)

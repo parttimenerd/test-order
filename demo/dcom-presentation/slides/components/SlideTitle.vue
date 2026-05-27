@@ -33,7 +33,7 @@
     </div>
     <div class="absolute bottom-8 left-8 z-10">
       <div class="text-lg font-medium text-gray-400">Johannes Bechberger</div>
-      <div class="text-sm text-gray-600 mt-1">SAP DCOM 2026 · Demo Jam</div>
+      <div class="text-sm text-gray-600 mt-1">SAP d-com Mannheim 2026 · Demo Jam</div>
     </div>
   </div>
 </template>

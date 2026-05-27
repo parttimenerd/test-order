@@ -18,12 +18,14 @@ public final class PluginContext {
 	private final Path testSourceRoot;
 	private final List<Path> additionalSourceRoots; // e.g. Kotlin
 	private final Path testClassesDir;
+	private final Path classesDir;
 	private final Path indexFile;
 	private final Path stateFile;
 	private final Path depsDir;
 	private final Path hashFile;
 	private final Path testHashFile;
 	private final Path methodHashFile;
+	private final Path bytecodeHashFile;
 
 	// ── Change detection config ──────────────────────────────────────
 	private final String changeMode;
@@ -35,6 +37,10 @@ public final class PluginContext {
 	private final Map<String, Integer> scoreOverrides;
 	private final boolean methodOrderingEnabled;
 	private final boolean springContextGrouping;
+	private final boolean staticAnalysisEnabled;
+	private final int staticAnalysisDepth;
+	private final boolean bytecodeChangeDetectionEnabled;
+	private final boolean bytecodeAugmentDependencyMapEnabled;
 
 	// ── Selection config ─────────────────────────────────────────────
 	private final int topN;
@@ -61,6 +67,13 @@ public final class PluginContext {
 	// ── Display / metadata ───────────────────────────────────────────
 	private final String projectName;
 	private final String pluginVersion;
+	/**
+	 * Owning module id of the project this context belongs to (e.g.
+	 * "groupId:artifactId"). When non-null, multi-module-aware operations filter
+	 * the dependency index to tests recorded as belonging to this module before
+	 * selection. Null in single-module builds or when callers don't supply it.
+	 */
+	private final String currentModuleId;
 
 	// ── Logging ──────────────────────────────────────────────────────
 	private final PluginLog log;
@@ -71,12 +84,14 @@ public final class PluginContext {
 		this.testSourceRoot = b.testSourceRoot;
 		this.additionalSourceRoots = b.additionalSourceRoots != null ? List.copyOf(b.additionalSourceRoots) : List.of();
 		this.testClassesDir = b.testClassesDir;
+		this.classesDir = b.classesDir;
 		this.indexFile = b.indexFile;
 		this.stateFile = b.stateFile;
 		this.depsDir = b.depsDir;
 		this.hashFile = b.hashFile;
 		this.testHashFile = b.testHashFile;
 		this.methodHashFile = b.methodHashFile;
+		this.bytecodeHashFile = b.bytecodeHashFile;
 		this.changeMode = b.changeMode;
 		this.changedClasses = b.changedClasses;
 		this.changedTestClasses = b.changedTestClasses;
@@ -84,6 +99,10 @@ public final class PluginContext {
 		this.scoreOverrides = b.scoreOverrides;
 		this.methodOrderingEnabled = b.methodOrderingEnabled;
 		this.springContextGrouping = b.springContextGrouping;
+		this.staticAnalysisEnabled = b.staticAnalysisEnabled;
+		this.staticAnalysisDepth = b.staticAnalysisDepth;
+		this.bytecodeChangeDetectionEnabled = b.bytecodeChangeDetectionEnabled;
+		this.bytecodeAugmentDependencyMapEnabled = b.bytecodeAugmentDependencyMapEnabled;
 		this.topN = b.topN;
 		this.randomM = b.randomM;
 		this.seed = b.seed;
@@ -100,6 +119,7 @@ public final class PluginContext {
 		this.dependencyFingerprintSupplier = b.dependencyFingerprintSupplier;
 		this.projectName = b.projectName;
 		this.pluginVersion = b.pluginVersion;
+		this.currentModuleId = b.currentModuleId;
 		this.log = b.log != null ? b.log : PluginLog.NOOP;
 	}
 
@@ -120,6 +140,9 @@ public final class PluginContext {
 	public Path testClassesDir() {
 		return testClassesDir;
 	}
+	public Path classesDir() {
+		return classesDir;
+	}
 	public Path indexFile() {
 		return indexFile;
 	}
@@ -137,6 +160,9 @@ public final class PluginContext {
 	}
 	public Path methodHashFile() {
 		return methodHashFile;
+	}
+	public Path bytecodeHashFile() {
+		return bytecodeHashFile;
 	}
 	public String changeMode() {
 		return changeMode;
@@ -158,6 +184,18 @@ public final class PluginContext {
 	}
 	public boolean springContextGrouping() {
 		return springContextGrouping;
+	}
+	public boolean staticAnalysisEnabled() {
+		return staticAnalysisEnabled;
+	}
+	public int staticAnalysisDepth() {
+		return staticAnalysisDepth;
+	}
+	public boolean bytecodeChangeDetectionEnabled() {
+		return bytecodeChangeDetectionEnabled;
+	}
+	public boolean bytecodeAugmentDependencyMapEnabled() {
+		return bytecodeAugmentDependencyMapEnabled;
 	}
 	public int topN() {
 		return topN;
@@ -207,6 +245,9 @@ public final class PluginContext {
 	public String pluginVersion() {
 		return pluginVersion;
 	}
+	public String currentModuleId() {
+		return currentModuleId;
+	}
 	public PluginLog log() {
 		return log;
 	}
@@ -235,12 +276,14 @@ public final class PluginContext {
 		private Path testSourceRoot;
 		private List<Path> additionalSourceRoots;
 		private Path testClassesDir;
+		private Path classesDir;
 		private Path indexFile;
 		private Path stateFile;
 		private Path depsDir;
 		private Path hashFile;
 		private Path testHashFile;
 		private Path methodHashFile;
+		private Path bytecodeHashFile;
 		private String changeMode;
 		private String changedClasses;
 		private String changedTestClasses;
@@ -248,6 +291,10 @@ public final class PluginContext {
 		private Map<String, Integer> scoreOverrides;
 		private boolean methodOrderingEnabled;
 		private boolean springContextGrouping;
+		private boolean staticAnalysisEnabled = true;
+		private int staticAnalysisDepth = 2;
+		private boolean bytecodeChangeDetectionEnabled = true;
+		private boolean bytecodeAugmentDependencyMapEnabled = true;
 		private int topN = -1;
 		private int randomM = 10;
 		private Long seed;
@@ -264,6 +311,7 @@ public final class PluginContext {
 		private Supplier<String> dependencyFingerprintSupplier;
 		private String projectName;
 		private String pluginVersion;
+		private String currentModuleId;
 		private PluginLog log;
 
 		private Builder() {
@@ -289,6 +337,10 @@ public final class PluginContext {
 			this.testClassesDir = v;
 			return this;
 		}
+		public Builder classesDir(Path v) {
+			this.classesDir = v;
+			return this;
+		}
 		public Builder indexFile(Path v) {
 			this.indexFile = v;
 			return this;
@@ -311,6 +363,10 @@ public final class PluginContext {
 		}
 		public Builder methodHashFile(Path v) {
 			this.methodHashFile = v;
+			return this;
+		}
+		public Builder bytecodeHashFile(Path v) {
+			this.bytecodeHashFile = v;
 			return this;
 		}
 		public Builder changeMode(String v) {
@@ -339,6 +395,22 @@ public final class PluginContext {
 		}
 		public Builder springContextGrouping(boolean v) {
 			this.springContextGrouping = v;
+			return this;
+		}
+		public Builder staticAnalysisEnabled(boolean v) {
+			this.staticAnalysisEnabled = v;
+			return this;
+		}
+		public Builder staticAnalysisDepth(int v) {
+			this.staticAnalysisDepth = v;
+			return this;
+		}
+		public Builder bytecodeChangeDetectionEnabled(boolean v) {
+			this.bytecodeChangeDetectionEnabled = v;
+			return this;
+		}
+		public Builder bytecodeAugmentDependencyMapEnabled(boolean v) {
+			this.bytecodeAugmentDependencyMapEnabled = v;
 			return this;
 		}
 		public Builder topN(int v) {
@@ -403,6 +475,10 @@ public final class PluginContext {
 		}
 		public Builder pluginVersion(String v) {
 			this.pluginVersion = v;
+			return this;
+		}
+		public Builder currentModuleId(String v) {
+			this.currentModuleId = v;
 			return this;
 		}
 		public Builder log(PluginLog v) {

@@ -32,6 +32,10 @@ public class IndexCollectorServer implements AutoCloseable {
 	private static final int MAGIC = 0x54_4F_44_50; // "TODP"
 	private static final byte PROTOCOL_VERSION_V1 = 1;
 	private static final byte PROTOCOL_VERSION_V2 = 2;
+	/** v3: v2 binary protocol + UTF-8 moduleId string after the version byte. */
+	private static final byte PROTOCOL_VERSION_V3 = 3;
+	/** v4: v1 string protocol + UTF-8 moduleId string after the version byte. */
+	private static final byte PROTOCOL_VERSION_V4 = 4;
 	private static final int MEMBER_ID_OFFSET = 8_000_000;
 
 	private final ServerSocket serverSocket;
@@ -48,6 +52,8 @@ public class IndexCollectorServer implements AutoCloseable {
 	private final ConcurrentHashMap<String, Set<String>> mergedMethodDeps = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, Set<String>> mergedMemberDeps = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, Set<String>> mergedMethodMemberDeps = new ConcurrentHashMap<>();
+	/** Maps each test FQCN to the moduleId of the fork that recorded it. */
+	private final ConcurrentHashMap<String, String> mergedTestToModule = new ConcurrentHashMap<>();
 	private final AtomicInteger receivedCount = new AtomicInteger();
 
 	/**
@@ -169,7 +175,7 @@ public class IndexCollectorServer implements AutoCloseable {
 		// Write the already-merged index
 		try {
 			DependencyMap.mergeFromAgent(targetIndexFile, mergedClassDeps, mergedMethodDeps, mergedMemberDeps,
-					mergedMethodMemberDeps);
+					mergedMethodMemberDeps, mergedTestToModule);
 		} catch (IOException e) {
 			System.err.println("[test-order] IndexCollectorServer: failed to write index: " + e.getMessage());
 			return 0;
@@ -237,7 +243,22 @@ public class IndexCollectorServer implements AutoCloseable {
 				return;
 			}
 			byte version = in.readByte();
-			if (version == PROTOCOL_VERSION_V2) {
+			if (version == PROTOCOL_VERSION_V3) {
+				String moduleId = readString(in);
+				Set<String> testKeysBefore = new HashSet<>(mergedClassDeps.keySet());
+				boolean handled = handleBinaryPayload(in);
+				if (!handled) {
+					rawOut.write(0);
+					rawOut.flush();
+					return;
+				}
+				stampNewTestsWithModule(testKeysBefore, moduleId);
+			} else if (version == PROTOCOL_VERSION_V4) {
+				String moduleId = readString(in);
+				Set<String> testKeysBefore = new HashSet<>(mergedClassDeps.keySet());
+				handleStringPayload(in);
+				stampNewTestsWithModule(testKeysBefore, moduleId);
+			} else if (version == PROTOCOL_VERSION_V2) {
 				boolean handled = handleBinaryPayload(in);
 				if (!handled) {
 					// No ClassIdMapping loaded — NACK so client falls back to v1
@@ -540,6 +561,23 @@ public class IndexCollectorServer implements AutoCloseable {
 				}
 				return existing;
 			});
+		}
+	}
+
+	/**
+	 * After a payload has been merged, record this fork's moduleId for every
+	 * test-class key in {@code mergedClassDeps} that was either added by this
+	 * payload or hasn't yet had a moduleId recorded. Empty/null moduleIds are
+	 * skipped so older agents (which don't send a moduleId) don't pollute the map.
+	 */
+	private void stampNewTestsWithModule(Set<String> beforeKeys, String moduleId) {
+		if (moduleId == null || moduleId.isEmpty()) {
+			return;
+		}
+		for (String testKey : mergedClassDeps.keySet()) {
+			if (!beforeKeys.contains(testKey) || !mergedTestToModule.containsKey(testKey)) {
+				mergedTestToModule.put(testKey, moduleId);
+			}
 		}
 	}
 

@@ -34,6 +34,18 @@ git --version   # Any recent version
 
 ## Quick Start
 
+> **⚠️ One-time Maven setup.** To use the short prefix form `mvn test-order:<goal>` (e.g., `mvn test-order:select`), add `me.bechberger` to your `~/.m2/settings.xml`:
+>
+> ```xml
+> <settings>
+>   <pluginGroups>
+>     <pluginGroup>me.bechberger</pluginGroup>
+>   </pluginGroups>
+> </settings>
+> ```
+>
+> Without this, CLI prefix invocations fail with `No plugin found for prefix 'test-order'`. This is a Maven limitation — declaring the plugin in `<build><plugins>` is **not** sufficient for CLI prefix resolution. Goals bound to a lifecycle phase (e.g., via `mvn test`) work without this setting.
+
 ### Maven
 
 **1. Add the plugin** to your `pom.xml` inside `<build><plugins>`:

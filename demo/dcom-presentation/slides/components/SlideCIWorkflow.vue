@@ -4,15 +4,22 @@
 
     <div class="relative z-10 w-full max-w-3xl px-12 flex flex-col gap-10">
 
-      <div class="text-gray-400 text-sm font-semibold uppercase tracking-widest">CI workflow</div>
-
       <div class="flex flex-col gap-5">
+
+        <div class="flex items-center gap-6 bg-blue-950/40 border border-blue-500/30 rounded-2xl px-8 py-6">
+          <span class="text-blue-400 font-mono font-bold text-4xl w-12 flex-shrink-0">0</span>
+          <div class="flex-1">
+            <div class="text-gray-100 font-semibold text-xl">Learn dependencies</div>
+            <div class="text-blue-400/70 text-base mt-1">record what each test executes</div>
+          </div>
+          <div class="text-blue-300 font-bold text-2xl">nightly</div>
+        </div>
 
         <div class="flex items-center gap-6 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl px-8 py-6">
           <span class="text-emerald-400 font-mono font-bold text-4xl w-12 flex-shrink-0">1</span>
           <div class="flex-1">
             <div class="text-gray-100 font-semibold text-xl">Affected tests</div>
-            <div class="text-emerald-400/70 text-base mt-1">dep graph × changed files</div>
+            <div class="text-emerald-400/70 text-base mt-1">tests that hit the change</div>
           </div>
           <div class="text-emerald-300 font-bold text-2xl">seconds</div>
         </div>
@@ -29,15 +36,13 @@
         <div class="flex items-center gap-6 bg-white/3 border border-white/8 rounded-2xl px-8 py-6">
           <span class="text-gray-500 font-mono font-bold text-4xl w-12 flex-shrink-0">3</span>
           <div class="flex-1">
-            <div class="text-gray-400 font-semibold text-xl">Full suite</div>
-            <div class="text-gray-600 text-base mt-1">safety net</div>
+            <div class="text-gray-400 font-semibold text-xl">Remaining tests</div>
+            <div class="text-gray-600 text-base mt-1">always run if tiers 1 &amp; 2 pass</div>
           </div>
-          <div class="text-gray-500 font-bold text-2xl">nightly</div>
+          <div class="text-gray-500 font-bold text-2xl">on green</div>
         </div>
 
       </div>
-
-      <div class="text-gray-500 text-sm text-center">bugs surface in Tier 1 — not discovered at Tier 3 the next morning</div>
 
     </div>
   </div>

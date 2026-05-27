@@ -9,42 +9,42 @@
       <!-- Row: testA / methodA -->
       <div class="flex items-center gap-0">
 
-        <pre class="flex-1 bg-purple-950/60 border border-purple-500/40 rounded-2xl px-5 py-4 text-sm font-mono text-purple-300 leading-relaxed m-0">@Test void testA() {
-  // ...
-  assertEquals(x,
-    methodA());
-  // ...
-}</pre>
+        <pre class="flex-1 bg-purple-950/60 border border-purple-500/40 rounded-2xl px-5 py-4 text-sm font-mono leading-relaxed m-0"><span class="text-yellow-300">@Test</span> <span class="text-pink-400">void</span> <span class="text-sky-300">testA</span><span class="text-gray-400">() {</span>
+  <span class="text-gray-500">// ...</span>
+  <span class="text-sky-300">assertEquals</span><span class="text-gray-400">(</span><span class="text-gray-200">x</span><span class="text-gray-400">,</span>
+    <span class="text-sky-300">methodA</span><span class="text-gray-400">());</span>
+  <span class="text-gray-500">// ...</span>
+<span class="text-gray-400">}</span></pre>
 
         <div class="flex items-center gap-1 px-6">
           <div class="h-0.5 w-12 bg-gray-600"></div>
           <div class="text-gray-500 text-xl">→</div>
         </div>
 
-        <pre class="flex-1 bg-blue-950/60 border border-blue-500/40 rounded-2xl px-5 py-4 text-sm font-mono text-blue-300 leading-relaxed m-0">int methodA() {
-  // ...
-}</pre>
+        <pre class="flex-1 bg-blue-950/60 border border-blue-500/40 rounded-2xl px-5 py-4 text-sm font-mono leading-relaxed m-0"><span class="text-pink-400">int</span> <span class="text-sky-300">methodA</span><span class="text-gray-400">() {</span>
+  <span class="text-gray-500">// ...</span>
+<span class="text-gray-400">}</span></pre>
 
       </div>
 
       <!-- Row: testB / methodB -->
       <div class="flex items-center gap-0">
 
-        <pre class="flex-1 bg-purple-950/40 border border-purple-500/25 rounded-2xl px-5 py-4 text-sm font-mono text-purple-300/70 leading-relaxed m-0">@Test void testB() {
-  // ...
-  assertEquals(y,
-    methodB());
-  // ...
-}</pre>
+        <pre class="flex-1 bg-purple-950/40 border border-purple-500/25 rounded-2xl px-5 py-4 text-sm font-mono leading-relaxed m-0 opacity-70"><span class="text-yellow-300">@Test</span> <span class="text-pink-400">void</span> <span class="text-sky-300">testB</span><span class="text-gray-400">() {</span>
+  <span class="text-gray-500">// ...</span>
+  <span class="text-sky-300">assertEquals</span><span class="text-gray-400">(</span><span class="text-gray-200">y</span><span class="text-gray-400">,</span>
+    <span class="text-sky-300">methodB</span><span class="text-gray-400">());</span>
+  <span class="text-gray-500">// ...</span>
+<span class="text-gray-400">}</span></pre>
 
         <div class="flex items-center gap-1 px-6">
           <div class="h-0.5 w-12 bg-gray-700/60"></div>
           <div class="text-gray-600 text-xl">→</div>
         </div>
 
-        <pre class="flex-1 bg-blue-950/40 border border-blue-500/25 rounded-2xl px-5 py-4 text-sm font-mono text-blue-300/70 leading-relaxed m-0">int methodB() {
-  // ...
-}</pre>
+        <pre class="flex-1 bg-blue-950/40 border border-blue-500/25 rounded-2xl px-5 py-4 text-sm font-mono leading-relaxed m-0 opacity-70"><span class="text-pink-400">int</span> <span class="text-sky-300">methodB</span><span class="text-gray-400">() {</span>
+  <span class="text-gray-500">// ...</span>
+<span class="text-gray-400">}</span></pre>
 
       </div>
 

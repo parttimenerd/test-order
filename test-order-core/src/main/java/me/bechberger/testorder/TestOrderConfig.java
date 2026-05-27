@@ -55,6 +55,8 @@ public final class TestOrderConfig {
 	public static final String METHOD_ORDER_ENABLED = "testorder.methodOrder.enabled";
 	public static final String STRUCTURAL_DIFF_ENABLED = "testorder.structuralDiff.enabled";
 	public static final String CHANGE_COMPLEXITY = "testorder.change.complexity";
+	public static final String STATIC_ANALYSIS_ENABLED = "testorder.staticAnalysis.enabled";
+	public static final String STATIC_ANALYSIS_DEPTH = "testorder.staticAnalysis.depth";
 	public static final String SPRING_CONTEXT_GROUPING = "testorder.score.springContextGrouping";
 	public static final String EMA_VARIANCE_THRESHOLD = "testorder.score.ema.varianceThreshold";
 	public static final String HISTORY_MAX_RUNS = "testorder.history.maxRuns";

@@ -2,7 +2,7 @@
 theme: default
 title: "You're Running the Wrong Tests First"
 info: |
-  SAP DCOM 2026 — 6-minute Demo Jam
+  SAP d-com Mannheim 2026 — 6-minute Demo Jam
 
   Predictive Test Ordering for Faster CI and Agentic Development
 author: Johannes Bechberger
@@ -43,7 +43,67 @@ transition: fade
 layout: full
 ---
 
-<SlideBeforePlugin />
+<div class="h-full w-full flex flex-col items-center justify-center relative overflow-hidden" style="background: #0f0f1a">
+<div class="absolute inset-0 bg-gradient-to-br"></div>
+
+<div class="relative z-10 w-full max-w-5xl px-12 flex flex-col gap-8">
+
+<div class="text-gray-400 text-sm font-semibold uppercase tracking-widest text-center">normally: run all tests</div>
+
+<div class="grid grid-cols-2 gap-x-6 gap-y-4 items-center">
+
+<div class="bg-purple-950/40 border border-purple-500/40 rounded-2xl px-2 py-1">
+
+```java
+@Test void testA() {
+  // ...
+  assertEquals(x,
+    methodA());
+  // ...
+}
+```
+
+</div>
+
+<div class="bg-blue-950/40 border border-blue-500/40 rounded-2xl px-2 py-1">
+
+```java
+int methodA() {
+  // ...
+}
+```
+
+</div>
+
+<div class="bg-purple-950/40 border border-purple-500/25 rounded-2xl px-2 py-1 opacity-70">
+
+```java
+@Test void testB() {
+  // ...
+  assertEquals(y,
+    methodB());
+  // ...
+}
+```
+
+</div>
+
+<div class="bg-blue-950/40 border border-blue-500/25 rounded-2xl px-2 py-1 opacity-70">
+
+```java
+int methodB() {
+  // ...
+}
+```
+
+</div>
+
+</div>
+
+
+
+</div>
+</div>
 
 <!--
 [slide on screen: testA → methodA, testB → methodB]
@@ -55,8 +115,9 @@ layout: full
 "But what if we could improve it?
  What if, when we change only methodA, we could only run testA?"
 
-"This is where my new test-order plugin comes in.
- In an initial step, it learns which code testA really executes:"
+"In an initial learn pass, the plugin watches which production methods each test
+ actually calls — not just which classes it touches, but which specific methods
+ end up on the call stack:"
 
 → Advance to SlideDepGraph.
 -->
@@ -71,9 +132,11 @@ layout: full
 <!--
 [slide on screen: dep-graph — testA → methodA, testB → methodB]
 
-"Then later when we change code in methodA, we know that we don't need to bother
- with testB. Yes we would still run it, just to be sure, but we don't always have
- to run it."
+"Then later, when we change a method, the plugin re-runs only the tests whose
+ recorded trace actually executed that method. A test that touches the same
+ class but never calls the changed method gets skipped — that's the precision
+ that makes the selection small. Yes we would still run those skipped tests
+ eventually, just to be sure, but we don't always have to run them."
 
 "This is where the experimental, and open-source test-order plugin for Maven and
  Gradle comes in. Now let's see how this works for the cloud-sdk, so we add the
@@ -113,10 +176,10 @@ layout: full
 
 <!--
 "In CI, you can also stack the tests in three tiers. First you run the affected
- tests — that takes seconds. Then broader coverage — minutes. And the full suite
- runs overnight. Bugs surface in the first tier, not discovered the next morning.
- And the learn index that CI builds can automatically be picked up by every
- developer on the team — so nobody has to run the learn pass locally."
+ tests — that takes seconds. Then broader coverage — minutes. And the remaining
+ tests run automatically once those tiers pass — same build, no waiting until
+ morning. And the learn index that CI builds can automatically be picked up by
+ every developer on the team — so nobody has to run the learn pass locally."
 
 → Advance to SlideClose.
 -->
@@ -129,13 +192,16 @@ layout: full
 <SlideClose />
 
 <!--
-[slide shows QR code + github.com/parttimenerd/test-order]
+[slide shows three checkmarks + QR code + github.com/parttimenerd/test-order]
 
-"Stop wasting hours on tests that never fail."
-[pause — 3 full seconds]
-"Scan it."
-[pause — 2 seconds]
-"Your CI will thank you."
+"Stop running tests that never fail."
+[pause — 2 seconds, let the line land]
+
+"Run only the tests that hit your change. Keep your agent loop moving.
+ Catch bugs in seconds, not overnight."
+
+[gesture to QR]
+"Scan it. Try it on your repo this week."
 
 [done — walk off or take questions.]
 -->

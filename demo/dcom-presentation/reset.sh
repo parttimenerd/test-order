@@ -12,7 +12,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SDK_DIR="$SCRIPT_DIR/cloud-sdk-java"
 MODULE="cloudplatform/connectivity-destination-service"
-POM="$SDK_DIR/$MODULE/pom.xml"
+ROOT_POM="$SDK_DIR/pom.xml"
+MODULE_POM="$SDK_DIR/$MODULE/pom.xml"
 BAKE_DIR="$SCRIPT_DIR/.baked-history/cloud-sdk-java"
 RESOLVER="$SDK_DIR/$MODULE/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivity/DestinationRetrievalStrategyResolver.java"
 
@@ -20,14 +21,19 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo " Resetting demo state..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# ── 1. Remove plugin from pom.xml ───────────────────────────────────────────
+# ── 1. Remove plugin from pom.xml (root + module fallback) ──────────────────
 
 echo ""
 echo "▶ Removing test-order plugin from pom.xml..."
-if grep -q "test-order-plugin-start" "$POM" 2>/dev/null; then
-    perl -i -ne 'print unless /test-order-plugin-start/ .. /test-order-plugin-end/' "$POM"
-    echo "  ✓ Plugin removed"
-else
+removed=false
+for pom in "$ROOT_POM" "$MODULE_POM"; do
+    if grep -q "test-order-plugin-start" "$pom" 2>/dev/null; then
+        perl -i -ne 'print unless /test-order-plugin-start/ .. /test-order-plugin-end/' "$pom"
+        echo "  ✓ Plugin removed from $(basename "$(dirname "$pom")")/pom.xml"
+        removed=true
+    fi
+done
+if [[ "$removed" == "false" ]]; then
     echo "  ✓ Already clean"
 fi
 
@@ -41,18 +47,12 @@ sed -i '' 's/return !Objects.equals(currentTenantId, providerTenantId);/return O
 git checkout -- . 2>/dev/null || true
 echo "  ✓ Source clean"
 
-# ── 3. Restore .test-order from baked snapshot ──────────────────────────────
+# ── 3. Remove .test-order from any prior run (add-test-order.sh restores it) ─
 
 echo ""
-echo "▶ Restoring learn index..."
-if [[ -d "$BAKE_DIR" ]]; then
-    rm -rf "$SDK_DIR/$MODULE/.test-order"
-    mkdir -p "$SDK_DIR/$MODULE/.test-order"
-    cp -r "$BAKE_DIR/." "$SDK_DIR/$MODULE/.test-order/"
-    echo "  ✓ .test-order restored from .baked-history/"
-else
-    echo "  ⚠  No baked index found — run prepare.sh first"
-fi
+echo "▶ Clearing learn index..."
+rm -rf "$SDK_DIR/.test-order" "$SDK_DIR/$MODULE/.test-order"
+echo "  ✓ .test-order/ cleared (will be restored by add-test-order.sh)"
 
 # ── 4. Commit clean state so change-detection baseline is correct ───────────
 
@@ -68,5 +68,5 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "  plugin:  OFF (pom.xml clean)"
 echo "  source:  clean (no bug)"
-echo "  index:   ready in .test-order/"
+echo "  index:   cleared — run ./add-test-order.sh to restore"
 echo ""

@@ -53,4 +53,32 @@ class TestClassDiscoveryTest {
 		assertTrue(filtered.testClasses().contains("com.example.OuterTest$Nested"));
 		assertFalse(filtered.testClasses().contains("com.example.RemovedTest"));
 	}
+
+	@Test
+	void filterToModuleId_keepsOnlyMatchingTestsAndUnknowns() {
+		DependencyMap depMap = new DependencyMap();
+		depMap.put("com.alpha.AlphaTest", Set.of("com.alpha.Alpha"));
+		depMap.put("com.beta.BetaTest", Set.of("com.beta.Beta"));
+		depMap.put("com.legacy.LegacyTest", Set.of("com.legacy.Legacy"));
+		depMap.putModule("com.alpha.AlphaTest", "g:alpha");
+		depMap.putModule("com.beta.BetaTest", "g:beta");
+
+		DependencyMap filtered = TestClassDiscovery.filterToModuleId(depMap, "g:alpha");
+
+		assertTrue(filtered.testClasses().contains("com.alpha.AlphaTest"));
+		assertFalse(filtered.testClasses().contains("com.beta.BetaTest"),
+				"tests owned by other modules should be dropped");
+		assertTrue(filtered.testClasses().contains("com.legacy.LegacyTest"),
+				"tests with no recorded module should pass through (backward compat)");
+	}
+
+	@Test
+	void filterToModuleId_returnsOriginalWhenIndexHasNoModuleMap() {
+		DependencyMap depMap = new DependencyMap();
+		depMap.put("com.example.FooTest", Set.of("com.example.Foo"));
+
+		DependencyMap filtered = TestClassDiscovery.filterToModuleId(depMap, "g:any");
+
+		assertSame(depMap, filtered, "no module map → return original map unchanged");
+	}
 }

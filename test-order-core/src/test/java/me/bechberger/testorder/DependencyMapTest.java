@@ -678,4 +678,47 @@ class DependencyMapTest {
 		assertEquals(Set.of("com.example.Foo", "com.example.Bar"), map.get("com.example.FooTest"),
 				"Comment lines should not appear as dependencies");
 	}
+
+	@Test
+	void moduleMapRoundtripsThroughSaveAndLoad() throws IOException {
+		DependencyMap original = new DependencyMap();
+		original.put("com.example.AlphaTest", Set.of("com.example.Alpha"));
+		original.put("com.example.BetaTest", Set.of("com.example.Beta"));
+		original.putModule("com.example.AlphaTest", "g:alpha-mod");
+		original.putModule("com.example.BetaTest", "g:beta-mod");
+
+		Path indexFile = tempDir.resolve("with-modules.lz4");
+		original.save(indexFile);
+
+		DependencyMap loaded = DependencyMap.load(indexFile);
+		assertTrue(loaded.hasModuleMap(), "module map should survive round-trip");
+		assertEquals("g:alpha-mod", loaded.getModule("com.example.AlphaTest"));
+		assertEquals("g:beta-mod", loaded.getModule("com.example.BetaTest"));
+		assertNull(loaded.getModule("com.example.UnknownTest"));
+	}
+
+	@Test
+	void aggregateReadsModuleIdSidecar() throws IOException {
+		Path depsDir = tempDir.resolve("deps");
+		Files.createDirectories(depsDir);
+		Files.writeString(depsDir.resolve("com.example.FooTest.deps"), "com.example.Foo\n");
+		Files.writeString(depsDir.resolve("com.example.BarTest.deps"), "com.example.Bar\n");
+		Files.writeString(depsDir.resolve("module.id"), "g:my-module\n");
+
+		DependencyMap map = DependencyMap.aggregate(depsDir);
+		assertEquals("g:my-module", map.getModule("com.example.FooTest"));
+		assertEquals("g:my-module", map.getModule("com.example.BarTest"));
+		assertTrue(map.hasModuleMap());
+	}
+
+	@Test
+	void aggregateWithoutSidecarLeavesModuleMapEmpty() throws IOException {
+		Path depsDir = tempDir.resolve("deps");
+		Files.createDirectories(depsDir);
+		Files.writeString(depsDir.resolve("com.example.FooTest.deps"), "com.example.Foo\n");
+
+		DependencyMap map = DependencyMap.aggregate(depsDir);
+		assertFalse(map.hasModuleMap());
+		assertNull(map.getModule("com.example.FooTest"));
+	}
 }

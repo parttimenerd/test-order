@@ -22,14 +22,20 @@
         <!-- Arrow group -->
         <div class="flex flex-col gap-8 items-center px-10">
           <!-- testA → methodA (solid, highlighted) -->
-          <div class="flex items-center gap-1">
-            <div class="h-0.5 w-20 bg-emerald-500/70"></div>
-            <div class="text-emerald-400 text-xl">→</div>
+          <div class="flex flex-col items-center gap-1">
+            <div class="flex items-center gap-1">
+              <div class="h-0.5 w-20 bg-emerald-500/70"></div>
+              <div class="text-emerald-400 text-xl">→</div>
+            </div>
+            <div class="text-emerald-400/80 text-xs font-semibold uppercase tracking-wider">re-run</div>
           </div>
           <!-- testB → methodB (dimmer) -->
-          <div class="flex items-center gap-1">
-            <div class="h-0.5 w-20 bg-gray-600/60"></div>
-            <div class="text-gray-500 text-xl">→</div>
+          <div class="flex flex-col items-center gap-1">
+            <div class="flex items-center gap-1">
+              <div class="h-0.5 w-20 bg-gray-600/60"></div>
+              <div class="text-gray-500 text-xl">→</div>
+            </div>
+            <div class="text-gray-500 text-xs font-semibold uppercase tracking-wider">skipped</div>
           </div>
         </div>
 
