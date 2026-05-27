@@ -13,7 +13,7 @@
             <div class="text-purple-300 font-bold text-xl">Learn pass</div>
             <div class="text-purple-400/70 text-base mt-2">bytecode instrumentation</div>
           </div>
-          <div class="text-purple-400/60 text-sm">once · ~12% overhead</div>
+          <div class="text-purple-400/60 text-sm">once · ~10% overhead · run in CI</div>
         </div>
 
         <div class="flex flex-col items-center flex-shrink-0 px-3 pb-8">
@@ -26,7 +26,7 @@
             <div class="text-blue-300 font-bold text-xl">Dep graph</div>
             <div class="text-blue-400/70 text-base mt-2">test → prod classes</div>
           </div>
-          <div class="text-blue-400/60 text-sm">~500 KB · stored locally</div>
+          <div class="text-blue-400/60 text-sm">~500 KB · local or from CI</div>
         </div>
 
         <div class="flex flex-col items-center flex-shrink-0 px-3 pb-8">

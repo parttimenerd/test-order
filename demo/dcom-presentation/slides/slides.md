@@ -21,63 +21,21 @@ fonts:
 <SlideHero />
 
 <!--
-PRESENTER CHECKLIST:
-- Terminal font: 20pt+ (test on projector!)
-- cloud-sdk-java built and index ready (./prepare.sh)
-- VS Code open on cloud-sdk-java/, .github/copilot-instructions.md visible in a tab
-- Dashboard tab open at localhost:8080 (optional)
-- Clock/timer visible on presenter display
-- No Wi-Fi needed (all local)
+[VS Code open on cloud-sdk-java/, terminal visible]
 
-TARGET TIMING:
-  0:00  Hero image — silence + opening line (10s)
-  0:10  Switch to VS Code — SDK intro (30s)
-  0:40  Pain — mvn clean test (~90s, killed)
-  2:10  Magic — toggle + make-change + select (~40s)
-  2:50  Local workflow slide (~20s)
-  3:10  CI workflow slide (~20s)
-  3:30  VS Code — Copilot run 1 red (~32s)
-  4:02  Copilot fixes + run 2 green (~27s)
-  4:29  test-order:show (~20s)
-  4:49  Close slide — kicker + CTA (~35s)
-  ─────────────────────────
-  Total: ~5:24 (leaves ~35s buffer for pauses, slow Copilot, audience reaction)
-
-  NOTE: The browser detour (localhost:8080) does not fit the budget. Cut it.
-
-[hold the image for ~5 seconds — let "YOU ARE RUNNING THE WRONG TESTS FIRST" land]
-
-"Let me show you why."
-
-→ Switch to VS Code (already open on cloud-sdk-java). Terminal is visible.
-  "SAP Cloud SDK for Java. Open-source, nearly ten years old, 65 modules — it's the
-   backbone for building connected SaaS apps on SAP BTP. It handles outbound communication,
-   multi-tenancy, resilience — so you can focus on business logic."
-
-  "It's a great example of the Java projects we build here at SAP: long-lived, widely
-   depended on, constantly evolving. Real teams, real releases, real pressure to ship."
-
-  "And its full test suite takes over five minutes to run."
+"This is the SAP Cloud SDK for Java — nine years old, 65 modules, a typical large
+ Java project at SAP. Let me show you something."
 
 → Run: mvn clean test
-  [while it compiles — ~20s before first output]
+  [while it compiles]
   "Every developer on this project runs this dozens of times a day. Right now it's
-   compiling 65 modules before a single test executes."
-  [tests start running]
-  "Watch the clock. This is what waiting for feedback feels like."
-  [around 90s mark — kill it]
-  "I'm not going to make you sit through the whole thing."
+   compiling all 65 modules before a single test executes."
+  [kill at ~90s]
+  "I'm not going to make you sit through the whole thing. But you get the idea.
+   Slow tests kill developer velocity — every minute waiting for feedback is a
+   minute not spent writing code."
 
-→ In demo dir: toggle-test-order.sh on, make-change.sh, then back to cloud-sdk-java:
-  cd /path/to/demo/dcom-presentation && ./toggle-test-order.sh on && ./make-change.sh
-  cd cloud-sdk-java && mvn test-order:select test
-  "Same project. Same change. Plugin on."
-  [select runs — tests start in seconds]
-  "Seven test classes. Not sixty-five modules."
-  [result comes back RED — ~25s total]
-  "Twenty-five seconds. Build failure. That's the feedback."
-
-→ Advance to SlideTransition slide.
+→ Advance to SlideBeforePlugin.
 -->
 
 ---
@@ -85,17 +43,65 @@ transition: fade
 layout: full
 ---
 
-<SlideLocalWorkflow />
+<SlideBeforePlugin />
 
 <!--
-[advance after magic beat]
-"Here's what just happened. Learn pass runs once — instruments bytecode, builds a dep
-graph of every production class each test touches. ~500KB, stored locally."
+[slide on screen: testA → methodA, testB → methodB]
 
-"Every run: git diff, intersect the graph, score by overlap, failure history, and speed.
-Select the top N. Everything else deferred."
+"So normally we run all tests."
 
-→ Advance to CI workflow slide.
+"It's simple, it works, it's fine."
+
+"But what if we could improve it?
+ What if, when we change only methodA, we could only run testA?"
+
+"This is where my new test-order plugin comes in.
+ In an initial step, it learns which code testA really executes:"
+
+→ Advance to SlideDepGraph.
+-->
+
+---
+transition: fade
+layout: full
+---
+
+<SlideDepGraph />
+
+<!--
+[slide on screen: dep-graph — testA → methodA, testB → methodB]
+
+"Then later when we change code in methodA, we know that we don't need to bother
+ with testB. Yes we would still run it, just to be sure, but we don't always have
+ to run it."
+
+"This is where the experimental, and open-source test-order plugin for Maven and
+ Gradle comes in. Now let's see how this works for the cloud-sdk, so we add the
+ plugin to the maven pom. Of course we would need to run a learn run, but we
+ prepared it beforehand to keep the demo fast."
+
+→ Switch to terminal in demo dir.
+  ./add-test-order.sh
+  [diff scrolls — audience sees one plugin block added; learn data copied in]
+
+→ Switch to VS Code. Run in terminal:
+  mvn test-order:select test
+  [only the affected test classes execute]
+
+"We see that we only executed the few tests that have been affected by our change.
+ Which is great. It's even better for agentic coding, for example to fix the bug,
+ as LLMs tend to add a lot of tests which slows down dev velocity significantly."
+
+"Let's try it out:"
+
+→ Type in VS Code Copilot: "fix the bug" and paste the error message.
+  [agent runs mvn test-order:select test automatically]
+
+"With the plugin we, by default first execute the likely affected tests, then tests
+ that cover a lot of the code base and have shown to be effective bug finders and
+ then the rest."
+
+→ Advance to SlideCIWorkflow.
 -->
 
 ---
@@ -106,32 +112,13 @@ layout: full
 <SlideCIWorkflow />
 
 <!--
-"In CI you stack three tiers. Tier 1: affected subset — seconds. Tier 2: broader
-coverage — minutes. Tier 3: full suite overnight."
+"In CI, you can also stack the tests in three tiers. First you run the affected
+ tests — that takes seconds. Then broader coverage — minutes. And the full suite
+ runs overnight. Bugs surface in the first tier, not discovered the next morning.
+ And the learn index that CI builds can automatically be picked up by every
+ developer on the team — so nobody has to run the learn pass locally."
 
-"Bugs surface in Tier 1. Not discovered at Tier 3 the next morning."
-
-→ Switch to VS Code. Show .github/copilot-instructions.md tab.
-  "Here's the entire AI integration. One file. Three lines:
-   'After every code change, run: mvn test-order:select test'"
-  Type the Copilot prompt: "Implement the changes needed to fix the failing test"
-  [first run starts — ~25s wait]
-  "The agent gets a result in 25 seconds. Not 5 minutes."
-  [run 1 finishes — red; ensure failure output is visible on screen before Copilot starts fixing]
-  "There's the bug."
-  [Copilot fixes, run 2 starts — narrate lightly]
-  "It read the stack trace. Fixed the negation."
-  [green]
-  "25 seconds to catch. 25 to verify."
-
-→ In terminal:
-  mvn test-order:show -pl cloudplatform/connectivity-destination-service
-  "Full ranked list. StrategyResolverTest — 12 deps on the class I changed. Failure rate 1.0."
-  Scroll to Method Order section briefly.
-  "Methods ranked within each class too. Highest failure signal first."
-  "There's also detect-dependencies for order-dependent tests — but that's a full rerun, not today."
-
-→ Back to slides. Advance to Close.
+→ Advance to SlideClose.
 -->
 
 ---
