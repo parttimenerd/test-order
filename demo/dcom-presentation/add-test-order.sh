@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # =============================================================================
-# add-test-order.sh — Add test-order plugin to pom.xml + restore learn data
+# add-test-order.sh — Add test-order plugin to pom.xml + download learn index
 # =============================================================================
 # Run on stage after the "pain" demo to show how easy it is to enable the plugin.
-# Adds one plugin block to pom.xml, copies in the pre-built learn index from
-# .baked-history/, and shows the git diff.
+# Adds one plugin block to pom.xml, downloads the pre-built learn index from CI,
+# and shows the git diff.
 # =============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 POM="$SCRIPT_DIR/cloud-sdk-java/cloudplatform/connectivity-destination-service/pom.xml"
-BAKE_DIR="$SCRIPT_DIR/.baked-history/cloud-sdk-java"
-MODULE_DIR="$SCRIPT_DIR/cloud-sdk-java/cloudplatform/connectivity-destination-service"
 MARKER="test-order-plugin-start"
+
+export JAVA_HOME="${JAVA_HOME:-/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home}"
+export PATH="$JAVA_HOME/bin:$PATH"
 
 # ── 1. Add plugin to pom.xml ────────────────────────────────────────────────
 
@@ -45,23 +46,20 @@ else
     echo "  ✓ Plugin block added"
 fi
 
-# ── 2. Restore pre-built learn index ────────────────────────────────────────
+# ── 2. Download learn index from CI ─────────────────────────────────────────
 
 echo ""
-echo "  Restoring pre-built learn index..."
-if [[ -d "$BAKE_DIR" ]]; then
-    rm -rf "$MODULE_DIR/.test-order"
-    mkdir -p "$MODULE_DIR/.test-order"
-    cp -r "$BAKE_DIR/." "$MODULE_DIR/.test-order/"
-    echo "  ✓ Learn data ready (built from CI — zero overhead today)"
-else
-    echo "  ⚠  No baked index found — run prepare.sh first"
-fi
+echo "  Downloading learn index from CI..."
+cd "$SCRIPT_DIR/cloud-sdk-java"
+mvn test-order:download \
+    -pl cloudplatform/connectivity-destination-service \
+    --batch-mode --no-transfer-progress \
+    -DskipFormatting -Denforcer.skip
+echo "  ✓ Learn data ready (downloaded from CI)"
 
 # ── 3. Show diff ─────────────────────────────────────────────────────────────
 
 echo ""
-cd "$SCRIPT_DIR/cloud-sdk-java"
 git --no-pager diff --color cloudplatform/connectivity-destination-service/pom.xml || true
 
 echo ""

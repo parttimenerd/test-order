@@ -78,7 +78,7 @@ layout: full
 "This is where the experimental, and open-source test-order plugin for Maven and
  Gradle comes in. Now let's see how this works for the cloud-sdk, so we add the
  plugin to the maven pom. Of course we would need to run a learn run, but we
- prepared it beforehand to keep the demo fast."
+ prepared it beforehand — the CI already built it and we just download it."
 
 → Switch to terminal in demo dir.
   ./add-test-order.sh

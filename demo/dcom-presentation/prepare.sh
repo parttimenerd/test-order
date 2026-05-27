@@ -90,8 +90,8 @@ echo "  ✓ test-order plugin installed"
 
 echo ""
 if [[ ! -d "$SDK_DIR" ]]; then
-    echo "▶ Cloning SAP Cloud SDK for Java..."
-    git clone --depth 1 https://github.com/SAP/cloud-sdk-java.git "$SDK_DIR"
+    echo "▶ Cloning demo fork of SAP Cloud SDK for Java..."
+    git clone --depth 1 https://github.com/parttimenerd/cloud-sdk-java.git "$SDK_DIR"
     cd "$SDK_DIR"
     sed -i '' '/void testConcurrentFetchSameDestinationSameTenantButDifferentPrincipal/i\
     @Disabled("Flaky timeout")' "$SDK_DIR/$MODULE/src/test/java/com/sap/cloud/sdk/cloudplatform/connectivity/DestinationServiceTest.java"
@@ -113,19 +113,26 @@ cd "$SDK_DIR"
 mvn clean install -DskipTests -q
 echo "  ✓ cloud-sdk-java built"
 
-# ── 4. Learn pass ─────────────────────────────────────────────────────────────
+# ── 4. Learn pass (or download from CI) ──────────────────────────────────────
 
 echo ""
 pom_enable
 
-if [[ ! -f "$SDK_DIR/$MODULE/.test-order/test-dependencies.lz4" ]]; then
-    echo "▶ Running learn pass for cloud-sdk-java..."
-    cd "$SDK_DIR"
-    mvn test -pl "$MODULE" -Dtestorder.mode=learn -q 2>/dev/null || true
-    mvn test-order:aggregate -pl "$MODULE" -q 2>/dev/null || true
-    echo "  ✓ Learn pass complete"
+INDEX="$SDK_DIR/$MODULE/.test-order/test-dependencies.lz4"
+if [[ -f "$INDEX" ]]; then
+    echo "▶ cloud-sdk-java index already exists — skipping"
 else
-    echo "▶ cloud-sdk-java index already exists — skipping learn"
+    echo "▶ Trying to download learn index from CI..."
+    cd "$SDK_DIR"
+    if mvn test-order:download -pl "$MODULE" --batch-mode --no-transfer-progress \
+        -DskipFormatting -Denforcer.skip -q 2>/dev/null && [[ -f "$INDEX" ]]; then
+        echo "  ✓ Index downloaded from CI"
+    else
+        echo "  ✗ Download failed or no CI artifact yet — running learn pass locally..."
+        mvn test -pl "$MODULE" -Dtestorder.mode=learn -q 2>/dev/null || true
+        mvn test-order:aggregate -pl "$MODULE" -q 2>/dev/null || true
+        echo "  ✓ Learn pass complete"
+    fi
 fi
 
 # ── 5. Commit index + copilot instructions ────────────────────────────────────
@@ -184,7 +191,7 @@ git add -A && git commit -m "Reset pom" --allow-empty -q 2>/dev/null || true
 # ── 8. Bake .test-order snapshot ─────────────────────────────────────────────
 
 echo ""
-echo "▶ Baking .test-order snapshot for fast reset..."
+echo "▶ Baking .test-order snapshot for fast reset (so reset.sh works offline)..."
 
 SDK_INDEX="$SDK_DIR/$MODULE/.test-order/test-dependencies.lz4"
 if [[ ! -f "$SDK_INDEX" ]]; then
