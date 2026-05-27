@@ -389,7 +389,7 @@ final class SurefireHelper {
 		try {
 			double value = Double.parseDouble(numPart);
 			if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
-			log.debug("[test-order] Surefire <forkCount>" + forkCount
+				log.debug("[test-order] Surefire <forkCount>" + forkCount
 						+ "</forkCount> — multiple forks may write .deps files concurrently in learn mode. "
 						+ "This can corrupt the dependency index. Consider using forkCount=1 for learn runs.");
 			}
