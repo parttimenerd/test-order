@@ -531,8 +531,8 @@ class PriorityMethodOrdererTest {
 	}
 
 	@Test
-	@DisplayName("@TestOrder + @Order on same class → @Order wins, no reordering")
-	void orderMethods_testOrderAnnotation_withJUnitOrder_junitOrderWins() {
+	@DisplayName("@Order-only (no @TestMethodOrder) → score-based reordering still applies")
+	void orderMethods_orderAnnotationOnly_stillReordersByScore() {
 		String className = OrderedDummy.class.getName();
 		TestOrderState state = new TestOrderState();
 		state.recordMethodFailure(className, "alpha");
@@ -546,10 +546,9 @@ class PriorityMethodOrdererTest {
 		var ctx = new StubMethodOrdererContext(OrderedDummy.class, descs);
 		orderer.orderMethods(ctx);
 
-		// @Order present → original order preserved
-		assertEquals("beta", ctx.getMethodDescriptors().get(0).getMethod().getName());
-		assertEquals("gamma", ctx.getMethodDescriptors().get(1).getMethod().getName());
-		assertEquals("alpha", ctx.getMethodDescriptors().get(2).getMethod().getName());
+		// @Order without @TestMethodOrder does not suppress score-based reordering —
+		// alpha has a failure so it moves to first
+		assertEquals("alpha", ctx.getMethodDescriptors().get(0).getMethod().getName());
 	}
 
 	// ── @AlwaysRun method tests ───────────────────────────────────────
