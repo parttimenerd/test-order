@@ -59,6 +59,13 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- PIT mutation testing -->
+        <dependency>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-entry</artifactId>
+            <version>1.16.1</version>
+        </dependency>
+
         <!-- ML: Tribuo logistic regression (Apache 2.0, opt-in via testorder.ml.enabled) -->
         <dependency>
             <groupId>org.tribuo</groupId>

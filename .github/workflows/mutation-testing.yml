@@ -1,0 +1,73 @@
+name: Mutation Testing
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'   # weekly, Sunday 2am UTC
+  workflow_dispatch:       # manual trigger
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: sapmachine
+          java-version: '17'
+          cache: maven
+
+      - name: Build and install test-order plugin
+        run: mvn -B -ntp -DskipTests install
+
+      - name: Build cloud-sdk-java (skip tests)
+        run: mvn -B -ntp -DskipTests -DskipFormatting install
+        working-directory: demo/dcom-presentation/cloud-sdk-java
+
+      - name: Run learn pass for connectivity-destination-service
+        run: |
+          mvn -B -ntp test \
+            -pl cloudplatform/connectivity-destination-service \
+            -Dtestorder.mode=learn
+        working-directory: demo/dcom-presentation/cloud-sdk-java
+
+      - name: Run mutation analysis
+        run: |
+          mvn -B -ntp test-order:analyze-mutations \
+            -pl cloudplatform/connectivity-destination-service
+        working-directory: demo/dcom-presentation/cloud-sdk-java
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-${{ github.run_number }}
+          path: demo/dcom-presentation/cloud-sdk-java/**/target/test-mutation-results.json
+          retention-days: 30
+
+      - name: Print kill rate summary
+        if: always()
+        run: |
+          REPORT=$(find demo/dcom-presentation/cloud-sdk-java -name "test-mutation-results.json" | head -1)
+          if [ -f "$REPORT" ]; then
+            echo "=== Mutation Kill Rate Summary ==="
+            python3 -c "
+          import json, sys
+          with open('$REPORT') as f:
+              data = json.load(f)
+          print(f\"Overall: {data['totalKilled']}/{data['totalMutants']} ({data['overallKillRate']*100:.1f}%)\")
+          print()
+          for tc in data.get('testClasses', []):
+              print(f\"  {tc['killRate']*100:5.1f}%  {tc['testClass'].split('.')[-1]}  ({tc['mutationsKilled']}/{tc['mutationsTotal']})\")
+          "
+          else
+            echo "No mutation report found"
+          fi

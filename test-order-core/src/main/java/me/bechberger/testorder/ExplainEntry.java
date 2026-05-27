@@ -73,6 +73,12 @@ public record ExplainEntry(
 		/** Points from greedy set-cover bonus (0 when disabled). */
 		int setCoverPoints,
 
+		// ── Mutation kill rate ─────────────────────────────────────────
+		/** Kill rate from mutation analysis (-1.0 if unavailable). */
+		double killRate,
+		/** Points from kill-rate bonus (0 when disabled or no data). */
+		int killRatePoints,
+
 		// ── Weights used ───────────────────────────────────────────────
 		/** Scoring weights active for this run. */
 		TestOrderState.ScoringWeights weights) {
@@ -108,6 +114,10 @@ public record ExplainEntry(
 		sb.append(String.format("      %-24s %+d  (%s)%n", "Speed:", speedPoints, durationStr));
 		if (setCoverPoints != 0) {
 			sb.append(String.format("      %-24s %+d%n", "Set-cover bonus:", setCoverPoints));
+		}
+		if (killRate >= 0) {
+			sb.append(String.format(Locale.US, "      %-24s %+d  (kill rate: %.0f%%)%n", "Mutation kill rate:",
+					killRatePoints, killRate * 100));
 		}
 
 		// dependency list (non-overlapping)

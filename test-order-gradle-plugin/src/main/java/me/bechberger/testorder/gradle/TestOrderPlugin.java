@@ -1011,6 +1011,36 @@ public class TestOrderPlugin implements Plugin<Project> {
             });
         });
 
+        project.getTasks().register("testOrderAnalyzeMutations", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Run PIT mutation testing scoped to indexed test classes and update kill rates in state file");
+            task.doLast(t -> {
+                Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
+                if (!Files.exists(indexFile)) {
+                    throw new GradleException("[test-order] Index file not found: " + indexFile
+                            + ". Run tests in learn mode first.");
+                }
+                Path stateFile = ext.getStateFile().get().getAsFile().toPath();
+                String outputFileStr = gradleOrSystemProperty(project, "testorder.mutations.outputFile");
+                String timeBudgetStr = gradleOrSystemProperty(project, "testorder.mutations.timeBudget");
+                String targetClassesStr = gradleOrSystemProperty(project, "testorder.mutations.targetClasses");
+                int timeBudget = parseIntOrDefault(timeBudgetStr, 0, "testorder.mutations.timeBudget");
+                Path outputPath = outputFileStr != null && !outputFileStr.isBlank()
+                        ? Path.of(outputFileStr)
+                        : project.getLayout().getBuildDirectory().getAsFile().get().toPath()
+                                .resolve("test-mutation-results.json");
+                Path projectRoot = project.getProjectDir().toPath().toAbsolutePath();
+                try {
+                    me.bechberger.testorder.ops.MutationAnalysisOperation
+                            .run(new me.bechberger.testorder.ops.MutationAnalysisOperation.Config(indexFile, stateFile,
+                                    outputPath, projectRoot, targetClassesStr, timeBudget, wrapLog(project)));
+                } catch (IOException e) {
+                    throw new GradleException("Mutation analysis failed: " + e.getMessage(), e);
+                }
+            });
+        });
+
         project.getTasks().register("testOrderShow", task -> {
             task.setGroup("test-order");
             task.setDescription("Unified view of predicted test order, method order, and ML health"

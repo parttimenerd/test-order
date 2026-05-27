@@ -52,7 +52,7 @@ public class TestOrderState {
 
 	/** Canonical weight order — defines the sequence for arrays and iteration. */
 	static final List<String> WEIGHT_ORDER = List.of("newTest", "changedTest", "maxFailure", "speed", "speedPenalty",
-			"depOverlap", "changeComplexity", "staticFieldBonus", "coverageBonus");
+			"depOverlap", "changeComplexity", "staticFieldBonus", "coverageBonus", "killRateBonus");
 
 	/**
 	 * Ordered weight definitions loaded from the
@@ -202,7 +202,13 @@ public class TestOrderState {
 	}
 
 	public record ScoringWeights(int newTest, int changedTest, int maxFailure, int speed, int speedPenalty,
-			int depOverlap, int changeComplexity, int staticFieldBonus, int coverageBonus) {
+			int depOverlap, int changeComplexity, int staticFieldBonus, int coverageBonus, int killRateBonus) {
+
+		public ScoringWeights(int newTest, int changedTest, int maxFailure, int speed, int speedPenalty, int depOverlap,
+				int changeComplexity, int staticFieldBonus, int coverageBonus) {
+			this(newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity, staticFieldBonus,
+					coverageBonus, 0);
+		}
 
 		public ScoringWeights(int newTest, int changedTest, int maxFailure, int speed, int speedPenalty, int depOverlap,
 				int changeComplexity, int staticFieldBonus) {
@@ -224,7 +230,7 @@ public class TestOrderState {
 			DEFAULT = new ScoringWeights(defaults.get("newTest"), defaults.get("changedTest"),
 					defaults.get("maxFailure"), defaults.get("speed"), defaults.get("speedPenalty"),
 					defaults.get("depOverlap"), defaults.get("changeComplexity"), defaults.get("staticFieldBonus"),
-					defaults.get("coverageBonus"));
+					defaults.get("coverageBonus"), defaults.getOrDefault("killRateBonus", 0));
 		}
 
 		/** Build weights from a name→value map; missing keys use resource defaults. */
@@ -236,7 +242,8 @@ public class TestOrderState {
 			});
 			return new ScoringWeights(merged.get("newTest"), merged.get("changedTest"), merged.get("maxFailure"),
 					merged.get("speed"), merged.get("speedPenalty"), merged.get("depOverlap"),
-					merged.get("changeComplexity"), merged.get("staticFieldBonus"), merged.get("coverageBonus"));
+					merged.get("changeComplexity"), merged.get("staticFieldBonus"), merged.get("coverageBonus"),
+					merged.getOrDefault("killRateBonus", 0));
 		}
 
 		/** Convert to an ordered name→value map (same order as WEIGHT_DEFS). */
@@ -251,13 +258,14 @@ public class TestOrderState {
 			map.put("changeComplexity", changeComplexity);
 			map.put("staticFieldBonus", staticFieldBonus);
 			map.put("coverageBonus", coverageBonus);
+			map.put("killRateBonus", killRateBonus);
 			return map;
 		}
 
 		/** Convert to array in WEIGHT_DEFS order. */
 		public int[] toArray() {
 			return new int[]{newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity,
-					staticFieldBonus, coverageBonus};
+					staticFieldBonus, coverageBonus, killRateBonus};
 		}
 
 		/** Human-readable key=value format. */
@@ -275,7 +283,7 @@ public class TestOrderState {
 		public static ScoringWeights fromArray(int[] a) {
 			return new ScoringWeights(a[0], a[1], a[2], a[3], a[4], a[5],
 					a.length > 6 ? a[6] : DEFAULT.changeComplexity(), a.length > 7 ? a[7] : DEFAULT.staticFieldBonus(),
-					a.length > 8 ? a[8] : DEFAULT.coverageBonus());
+					a.length > 8 ? a[8] : DEFAULT.coverageBonus(), a.length > 9 ? a[9] : DEFAULT.killRateBonus());
 		}
 
 		/**
@@ -464,6 +472,10 @@ public class TestOrderState {
 	private final FailureHistoryTracker failureHistory;
 	private final RunHistoryManager runHistory;
 	/**
+	 * Per-test-class mutation kill rates, populated by the analyze-mutations goal.
+	 */
+	private Map<String, Double> killRates = new java.util.HashMap<>();
+	/**
 	 * True when addRunRecord was called since the last save — enables decay even on
 	 * all-pass runs.
 	 */
@@ -485,6 +497,16 @@ public class TestOrderState {
 	}
 	public void setWeights(ScoringWeights w) {
 		this.weights = w;
+	}
+
+	/** Returns an unmodifiable view of the per-test mutation kill rates. */
+	public Map<String, Double> getKillRates() {
+		return java.util.Collections.unmodifiableMap(killRates);
+	}
+
+	/** Replaces the mutation kill rates (called by analyze-mutations). */
+	public void setKillRates(Map<String, Double> rates) {
+		this.killRates = new java.util.HashMap<>(rates);
 	}
 
 	// ── Configuration ─────────────────────────────────────────────────
@@ -878,6 +900,11 @@ public class TestOrderState {
 			root.put("methodWeights", new LinkedHashMap<>(methodScoringWeights.toMap()));
 		}
 
+		// mutation kill rates (only persist when present)
+		if (!killRates.isEmpty()) {
+			root.put("killRates", new LinkedHashMap<>(killRates));
+		}
+
 		persistedFailureScores = mergedFailures;
 		persistedMethodFailureScores = mergedMethodFailures;
 		persistedRunsAfterSave = persistedRuns;
@@ -1056,6 +1083,16 @@ public class TestOrderState {
 		for (var e : safeMap(root.get("methodFailureScores"), "methodFailureScores").entrySet()) {
 			state.failureHistory.loadMethodFailureScore(e.getKey(),
 					safeDouble(e.getValue(), 0.0, "methodFailureScores." + e.getKey()));
+		}
+
+		// mutation kill rates
+		Map<String, Object> krMap = safeMap(root.get("killRates"), "killRates");
+		if (!krMap.isEmpty()) {
+			Map<String, Double> rates = new java.util.LinkedHashMap<>();
+			for (var e : krMap.entrySet()) {
+				rates.put(e.getKey(), safeDouble(e.getValue(), 0.0, "killRates." + e.getKey()));
+			}
+			state.killRates = rates;
 		}
 
 		state.runHistory.trimToMax(state.config.historyMaxRuns());

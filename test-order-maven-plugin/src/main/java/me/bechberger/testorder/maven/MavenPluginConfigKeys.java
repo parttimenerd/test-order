@@ -100,6 +100,11 @@ final class MavenPluginConfigKeys {
 	static final String DETECT_SEED = "testorder.detect.seed";
 	static final String DETECT_FAIL_ON_DETECTION = "testorder.detect.failOnDetection";
 
+	// Mutation analysis goal keys
+	static final String MUTATIONS_OUTPUT_FILE = "testorder.mutations.outputFile";
+	static final String MUTATIONS_TIME_BUDGET = "testorder.mutations.timeBudget";
+	static final String MUTATIONS_TARGET_CLASSES = "testorder.mutations.targetClasses";
+
 	// Legacy aliases kept for backward compatibility in Maven user properties
 	static final String LEGACY_INDEX = "testorder.index";
 	static final String LEGACY_STATE_FILE = "testorder.stateFile";
@@ -145,7 +150,8 @@ final class MavenPluginConfigKeys {
 			LEGACY_VERBOSE_FILE, LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip",
 			"testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file",
 			"testorder.score.springContextGrouping", "testorder.auto.active", "testorder.remaining.file",
-			"testorder.metrics.output", SERVE_PORT_ALIAS,
+			"testorder.metrics.output", SERVE_PORT_ALIAS, MUTATIONS_OUTPUT_FILE, MUTATIONS_TIME_BUDGET,
+			MUTATIONS_TARGET_CLASSES,
 			// Show goal keys (inline in ShowMojo)
 			SHOW_CLASSES, SHOW_METHODS, SHOW_ML, SHOW_ALL, SHOW_FORMAT, SHOW_FILTER,
 			// CamelCase aliases (silently accepted, see ALIASES map)

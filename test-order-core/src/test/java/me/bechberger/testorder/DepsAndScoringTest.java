@@ -1072,7 +1072,7 @@ class DepsAndScoringTest {
 
 	@Test
 	void scoringWeightsFromArrayAndToArray() {
-		int[] arr = {10, 8, 5, 3, 2, 6, 4, 1, 0};
+		int[] arr = {10, 8, 5, 3, 2, 6, 4, 1, 0, 0};
 		var sw = TestOrderState.ScoringWeights.fromArray(arr);
 		assertArrayEquals(arr, sw.toArray());
 		assertEquals(10, sw.newTest());

@@ -51,6 +51,14 @@
             <version>3.26.4</version>
         </dependency>
 
+        <!-- PIT mutation testing (optional — only needed when running analyze-mutations) -->
+        <dependency>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-entry</artifactId>
+            <version>1.16.1</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- test -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

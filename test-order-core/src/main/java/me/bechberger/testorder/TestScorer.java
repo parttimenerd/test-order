@@ -41,7 +41,17 @@ public class TestScorer {
 	/** Full result of scoring a single test class. */
 	public record ScoreResult(int score, int depOverlap, int depTotal, double failScore, boolean isNew,
 			boolean isChanged, boolean isFast, boolean isSlow, double complexityOverlap, double speedRatio,
-			boolean hasStaticFieldOverlap) {
+			boolean hasStaticFieldOverlap, double killRate) {
+
+		/**
+		 * Backward-compat constructor without killRate (defaults to -1.0 = no data).
+		 */
+		public ScoreResult(int score, int depOverlap, int depTotal, double failScore, boolean isNew, boolean isChanged,
+				boolean isFast, boolean isSlow, double complexityOverlap, double speedRatio,
+				boolean hasStaticFieldOverlap) {
+			this(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOverlap,
+					speedRatio, hasStaticFieldOverlap, -1.0);
+		}
 	}
 
 	/**
@@ -346,6 +356,14 @@ public class TestScorer {
 		if (isChanged)
 			score += weights.changedTest();
 
+		// Kill-rate lookup — used as a multiplier on dep-overlap score
+		double killRate = state.getKillRates().getOrDefault(testClassName, -1.0);
+		if (killRate < 0 && !topLevel.equals(testClassName)) {
+			killRate = state.getKillRates().getOrDefault(topLevel, -1.0);
+		}
+		// multiplier: 1.0 when no data, 0.5..1.0 when data available
+		double killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0;
+
 		Set<String> deps = depMap.get(testClassName);
 		int depTotal = deps.size();
 		int depOverlap = 0;
@@ -357,19 +375,22 @@ public class TestScorer {
 			if (!setCoverBonuses.isEmpty()) {
 				// Greedy set-cover mode: reuse cached overlap count from set-cover computation
 				depOverlap = cachedOverlapCounts.getOrDefault(testClassName, 0);
-				score += setCoverBonuses.getOrDefault(testClassName, 0);
+				int rawSetCover = setCoverBonuses.getOrDefault(testClassName, 0);
+				score += (int) Math.round(rawSetCover * killMultiplier);
 			} else {
 				Set<String> overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps,
 						changedMembers, effectiveChangedForOverlap);
 				depOverlap = overlapClasses.size();
-				score += depOverlapScore(depOverlap, depTotal, weights.depOverlap());
+				int rawDepOverlap = depOverlapScore(depOverlap, depTotal, weights.depOverlap());
+				score += (int) Math.round(rawDepOverlap * killMultiplier);
 
 				// Complexity-weighted overlap: sum normalised complexity of overlapping deps
 				if (!changeComplexity.isEmpty() && depOverlap > 0) {
 					for (String dep : overlapClasses) {
 						complexityOvlp += changeComplexity.getOrDefault(dep, 0.0);
 					}
-					score += complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
+					int rawComplexity = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
+					score += (int) Math.round(rawComplexity * killMultiplier);
 				}
 			}
 
@@ -411,8 +432,13 @@ public class TestScorer {
 			isSlow = speedScore < 0;
 		}
 
+		// Kill-rate bonus: direct points for high kill rate
+		if (killRate >= 0 && weights.killRateBonus() > 0) {
+			score += (int) Math.round(killRate * weights.killRateBonus());
+		}
+
 		return new ScoreResult(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOvlp,
-				sRatio, staticFieldOverlap > 0);
+				sRatio, staticFieldOverlap > 0, killRate);
 	}
 
 	public long medianDuration() {
@@ -516,9 +542,31 @@ public class TestScorer {
 			totalScore += speedPts;
 		}
 
+		// Kill-rate
+		double killRate = state.getKillRates().getOrDefault(testClassName, -1.0);
+		if (killRate < 0 && !topLevel.equals(testClassName)) {
+			killRate = state.getKillRates().getOrDefault(topLevel, -1.0);
+		}
+		double killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0;
+		int killRatePts = 0;
+		if (killRate >= 0 && weights.killRateBonus() > 0) {
+			killRatePts = (int) Math.round(killRate * weights.killRateBonus());
+			totalScore += killRatePts;
+		}
+		// Apply kill-rate multiplier retroactively to dep-overlap/complexity/set-cover
+		// pts
+		int adjustedDepOverlapPts = (int) Math.round(depOverlapPts * killMultiplier);
+		int adjustedComplexityPts = (int) Math.round(complexityPts * killMultiplier);
+		int adjustedSetCoverPts = (int) Math.round(setCoverPts * killMultiplier);
+		if (killRate >= 0) {
+			totalScore += (adjustedDepOverlapPts - depOverlapPts) + (adjustedComplexityPts - complexityPts)
+					+ (adjustedSetCoverPts - setCoverPts);
+		}
+
 		return new ExplainEntry(testClassName, rank, totalScore, isChanged, changedTestPts, deps, overlapClasses,
-				depOverlapPts, complexityOvlp, complexityPts, hasStaticFieldOvlp, staticFieldPts, failScore, failurePts,
-				isNew, newTestPts, dur, medianDuration, sRatio, speedPts, setCoverPts, weights);
+				adjustedDepOverlapPts, complexityOvlp, adjustedComplexityPts, hasStaticFieldOvlp, staticFieldPts,
+				failScore, failurePts, isNew, newTestPts, dur, medianDuration, sRatio, speedPts, adjustedSetCoverPts,
+				killRate, killRatePts, weights);
 	}
 
 	/**
