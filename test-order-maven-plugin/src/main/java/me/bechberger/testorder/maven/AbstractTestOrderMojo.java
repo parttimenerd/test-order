@@ -609,10 +609,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		return PluginContext.builder().projectRoot(project.getBasedir().toPath().toAbsolutePath())
 				.sourceRoot(resolvedSourceRoot).testSourceRoot(resolvedTestSourceRoot)
 				.additionalSourceRoots(additionalSourceRoots)
-				.testClassesDir(Path.of(project.getBuild().getTestOutputDirectory()))
-				.classesDir(Path.of(project.getBuild().getOutputDirectory())).indexFile(ctx.resolveIndexFile(indexFile))
-				.stateFile(ctx.resolveStateFile(stateFile)).depsDir(ctx.resolveDepsDir(depsDir))
-				.hashFile(ctx.resolveHashFile(hashFile)).testHashFile(ctx.resolveTestHashFile(testHashFile))
+				.testClassesDir(toPathOrNull(project.getBuild().getTestOutputDirectory()))
+				.classesDir(toPathOrNull(project.getBuild().getOutputDirectory()))
+				.indexFile(ctx.resolveIndexFile(indexFile)).stateFile(ctx.resolveStateFile(stateFile))
+				.depsDir(ctx.resolveDepsDir(depsDir)).hashFile(ctx.resolveHashFile(hashFile))
+				.testHashFile(ctx.resolveTestHashFile(testHashFile))
 				.methodHashFile(ctx.resolveMethodHashFile(methodHashFile))
 				.bytecodeHashFile(ctx.resolveBytecodeHashFile(bytecodeHashFile))
 				.bytecodeChangeDetectionEnabled(bytecodeChangeDetectionEnabled)
@@ -639,12 +640,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * tests.
 	 */
 	protected String computeCurrentModuleId() {
-		String gid = project.getGroupId();
-		String aid = project.getArtifactId();
-		if (gid == null || gid.isEmpty()) {
-			return aid;
-		}
-		return gid + "-" + aid;
+		return ModuleIds.of(project);
+	}
+
+	private static Path toPathOrNull(String s) {
+		return (s == null || s.isBlank()) ? null : Path.of(s);
 	}
 
 	/**

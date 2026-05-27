@@ -88,8 +88,7 @@ public class ReactorOrderMojo extends AbstractTestOrderMojo {
 			if (!Files.isDirectory(testClassesDir)) {
 				continue;
 			}
-			String gid = p.getGroupId();
-			String moduleId = (gid == null || gid.isEmpty()) ? p.getArtifactId() : gid + ":" + p.getArtifactId();
+			String moduleId = ModuleIds.of(p);
 			moduleTestDirs.put(moduleId, testClassesDir);
 
 			// Compute relative path from reactor root for -pl suggestion
