@@ -27,18 +27,27 @@ class TddEnforcementExtensionTest {
 
 	private String origTdd;
 	private String origStatePath;
+	private String origBuildId;
+	private String origPendingRunsDir;
 
 	@BeforeEach
 	void setUp() {
 		TddEnforcementExtension.resetForTesting();
 		origTdd = System.getProperty(TestOrderConfig.TDD);
 		origStatePath = System.getProperty(TestOrderConfig.STATE_PATH);
+		origBuildId = System.getProperty("testorder.build.id");
+		origPendingRunsDir = System.getProperty("testorder.pending.runs.dir");
+		// Isolate from testorder-config.properties (written by mvn test-order:auto)
+		System.setProperty("testorder.build.id", "");
+		System.setProperty("testorder.pending.runs.dir", "");
 	}
 
 	@AfterEach
 	void tearDown() {
 		restoreProp(TestOrderConfig.TDD, origTdd);
 		restoreProp(TestOrderConfig.STATE_PATH, origStatePath);
+		restoreProp("testorder.build.id", origBuildId);
+		restoreProp("testorder.pending.runs.dir", origPendingRunsDir);
 		TddEnforcementExtension.resetForTesting();
 	}
 
@@ -74,7 +83,11 @@ class TddEnforcementExtensionTest {
 	@Test
 	void skipsWhenNoStatePathConfigured() throws Exception {
 		System.setProperty(TestOrderConfig.TDD, "true");
-		System.clearProperty(TestOrderConfig.STATE_PATH);
+		// Set blank rather than clear — clearing falls back to
+		// testorder-config.properties
+		// which may have a state path set (e.g. when running under mvn
+		// test-order:auto).
+		System.setProperty(TestOrderConfig.STATE_PATH, "");
 		TddEnforcementExtension ext = new TddEnforcementExtension();
 		ext.afterTestExecution(fakeContext(KnownTestA.class, "testOne", Optional.empty()));
 	}

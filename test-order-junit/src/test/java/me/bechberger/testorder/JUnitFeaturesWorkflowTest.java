@@ -56,9 +56,11 @@ class JUnitFeaturesWorkflowTest {
 		origMode = System.getProperty("testorder.instrumentation.mode");
 		origBuildId = System.getProperty("testorder.build.id");
 		origPendingRunsDir = System.getProperty("testorder.pending.runs.dir");
-		// Clear build-session aggregation props so tests write directly to state file
-		System.clearProperty("testorder.build.id");
-		System.clearProperty("testorder.pending.runs.dir");
+		// Override build-session aggregation props with blank so TelemetryListener
+		// writes directly to the state file even when testorder-config.properties
+		// has these set (e.g. when running under mvn test-order:auto test).
+		System.setProperty("testorder.build.id", "");
+		System.setProperty("testorder.pending.runs.dir", "");
 	}
 
 	@AfterEach

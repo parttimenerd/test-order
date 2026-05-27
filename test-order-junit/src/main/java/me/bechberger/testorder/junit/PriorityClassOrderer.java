@@ -281,11 +281,19 @@ public class PriorityClassOrderer implements ClassOrderer {
 		}
 
 		// Write the computed order back into the original list so JUnit sees it.
-		// JUnit's ClassOrderer contract requires in-place modification.
+		// JUnit's ClassOrderer contract requires in-place modification of the list
+		// returned by getClassDescriptors(). If the list is somehow immutable
+		// (should not happen in practice), log a warning and skip reordering.
 		@SuppressWarnings("unchecked")
 		List<ClassDescriptor> originalList = (List<ClassDescriptor>) descriptors;
-		originalList.clear();
-		originalList.addAll(mutableDescriptors);
+		try {
+			originalList.clear();
+			originalList.addAll(mutableDescriptors);
+		} catch (UnsupportedOperationException e) {
+			TestOrderLogger.warn("ClassDescriptors list is unmodifiable — test ordering cannot be applied. "
+					+ "This is unexpected; please report at https://github.com/bechberger/test-order/issues");
+			return;
+		}
 
 		if (s.debug() && originalList.size() > 1) {
 			TestOrderLogger.debug("Final order:");

@@ -42,6 +42,8 @@ class PriorityClassOrdererTest {
 	private String origStructuralDiffEnabled;
 	private String origMlEnabled;
 	private String origMlPredictionsFile;
+	private String origBuildId;
+	private String origPendingRunsDir;
 
 	@BeforeEach
 	void saveProperties() {
@@ -63,6 +65,17 @@ class PriorityClassOrdererTest {
 		origStructuralDiffEnabled = System.getProperty(TestOrderConfig.STRUCTURAL_DIFF_ENABLED);
 		origMlEnabled = System.getProperty(TestOrderConfig.ML_ENABLED);
 		origMlPredictionsFile = System.getProperty(TestOrderConfig.ML_PREDICTIONS_FILE);
+		origBuildId = System.getProperty("testorder.build.id");
+		origPendingRunsDir = System.getProperty("testorder.pending.runs.dir");
+		// Isolate from auto-mode testorder-config.properties: blank all properties
+		// that the config file can set so they don't bleed into unit tests.
+		// Tests that need specific values set them explicitly below.
+		System.setProperty("testorder.state.path", tempDir.resolve(".isolated-state").toString());
+		System.setProperty("testorder.index.path", "");
+		System.setProperty("testorder.changed.classes", "");
+		System.setProperty("testorder.changed.test.classes", "");
+		System.setProperty("testorder.build.id", "");
+		System.setProperty("testorder.pending.runs.dir", "");
 	}
 
 	@AfterEach
@@ -84,6 +97,8 @@ class PriorityClassOrdererTest {
 		restoreProp(TestOrderConfig.STRUCTURAL_DIFF_ENABLED, origStructuralDiffEnabled);
 		restoreProp(TestOrderConfig.ML_ENABLED, origMlEnabled);
 		restoreProp(TestOrderConfig.ML_PREDICTIONS_FILE, origMlPredictionsFile);
+		restoreProp("testorder.build.id", origBuildId);
+		restoreProp("testorder.pending.runs.dir", origPendingRunsDir);
 		TestOrderState.resetPending();
 	}
 
