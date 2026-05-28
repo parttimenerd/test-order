@@ -53,7 +53,13 @@ final class ReactorContext {
 		boolean inferredMulti = false;
 		Path mmDir = resolveMultiModuleRoot(session);
 		Path projectDir = project.getBasedir().toPath().normalize();
-		if (!explicitMulti && mmDir != null && !projectDir.equals(mmDir) && projectDir.startsWith(mmDir)
+		// Use the invocation directory as discriminator: for -pl <module> without -am,
+		// the user runs mvn from the reactor root so executionRootDirectory == mmDir.
+		// When a third-party project sits inside an unrelated Maven project tree, Maven
+		// may walk up to that project's .mvn/, but executionRootDirectory stays at the
+		// project where mvn was actually invoked, so mmDir != executionRootDir.
+		Path executionRootDir = resolveExecutionRootDir(session);
+		if (!explicitMulti && mmDir != null && !projectDir.equals(mmDir) && mmDir.equals(executionRootDir)
 				&& Files.isDirectory(mmDir.resolve(SHARED_DIR_NAME))) {
 			inferredMulti = true;
 		}
@@ -61,6 +67,15 @@ final class ReactorContext {
 		this.multiModule = explicitMulti || inferredMulti;
 		this.reactorRoot = inferredMulti ? mmDir : session.getTopLevelProject().getBasedir().toPath();
 		this.sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
+	}
+
+	private static Path resolveExecutionRootDir(MavenSession session) {
+		try {
+			String dir = session.getExecutionRootDirectory();
+			return dir != null ? Path.of(dir).normalize() : null;
+		} catch (Exception e) {
+			return null;
+		}
 	}
 
 	private static Path resolveMultiModuleRoot(MavenSession session) {

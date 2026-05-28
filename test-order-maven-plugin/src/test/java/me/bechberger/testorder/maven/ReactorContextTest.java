@@ -252,6 +252,7 @@ class ReactorContextTest {
 		MavenProject moduleA = mockProject("module-a", rootDir.resolve("module-a"));
 		when(session.getProjects()).thenReturn(List.of(moduleA));
 		when(session.getTopLevelProject()).thenReturn(moduleA);
+		when(session.getExecutionRootDirectory()).thenReturn(rootDir.toString());
 
 		// Mock getRequest().getMultiModuleProjectDirectory() → rootDir
 		var request = mock(org.apache.maven.execution.MavenExecutionRequest.class);
@@ -271,6 +272,7 @@ class ReactorContextTest {
 		MavenProject moduleA = mockProject("module-a", rootDir.resolve("module-a"));
 		when(session.getProjects()).thenReturn(List.of(moduleA));
 		when(session.getTopLevelProject()).thenReturn(moduleA);
+		when(session.getExecutionRootDirectory()).thenReturn(rootDir.toString());
 
 		var request = mock(org.apache.maven.execution.MavenExecutionRequest.class);
 		when(session.getRequest()).thenReturn(request);
@@ -280,6 +282,31 @@ class ReactorContextTest {
 		assertThat(ctx.isMultiModule()).isFalse();
 		// Falls back to module-local paths
 		assertThat(ctx.resolveStateFile(null)).isEqualTo(rootDir.resolve("module-a/.test-order/state.lz4"));
+	}
+
+	@Test
+	void inferredMultiModule_doesNotFireForUnrelatedNestedProject() throws IOException {
+		// Simulate a third-party project physically nested inside another Maven project
+		// (e.g. third-party/jsoup inside a repo whose root has .mvn/ and .test-order/).
+		// Maven walks up and finds the outer .mvn/, so mmDir points to the outer root.
+		// But the user invoked mvn from jsoup's directory, so executionRootDirectory
+		// points to jsoup — not to the outer root. inferredMulti must NOT fire.
+		Path outerRoot = tempDir.resolve("outer-root");
+		Files.createDirectories(outerRoot.resolve(".test-order")); // outer project has shared dir
+		Path jsoupDir = outerRoot.resolve("third-party").resolve("jsoup");
+
+		MavenProject jsoup = mockProject("jsoup", jsoupDir);
+		when(session.getProjects()).thenReturn(List.of(jsoup));
+		when(session.getTopLevelProject()).thenReturn(jsoup);
+		when(session.getExecutionRootDirectory()).thenReturn(jsoupDir.toString()); // invoked from jsoup dir
+
+		var request = mock(org.apache.maven.execution.MavenExecutionRequest.class);
+		when(session.getRequest()).thenReturn(request);
+		when(request.getMultiModuleProjectDirectory()).thenReturn(outerRoot.toFile()); // Maven found outer .mvn/
+
+		ReactorContext ctx = new ReactorContext(session, jsoup);
+		assertThat(ctx.isMultiModule()).isFalse();
+		assertThat(ctx.resolveStateFile(null)).isEqualTo(jsoupDir.resolve(".test-order/state.lz4"));
 	}
 
 	// --- helper ---
