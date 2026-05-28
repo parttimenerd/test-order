@@ -463,6 +463,7 @@ public class DependencyMap {
 		result.methodDependencies.putAll(methodDependencies);
 		result.memberDependencies.putAll(memberDependencies);
 		result.methodMemberDependencies.putAll(methodMemberDependencies);
+		result.testToModule.putAll(testToModule);
 		return result;
 	}
 

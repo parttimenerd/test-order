@@ -148,4 +148,20 @@ class BytecodeDependencyAugmenterTest {
 		assertTrue(merged.get("com.example.TestA").contains("com.example.Prod2"));
 		assertTrue(merged.get("com.example.TestA").contains("com.example.Prod3"));
 	}
+
+	@Test
+	void withAugmentation_preservesModuleMap() {
+		DependencyMap dep = new DependencyMap();
+		dep.put("com.example.TestA", Set.of("com.example.Prod1"));
+		dep.put("com.example.TestB", Set.of("com.example.Prod2"));
+		dep.putModule("com.example.TestA", "g-module-a");
+		dep.putModule("com.example.TestB", "g-module-b");
+
+		Map<String, Set<String>> aug = Map.of("com.example.TestA", Set.of("com.example.Extra"));
+		DependencyMap merged = dep.withAugmentation(aug);
+
+		assertTrue(merged.hasModuleMap(), "module map must survive withAugmentation");
+		assertEquals("g-module-a", merged.getModule("com.example.TestA"));
+		assertEquals("g-module-b", merged.getModule("com.example.TestB"));
+	}
 }
