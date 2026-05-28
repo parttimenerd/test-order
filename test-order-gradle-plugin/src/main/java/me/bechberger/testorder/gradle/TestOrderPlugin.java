@@ -5,7 +5,6 @@ import me.bechberger.testorder.PersistenceSupport;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.TestSelector;
 import me.bechberger.testorder.changes.ChangeDetectionSupport;
-import me.bechberger.testorder.changes.HashSnapshotSupport;
 import org.gradle.api.GradleException;
 import me.bechberger.testorder.ops.AggregateOperation;
 import me.bechberger.testorder.ops.CleanOperation;
@@ -2498,26 +2497,6 @@ public class TestOrderPlugin implements Plugin<Project> {
         return ChangeDetectionOps.detectChangedClassesWithKotlin(
                 ext.getChangeMode().get(), pctx.projectRoot(), pctx.sourceRoot(),
                 pctx.hashFile(), pctx.changedClasses(), true, wrapLog(project));
-    }
-
-    /**
-     * Snapshots a single source directory to the given hash file, waiting for
-     * the hash-file lock before writing.
-     *
-     * @param sourceRoot root directory to scan
-     * @param hashFile   output hash file (also used as the lock target)
-     * @param label      human-readable label for log messages
-     * @param project    Gradle project (used for logging)
-     */
-    private static void snapshotSingleDir(Path sourceRoot, Path hashFile, String label, Project project) {
-        try {
-            PersistenceSupport.withFileLock(hashFile, () -> {
-                HashSnapshotSupport.snapshotDirectory(sourceRoot, hashFile);
-                return null;
-            });
-        } catch (IOException e) {
-            project.getLogger().warn("[test-order] Failed to save {} hash snapshot: {}", label, e.getMessage());
-        }
     }
 
     // -----------------------------------------------------------------------
