@@ -22,6 +22,10 @@ final class StateSerializer {
 	}
 
 	static void save(Path file, TestOrderState state) throws IOException {
+		save(file, state, true);
+	}
+
+	static void save(Path file, TestOrderState state, boolean applyDecay) throws IOException {
 		PersistenceSupport.withFileLock(file, () -> {
 			Path parent = file.getParent();
 			if (parent != null) {
@@ -30,7 +34,7 @@ final class StateSerializer {
 			Path tempFile = PersistenceSupport.temporarySibling(file);
 			try (var writer = new java.io.OutputStreamWriter(LZ4Support.blockOutputStream(
 					Files.newOutputStream(tempFile), 1 << 16, LZ4Support.highCompressor(9)), StandardCharsets.UTF_8)) {
-				writer.write(PrettyPrinter.compactPrint(state.toPersistedRoot()));
+				writer.write(PrettyPrinter.compactPrint(state.toPersistedRoot(applyDecay)));
 			}
 			PersistenceSupport.moveIntoPlace(tempFile, file);
 			state.afterSave();

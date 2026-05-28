@@ -409,13 +409,16 @@ public class TelemetryListener implements TestExecutionListener {
 					} catch (IOException e) {
 						TestOrderLogger.warn("[telemetry] Could not write partial run record: {}", e.getMessage());
 					}
-					// Still apply duration/failure telemetry to state under lock
+					// Still apply duration/failure telemetry to state under lock.
+					// Use saveAggregatedFork to avoid applying decay to historical scores —
+					// PartialRunAggregator.mergeAndApply applies the single decay round at
+					// session end via addRunRecord.
 					state = PersistenceSupport.withFileLock(stateFile, () -> {
 						TestOrderState lockedState = TelemetryPersistence.loadStateOrEmpty(stateFile);
 						TelemetryPersistence.applyHistoryMaxRuns(lockedState);
 						TelemetryPersistence.applyPendingTelemetry(lockedState, pendingDurations, failedClassNames,
 								pendingMethodDurations, failedMethodNames);
-						lockedState.save(stateFile);
+						lockedState.saveAggregatedFork(stateFile);
 						return lockedState;
 					});
 				} else {

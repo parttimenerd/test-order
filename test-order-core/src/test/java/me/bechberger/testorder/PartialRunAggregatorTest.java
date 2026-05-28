@@ -9,6 +9,8 @@ import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
+import me.bechberger.testorder.TelemetryPersistence;
+
 class PartialRunAggregatorTest {
 
 	@TempDir
@@ -219,47 +221,86 @@ class PartialRunAggregatorTest {
 	// ── regression: double-decay in aggregated mode ────────────────────────
 
 	/**
-	 * In aggregated (multi-fork) mode the TelemetryListener already saves failure
-	 * scores with decay once per run. PartialRunAggregator.mergeAndApply must NOT
-	 * decay again — otherwise scores decay twice per run, cutting them by
-	 * (1-decay)^2 instead of (1-decay).
-	 *
-	 * This test simulates the full aggregated path: 1. Record a failure and save
-	 * (simulates TelemetryListener per-fork save). 2. Run mergeAndApply (simulates
-	 * session-end aggregation).
-	 *
-	 * The resulting failure score should match a single-save path (decay once).
+	 * In aggregated (multi-fork) mode, two forks each fail a different class. With
+	 * {@code saveAggregatedFork()}, historical scores are NOT decayed by each fork
+	 * save — only the session-end {@link PartialRunAggregator#mergeAndApply}
+	 * applies one decay round. This test verifies that classA's score after fork2
+	 * saves is still the raw pending-failure weight (1.0), not decayed by fork2's
+	 * presence.
 	 */
 	@Test
-	void mergeAndApplyDoesNotDecayFailureScoreSecondTime() throws IOException {
+	void multiForksWithDifferentFailuresDoNotCrossDecay() throws IOException {
+		Path stateFile = dir.resolve("state.lz4");
+
+		// Fork 1: fails classA (saveAggregatedFork — no decay)
+		TestOrderState fork1 = TelemetryPersistence.loadStateOrEmpty(stateFile);
+		TelemetryPersistence.applyPendingTelemetry(fork1, Map.of(), Set.of("com.test.ClassA"), Map.of(), Set.of());
+		fork1.saveAggregatedFork(stateFile);
+
+		// Fork 2: fails classB (loads state from fork1, saveAggregatedFork — no
+		// cross-decay)
+		TestOrderState fork2 = TelemetryPersistence.loadStateOrEmpty(stateFile);
+		TelemetryPersistence.applyPendingTelemetry(fork2, Map.of(), Set.of("com.test.ClassB"), Map.of(), Set.of());
+		fork2.saveAggregatedFork(stateFile);
+
+		TestOrderState after = TestOrderState.load(stateFile);
+		double scoreA = after.failureScore("com.test.ClassA");
+		double scoreB = after.failureScore("com.test.ClassB");
+
+		// With saveAggregatedFork, no decay is applied per-fork — both scores should
+		// remain at the raw pending-failure weight of 1.0.
+		assertEquals(1.0, scoreA, 1e-6,
+				"classA score must not be decayed by fork2's save (no cross-fork decay): actual=" + scoreA);
+		assertEquals(1.0, scoreB, 1e-6,
+				"classB score must equal raw pending weight after fork2 save: actual=" + scoreB);
+	}
+
+	/**
+	 * Verifies the full aggregated path applies decay exactly once across the
+	 * complete fork-save + mergeAndApply pipeline.
+	 *
+	 * <p>
+	 * In aggregated (multi-fork) mode:
+	 * <ul>
+	 * <li>TelemetryListener calls {@code saveAggregatedFork()} — accumulates
+	 * pending failures WITHOUT decaying historical scores.</li>
+	 * <li>{@link PartialRunAggregator#mergeAndApply} calls {@code addRunRecord()}
+	 * which sets {@code pendingRunCompleted=true}, so the subsequent {@code save()}
+	 * applies exactly one decay round.</li>
+	 * </ul>
+	 *
+	 * The resulting failure score after the full pipeline should equal one decay
+	 * round applied to the initial score (i.e. {@code initialScore * (1 - decay)}).
+	 */
+	@Test
+	void fullAggregatedPipelineAppliesDecayExactlyOnce() throws IOException {
 		Path pendingDir = dir.resolve("pending");
 		Path stateFile = dir.resolve("state.lz4");
 		String buildId = "build-decay";
 
-		// === Step 1: simulate TelemetryListener per-fork save ===
-		// Record a failure in a fresh state and save — this is what TelemetryListener
-		// does in aggregated mode before writing the partial file.
-		TestOrderState state = new TestOrderState();
-		state.recordFailure("com.test.Flaky");
-		state.save(stateFile); // decay occurs here (hasPendingData=true)
+		// === Step 1: simulate TelemetryListener per-fork save (aggregated mode) ===
+		// saveAggregatedFork adds pending failures WITHOUT decaying historical scores.
+		TestOrderState fork = TelemetryPersistence.loadStateOrEmpty(stateFile);
+		TelemetryPersistence.applyPendingTelemetry(fork, Map.of(), Set.of("com.test.Flaky"), Map.of(), Set.of());
+		fork.saveAggregatedFork(stateFile); // no decay here
 
-		double scoreAfterOneSave = TestOrderState.load(stateFile).failureScore("com.test.Flaky");
-		assertTrue(scoreAfterOneSave > 0, "Score should be positive after one save");
-		// With default decay=0.3: score starts at 1.0, decays to 0.7 after one save
-		// (pending + decay combined — see FailureHistoryTracker.mergeForSave)
+		double scoreAfterForkSave = TestOrderState.load(stateFile).failureScore("com.test.Flaky");
+		assertTrue(scoreAfterForkSave > 0, "Score should be positive after fork save");
 
 		// === Step 2: simulate PartialRunAggregator.mergeAndApply session-end call ===
-		// Write a partial (as TelemetryListener would), then merge.
+		// mergeAndApply calls addRunRecord (pendingRunCompleted=true) → save() decays.
 		PartialRunAggregator.writePartial(pendingDir, buildId, makeRecord("com.test.Flaky"), false);
 		PartialRunAggregator.mergeAndApply(pendingDir, buildId, stateFile);
 
 		double scoreAfterMerge = TestOrderState.load(stateFile).failureScore("com.test.Flaky");
 
-		// The score after merge should equal scoreAfterOneSave — mergeAndApply must
-		// not apply a second round of decay. If it does, the score would be roughly
-		// scoreAfterOneSave * (1 - 0.3) instead.
-		assertEquals(scoreAfterOneSave, scoreAfterMerge, 1e-6,
-				"mergeAndApply must not decay failure scores a second time; " + "expected=" + scoreAfterOneSave
-						+ " actual=" + scoreAfterMerge);
+		// After the full pipeline (fork save + mergeAndApply), decay should be applied
+		// exactly once: score = scoreAfterForkSave * (1 - failureDecay).
+		// With default decay=0.3: score goes from ~1.0 to ~0.7.
+		// More precisely: scoreAfterMerge = scoreAfterForkSave * 0.7
+		double defaultDecay = 0.3; // default from TestOrderState
+		assertEquals(scoreAfterForkSave * (1 - defaultDecay), scoreAfterMerge, 1e-6,
+				"Full pipeline must apply decay exactly once; " + "scoreAfterForkSave=" + scoreAfterForkSave
+						+ " scoreAfterMerge=" + scoreAfterMerge);
 	}
 }

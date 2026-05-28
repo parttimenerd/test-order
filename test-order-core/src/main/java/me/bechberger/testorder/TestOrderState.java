@@ -784,7 +784,36 @@ public class TestOrderState {
 		STATE_LOAD_CACHE.keySet().removeIf(k -> k.path().equals(abs));
 	}
 
+	/**
+	 * Saves pending failure telemetry (durations, failures) accumulated in this
+	 * fork WITHOUT applying a decay round to historically persisted scores.
+	 *
+	 * <p>
+	 * In aggregated (multi-fork) mode, multiple surefire forks each persist their
+	 * own failure data to the shared state file. If each fork applied one decay
+	 * round, a class that failed in fork 1 would be decayed again when fork 2 saves
+	 * — even though fork 2's tests had nothing to do with that class.
+	 * {@link PartialRunAggregator#mergeAndApply} applies the single decay round at
+	 * session end instead, via {@link #addRunRecord}.
+	 */
+	public void saveAggregatedFork(Path file) throws IOException {
+		StateSerializer.save(file, this, false);
+		Path abs = file.toAbsolutePath();
+		STATE_LOAD_CACHE.keySet().removeIf(k -> k.path().equals(abs));
+	}
+
 	Map<String, Object> toPersistedRoot() {
+		return toPersistedRoot(true);
+	}
+
+	/**
+	 * @param applyDecay
+	 *            when false, historical failure scores are preserved without decay
+	 *            — used for per-fork saves in aggregated (multi-fork) mode so that
+	 *            only the session-end {@link PartialRunAggregator} merge applies
+	 *            the single decay round.
+	 */
+	Map<String, Object> toPersistedRoot(boolean applyDecay) {
 		Map<String, Object> root = new LinkedHashMap<>();
 		root.put("schemaVersion", CURRENT_SCHEMA_VERSION);
 
@@ -859,7 +888,7 @@ public class TestOrderState {
 		// then add pending failures (current run) at full weight, prune.
 		// When save() is called without a run (e.g. optimizer saving weights only),
 		// scores are preserved without decay — decay represents "one run passed".
-		boolean hasRunData = pendingRunCompleted || failureHistory.hasPendingData();
+		boolean hasRunData = applyDecay && (pendingRunCompleted || failureHistory.hasPendingData());
 		FailureHistoryTracker.PersistedScores mergedFailureState = failureHistory.mergeForSave(hasRunData,
 				config.failureDecay(), config.methodFailureDecay(), config.failurePruneThreshold(), LOG);
 		Map<String, Object> mergedFailures = mergedFailureState.failureScores();
