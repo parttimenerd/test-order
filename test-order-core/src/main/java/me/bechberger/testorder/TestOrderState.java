@@ -717,16 +717,6 @@ public class TestOrderState {
 		pendingRunCompleted = true;
 	}
 
-	/**
-	 * Adds a run record without triggering an additional failure-score decay round.
-	 * Used by {@link PartialRunAggregator} when the per-fork TelemetryListener has
-	 * already applied decay during its own save pass.
-	 */
-	public synchronized void addRunRecordNoDecay(RunRecord record) {
-		runHistory.add(record, config.historyMaxRuns());
-		// intentionally does NOT set pendingRunCompleted — decay already applied
-	}
-
 	// ── Static coordination (PriorityClassOrderer → TelemetryListener) ──
 
 	public static void recordBreakdown(String testClass, ScoreBreakdown breakdown) {
