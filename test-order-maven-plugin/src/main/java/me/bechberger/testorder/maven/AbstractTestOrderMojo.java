@@ -1438,7 +1438,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			// restoreInstrumentedClasses() can cleanly undo the instrumentation after
 			// this learn run completes.
 			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
-			if (!java.nio.file.Files.isDirectory(backupDir)) {
+			boolean backupHasContent;
+			try {
+				backupHasContent = java.nio.file.Files.isDirectory(backupDir)
+						&& java.nio.file.Files.walk(backupDir).anyMatch(p -> p.toString().endsWith(".class"));
+			} catch (IOException e) {
+				backupHasContent = false;
+			}
+			if (!backupHasContent) {
 				Path classesDir = resolveClassesDir();
 				if (classesDir != null) {
 					getLog().info(
