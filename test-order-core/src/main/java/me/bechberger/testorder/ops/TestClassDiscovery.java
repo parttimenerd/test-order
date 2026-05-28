@@ -3,7 +3,11 @@ package me.bechberger.testorder.ops;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -62,6 +66,20 @@ public final class TestClassDiscovery {
 	}
 
 	/**
+	 * Groups method keys (className#methodName) by class name for O(N+M) filtering.
+	 */
+	private static Map<String, List<String>> groupMethodKeysByClass(Set<String> methodKeys) {
+		Map<String, List<String>> byClass = new HashMap<>();
+		for (String key : methodKeys) {
+			int hash = key.indexOf('#');
+			if (hash > 0) {
+				byClass.computeIfAbsent(key.substring(0, hash), k -> new ArrayList<>()).add(key);
+			}
+		}
+		return byClass;
+	}
+
+	/**
 	 * Returns true if the test source root contains at least one Java/Kotlin/Groovy
 	 * source file. Used as a fallback before test classes are compiled.
 	 */
@@ -88,18 +106,18 @@ public final class TestClassDiscovery {
 		if (moduleTests.isEmpty()) {
 			return depMap;
 		}
+		Map<String, List<String>> methodKeysByClass = depMap.hasMethodDeps()
+				? groupMethodKeysByClass(depMap.methodKeys())
+				: Map.of();
 		DependencyMap filtered = new DependencyMap();
 		for (String testClass : moduleTests) {
 			if (depMap.testClasses().contains(testClass)) {
 				filtered.put(testClass, depMap.get(testClass));
-				if (depMap.hasMethodDeps()) {
-					for (String methodKey : depMap.methodKeys()) {
-						if (methodKey.startsWith(testClass + "#")) {
-							filtered.putMethodDeps(methodKey, depMap.getMethodDeps(methodKey));
-							if (depMap.hasMemberDeps()) {
-								filtered.putMethodMemberDeps(methodKey, depMap.getMethodMemberDeps(methodKey));
-							}
-						}
+				List<String> methodKeys = methodKeysByClass.getOrDefault(testClass, List.of());
+				for (String methodKey : methodKeys) {
+					filtered.putMethodDeps(methodKey, depMap.getMethodDeps(methodKey));
+					if (depMap.hasMemberDeps()) {
+						filtered.putMethodMemberDeps(methodKey, depMap.getMethodMemberDeps(methodKey));
 					}
 				}
 				if (depMap.hasMemberDeps()) {
@@ -129,6 +147,9 @@ public final class TestClassDiscovery {
 		if (moduleId == null || moduleId.isEmpty() || !depMap.hasModuleMap()) {
 			return depMap;
 		}
+		Map<String, List<String>> methodKeysByClass = depMap.hasMethodDeps()
+				? groupMethodKeysByClass(depMap.methodKeys())
+				: Map.of();
 		DependencyMap filtered = new DependencyMap();
 		for (String testClass : depMap.testClasses()) {
 			String recorded = depMap.getModule(testClass);
@@ -136,14 +157,11 @@ public final class TestClassDiscovery {
 				continue;
 			}
 			filtered.put(testClass, depMap.get(testClass));
-			if (depMap.hasMethodDeps()) {
-				for (String methodKey : depMap.methodKeys()) {
-					if (methodKey.startsWith(testClass + "#")) {
-						filtered.putMethodDeps(methodKey, depMap.getMethodDeps(methodKey));
-						if (depMap.hasMemberDeps()) {
-							filtered.putMethodMemberDeps(methodKey, depMap.getMethodMemberDeps(methodKey));
-						}
-					}
+			List<String> methodKeys = methodKeysByClass.getOrDefault(testClass, List.of());
+			for (String methodKey : methodKeys) {
+				filtered.putMethodDeps(methodKey, depMap.getMethodDeps(methodKey));
+				if (depMap.hasMemberDeps()) {
+					filtered.putMethodMemberDeps(methodKey, depMap.getMethodMemberDeps(methodKey));
 				}
 			}
 			if (depMap.hasMemberDeps()) {
