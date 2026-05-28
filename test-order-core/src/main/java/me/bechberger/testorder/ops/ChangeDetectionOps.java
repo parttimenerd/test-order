@@ -104,7 +104,7 @@ public final class ChangeDetectionOps {
 	 */
 	public static Set<String> detectChangedMethods(Path testSourceRoot, Path methodHashFile, PluginLog log) {
 		try {
-			if (!Files.isDirectory(testSourceRoot))
+			if (testSourceRoot == null || !Files.isDirectory(testSourceRoot))
 				return Set.of();
 			if (Files.exists(methodHashFile)) {
 				MethodHashStore previous = MethodHashStore.load(methodHashFile);
@@ -124,7 +124,7 @@ public final class ChangeDetectionOps {
 	 */
 	public static void snapshotMethodHashes(Path testSourceRoot, Path methodHashFile, PluginLog log) {
 		try {
-			if (Files.isDirectory(testSourceRoot)) {
+			if (testSourceRoot != null && Files.isDirectory(testSourceRoot)) {
 				MethodHashStore store = MethodHashStore.scan(testSourceRoot);
 				store.save(methodHashFile);
 				log.info("[test-order] Saved method hash snapshot (" + store.getHashes().size() + " methods): "
