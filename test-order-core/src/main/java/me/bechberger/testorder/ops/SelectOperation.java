@@ -83,7 +83,9 @@ public final class SelectOperation {
 		}
 
 		boolean allSelected = selection.remaining().isEmpty();
-		if (allSelected) {
+		if (selection.selected().isEmpty() && selection.remaining().isEmpty()) {
+			// no tests in depMap — nothing to report
+		} else if (allSelected) {
 			config.log().info("[test-order] Selected all " + selection.selected().size()
 					+ " tests (no subset — all will run in priority order)");
 		} else {

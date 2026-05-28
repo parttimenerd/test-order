@@ -141,8 +141,10 @@ public final class AutoWorkflow {
 			selectResult = SelectOperation.select(new SelectOperation.SelectConfig(a.depMap(), a.state(),
 					a.changedClasses(), a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(), alwaysRun,
 					ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
-			// G3: Warn if selection yields no tests in auto mode
-			if (selectResult.selection().selected().isEmpty()) {
+			// G3: Warn if selection yields no tests in auto mode, but only when the depMap
+			// has tests — modules with no test classes legitimately select nothing.
+			if (selectResult.selection().selected().isEmpty() && !a.depMap().testClasses().isEmpty()
+					&& (!a.changedClasses().isEmpty() || !a.changedTests().isEmpty())) {
 				ctx.log().warn("[test-order] Selection yielded 0 tests despite detected changes. "
 						+ "Check scoring weights or selectTopN/selectRandomM configuration.");
 			}
