@@ -110,6 +110,9 @@ public final class ChangeDetectionSupport {
 		if (changedClasses != null && !changedClasses.isBlank()) {
 			return parseExplicitClasses(changedClasses);
 		}
+		if (sourceRoot == null) {
+			return Set.of();
+		}
 		ChangeDetector.Mode mode = resolveMode(normalized, hashFile);
 		if (mode == ChangeDetector.Mode.EXPLICIT) {
 			return Set.of();
@@ -129,6 +132,9 @@ public final class ChangeDetectionSupport {
 			Path testHashFile, boolean readOnly) throws IOException {
 		String normalized = normalizeMode(changeMode);
 		if ("explicit".equals(normalized)) {
+			return Set.of();
+		}
+		if (testSourceRoot == null) {
 			return Set.of();
 		}
 		ChangeDetector.Mode mode = resolveMode(normalized, testHashFile);

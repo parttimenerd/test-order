@@ -80,4 +80,18 @@ class ChangeDetectionSupportTest {
 				tempDir.resolve("src/test/java"), tempDir.resolve("test-hashes.lz4"), true);
 		assertEquals(Set.of(), changedTests);
 	}
+
+	@Test
+	void detectChangedClasses_nullSourceRoot_returnsEmpty() throws Exception {
+		Set<String> changed = ChangeDetectionSupport.detectChangedClasses("auto", tempDir, null,
+				tempDir.resolve("hashes.lz4"), null, true);
+		assertEquals(Set.of(), changed, "null sourceRoot must not throw NPE — return empty set");
+	}
+
+	@Test
+	void detectChangedTestClasses_nullTestSourceRoot_returnsEmpty() throws Exception {
+		Set<String> changed = ChangeDetectionSupport.detectChangedTestClasses("auto", tempDir, null,
+				tempDir.resolve("test-hashes.lz4"), true);
+		assertEquals(Set.of(), changed, "null testSourceRoot must not throw NPE — return empty set");
+	}
 }
