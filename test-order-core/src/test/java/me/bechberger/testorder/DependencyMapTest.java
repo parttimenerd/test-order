@@ -721,4 +721,44 @@ class DependencyMapTest {
 		assertFalse(map.hasModuleMap());
 		assertNull(map.getModule("com.example.FooTest"));
 	}
+
+	@Test
+	void mergeWith_unionsClassDepsAndPreservesModuleMap() {
+		DependencyMap a = new DependencyMap();
+		a.put("com.example.TestA", Set.of("com.example.Prod1"));
+		a.putModule("com.example.TestA", "g:mod-a");
+
+		DependencyMap b = new DependencyMap();
+		b.put("com.example.TestA", Set.of("com.example.Prod2"));
+		b.put("com.example.TestB", Set.of("com.example.Prod3"));
+		b.putModule("com.example.TestB", "g:mod-b");
+
+		a.mergeWith(b);
+
+		assertEquals(Set.of("com.example.Prod1", "com.example.Prod2"), a.get("com.example.TestA"),
+				"class deps must be unioned");
+		assertEquals(Set.of("com.example.Prod3"), a.get("com.example.TestB"), "new test from b must appear");
+		assertTrue(a.hasModuleMap(), "module map must survive mergeWith");
+		assertEquals("g:mod-a", a.getModule("com.example.TestA"));
+		assertEquals("g:mod-b", a.getModule("com.example.TestB"));
+	}
+
+	@Test
+	void mergeWith_invalidatesInvertedIndexCache() {
+		DependencyMap a = new DependencyMap();
+		a.put("com.example.TestA", Set.of("com.example.Prod1"));
+
+		// Warm the inverted index cache
+		a.getAffectedTests(Set.of("com.example.Prod1"));
+
+		DependencyMap b = new DependencyMap();
+		b.put("com.example.TestB", Set.of("com.example.Prod1"));
+
+		a.mergeWith(b);
+
+		Set<String> affected = a.getAffectedTests(Set.of("com.example.Prod1"));
+		assertTrue(affected.contains("com.example.TestA"), "original test must still be affected");
+		assertTrue(affected.contains("com.example.TestB"),
+				"newly merged test must be affected after cache invalidation");
+	}
 }

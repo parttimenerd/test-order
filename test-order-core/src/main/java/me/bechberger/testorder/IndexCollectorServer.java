@@ -611,6 +611,15 @@ public class IndexCollectorServer implements AutoCloseable {
 				pw.println("---");
 				writeMapText(pw, mergedMethodMemberDeps);
 				pw.println("===");
+				if (!mergedTestToModule.isEmpty()) {
+					pw.println("===module-map");
+					for (var entry : mergedTestToModule.entrySet()) {
+						if (entry.getValue() != null && !entry.getValue().isEmpty()) {
+							pw.println(entry.getKey() + "\t" + entry.getValue());
+						}
+					}
+					pw.println("===end-module-map");
+				}
 			}
 			System.err.println("[test-order] Wrote fallback payloads to " + fallbackFile
 					+ " — will be processed on next build run");
@@ -649,11 +658,29 @@ public class IndexCollectorServer implements AutoCloseable {
 		Map<String, Set<String>> methodDeps = new HashMap<>();
 		Map<String, Set<String>> memberDeps = new HashMap<>();
 		Map<String, Set<String>> methodMemberDeps = new HashMap<>();
+		Map<String, String> testToModule = new HashMap<>();
 
 		// Parse: 4 maps per payload, separated by "---", payloads separated by "==="
+		// Optionally followed by "===module-map" ... "===end-module-map" section.
 		int mapIndex = 0;
 		Map<String, Set<String>> current = classDeps;
+		boolean inModuleMap = false;
 		for (String line : lines) {
+			if ("===module-map".equals(line)) {
+				inModuleMap = true;
+				continue;
+			}
+			if ("===end-module-map".equals(line)) {
+				inModuleMap = false;
+				continue;
+			}
+			if (inModuleMap) {
+				int tab = line.indexOf('\t');
+				if (tab > 0) {
+					testToModule.put(line.substring(0, tab), line.substring(tab + 1));
+				}
+				continue;
+			}
 			if ("===".equals(line)) {
 				mapIndex = 0;
 				current = classDeps;
@@ -678,7 +705,7 @@ public class IndexCollectorServer implements AutoCloseable {
 			}
 		}
 
-		DependencyMap.mergeFromAgent(indexFile, classDeps, methodDeps, memberDeps, methodMemberDeps);
+		DependencyMap.mergeFromAgent(indexFile, classDeps, methodDeps, memberDeps, methodMemberDeps, testToModule);
 		java.nio.file.Files.deleteIfExists(fallbackFile);
 		return true;
 	}

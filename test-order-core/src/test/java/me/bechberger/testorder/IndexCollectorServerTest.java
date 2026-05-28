@@ -129,6 +129,41 @@ class IndexCollectorServerTest {
 	}
 
 	@Test
+	void processFallbackFile_preservesModuleMap() throws Exception {
+		Path indexFile = tempDir.resolve("test-dependencies.lz4");
+		Path fallbackFile = indexFile.resolveSibling(indexFile.getFileName() + ".collector-fallback");
+
+		String fallbackContent = String.join("\n", "com.example.FooTest\tcom.example.Foo",
+				"com.example.BarTest\tcom.example.Bar", "---", "", "---", "", "---", "", "===", "===module-map",
+				"com.example.FooTest\tg:module-a", "com.example.BarTest\tg:module-b", "===end-module-map", "");
+		Files.writeString(fallbackFile, fallbackContent);
+
+		assertTrue(IndexCollectorServer.processFallbackFile(indexFile));
+		assertFalse(Files.exists(fallbackFile));
+
+		DependencyMap map = DependencyMap.load(indexFile);
+		assertTrue(map.hasModuleMap(), "module map must survive fallback roundtrip");
+		assertEquals("g:module-a", map.getModule("com.example.FooTest"));
+		assertEquals("g:module-b", map.getModule("com.example.BarTest"));
+	}
+
+	@Test
+	void processFallbackFile_oldFormatWithoutModuleMap_stillLoads() throws Exception {
+		Path indexFile = tempDir.resolve("test-dependencies.lz4");
+		Path fallbackFile = indexFile.resolveSibling(indexFile.getFileName() + ".collector-fallback");
+
+		// Old format: no ===module-map section
+		String fallbackContent = String.join("\n", "com.example.FooTest\tcom.example.Foo", "---", "", "---", "", "---",
+				"", "===", "");
+		Files.writeString(fallbackFile, fallbackContent);
+
+		assertTrue(IndexCollectorServer.processFallbackFile(indexFile));
+		DependencyMap map = DependencyMap.load(indexFile);
+		assertTrue(map.testClasses().contains("com.example.FooTest"));
+		assertFalse(map.hasModuleMap(), "old-format fallback has no module map");
+	}
+
+	@Test
 	void preloadSaveClassesDoesNotThrow() {
 		// Should complete without error even if called multiple times
 		assertDoesNotThrow(DependencyMap::preloadSaveClasses);
