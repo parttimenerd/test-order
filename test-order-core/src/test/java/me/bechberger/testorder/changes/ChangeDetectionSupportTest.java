@@ -61,6 +61,12 @@ class ChangeDetectionSupportTest {
 	}
 
 	@Test
+	void resolveMode_autoWithNullHashFile_returnsSinceLastCommit() throws Exception {
+		assertEquals(ChangeDetector.Mode.SINCE_LAST_COMMIT, ChangeDetectionSupport.resolveMode("auto", null),
+				"auto + null hashFile must not NPE — treat as no snapshot present");
+	}
+
+	@Test
 	void detectChangedClassesReturnsExplicitSetWithoutGit() throws Exception {
 		Set<String> changed = ChangeDetectionSupport.detectChangedClasses("auto", tempDir,
 				tempDir.resolve("src/main/java"), tempDir.resolve("hashes.lz4"), "com.example.A, com.example.B", true);

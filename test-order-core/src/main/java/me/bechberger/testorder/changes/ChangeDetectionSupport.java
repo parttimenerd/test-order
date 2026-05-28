@@ -84,7 +84,9 @@ public final class ChangeDetectionSupport {
 	public static ChangeDetector.Mode resolveMode(String changeMode, Path hashFile) throws IOException {
 		String normalized = normalizeMode(changeMode);
 		if ("auto".equals(normalized)) {
-			return Files.exists(hashFile) ? ChangeDetector.Mode.SINCE_LAST_RUN : ChangeDetector.Mode.SINCE_LAST_COMMIT;
+			return (hashFile != null && Files.exists(hashFile))
+					? ChangeDetector.Mode.SINCE_LAST_RUN
+					: ChangeDetector.Mode.SINCE_LAST_COMMIT;
 		}
 		return parseMode(normalized);
 	}
