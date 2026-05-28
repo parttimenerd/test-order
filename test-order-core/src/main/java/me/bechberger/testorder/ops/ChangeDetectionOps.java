@@ -163,6 +163,9 @@ public final class ChangeDetectionOps {
 	 */
 	public static Set<String> mergeKotlinChanges(Set<String> base, Path sourceRoot, Path hashPath, String changeMode,
 			String changedClasses, Path projectRoot, boolean readOnly, boolean skipExplicit, PluginLog log) {
+		if (sourceRoot == null) {
+			return base;
+		}
 		Path kotlinRoot = sourceRoot.resolveSibling("kotlin");
 		if (!Files.isDirectory(kotlinRoot)) {
 			return base;
