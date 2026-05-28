@@ -67,6 +67,9 @@ public final class HashSnapshotOperation {
 
 	private static void snapshotSingle(Path root, Path hashFile, String label, BiConsumer<String, Path> log,
 			BiConsumer<String, String> warn) {
+		if (root == null) {
+			return;
+		}
 		try {
 			if (HashSnapshotSupport.snapshotDirectory(root, hashFile)) {
 				// R10-14: Warn if hash file is trivially small (empty snapshot → since-last-run

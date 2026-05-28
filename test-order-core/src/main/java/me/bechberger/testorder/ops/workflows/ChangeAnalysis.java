@@ -134,14 +134,9 @@ public final class ChangeAnalysis {
 		var prodChangeFuture = java.util.concurrent.CompletableFuture
 				.supplyAsync(() -> ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(),
 						ctx.projectRoot(), ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log()));
-		var testChangeFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-			try {
-				return ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
-						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log());
-			} catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-		});
+		var testChangeFuture = java.util.concurrent.CompletableFuture.supplyAsync(
+				() -> ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
+						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log()));
 
 		Set<String> changed = prodChangeFuture.join();
 		Set<String> changedTests = testChangeFuture.join();
