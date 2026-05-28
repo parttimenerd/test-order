@@ -55,6 +55,48 @@ class TestClassDiscoveryTest {
 	}
 
 	@Test
+	void filterToModule_preservesMethodDepsForMatchingTests() throws IOException {
+		Path testClasses = tempDir.resolve("test-classes/com/example");
+		Files.createDirectories(testClasses);
+		Files.write(testClasses.resolve("AlphaTest.class"), new byte[0]);
+
+		DependencyMap depMap = new DependencyMap();
+		depMap.put("com.example.AlphaTest", Set.of("app.Svc"));
+		depMap.put("com.example.BetaTest", Set.of("app.Other"));
+		depMap.putMethodDeps("com.example.AlphaTest#testSomething", Set.of("app.Svc"));
+		depMap.putMethodDeps("com.example.BetaTest#testOther", Set.of("app.Other"));
+
+		DependencyMap filtered = TestClassDiscovery.filterToModule(depMap, tempDir.resolve("test-classes"));
+
+		assertTrue(filtered.testClasses().contains("com.example.AlphaTest"));
+		assertFalse(filtered.testClasses().contains("com.example.BetaTest"));
+		assertEquals(Set.of("app.Svc"), filtered.getMethodDeps("com.example.AlphaTest", "testSomething"),
+				"method deps for AlphaTest must be preserved");
+		assertTrue(filtered.getMethodDeps("com.example.BetaTest", "testOther").isEmpty(),
+				"method deps for filtered-out BetaTest must not appear");
+	}
+
+	@Test
+	void filterToModuleId_preservesMethodDepsForMatchingTests() {
+		DependencyMap depMap = new DependencyMap();
+		depMap.put("com.alpha.AlphaTest", Set.of("app.Alpha"));
+		depMap.put("com.beta.BetaTest", Set.of("app.Beta"));
+		depMap.putModule("com.alpha.AlphaTest", "g:alpha");
+		depMap.putModule("com.beta.BetaTest", "g:beta");
+		depMap.putMethodDeps("com.alpha.AlphaTest#testA", Set.of("app.Alpha"));
+		depMap.putMethodDeps("com.beta.BetaTest#testB", Set.of("app.Beta"));
+
+		DependencyMap filtered = TestClassDiscovery.filterToModuleId(depMap, "g:alpha");
+
+		assertTrue(filtered.testClasses().contains("com.alpha.AlphaTest"));
+		assertFalse(filtered.testClasses().contains("com.beta.BetaTest"));
+		assertEquals(Set.of("app.Alpha"), filtered.getMethodDeps("com.alpha.AlphaTest", "testA"),
+				"method deps for AlphaTest must be preserved after moduleId filter");
+		assertTrue(filtered.getMethodDeps("com.beta.BetaTest", "testB").isEmpty(),
+				"method deps for BetaTest (different module) must not appear");
+	}
+
+	@Test
 	void filterToModuleId_keepsOnlyMatchingTestsAndUnknowns() {
 		DependencyMap depMap = new DependencyMap();
 		depMap.put("com.alpha.AlphaTest", Set.of("com.alpha.Alpha"));
