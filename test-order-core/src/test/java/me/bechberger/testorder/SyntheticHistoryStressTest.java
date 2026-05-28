@@ -9,6 +9,8 @@ import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
+import me.bechberger.testorder.TelemetryPersistence;
+
 /**
  * Stress-tests scoring and selection with injected synthetic failure history.
  * Verifies the full save/load/score cycle under conditions similar to what the
@@ -190,8 +192,52 @@ class SyntheticHistoryStressTest {
 		assertTrue(state.runs().size() > 0, "Should have at least some run history");
 	}
 
-	private static int failed(List<TestOrderState.TestOutcome> outcomes) {
-		return (int) outcomes.stream().filter(TestOrderState.TestOutcome::failed).count();
+	/**
+	 * Simulates N consecutive builds in aggregated (multi-fork) mode, each failing
+	 * the same test class. Verifies that after each build the failure score is
+	 * exactly what the single-decay-per-build model predicts.
+	 *
+	 * <p>
+	 * With default decay=0.3, starting from 0.0: score_{n+1} = (score_n + 1.0) *
+	 * 0.7. This converges to ~3.33 (the asymptote 1/0.3).
+	 */
+	@Test
+	void aggregatedMultiBuildDecayConvergesToExpectedAsymptote() throws IOException {
+		Path stateFile = dir.resolve("state.lz4");
+		Path pendingDir = dir.resolve("pending");
+
+		double score = 0.0;
+		double decay = 0.3;
+		double retain = 1.0 - decay;
+
+		for (int build = 0; build < 15; build++) {
+			String buildId = "build-" + build;
+
+			// Fork save: add pending failure without decaying historical
+			TestOrderState fork = TelemetryPersistence.loadStateOrEmpty(stateFile);
+			TelemetryPersistence.applyPendingTelemetry(fork, Map.of(), Set.of("com.test.Flaky"), Map.of(), Set.of());
+			fork.saveAggregatedFork(stateFile);
+
+			// mergeAndApply: apply one decay round
+			List<TestOrderState.TestOutcome> outcomes = List.of(new TestOrderState.TestOutcome("com.test.Flaky", 10,
+					false, false, 0, 0, 0.0, false, false, true, 0.0));
+			TestOrderState.RunRecord record = new TestOrderState.RunRecord(build * 1000L, 1, 1, 0, 0.5, outcomes);
+			PartialRunAggregator.writePartial(pendingDir, buildId, record, false);
+			PartialRunAggregator.mergeAndApply(pendingDir, buildId, stateFile);
+
+			// Expected: score = (score + 1.0) * retain
+			score = (score + 1.0) * retain;
+			double actual = TestOrderState.load(stateFile).failureScore("com.test.Flaky");
+			assertEquals(score, actual, 1e-6, "Build " + build + ": expected score=" + score + " actual=" + actual);
+		}
+
+		// After 15 builds of consistent failure, score should approach the asymptote.
+		// Asymptote: s* = (s* + 1) * retain → s* = retain / (1 - retain) = retain /
+		// decay
+		double asymptote = retain / decay; // = 0.7 / 0.3 ≈ 2.333
+		double finalScore = TestOrderState.load(stateFile).failureScore("com.test.Flaky");
+		assertTrue(finalScore > asymptote * 0.95,
+				"After 15 builds, score should be >95% of asymptote " + asymptote + ", got " + finalScore);
 	}
 
 	@Test
@@ -287,5 +333,9 @@ class SyntheticHistoryStressTest {
 		assertTrue(slow.isSlow(), "1000ms should be slow vs median ~200ms");
 		assertTrue(fast.score() > 0, "fast test should get speed bonus");
 		assertTrue(slow.score() < 0, "slow test should get speed penalty");
+	}
+
+	private static int failed(List<TestOrderState.TestOutcome> outcomes) {
+		return (int) outcomes.stream().filter(TestOrderState.TestOutcome::failed).count();
 	}
 }
