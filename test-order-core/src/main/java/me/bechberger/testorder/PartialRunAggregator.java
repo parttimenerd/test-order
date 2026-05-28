@@ -152,7 +152,7 @@ public final class PartialRunAggregator {
 		PersistenceSupport.withFileLock(stateFile, () -> {
 			TestOrderState state = TelemetryPersistence.loadStateOrEmpty(stateFile);
 			TelemetryPersistence.applyHistoryMaxRuns(state);
-			state.addRunRecord(merged);
+			state.addRunRecordNoDecay(merged);
 			if (!isLearnRun) {
 				state.incrementRunsSinceLearn();
 			}

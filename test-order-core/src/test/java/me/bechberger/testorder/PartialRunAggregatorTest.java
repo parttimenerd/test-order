@@ -215,4 +215,51 @@ class PartialRunAggregatorTest {
 		assertEquals(0.8, o.speedRatio(), 1e-9);
 		assertTrue(o.hasStaticFieldOverlap());
 	}
+
+	// ── regression: double-decay in aggregated mode ────────────────────────
+
+	/**
+	 * In aggregated (multi-fork) mode the TelemetryListener already saves failure
+	 * scores with decay once per run. PartialRunAggregator.mergeAndApply must NOT
+	 * decay again — otherwise scores decay twice per run, cutting them by
+	 * (1-decay)^2 instead of (1-decay).
+	 *
+	 * This test simulates the full aggregated path: 1. Record a failure and save
+	 * (simulates TelemetryListener per-fork save). 2. Run mergeAndApply (simulates
+	 * session-end aggregation).
+	 *
+	 * The resulting failure score should match a single-save path (decay once).
+	 */
+	@Test
+	void mergeAndApplyDoesNotDecayFailureScoreSecondTime() throws IOException {
+		Path pendingDir = dir.resolve("pending");
+		Path stateFile = dir.resolve("state.lz4");
+		String buildId = "build-decay";
+
+		// === Step 1: simulate TelemetryListener per-fork save ===
+		// Record a failure in a fresh state and save — this is what TelemetryListener
+		// does in aggregated mode before writing the partial file.
+		TestOrderState state = new TestOrderState();
+		state.recordFailure("com.test.Flaky");
+		state.save(stateFile); // decay occurs here (hasPendingData=true)
+
+		double scoreAfterOneSave = TestOrderState.load(stateFile).failureScore("com.test.Flaky");
+		assertTrue(scoreAfterOneSave > 0, "Score should be positive after one save");
+		// With default decay=0.3: score starts at 1.0, decays to 0.7 after one save
+		// (pending + decay combined — see FailureHistoryTracker.mergeForSave)
+
+		// === Step 2: simulate PartialRunAggregator.mergeAndApply session-end call ===
+		// Write a partial (as TelemetryListener would), then merge.
+		PartialRunAggregator.writePartial(pendingDir, buildId, makeRecord("com.test.Flaky"), false);
+		PartialRunAggregator.mergeAndApply(pendingDir, buildId, stateFile);
+
+		double scoreAfterMerge = TestOrderState.load(stateFile).failureScore("com.test.Flaky");
+
+		// The score after merge should equal scoreAfterOneSave — mergeAndApply must
+		// not apply a second round of decay. If it does, the score would be roughly
+		// scoreAfterOneSave * (1 - 0.3) instead.
+		assertEquals(scoreAfterOneSave, scoreAfterMerge, 1e-6,
+				"mergeAndApply must not decay failure scores a second time; " + "expected=" + scoreAfterOneSave
+						+ " actual=" + scoreAfterMerge);
+	}
 }
