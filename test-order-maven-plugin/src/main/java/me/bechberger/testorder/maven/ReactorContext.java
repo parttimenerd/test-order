@@ -53,7 +53,7 @@ final class ReactorContext {
 		boolean inferredMulti = false;
 		Path mmDir = resolveMultiModuleRoot(session);
 		Path projectDir = project.getBasedir().toPath().normalize();
-		if (!explicitMulti && mmDir != null && !projectDir.equals(mmDir)
+		if (!explicitMulti && mmDir != null && !projectDir.equals(mmDir) && projectDir.startsWith(mmDir)
 				&& Files.isDirectory(mmDir.resolve(SHARED_DIR_NAME))) {
 			inferredMulti = true;
 		}
