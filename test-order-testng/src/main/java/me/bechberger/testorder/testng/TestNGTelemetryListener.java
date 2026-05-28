@@ -305,7 +305,7 @@ public class TestNGTelemetryListener implements ITestListener {
 		if (finishedNormally)
 			return;
 		TelemetryPersistence.emergencySave(statePath, pendingDurations, failedClassNames, pendingMethodDurations,
-				failedMethodNames);
+				failedMethodNames, false);
 	}
 
 	/**

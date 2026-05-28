@@ -544,7 +544,8 @@ public class TelemetryListener implements TestExecutionListener {
 		Set<String> failSnap = new java.util.HashSet<>(failedClassNames);
 		Map<String, List<Long>> methDurSnap = snapshotMapOfLists(pendingMethodDurations);
 		Set<String> methFailSnap = new java.util.HashSet<>(failedMethodNames);
-		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methDurSnap, methFailSnap);
+		boolean aggregatedMode = buildId != null && !buildId.isBlank();
+		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methDurSnap, methFailSnap, aggregatedMode);
 	}
 
 	private static Map<String, List<Long>> snapshotMapOfLists(Map<String, List<Long>> source) {

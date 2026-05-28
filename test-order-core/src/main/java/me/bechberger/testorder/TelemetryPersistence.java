@@ -110,10 +110,13 @@ public final class TelemetryPersistence {
 	 *            method-level durations
 	 * @param failedMethodNames
 	 *            failed method keys
+	 * @param aggregatedMode
+	 *            when true, use saveAggregatedFork (no decay) — decay happens later
+	 *            when PartialRunAggregator.mergeAndApply runs
 	 */
 	public static void emergencySave(String statePath, Map<String, List<Long>> pendingDurations,
-			Set<String> failedClassNames, Map<String, List<Long>> pendingMethodDurations,
-			Set<String> failedMethodNames) {
+			Set<String> failedClassNames, Map<String, List<Long>> pendingMethodDurations, Set<String> failedMethodNames,
+			boolean aggregatedMode) {
 		String effectivePath = statePath;
 		if (effectivePath == null || effectivePath.isEmpty()) {
 			effectivePath = TestOrderState.getPendingStatePath();
@@ -128,7 +131,11 @@ public final class TelemetryPersistence {
 				applyHistoryMaxRuns(state);
 				applyPendingTelemetry(state, pendingDurations, failedClassNames, pendingMethodDurations,
 						failedMethodNames);
-				state.save(stateFile);
+				if (aggregatedMode) {
+					state.saveAggregatedFork(stateFile);
+				} else {
+					state.save(stateFile);
+				}
 				return state;
 			});
 		} catch (Exception ignored) {
