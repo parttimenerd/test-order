@@ -2,6 +2,7 @@
 import { inject, watch, nextTick, onMounted, computed, ref, type Ref } from 'vue'
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
+import type { TestHoverState } from '../composables/useTestHover'
 import { sn, esc, DIST, fmtDur, fmtTime, computeScore, computeApfd, computeSetCoverBonuses } from '../utils'
 import { useClassHover } from '../composables/useClassInfo'
 import ClassInfoCard from './ClassInfoCard.vue'
@@ -10,6 +11,7 @@ import { mkChart, destroyCharts, chartOpts } from '../composables/useCharts'
 
 const d = inject<DashboardState>('dashboard')!
 const shortNames = inject<Ref<boolean>>('shortNames', { value: true } as any)
+const testHover = inject<TestHoverState>('testHover')!
 
 const classHover = useClassHover()
 
@@ -1322,13 +1324,21 @@ onMounted(initAll)
   <div v-if="d.activeTab.value === 'analytics'">
     <div v-if="d.runs.length === 0 && !d.hasCoverage && !d.tests.length" style="height:180px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">No run history yet</div>
     <div v-else>
+      <!-- Sticky section nav -->
+      <nav class="analytics__subnav">
+        <a class="analytics__subnav-link" href="#suite-health">📊 Health</a>
+        <a class="analytics__subnav-link" href="#analytics-history">⏱ History</a>
+        <a class="analytics__subnav-link" href="#analytics-coverage">🗂 Coverage</a>
+        <a class="analytics__subnav-link" href="#analytics-analysis">🔬 Analysis</a>
+      </nav>
+
       <!-- Suite Health Card -->
       <div id="suite-health">
         <SuiteHealthCard v-if="d.suiteHealthBreakdown.value" />
       </div>
 
       <!-- Timeline -->
-      <div v-if="d.runs.length" style="margin-bottom:12px">
+      <div v-if="d.runs.length" id="analytics-history" style="margin-bottom:12px">
         <!-- Session health arc banner -->
         <div v-if="healthArc" class="analytics__health-arc">
           <span class="analytics__health-arc-icon" :style="{ color: healthArc.trendColor }">{{ healthArc.trendIcon }}</span>
@@ -2341,7 +2351,7 @@ onMounted(initAll)
       </div>
 
       <!-- Coverage -->
-      <div v-if="d.hasCoverage">
+      <div v-if="d.hasCoverage" id="analytics-coverage">
         <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px">Coverage</h3>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
           <div class="kpi analytics__cov-kpi">
@@ -2384,7 +2394,7 @@ onMounted(initAll)
             <div class="analytics__progress-bar" style="flex:1;min-width:100px">
               <div class="analytics__progress-fill" :style="{ width: d.selectionCoverage.value.percent + '%', background: 'var(--accent)' }"></div>
             </div>
-            <span class="analytics__pct" :class="d.selectionCoverage.value.percent >= 80 ? 'analytics__pct--green' : d.selectionCoverage.value.percent >= 50 ? 'analytics__pct--yellow' : 'analytics__pct--red'">{{ d.selectionCoverage.value.percent }}%</span>
+            <span style="font-size:.72rem;font-weight:700;color:var(--accent-light)">{{ d.selectionCoverage.value.percent }}%</span>
             <span style="font-size:.68rem;color:var(--text-sec)">({{ d.selectionCoverage.value.covered }}/{{ d.selectionCoverage.value.total }} classes)</span>
           </div>
         </div>
@@ -2426,7 +2436,7 @@ onMounted(initAll)
         <div id="cov-treemap" style="background:var(--bg-card);border-radius:var(--radius);overflow:hidden;height:420px;position:relative"></div>
 
         <!-- Top Impact Classes -->
-        <div v-if="topImpactClasses.length" style="margin-top:10px;margin-bottom:10px">
+        <div v-if="topImpactClasses.length" id="analytics-analysis" style="margin-top:10px;margin-bottom:10px">
           <div style="font-size:.72rem;font-weight:700;color:var(--text-sec);margin-bottom:6px" title="Source classes covered by the most tests. Changing these classes could trigger the most re-runs.">
             🎯 Top Impact Source Classes
             <span style="font-size:.6rem;font-weight:400;color:var(--text-muted);margin-left:4px">— highest test blast radius if changed</span>
@@ -2567,7 +2577,7 @@ onMounted(initAll)
               v-for="tn in d.covSelectedClass.value.tests" :key="tn"
               class="analytics__class-test-tag analytics__class-test-tag--clickable"
               @click="d.navigateToTestFromCov(tn)"
-              @mouseenter="classHover.show(tn, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()"
+              @mouseenter="testHover.show(tn, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
               :title="'Go to ' + tn + ' in Tests tab'"
             >{{ dn(tn) }} →</span>
           </div>
@@ -3075,4 +3085,17 @@ onMounted(initAll)
 .retire__seen { font-size: .63rem; font-weight: 700; text-align: right; }
 .retire__dur { font-size: .6rem; text-align: right; }
 .retire__deps { font-size: .6rem; text-align: right; }
+
+/* Subnav */
+.analytics__subnav {
+  position: sticky; top: 0; z-index: 4; background: var(--bg-base);
+  border-bottom: 1px solid var(--border); display: flex; gap: 0;
+  overflow-x: auto; margin-bottom: 8px;
+}
+.analytics__subnav-link {
+  padding: 4px 12px; font-size: .68rem; color: var(--text-muted);
+  text-decoration: none; border-right: 1px solid var(--border); white-space: nowrap;
+  flex-shrink: 0;
+}
+.analytics__subnav-link:hover { color: var(--accent-light); background: rgba(99,102,241,.06); }
 </style>

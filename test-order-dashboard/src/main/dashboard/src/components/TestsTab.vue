@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { inject, watch, nextTick, onMounted, onUnmounted, computed, ref, type Ref } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
+import type { TestHoverState } from '../composables/useTestHover'
 import type { TestEntry } from '../types'
 import { sn, fmtDur, fmtTime, computeScore } from '../utils'
 import { mkChart, destroyCharts, chartOpts } from '../composables/useCharts'
@@ -11,6 +12,7 @@ import DepGraph from './DepGraph.vue'
 
 const d = inject<DashboardState>('dashboard')!
 const showToast = inject<(msg: string) => void>('showToast')!
+const testHover = inject<TestHoverState>('testHover')!
 const shortNames = inject<Ref<boolean>>('shortNames', { value: true } as any)
 const focusMode = inject<Ref<boolean>>('focusMode', ref(false))
 const toggleFocusMode = inject<() => void>('toggleFocusMode', () => {})
@@ -1422,6 +1424,7 @@ function previewScoreBars(t: TestEntry) {
               :key="r.test.name"
               class="test-detail__similar-row"
               @click="$event.ctrlKey || $event.metaKey ? d.selectTest(r.test, $event) : d.selectTest(r.test, null)"
+              @mouseenter="testHover.show(r.test.name, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
               :title="r.test.name + '\n' + r.overlap + ' shared deps (' + r.pct + '% of selected test\'s deps)\nClick to navigate · Ctrl+click to add to comparison'"
             >
               <span class="test-detail__similar-rank">#{{ r.test.rank }}</span>

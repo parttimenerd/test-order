@@ -367,7 +367,8 @@ const sparkBars = computed(() => {
 <style scoped>
 .kpi-row {
   background: var(--bg-card); border-bottom: 1px solid var(--border);
-  padding: 5px 14px; display: flex; gap: 6px; overflow-x: auto; flex-shrink: 0; align-items: stretch;
+  padding: 5px 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 6px; flex-shrink: 0; align-items: stretch;
 }
 .kpi-row__kpi { padding: 5px 10px; min-width: 90px; }
 .kpi-row__kpi--history { min-width: 180px; }
