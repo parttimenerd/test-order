@@ -106,9 +106,20 @@ public final class SelectOperation {
 			// no tests in depMap — nothing to report
 		} else if (allSelected) {
 			config.log().info("[test-order] Selected all " + selection.selected().size()
-					+ " tests (no subset — all will run in priority order)");
+					+ " affected tests (topN=-1, running in priority order)");
 		} else {
-			config.log().info("[test-order] Selected " + selection.selected().size() + " tests, deferred "
+			int alwaysRunCount = (int) selection.selected().stream().filter(t -> config.alwaysRunClasses().contains(t))
+					.count();
+			int newCount = (int) selection.selected().stream().filter(t -> !config.depMap().testClasses().contains(t))
+					.count();
+			int scoredCount = selection.selected().size() - alwaysRunCount - newCount;
+			StringBuilder bd = new StringBuilder();
+			bd.append(scoredCount).append(" scored");
+			if (newCount > 0)
+				bd.append(" + ").append(newCount).append(" new");
+			if (alwaysRunCount > 0)
+				bd.append(" + ").append(alwaysRunCount).append(" always-run");
+			config.log().info("[test-order] Selected " + selection.selected().size() + " tests (" + bd + "), deferred "
 					+ selection.remaining().size());
 		}
 

@@ -55,6 +55,11 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			System.err.println("[test-order] prepare-goal binding failed: " + e);
 		}
 		try {
+			disableValidatePhasePlugins(session);
+		} catch (Exception | NoClassDefFoundError e) {
+			System.err.println("[test-order] disableValidatePlugins failed: " + e);
+		}
+		try {
 			tryReorderReactor(session);
 		} catch (Exception | NoClassDefFoundError e) {
 			System.err.println("[test-order] reactor reorder failed: " + e);
@@ -115,6 +120,45 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			}
 		}
 		return false;
+	}
+
+	private static final String PROP_DISABLE_VALIDATE = "testorder.disableValidatePlugins";
+
+	/**
+	 * When {@code -Dtestorder.disableValidatePlugins=true} is set, moves executions
+	 * of known validate-phase-only plugins (e.g. xml-maven-plugin,
+	 * spring-javaformat-maven-plugin) to phase "none" so they don't block the
+	 * build. Some of these plugins have no generic {@code skip} property, making
+	 * this the only way to bypass them for repos with pre-existing format
+	 * violations (e.g. netty).
+	 */
+	private void disableValidatePhasePlugins(MavenSession session) {
+		if (session == null) {
+			return;
+		}
+		String prop = session.getUserProperties().getProperty(PROP_DISABLE_VALIDATE,
+				session.getSystemProperties().getProperty(PROP_DISABLE_VALIDATE, "false"));
+		if (!"true".equalsIgnoreCase(prop)) {
+			return;
+		}
+		Set<String> knownBlockers = Set.of("xml-maven-plugin", "spring-javaformat-maven-plugin");
+		for (MavenProject project : session.getProjects()) {
+			if (project == null || project.getBuild() == null) {
+				continue;
+			}
+			for (Plugin p : project.getBuildPlugins()) {
+				if (!knownBlockers.contains(p.getArtifactId())) {
+					continue;
+				}
+				for (PluginExecution exec : p.getExecutions()) {
+					if ("validate".equals(exec.getPhase())) {
+						exec.setPhase("none");
+						System.out.println("[test-order] Disabled " + p.getArtifactId() + ":" + exec.getId()
+								+ " validate-phase execution (testorder.disableValidatePlugins=true)");
+					}
+				}
+			}
+		}
 	}
 
 	private void tryReorderReactor(MavenSession session) {
