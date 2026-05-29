@@ -21,6 +21,10 @@ THIRD_PARTY="$ROOT_DIR/third-party"
 RESULTS_DIR="$ROOT_DIR/target/third-party-results"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
+# Source per-repo overrides (detect_compiler_args, detect_package_override, …)
+# shellcheck source=scripts/third-party-overrides.sh
+source "$SCRIPT_DIR/third-party-overrides.sh" 2>/dev/null || true
+
 # ─── Configuration ────────────────────────────────────────────────────────────
 
 # Maven repos (use test-order-maven-plugin)
@@ -80,6 +84,17 @@ LARGE_REPOS=(
     "spring-boot"
     "maven"
     "logging-log4j2"
+)
+
+# Known-working repos for regression sweeps (must produce an index + catch bugs)
+REGRESSION_REPOS=(
+    "jackson-databind"
+    "commons-collections"
+    "commons-text"
+    "commons-io"
+    "jsoup"
+    "logging-log4j2"
+    "javaparser"
 )
 
 PLUGIN_VERSION="0.0.1-SNAPSHOT"
@@ -207,18 +222,6 @@ detect_single_module() {
     echo ""  # single-module project
 }
 
-# Return extra Maven args required by a repo to compile on the current JDK.
-# javaparser 3.x has NodeList.getFirst()/getLast() returning Optional<N> which
-# conflicts with Java 21+'s List.getFirst()/getLast() returning N.
-# Passing --release=11 hides the new API and allows compilation.
-detect_compiler_args() {
-    local repo="$1"
-    case "$repo" in
-        javaparser) echo "-Dmaven.compiler.release=11" ;;
-        *)          echo "" ;;
-    esac
-}
-
 # ─── Synthetic Bug Injection ─────────────────────────────────────────────────
 
 # Strategy: We inject bugs that cause test failures in predictable ways.
@@ -289,9 +292,14 @@ restore_bugs() {
     log "  Restored all files in $repo"
 }
 
-# Find good bug injection targets: source files that have corresponding tests
+# Find good bug injection targets: source files that have corresponding tests.
+# Optional second argument: path to a TSV index dump (from mvn test-order:dump).
+# When provided, candidates are scored by injectability / (df + 1) so that
+# discriminating classes (low document-frequency in the dep index) are preferred
+# over near-universal utility classes that provide no test-selection signal.
 find_bug_targets() {
     local repo="$1"
+    local dump_file="${2:-}"
     local dir="$THIRD_PARTY/$repo"
     # Build a set of test class basenames (without Test.java suffix) for O(1) lookup
     local -A test_set
@@ -301,19 +309,37 @@ find_bug_targets() {
         test_set["$base"]=1
     done < <(find "$dir" -path "*/src/test/java/*" -name "*Test.java" ! -path "*/target/*" 2>/dev/null)
 
+    # Build df map from dump: class -> number of tests that list it as a dep
+    local -A df_map
+    if [[ -n "$dump_file" && -f "$dump_file" ]]; then
+        while IFS=$'\t' read -r _test deps; do
+            [[ -z "$deps" ]] && continue
+            IFS=',' read -ra dep_arr <<< "$deps"
+            for dep in "${dep_arr[@]}"; do
+                [[ -z "$dep" ]] && continue
+                df_map["$dep"]=$(( ${df_map["$dep"]:-0} + 1 ))
+            done
+        done < "$dump_file"
+    fi
+
     find "$dir" -path "*/src/main/java/*" -name "*.java" ! -path "*/target/*" \
         | while read -r src; do
             local name
             name=$(basename "$src" .java)
             if [[ -n "${test_set[$name]+set}" ]]; then
-                local score
-                score=$(grep -cE "return (true|false)|< |\.add\(|return 0;" "$src" 2>/dev/null || true)
-                if [[ "$score" -gt 0 ]]; then
-                    echo "$score $src"
+                local inject_score
+                inject_score=$(grep -cE "return (true|false)|< |\.add\(|return 0;" "$src" 2>/dev/null || true)
+                if [[ "$inject_score" -gt 0 ]]; then
+                    local fqcn
+                    fqcn=$(echo "$src" | sed 's|.*/src/main/java/||;s|/|.|g;s|\.java$||')
+                    local df=${df_map["$fqcn"]:-0}
+                    # Penalise high-df: discriminating classes rank higher
+                    local final_score=$(( inject_score * 1000 / (df + 1) ))
+                    echo "$final_score $src"
                 fi
             fi
         done \
-        | sort -rn | awk 'NR<=5{print $2}'  # Pick top-5 most injectable
+        | sort -rn | awk 'NR<=5{print $2}'  # Pick top-5 most injectable + discriminating
 }
 
 # ─── Maven Plugin Injection ──────────────────────────────────────────────────
@@ -861,6 +887,11 @@ phase_full_maven() {
     log "Step 3: Dump state"
     mvn me.bechberger:test-order-maven-plugin:dump "${cmd_args[@]}" 2>&1 | tee "$results/full-dump.log" | tail -20 || warn "Dump failed"
 
+    # Also dump as TSV for discriminating-power scoring in find_bug_targets (S15)
+    local dump_tsv="$results/full-dump.tsv"
+    mvn me.bechberger:test-order-maven-plugin:dump "${cmd_args[@]}" \
+        -Dtestorder.dump.format=tsv -Dtestorder.dump.output="$dump_tsv" -q 2>/dev/null || true
+
     # 4. Show order with a specific change
     log "Step 4: Show order"
     mvn me.bechberger:test-order-maven-plugin:show-order \
@@ -890,7 +921,7 @@ phase_full_maven() {
     local bug_targets_array=()
     while IFS= read -r line; do
         [[ -n "$line" ]] && bug_targets_array+=("$line")
-    done < <(find_bug_targets "$repo")
+    done < <(find_bug_targets "$repo" "$dump_tsv")
     local bug_injected=false
     if [[ ${#bug_targets_array[@]} -eq 0 ]]; then
         warn "No suitable bug injection targets found"
@@ -918,6 +949,18 @@ phase_full_maven() {
                 all_not_in_index=false
             elif echo "$bug_out" | grep -q "None of the explicitly specified changed classes"; then
                 warn "Bug class $classname not in dependency index (trying next target)"
+                # S18: show index stats to help diagnose why the class is missing
+                local n_tests
+                n_tests=$(grep -c $'\t' "$results/full-dump.log" 2>/dev/null || echo "?")
+                log "    Index has ~$n_tests test entries"
+                local src_hit
+                src_hit=$(find "$dir" -name "$(echo "$classname" | sed 's/.*\.//')*.java" \
+                    ! -path "*/target/*" -print -quit 2>/dev/null)
+                if [[ -n "$src_hit" ]]; then
+                    log "    Source found: $src_hit — class exists but not in index (instrumentation may have skipped it)"
+                else
+                    log "    Source NOT found for $classname — may be generated or external"
+                fi
             elif ! echo "$bug_out" | grep -q "Tests run:"; then
                 warn "Bug result unknown for $classname — build failed before tests ran (step 7)"
                 bug_injected=true
@@ -926,6 +969,23 @@ phase_full_maven() {
                 warn "Bug not caught in top-3 selected tests for $classname (step 7)"
                 bug_injected=true
                 all_not_in_index=false
+                # S6: show which tests were selected and top-5 scorers for this class
+                log "  Step 7 diagnosis for $classname:"
+                if [[ -f "$results/full-bug-select.log" ]]; then
+                    local selected_tests
+                    selected_tests=$(grep -oE '[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+Test[a-zA-Z0-9_]*' \
+                        "$results/full-bug-select.log" 2>/dev/null | sort -u | head -10 || true)
+                    if [[ -n "$selected_tests" ]]; then
+                        log "  Selected tests:"
+                        echo "$selected_tests" | sed 's/^/    /'
+                    fi
+                fi
+                log "  Top-5 scorers (show-order):"
+                mvn me.bechberger:test-order-maven-plugin:show-order \
+                    -Dtestorder.changeMode=explicit \
+                    -Dtestorder.changed.classes="$classname" \
+                    "${cmd_args[@]}" -q 2>&1 \
+                    | grep -E '^\s+[0-9]' | head -5 | sed 's/^/    /' || true
             fi
 
             restore_bugs "$repo"
@@ -1132,22 +1192,42 @@ main() {
                 [[ -d "$THIRD_PARTY/$repo" ]] && run_for_repo "$repo" "learn"
             done
             ;;
+        regression)
+            phase_install
+            local reg_pass=0 reg_fail=0
+            for repo in "${REGRESSION_REPOS[@]}"; do
+                if [[ ! -d "$THIRD_PARTY/$repo" ]]; then
+                    warn "regression: $repo not cloned — skipping"
+                    continue
+                fi
+                if run_for_repo "$repo" "full"; then
+                    ok "PASS: $repo"
+                    (( reg_pass++ )) || true
+                else
+                    warn "FAIL: $repo"
+                    (( reg_fail++ )) || true
+                fi
+            done
+            section "REGRESSION: $reg_pass passed, $reg_fail failed"
+            [[ "$reg_fail" -eq 0 ]]
+            ;;
         *)
             echo "Usage: $0 [PHASE] [REPO]"
             echo ""
             echo "Phases:"
-            echo "  install   - Install test-order to local Maven repo"
-            echo "  learn     - Run learn mode on all repos"
-            echo "  order     - Run order mode (requires prior learn)"
-            echo "  select    - Run select + run-remaining"
-            echo "  tiered    - Run 3-tier CI pipeline"
-            echo "  bugs      - Inject synthetic bugs and verify detection"
-            echo "  auto      - Run auto mode (learn→order transition)"
-            echo "  full      - Complete workflow (all of the above)"
-            echo "  quick     - Full workflow on small repos only"
-            echo "  medium    - Full workflow on medium repos"
-            echo "  large     - Full workflow on large repos"
-            echo "  all       - Everything on every repo"
+            echo "  install    - Install test-order to local Maven repo"
+            echo "  learn      - Run learn mode on all repos"
+            echo "  order      - Run order mode (requires prior learn)"
+            echo "  select     - Run select + run-remaining"
+            echo "  tiered     - Run 3-tier CI pipeline"
+            echo "  bugs       - Inject synthetic bugs and verify detection"
+            echo "  auto       - Run auto mode (learn→order transition)"
+            echo "  full       - Complete workflow (all of the above)"
+            echo "  quick      - Full workflow on small repos only"
+            echo "  medium     - Full workflow on medium repos"
+            echo "  large      - Full workflow on large repos"
+            echo "  all        - Everything on every repo"
+            echo "  regression - Full workflow on known-working regression set"
             echo ""
             echo "Repos: ${MAVEN_REPOS[*]} ${GRADLE_REPOS[*]}"
             exit 1
