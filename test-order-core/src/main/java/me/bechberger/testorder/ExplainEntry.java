@@ -79,6 +79,12 @@ public record ExplainEntry(
 		/** Points from kill-rate bonus (0 when disabled or no data). */
 		int killRatePoints,
 
+		// ── Package proximity ──────────────────────────────────────────
+		/**
+		 * Points from package-proximity bonus (test in same package as changed class).
+		 */
+		int packageProximityPoints,
+
 		// ── Weights used ───────────────────────────────────────────────
 		/** Scoring weights active for this run. */
 		TestOrderState.ScoringWeights weights) {
@@ -118,6 +124,9 @@ public record ExplainEntry(
 		if (killRate >= 0) {
 			sb.append(String.format(Locale.US, "      %-24s %+d  (kill rate: %.0f%%)%n", "Mutation kill rate:",
 					killRatePoints, killRate * 100));
+		}
+		if (packageProximityPoints != 0) {
+			sb.append(String.format("      %-24s %+d%n", "Package proximity:", packageProximityPoints));
 		}
 
 		// dependency list (non-overlapping)

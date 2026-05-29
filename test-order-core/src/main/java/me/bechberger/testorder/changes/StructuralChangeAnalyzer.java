@@ -277,8 +277,8 @@ public class StructuralChangeAnalyzer {
 
 			Set<String> changedInClass = entry.getValue();
 
-			// Static initializer changed → affects ALL users of this class.
-			if (changedInClass.contains("<clinit>")) {
+			// Static initializer or synthetic class-level marker → affects ALL users.
+			if (changedInClass.contains("<clinit>") || changedInClass.contains(StaticCallGraphAnalyzer.CLASS_MARKER)) {
 				affectedClasses.add(classDep);
 				continue;
 			}

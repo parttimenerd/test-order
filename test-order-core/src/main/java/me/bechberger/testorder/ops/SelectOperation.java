@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
@@ -45,24 +46,42 @@ public final class SelectOperation {
 			config.log().warn("[test-order] randomM=" + config.randomM()
 					+ " has no effect when topN=-1 (all tests selected). Set topN to a positive number to use random sampling.");
 		}
-		// R15-5: Warn if randomM is used without a seed — only when topN is positive
-		// (i.e. actual subsetting is happening), since non-determinism matters only
-		// when a subset is being selected.
-		// Suppress the warning when topN >= total test count: there is only one
-		// possible
-		// selection so non-determinism is irrelevant.
-		if (config.topN() > 0 && config.randomM() > 0 && config.seed() == null) {
+		// When no explicit seed is provided, derive one from the changed-class set so
+		// selection is deterministic for the same inputs. Users who need to pin
+		// reproducibility across machines can still set testorder.select.seed
+		// explicitly.
+		Long effectiveSeed = config.seed();
+		if (effectiveSeed == null && config.topN() > 0 && config.randomM() > 0) {
 			int totalTests = config.depMap().testClasses().size();
 			if (config.topN() < totalTests) {
-				config.log().warn("[test-order] Selection is non-deterministic (no seed set). "
-						+ "Set testorder.select.seed for reproducible CI runs.");
+				effectiveSeed = (long) config.changedClasses().stream().sorted()
+						.collect(java.util.stream.Collectors.joining(",")).hashCode();
 			}
 		}
 
 		TestSelector.Selection selection = new TestSelector(config.depMap(), config.state(), config.changedClasses(),
 				config.changedTests(), config.weights(),
-				new TestSelector.Config(config.topN(), config.randomM(), config.seed()), config.alwaysRunClasses(),
+				new TestSelector.Config(config.topN(), config.randomM(), effectiveSeed), config.alwaysRunClasses(),
 				config.changeComplexity()).select();
+
+		// Warn when a changed class appears in deps of >50% of all tests: the scorer
+		// can't discriminate and the selection is essentially a random subset.
+		if (!config.changedClasses().isEmpty()) {
+			int totalTests = config.depMap().testClasses().size();
+			if (totalTests > 0) {
+				for (String changed : config.changedClasses()) {
+					long matchCount = config.depMap().testClasses().stream()
+							.filter(t -> config.depMap().get(t).contains(changed)).count();
+					if (matchCount > totalTests / 2) {
+						config.log()
+								.warn("[test-order] Changed class " + changed + " appears in deps of " + matchCount
+										+ "/" + totalTests + " tests (" + (100 * matchCount / totalTests) + "%). "
+										+ "Selection signal is weak — results may be near-random. "
+										+ "Consider running the full suite.");
+					}
+				}
+			}
+		}
 
 		if (config.selectedFile() != null) {
 			TestSelector.writeTestList(selection.selected(), config.selectedFile());

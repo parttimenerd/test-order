@@ -39,6 +39,14 @@ public final class ShowOrderOperation {
 	private static final int CLASS_SCAN_LIMIT = 16 * 1024;
 
 	public static boolean looksLikeTestClass(Path classFile) {
+		String name = classFile.getFileName().toString();
+		String simpleName = name.substring(0, name.length() - 6); // strip .class
+		// Abstract*Test classes are base classes that Surefire never runs directly.
+		// They appear as "NEW" tests (not in dep map) and would otherwise flood the
+		// top of the selection list with an unearned new-test bonus.
+		if (simpleName.startsWith("Abstract")) {
+			return false;
+		}
 		try (InputStream in = Files.newInputStream(classFile)) {
 			byte[] buf = in.readNBytes(CLASS_SCAN_LIMIT);
 			String content = new String(buf, StandardCharsets.ISO_8859_1);
@@ -126,17 +134,33 @@ public final class ShowOrderOperation {
 				walk.filter(p -> {
 					String name = p.toString();
 					return name.endsWith(".class") && !name.contains("$");
-				}).filter(ShowOrderOperation::looksLikeTestClass).forEach(p -> {
-					String relative = testClassesDir.relativize(p).toString();
-					// We know it ends with ".class" (6 chars) from the filter above
-					String fqcn = relative.substring(0, relative.length() - 6).replace('/', '.').replace('\\', '.');
-					allTests.add(fqcn);
-				});
+				}).filter(ShowOrderOperation::looksLikeTestClass).filter(p -> !isSurefireDefaultExcluded(p))
+						.forEach(p -> {
+							String relative = testClassesDir.relativize(p).toString();
+							// We know it ends with ".class" (6 chars) from the filter above
+							String fqcn = relative.substring(0, relative.length() - 6).replace('/', '.').replace('\\',
+									'.');
+							allTests.add(fqcn);
+						});
 			} catch (IOException e) {
 				// best effort
 			}
 		}
 		return allTests;
+	}
+
+	/**
+	 * Returns true for class files that match Maven Surefire's default excludes:
+	 * {@code **‌/*IT.class} and {@code **‌/*ITCase.class}. These are integration
+	 * tests run by Failsafe, not Surefire, so they have no dependency data in the
+	 * index and would otherwise appear as permanently-NEW tests with a large score
+	 * bonus.
+	 */
+	public static boolean isSurefireDefaultExcluded(Path classFile) {
+		String name = classFile.getFileName().toString();
+		// strip .class suffix (guaranteed present by caller's filter)
+		String simple = name.substring(0, name.length() - 6);
+		return simple.endsWith("IT") || simple.endsWith("ITCase");
 	}
 
 	/**

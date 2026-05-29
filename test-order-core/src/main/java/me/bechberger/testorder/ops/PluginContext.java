@@ -300,7 +300,7 @@ public final class PluginContext {
 		private Long seed;
 		private Path selectedFile;
 		private Path remainingFile;
-		private String instrumentationMode = "CLASS";
+		private String instrumentationMode = "MEMBER";
 		private String includePackages;
 		private boolean filterByGroupId = true;
 		private String groupId;

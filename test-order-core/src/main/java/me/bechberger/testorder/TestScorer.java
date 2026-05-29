@@ -84,11 +84,16 @@ public class TestScorer {
 	 */
 	private static final int MIN_DEPS_DENOMINATOR = 5;
 
-	public static int depOverlapScore(int depOverlap, int depTotal, int weight) {
-		if (depOverlap == 0 || depTotal == 0 || weight == 0)
+	public static int depOverlapScore(double depOverlap, int depTotal, int weight) {
+		if (depOverlap <= 0 || depTotal == 0 || weight == 0)
 			return 0;
 		double normalized = depOverlap / Math.sqrt(Math.max(depTotal, MIN_DEPS_DENOMINATOR));
 		return Math.min((int) Math.ceil(normalized * weight), weight);
+	}
+
+	/** Convenience overload for raw (non-IDF-weighted) integer overlap counts. */
+	public static int depOverlapScore(int depOverlap, int depTotal, int weight) {
+		return depOverlapScore((double) depOverlap, depTotal, weight);
 	}
 
 	/**
@@ -381,7 +386,12 @@ public class TestScorer {
 				Set<String> overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps,
 						changedMembers, effectiveChangedForOverlap);
 				depOverlap = overlapClasses.size();
-				int rawDepOverlap = depOverlapScore(depOverlap, depTotal, weights.depOverlap());
+				// Weight each overlapping dep by its IDF so near-universal deps (high df)
+				// contribute near-zero while discriminating rare deps contribute more.
+				double weightedOverlap = 0.0;
+				for (String dep : overlapClasses)
+					weightedOverlap += depMap.idf(dep);
+				int rawDepOverlap = depOverlapScore(weightedOverlap, depTotal, weights.depOverlap());
 				score += (int) Math.round(rawDepOverlap * killMultiplier);
 
 				// Complexity-weighted overlap: sum normalised complexity of overlapping deps
@@ -436,6 +446,9 @@ public class TestScorer {
 		if (killRate >= 0 && weights.killRateBonus() > 0) {
 			score += (int) Math.round(killRate * weights.killRateBonus());
 		}
+
+		// Package-proximity bonus: favour tests in the same package as a changed class
+		score += packageProximityBonus(testClassName);
 
 		return new ScoreResult(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOvlp,
 				sRatio, staticFieldOverlap > 0, killRate);
@@ -497,7 +510,10 @@ public class TestScorer {
 			} else {
 				overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
 						effectiveChangedForOverlap);
-				depOverlapPts = depOverlapScore(overlapClasses.size(), depTotal, weights.depOverlap());
+				double weightedOverlap = 0.0;
+				for (String dep : overlapClasses)
+					weightedOverlap += depMap.idf(dep);
+				depOverlapPts = depOverlapScore(weightedOverlap, depTotal, weights.depOverlap());
 				totalScore += depOverlapPts;
 
 				if (!changeComplexity.isEmpty() && !overlapClasses.isEmpty()) {
@@ -563,10 +579,40 @@ public class TestScorer {
 					+ (adjustedSetCoverPts - setCoverPts);
 		}
 
+		// Package-proximity bonus
+		int packageProximityPts = packageProximityBonus(testClassName);
+		totalScore += packageProximityPts;
+
 		return new ExplainEntry(testClassName, rank, totalScore, isChanged, changedTestPts, deps, overlapClasses,
 				adjustedDepOverlapPts, complexityOvlp, adjustedComplexityPts, hasStaticFieldOvlp, staticFieldPts,
 				failScore, failurePts, isNew, newTestPts, dur, medianDuration, sRatio, speedPts, adjustedSetCoverPts,
-				killRate, killRatePts, weights);
+				killRate, killRatePts, packageProximityPts, weights);
+	}
+
+	/**
+	 * Returns +2 if the test class shares a package with any changed class, 0
+	 * otherwise. Helps surface direct unit tests (e.g. {@code FooTest} lives in the
+	 * same package as {@code Foo}) over tests that merely load the changed class
+	 * transitively.
+	 */
+	private int packageProximityBonus(String testClassName) {
+		int dot = testClassName.lastIndexOf('.');
+		if (dot < 0 || changedClasses.isEmpty())
+			return 0;
+		String testPkg = testClassName.substring(0, dot);
+		if (!testPkg.contains("."))
+			return 0; // require at least 2 components (e.g. com.example, not com)
+		for (String changed : changedClasses) {
+			int cdot = changed.lastIndexOf('.');
+			if (cdot < 0)
+				continue;
+			String changedPkg = changed.substring(0, cdot);
+			if (!changedPkg.contains("."))
+				continue; // require at least 2 components on the changed side too
+			if (testPkg.equals(changedPkg) || testPkg.startsWith(changedPkg + "."))
+				return 2;
+		}
+		return 0;
 	}
 
 	/**
