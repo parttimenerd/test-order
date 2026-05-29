@@ -183,6 +183,7 @@ public abstract class TestOrderExtension {
     public abstract Property<Integer> getScoreChangeComplexity();
     public abstract Property<Integer> getScoreStaticFieldBonus();
     public abstract Property<Integer> getScoreCoverageBonus();
+    public abstract Property<Integer> getScoreKillRateBonus();
 
     // ---- Auto-learn thresholds ----
 

@@ -63,6 +63,8 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:tiered-select` | Split tests into tier 1/2/3 files and run tier 1 |
 | `test-order:run-tier` | Execute tier 2 or tier 3 from prior tiered selection |
 | `test-order:show` | Unified view: class order, method order, ML health (auto-detects) |
+| `test-order:explain` | Print detailed per-test score breakdown for the current change set |
+| `test-order:show-static-analysis` | Show static call-graph expansion details (verbose) |
 | `test-order:reactor-order` | Compute optimal module execution order for multi-module builds |
 | `test-order:dashboard` | Generate interactive HTML dashboard |
 | `test-order:serve` | Serve dashboard via local HTTP server |
@@ -77,6 +79,7 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:download` | Download dependency index from CI artifact store |
 | `test-order:coverage` | Generate least-tested / coverage reports |
 | `test-order:metrics` | Export test-order metrics as JSON for CI/CD reporting |
+| `test-order:analyze-mutations` | Run PIT mutation testing and record kill-rate data for scoring |
 | `test-order:detect-dependencies` | Detect order-dependent tests via reordering strategies |
 | `test-order:help` | Display all goals and common properties |
 
@@ -116,6 +119,28 @@ mvn test-order:show -Dtestorder.show.format=json
 > **CamelCase aliases:** `testorder.showOrder.format` is accepted as an alias for `testorder.show.format`,
 > and `testorder.showOrder.topN` is accepted as an alias for `testorder.select.topN`.
 > Both aliases log an info-level message pointing to the canonical name.
+
+## Explain Goal
+
+The `explain` goal prints a detailed per-test score breakdown so you can understand why each test is ranked where it is:
+
+```bash
+# Explain top 10 tests for the current change set
+mvn test-order:explain -Dtestorder.changed.classes=com.example.Foo
+
+# Explain a specific test only
+mvn test-order:explain \
+    -Dtestorder.changed.classes=com.example.Foo \
+    -Dtestorder.explain.test=com.example.FooTest
+
+# Explain top 5
+mvn test-order:explain -Dtestorder.explain.topN=5
+```
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.explain.test` | — | Fully-qualified name of the test to explain; if omitted, top-N tests are explained |
+| `testorder.explain.topN` | `10` | Number of top-ranked tests to explain when `testorder.explain.test` is not set |
 
 ## Plugin Prefix Resolution
 

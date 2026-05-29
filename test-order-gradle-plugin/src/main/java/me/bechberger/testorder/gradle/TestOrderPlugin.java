@@ -804,13 +804,29 @@ public class TestOrderPlugin implements Plugin<Project> {
             testTask.systemProperty("testorder.score.speed",
                     String.valueOf(ext.getScoreSpeed().get()));
         }
+        if (ext.getScoreSpeedPenalty().isPresent()) {
+            testTask.systemProperty("testorder.score.speedPenalty",
+                    String.valueOf(ext.getScoreSpeedPenalty().get()));
+        }
         if (ext.getScoreDepOverlap().isPresent()) {
             testTask.systemProperty("testorder.score.depOverlap",
                     String.valueOf(ext.getScoreDepOverlap().get()));
         }
+        if (ext.getScoreChangeComplexity().isPresent()) {
+            testTask.systemProperty("testorder.score.changeComplexity",
+                    String.valueOf(ext.getScoreChangeComplexity().get()));
+        }
+        if (ext.getScoreStaticFieldBonus().isPresent()) {
+            testTask.systemProperty("testorder.score.staticFieldBonus",
+                    String.valueOf(ext.getScoreStaticFieldBonus().get()));
+        }
         if (ext.getScoreCoverageBonus().isPresent()) {
             testTask.systemProperty("testorder.score.coverageBonus",
                     String.valueOf(ext.getScoreCoverageBonus().get()));
+        }
+        if (ext.getScoreKillRateBonus().isPresent()) {
+            testTask.systemProperty("testorder.score.killRateBonus",
+                    String.valueOf(ext.getScoreKillRateBonus().get()));
         }
         String weightsFile = ext.getWeightsFile().get();
         if (weightsFile != null && !weightsFile.isBlank()) {
@@ -1881,7 +1897,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 orNull(ext.getScoreMaxFailure()), orNull(ext.getScoreSpeed()),
                 orNull(ext.getScoreSpeedPenalty()), orNull(ext.getScoreDepOverlap()),
                 orNull(ext.getScoreChangeComplexity()), orNull(ext.getScoreStaticFieldBonus()),
-                orNull(ext.getScoreCoverageBonus()));
+                orNull(ext.getScoreCoverageBonus()), orNull(ext.getScoreKillRateBonus()));
 
         String explicitChanged = ext.getChangedClasses().get();
         String propChanged = gradleOrSystemProperty(project, "testorder.changed.classes");

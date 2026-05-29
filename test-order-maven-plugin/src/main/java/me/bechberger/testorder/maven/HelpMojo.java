@@ -19,12 +19,17 @@ import me.bechberger.testorder.TestOrderState.WeightDef;
 public class HelpMojo extends AbstractMojo {
 
 	/** Property name mapping for score weights (weight name → description). */
-	private static final Map<String, String> SCORE_DESCRIPTIONS = Map.of("newTest", "Weight for new/unseen tests",
-			"changedTest", "Weight for changed test classes", "maxFailure", "Weight for recently failed tests", "speed",
-			"Weight favouring fast tests", "speedPenalty", "Weight penalising slow tests", "depOverlap",
-			"Weight for dependency overlap with changes", "changeComplexity", "Weight for source-change complexity",
-			"staticFieldBonus", "Weight for changed static field overlap", "coverageBonus",
-			"Weight for greedy set-cover bonus");
+	private static final Map<String, String> SCORE_DESCRIPTIONS = Map.ofEntries(
+			Map.entry("newTest", "Weight for new/unseen tests"),
+			Map.entry("changedTest", "Weight for changed test classes"),
+			Map.entry("maxFailure", "Weight for recently failed tests"),
+			Map.entry("speed", "Weight favouring fast tests"),
+			Map.entry("speedPenalty", "Weight penalising slow tests"),
+			Map.entry("depOverlap", "Weight for dependency overlap with changes"),
+			Map.entry("changeComplexity", "Weight for source-change complexity"),
+			Map.entry("staticFieldBonus", "Weight for changed static field overlap"),
+			Map.entry("coverageBonus", "Weight for greedy set-cover bonus"),
+			Map.entry("killRateBonus", "Bonus scaled by mutation kill rate (requires analyze-mutations data)"));
 
 	@Override
 	public void execute() throws MojoExecutionException {
@@ -43,6 +48,9 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  show-order       (deprecated) Use 'show' instead\n");
 		sb.append("  show-method-order  (deprecated) Use 'show' instead\n");
 		sb.append("  analyze          (deprecated) Use 'show -Dtestorder.show.ml=true' instead\n");
+		sb.append("  explain          Explain why a specific test class is ranked where it is\n");
+		sb.append("  show-static-analysis  Show static call-graph analysis details (verbose output)\n");
+		sb.append("  analyze-mutations  Run mutation testing and record kill-rate data for scoring\n");
 		sb.append("  reactor-order    Compute optimal module execution order for multi-module builds\n");
 		sb.append("  dashboard        Generate an interactive HTML dashboard\n");
 		sb.append("  serve            Generate dashboard and serve it via a local HTTP server\n");
@@ -129,6 +137,9 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  Detect OD:  mvn test-order:detect-dependencies  (find order-dependent tests)\n");
 		sb.append("  Coverage:    mvn test-order:coverage           (writes to target/coverage-reports/)\n");
 		sb.append("  Metrics:     mvn test-order:metrics            (writes to target/test-order-metrics.json)\n");
+		sb.append("  Mutations:   mvn test-order:analyze-mutations   (record kill rates; enable killRateBonus)\n");
+		sb.append(
+				"  Explain:     mvn test-order:explain -Dtestorder.explain.test=com.example.MyTest  (score explanation)\n");
 
 		getLog().info(sb.toString());
 	}
