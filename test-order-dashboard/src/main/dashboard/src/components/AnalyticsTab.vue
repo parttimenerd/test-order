@@ -5,6 +5,7 @@ import type { DashboardState } from '../composables/useDashboard'
 import { sn, esc, DIST, fmtDur, fmtTime, computeScore, computeApfd, computeSetCoverBonuses } from '../utils'
 import { useClassHover } from '../composables/useClassInfo'
 import ClassInfoCard from './ClassInfoCard.vue'
+import SuiteHealthCard from './SuiteHealthCard.vue'
 import { mkChart, destroyCharts, chartOpts } from '../composables/useCharts'
 
 const d = inject<DashboardState>('dashboard')!
@@ -1286,6 +1287,11 @@ onMounted(initAll)
   <div v-if="d.activeTab.value === 'analytics'">
     <div v-if="d.runs.length === 0 && !d.hasCoverage && !d.tests.length" style="height:180px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">No run history yet</div>
     <div v-else>
+      <!-- Suite Health Card -->
+      <div id="suite-health">
+        <SuiteHealthCard v-if="d.suiteHealthBreakdown.value" />
+      </div>
+
       <!-- Timeline -->
       <div v-if="d.runs.length" style="margin-bottom:12px">
         <!-- Session health arc banner -->

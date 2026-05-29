@@ -417,6 +417,8 @@ public class DashboardGenerator {
 		}
 
 		// build per-class entries
+		Map<String, Integer> totalMembersPerClass = depMap.hasMemberDeps()
+				? depMap.trackedMembersPerClass() : Map.of();
 		List<Object> classes = new ArrayList<>();
 		for (var entry : sourceToTests.entrySet()) {
 			String fqcn = entry.getKey();
@@ -443,6 +445,11 @@ public class DashboardGenerator {
 			} else {
 				cls.put("members", null);
 			}
+			// total vs. covered member counts (enables method-coverage % in dashboard)
+			int coveredCount = memberMap != null ? memberMap.size() : 0;
+			int totalCount = totalMembersPerClass.getOrDefault(fqcn, 0);
+			cls.put("coveredMembers", coveredCount);
+			cls.put("totalMembers", totalCount);
 			classes.add(cls);
 		}
 

@@ -364,6 +364,23 @@ public class DependencyMap {
 	}
 
 	/**
+	 * Returns the number of distinct tracked members (methods) per source class,
+	 * derived from the member key dictionary. Only populated when member-level
+	 * instrumentation is active (i.e. {@link #hasMemberDeps()} is true).
+	 * Keys are fully-qualified class names; values are the count of tracked members.
+	 */
+	public Map<String, Integer> trackedMembersPerClass() {
+		Map<String, Integer> counts = new LinkedHashMap<>();
+		for (String key : memberKeyDictionary) {
+			int hash = key.indexOf('#');
+			if (hash < 0) continue;
+			String cls = key.substring(0, hash);
+			counts.merge(cls, 1, Integer::sum);
+		}
+		return counts;
+	}
+
+	/**
 	 * Store per-test-method member deps. Key: "testClass#method", value: set of
 	 * "depClass#memberName".
 	 */

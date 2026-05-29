@@ -169,6 +169,109 @@ export function computeApfd(orderedOutcomes: TestOutcome[]): number | null {
   return 1 - posSum / (n * m) + 1 / (2 * n)
 }
 
+/** A single scored component in the breakdown */
+export interface ScoreComponent {
+  label: string
+  contribution: number   // signed points; positive boosts rank, negative is penalty
+  rawDetail: string      // human-readable raw value, e.g. "3/8 deps changed"
+}
+
+/** Structured score breakdown returned by computeScoreBreakdown */
+export interface ScoreBreakdown {
+  total: number
+  components: ScoreComponent[]
+  changedDeps: { className: string; members: string[] }[]
+  methodTouches: { method: string; changedDeps: string[] }[]
+  nonOverlappingCount: number
+  flags: { newTest: boolean; changedTest: boolean; staticFieldOverlap: boolean; isFast: boolean; isSlow: boolean }
+}
+
+/** Compute a fully-structured score breakdown for use in ScoreBreakdownPanel */
+export function computeScoreBreakdown(
+  t: TestEntry | TestOutcome,
+  w: ScoringWeights,
+  bonusMap: Record<string, number> | null,
+  medianDuration: number,
+  changedClasses: string[],
+): ScoreBreakdown {
+  const name = 'name' in t ? t.name : (t as TestOutcome).testClass
+  const changedSet = new Set(changedClasses)
+  const deps: string[] = 'deps' in t && t.deps ? t.deps : []
+  const overlapping = deps.filter(d => changedSet.has(d)).sort()
+  const te = 'name' in t ? t as TestEntry : null
+
+  // dep overlap / set-cover
+  let depContrib = 0, depDetail = ''
+  if (w.coverageBonus > 0 && bonusMap) {
+    depContrib = bonusMap[name] || 0
+    depDetail = 'set-cover bonus'
+  } else {
+    depContrib = t.depOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
+      ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
+    depDetail = `${t.depOverlap}/${t.depTotal} deps changed`
+  }
+  const cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
+    ? Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) : 0
+
+  // changed deps tree (class → member list)
+  const membersByClass = new Map<string, string[]>()
+  for (const md of te?.memberDeps ?? []) {
+    const h = md.indexOf('#'); if (h < 0) continue
+    const cls = md.substring(0, h); if (!changedSet.has(cls)) continue
+    const mem = md.substring(h + 1)
+    if (!membersByClass.has(cls)) membersByClass.set(cls, [])
+    membersByClass.get(cls)!.push(mem)
+  }
+  const changedDeps = overlapping.map(dep => ({
+    className: dep, members: (membersByClass.get(dep) ?? []).sort(),
+  }))
+
+  // per-method touches
+  const methodTouches = (te?.methods ?? [])
+    .map(m => {
+      const mChanged = (m.deps ?? []).filter(d => {
+        const h = d.indexOf('#'); const cls = h >= 0 ? d.substring(0, h) : d
+        return changedSet.has(cls)
+      })
+      return { method: m.name, changedDeps: mChanged }
+    })
+    .filter(m => m.changedDeps.length > 0)
+
+  // speed
+  let speedPts = 0
+  if (t.speedRatio < 0) speedPts = Math.round(Math.abs(t.speedRatio) * w.speed)
+  else if (t.speedRatio > 0) speedPts = -Math.round(t.speedRatio * w.speedPenalty)
+  const dur = te?.duration ?? -1
+  const durStr = dur >= 0 ? `${fmtDur(dur)} vs median ${fmtDur(medianDuration)}` : 'unknown'
+
+  const fail = t.failScore > 0 ? Math.min(Math.ceil(t.failScore), w.maxFailure) : 0
+
+  const raw: ScoreComponent[] = [
+    { label: 'Dep overlap',       contribution: depContrib,                  rawDetail: depDetail },
+    { label: 'Change complexity', contribution: cmplx,                       rawDetail: `score ${t.complexityOverlap.toFixed(2)}` },
+    { label: 'Failure history',   contribution: fail,                        rawDetail: `raw ${t.failScore.toFixed(2)}, cap ${w.maxFailure}` },
+    { label: 'New test',          contribution: t.isNew ? w.newTest : 0,     rawDetail: t.isNew ? 'yes' : 'no' },
+    { label: 'Changed test',      contribution: t.isChanged ? w.changedTest : 0, rawDetail: t.isChanged ? 'yes' : 'no' },
+    { label: 'Static field',      contribution: t.hasStaticFieldOverlap ? w.staticFieldBonus : 0, rawDetail: t.hasStaticFieldOverlap ? 'yes' : 'no' },
+    { label: 'Speed',             contribution: speedPts,                    rawDetail: durStr },
+  ]
+  const components = raw
+    .filter(c => c.contribution !== 0)
+    .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+
+  return {
+    total: components.reduce((s, c) => s + c.contribution, 0),
+    components,
+    changedDeps,
+    methodTouches,
+    nonOverlappingCount: deps.filter(d => !changedSet.has(d)).length,
+    flags: {
+      newTest: t.isNew, changedTest: t.isChanged, staticFieldOverlap: t.hasStaticFieldOverlap,
+      isFast: t.isFast ?? false, isSlow: t.isSlow ?? false,
+    },
+  }
+}
+
 /** Build an explain-mode-style tooltip for a test's score breakdown */
 export function scoreTooltip(
   t: TestEntry | TestOutcome,

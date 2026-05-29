@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { inject, computed, ref, onMounted, type Ref } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
+import type { TestHoverState } from '../composables/useTestHover'
 import { sn, computeScore } from '../utils'
 import type { ScoringWeights } from '../types'
 
 const d = inject<DashboardState>('dashboard')!
 const shortNames = inject<Ref<boolean>>('shortNames', { value: true } as any)
+const testHover = inject<TestHoverState>('testHover')!
 function dn(name: string): string { return shortNames.value ? sn(name) : name }
 
 const showChangedOnly = ref(false)
@@ -280,7 +282,11 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
             @click="d.navigateToTestFromCov(r.name)"
           >
             <span class="weights__mover-delta" style="color:var(--green)">↑{{ Math.abs(r.delta) }}</span>
-            <span class="weights__mover-name" :title="r.name">{{ dn(r.name) }}</span>
+            <span class="weights__mover-name" :title="r.name"
+              @mouseenter="testHover.show(r.name, $event)"
+              @mousemove="testHover.move($event)"
+              @mouseleave="testHover.hide()"
+            >{{ dn(r.name) }}</span>
             <span class="weights__mover-pos">#{{ r.origRank }}→#{{ r.simRank }}</span>
           </div>
         </div>
@@ -293,7 +299,11 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
             @click="d.navigateToTestFromCov(r.name)"
           >
             <span class="weights__mover-delta" style="color:var(--red)">↓{{ r.delta }}</span>
-            <span class="weights__mover-name" :title="r.name">{{ dn(r.name) }}</span>
+            <span class="weights__mover-name" :title="r.name"
+              @mouseenter="testHover.show(r.name, $event)"
+              @mousemove="testHover.move($event)"
+              @mouseleave="testHover.hide()"
+            >{{ dn(r.name) }}</span>
             <span class="weights__mover-pos">#{{ r.origRank }}→#{{ r.simRank }}</span>
           </div>
         </div>
@@ -336,7 +346,12 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
         </thead>
         <tbody>
           <tr v-for="r in displayedResults" :key="r.name" :class="{ 'weights__row--big-delta': Math.abs(r.delta) > 5 }">
-            <td class="weights__td weights__td--name weights__td--name-link" :title="r.name + ' — click to view in Tests tab'" @click="d.navigateToTestFromCov(r.name)">{{ dn(r.name) }}</td>
+            <td class="weights__td weights__td--name weights__td--name-link" :title="r.name + ' — click to view in Tests tab'"
+              @click="d.navigateToTestFromCov(r.name)"
+              @mouseenter="testHover.show(r.name, $event)"
+              @mousemove="testHover.move($event)"
+              @mouseleave="testHover.hide()"
+            >{{ dn(r.name) }}</td>
             <td class="weights__td weights__td--right weights__td--dim">{{ r.origRank }}</td>
             <td class="weights__td weights__td--right weights__td--dim">{{ r.simRank }}</td>
             <td class="weights__td weights__td--right" :title="r.delta < 0 ? 'Moves earlier (better)' : r.delta > 0 ? 'Moves later (worse)' : 'No change'">

@@ -101,6 +101,8 @@ export interface CoverageClass {
   testCount: number
   tests: string[]
   members: MemberCoverage[] | null
+  totalMembers: number    // 0 when instrumentation is class-level only
+  coveredMembers: number  // number of exercised members
 }
 
 export interface CoverageData {

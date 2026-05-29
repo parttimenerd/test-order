@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { inject, watch, nextTick, ref, computed, type Ref } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
+import type { TestHoverState } from '../composables/useTestHover'
 import { sn, fmtDur } from '../utils'
 import TestBadges from './TestBadges.vue'
 
 const d = inject<DashboardState>('dashboard')!
 const showToast = inject<(msg: string) => void>('showToast')!
 const shortNames = inject<Ref<boolean>>('shortNames', { value: true } as any)
+const testHover = inject<TestHoverState>('testHover')!
 
 function dn(name: string): string {
   return shortNames.value ? sn(name) : name
@@ -156,7 +158,11 @@ watch(() => d.selectedTest.value, (t) => {
           >
             <div class="sidebar__test-main">
               <span class="sidebar__test-rank">#{{ t.rank }}</span>
-              <span class="sidebar__test-name" :title="t.name">{{ dn(t.name) }}</span>
+              <span class="sidebar__test-name" :title="t.name"
+                @mouseenter="testHover.show(t.name, $event)"
+                @mousemove="testHover.move($event)"
+                @mouseleave="testHover.hide()"
+              >{{ dn(t.name) }}</span>
               <button class="sidebar__watch-btn sidebar__watch-btn--on" @click.stop="toggleWatch(t.name, $event)" title="Remove from watchlist">★</button>
             </div>
             <div class="sidebar__test-badges">
@@ -180,7 +186,11 @@ watch(() => d.selectedTest.value, (t) => {
         >
           <div class="sidebar__test-main">
             <span class="sidebar__test-rank">#{{ t.rank }}</span>
-            <span class="sidebar__test-name" :title="t.name">{{ dn(t.name) }}</span>
+            <span class="sidebar__test-name" :title="t.name"
+              @mouseenter="testHover.show(t.name, $event)"
+              @mousemove="testHover.move($event)"
+              @mouseleave="testHover.hide()"
+            >{{ dn(t.name) }}</span>
             <button
               class="sidebar__test-score"
               type="button"

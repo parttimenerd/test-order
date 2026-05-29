@@ -15,10 +15,16 @@ import MLTab from './components/MLTab.vue'
 import MutationTab from './components/MutationTab.vue'
 import AppFooter from './components/AppFooter.vue'
 import CommandPalette from './components/CommandPalette.vue'
+import ScoreBreakdownPanel from './components/ScoreBreakdownPanel.vue'
+import TestInfoCard from './components/TestInfoCard.vue'
+import { useTestHover } from './composables/useTestHover'
 
 const { data, error } = parseDashboardData()
 const dashboard = useDashboard(data, error)
 provide('dashboard', dashboard)
+
+const testHover = useTestHover()
+provide('testHover', testHover)
 
 // Bulk-preload class info for all known test + source class names
 const allClassNames = new Set<string>()
@@ -253,8 +259,12 @@ function startResize(e: MouseEvent) {
             <h2 id="score-modal-title" class="score-modal__title">{{ dashboard.scoreModalTitle.value }}</h2>
             <button class="score-modal__close" type="button" @click="dashboard.closeScoreModal()" aria-label="Close score details">×</button>
           </header>
-          <p class="score-modal__hint">Verbose score breakdown</p>
-          <pre class="score-modal__body">{{ dashboard.scoreModalBody.value }}</pre>
+          <p class="score-modal__hint">Score breakdown</p>
+          <ScoreBreakdownPanel
+            v-if="dashboard.scoreModalData.value"
+            :data="dashboard.scoreModalData.value"
+          />
+          <pre v-else class="score-modal__body">{{ dashboard.scoreModalBody.value }}</pre>
         </section>
       </div>
     </Transition>
@@ -266,6 +276,14 @@ function startResize(e: MouseEvent) {
 
     <!-- Command palette -->
     <CommandPalette :open="paletteOpen" @close="paletteOpen = false" />
+
+    <!-- Test hover card (global, rendered via Teleport) -->
+    <TestInfoCard
+      :visible="testHover.visible.value"
+      :x="testHover.x.value"
+      :y="testHover.y.value"
+      :testName="testHover.testName.value"
+    />
   </div>
 </template>
 

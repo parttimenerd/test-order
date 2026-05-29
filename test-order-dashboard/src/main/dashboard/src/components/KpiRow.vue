@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, computed, ref } from 'vue'
+import { inject, computed, ref, nextTick } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
 import { fmtDur, fmtTime, sn } from '../utils'
 import { useClassHover } from '../composables/useClassInfo'
@@ -32,46 +32,25 @@ const reliabilityPct = computed(() => {
   return Math.round(((total - failedOnce.size) / total) * 100)
 })
 
-// Suite Health Score: A+ through F letter grade
+// Use shared suiteHealthBreakdown from composable
 const suiteHealth = computed(() => {
-  if (!d.tests.length) return null
-
-  // APFD component (0–100, weight 30)
-  const apfdScore = d.avgApfd.value !== null ? d.avgApfd.value * 100 : 50
-
-  // Reliability component (% tests never failed, weight 30)
-  const relScore = reliabilityPct.value ?? 100
-
-  // Flakiness component (% non-flaky, weight 20)
-  const flakyPct = d.tests.length > 0 ? (d.flakyTests.value.size / d.tests.length) * 100 : 0
-  const flakyScore = Math.max(0, 100 - flakyPct * 3)
-
-  // Coverage component (weight 20, 50 if no coverage data)
-  const covScore = d.hasCoverage ? d.covPercent.value : 50
-
-  const composite = apfdScore * 0.30 + relScore * 0.30 + flakyScore * 0.20 + covScore * 0.20
-
-  let grade: string, color: string
-  if (composite >= 93) { grade = 'A+'; color = 'var(--green)' }
-  else if (composite >= 85) { grade = 'A'; color = 'var(--green)' }
-  else if (composite >= 78) { grade = 'B+'; color = '#86efac' }
-  else if (composite >= 70) { grade = 'B'; color = 'var(--yellow)' }
-  else if (composite >= 62) { grade = 'C+'; color = 'var(--yellow)' }
-  else if (composite >= 55) { grade = 'C'; color = 'var(--orange)' }
-  else if (composite >= 45) { grade = 'D'; color = 'var(--orange)' }
-  else { grade = 'F'; color = 'var(--red)' }
-
+  const h = d.suiteHealthBreakdown.value
+  if (!h) return null
   const tip = [
-    `Suite Health Score: ${grade} (${composite.toFixed(0)}/100)`,
-    `  APFD:        ${apfdScore.toFixed(0)}% × 30%`,
-    `  Reliability: ${relScore}% × 30%`,
-    `  Flakiness:   ${flakyScore.toFixed(0)}% × 20%`,
-    `  Coverage:    ${covScore}% × 20%`,
+    `Suite Health Score: ${h.grade} (${h.composite}/100)`,
+    `  APFD:        ${h.apfdScore}% × 30%`,
+    `  Reliability: ${h.relScore}% × 30%`,
+    `  Flakiness:   ${h.flakyScore}% × 20%`,
+    `  Coverage:    ${h.covScore}% × 20%`,
     d.hasCoverage ? '' : '  (Coverage component estimated — no instrumentation data)',
   ].filter(Boolean).join('\n')
-
-  return { grade, color, composite: Math.round(composite), tip }
+  return { grade: h.grade, color: h.color, composite: h.composite, tip }
 })
+
+function openHealth() {
+  d.setTab('analytics')
+  nextTick(() => document.getElementById('suite-health')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
 
 // Latest APFD trend: arrow showing improvement/regression vs previous run
 const apfdTrend = computed(() => {
@@ -365,7 +344,7 @@ const sparkBars = computed(() => {
     </div>
 
     <!-- Suite Health Score -->
-    <div v-if="suiteHealth" class="kpi kpi-row__kpi kpi-row__kpi--clickable kpi-row__kpi--health" @click="d.setTab('analytics')" :title="suiteHealth.tip">
+    <div v-if="suiteHealth" class="kpi kpi-row__kpi kpi-row__kpi--clickable kpi-row__kpi--health" @click="openHealth()" :title="suiteHealth.tip">
       <div class="kpi-row__label">Health</div>
       <div class="kpi-row__health-grade" :style="{ color: suiteHealth.color }">{{ suiteHealth.grade }}</div>
       <div class="kpi-row__health-score">{{ suiteHealth.composite }}/100</div>

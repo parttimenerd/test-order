@@ -9,6 +9,7 @@ export interface ClassInfo {
 // Module-level cache populated by preloadClassInfo()
 const cache = new Map<string, ClassInfo | null>()
 let preloadDone = false
+let apiAvailable = true  // set to false after first network failure; suppresses further requests
 
 /** Call once at app startup with all known class names to bulk-fetch and cache. */
 export async function preloadClassInfo(classNames: string[]): Promise<void> {
@@ -26,7 +27,7 @@ export async function preloadClassInfo(classNames: string[]): Promise<void> {
       cache.set(name, info)
     }
   } catch {
-    // server may not support bulk (standalone HTML mode) — silently ignore
+    apiAvailable = false  // server not present; suppress all future API requests
   }
 }
 
@@ -62,6 +63,7 @@ export function useClassHover(): ClassHoverState {
     }
 
     // Fallback: fetch individually (standalone HTML without server, or class not preloaded)
+    if (!apiAvailable) return
     info.value = null
     fetch(`/api/classinfo?class=${encodeURIComponent(className)}`)
       .then(r => r.ok ? r.json() : null)

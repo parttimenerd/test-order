@@ -4,7 +4,7 @@ import type {
   SortColumn, GraphMode, TabDef, ScoreComponent, TestRunOutcome,
   SimResult, SelectionCoverage, CoverageClass, RunDiffEntry,
 } from '../types'
-import { sn, computeSetCoverBonuses, computeScore, computeApfd, exportTestsCsv, scoreTooltip } from '../utils'
+import { sn, computeSetCoverBonuses, computeScore, computeApfd, exportTestsCsv, scoreTooltip, computeScoreBreakdown, type ScoreBreakdown } from '../utils'
 
 type ScoreMode = 'orig' | 'sim'
 
@@ -37,6 +37,7 @@ export interface DashboardState {
   scoreModalOpen: Ref<boolean>
   scoreModalTitle: Ref<string>
   scoreModalBody: Ref<string>
+  scoreModalData: Ref<ScoreBreakdown | null>
   analyticsSelectedRunIdx: Ref<number | null>
 
   // Constants
@@ -65,6 +66,15 @@ export interface DashboardState {
   covPackages: ComputedRef<string[]>
   covAvgTests: ComputedRef<string>
   covPercent: ComputedRef<number>
+  hasMethodCoverage: ComputedRef<boolean>
+  covMethodPercent: ComputedRef<number | null>
+  coverageByName: ComputedRef<Map<string, CoverageClass>>
+  suiteHealthBreakdown: ComputedRef<{
+    grade: string; color: string; composite: number
+    apfdScore: number; relScore: number; flakyScore: number; covScore: number
+    failedOnce: string[]; flakyList: string[]
+    methodCovPct: number | null
+  } | null>
   selectionCoverage: ComputedRef<SelectionCoverage | null>
   origSCB: Record<string, number>
   simSetCoverBonuses: ComputedRef<Record<string, number>>
@@ -138,6 +148,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const scoreModalOpen = ref(false)
   const scoreModalTitle = ref('')
   const scoreModalBody = ref('')
+  const scoreModalData = ref<ScoreBreakdown | null>(null)
   const analyticsSelectedRunIdx = ref<number | null>(null)
   let lastClickedTestIndex = -1
   let lastClickedMethodIndex = -1
@@ -184,6 +195,10 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       optimizing.value = false
     }
   }
+
+  // Clear optimize error on tab change or weight slider change
+  watch(activeTab, () => { optimizeError.value = null })
+  watch(() => Object.values(lw).join(','), () => { optimizeError.value = null })
 
   const SIDEBAR_SORT_COLS: SortColumn[] = [
     { key: 'rank', label: 'Rank' },
@@ -364,6 +379,49 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     const covered = dd.coverage.classes.filter(c => c.testCount > 0).length
     return Math.round((covered / dd.coverage.totalSourceClasses) * 100)
   })
+  const hasMethodCoverage = computed<boolean>(() =>
+    (dd.coverage?.classes ?? []).some(c => c.totalMembers > 0)
+  )
+  const covMethodPercent = computed<number | null>(() => {
+    if (!hasMethodCoverage.value) return null
+    let totalM = 0, coveredM = 0
+    for (const c of dd.coverage?.classes ?? []) {
+      totalM += c.totalMembers
+      coveredM += c.coveredMembers
+    }
+    return totalM > 0 ? Math.round((coveredM / totalM) * 100) : null
+  })
+  const coverageByName = computed<Map<string, CoverageClass>>(() => {
+    const m = new Map<string, CoverageClass>()
+    for (const c of dd.coverage?.classes ?? []) m.set(c.name, c)
+    return m
+  })
+  const suiteHealthBreakdown = computed(() => {
+    if (!tests.length) return null
+    const apfdScore = avgApfd.value !== null ? avgApfd.value * 100 : 50
+    const total = tests.length
+    const failedOnce = new Set(runs.flatMap(r => r.outcomes.filter(o => o.failed).map(o => o.testClass)))
+    const relScore = total > 0 ? Math.round(((total - failedOnce.size) / total) * 100) : 100
+    const flakyPct = total > 0 ? (flakyTests.value.size / total) * 100 : 0
+    const flakyScore = Math.max(0, 100 - flakyPct * 3)
+    const covScore = hasCoverage ? covPercent.value : 50
+    const composite = apfdScore * 0.30 + relScore * 0.30 + flakyScore * 0.20 + covScore * 0.20
+    let grade: string, color: string
+    if (composite >= 93)      { grade = 'A+'; color = 'var(--green)' }
+    else if (composite >= 85) { grade = 'A';  color = 'var(--green)' }
+    else if (composite >= 78) { grade = 'B+'; color = '#86efac' }
+    else if (composite >= 70) { grade = 'B';  color = 'var(--yellow)' }
+    else if (composite >= 62) { grade = 'C+'; color = 'var(--yellow)' }
+    else if (composite >= 55) { grade = 'C';  color = 'var(--orange)' }
+    else if (composite >= 45) { grade = 'D';  color = 'var(--orange)' }
+    else                       { grade = 'F';  color = 'var(--red)' }
+    return {
+      grade, color, composite: Math.round(composite),
+      apfdScore: Math.round(apfdScore), relScore, flakyScore: Math.round(flakyScore), covScore: Math.round(covScore),
+      failedOnce: [...failedOnce], flakyList: [...flakyTests.value],
+      methodCovPct: covMethodPercent.value,
+    }
+  })
   const selectionCoverage = computed<SelectionCoverage | null>(() => {
     if (!dd.coverage?.classes) return null
     const selNames = selectedTests.value
@@ -496,12 +554,15 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   function openScoreModal(testName: string, mode: ScoreMode, sourceLabel?: string) {
     const t = tests.find(x => x.name === testName)
     if (!t) return
+    const weights = mode === 'sim' ? (lw as unknown as ScoringWeights) : dd.weights
+    const bonuses = mode === 'sim' ? simSetCoverBonuses.value : origSCB
     const score = mode === 'sim'
       ? computeScore(t, lw as unknown as ScoringWeights, simSetCoverBonuses.value)
       : t.score
     const sourceSuffix = sourceLabel ? ` (${sourceLabel})` : ''
     scoreModalTitle.value = `${sn(t.name)}${sourceSuffix} - ${mode === 'sim' ? 'Simulated' : 'Original'} score: ${score}`
     scoreModalBody.value = getScoreBreakdown(testName, mode)
+    scoreModalData.value = computeScoreBreakdown(t, weights, bonuses, dd.medianDuration, dd.changedClasses)
     scoreModalOpen.value = true
   }
 
@@ -757,7 +818,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
     showChangedPanel, simSortKey, simSortDir, badgeFilter,
     focusedTestIndex, covSearchQ,
-    scoreModalOpen, scoreModalTitle, scoreModalBody,
+    scoreModalOpen, scoreModalTitle, scoreModalBody, scoreModalData,
     analyticsSelectedRunIdx,
     TABS, SIDEBAR_SORT_COLS, GMODES,
     tests, runs, changedSet, hasMethodData,
@@ -765,7 +826,9 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     testHistoryMap, testRankHistoryMap,
     flakyTests,
     fastestTest, slowestTest, totalNodes, scoreComps, testOutcomes,
-    simResults, covPackages, covAvgTests, covPercent, selectionCoverage,
+    simResults, covPackages, covAvgTests, covPercent,
+    hasMethodCoverage, covMethodPercent, coverageByName, suiteHealthBreakdown,
+    selectionCoverage,
     origSCB, simSetCoverBonuses, runDiff, simApfd, filteredCovClasses,
     selectTest, selectAllVisible, drillDown, selectMethod,
     sortBy, simSortBy: simSortByFn, resetWeights, setGraphMode, setTab, setBadgeFilter,
