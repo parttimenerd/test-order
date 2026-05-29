@@ -17,6 +17,25 @@ detect_compiler_args() {
     esac
 }
 
+# Return extra Maven args appended to ALL maven invocations for a repo.
+# Used for per-repo workarounds like excluding modules with pre-existing failures.
+detect_extra_mvn_args() {
+    local repo="$1"
+    case "$repo" in
+        # javaparser-symbol-solver-testing has a pre-existing test failure:
+        # "Unable to determine the current version of java running" on Java 21.
+        # maven.test.failure.ignore lets the build continue past this module;
+        # our bug-injection check inspects "Tests run: ... Failures:" lines directly.
+        #
+        # logging-log4j2 log4j-core-test fails to compile on JDK 25 due to an
+        # annotation processor intentionally testing error handling (FakePluginPublicSetter).
+        # Exclude it; pre-existing test failures in log4j-api-test also require ignore.
+        javaparser) echo "-Dmaven.test.failure.ignore=true" ;;
+        logging-log4j2) echo "-Dmaven.test.failure.ignore=true -pl '!log4j-core-test'" ;;
+        *)          echo "" ;;
+    esac
+}
+
 # Return the dominant top-level test package for a repo (for includePackages).
 # When empty the heuristic in detect_test_package (third_party_test_plan.sh) is used.
 detect_package_override() {

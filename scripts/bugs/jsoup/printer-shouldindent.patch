@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/jsoup/nodes/Printer.java b/src/main/java/org/jsoup/nodes/Printer.java
+index 6b83fdb..0b6b65e 100644
+--- a/src/main/java/org/jsoup/nodes/Printer.java
++++ b/src/main/java/org/jsoup/nodes/Printer.java
+@@ -139,7 +139,7 @@ class Printer implements NodeVisitor {
+ 
+         boolean shouldIndent(@Nullable Node node) {
+             if (node == null || node == root || preserveWhitespace || isBlankText(node))
+-                return false;
++                return true; /* BUG_INJECTED */
+             if (isBlockEl(node))
+                 return true;
+ 

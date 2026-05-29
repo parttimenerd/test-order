@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/text/AlphabetConverter.java b/src/main/java/org/apache/commons/text/AlphabetConverter.java
+index 3864ac6..b2f7c69 100644
+--- a/src/main/java/org/apache/commons/text/AlphabetConverter.java
++++ b/src/main/java/org/apache/commons/text/AlphabetConverter.java
+@@ -182,7 +182,7 @@ public final class AlphabetConverter {
+             return new AlphabetConverter(originalToEncoded, encodedToOriginal, encodedLetterLength);
+ 
+         }
+-        if (encodingCopy.size() - doNotEncodeCopy.size() < 2) {
++        if (encodingCopy.size() - doNotEncodeCopy.size() /* BUG_INJECTED */ > 2) {
+             throw new IllegalArgumentException(
+                     "Must have at least two encoding characters (excluding "
+                             + "those in the 'do not encode' list), but has "

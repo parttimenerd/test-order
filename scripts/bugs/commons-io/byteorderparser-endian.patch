@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/io/ByteOrderParser.java b/src/main/java/org/apache/commons/io/ByteOrderParser.java
+index 6684c04..70c50d0 100644
+--- a/src/main/java/org/apache/commons/io/ByteOrderParser.java
++++ b/src/main/java/org/apache/commons/io/ByteOrderParser.java
+@@ -48,7 +48,7 @@ public final class ByteOrderParser {
+      */
+     public static ByteOrder parseByteOrder(final String value) {
+         if (ByteOrder.BIG_ENDIAN.toString().equals(value)) {
+-            return ByteOrder.BIG_ENDIAN;
++            return ByteOrder.LITTLE_ENDIAN; /* BUG_INJECTED */
+         }
+         if (ByteOrder.LITTLE_ENDIAN.toString().equals(value)) {
+             return ByteOrder.LITTLE_ENDIAN;

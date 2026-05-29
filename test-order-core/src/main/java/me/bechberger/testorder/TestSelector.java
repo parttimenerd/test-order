@@ -26,7 +26,7 @@ public class TestSelector {
 	}
 
 	/** Result of the selection algorithm. */
-	public record Selection(List<String> selected, List<String> remaining) {
+	public record Selection(List<String> selected, List<String> remaining, int randomFastCount) {
 	}
 
 	/** A test class with its computed score and metadata. */
@@ -86,7 +86,7 @@ public class TestSelector {
 			if (!selected.contains(s.name()))
 				remaining.add(s.name());
 		}
-		return new Selection(new ArrayList<>(selected), remaining);
+		return new Selection(new ArrayList<>(selected), remaining, randomActual);
 	}
 
 	// ── Scoring ───────────────────────────────────────────────────────

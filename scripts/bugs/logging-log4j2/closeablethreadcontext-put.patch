@@ -1,0 +1,22 @@
+diff --git a/log4j-api/src/main/java/org/apache/logging/log4j/CloseableThreadContext.java b/log4j-api/src/main/java/org/apache/logging/log4j/CloseableThreadContext.java
+index f66c814..2c2499d 100644
+--- a/log4j-api/src/main/java/org/apache/logging/log4j/CloseableThreadContext.java
++++ b/log4j-api/src/main/java/org/apache/logging/log4j/CloseableThreadContext.java
+@@ -147,7 +147,7 @@ public class CloseableThreadContext {
+          */
+         public Instance put(final String key, final String value) {
+             // If there are no existing values, a null will be stored as an old value
+-            if (!originalValues.containsKey(key)) {
++            if (originalValues.containsKey(key)) { /* BUG_INJECTED */
+                 originalValues.put(key, ThreadContext.get(key));
+             }
+             ThreadContext.put(key, value);
+@@ -167,7 +167,7 @@ public class CloseableThreadContext {
+             final Map<String, String> currentValues = ThreadContext.getContext();
+             ThreadContext.putAll(values);
+             for (final String key : values.keySet()) {
+-                if (!originalValues.containsKey(key)) {
++                if (originalValues.containsKey(key)) { /* BUG_INJECTED */
+                     originalValues.put(key, currentValues.get(key));
+                 }
+             }

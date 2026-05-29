@@ -1,0 +1,13 @@
+diff --git a/log4j-slf4j-impl/src/main/java/org/apache/logging/slf4j/Log4jMarker.java b/log4j-slf4j-impl/src/main/java/org/apache/logging/slf4j/Log4jMarker.java
+index 64b9ef9..21cf0ac 100644
+--- a/log4j-slf4j-impl/src/main/java/org/apache/logging/slf4j/Log4jMarker.java
++++ b/log4j-slf4j-impl/src/main/java/org/apache/logging/slf4j/Log4jMarker.java
+@@ -70,7 +70,7 @@ public class Log4jMarker implements Marker {
+     @Override
+     public boolean equals(final Object obj) {
+         if (this == obj) {
+-            return true;
++            return false; /* BUG_INJECTED */
+         }
+         if (obj == null) {
+             return false;

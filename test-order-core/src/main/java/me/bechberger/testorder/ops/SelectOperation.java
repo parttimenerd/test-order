@@ -112,13 +112,26 @@ public final class SelectOperation {
 					.count();
 			int newCount = (int) selection.selected().stream().filter(t -> !config.depMap().testClasses().contains(t))
 					.count();
-			int scoredCount = selection.selected().size() - alwaysRunCount - newCount;
+			int fastCount = selection.randomFastCount();
+			int scoredCount = selection.selected().size() - alwaysRunCount - newCount - fastCount;
 			StringBuilder bd = new StringBuilder();
-			bd.append(scoredCount).append(" scored");
-			if (newCount > 0)
-				bd.append(" + ").append(newCount).append(" new");
-			if (alwaysRunCount > 0)
-				bd.append(" + ").append(alwaysRunCount).append(" always-run");
+			if (scoredCount > 0)
+				bd.append(scoredCount).append(" scored");
+			if (newCount > 0) {
+				if (bd.length() > 0)
+					bd.append(" + ");
+				bd.append(newCount).append(" new");
+			}
+			if (alwaysRunCount > 0) {
+				if (bd.length() > 0)
+					bd.append(" + ");
+				bd.append(alwaysRunCount).append(" always-run");
+			}
+			if (fastCount > 0) {
+				if (bd.length() > 0)
+					bd.append(" + ");
+				bd.append(fastCount).append(" fast-diverse");
+			}
 			config.log().info("[test-order] Selected " + selection.selected().size() + " tests (" + bd + "), deferred "
 					+ selection.remaining().size());
 		}

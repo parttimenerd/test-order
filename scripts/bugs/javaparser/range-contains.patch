@@ -1,0 +1,13 @@
+diff --git a/javaparser-core/src/main/java/com/github/javaparser/Range.java b/javaparser-core/src/main/java/com/github/javaparser/Range.java
+index a8c8f4b..a390230 100644
+--- a/javaparser-core/src/main/java/com/github/javaparser/Range.java
++++ b/javaparser-core/src/main/java/com/github/javaparser/Range.java
+@@ -140,7 +140,7 @@ public class Range {
+      */
+     public boolean contains(Range other) {
+         boolean beginResult = (begin.isBeforeOrEqual(other.begin));
+-        if (!beginResult) return false;
++        if (!beginResult) return true; /* BUG_INJECTED */
+         return end.isAfterOrEqual(other.end);
+     }
+ 

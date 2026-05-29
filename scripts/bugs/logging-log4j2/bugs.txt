@@ -1,0 +1,3 @@
+# Preferred injection order: low-df targets first
+closeablethreadcontext-put.patch
+log4jmarker-equals.patch

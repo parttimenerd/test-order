@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/collections4/ListUtils.java b/src/main/java/org/apache/commons/collections4/ListUtils.java
+index 7d658cb..43c6ccc 100644
+--- a/src/main/java/org/apache/commons/collections4/ListUtils.java
++++ b/src/main/java/org/apache/commons/collections4/ListUtils.java
+@@ -321,7 +321,7 @@ public class ListUtils {
+      */
+     public static boolean isEqualList(final Collection<?> list1, final Collection<?> list2) {
+         if (list1 == list2) {
+-            return true;
++            return false; /* BUG_INJECTED */
+         }
+         if (list1 == null || list2 == null || list1.size() != list2.size()) {
+             return false;

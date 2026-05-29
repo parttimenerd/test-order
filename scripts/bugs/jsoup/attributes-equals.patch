@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/jsoup/nodes/Attributes.java b/src/main/java/org/jsoup/nodes/Attributes.java
+index 15f34d1..8e3c76d 100644
+--- a/src/main/java/org/jsoup/nodes/Attributes.java
++++ b/src/main/java/org/jsoup/nodes/Attributes.java
+@@ -585,7 +585,7 @@ public class Attributes implements Iterable<Attribute>, Cloneable {
+      */
+     @Override
+     public boolean equals(@Nullable Object o) {
+-        if (this == o) return true;
++        if (this == o) return false; /* BUG_INJECTED */
+         if (o == null || getClass() != o.getClass()) return false;
+ 
+         Attributes that = (Attributes) o;

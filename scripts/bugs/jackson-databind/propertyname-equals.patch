@@ -1,0 +1,13 @@
+diff --git a/src/main/java/tools/jackson/databind/PropertyName.java b/src/main/java/tools/jackson/databind/PropertyName.java
+index 685bc016..f40aeb41 100644
+--- a/src/main/java/tools/jackson/databind/PropertyName.java
++++ b/src/main/java/tools/jackson/databind/PropertyName.java
+@@ -283,7 +283,7 @@ public class PropertyName
+     @Override
+     public boolean equals(Object o)
+     {
+-        if (o == this) return true;
++        if (o == this) return false; /* BUG_INJECTED */
+         if (o == null) return false;
+         // 13-Nov-2012, tatu: by default, require strict type equality.
+         //   Re-evaluate if this becomes an issue.

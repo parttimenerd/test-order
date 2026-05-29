@@ -223,68 +223,67 @@ detect_single_module() {
 }
 
 # ─── Synthetic Bug Injection ─────────────────────────────────────────────────
+#
+# Primary strategy: apply a pre-written .patch file from scripts/bugs/<repo>/.
+# Each patch was created by hand against a real source file so it is guaranteed
+# to produce compilable Java and target code that is actually exercised by tests.
+#
+# Patch files live in  scripts/bugs/<repo>/<name>.patch  (unified diff format).
+# A "bugs.txt" file in the same directory lists patches in preferred order, one
+# per line.  If bugs.txt is absent, all *.patch files are tried in sorted order.
+#
+# The function emits on stdout the FQCN of the class that was patched so that
+# the caller can pass it to -Dtestorder.changed.classes.
 
-# Strategy: We inject bugs that cause test failures in predictable ways.
-# This lets us verify that test-order correctly prioritizes affected tests.
+BUGS_DIR="$SCRIPT_DIR/bugs"
 
-inject_bug_off_by_one() {
-    local repo="$1" file="$2"
-    local full="$THIRD_PARTY/$repo/$file"
-    if [[ -f "$full" ]]; then
-        # Replace "return 0" with "return 1" or "== 0" with "== 1" (cross-platform)
-        cp "$full" "$full.bak"
-        perl -i -pe 's/return 0;/return 1; \/\/ BUG_INJECTED/g;
-                     s/== 0/== 1 \/* BUG_INJECTED *\//g' "$full" 2>/dev/null || true
-        log "  Injected off-by-one bug in $file"
+# Apply the first applicable patch for $repo.
+# Prints "CLASSNAME\tPATCH_FILE" on success, returns 0.
+# Returns 1 if no patch applies.
+inject_bug_patch() {
+    local repo="$1"
+    local dir="$THIRD_PARTY/$repo"
+    local bugs_dir="$BUGS_DIR/$repo"
+    [[ -d "$bugs_dir" ]] || return 1
+
+    local patches=()
+    if [[ -f "$bugs_dir/bugs.txt" ]]; then
+        while IFS= read -r line; do
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            patches+=("$bugs_dir/$line")
+        done < "$bugs_dir/bugs.txt"
+    else
+        while IFS= read -r p; do patches+=("$p"); done \
+            < <(find "$bugs_dir" -name "*.patch" | sort)
     fi
+
+    for patch_file in "${patches[@]}"; do
+        [[ -f "$patch_file" ]] || continue
+        # Dry-run first to check the patch applies cleanly
+        if patch -d "$dir" -p1 --dry-run --no-backup-if-mismatch --forward -s < "$patch_file" 2>/dev/null; then
+            patch -d "$dir" -p1 --no-backup-if-mismatch --forward -s < "$patch_file"
+            # Derive the changed class FQCN from the patch +++ header (strip "b/" prefix from git patches)
+            local changed_file
+            changed_file=$(grep '^+++ ' "$patch_file" | head -1 | sed 's|^+++ b/||;s|^+++ ||;s|\t.*||')
+            local fqcn
+            fqcn=$(echo "$changed_file" | sed 's|.*src/main/java/||;s|/|.|g;s|\.java$||')
+            log "  Applied patch $(basename "$patch_file") → $fqcn" >&2
+            printf '%s\t%s\n' "$fqcn" "$patch_file"
+            return 0
+        fi
+    done
+    return 1
 }
 
-inject_bug_null_return() {
-    local repo="$1" file="$2"
-    local full="$THIRD_PARTY/$repo/$file"
-    if [[ -f "$full" ]]; then
-        # Replace first non-void return statement with null (cross-platform, first match only)
-        cp "$full" "$full.bak"
-        perl -i -p0e 's/\breturn (?!null|void|;)[^;]+;/return null; \/\/ BUG_INJECTED/' "$full" 2>/dev/null || true
-        log "  Injected null-return bug in $file"
-    fi
+# Reverse the patch applied by inject_bug_patch.
+restore_bug_patch() {
+    local repo="$1" patch_file="$2"
+    local dir="$THIRD_PARTY/$repo"
+    patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$patch_file" 2>/dev/null || true
+    log "  Reversed patch $(basename "$patch_file")" >&2
 }
 
-inject_bug_flip_comparison() {
-    local repo="$1" file="$2"
-    local full="$THIRD_PARTY/$repo/$file"
-    if [[ -f "$full" ]]; then
-        # Flip < to > in the first comparison found (cross-platform, first match only)
-        cp "$full" "$full.bak"
-        perl -i -p0e 's/< /> \/* BUG_INJECTED *\//' "$full" 2>/dev/null || true
-        log "  Injected flipped-comparison bug in $file"
-    fi
-}
-
-inject_bug_flip_boolean() {
-    local repo="$1" file="$2"
-    local full="$THIRD_PARTY/$repo/$file"
-    if [[ -f "$full" ]]; then
-        # Flip first "return true" to "return false" or vice versa
-        cp "$full" "$full.bak"
-        perl -i -p0e 's/\breturn true;/return false; \/\/ BUG_INJECTED/' "$full" 2>/dev/null || \
-        perl -i -p0e 's/\breturn false;/return true; \/\/ BUG_INJECTED/' "$full" 2>/dev/null || true
-        log "  Injected flip-boolean bug in $file"
-    fi
-}
-
-inject_bug_remove_add() {
-    local repo="$1" file="$2"
-    local full="$THIRD_PARTY/$repo/$file"
-    if [[ -f "$full" ]]; then
-        # Comment out the first .add( call (cross-platform, first match only)
-        cp "$full" "$full.bak"
-        perl -i -p0e 's/\.add\((.+?)\);/; \/\/ BUG_INJECTED (was: .add($1))/s' "$full" 2>/dev/null || true
-        log "  Injected remove-add bug in $file"
-    fi
-}
-
-# Restore all injected bugs
+# Restore all injected bugs (legacy .bak fallback + any leftover patches)
 restore_bugs() {
     local repo="$1"
     local dir="$THIRD_PARTY/$repo"
@@ -328,7 +327,12 @@ find_bug_targets() {
             name=$(basename "$src" .java)
             if [[ -n "${test_set[$name]+set}" ]]; then
                 local inject_score
-                inject_score=$(grep -cE "return (true|false)|< |\.add\(|return 0;" "$src" 2>/dev/null || true)
+                # Count injectable patterns only on non-comment lines (skip //, /* ... */ blocks).
+                # Use tight < pattern: left side must end with ), ] or digit to exclude generics.
+                inject_score=$(perl -ne '
+                    $in_block = 1 if /\/\*/; $in_block = 0 if /\*\//;
+                    print if !$in_block && !/^\s*\/\//;
+                ' "$src" 2>/dev/null | grep -cE "return (true|false)|[0-9)]\s*<\s*[0-9a-zA-Z_(]|\.add\(|return 0;" || true)
                 if [[ "$inject_score" -gt 0 ]]; then
                     local fqcn
                     fqcn=$(echo "$src" | sed 's|.*/src/main/java/||;s|/|.|g;s|\.java$||')
@@ -827,9 +831,15 @@ phase_full_maven() {
     # Base args (no module selector) shared by all goals
     local compiler_args
     compiler_args=$(detect_compiler_args "$repo")
+    local extra_mvn_args=""
+    type detect_extra_mvn_args &>/dev/null && extra_mvn_args=$(detect_extra_mvn_args "$repo")
     local base_args=(-B --fail-at-end -Denforcer.skip=true -Djacoco.skip=true
                      -Dmaven.build.cache.enabled=false)
     [[ -n "$compiler_args" ]] && base_args+=($compiler_args)
+    if [[ -n "$extra_mvn_args" ]]; then
+        # Use eval to correctly handle quoted args like -pl '!module-name'
+        eval "base_args+=($extra_mvn_args)"
+    fi
     [[ -n "$pkg" ]] && base_args+=("-Dtestorder.includePackages=$pkg")
 
     # Build args for test+compile goals: need -pl $module -am so dependencies compile
@@ -918,124 +928,64 @@ phase_full_maven() {
 
     # 7. Inject bug and verify detection
     log "Step 7: Bug injection verification"
-    local bug_targets_array=()
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && bug_targets_array+=("$line")
-    done < <(find_bug_targets "$repo" "$dump_tsv")
+    # Safety: if a prior run crashed with a patch applied, undo it first
+    local bugs_dir_7="$BUGS_DIR/$repo"
+    if [[ -d "$bugs_dir_7" ]]; then
+        for pf in "$bugs_dir_7"/*.patch; do
+            [[ -f "$pf" ]] || continue
+            patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" 2>/dev/null || true
+        done
+        # Remove any .rej files left by failed reverse-patch attempts
+        find "$dir" -name "*.rej" -delete 2>/dev/null || true
+    fi
     local bug_injected=false
-    if [[ ${#bug_targets_array[@]} -eq 0 ]]; then
-        warn "No suitable bug injection targets found"
-    else
-        local all_not_in_index=true
-        for target in "${bug_targets_array[@]}"; do
-            local relative="${target#$THIRD_PARTY/$repo/}"
-            local classname
-            classname=$(echo "$relative" | sed 's|^src/main/java/||;s|.*/src/main/java/||;s|/|.|g;s|\.java$||')
-
-            inject_bug_flip_comparison "$repo" "$relative"
-
-            local bug_out
-            bug_out=$(mvn clean me.bechberger:test-order-maven-plugin:select test \
+    local patch_result
+    patch_result=$(inject_bug_patch "$repo") || true
+    if [[ -n "$patch_result" ]]; then
+        local classname patch_file
+        classname=$(echo "$patch_result" | cut -f1)
+        patch_file=$(echo "$patch_result" | cut -f2)
+        local bug_out
+        bug_out=$(mvn clean me.bechberger:test-order-maven-plugin:select test \
+            -Dtestorder.changeMode=explicit \
+            -Dtestorder.changed.classes="$classname" \
+            -Dtestorder.select.topN=3 \
+            -Dtestorder.mode=skip \
+            "${test_cmd_args[@]}" \
+            2>&1 | tee "$results/full-bug-select.log") || true
+        echo "$bug_out" | tail -10
+        if echo "$bug_out" | grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]"; then
+            ok "Bug caught in top-3 selected tests! (step 7)"
+            bug_injected=true
+        elif echo "$bug_out" | grep -q "None of the explicitly specified changed classes"; then
+            warn "Bug class $classname not in dependency index"
+            local n_tests
+            n_tests=$(grep -c $'\t' "$results/full-dump.log" 2>/dev/null || echo "?")
+            log "    Index has ~$n_tests test entries"
+        elif ! echo "$bug_out" | grep -q "Tests run:"; then
+            warn "Bug result unknown for $classname — build failed before tests ran (step 7)"
+            bug_injected=true
+        else
+            warn "Bug not caught in top-3 selected tests for $classname (step 7)"
+            bug_injected=true
+            # S6: diagnosis
+            log "  Step 7 diagnosis for $classname:"
+            if [[ -f "$results/full-bug-select.log" ]]; then
+                local selected_tests
+                selected_tests=$(grep -oE '[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+Test[a-zA-Z0-9_]*' \
+                    "$results/full-bug-select.log" 2>/dev/null | sort -u | head -10 || true)
+                [[ -n "$selected_tests" ]] && log "  Selected tests:" && echo "$selected_tests" | sed 's/^/    /'
+            fi
+            log "  Top-5 scorers (show-order):"
+            mvn me.bechberger:test-order-maven-plugin:show-order \
                 -Dtestorder.changeMode=explicit \
                 -Dtestorder.changed.classes="$classname" \
-                -Dtestorder.select.topN=3 \
-                -Dtestorder.mode=skip \
-                "${test_cmd_args[@]}" \
-                2>&1 | tee "$results/full-bug-select.log") || true
-            echo "$bug_out" | tail -10
-            if echo "$bug_out" | grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]"; then
-                ok "Bug caught in top-3 selected tests! (step 7)"
-                bug_injected=true
-                all_not_in_index=false
-            elif echo "$bug_out" | grep -q "None of the explicitly specified changed classes"; then
-                warn "Bug class $classname not in dependency index (trying next target)"
-                # S18: show index stats to help diagnose why the class is missing
-                local n_tests
-                n_tests=$(grep -c $'\t' "$results/full-dump.log" 2>/dev/null || echo "?")
-                log "    Index has ~$n_tests test entries"
-                local src_hit
-                src_hit=$(find "$dir" -name "$(echo "$classname" | sed 's/.*\.//')*.java" \
-                    ! -path "*/target/*" -print -quit 2>/dev/null)
-                if [[ -n "$src_hit" ]]; then
-                    log "    Source found: $src_hit — class exists but not in index (instrumentation may have skipped it)"
-                else
-                    log "    Source NOT found for $classname — may be generated or external"
-                fi
-            elif ! echo "$bug_out" | grep -q "Tests run:"; then
-                warn "Bug result unknown for $classname — build failed before tests ran (step 7)"
-                bug_injected=true
-                all_not_in_index=false
-            else
-                warn "Bug not caught in top-3 selected tests for $classname (step 7)"
-                bug_injected=true
-                all_not_in_index=false
-                # S6: show which tests were selected and top-5 scorers for this class
-                log "  Step 7 diagnosis for $classname:"
-                if [[ -f "$results/full-bug-select.log" ]]; then
-                    local selected_tests
-                    selected_tests=$(grep -oE '[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+Test[a-zA-Z0-9_]*' \
-                        "$results/full-bug-select.log" 2>/dev/null | sort -u | head -10 || true)
-                    if [[ -n "$selected_tests" ]]; then
-                        log "  Selected tests:"
-                        echo "$selected_tests" | sed 's/^/    /'
-                    fi
-                fi
-                log "  Top-5 scorers (show-order):"
-                mvn me.bechberger:test-order-maven-plugin:show-order \
-                    -Dtestorder.changeMode=explicit \
-                    -Dtestorder.changed.classes="$classname" \
-                    "${cmd_args[@]}" -q 2>&1 \
-                    | grep -E '^\s+[0-9]' | head -5 | sed 's/^/    /' || true
-            fi
-
-            restore_bugs "$repo"
-            [[ "$bug_injected" == true ]] && break
-        done
-        # If all find_bug_targets were not in the index, try a class from the index directly
-        if [[ "$all_not_in_index" == true ]]; then
-            warn "None of find_bug_targets classes are in the dependency index — trying index-derived class"
-            # Dump index and find a dep class that has a src/main/java source file
-            local idx_class="" idx_rel=""
-            while IFS= read -r candidate; do
-                [[ -z "$candidate" ]] && continue
-                local cand_file
-                cand_file=$(find "$dir" -path "*/src/main/java/*" \
-                    -name "$(echo "$candidate" | sed 's/.*\.//' ).java" \
-                    ! -path "*/target/*" -print -quit 2>/dev/null)
-                if [[ -n "$cand_file" ]]; then
-                    idx_class="$candidate"
-                    idx_rel="$cand_file"
-                    break
-                fi
-            done < <(mvn me.bechberger:test-order-maven-plugin:"$PLUGIN_VERSION":dump \
-                "${cmd_args[@]}" -B -q 2>/dev/null \
-                | awk -F'\t' 'NF==2 && $1!=$2 {print $2}' \
-                | tr ',' '\n' | awk '!/\$|Test$|Tests$|^#|^D|^$/' 2>/dev/null || true)
-            if [[ -n "$idx_class" && -n "$idx_rel" ]]; then
-                local idx_rel_path="${idx_rel#$THIRD_PARTY/$repo/}"
-                inject_bug_flip_comparison "$repo" "$idx_rel_path"
-                local bug_out2
-                bug_out2=$(mvn clean me.bechberger:test-order-maven-plugin:select test \
-                    -Dtestorder.changeMode=explicit \
-                    -Dtestorder.changed.classes="$idx_class" \
-                    -Dtestorder.select.topN=3 \
-                    -Dtestorder.mode=skip \
-                    "${test_cmd_args[@]}" \
-                    2>&1 | tee "$results/full-bug-select-idx.log") || true
-                echo "$bug_out2" | tail -10
-                if echo "$bug_out2" | grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]"; then
-                    ok "Bug caught in top-3 selected tests! (step 7, index-derived)"
-                    bug_injected=true
-                elif ! echo "$bug_out2" | grep -q "Tests run:"; then
-                    warn "Bug result unknown for $idx_class — build failed before tests ran (step 7, index-derived)"
-                else
-                    warn "Bug not caught in top-3 for index-derived class $idx_class (step 7)"
-                fi
-                restore_bugs "$repo"
-            else
-                warn "No index-derived class with a src/main/java source found for bug injection"
-            fi
+                "${cmd_args[@]}" -q 2>&1 \
+                | grep -E '^\s+[0-9]' | head -5 | sed 's/^/    /' || true
         fi
+        restore_bug_patch "$repo" "$patch_file"
+    else
+        warn "No patch available for $repo — skipping bug injection (add scripts/bugs/$repo/*.patch)"
     fi
     # 8. Compact state
     log "Step 8: Compact"

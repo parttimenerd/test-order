@@ -1,0 +1,3 @@
+# Preferred injection order: low-df targets first
+comparatorpredicate-equal.patch
+listutils-isequal.patch

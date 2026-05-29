@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/io/IOCase.java b/src/main/java/org/apache/commons/io/IOCase.java
+index 9a4d168..088decc 100644
+--- a/src/main/java/org/apache/commons/io/IOCase.java
++++ b/src/main/java/org/apache/commons/io/IOCase.java
+@@ -152,7 +152,7 @@ public int checkCompareTo(final String str1, final String str2) {
+      */
+     public boolean checkEndsWith(final String str, final String end) {
+         if (str == null || end == null) {
+-            return false;
++            return true; /* BUG_INJECTED */
+         }
+         final int endLen = end.length();
+         return str.regionMatches(!sensitive, str.length() - endLen, end, 0, endLen);

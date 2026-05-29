@@ -1,0 +1,3 @@
+# Preferred injection order: low-df targets first for stronger test-selection signal
+printer-shouldindent.patch
+attributes-equals.patch

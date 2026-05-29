@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/collections4/functors/ComparatorPredicate.java b/src/main/java/org/apache/commons/collections4/functors/ComparatorPredicate.java
+index 9e19499..58dee4d 100644
+--- a/src/main/java/org/apache/commons/collections4/functors/ComparatorPredicate.java
++++ b/src/main/java/org/apache/commons/collections4/functors/ComparatorPredicate.java
+@@ -188,7 +188,7 @@ public class ComparatorPredicate<T> extends AbstractPredicate<T> implements Seri
+         final int comparison = comparator.compare(object, target);
+         switch (criterion) {
+         case EQUAL:
+-            result = comparison == 0;
++            result = comparison != 0; /* BUG_INJECTED */
+             break;
+         case GREATER:
+             result = comparison > 0;
