@@ -12,7 +12,7 @@ import org.gradle.api.provider.Property;
  * <pre>
  * testOrder {
  *     mode = "auto"               // auto | learn | order | optimize | skip
- *     instrumentationMode = "FULL" // FULL | CLASS | METHOD | MEMBER
+ *     instrumentationMode = "MEMBER" // MEMBER (default) | CLASS | METHOD | FULL
  *     includePackages = ""         // comma-separated package prefixes (auto-detected if empty)
  *     changeMode = "auto"          // auto | since-last-run | since-last-commit | uncommitted | explicit
  * }
@@ -36,7 +36,7 @@ public abstract class TestOrderExtension {
      */
     public abstract Property<String> getMode();
 
-    /** Instrumentation mode: FULL (default), CLASS, METHOD, MEMBER. */
+    /** Instrumentation mode: MEMBER (default), CLASS, METHOD, FULL. */
     public abstract Property<String> getInstrumentationMode();
 
     /**
@@ -251,7 +251,7 @@ public abstract class TestOrderExtension {
     /** Apply defaults. Called once during plugin application. */
     void applyDefaults(Project project) {
         getMode().convention("auto");
-        getInstrumentationMode().convention("FULL");
+        getInstrumentationMode().convention("MEMBER");
         getInstrumentation().convention("offline");
         getCompression().convention("fast");
         getStorage().convention("local");

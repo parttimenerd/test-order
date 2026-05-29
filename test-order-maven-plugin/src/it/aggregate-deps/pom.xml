@@ -42,6 +42,7 @@ com.example.Bar
         <groupId>@project.groupId@</groupId>
         <artifactId>@project.artifactId@</artifactId>
         <version>@project.version@</version>
+        <extensions>true</extensions>
         <executions>
           <execution>
             <id>aggregate</id>
