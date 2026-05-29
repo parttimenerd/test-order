@@ -52,7 +52,7 @@ layout: full
 
 <div class="grid grid-cols-2 gap-x-6 gap-y-4 items-center">
 
-<div class="bg-purple-950/40 border border-purple-500/40 rounded-2xl px-2 py-1">
+<div class="bg-purple-950/40 border border-purple-500/40 rounded-2xl px-2 py-1 text-x">
 
 ```java
 @Test void testA() {
