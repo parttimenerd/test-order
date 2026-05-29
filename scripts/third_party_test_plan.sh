@@ -45,6 +45,7 @@ MAVEN_REPOS=(
     "ai-sdk-java"
     "maven"
     "logging-log4j2"
+    "cds-feature-attachments"
 )
 
 # Gradle repos (use test-order-gradle-plugin)
@@ -57,6 +58,8 @@ GRADLE_REPOS=(
     "mockito"
     "spring-boot"
     "spring-petclinic"
+    "neonbee"
+    "resilience4j"
 )
 
 # Small/fast repos for quick validation
@@ -493,6 +496,14 @@ pluginManagement {\
 ' "$build_file"
     fi
 
+    # For multi-module projects that have an allprojects {} block, also apply
+    # the plugin to subprojects via legacy apply style so that each subproject's
+    # Test task is configured (root plugins{} only covers the root project).
+    if grep -q "^allprojects {" "$build_file"; then
+        printf '\nallprojects { apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
+        log "  → multi-module: added allprojects apply block to $build_file"
+    fi
+
     ok "Injected test-order-gradle-plugin into $build_file"
 }
 
@@ -571,9 +582,15 @@ phase_learn_gradle() {
     cd "$dir"
     inject_gradle_plugin "$repo"
 
+    local extra_args
+    extra_args=$(detect_gradle_extra_args "$repo" 2>/dev/null || echo "")
+    local override_java_home
+    override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
+
     log "Running: ./gradlew test -PtestOrder.mode=learn"
-    if ./gradlew test -PtestOrder.mode=learn --no-daemon \
-        -x checkstyleMain -x checkstyleTest -x spotbugsMain \
+    # shellcheck disable=SC2086
+    if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew test -PtestOrder.mode=learn --no-daemon \
+        $extra_args \
         2>&1 | tee "$results/learn.log" | tail -5; then
         ok "Learn succeeded for $repo"
     else
