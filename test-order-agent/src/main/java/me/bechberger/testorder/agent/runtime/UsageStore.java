@@ -352,6 +352,8 @@ public class UsageStore {
 	// ── Flush on shutdown ─────────────────────────────────────────────
 
 	private void flush() {
+		AgentLogger.info("[flush] flush() called, perTestTrackers.size()=" + perTestTrackers.size() + ", collectorPort="
+				+ System.getProperty("testorder.collector.port"));
 		if (perTestTrackers.isEmpty()) {
 			return;
 		}
@@ -386,15 +388,15 @@ public class UsageStore {
 				int port = Integer.parseInt(collectorPort);
 				boolean sent = IndexCollectorClient.sendBinary(port, perTestTrackers, perMethodTrackers);
 				if (sent) {
-					AgentLogger.log("[flush] Sent binary deps to IndexCollectorServer on port " + port + " ("
+					AgentLogger.info("[flush] Sent binary deps to IndexCollectorServer on port " + port + " ("
 							+ perTestTrackers.size() + " test classes)");
 					return;
 				}
 			} catch (NumberFormatException e) {
-				AgentLogger.log("[flush] Invalid collector port: " + collectorPort);
+				AgentLogger.info("[flush] Invalid collector port: " + collectorPort);
 			}
 			// Fall through to string-based approach on failure
-			AgentLogger.log("[flush] Binary socket send failed, falling back to string-based approach");
+			AgentLogger.info("[flush] Binary socket send failed, falling back to string-based approach");
 		}
 
 		// String-based path: convert IDs to names (needed for .deps files or v1
