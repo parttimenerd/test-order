@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, watch, onMounted, nextTick, ref as vueRef } from 'vue'
+import { inject, watch, onMounted, nextTick, ref as vueRef, computed } from 'vue'
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
 import { esc, GRAPH } from '../utils'
@@ -22,6 +22,8 @@ interface GNode extends d3.SimulationNodeDatum {
 interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean }
 
 const searchText = vueRef('')
+const colorByCoverage = vueRef(false)
+const pkgFilter = vueRef('')
 let liveNodeSel: d3.Selection<SVGGElement, GNode, SVGGElement, unknown> | null = null
 let liveLinkSel: d3.Selection<SVGLineElement, GLink, SVGGElement, unknown> | null = null
 let liveGraphLinks: GLink[] = []
@@ -30,15 +32,48 @@ let liveSvg: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null
 const nodeCount = vueRef(0)
 const edgeCount = vueRef(0)
 
+function depNodeColor(nodeId: string, changed: boolean): string {
+  if (colorByCoverage.value) {
+    const cov = d.coverageByName.value.get(nodeId)
+    if (cov && cov.totalMembers > 0) {
+      const pct = cov.coveredMembers / cov.totalMembers
+      return d3.interpolateRgb('#ef4444', '#22c55e')(pct)
+    }
+    return '#64748b'
+  }
+  return changed ? '#ef4444' : '#64748b'
+}
+
+function applyPkgFilter(pkg: string) {
+  if (!liveNodeSel) return
+  liveNodeSel.attr('display', (n: GNode) => {
+    if (!pkg) return null
+    return (n.pkg === pkg || n.type === 'test' || n.type === 'method') ? null : 'none'
+  })
+  if (liveLinkSel) liveLinkSel.attr('display', (l: GLink) => {
+    if (!pkg) return null
+    const s = l.source as GNode, t = l.target as GNode
+    return (s.pkg === pkg || s.type === 'test' || s.type === 'method' || t.pkg === pkg || t.type === 'test' || t.type === 'method') ? null : 'none'
+  })
+}
+
+watch(pkgFilter, pkg => applyPkgFilter(pkg))
+
+// Recolor dep nodes when coverage toggle changes
+watch(colorByCoverage, () => {
+  if (!liveNodeSel) return
+  liveNodeSel.selectAll<SVGCircleElement, GNode>('circle')
+    .attr('fill', (n: GNode) => n.type === 'test' || n.type === 'method' ? '#3b82f6' : depNodeColor(n.id, n.changed))
+    .attr('stroke', (n: GNode) => n.type === 'test' || n.type === 'method' ? '#1d4ed8' : n.changed ? '#b91c1c' : '#334155')
+})
+
 function resetZoom() {
   if (!liveSvg || !liveZoom) return
-  // Re-fit to the current node layout
   const container = document.getElementById('dg-wrap')
   const cW = container?.clientWidth || 700, cH = container?.clientHeight || 420
   const allNodes = liveGraphLinks.length
     ? [...new Set([...liveGraphLinks.map(l => l.source as GNode), ...liveGraphLinks.map(l => l.target as GNode)])]
     : []
-  // Fall back to identity if no nodes
   if (!allNodes.length || !allNodes[0].x) { liveSvg.transition().duration(300).call(liveZoom.transform, d3.zoomIdentity); return }
   const pad = 40
   const xs = allNodes.map(n => n.x!), ys = allNodes.map(n => n.y!)
@@ -61,7 +96,6 @@ function applySearch(q: string) {
     if (liveLinkSel) liveLinkSel.attr('opacity', 0.6)
     return
   }
-  // Find matching nodes and their direct neighbors
   const matchingIds = new Set<string>()
   liveGraphLinks.forEach(l => {
     const srcId = (l.source as GNode).id ?? l.source as string
@@ -123,7 +157,6 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
       ;(t.deps || []).filter(dep => d.changedSet.has(dep)).forEach(dep => { addNode(dep, 'dep', true); links.push({ source: t.name, target: dep, changed: true }) })
     })
   } else {
-    // For mode 'full' with too many nodes: aggregate by package
     if (d.totalNodes.value > GRAPH.FULL_MODE_NODE_LIMIT) {
       const pkgDeps: Record<string, Set<string>> = {}
       d.tests.forEach(t => {
@@ -181,7 +214,6 @@ function initGraph() {
     n.mass = n.type === 'test' || n.type === 'method' ? 2 + 3 * (n.depCount || 0) / maxDeps : n.changed ? 0.5 : 1
     const dotIdx = n.id.lastIndexOf('.')
     n.pkg = dotIdx > 0 ? n.id.substring(0, dotIdx) : '(default)'
-    // Spread nodes in a circle around center so force sim starts centered
     const angle = (i / nodes.length) * 2 * Math.PI
     const r = Math.min(W, H) * 0.25
     n.x = W / 2 + r * Math.cos(angle)
@@ -217,7 +249,7 @@ function initGraph() {
 
   node.append('circle')
     .attr('r', n => { const base = n.type === 'test' || n.type === 'method' ? 10 : 7; return base + 1.5 * (n.mass || 1) })
-    .attr('fill', n => n.type === 'test' || n.type === 'method' ? '#3b82f6' : n.changed ? '#ef4444' : '#64748b')
+    .attr('fill', n => n.type === 'test' || n.type === 'method' ? '#3b82f6' : depNodeColor(n.id, n.changed))
     .attr('stroke', n => n.type === 'test' || n.type === 'method' ? '#1d4ed8' : n.changed ? '#b91c1c' : '#334155')
     .attr('stroke-width', 1.5)
 
@@ -231,14 +263,30 @@ function initGraph() {
   const tip = d3.select(container).append('div').attr('class', 'dep-graph__tooltip')
   const testNames = new Set(d.tests.map(t => t.name))
   node.on('mouseover', (e, n) => {
-    const isNavigable = n.type === 'dep' && testNames.has(n.id)
-    tip.style('opacity', '1').html(`<strong>${esc(n.id)}</strong><br><span style="color:#64748b">${n.type === 'test' ? n.depCount + ' deps' : 'dep · ' + (n.changed ? '<span style=color:#ef4444>changed</span>' : 'unchanged')}</span><br><span style="color:#475569;font-size:9px">pkg: ${esc(n.pkg)}</span>${isNavigable ? '<br><span style="color:#818cf8;font-size:9px">click → go to test</span>' : ''}`)
+    const isTest = n.type === 'test' || n.type === 'method' || testNames.has(n.id)
+    const isDep = n.type === 'dep'
+    const hasCov = isDep && d.coverageByName.value.has(n.id)
+    const covStr = hasCov
+      ? (() => {
+          const c = d.coverageByName.value.get(n.id)!
+          return c.totalMembers > 0 ? ` · ${c.coveredMembers}/${c.totalMembers} methods` : ''
+        })()
+      : ''
+    const hint = isTest ? '<br><span style="color:#818cf8;font-size:9px">click → go to test</span>'
+      : isDep ? `<br><span style="color:#64748b;font-size:9px">click → inspect coverage</span>` : ''
+    tip.style('opacity', '1').html(
+      `<strong>${esc(n.id)}</strong><br>` +
+      `<span style="color:#64748b">${n.type === 'test' ? n.depCount + ' deps' : `dep · ${n.changed ? '<span style=color:#ef4444>changed</span>' : 'unchanged'}${covStr}`}</span>` +
+      `<br><span style="color:#475569;font-size:9px">pkg: ${esc(n.pkg)}</span>${hint}`
+    )
     classHover.show(n.id, e)
   }).on('mousemove', e => { tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'); classHover.move(e) })
     .on('mouseout', () => { tip.style('opacity', '0'); classHover.hide() })
     .on('click', (_e, n) => {
       if (n.type === 'test' || n.type === 'method' || testNames.has(n.id)) {
         d.navigateToTestFromCov(n.id)
+      } else if (n.type === 'dep') {
+        d.navigateToCovClass(n.id)
       }
     })
 
@@ -258,7 +306,6 @@ function initGraph() {
         .attr('fill', pkgColors[pkg] || 'rgba(100,100,100,.06)')
         .attr('stroke', (pkgColors[pkg] || 'rgba(100,100,100,.06)').replace('0.08', '0.2'))
     })
-    // Labels
     const labels = bubbleGroup.selectAll<SVGTextElement, [string, GNode[]]>('text')
       .data(entries, ([pkg]) => pkg)
     labels.exit().remove()
@@ -285,7 +332,7 @@ function initGraph() {
   }).on('end', () => {
     updateBubbles()
     applySearch(searchText.value)
-    // Auto-fit: zoom+pan so all nodes fill the view with padding
+    applyPkgFilter(pkgFilter.value)
     if (nodes.length && liveSvg && liveZoom) {
       const pad = 40
       const xs = nodes.map(n => n.x!), ys = nodes.map(n => n.y!)
@@ -314,8 +361,9 @@ defineExpose({ initGraph })
 
 <template>
   <div style="margin-top:12px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-      <span style="font-size:.73rem;color:var(--text-sec)">
+    <!-- Sticky toolbar -->
+    <div style="position:sticky;top:0;z-index:5;background:var(--bg-base);padding:4px 0 6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span style="font-size:.73rem;color:var(--text-sec);flex-shrink:0">
         {{ label || 'Dependency Graph' }}<span v-if="d.selectedMethod.value" style="color:var(--accent-light)"> ({{ d.selectedMethod.value.name }})</span>:
       </span>
       <button
@@ -336,12 +384,38 @@ defineExpose({ initGraph })
         />
         <button v-if="searchText" class="dep-graph__search-clear" @click="searchText = ''" title="Clear search">×</button>
       </div>
+      <!-- Coverage color toggle -->
+      <button
+        class="dep-graph__btn"
+        :class="{ 'dep-graph__btn--active': colorByCoverage }"
+        :disabled="!d.hasMethodCoverage.value"
+        :title="d.hasMethodCoverage.value ? 'Color source-class nodes by method coverage %' : 'Method coverage data not available'"
+        @click="colorByCoverage = !colorByCoverage"
+      >⬤ by cov</button>
+      <!-- Package filter -->
+      <select
+        v-model="pkgFilter"
+        class="dep-graph__select"
+        title="Show only nodes from this package"
+      >
+        <option value="">All packages</option>
+        <option v-for="pkg in d.covPackages.value" :key="pkg" :value="pkg">{{ pkg.split('.').slice(-2).join('.') }}</option>
+      </select>
       <button class="dep-graph__btn" @click="resetZoom()" title="Reset zoom and pan to default">⊙ Reset</button>
-      <span v-if="nodeCount > 0" style="margin-left:4px;font-size:.62rem;color:var(--text-muted)">{{ nodeCount }} nodes · {{ edgeCount }} edges</span>
-      <span style="margin-left:auto;font-size:.68rem;color:var(--text-muted);display:flex;gap:10px">
-        <span><span class="dep-graph__dot" style="background:#3b82f6"></span>test</span>
-        <span><span class="dep-graph__dot" style="background:#ef4444"></span>changed</span>
-        <span><span class="dep-graph__dot" style="background:var(--text-sec)"></span>dep</span>
+      <span v-if="nodeCount > 0" style="font-size:.62rem;color:var(--text-muted)">{{ nodeCount }} nodes · {{ edgeCount }} edges</span>
+      <!-- Inline legend -->
+      <span style="margin-left:auto;font-size:.68rem;color:var(--text-muted);display:flex;gap:10px;align-items:center">
+        <template v-if="colorByCoverage">
+          <span><span class="dep-graph__dot" style="background:#3b82f6"></span>test</span>
+          <span><span class="dep-graph__dot" style="background:#ef4444"></span>0% cov</span>
+          <span><span class="dep-graph__dot" style="background:#22c55e"></span>100% cov</span>
+          <span><span class="dep-graph__dot" style="background:#64748b"></span>no data</span>
+        </template>
+        <template v-else>
+          <span><span class="dep-graph__dot" style="background:#3b82f6"></span>test</span>
+          <span><span class="dep-graph__dot" style="background:#ef4444"></span>changed</span>
+          <span><span class="dep-graph__dot" style="background:var(--text-sec)"></span>dep</span>
+        </template>
       </span>
     </div>
     <div id="dg-wrap" style="height:420px;background:var(--bg-card);border-radius:var(--radius);overflow:hidden;position:relative"></div>
@@ -356,6 +430,7 @@ defineExpose({ initGraph })
 }
 .dep-graph__btn--active { background: #4338ca; border-color: var(--accent); color: var(--text); }
 .dep-graph__btn--disabled { cursor: not-allowed; opacity: .4; }
+.dep-graph__btn:disabled { cursor: not-allowed; opacity: .4; }
 .dep-graph__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; margin-right: 3px; }
 .dep-graph__search {
   padding: 3px 22px 3px 8px; font-size: .7rem; border: 1px solid var(--border); border-radius: 4px;
@@ -371,6 +446,12 @@ defineExpose({ initGraph })
   transition: color var(--tr-fast);
 }
 .dep-graph__search-clear:hover { color: var(--text); }
+.dep-graph__select {
+  font-size: .7rem; background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px;
+  cursor: pointer; outline: none;
+}
+.dep-graph__select:focus { border-color: var(--accent); }
 </style>
 
 <style>

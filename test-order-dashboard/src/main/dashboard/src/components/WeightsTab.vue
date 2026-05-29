@@ -125,6 +125,25 @@ function applyPreset(preset: typeof PRESETS[0]) {
   }
 }
 
+// Optimize: snapshot weights before run, enable revert
+const showOptHelp = ref(false)
+const preOptWeights = ref<Record<string, number> | null>(null)
+
+async function runOptimize() {
+  preOptWeights.value = { ...d.lw }
+  await d.optimizeWeights()
+}
+
+function revertOptimize() {
+  if (preOptWeights.value) {
+    for (const key of Object.keys(preOptWeights.value)) {
+      d.lw[key] = preOptWeights.value[key]
+    }
+  }
+  d.optimizeResult.value = null
+  preOptWeights.value = null
+}
+
 // Sensitivity curves: for the currently selected test, sweep each weight and track rank
 const SENS_STEPS = 20
 interface SensCurve {
@@ -232,16 +251,58 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
         :class="{ 'weights__share-btn--copied': shareCopied }"
         title="Copy a shareable URL with the current weight configuration to clipboard"
       >{{ shareCopied ? '✓ Copied!' : '⤴ Share' }}</button>
-      <button v-if="d.serverConnected.value" @click="d.optimizeWeights()" :disabled="d.optimizing.value" class="weights__optimize-btn" :title="d.optimizing.value ? 'Running genetic algorithm…' : 'Run genetic algorithm to find optimal weights from run history'">
+      <button
+        @click="d.serverConnected.value ? runOptimize() : (showOptHelp = !showOptHelp)"
+        :disabled="d.optimizing.value"
+        class="weights__optimize-btn"
+        :class="{ 'weights__optimize-btn--offline': !d.serverConnected.value }"
+        :title="d.serverConnected.value
+          ? (d.optimizing.value ? 'Running genetic algorithm…' : 'Run GA to find optimal weights')
+          : 'Live server required — click for instructions'"
+      >
+        <span v-if="d.optimizing.value" class="weights__spin">⟳</span>
         {{ d.optimizing.value ? 'Optimizing…' : '⚡ Optimize' }}
+        <span v-if="!d.serverConnected.value" style="font-size:.6rem;opacity:.6"> (offline)</span>
       </button>
     </div>
-    <p v-if="!d.runs.length" style="font-size:.65rem;color:var(--text-muted);margin-bottom:8px">No run history yet — APFD simulation requires at least one recorded run with failures.</p>
+    <!-- Offline help panel -->
+    <div v-if="showOptHelp && !d.serverConnected.value" class="weights__help-panel">
+      <strong>Live server required</strong>
+      <p>The Optimize feature runs a genetic algorithm against recorded run history to find weights that maximise APFDc.</p>
+      <p>To use it, run the dashboard with a live server:</p>
+      <code>mvn test-order:dashboard</code>
+      <p style="margin-top:4px">Then reload this page from <code>http://localhost:8765</code>.</p>
+    </div>
+    <!-- Empty state: no run history -->
+    <div v-if="!d.runs.length" class="weights__empty-state">
+      <div style="font-size:1.2rem;margin-bottom:6px">📊</div>
+      <div style="font-weight:700;margin-bottom:4px">No run history yet</div>
+      <div style="color:var(--text-muted);font-size:.72rem;margin-bottom:8px">
+        APFD simulation and rank comparison require at least one recorded run with failures.
+      </div>
+      <code style="font-size:.7rem;background:var(--bg-base);padding:4px 8px;border-radius:4px">mvn test-order:test</code>
+    </div>
     <div v-if="d.optimizeError.value" class="weights__opt-msg weights__opt-msg--err">{{ d.optimizeError.value }}</div>
-    <div v-if="d.optimizeResult.value && !d.optimizeError.value" class="weights__opt-msg weights__opt-msg--ok">
-      Optimized{{ d.optimizeResult.value.overfit ? ' (overfit → defaults)' : '' }}
-      — train APFDc: {{ (d.optimizeResult.value.trainScore * 100).toFixed(1) }}%
-      <span v-if="d.optimizeResult.value.folds > 0">, validation: {{ (d.optimizeResult.value.validationScore * 100).toFixed(1) }}%</span>
+    <div v-if="d.optimizeResult.value && !d.optimizeError.value" class="weights__opt-result">
+      <div class="weights__opt-result-header">
+        ⚡ Optimized{{ d.optimizeResult.value.overfit ? ' (overfit → defaults)' : '' }}
+        — train APFDc: {{ (d.optimizeResult.value.trainScore * 100).toFixed(1) }}%
+        <span v-if="d.optimizeResult.value.folds > 0" style="color:var(--text-muted)">  · validation: {{ (d.optimizeResult.value.validationScore * 100).toFixed(1) }}%</span>
+        <span v-if="d.optimizeResult.value.overfit" style="color:var(--orange)"> (overfit → defaults used)</span>
+        <button @click="revertOptimize()" class="weights__revert-btn">↩ Revert</button>
+      </div>
+      <div v-if="preOptWeights" class="weights__opt-diffs">
+        <template v-for="wd in d.dd.weightDefs" :key="wd.name">
+          <div v-if="d.optimizeResult.value.weights[wd.name] !== undefined && d.optimizeResult.value.weights[wd.name] !== preOptWeights![wd.name]" class="weights__opt-diff-row">
+            <span class="weights__opt-diff-name">{{ wd.name }}</span>
+            <span style="color:var(--text-muted)">{{ preOptWeights![wd.name] }}</span>
+            <span style="color:var(--text-sec)">→</span>
+            <span :style="{ color: d.optimizeResult.value.weights[wd.name] > preOptWeights![wd.name] ? 'var(--green)' : 'var(--red)' }">
+              {{ d.optimizeResult.value.weights[wd.name] }}
+            </span>
+          </div>
+        </template>
+      </div>
     </div>
     <!-- Preset buttons -->
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
@@ -255,14 +316,27 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
       >{{ preset.label }}</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:5px;margin-bottom:14px">
-      <div v-for="wd in d.dd.weightDefs" :key="wd.name" class="weights__slider-row" :title="WEIGHT_DESC[wd.name] || wd.name">
+      <div v-for="wd in d.dd.weightDefs" :key="wd.name" class="weights__slider-row">
         <div class="weights__slider-label-wrap">
           <span class="weights__slider-label">{{ wd.name }}</span>
-          <span v-if="WEIGHT_DESC[wd.name]" class="weights__slider-desc">{{ WEIGHT_DESC[wd.name] }}</span>
         </div>
-        <input type="range" :min="wd.min" :max="wd.max" step="1" v-model.number="d.lw[wd.name]" class="weights__range">
+        <span v-if="WEIGHT_DESC[wd.name]" class="weights__slider-info" :title="WEIGHT_DESC[wd.name]">?</span>
+        <div class="weights__range-wrap">
+          <input type="range" :min="wd.min" :max="wd.max" step="1" v-model.number="d.lw[wd.name]" class="weights__range">
+          <div
+            class="weights__default-tick"
+            :style="{ left: ((wd.defaultValue - wd.min) / (wd.max - wd.min) * 100) + '%' }"
+            :title="`Default: ${wd.defaultValue}`"
+          ></div>
+        </div>
         <span class="weights__slider-val">{{ d.lw[wd.name] }}</span>
-        <span class="weights__slider-default">({{ wd.defaultValue }})</span>
+        <button
+          v-if="d.lw[wd.name] !== wd.defaultValue"
+          class="weights__slider-reset"
+          @click.stop="d.lw[wd.name] = wd.defaultValue"
+          :title="`Reset ${wd.name} to default (${wd.defaultValue})`"
+        >↺</button>
+        <span v-else class="weights__slider-default">({{ wd.defaultValue }})</span>
       </div>
     </div>
 
@@ -310,7 +384,7 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
       </div>
     </div>
 
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+    <div v-if="d.runs.length" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
       <h3 style="font-size:.82rem;color:var(--text-sec);margin:0">Rank comparison <span style="font-size:.65rem;color:var(--text-muted);font-weight:400">— click headers to sort</span></h3>
       <button
         class="weights__toggle-btn"
@@ -319,7 +393,7 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
         :title="showChangedOnly ? 'Showing only tests with rank changes — click to show all' : 'Click to show only tests whose rank changed'"
       >{{ showChangedOnly ? '✕ changed only (' + displayedResults.length + ')' : 'Show changed only' }}</button>
     </div>
-    <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
+    <div v-if="d.runs.length" style="overflow-x:auto;max-height:400px;overflow-y:auto">
       <div v-if="showChangedOnly && displayedResults.length === 0" style="padding:20px;text-align:center;color:var(--text-muted);font-size:.75rem">No rank changes — all tests have the same order with current weights.</div>
       <table v-else>
         <thead style="position:sticky;top:0;background:var(--bg-base);z-index:1">
@@ -546,4 +620,74 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
 }
 .weights__share-btn:hover { background: var(--accent-bg); border-color: var(--accent); }
 .weights__share-btn--copied { color: var(--green); border-color: rgba(74,222,128,.5); background: rgba(74,222,128,.08); }
+
+/* Optimize offline */
+.weights__optimize-btn--offline { background: var(--border); color: var(--text-muted); }
+.weights__optimize-btn--offline:hover:not(:disabled) { background: var(--text-muted); color: var(--bg-base); filter: none; }
+.weights__spin { display: inline-block; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Offline help panel */
+.weights__help-panel {
+  font-size: .7rem; color: var(--text-sec); background: rgba(99,102,241,.08);
+  border: 1px solid rgba(99,102,241,.3); border-radius: 5px;
+  padding: 10px 14px; margin-bottom: 10px; line-height: 1.5;
+}
+.weights__help-panel strong { color: var(--accent-light); }
+.weights__help-panel p { margin: 4px 0; }
+.weights__help-panel code { background: var(--bg-base); padding: 2px 6px; border-radius: 3px; font-size: .68rem; }
+
+/* Empty state */
+.weights__empty-state {
+  text-align: center; padding: 24px; color: var(--text-sec);
+  background: var(--bg-card); border-radius: var(--radius); margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
+
+/* Optimize result diff */
+.weights__opt-result {
+  font-size: .65rem; padding: 8px 10px; border-radius: 5px; margin-bottom: 8px;
+  background: rgba(34, 197, 94, .08); border: 1px solid rgba(34, 197, 94, .25);
+}
+.weights__opt-result-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  color: var(--green); margin-bottom: 6px;
+}
+.weights__revert-btn {
+  margin-left: auto; padding: 2px 8px; font-size: .62rem; border-radius: 3px;
+  border: 1px solid rgba(248,113,113,.4); background: none; color: var(--red);
+  cursor: pointer; transition: all .15s;
+}
+.weights__revert-btn:hover { background: rgba(248,113,113,.1); }
+.weights__opt-diffs {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+}
+.weights__opt-diff-row {
+  display: flex; align-items: center; gap: 4px; font-size: .62rem;
+}
+.weights__opt-diff-name { color: var(--text-sec); }
+
+/* Per-slider reset + info */
+.weights__slider-info {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  background: var(--border); color: var(--text-muted); font-size: .6rem;
+  cursor: help;
+}
+.weights__slider-info:hover { background: var(--accent); color: #fff; }
+
+.weights__range-wrap { position: relative; flex: 1; }
+.weights__default-tick {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 2px; height: 14px; background: var(--text-muted); opacity: .4;
+  pointer-events: none; border-radius: 1px;
+}
+
+.weights__slider-reset {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: .8rem; padding: 0 2px; opacity: 0; flex-shrink: 0;
+  transition: opacity .15s, color .15s;
+}
+.weights__slider-row:hover .weights__slider-reset { opacity: 1; }
+.weights__slider-reset:hover { color: var(--accent-light); }
 </style>

@@ -313,6 +313,19 @@ let treemapLeaves: d3.Selection<SVGRectElement, d3.HierarchyRectangularNode<unkn
 let treemapColorScale: ((t: number) => string) | null = null
 let treemapMaxTests = 1
 
+function tileFill(c: any, highlightSources: Set<string> | null): string {
+  if (!c) return '#334155'
+  if (highlightSources) return highlightSources.has(c.name) ? '#22c55e' : '#1e293b'
+  if (d.hasMethodCoverage.value && c.totalMembers > 0) {
+    const pct = c.coveredMembers / c.totalMembers
+    const sat = Math.max(0.45, Math.min(1.0, 0.45 + (Math.log(Math.max(c.testCount, 1)) / Math.log(Math.max(treemapMaxTests, 2))) * 0.55))
+    const rgb = d3.rgb(d3.interpolateRgb('#ef4444', '#22c55e')(pct))
+    const gray = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b
+    return d3.rgb(gray + (rgb.r - gray) * sat, gray + (rgb.g - gray) * sat, gray + (rgb.b - gray) * sat).formatHex()
+  }
+  return treemapColorScale!(c.testCount)
+}
+
 function buildCoverageTreemap() {
   try {
   const container = document.getElementById('cov-treemap')
@@ -351,11 +364,7 @@ function buildCoverageTreemap() {
     .attr('x', (nd: any) => nd.x0).attr('y', (nd: any) => nd.y0)
     .attr('width', (nd: any) => Math.max(nd.x1 - nd.x0, 0))
     .attr('height', (nd: any) => Math.max(nd.y1 - nd.y0, 0))
-    .attr('fill', (nd: any) => {
-      if (!nd.data.data) return '#334155'
-      if (highlightSources) return highlightSources.has(nd.data.data.name) ? '#22c55e' : '#1e293b'
-      return treemapColorScale!(nd.data.data.testCount)
-    })
+    .attr('fill', (nd: any) => tileFill(nd.data.data, highlightSources))
     .attr('stroke', (nd: any) => {
       if (!nd.data.data) return '#0f172a'
       if (d.covSelectedClass.value?.name === nd.data.data.name) return '#f8fafc'
@@ -371,7 +380,8 @@ function buildCoverageTreemap() {
     .attr('rx', 2)
 
   svg.selectAll('text.leaf-label').data(hierarchy.leaves()).join('text').attr('class', 'leaf-label')
-    .attr('x', (nd: any) => nd.x0 + 4).attr('y', (nd: any) => nd.y0 + ((nd.y1 - nd.y0) / 2) + 4)
+    .attr('x', (nd: any) => nd.x0 + 4)
+    .attr('y', (nd: any) => Math.max(nd.y0 + 14, nd.y0 + ((nd.y1 - nd.y0) / 2) + 4))
     .attr('font-size', (nd: any) => {
       const w = nd.x1 - nd.x0, h = nd.y1 - nd.y0
       if (w < 36 || h < 14) return '0px'
@@ -380,15 +390,16 @@ function buildCoverageTreemap() {
     .attr('fill', (nd: any) => {
       if (!nd.data.data) return '#e2e8f0'
       const c = nd.data.data
-      const brightness = d3.rgb(treemapColorScale!(c.testCount)).r * 0.299 + d3.rgb(treemapColorScale!(c.testCount)).g * 0.587 + d3.rgb(treemapColorScale!(c.testCount)).b * 0.114
+      const fill = tileFill(c, highlightSources)
+      const brightness = d3.rgb(fill).r * 0.299 + d3.rgb(fill).g * 0.587 + d3.rgb(fill).b * 0.114
       return brightness > 128 ? '#0f172a' : '#f1f5f9'
     })
     .attr('font-weight', '700')
     .attr('paint-order', 'stroke')
     .attr('stroke', (nd: any) => {
       if (!nd.data.data) return 'none'
-      const c = nd.data.data
-      const brightness = d3.rgb(treemapColorScale!(c.testCount)).r * 0.299 + d3.rgb(treemapColorScale!(c.testCount)).g * 0.587 + d3.rgb(treemapColorScale!(c.testCount)).b * 0.114
+      const fill = tileFill(nd.data.data, highlightSources)
+      const brightness = d3.rgb(fill).r * 0.299 + d3.rgb(fill).g * 0.587 + d3.rgb(fill).b * 0.114
       return brightness > 128 ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.6)'
     })
     .attr('stroke-width', '2.5px')
@@ -401,6 +412,31 @@ function buildCoverageTreemap() {
       return nm.length > maxChars ? nm.substring(0, Math.max(3, maxChars - 1)) + '…' : nm
     })
 
+  // SVG-native title tooltips on small tiles
+  leaves.append('title').text((nd: any) => nd.data?.data?.name ?? '')
+
+  // Method coverage progress bars (thin strip at bottom of each tile when member data available)
+  if (d.hasMethodCoverage.value) {
+    svg.selectAll('rect.cov-bar')
+      .data(hierarchy.leaves().filter((nd: any) => {
+        const c = nd.data?.data; return c && c.totalMembers > 0 && (nd.y1 - nd.y0) > 20
+      }))
+      .join('rect').attr('class', 'cov-bar')
+      .attr('x', (nd: any) => nd.x0 + 1)
+      .attr('y', (nd: any) => nd.y1 - 3)
+      .attr('width', (nd: any) => {
+        const c = nd.data.data
+        return Math.max((nd.x1 - nd.x0 - 2) * (c.coveredMembers / c.totalMembers), 0)
+      })
+      .attr('height', 2)
+      .attr('rx', 1)
+      .attr('fill', (nd: any) => {
+        const c = nd.data.data
+        return d3.interpolateRgb('#ef4444', '#22c55e')(c.coveredMembers / c.totalMembers)
+      })
+      .attr('pointer-events', 'none')
+  }
+
   const tip = d3.select(container).append('div')
     .style('position', 'absolute').style('background', '#1e293b').style('border', '1px solid #334155')
     .style('padding', '6px 10px').style('border-radius', '4px').style('font-size', '11px')
@@ -410,7 +446,10 @@ function buildCoverageTreemap() {
     if (!nd.data.data) return
     const c = nd.data.data
     const selHit = highlightSources ? (highlightSources.has(c.name) ? ' · <span style="color:#22c55e">covered by selection</span>' : ' · <span style="color:#64748b">not in selection</span>') : ''
-    tip.style('opacity', '1').html(`<strong>${esc(sn(c.name))}</strong><br><span style="color:#64748b">${c.testCount} test${c.testCount === 1 ? '' : 's'}${selHit}</span>`)
+    const pctStr = c.totalMembers > 0
+      ? ` · <span style="color:#94a3b8">${c.coveredMembers}/${c.totalMembers} methods (${Math.round(c.coveredMembers/c.totalMembers*100)}%)</span>`
+      : ''
+    tip.style('opacity', '1').html(`<strong>${esc(sn(c.name))}</strong><br><span style="color:#64748b">${c.testCount} test${c.testCount === 1 ? '' : 's'}${selHit}${pctStr}</span>`)
     classHover.show(c.name, e)
   }).on('mousemove', (e: MouseEvent) => { tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'); classHover.move(e) })
     .on('mouseout', () => { tip.style('opacity', '0'); classHover.hide() })
@@ -426,11 +465,7 @@ function updateTreemapColors() {
   const selCov = d.selectionCoverage.value
   const highlightSources = selCov ? selCov.sources : null
   treemapLeaves
-    .attr('fill', (nd: any) => {
-      if (!nd.data.data) return '#334155'
-      if (highlightSources) return highlightSources.has(nd.data.data.name) ? '#22c55e' : '#1e293b'
-      return treemapColorScale!(nd.data.data.testCount)
-    })
+    .attr('fill', (nd: any) => tileFill(nd.data.data, highlightSources))
     .attr('stroke', (nd: any) => {
       if (!nd.data.data) return '#0f172a'
       if (d.covSelectedClass.value?.name === nd.data.data.name) return '#f8fafc'
@@ -2330,6 +2365,15 @@ onMounted(initAll)
               <span class="analytics__pct" :class="d.covPercent.value >= 80 ? 'analytics__pct--green' : d.covPercent.value >= 50 ? 'analytics__pct--yellow' : 'analytics__pct--red'">{{ d.covPercent.value }}%</span>
             </div>
           </div>
+          <div v-if="d.hasMethodCoverage.value" class="kpi analytics__cov-kpi" style="min-width:160px" title="Fraction of tracked methods exercised by at least one test">
+            <div class="analytics__cov-kpi-label">Method Coverage</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <div class="analytics__progress-bar">
+                <div class="analytics__progress-fill" :class="(d.covMethodPercent.value??0) >= 80 ? 'analytics__progress-fill--green' : (d.covMethodPercent.value??0) >= 50 ? 'analytics__progress-fill--yellow' : 'analytics__progress-fill--red'" :style="{ width: (d.covMethodPercent.value??0) + '%' }"></div>
+              </div>
+              <span class="analytics__pct" :class="(d.covMethodPercent.value??0) >= 80 ? 'analytics__pct--green' : (d.covMethodPercent.value??0) >= 50 ? 'analytics__pct--yellow' : 'analytics__pct--red'">{{ d.covMethodPercent.value }}%</span>
+            </div>
+          </div>
         </div>
 
         <!-- Selection coverage -->
@@ -2338,7 +2382,7 @@ onMounted(initAll)
             <span style="font-size:.72rem;color:var(--text-sec);font-weight:600">Selection Coverage</span>
             <span style="font-size:.68rem;color:var(--text-muted)">{{ d.selectedTests.value.size }} test{{ d.selectedTests.value.size === 1 ? '' : 's' }}<span v-if="d.selectedMethods.value.size"> · {{ d.selectedMethods.value.size }} method{{ d.selectedMethods.value.size === 1 ? '' : 's' }}</span></span>
             <div class="analytics__progress-bar" style="flex:1;min-width:100px">
-              <div class="analytics__progress-fill" :class="d.selectionCoverage.value.percent >= 80 ? 'analytics__progress-fill--green' : d.selectionCoverage.value.percent >= 50 ? 'analytics__progress-fill--yellow' : 'analytics__progress-fill--red'" :style="{ width: d.selectionCoverage.value.percent + '%' }"></div>
+              <div class="analytics__progress-fill" :style="{ width: d.selectionCoverage.value.percent + '%', background: 'var(--accent)' }"></div>
             </div>
             <span class="analytics__pct" :class="d.selectionCoverage.value.percent >= 80 ? 'analytics__pct--green' : d.selectionCoverage.value.percent >= 50 ? 'analytics__pct--yellow' : 'analytics__pct--red'">{{ d.selectionCoverage.value.percent }}%</span>
             <span style="font-size:.68rem;color:var(--text-sec)">({{ d.selectionCoverage.value.covered }}/{{ d.selectionCoverage.value.total }} classes)</span>
@@ -2365,10 +2409,18 @@ onMounted(initAll)
           >⚠ {{ covUncoveredCount }} uncovered</button>
           <span v-if="d.covSearchQ.value && d.covSearchQ.value !== '__uncovered__'" style="font-size:.65rem;color:var(--text-muted)">{{ d.filteredCovClasses.value.length }} matches</span>
           <!-- Color legend -->
-          <div style="display:flex;align-items:center;gap:5px;margin-left:auto">
-            <span style="font-size:.58rem;color:var(--text-muted)">0 tests</span>
-            <div class="analytics__treemap-legend"></div>
-            <span style="font-size:.58rem;color:var(--text-muted)">many tests</span>
+          <div style="display:flex;align-items:center;gap:5px;margin-left:auto;flex-wrap:wrap">
+            <template v-if="d.hasMethodCoverage.value">
+              <span style="font-size:.58rem;color:var(--text-muted)">0% methods</span>
+              <div class="analytics__treemap-legend"></div>
+              <span style="font-size:.58rem;color:var(--text-muted)">100% covered</span>
+              <span style="font-size:.55rem;color:var(--text-muted);margin-left:4px">· brightness = test count</span>
+            </template>
+            <template v-else>
+              <span style="font-size:.58rem;color:var(--text-muted)">0 tests</span>
+              <div class="analytics__treemap-legend"></div>
+              <span style="font-size:.58rem;color:var(--text-muted)">many tests</span>
+            </template>
           </div>
         </div>
         <div id="cov-treemap" style="background:var(--bg-card);border-radius:var(--radius);overflow:hidden;height:420px;position:relative"></div>
@@ -2496,6 +2548,19 @@ onMounted(initAll)
             >{{ d.covSelectedClass.value.name.split('.').pop() }}</span>
             <span style="font-size:.72rem;color:var(--text-sec)">tested by {{ d.covSelectedClass.value.testCount }} test{{ d.covSelectedClass.value.testCount === 1 ? '' : 's' }}</span>
             <button @click="d.covSelectedClass.value = null" style="margin-left:auto;padding:2px 8px;font-size:.65rem;background:var(--border);color:var(--text-sec);border:1px solid var(--text-muted);border-radius:3px;cursor:pointer">✕</button>
+          </div>
+          <!-- Method coverage bar in detail panel -->
+          <div v-if="d.covSelectedClass.value.totalMembers > 0" style="margin-bottom:8px">
+            <span style="font-size:.65rem;color:var(--text-sec)">
+              {{ d.covSelectedClass.value.coveredMembers }} / {{ d.covSelectedClass.value.totalMembers }} methods covered
+              ({{ Math.round(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers*100) }}%)
+            </span>
+            <div class="analytics__progress-bar" style="margin-top:3px">
+              <div class="analytics__progress-fill"
+                :class="(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers)>=0.8?'analytics__progress-fill--green':(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers)>=0.5?'analytics__progress-fill--yellow':'analytics__progress-fill--red'"
+                :style="{ width: Math.round(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers*100)+'%' }">
+              </div>
+            </div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
             <span
