@@ -73,7 +73,7 @@ export interface DashboardState {
     grade: string; color: string; composite: number
     apfdScore: number; relScore: number; flakyScore: number; covScore: number
     failedOnce: string[]; flakyList: string[]
-    methodCovPct: number | null
+    methodCovPct: number | null; hasApfd: boolean
   } | null>
   selectionCoverage: ComputedRef<SelectionCoverage | null>
   origSCB: Record<string, number>
@@ -420,6 +420,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       apfdScore: Math.round(apfdScore), relScore, flakyScore: Math.round(flakyScore), covScore: Math.round(covScore),
       failedOnce: [...failedOnce], flakyList: [...flakyTests.value],
       methodCovPct: covMethodPercent.value,
+      hasApfd: avgApfd.value !== null,
     }
   })
   const selectionCoverage = computed<SelectionCoverage | null>(() => {

@@ -138,16 +138,19 @@ export function computeScore(
 ): number {
   let s = 0
   const name = 'name' in t ? t.name : (t as TestOutcome).testClass
+  const killRate = ('killRate' in t ? t.killRate : null) ?? -1
+  const killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0
 
   if (w.coverageBonus > 0 && bonusMap) {
     s += bonusMap[name] || 0
   } else {
     if (t.depOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0)
-      s += Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap)
+      s += Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap)
     if (t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0)
       s += Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity)
   }
 
+  if (killRate >= 0 && w.killRateBonus > 0) s += Math.round(killRate * w.killRateBonus)
   if (t.isChanged) s += w.changedTest
   if (t.isNew) s += w.newTest
   if (t.speedRatio < 0) s += Math.round(Math.abs(t.speedRatio) * w.speed)
@@ -199,6 +202,8 @@ export function computeScoreBreakdown(
   const deps: string[] = 'deps' in t && t.deps ? t.deps : []
   const overlapping = deps.filter(d => changedSet.has(d)).sort()
   const te = 'name' in t ? t as TestEntry : null
+  const killRate = (te?.killRate ?? -1)
+  const killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0
 
   // dep overlap / set-cover
   let depContrib = 0, depDetail = ''
@@ -207,11 +212,14 @@ export function computeScoreBreakdown(
     depDetail = 'set-cover bonus'
   } else {
     depContrib = t.depOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
+      ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap) : 0
     depDetail = `${t.depOverlap}/${t.depTotal} deps changed`
+    if (killRate >= 0) depDetail += ` · kill rate ${(killRate * 100).toFixed(0)}%`
   }
   const cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
     ? Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) : 0
+
+  const killBonus = killRate >= 0 && w.killRateBonus > 0 ? Math.round(killRate * w.killRateBonus) : 0
 
   // changed deps tree (class → member list)
   const membersByClass = new Map<string, string[]>()
@@ -249,6 +257,7 @@ export function computeScoreBreakdown(
   const raw: ScoreComponent[] = [
     { label: 'Dep overlap',       contribution: depContrib,                  rawDetail: depDetail },
     { label: 'Change complexity', contribution: cmplx,                       rawDetail: `score ${t.complexityOverlap.toFixed(2)}` },
+    { label: 'Kill rate bonus',   contribution: killBonus,                   rawDetail: killRate >= 0 ? `kill rate ${(killRate * 100).toFixed(0)}%` : 'no data' },
     { label: 'Failure history',   contribution: fail,                        rawDetail: `raw ${t.failScore.toFixed(2)}, cap ${w.maxFailure}` },
     { label: 'New test',          contribution: t.isNew ? w.newTest : 0,     rawDetail: t.isNew ? 'yes' : 'no' },
     { label: 'Changed test',      contribution: t.isChanged ? w.changedTest : 0, rawDetail: t.isChanged ? 'yes' : 'no' },
@@ -289,16 +298,22 @@ export function scoreTooltip(
   const te = isTestEntry ? t as TestEntry : null
 
   // dep overlap / set-cover
+  const killRate = te?.killRate ?? -1
+  const killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0
   if (w.coverageBonus > 0 && bonusMap) {
     const scBonus = bonusMap[name] || 0
     lines.push(`Set-cover bonus:       ${signed(scBonus)}`)
   } else {
     const depOv = t.depOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
-    lines.push(`Dependency overlap:    ${signed(depOv)}  (${t.depOverlap}/${t.depTotal} deps overlap)`)
+      ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap) : 0
+    lines.push(`Dependency overlap:    ${signed(depOv)}  (${t.depOverlap}/${t.depTotal} deps overlap${killRate >= 0 ? `, kill-rate ×${killMultiplier.toFixed(2)}` : ''})`)
     const cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
       ? Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) : 0
     lines.push(`Change complexity:     ${signed(cmplx)}  (complexity: ${t.complexityOverlap.toFixed(2)})`)
+  }
+  if (killRate >= 0 && w.killRateBonus > 0) {
+    const kb = Math.round(killRate * w.killRateBonus)
+    lines.push(`Kill-rate bonus:       ${signed(kb)}  (${(killRate * 100).toFixed(0)}% kill rate)`)
   }
 
   // changed deps listing with member-level detail

@@ -132,6 +132,7 @@ public class DashboardGenerator {
 		weightsMap.put("changeComplexity", sw.changeComplexity());
 		weightsMap.put("staticFieldBonus", sw.staticFieldBonus());
 		weightsMap.put("coverageBonus", sw.coverageBonus());
+		weightsMap.put("killRateBonus", sw.killRateBonus());
 		root.put("weights", weightsMap);
 
 		// weight definitions (min/max for sliders)
@@ -417,8 +418,7 @@ public class DashboardGenerator {
 		}
 
 		// build per-class entries
-		Map<String, Integer> totalMembersPerClass = depMap.hasMemberDeps()
-				? depMap.trackedMembersPerClass() : Map.of();
+		Map<String, Integer> totalMembersPerClass = depMap.hasMemberDeps() ? depMap.trackedMembersPerClass() : Map.of();
 		List<Object> classes = new ArrayList<>();
 		for (var entry : sourceToTests.entrySet()) {
 			String fqcn = entry.getKey();

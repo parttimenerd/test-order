@@ -9,10 +9,10 @@ const h = computed(() => d.suiteHealthBreakdown.value)
 const components = computed(() => {
   if (!h.value) return []
   return [
-    { label: 'APFD',        value: h.value.apfdScore,   weight: 30, color: 'var(--accent)' },
-    { label: 'Reliability', value: h.value.relScore,    weight: 30, color: 'var(--green)' },
-    { label: 'Flakiness',   value: h.value.flakyScore,  weight: 20, color: 'var(--yellow)' },
-    { label: 'Coverage',    value: h.value.covScore,    weight: 20, color: 'var(--cyan)' },
+    { label: 'APFD',        value: h.value.apfdScore,   weight: 30, color: 'var(--accent)',  naText: h.value.hasApfd ? null : 'N/A' },
+    { label: 'Reliability', value: h.value.relScore,    weight: 30, color: 'var(--green)',   naText: null },
+    { label: 'Flakiness',   value: h.value.flakyScore,  weight: 20, color: 'var(--yellow)',  naText: null },
+    { label: 'Coverage',    value: h.value.covScore,    weight: 20, color: 'var(--cyan)',    naText: null },
   ]
 })
 
@@ -21,7 +21,7 @@ const recommendations = computed(() => {
   const recs: string[] = []
   if (h.value.flakyList.length > 0)
     recs.push(`Consider quarantining ${h.value.flakyList.length} flaky test${h.value.flakyList.length > 1 ? 's' : ''}`)
-  if (h.value.apfdScore < 70)
+  if (h.value.hasApfd && h.value.apfdScore < 70)
     recs.push(`APFD ${h.value.apfdScore}% is low — review weight tuning in Weights tab`)
   if (h.value.covScore < 60)
     recs.push(`Coverage ${h.value.covScore}% — consider adding instrumentation to uncovered packages`)
@@ -49,9 +49,10 @@ const recommendations = computed(() => {
       <div v-for="c in components" :key="c.label" class="shc__bar-row">
         <span class="shc__bar-label">{{ c.label }}</span>
         <div class="shc__bar-track">
-          <div class="shc__bar-fill" :style="{ width: c.value + '%', background: c.color }"></div>
+          <div v-if="!c.naText" class="shc__bar-fill" :style="{ width: c.value + '%', background: c.color }"></div>
         </div>
-        <span class="shc__bar-pct" :style="{ color: c.value >= 80 ? 'var(--green)' : c.value >= 60 ? 'var(--yellow)' : 'var(--red)' }">{{ c.value }}%</span>
+        <span v-if="c.naText" class="shc__bar-pct" style="color:var(--text-muted)">{{ c.naText }}</span>
+        <span v-else class="shc__bar-pct" :style="{ color: c.value >= 80 ? 'var(--green)' : c.value >= 60 ? 'var(--yellow)' : 'var(--red)' }">{{ c.value }}%</span>
         <span class="shc__bar-weight">×{{ c.weight / 100 }}</span>
       </div>
     </div>

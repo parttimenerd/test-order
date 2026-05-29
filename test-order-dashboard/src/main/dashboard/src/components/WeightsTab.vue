@@ -97,6 +97,7 @@ const WEIGHT_DESC: Record<string, string> = {
   changeComplexity: 'Scales the dep-overlap bonus by the number of changed dependencies touched',
   staticFieldBonus: 'Boost for tests that read static fields of changed classes',
   coverageBonus:    'Boost based on line coverage of changed classes (requires JaCoCo coverage data)',
+  killRateBonus:    'Bonus scaled by mutation kill rate — tests that kill more mutants get higher priority (requires mutation data)',
 }
 
 const PRESETS: { label: string; desc: string; values: Record<string, number> }[] = [
@@ -270,8 +271,8 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
       <strong>Live server required</strong>
       <p>The Optimize feature runs a genetic algorithm against recorded run history to find weights that maximise APFDc.</p>
       <p>To use it, run the dashboard with a live server:</p>
-      <code>mvn test-order:dashboard</code>
-      <p style="margin-top:4px">Then reload this page from <code>http://localhost:8765</code>.</p>
+      <code>mvn test-order:serve</code>
+      <p style="margin-top:4px">Then open the URL printed in the Maven output (e.g. <code>http://localhost:8080</code>).</p>
     </div>
     <!-- Empty state: no run history -->
     <div v-if="!d.runs.length" class="weights__empty-state">
@@ -280,7 +281,7 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
       <div style="color:var(--text-muted);font-size:.72rem;margin-bottom:8px">
         APFD simulation and rank comparison require at least one recorded run with failures.
       </div>
-      <code style="font-size:.7rem;background:var(--bg-base);padding:4px 8px;border-radius:4px">mvn test-order:test</code>
+      <code style="font-size:.7rem;background:var(--bg-base);padding:4px 8px;border-radius:4px">mvn test</code>
     </div>
     <div v-if="d.optimizeError.value" class="weights__opt-msg weights__opt-msg--err">{{ d.optimizeError.value }}</div>
     <div v-if="d.optimizeResult.value && !d.optimizeError.value" class="weights__opt-result">

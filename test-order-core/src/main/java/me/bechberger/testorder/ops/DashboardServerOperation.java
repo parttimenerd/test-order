@@ -126,6 +126,7 @@ public final class DashboardServerOperation {
 		server.createContext("/api/optimize", exchange -> handleOptimize(exchange, statePath, log));
 		server.createContext("/api/classinfo/bulk", exchange -> handleClassInfoBulk(exchange, sourceRoots));
 		server.createContext("/api/classinfo", exchange -> handleClassInfo(exchange, sourceRoots));
+		server.createContext("/favicon.ico", exchange -> exchange.sendResponseHeaders(204, -1));
 		server.createContext("/", exchange -> handleHtml(exchange, htmlPath));
 		server.setExecutor(executor);
 
@@ -231,10 +232,11 @@ public final class DashboardServerOperation {
 			String json = String.format(
 					"{\"weights\":{\"newTest\":%d,\"changedTest\":%d,\"maxFailure\":%d,"
 							+ "\"speed\":%d,\"speedPenalty\":%d,\"depOverlap\":%d,"
-							+ "\"changeComplexity\":%d,\"staticFieldBonus\":%d,\"coverageBonus\":%d},"
+							+ "\"changeComplexity\":%d,\"staticFieldBonus\":%d,\"coverageBonus\":%d,\"killRateBonus\":%d},"
 							+ "\"trainScore\":%.4f,\"validationScore\":%.4f,\"overfit\":%b,\"folds\":%d}",
 					w.newTest(), w.changedTest(), w.maxFailure(), w.speed(), w.speedPenalty(), w.depOverlap(),
-					w.changeComplexity(), w.staticFieldBonus(), w.coverageBonus(), result.trainScore(),
+					w.changeComplexity(), w.staticFieldBonus(), w.coverageBonus(), w.killRateBonus(),
+					result.trainScore(),
 					result.validationScore(), result.overfit(), result.folds());
 			sendJson(exchange, json);
 		} catch (Exception e) {
