@@ -351,7 +351,7 @@ function buildCoverageTreemap() {
   d3.treemap().size([W, H]).padding(2).paddingTop(16).round(true)(hierarchy as any)
 
   treemapMaxTests = Math.max(...d.dd.coverage.classes.map(c => c.testCount), 1)
-  treemapColorScale = d3.scaleSequential(t => d3.interpolateRgb('#ef4444', '#22c55e')(t)).domain([0, treemapMaxTests])
+  treemapColorScale = d3.scaleSequential(t => t === 0 ? '#1e293b' : d3.interpolateRgb('#1e3a5f', '#6366f1')(Math.pow(t, 0.5))).domain([0, treemapMaxTests])
 
   const svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
 
@@ -2428,7 +2428,7 @@ onMounted(initAll)
             </template>
             <template v-else>
               <span style="font-size:.58rem;color:var(--text-muted)">0 tests</span>
-              <div class="analytics__treemap-legend"></div>
+              <div class="analytics__treemap-legend analytics__treemap-legend--count"></div>
               <span style="font-size:.58rem;color:var(--text-muted)">many tests</span>
             </template>
           </div>
@@ -2882,6 +2882,9 @@ onMounted(initAll)
   width: 80px; height: 8px; border-radius: 4px;
   background: linear-gradient(to right, #ef4444, #f97316, #f59e0b, #22c55e);
   opacity: .8;
+}
+.analytics__treemap-legend--count {
+  background: linear-gradient(to right, #1e293b, #1e3a5f, #6366f1);
 }
 
 .analytics__cov-filter-btn {

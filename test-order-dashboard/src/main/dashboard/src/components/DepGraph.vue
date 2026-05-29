@@ -220,10 +220,8 @@ function initGraph() {
     const afterPkg = dotIdx > 0 ? n.id.substring(dotIdx + 1) : n.id
     const dollarIdx = afterPkg.indexOf('$')
     n.outerClass = dollarIdx > 0 ? n.id.substring(0, dotIdx > 0 ? dotIdx + 1 + dollarIdx : dollarIdx) : undefined
-    const angle = (i / nodes.length) * 2 * Math.PI
-    const r = Math.min(W, H) * 0.25
-    n.x = W / 2 + r * Math.cos(angle)
-    n.y = H / 2 + r * Math.sin(angle)
+    n.x = W / 2 + (Math.random() - 0.5) * Math.min(W, H) * 0.4
+    n.y = H / 2 + (Math.random() - 0.5) * Math.min(W, H) * 0.4
   })
 
   const pkgMap: Record<string, GNode[]> = {}
@@ -261,6 +259,72 @@ function initGraph() {
 
   // Clustering force: pull inner-class nodes toward their group centroid
   const outerClassGroups = Object.entries(outerClassMap).filter(([, m]) => m.length >= 2)
+
+  // Compute connected components for separation force
+  function getComponents(nodes: GNode[], links: GLink[]): GNode[][] {
+    const adj = new Map<string, Set<string>>()
+    nodes.forEach(n => adj.set(n.id, new Set()))
+    links.forEach(l => {
+      const sid = (l.source as GNode).id ?? l.source as string
+      const tid = (l.target as GNode).id ?? l.target as string
+      adj.get(sid)?.add(tid); adj.get(tid)?.add(sid)
+    })
+    const visited = new Set<string>()
+    const components: GNode[][] = []
+    const nodeById = new Map(nodes.map(n => [n.id, n]))
+    for (const n of nodes) {
+      if (visited.has(n.id)) continue
+      const comp: GNode[] = []
+      const stack = [n.id]
+      while (stack.length) {
+        const id = stack.pop()!
+        if (visited.has(id)) continue
+        visited.add(id)
+        const node = nodeById.get(id)
+        if (node) comp.push(node)
+        adj.get(id)?.forEach(nb => { if (!visited.has(nb)) stack.push(nb) })
+      }
+      if (comp.length) components.push(comp)
+    }
+    return components
+  }
+
+  const components = getComponents(nodes, links)
+  if (components.length > 1) {
+    // Spread initial positions: place each component in its own region of the canvas
+    const cols = Math.ceil(Math.sqrt(components.length))
+    components.forEach((comp, i) => {
+      const col = i % cols, row = Math.floor(i / cols)
+      const cx = W * (col + 0.5) / cols
+      const cy = H * (row + 0.5) / Math.ceil(components.length / cols)
+      comp.forEach(n => { n.x = cx + (Math.random() - 0.5) * 60; n.y = cy + (Math.random() - 0.5) * 60 })
+    })
+
+    // Component repulsion force: push component centroids apart
+    sim.force('componentSep', () => {
+      if (components.length < 2) return
+      const strength = 0.08
+      const centroids = components.map(comp => ({
+        cx: comp.reduce((s, n) => s + (n.x || 0), 0) / comp.length,
+        cy: comp.reduce((s, n) => s + (n.y || 0), 0) / comp.length,
+      }))
+      for (let i = 0; i < components.length; i++) {
+        for (let j = i + 1; j < components.length; j++) {
+          const dx = centroids[i].cx - centroids[j].cx
+          const dy = centroids[i].cy - centroids[j].cy
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1
+          const minDist = 200 + Math.sqrt(components[i].length + components[j].length) * 20
+          if (dist < minDist) {
+            const fx = (dx / dist) * strength * (minDist - dist)
+            const fy = (dy / dist) * strength * (minDist - dist)
+            components[i].forEach(n => { n.vx = (n.vx || 0) + fx; n.vy = (n.vy || 0) + fy })
+            components[j].forEach(n => { n.vx = (n.vx || 0) - fx; n.vy = (n.vy || 0) - fy })
+          }
+        }
+      }
+    })
+  }
+
   if (outerClassGroups.length > 0) {
     sim.force('classCluster', () => {
       const strength = 0.15

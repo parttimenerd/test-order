@@ -1,12 +1,21 @@
 <script setup lang="ts">
-import { inject, computed, ref, type Ref } from 'vue'
+import { inject, computed, ref } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
 import { sn, fmtDur } from '../utils'
 
 const d = inject<DashboardState>('dashboard')!
-const shortNames = inject<Ref<boolean>>('shortNames')!
-const toggleShortNames = inject<() => void>('toggleShortNames')!
 const openPalette = inject<() => void>('openPalette', () => {})
+
+const nameMode = computed(() => d.nameMode.value)
+const nameModeLabel = computed(() => nameMode.value === 'short' ? 'abc' : nameMode.value === 'strip' ? 'pkg…' : 'FQCN')
+const nameModeTitle = computed(() => ({
+  short: 'Abbreviated names (e.g. o.j.n.CommentTest) — click for smart strip',
+  strip: 'Common prefix stripped (shows only the unique part) — click for full names',
+  full: 'Full class names — click to abbreviate',
+})[nameMode.value])
+function cycleNameMode() {
+  d.nameMode.value = nameMode.value === 'short' ? 'strip' : nameMode.value === 'strip' ? 'full' : 'short'
+}
 
 const helpOpen = ref(false)
 
@@ -125,12 +134,12 @@ const generatedAge = computed(() => {
       title="Quick test search (⌘K / Ctrl+K)"
     ><kbd>⌘K</kbd> Search tests</button>
 
-    <!-- Short name toggle -->
+    <!-- Name mode cycle toggle -->
     <button
       class="app-header__toggle"
-      @click="toggleShortNames"
-      :title="shortNames ? 'Showing abbreviated class names (e.g. c.e.MyClass) — click to show full names' : 'Showing full class names — click to abbreviate'"
-    >{{ shortNames ? 'abc' : 'com.example…' }}</button>
+      @click="cycleNameMode()"
+      :title="nameModeTitle"
+    >{{ nameModeLabel }}</button>
 
     <!-- Help button -->
     <button class="app-header__help-btn" @click="helpOpen = true" title="Quick reference — scores, shortcuts, APFD">?</button>

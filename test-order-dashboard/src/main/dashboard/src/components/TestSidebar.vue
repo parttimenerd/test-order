@@ -2,16 +2,18 @@
 import { inject, watch, nextTick, ref, computed, type Ref } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
 import type { TestHoverState } from '../composables/useTestHover'
-import { sn, fmtDur } from '../utils'
+import { sn, snStrip, fmtDur } from '../utils'
 import TestBadges from './TestBadges.vue'
 
 const d = inject<DashboardState>('dashboard')!
 const showToast = inject<(msg: string) => void>('showToast')!
-const shortNames = inject<Ref<boolean>>('shortNames', { value: true } as any)
 const testHover = inject<TestHoverState>('testHover')!
 
 function dn(name: string): string {
-  return shortNames.value ? sn(name) : name
+  const mode = d.nameMode.value
+  if (mode === 'full') return name
+  if (mode === 'strip') return snStrip(name, d.commonPrefix.value)
+  return sn(name)
 }
 
 function doExport() {
@@ -83,8 +85,14 @@ watch(() => d.selectedTest.value, (t) => {
           placeholder="Filter tests…  ( / )"
           data-search-main
           class="sidebar__search"
+          title="Search tests. Examples: is:failing  is:slow  score>5  duration<500ms  method:setUp  -is:flaky"
         >
         <button v-if="d.searchQ.value" class="sidebar__search-clear" @click="d.searchQ.value = ''" title="Clear search (Esc)">×</button>
+        <span
+          class="sidebar__search-hint"
+          title="Syntax: is:failing  is:flaky  is:new  is:changed  is:slow  is:fast&#10;score>N  duration<Nms  duration>Ns  failures>=N  deps>N&#10;method:name  plain text (substring)&#10;Prefix with - to negate: -is:flaky"
+          style="cursor:help;color:var(--text-muted);font-size:.7rem;padding:0 4px"
+        >?</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:.65rem;color:var(--text-muted)">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { provide, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { provide, onMounted, onUnmounted, ref, watch, computed, type Ref } from 'vue'
 import { useDashboard } from './composables/useDashboard'
 import { parseDashboardData } from './data'
 import { preloadClassInfo } from './composables/useClassInfo'
@@ -45,11 +45,10 @@ const blameMode = ref(false)
 provide('blameMode', blameMode)
 provide('toggleBlameMode', () => { blameMode.value = !blameMode.value })
 
-// Short names toggle — persisted to localStorage
-const shortNames = ref(localStorage.getItem('shortNames') !== 'false')
+// Short names toggle — backward compat for CommandPalette; derived from nameMode
+const shortNames = computed(() => dashboard.nameMode.value !== 'full')
 function toggleShortNames() {
-  shortNames.value = !shortNames.value
-  localStorage.setItem('shortNames', String(shortNames.value))
+  dashboard.nameMode.value = dashboard.nameMode.value === 'full' ? 'short' : 'full'
 }
 provide('shortNames', shortNames)
 provide('toggleShortNames', toggleShortNames)

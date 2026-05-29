@@ -170,7 +170,6 @@ final class MavenPluginConfigKeys {
 			"testorder.download.fallbackToLearn",
 			// Static analysis goal keys
 			"testorder.staticAnalysis.enabled", "testorder.staticAnalysis.depth",
-			"testorder.showStaticAnalysis.verbose",
 			// Reactor lifecycle participant keys
 			"testorder.reactorReorder", "testorder.reactorTopN", "testorder.reactorReorder.dryRun",
 			// Offline instrumentation runtime keys (passed to surefire JVM)

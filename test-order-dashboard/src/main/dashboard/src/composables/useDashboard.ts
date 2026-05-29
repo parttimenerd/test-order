@@ -4,7 +4,7 @@ import type {
   SortColumn, GraphMode, TabDef, ScoreComponent, TestRunOutcome,
   SimResult, SelectionCoverage, CoverageClass, RunDiffEntry,
 } from '../types'
-import { sn, computeSetCoverBonuses, computeScore, computeApfd, exportTestsCsv, scoreTooltip, computeScoreBreakdown, type ScoreBreakdown } from '../utils'
+import { sn, computeSetCoverBonuses, computeScore, computeApfd, exportTestsCsv, scoreTooltip, computeScoreBreakdown, computeCommonPrefix, type ScoreBreakdown } from '../utils'
 
 type ScoreMode = 'orig' | 'sim'
 
@@ -25,6 +25,8 @@ export interface DashboardState {
   sortKey: Ref<string>
   sortDir: Ref<string>
   graphMode: Ref<string>
+  nameMode: Ref<'short' | 'strip' | 'full'>
+  commonPrefix: ComputedRef<string>
   covSelectedClass: Ref<CoverageClass | null>
   selectedMethod: Ref<MethodEntry | null>
   selectedMethods: Ref<Set<string>>
@@ -133,6 +135,8 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const activeTab = ref('tests')
   const lw: Record<string, number> = reactive(Object.assign({}, dd.weights))
   const searchQ = ref('')
+  const nameMode = ref<'short' | 'strip' | 'full'>((localStorage.getItem('nameMode') as any) || 'short')
+  watch(nameMode, v => localStorage.setItem('nameMode', v))
   const sortKey = ref('rank')
   const sortDir = ref('asc')
   const graphMode = ref('focus')
@@ -230,6 +234,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const origSCB = computeSetCoverBonuses(dd.tests, new Set(dd.changedClasses || []), dd.weights?.coverageBonus || 0)
 
   const hasMethodData = computed(() => tests.some(t => t.methods && t.methods.length > 0))
+  const commonPrefix = computed(() => nameMode.value === 'strip' ? computeCommonPrefix(tests.map(t => t.name)) : '')
   const simSetCoverBonuses = computed(() => computeSetCoverBonuses(tests, changedSet, lw.coverageBonus))
   const selectedTestObjects = computed(() =>
     tests.filter(t => selectedTests.value.has(t.name)).sort((a, b) => a.rank - b.rank),
@@ -250,11 +255,72 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     return s
   })
 
+  // Parse a query string into predicates. Supported tokens:
+  // is:failing  is:flaky  is:new  is:changed  is:slow  is:fast
+  // score>N  score>=N  score<N  score<=N  score=N
+  // duration>Nms  duration<Ns  (units: ms, s, m — default ms)
+  // failures>N  failures>=N etc.
+  // method:name  (substring match on method names in t.methods)
+  // plain text → substring on t.name (case-insensitive)
+  // Prefix with - to negate: -is:flaky
+  type Pred = (t: TestEntry, flaky: Set<string>) => boolean
+  function parseQuery(q: string, flakySet: Set<string>): Pred[] {
+    if (!q.trim()) return []
+    const tokens = q.trim().split(/\s+/)
+    const preds: Pred[] = []
+    for (let tok of tokens) {
+      let negate = false
+      if (tok.startsWith('-')) { negate = true; tok = tok.slice(1) }
+      let pred: Pred | null = null
+      if (tok === 'is:failing') pred = (t) => t.failScore > 0
+      else if (tok === 'is:flaky') pred = (t, fl) => fl.has(t.name)
+      else if (tok === 'is:new') pred = (t) => t.isNew
+      else if (tok === 'is:changed') pred = (t) => t.isChanged
+      else if (tok === 'is:slow') pred = (t) => t.isSlow ?? false
+      else if (tok === 'is:fast') pred = (t) => t.isFast ?? false
+      else if (tok.startsWith('method:')) {
+        const mq = tok.slice(7).toLowerCase()
+        pred = (t) => !!(t as any).methods?.some((m: any) => m.name?.toLowerCase().includes(mq))
+      } else {
+        // numeric: score, duration, failures, deps
+        const numMatch = tok.match(/^(score|duration|failures|deps)(>=|<=|>|<|=)(.+)$/)
+        if (numMatch) {
+          const [, field, op, valStr] = numMatch
+          let val = parseFloat(valStr.replace(/ms$/i, ''))
+          // convert units to ms for duration
+          if (field === 'duration') {
+            if (valStr.match(/[^m]s$/i)) val *= 1000
+            else if (valStr.endsWith('m')) val *= 60000
+          }
+          const compare = (a: number): boolean => {
+            if (op === '>') return a > val
+            if (op === '>=') return a >= val
+            if (op === '<') return a < val
+            if (op === '<=') return a <= val
+            return Math.abs(a - val) < 0.5
+          }
+          if (field === 'score') pred = (t) => compare(t.score ?? 0)
+          else if (field === 'duration') pred = (t) => t.duration >= 0 && compare(t.duration)
+          else if (field === 'failures') pred = (t) => compare(Math.ceil(t.failScore ?? 0))
+          else if (field === 'deps') pred = (t) => compare((t.deps || []).length)
+        }
+      }
+      if (!pred) {
+        // plain text match on name
+        const lower = tok.toLowerCase()
+        pred = (t) => t.name.toLowerCase().includes(lower)
+      }
+      if (negate) { const p = pred; pred = (t, fl) => !p(t, fl) }
+      preds.push(pred)
+    }
+    return preds
+  }
+
   const filteredTests = computed(() => {
     let arr = [...tests]
     if (searchQ.value) {
-      const q = searchQ.value.toLowerCase()
-      arr = arr.filter(t => t.name.toLowerCase().includes(q))
+      const preds = parseQuery(searchQ.value, flakyTests.value)
+      if (preds.length) arr = arr.filter(t => preds.every(p => p(t, flakyTests.value)))
     }
     if (badgeFilter.value === 'changed') arr = arr.filter(t => t.isChanged)
     else if (badgeFilter.value === 'new') arr = arr.filter(t => t.isNew)
@@ -817,6 +883,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     dd, parseError, hasData, hasCoverage, hasML, hasMutation,
     selectedTest, selectedTests, activeTab, lw, searchQ, sortKey, sortDir,
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
+    nameMode, commonPrefix,
     showChangedPanel, simSortKey, simSortDir, badgeFilter,
     focusedTestIndex, covSearchQ,
     scoreModalOpen, scoreModalTitle, scoreModalBody, scoreModalData,

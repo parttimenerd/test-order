@@ -229,14 +229,12 @@ public final class DashboardServerOperation {
 				return;
 			}
 			TestOrderState.ScoringWeights w = result.weights();
-			String json = String.format(
-					"{\"weights\":{\"newTest\":%d,\"changedTest\":%d,\"maxFailure\":%d,"
-							+ "\"speed\":%d,\"speedPenalty\":%d,\"depOverlap\":%d,"
-							+ "\"changeComplexity\":%d,\"staticFieldBonus\":%d,\"coverageBonus\":%d,\"killRateBonus\":%d},"
-							+ "\"trainScore\":%.4f,\"validationScore\":%.4f,\"overfit\":%b,\"folds\":%d}",
-					w.newTest(), w.changedTest(), w.maxFailure(), w.speed(), w.speedPenalty(), w.depOverlap(),
-					w.changeComplexity(), w.staticFieldBonus(), w.coverageBonus(), w.killRateBonus(),
-					result.trainScore(),
+			String json = String.format("{\"weights\":{\"newTest\":%d,\"changedTest\":%d,\"maxFailure\":%d,"
+					+ "\"speed\":%d,\"speedPenalty\":%d,\"depOverlap\":%d,"
+					+ "\"changeComplexity\":%d,\"staticFieldBonus\":%d,\"coverageBonus\":%d,\"killRateBonus\":%d},"
+					+ "\"trainScore\":%.4f,\"validationScore\":%.4f,\"overfit\":%b,\"folds\":%d}", w.newTest(),
+					w.changedTest(), w.maxFailure(), w.speed(), w.speedPenalty(), w.depOverlap(), w.changeComplexity(),
+					w.staticFieldBonus(), w.coverageBonus(), w.killRateBonus(), result.trainScore(),
 					result.validationScore(), result.overfit(), result.folds());
 			sendJson(exchange, json);
 		} catch (Exception e) {

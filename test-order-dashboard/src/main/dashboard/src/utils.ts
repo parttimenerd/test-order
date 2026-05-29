@@ -41,6 +41,29 @@ export function snMed(fqcn: string): string {
   return prefix + '.' + last2
 }
 
+/**
+ * Strip the longest common package prefix shared across all names in a set.
+ * Returns the remainder (the part that differs). If names is empty or all share
+ * the entire name, falls back to sn().
+ */
+export function computeCommonPrefix(names: string[]): string {
+  if (!names.length) return ''
+  const parts = names.map(n => n.split('.'))
+  const minLen = Math.min(...parts.map(p => p.length)) - 1 // never strip the class name
+  let common = 0
+  outer: for (let i = 0; i < minLen; i++) {
+    const seg = parts[0][i]
+    for (const p of parts) { if (p[i] !== seg) break outer }
+    common++
+  }
+  return parts[0].slice(0, common).join('.')
+}
+
+export function snStrip(fqcn: string, prefix: string): string {
+  if (!prefix || !fqcn.startsWith(prefix + '.')) return sn(fqcn)
+  return fqcn.substring(prefix.length + 1)
+}
+
 /** Escape HTML special characters to prevent XSS when inserting into .html() */
 export function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
