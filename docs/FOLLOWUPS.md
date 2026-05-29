@@ -358,23 +358,33 @@ soon `detect_extra_args` if S3 lands). Move these to
 ## Suggested ordering
 
 1. ~~S1~~ — done (IDF scoring weight only; write-time pruning won't-do).
-2. S5 (regression sweep) — verify no regressions from recent changes. **Start here.**
-3. S6 (diagnose-selection) — makes future debugging cheaper.
-4. S3 (validate-plugin opt-out) — unblocks netty + similar.
+2. ~~S5~~ — done (`regression` subcommand added to script).
+3. ~~S6~~ — done (step-7 diagnosis: selected tests + top-5 show-order).
+4. ~~S3~~ — done (`testorder.disableValidatePlugins=true` in CollectorLifecycleParticipant).
 5. S2 (RoaringBitmap) — only if index size becomes a problem again.
-6. S7 (override file) — refactor when the per-repo cases multiply.
+6. ~~S7~~ — done (extracted to `scripts/third-party-overrides.sh`).
 7. S4 (exercise weight) — last, biggest blast radius.
 
 ## More suggestions from today's bug runs — STATUS
 
-S8, S9, S10, S11, S13, S17 have been **implemented**. S12, S14, S15, S16, S18 remain open.
+S3, S5, S6, S7, S8, S9, S10, S11, S13, S14, S15, S16, S17, S18 have been **implemented**.
+S2 (won't-do unless index size is an issue), S4 (deferred, high blast radius), S12 (won't-do, plugin side already correct) remain.
 
 Summary of what was done:
+- **S3** — `CollectorLifecycleParticipant.disableValidatePhasePlugins()`: when `-Dtestorder.disableValidatePlugins=true`, moves `xml-maven-plugin` and `spring-javaformat-maven-plugin` validate-phase executions to phase "none".
+- **S5** — `regression` subcommand added to `scripts/third_party_test_plan.sh`; runs `full` on `REGRESSION_REPOS` and prints pass/fail summary.
+- **S6** — When step 7 doesn't catch the bug, prints selected test names (extracted from log) and top-5 scorers from `show-order`.
+- **S7** — `detect_compiler_args` and `detect_package_override` extracted to `scripts/third-party-overrides.sh`, sourced at startup.
+- **S8** — Selection log now shows breakdown: "N scored + X new + Y always-run, deferred M".
 - **S9** — `SelectOperation` and `ShowOrderWorkflow` now derive a stable seed from `hash(sorted changedClasses)` when none is set. The non-determinism warning is gone.
 - **S10** — Bug-caught detection in the script now distinguishes three outcomes: `caught` (test failures), `unknown` (build failed before any `Tests run:` line), `not_caught` (tests ran and all passed). Fixed in both step 7 and `phase_bugs_maven`.
 - **S11** — `SelectOperation` warns when any changed class appears in >50% of all test deps: `"Selection signal is weak — results may be near-random."` Fires at selection time, visible in the Maven log.
 - **S13** — `IndexCollectorServer.logIndexSize()` logs `Index written: X MB (N tests)` after every write. Warns if >20 MB.
+- **S14** — `topN=-1` log now says "all affected tests (topN=-1, running in priority order)".
+- **S15** — `find_bug_targets` accepts a TSV dump; scores candidates by `inject_score * 1000 / (df + 1)` to prefer discriminating classes over near-universal utility classes.
+- **S16** — New `mvn test-order:explain` goal (`ExplainMojo`): prints per-test score breakdown for the given changed-class set. `-Dtestorder.explain.test=FQCN` for a specific test; `-Dtestorder.explain.topN=N` for top-N (default 10).
 - **S17** — `IndexCollectorServer.isSyntheticClass()` filters cglib (`$$EnhancerByCGLIB$$`, `$$FastClassByCGLIB$$`), JDK proxies (`com.sun.proxy.*`, `jdk.proxy*`), lambda forms, Spring cglib (`org.springframework.cglib.*`), and Hibernate repackaged classes (`org.hibernate.repackage.*`) from all dep sets at merge time. Jackson index dropped from 80 MB → 65 MB.
+- **S18** — When a candidate class is not in the index, prints the approx number of test entries and whether the source file exists in the repo tree.
 
 After these fixes, jackson-databind's bug is **caught in top-3** (was: not caught).
 
