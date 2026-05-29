@@ -318,6 +318,7 @@ Each test gets a score based on multiple signals. Tests run in descending score 
 | **Recent failures** | up to 5 | Test failed recently (weighted by recency) |
 | **Speed** | ±1 | Fast tests get a small bonus; slow tests a penalty |
 | **Change complexity** | up to 2 | Changed classes are information-dense |
+| **Kill-rate bonus** | 0 (opt-in) | Tests killing more mutants rank higher (requires `analyze-mutations`) |
 <!-- END WEIGHTS TABLE -->
 
 All weights are configurable. Run `mvn test-order:optimize` to auto-tune them for your project.
@@ -355,7 +356,7 @@ The Gradle equivalent:
 **Enable the kill-rate scoring bonus** by setting `killRateBonus` in your scoring weights (default is 0 — no effect until you explicitly opt in):
 
 ```bash
-mvn test -Dtestorder.weight.killRateBonus=5
+mvn test -Dtestorder.score.killRateBonus=5
 ```
 
 Or persistently in `.test-order/scoring-weights.toml`:

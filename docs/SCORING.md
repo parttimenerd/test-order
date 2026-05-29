@@ -16,6 +16,7 @@ Each test class receives a score. Tests are sorted by descending score, with fas
 | **Change complexity** | 2 (max) | `testorder.score.changeComplexity` | Complexity-weighted overlap using Deflate-compressed file size as information-density proxy. Disabled when `coverageBonus > 0`. |
 | **Static field bonus** | 0 | `testorder.score.staticFieldBonus` | Fixed bonus when a test directly overlaps a changed static field. Only applied with member-level (`MEMBER` mode) overlap data. |
 | **Coverage bonus** | 0 | `testorder.score.coverageBonus` | Greedy set-cover bonus: replaces `depOverlap` + `changeComplexity` with geometrically declining bonuses (×0.8) for tests that collectively cover all changed classes. Set to 0 (default) to use per-test scoring instead. |
+| **Kill-rate bonus** | 0 | `testorder.score.killRateBonus` | Bonus scaled by mutation kill rate (requires `analyze-mutations` data). Tests with a high kill rate also get a multiplier on dep-overlap: `depOverlapScore × (0.5 + killRate × 0.5)`. Default 0 — no effect until explicitly set. |
 <!-- END WEIGHTS TABLE -->
 
 ## Formula
@@ -29,12 +30,15 @@ score = (isNew ? newTestBonus : 0)
       - round(|speedRatio| × speedPenalty)      # speedRatio ∈ (0, 1] for slow tests
       + overlapScore                             # see below
       + (overlapsChangedStaticField ? staticFieldBonus : 0)
+      + round(killRate × killRateBonus)          # 0 when killRateBonus = 0 (default)
 
   where speedRatio = clamp(log₂(duration / median) / 3, -1, 1)
+        killRate ∈ [0, 1] from mutation testing; tests without data are unaffected
 
   overlapScore (when coverageBonus = 0, the default):
-      min(ceil(|dependencies ∩ changedClasses| / √|dependencies| × depOverlap), depOverlap)
+      min(ceil(|dependencies ∩ changedClasses| / √|dependencies| × depOverlap × killMultiplier), depOverlap)
     + min(ceil(Σ complexity(dep) / √|dependencies| × changeComplexity), changeComplexity)
+    where killMultiplier = killRate ≥ 0 ? (0.5 + killRate × 0.5) : 1.0
 
   overlapScore (when coverageBonus > 0):
       greedy set-cover bonus: coverageBonus × 0.8^rank  (rank = 0-based position in set-cover order)

@@ -63,7 +63,7 @@ public final class WeightResolverOperation {
 	 */
 	public static TestOrderState.ScoringWeights applyOverrides(TestOrderState.ScoringWeights base, Integer newTest,
 			Integer changedTest, Integer maxFailure, Integer speed, Integer speedPenalty, Integer depOverlap,
-			Integer changeComplexity, Integer staticFieldBonus, Integer coverageBonus) {
+			Integer changeComplexity, Integer staticFieldBonus, Integer coverageBonus, Integer killRateBonus) {
 		return new TestOrderState.ScoringWeights(newTest != null ? newTest : base.newTest(),
 				changedTest != null ? changedTest : base.changedTest(),
 				maxFailure != null ? maxFailure : base.maxFailure(), speed != null ? speed : base.speed(),
@@ -71,7 +71,8 @@ public final class WeightResolverOperation {
 				depOverlap != null ? depOverlap : base.depOverlap(),
 				changeComplexity != null ? changeComplexity : base.changeComplexity(),
 				staticFieldBonus != null ? staticFieldBonus : base.staticFieldBonus(),
-				coverageBonus != null ? coverageBonus : base.coverageBonus());
+				coverageBonus != null ? coverageBonus : base.coverageBonus(),
+				killRateBonus != null ? killRateBonus : base.killRateBonus());
 	}
 
 	/**
@@ -82,7 +83,7 @@ public final class WeightResolverOperation {
 	 */
 	public static Map<String, Integer> buildScoreOverrides(Integer newTest, Integer changedTest, Integer maxFailure,
 			Integer speed, Integer speedPenalty, Integer depOverlap, Integer changeComplexity, Integer staticFieldBonus,
-			Integer coverageBonus) {
+			Integer coverageBonus, Integer killRateBonus) {
 		Map<String, Integer> scores = new LinkedHashMap<>();
 		if (newTest != null)
 			scores.put("newTest", newTest);
@@ -102,6 +103,8 @@ public final class WeightResolverOperation {
 			scores.put("staticFieldBonus", staticFieldBonus);
 		if (coverageBonus != null)
 			scores.put("coverageBonus", coverageBonus);
+		if (killRateBonus != null)
+			scores.put("killRateBonus", killRateBonus);
 		return scores.isEmpty() ? null : scores;
 	}
 }

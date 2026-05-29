@@ -297,6 +297,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	@Parameter(property = MavenPluginConfigKeys.SCORE_COVERAGE_BONUS)
 	protected Integer scoreCoverageBonus;
 
+	/** Kill-rate bonus weight (0 = disabled; requires analyze-mutations data) */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_KILL_RATE_BONUS)
+	protected Integer scoreKillRateBonus;
+
 	// ── Lifecycle helpers ─────────────────────────────────────────────
 
 	protected void initContext() throws MojoExecutionException {
@@ -1134,7 +1138,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		TestOrderState.ScoringWeights sw = resolveWeights(state);
 		return me.bechberger.testorder.ops.WeightResolverOperation.applyOverrides(sw, scoreNewTest, scoreChangedTest,
 				scoreMaxFailure, scoreSpeed, scoreSpeedPenalty, scoreDepOverlap, scoreChangeComplexity,
-				scoreStaticFieldBonus, scoreCoverageBonus);
+				scoreStaticFieldBonus, scoreCoverageBonus, scoreKillRateBonus);
 	}
 
 	/**
@@ -1144,7 +1148,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected Map<String, Integer> buildScoreOverrides() {
 		return me.bechberger.testorder.ops.WeightResolverOperation.buildScoreOverrides(scoreNewTest, scoreChangedTest,
 				scoreMaxFailure, scoreSpeed, scoreSpeedPenalty, scoreDepOverlap, scoreChangeComplexity,
-				scoreStaticFieldBonus, scoreCoverageBonus);
+				scoreStaticFieldBonus, scoreCoverageBonus, scoreKillRateBonus);
 	}
 
 	// ── Orderer config ────────────────────────────────────────────────

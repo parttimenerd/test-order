@@ -28,7 +28,7 @@ public final class PropertySuggestion {
 			"testorder.showOrder.fullNames", "testorder.showMethodOrder.explain", "testorder.score.newTest",
 			"testorder.score.changedTest", "testorder.score.maxFailure", "testorder.score.speed",
 			"testorder.score.speedPenalty", "testorder.score.depOverlap", "testorder.score.changeComplexity",
-			"testorder.score.staticFieldBonus", "testorder.score.coverageBonus",
+			"testorder.score.staticFieldBonus", "testorder.score.coverageBonus", "testorder.score.killRateBonus",
 			"testorder.score.springContextGrouping", "testorder.dump.output", "testorder.exportJson.output",
 			"testorder.dashboard.output", "testorder.dashboard.open", "testorder.dashboard.port",
 			"testorder.serve.port", "testorder.dashboard.serveSeconds", "testorder.dashboard.regenerate",

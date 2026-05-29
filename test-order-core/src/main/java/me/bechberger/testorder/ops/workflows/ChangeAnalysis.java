@@ -362,7 +362,7 @@ public final class ChangeAnalysis {
 		return WeightResolverOperation.applyOverrides(base, overrides.get("newTest"), overrides.get("changedTest"),
 				overrides.get("maxFailure"), overrides.get("speed"), overrides.get("speedPenalty"),
 				overrides.get("depOverlap"), overrides.get("changeComplexity"), overrides.get("staticFieldBonus"),
-				overrides.get("coverageBonus"));
+				overrides.get("coverageBonus"), overrides.get("killRateBonus"));
 	}
 
 	/**
