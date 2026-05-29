@@ -1,0 +1,4 @@
+# Prefer DefaultToolDefinition patch (18 test dependencies - better signal)
+flip-tool-definition-condition.patch
+# Fallback: JsonReader patch (lower signal)
+flip-json-content-condition.patch

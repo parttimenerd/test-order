@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/compress/utils/ByteUtils.java b/src/main/java/org/apache/commons/compress/utils/ByteUtils.java
+index 50ea804..3df8743 100644
+--- a/src/main/java/org/apache/commons/compress/utils/ByteUtils.java
++++ b/src/main/java/org/apache/commons/compress/utils/ByteUtils.java
+@@ -152,7 +152,7 @@ public static long fromLittleEndian(final byte[] bytes, final int off, final int
+         checkReadLength(length);
+         long l = 0;
+         for (int i = 0; i < length; i++) {
+-            l |= (bytes[off + i] & 0xffL) << 8 * i;
++            l |= (bytes[off + i] & 0xffL) << 8 * (i + 1);
+         }
+         return l;
+     }

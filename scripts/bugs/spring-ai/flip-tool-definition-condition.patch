@@ -1,0 +1,13 @@
+diff --git a/spring-ai-model/src/main/java/org/springframework/ai/tool/definition/DefaultToolDefinition.java b/spring-ai-model/src/main/java/org/springframework/ai/tool/definition/DefaultToolDefinition.java
+index 7d76d2c..67df456 100644
+--- a/spring-ai-model/src/main/java/org/springframework/ai/tool/definition/DefaultToolDefinition.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/tool/definition/DefaultToolDefinition.java
+@@ -68,7 +68,7 @@ public record DefaultToolDefinition(String name, String description, String inpu
+ 
+ 		public ToolDefinition build() {
+ 			Assert.state(this.name != null, "toolName cannot be null or empty");
+-			if (!StringUtils.hasText(this.description)) {
++			if (StringUtils.hasText(this.description)) {
+ 				this.description = ParsingUtils.reConcatenateCamelCase(this.name, " ");
+ 			}
+ 			Assert.state(this.description != null, "toolDescription cannot be null or empty");

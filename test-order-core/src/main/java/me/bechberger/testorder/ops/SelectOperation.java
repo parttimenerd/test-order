@@ -2,6 +2,8 @@ package me.bechberger.testorder.ops;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -64,20 +66,33 @@ public final class SelectOperation {
 				new TestSelector.Config(config.topN(), config.randomM(), effectiveSeed), config.alwaysRunClasses(),
 				config.changeComplexity()).select();
 
-		// Warn when a changed class appears in deps of >50% of all tests: the scorer
+		// Warn when changed classes appear in deps of >50% of all tests: the scorer
 		// can't discriminate and the selection is essentially a random subset.
+		// Collapse into one summary when many classes exceed the threshold.
 		if (!config.changedClasses().isEmpty()) {
 			int totalTests = config.depMap().testClasses().size();
 			if (totalTests > 0) {
+				List<String> weakSignalClasses = new ArrayList<>();
 				for (String changed : config.changedClasses()) {
 					long matchCount = config.depMap().testClasses().stream()
 							.filter(t -> config.depMap().get(t).contains(changed)).count();
 					if (matchCount > totalTests / 2) {
+						weakSignalClasses.add(changed + " (" + (100 * matchCount / totalTests) + "%)");
+					}
+				}
+				if (!weakSignalClasses.isEmpty()) {
+					if (weakSignalClasses.size() == 1) {
 						config.log()
-								.warn("[test-order] Changed class " + changed + " appears in deps of " + matchCount
-										+ "/" + totalTests + " tests (" + (100 * matchCount / totalTests) + "%). "
-										+ "Selection signal is weak — results may be near-random. "
-										+ "Consider running the full suite.");
+								.warn("[test-order] Changed class " + weakSignalClasses.get(0)
+										+ " appears in deps of >50% of tests. Selection signal is weak — results may be"
+										+ " near-random. Consider running the full suite.");
+					} else {
+						String sample = weakSignalClasses.stream().limit(3)
+								.collect(java.util.stream.Collectors.joining(", "));
+						config.log()
+								.warn("[test-order] " + weakSignalClasses.size()
+										+ " changed classes appear in deps of >50% of tests (e.g. " + sample
+										+ "). Selection signal is weak — consider running the full suite.");
 					}
 				}
 			}

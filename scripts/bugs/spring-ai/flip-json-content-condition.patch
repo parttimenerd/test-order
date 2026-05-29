@@ -1,0 +1,13 @@
+diff --git a/spring-ai-commons/src/main/java/org/springframework/ai/reader/JsonReader.java b/spring-ai-commons/src/main/java/org/springframework/ai/reader/JsonReader.java
+index 061abeb..583eb95 100644
+--- a/spring-ai-commons/src/main/java/org/springframework/ai/reader/JsonReader.java
++++ b/spring-ai-commons/src/main/java/org/springframework/ai/reader/JsonReader.java
+@@ -98,7 +98,7 @@ public class JsonReader implements DocumentReader {
+ 			.forEach(key -> sb.append(key).append(": ").append(item.get(key)).append(System.lineSeparator()));
+ 
+ 		Map<String, Object> metadata = this.jsonMetadataGenerator.generate(item);
+-		String content = sb.isEmpty() ? item.toString() : sb.toString();
++		String content = !sb.isEmpty() ? item.toString() : sb.toString();
+ 		return new Document(content, metadata);
+ 	}
+ 

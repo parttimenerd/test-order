@@ -39,7 +39,10 @@ MAVEN_REPOS=(
     "commons-io"
     "commons-lang"
     "commons-text"
+    "commons-pool"
+    "commons-compress"
     "spring-ai"
+    "ai-sdk-java"
     "maven"
     "logging-log4j2"
 )
@@ -71,6 +74,7 @@ MEDIUM_REPOS=(
     "javaparser"
     "commons-collections"
     "commons-io"
+    "commons-compress"
     "okhttp"
     "mockito"
 )
@@ -422,6 +426,7 @@ remove_maven_plugin() {
         (( restored++ ))
     done < <(find "$dir" -name "pom.xml.bak" 2>/dev/null)
     [[ "$restored" -gt 0 ]] && ok "Restored $restored legacy pom.xml backup(s) in $repo"
+    return 0
 }
 
 # ─── Gradle Plugin Injection ─────────────────────────────────────────────────
@@ -511,7 +516,7 @@ phase_install() {
     section "PHASE 0: Installing test-order to local repo"
     cd "$ROOT_DIR"
     mvn install -DskipTests -Dspotless.check.skip=true -q \
-        -pl test-order-agent,test-order-core,test-order-annotations,test-order-junit,test-order-maven-plugin,test-order-gradle-plugin -am
+        -pl test-order-agent,test-order-core,test-order-annotations,test-order-junit,test-order-maven-plugin -am
     ok "test-order $PLUGIN_VERSION installed to ~/.m2/repository"
 }
 
@@ -945,6 +950,19 @@ phase_full_maven() {
         local classname patch_file
         classname=$(echo "$patch_result" | cut -f1)
         patch_file=$(echo "$patch_result" | cut -f2)
+        # If the repo uses the Maven Build Cache Extension, purge all local cache
+        # entries so the patched source is actually recompiled.  Without this,
+        # the cache restores pre-patch bytecode and the bug goes undetected.
+        if [[ -f "$dir/.mvn/maven-build-cache-config.xml" && -d "$HOME/.m2/build-cache" ]]; then
+            local root_pom="$dir/pom.xml"
+            # Extract groupId from root pom (falls back to empty → skip purge)
+            local groupId
+            groupId=$(grep -m1 '<groupId>' "$root_pom" 2>/dev/null | sed 's|.*<groupId>||;s|</groupId>.*||;s|[[:space:]]||g' || echo "")
+            if [[ -n "$groupId" ]]; then
+                find "$HOME/.m2/build-cache" -path "*/${groupId}/*" -delete 2>/dev/null || true
+                log "  Purged local build cache for groupId=$groupId (step 7 bug injection)"
+            fi
+        fi
         local bug_out
         bug_out=$(mvn clean me.bechberger:test-order-maven-plugin:select test \
             -Dtestorder.changeMode=explicit \
@@ -954,15 +972,19 @@ phase_full_maven() {
             "${test_cmd_args[@]}" \
             2>&1 | tee "$results/full-bug-select.log") || true
         echo "$bug_out" | tail -10
-        if echo "$bug_out" | grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]"; then
+        log "DEBUG: bug_out length=${#bug_out}, Tests run count=$(echo "$bug_out" | grep -c 'Tests run:' || echo 0)"
+        # NOTE: grep on the file rather than $bug_out — $bug_out may be missing
+        # some bytes due to bash command-substitution buffering in multi-module builds.
+        local bug_log="$results/full-bug-select.log"
+        if grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]" "$bug_log" 2>/dev/null; then
             ok "Bug caught in top-3 selected tests! (step 7)"
             bug_injected=true
-        elif echo "$bug_out" | grep -q "None of the explicitly specified changed classes"; then
+        elif grep -q "None of the explicitly specified changed classes" "$bug_log" 2>/dev/null; then
             warn "Bug class $classname not in dependency index"
             local n_tests
             n_tests=$(grep -c $'\t' "$results/full-dump.log" 2>/dev/null || echo "?")
             log "    Index has ~$n_tests test entries"
-        elif ! echo "$bug_out" | grep -q "Tests run:"; then
+        elif ! grep -q "Tests run:" "$bug_log" 2>/dev/null; then
             warn "Bug result unknown for $classname — build failed before tests ran (step 7)"
             bug_injected=true
         else

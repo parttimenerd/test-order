@@ -1,0 +1,12 @@
+diff --git a/src/main/java/org/apache/commons/pool3/impl/GenericObjectPool.java b/src/main/java/org/apache/commons/pool3/impl/GenericObjectPool.java
+--- a/src/main/java/org/apache/commons/pool3/impl/GenericObjectPool.java
++++ b/src/main/java/org/apache/commons/pool3/impl/GenericObjectPool.java
+@@ -1097,7 +1097,7 @@
+             }
+         } else {
+             if (getLifo()) {
+-                idleObjects.addFirst(p);
++                idleObjects.addLast(p);
+             } else {
+                 idleObjects.addLast(p);
+             }

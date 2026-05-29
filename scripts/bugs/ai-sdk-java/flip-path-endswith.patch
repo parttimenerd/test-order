@@ -1,0 +1,13 @@
+diff --git a/core/src/main/java/com/sap/ai/sdk/core/DestinationResolver.java b/core/src/main/java/com/sap/ai/sdk/core/DestinationResolver.java
+index 8f80a26..7b78ae6 100644
+--- a/core/src/main/java/com/sap/ai/sdk/core/DestinationResolver.java
++++ b/core/src/main/java/com/sap/ai/sdk/core/DestinationResolver.java
+@@ -66,7 +66,7 @@ class DestinationResolver {
+     if (path == null || path.isEmpty() || path.equals("/")) {
+       return setBasePath(enhancedBaseDestination);
+     }
+-    if (path.endsWith("/")) {
++    if (!path.endsWith("/")) {
+       return enhancedBaseDestination;
+     }
+     val urlWithTrailingSlash = URI.create(enhancedBaseDestination.getUri() + "/");

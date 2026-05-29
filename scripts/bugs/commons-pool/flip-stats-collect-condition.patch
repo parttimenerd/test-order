@@ -1,0 +1,12 @@
+diff --git a/src/main/java/org/apache/commons/pool3/impl/BaseGenericObjectPool.java b/src/main/java/org/apache/commons/pool3/impl/BaseGenericObjectPool.java
+--- a/src/main/java/org/apache/commons/pool3/impl/BaseGenericObjectPool.java
++++ b/src/main/java/org/apache/commons/pool3/impl/BaseGenericObjectPool.java
+@@ -1813,7 +1813,7 @@
+     final void updateStatsReturn(final Duration activeTime) {
+         returnedCount.incrementAndGet();
+         // Only collect detailed statistics if enabled
+-        if (collectDetailedStatistics) {
++        if (!collectDetailedStatistics) {
+             activeTimes.add(activeTime);
+         }
+     }
