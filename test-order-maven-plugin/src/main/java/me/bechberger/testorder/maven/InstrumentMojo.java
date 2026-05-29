@@ -44,9 +44,9 @@ public class InstrumentMojo extends AbstractTestOrderMojo {
 	private String includePackages;
 
 	/**
-	 * Instrumentation mode: CLASS (default), METHOD, or MEMBER.
+	 * Instrumentation mode: MEMBER (default), CLASS, or METHOD.
 	 */
-	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "CLASS")
+	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "MEMBER")
 	private String instrumentationMode;
 
 	/**

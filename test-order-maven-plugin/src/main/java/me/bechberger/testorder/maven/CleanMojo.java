@@ -52,15 +52,17 @@ public class CleanMojo extends AbstractTestOrderMojo {
 			dirs.add(detectionDir);
 		}
 
-		// Also clean .test-order-precheck-* directories left behind by
-		// assessment/precheck
+		// Also clean .test-order-precheck-* and .test-order.precheck-* directories
+		// left behind by assessment/precheck
 		Path baseDir = project.getBasedir().toPath();
-		try (DirectoryStream<Path> stream = Files.newDirectoryStream(baseDir, ".test-order-precheck-*")) {
-			for (Path precheckDir : stream) {
-				dirs.add(precheckDir);
+		for (String pattern : new String[]{".test-order-precheck-*", ".test-order.precheck-*"}) {
+			try (DirectoryStream<Path> stream = Files.newDirectoryStream(baseDir, pattern)) {
+				for (Path precheckDir : stream) {
+					dirs.add(precheckDir);
+				}
+			} catch (IOException ignored) {
+				// Directory listing failed — skip precheck cleanup
 			}
-		} catch (IOException ignored) {
-			// Directory listing failed — skip precheck cleanup
 		}
 
 		// Clean any remaining .lock files in .test-order/ directory

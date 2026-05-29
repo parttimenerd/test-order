@@ -31,7 +31,7 @@ public class AutoMojo extends AbstractTestOrderMojo {
 	@Parameter(property = MavenPluginConfigKeys.FILTER_BY_GROUP_ID, defaultValue = "true")
 	private boolean filterByGroupId;
 
-	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "CLASS")
+	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "MEMBER")
 	private String instrumentationMode;
 
 	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION, defaultValue = "offline")

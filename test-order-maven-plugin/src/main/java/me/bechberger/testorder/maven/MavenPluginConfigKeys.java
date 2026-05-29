@@ -217,7 +217,7 @@ final class MavenPluginConfigKeys {
 				continue;
 			// Skip internal reactor propagation keys and session-coordination keys
 			if (key.startsWith(CHANGED_CLASSES + ".") || key.startsWith(CHANGED_TEST_CLASSES + ".")
-					|| key.equals("testorder.pendingRestores"))
+					|| key.equals("testorder.pendingRestores") || key.equals("testorder.activeCollectors"))
 				continue;
 			String suggestion = findClosestKey(key);
 			if (suggestion != null) {

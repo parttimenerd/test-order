@@ -54,9 +54,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	private boolean filterByGroupId;
 
 	/**
-	 * Instrumentation mode: CLASS (default), METHOD, or MEMBER
+	 * Instrumentation mode: MEMBER (default), CLASS, or METHOD.
 	 */
-	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "CLASS")
+	@Parameter(property = MavenPluginConfigKeys.INSTRUMENTATION_MODE, defaultValue = "MEMBER")
 	private String instrumentationMode;
 
 	/**
@@ -579,7 +579,12 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		if (session == null || session.getGoals() == null) {
 			return false;
 		}
-		return session.getGoals().stream().anyMatch(goal -> isGoal(goal, "learn"));
+		if (session.getGoals().stream().anyMatch(goal -> isGoal(goal, "learn"))) {
+			return true;
+		}
+		// Also treat offline learn as active when AutoMojo has configured it:
+		// restoring classes before tests run would undo the instrumentation.
+		return "true".equals(project.getProperties().getProperty("testorder.offline.learnActive"));
 	}
 
 	/**

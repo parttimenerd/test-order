@@ -911,6 +911,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			me.bechberger.testorder.IndexCollectorServer collector = new me.bechberger.testorder.IndexCollectorServer(
 					indexFilePath, mappingFile);
 			activeCollectors.put(indexFilePath.toAbsolutePath().normalize(), collector);
+			registerCollectorInSession(collector.getPort(), indexFilePath);
 			getLog().info("[test-order] IndexCollectorServer started on port " + collector.getPort()
 					+ (java.nio.file.Files.exists(mappingFile)
 							? " (v2 binary protocol enabled)"
@@ -921,6 +922,24 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					+ e.getMessage());
 			return null;
 		}
+	}
+
+	static final String SESSION_ACTIVE_COLLECTORS_KEY = "testorder.activeCollectors";
+
+	/**
+	 * Stores a running collector's port and index path in Maven session user
+	 * properties so the lifecycle participant (extension classloader) can drain it
+	 * at session end — the plugin and extension classloader realms each have their
+	 * own static field, so the static map cannot be shared directly.
+	 */
+	void registerCollectorInSession(int port, Path indexFilePath) {
+		if (session == null) {
+			return;
+		}
+		java.util.Properties props = session.getUserProperties();
+		String entry = port + ":" + indexFilePath.toAbsolutePath().normalize();
+		String existing = props.getProperty(SESSION_ACTIVE_COLLECTORS_KEY, "");
+		props.setProperty(SESSION_ACTIVE_COLLECTORS_KEY, existing.isEmpty() ? entry : existing + "|" + entry);
 	}
 
 	/**
@@ -1473,6 +1492,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		getLog().info("[test-order] Offline learn mode (" + instrumentationMode.toUpperCase()
 				+ "): no agent, using pre-instrumented classes");
 
+		// Signal PrepareMojo to skip class restoration — restoring would undo the
+		// instrumentation before tests run and prevent dependency tracking.
+		project.getProperties().setProperty("testorder.offline.learnActive", "true");
+
 		// Resolve output paths
 		Path depsDir = ctx.resolveDepsDir(this.depsDir);
 		Path indexFile = ctx.resolveIndexFile(this.indexFile);
@@ -1554,6 +1577,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (isTestNGOnTestClasspath()) {
 			ensureTestNGListenerServiceFile(runtimeDir);
 		}
+
+		// Skip API-compatibility checkers that scan target/classes — they would flag
+		// the UsageStore call-sites injected by offline instrumentation as unknown
+		// references (e.g. animal-sniffer's Java 8 API check).
+		skipPostInstrumentCheckers();
 
 		snapshotHashes();
 	}
@@ -1639,6 +1667,28 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		} catch (IOException e) {
 			throw new MojoExecutionException("[test-order] Offline instrumentation failed", e);
 		}
+	}
+
+	/**
+	 * Sets project properties to skip QA plugins that scan {@code target/classes}
+	 * after offline instrumentation. Offline instrumentation injects
+	 * {@code UsageStore} call-sites into the bytecode, which makes tools like
+	 * animal-sniffer (Java 8 API compatibility check) and Checkstyle's bytecode
+	 * analyser report false positives — they see method references that are only
+	 * valid at test runtime, not in a Java 8 environment.
+	 * <p>
+	 * These skips are project-scoped and only affect the current Maven session.
+	 */
+	private void skipPostInstrumentCheckers() {
+		java.util.Properties props = project.getProperties();
+		props.setProperty("animal.sniffer.skip", "true");
+		props.setProperty("checkstyle.skip", "true");
+		props.setProperty("pmd.skip", "true");
+		props.setProperty("cpd.skip", "true");
+		props.setProperty("spotbugs.skip", "true");
+		props.setProperty("findbugs.skip", "true");
+		getLog().debug(
+				"[test-order] Disabled API/QA checkers for learn run (animal-sniffer, checkstyle, pmd, spotbugs)");
 	}
 
 	static final String SESSION_PENDING_RESTORES_KEY = "testorder.pendingRestores";

@@ -13,6 +13,8 @@ import java.util.Set;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.execution.ExecutionListener;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
 
 import me.bechberger.testorder.ops.ChangeDetectionOps;
@@ -48,10 +50,71 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	@Override
 	public void afterProjectsRead(MavenSession session) {
 		try {
+			ensurePrepareGoalBound(session);
+		} catch (Exception | NoClassDefFoundError e) {
+			System.err.println("[test-order] prepare-goal binding failed: " + e);
+		}
+		try {
 			tryReorderReactor(session);
 		} catch (Exception | NoClassDefFoundError e) {
 			System.err.println("[test-order] reactor reorder failed: " + e);
 		}
+	}
+
+	/**
+	 * Programmatically binds {@code test-order:prepare} to
+	 * {@code process-test-classes} for every project in the reactor that does not
+	 * already declare the plugin.
+	 * <p>
+	 * This lets users invoke {@code mvn clean test} (a single lifecycle phase) and
+	 * have instrumentation run between {@code testCompile} and {@code test},
+	 * without the Maven double-lifecycle bug that occurs when {@code prepare} is
+	 * invoked as a CLI goal alongside two lifecycle phases (e.g.,
+	 * {@code mvn clean process-test-classes
+	 * me.bechberger:test-order-maven-plugin:prepare test}). In that pathological
+	 * form, Maven re-runs the default lifecycle from {@code validate} when
+	 * computing the {@code test} phase, recompiling sources after instrumentation
+	 * has overwritten the bytecode.
+	 */
+	private void ensurePrepareGoalBound(MavenSession session) {
+		if (session == null || session.getProjects() == null) {
+			return;
+		}
+		for (MavenProject project : session.getProjects()) {
+			if (project == null || project.getModel() == null || project.getBuild() == null) {
+				continue;
+			}
+			if ("pom".equals(project.getPackaging())) {
+				continue;
+			}
+			if (hasTestOrderPlugin(project)) {
+				continue;
+			}
+			Plugin plugin = new Plugin();
+			plugin.setGroupId("me.bechberger");
+			plugin.setArtifactId("test-order-maven-plugin");
+			// Version intentionally omitted: matches the plugin already loaded in this
+			// session (the same one that registered this lifecycle participant). Maven
+			// resolves it from the realm hosting the participant.
+			PluginExecution exec = new PluginExecution();
+			exec.setId("test-order-prepare-injected");
+			exec.setPhase("process-test-classes");
+			exec.getGoals().add("prepare");
+			plugin.getExecutions().add(exec);
+			project.getBuild().getPlugins().add(plugin);
+		}
+	}
+
+	private static boolean hasTestOrderPlugin(MavenProject project) {
+		if (project.getBuildPlugins() == null) {
+			return false;
+		}
+		for (Plugin p : project.getBuildPlugins()) {
+			if ("me.bechberger".equals(p.getGroupId()) && "test-order-maven-plugin".equals(p.getArtifactId())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void tryReorderReactor(MavenSession session) {
@@ -241,12 +304,61 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 
 	@Override
 	public void afterSessionEnd(MavenSession session) {
-		drainCollectors();
+		drainCollectors(session);
 		mergePartialRunRecords();
 		restoreInstrumentedClasses(session);
 	}
 
-	private void drainCollectors() {
+	private void drainCollectors(MavenSession session) {
+		// Primary path: session-property bridge (works across classloader realms).
+		// AbstractTestOrderMojo.startCollector() stores "port:indexFilePath" entries
+		// in session user properties so this participant can find and drain them even
+		// though the extension and plugin classloaders each have separate static maps.
+		String activeEntry = session != null
+				? session.getUserProperties().getProperty(AbstractTestOrderMojo.SESSION_ACTIVE_COLLECTORS_KEY, "")
+				: "";
+		if (!activeEntry.isBlank()) {
+			session.getUserProperties().remove(AbstractTestOrderMojo.SESSION_ACTIVE_COLLECTORS_KEY);
+			for (String entry : activeEntry.split("\\|")) {
+				if (entry.isBlank()) {
+					continue;
+				}
+				int colon = entry.indexOf(':');
+				if (colon <= 0) {
+					continue;
+				}
+				try {
+					int port = Integer.parseInt(entry.substring(0, colon));
+					java.nio.file.Path indexFile = java.nio.file.Path.of(entry.substring(colon + 1));
+					// Try to drain via the local (possibly shared) static map first.
+					me.bechberger.testorder.IndexCollectorServer collector = AbstractTestOrderMojo.activeCollectors
+							.remove(indexFile);
+					if (collector != null) {
+						try {
+							int merged = collector.stopAndMerge();
+							if (merged > 0) {
+								System.out.println("[test-order] IndexCollectorServer merged " + merged
+										+ " test classes (session end)");
+							}
+							continue;
+						} catch (Exception | NoClassDefFoundError e) {
+							System.err.println("[test-order] CollectorLifecycleParticipant: merge failed for "
+									+ indexFile + ": " + e);
+						}
+					}
+					// Cross-realm case: server is in the plugin classloader which is a
+					// different realm. Use the JVM-global registry (System.getProperties()
+					// key) to find the actual server instance.
+					me.bechberger.testorder.IndexCollectorServer.drainByPort(port, indexFile);
+				} catch (Exception e) {
+					System.err.println("[test-order] CollectorLifecycleParticipant: drain entry error: " + e);
+				}
+			}
+			return;
+		}
+
+		// Legacy fallback: same-realm static map (works when not using extensions
+		// or when the mojos happen to share our classloader).
 		Map<Path, me.bechberger.testorder.IndexCollectorServer> collectors = AbstractTestOrderMojo.activeCollectors;
 		if (collectors.isEmpty()) {
 			return;
