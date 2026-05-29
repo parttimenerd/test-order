@@ -30,6 +30,7 @@ Add to your `pom.xml` inside `<build><plugins>`:
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
   <version>0.0.1-SNAPSHOT</version>
+  <extensions>true</extensions>  <!-- required: registers the lifecycle participant that writes the index -->
   <executions>
     <execution>
       <goals><goal>prepare</goal></goals>

@@ -143,6 +143,7 @@ If Maven reports `No plugin found for prefix 'test-order'`, use one of these sol
          <groupId>me.bechberger</groupId>
          <artifactId>test-order-maven-plugin</artifactId>
          <version>0.0.1-SNAPSHOT</version>
+         <extensions>true</extensions>  <!-- required: registers the lifecycle participant that writes the index -->
        </plugin>
      </plugins>
    </build>

@@ -8,8 +8,6 @@
 
 > **New here?** Jump to the [Quick Start](#quick-start) below, or follow the [Getting Started Tutorial](docs/GETTING_STARTED.md) for a hands-on 5-minute walkthrough. Something not working? Run `mvn test-order:diagnose` or see [Troubleshooting](#troubleshooting).
 
-> **SAP DCOM 2026 Demo Jam:** This plugin was demoed live at *"You're Running the Wrong Tests First"*. The demo uses a fork of [SAP Cloud SDK for Java](https://github.com/parttimenerd/cloud-sdk-java) as a real-world sample project with CI-built learn indexes and three-tier test ordering. Slides and scripts live in [`demo/dcom-presentation/`](demo/dcom-presentation/).
-
 ---
 
 ## Requirements
@@ -34,7 +32,16 @@ git --version   # Any recent version
 
 ## Quick Start
 
-> **⚠️ One-time Maven setup.** To use the short prefix form `mvn test-order:<goal>` (e.g., `mvn test-order:select`), add `me.bechberger` to your `~/.m2/settings.xml`:
+> **ℹ️ Invoking goals from the CLI.** The README uses the short prefix form `mvn test-order:<goal>` (e.g., `mvn test-order:select`) throughout. There are three ways to run these goals; pick whichever fits your setup.
+>
+> **Option A — Use the fully-qualified form (no setup).** Always works:
+>
+> ```bash
+> mvn me.bechberger:test-order-maven-plugin:select
+> mvn me.bechberger:test-order-maven-plugin:show
+> ```
+>
+> **Option B — Enable the short prefix (one-time, per developer).** Add `me.bechberger` to your `~/.m2/settings.xml` so Maven recognises `test-order:` as a goal prefix:
 >
 > ```xml
 > <settings>
@@ -44,7 +51,11 @@ git --version   # Any recent version
 > </settings>
 > ```
 >
-> Without this, CLI prefix invocations fail with `No plugin found for prefix 'test-order'`. This is a Maven limitation — declaring the plugin in `<build><plugins>` is **not** sufficient for CLI prefix resolution. Goals bound to a lifecycle phase (e.g., via `mvn test`) work without this setting.
+> After this, every short-form example in the README works as written.
+>
+> **Option C — Bind to a lifecycle phase.** Goals bound via `<execution>` in your `pom.xml` (e.g., `auto` running on `test`) trigger automatically with `mvn test` and need neither setting nor prefix.
+>
+> **Why is the settings.xml step needed at all?** Maven only resolves goal prefixes for plugins under groupIds it has been told to trust — by default just `org.apache.maven.plugins` and `org.codehaus.mojo`. Declaring the plugin in `<build><plugins>` is **not** sufficient for CLI prefix resolution; it only wires the plugin into the build lifecycle. Without Option A or Option B, ad-hoc CLI calls fail with `No plugin found for prefix 'test-order'`. This is a global Maven design choice, not something a third-party plugin can change.
 
 ### Maven
 
@@ -55,6 +66,7 @@ git --version   # Any recent version
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
   <version>0.0.1-SNAPSHOT</version>
+  <extensions>true</extensions>  <!-- required: registers the lifecycle participant that writes the index -->
   <executions>
     <execution>
       <goals><goal>prepare</goal></goals>
@@ -481,6 +493,33 @@ No. By default, all tests still run — they're just **reordered** so the most r
 
 - **Order mode** (normal runs): Near-zero. The plugin resolves ordering before tests start.
 - **Learn mode** (first run or after dependency changes): ~5–20% overhead from the Java agent recording class coverage. This runs automatically and infrequently.
+
+The overhead depends on the instrumentation mode (see below). MEMBER mode (the default) is slightly heavier than CLASS mode but produces more accurate dependency data.
+
+</details>
+
+<details>
+<summary><strong>Can I control how much dependency data is recorded?</strong></summary>
+
+Yes, via `testorder.instrumentation.mode`. Three modes are available:
+
+| Mode | What it records | Index size | Learn overhead | Accuracy |
+|---|---|---|---|---|
+| `MEMBER` *(default)* | Which fields/methods of each class are accessed | Larger | ~10–30% | Highest — precise member-level overlap |
+| `CLASS` | Which classes are loaded | Smallest | ~5–15% | Good — class-level overlap |
+| `METHOD` | Which methods are entered | Medium | ~10–20% | High — method-level overlap |
+
+MEMBER mode is the default because it produces the most accurate dependency data: a test only "overlaps" a changed class if it actually calls a member that changed, not just if it happens to load the class. This matters for utility classes used everywhere — the test that *directly exercises* the changed code ranks significantly higher.
+
+If your index files grow too large (check `.test-order/test-dependencies.lz4`) or learn mode takes too long, switch to CLASS mode:
+
+```bash
+# Maven
+mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=CLASS
+
+# Gradle
+./gradlew test -Dtestorder.mode=learn -Dtestorder.instrumentationMode=CLASS
+```
 
 </details>
 

@@ -111,6 +111,7 @@ Legend:
                 <groupId>me.bechberger</groupId>
                 <artifactId>test-order-maven-plugin</artifactId>
                 <version>${test-order.version}</version>
+                <extensions>true</extensions>  <!-- required: registers the lifecycle participant that writes the index -->
                 <configuration>
                     <!-- All modules inherit this config -->
                     <instrumentationMode>CLASS</instrumentationMode>
