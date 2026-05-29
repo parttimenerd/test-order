@@ -82,9 +82,10 @@ LARGE_REPOS=(
     "logging-log4j2"
 )
 
-PLUGIN_VERSION="0.1.0-SNAPSHOT"
+PLUGIN_VERSION="0.0.1-SNAPSHOT"
 PLUGIN_GROUP="me.bechberger"
 PLUGIN_ARTIFACT="test-order-maven-plugin"
+PREPARE_GOAL="$PLUGIN_GROUP:$PLUGIN_ARTIFACT:prepare"
 
 # ─── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -97,6 +98,15 @@ err()  { echo -e "${RED}  ✗${NC} $*"; }
 section() { echo -e "\n${CYAN}═══ $* ═══${NC}"; }
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+# Single-invocation learn: prepare goal is auto-bound to process-test-classes by
+# CollectorLifecycleParticipant.afterProjectsRead(), so plain `mvn clean test`
+# instruments classes between testCompile and test, with no double-lifecycle
+# recompilation.
+mvn_learn() {
+    # $@ = extra mvn args (base_args/mvn_args already expanded by caller)
+    mvn clean test -Dtestorder.mode=learn "$@"
+}
 
 is_maven_repo() {
     [[ -f "$THIRD_PARTY/$1/pom.xml" ]]
@@ -124,19 +134,54 @@ detect_test_package() {
     find "$dir" -path "*/src/test/java/*" -name "*.java" 2>/dev/null \
         | sed 's|.*/src/test/java/||' \
         | cut -d'/' -f1-3 \
-        | sort | uniq -c | sort -rn \
-        | head -1 | awk '{print $2}' | tr '/' '.'
+        | sort | uniq -c | sort -rn 2>/dev/null \
+        | awk 'NR==1{print $2}' | tr '/' '.'
 }
 
-# Detect a source class name (for changed.classes parameter)
+# Detect a source class name (for changed.classes parameter).
+# First tries to extract a dependency class from the test index (most reliable:
+# guarantees the class is actually reachable from the indexed tests).
+# Falls back to scanning source files if no index exists yet.
 detect_source_class() {
     local repo="$1"
+    local module="${2:-}"  # optional: prefer source files from this module
     local dir="$THIRD_PARTY/$repo"
-    # Pick the first non-internal, non-package-info source class
-    find "$dir" -path "*/src/main/java/*" -name "*.java" \
+
+    # Try extracting a non-test dependency class from the existing index
+    local idx_file
+    idx_file=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    if [[ -n "$idx_file" ]]; then
+        # Run dump, parse the dep column, skip test classes, pick first non-inner non-test class
+        local from_index
+        from_index=$(mvn me.bechberger:test-order-maven-plugin:"$PLUGIN_VERSION":dump \
+            -f "$dir/pom.xml" -B -q 2>/dev/null \
+            | awk -F'\t' 'NF==2 && $1!=$2 {print $2}' \
+            | tr ',' '\n' | awk '!/\$|Test$|Tests$|^#|^D|^$/{print; exit}' 2>/dev/null || true)
+        if [[ -n "$from_index" ]]; then
+            echo "$from_index"
+            return
+        fi
+    fi
+
+    # Fall back to scanning source files if no index exists yet
+    if [[ -n "$module" ]]; then
+        local result
+        result=$(find "$dir/$module" -path "*/src/main/java/*.java" \
+            ! -path "*/target/*" ! -path "*/src/test/*" \
+            ! -name "package-info.java" ! -name "module-info.java" \
+            -print -quit 2>/dev/null \
+            | sed 's|.*/src/main/java/||;s|/|.|g;s|\.java$||')
+        if [[ -n "$result" ]]; then
+            echo "$result"
+            return
+        fi
+    fi
+    # Last resort: search the whole repo, avoiding generated/target dirs.
+    find "$dir" -path "*/src/main/java/*.java" \
+        ! -path "*/target/*" ! -path "*/src/test/*" \
+        ! -path "*generator*" ! -path "*metamodel*" \
         ! -name "package-info.java" ! -name "module-info.java" \
-        2>/dev/null \
-        | head -1 \
+        -print -quit 2>/dev/null \
         | sed 's|.*/src/main/java/||;s|/|.|g;s|\.java$||'
 }
 
@@ -162,6 +207,18 @@ detect_single_module() {
     echo ""  # single-module project
 }
 
+# Return extra Maven args required by a repo to compile on the current JDK.
+# javaparser 3.x has NodeList.getFirst()/getLast() returning Optional<N> which
+# conflicts with Java 21+'s List.getFirst()/getLast() returning N.
+# Passing --release=11 hides the new API and allows compilation.
+detect_compiler_args() {
+    local repo="$1"
+    case "$repo" in
+        javaparser) echo "-Dmaven.compiler.release=11" ;;
+        *)          echo "" ;;
+    esac
+}
+
 # ─── Synthetic Bug Injection ─────────────────────────────────────────────────
 
 # Strategy: We inject bugs that cause test failures in predictable ways.
@@ -171,9 +228,10 @@ inject_bug_off_by_one() {
     local repo="$1" file="$2"
     local full="$THIRD_PARTY/$repo/$file"
     if [[ -f "$full" ]]; then
-        # Replace "return 0" with "return 1" or "== 0" with "== 1"
-        sed -i.bak 's/return 0;/return 1; \/\/ BUG_INJECTED/g' "$full" 2>/dev/null || true
-        sed -i.bak 's/== 0/== 1 \/\* BUG_INJECTED \*\//g' "$full" 2>/dev/null || true
+        # Replace "return 0" with "return 1" or "== 0" with "== 1" (cross-platform)
+        cp "$full" "$full.bak"
+        perl -i -pe 's/return 0;/return 1; \/\/ BUG_INJECTED/g;
+                     s/== 0/== 1 \/* BUG_INJECTED *\//g' "$full" 2>/dev/null || true
         log "  Injected off-by-one bug in $file"
     fi
 }
@@ -182,8 +240,9 @@ inject_bug_null_return() {
     local repo="$1" file="$2"
     local full="$THIRD_PARTY/$repo/$file"
     if [[ -f "$full" ]]; then
-        # Replace first non-void return with null
-        sed -i.bak '0,/return [^;]*;/{s/return [^;]*;/return null; \/\/ BUG_INJECTED/}' "$full" 2>/dev/null || true
+        # Replace first non-void return statement with null (cross-platform, first match only)
+        cp "$full" "$full.bak"
+        perl -i -p0e 's/\breturn (?!null|void|;)[^;]+;/return null; \/\/ BUG_INJECTED/' "$full" 2>/dev/null || true
         log "  Injected null-return bug in $file"
     fi
 }
@@ -192,9 +251,22 @@ inject_bug_flip_comparison() {
     local repo="$1" file="$2"
     local full="$THIRD_PARTY/$repo/$file"
     if [[ -f "$full" ]]; then
-        # Flip < to > in the first comparison found
-        sed -i.bak '0,/< /{s/< /> \/\* BUG_INJECTED \*\//}' "$full" 2>/dev/null || true
+        # Flip < to > in the first comparison found (cross-platform, first match only)
+        cp "$full" "$full.bak"
+        perl -i -p0e 's/< /> \/* BUG_INJECTED *\//' "$full" 2>/dev/null || true
         log "  Injected flipped-comparison bug in $file"
+    fi
+}
+
+inject_bug_flip_boolean() {
+    local repo="$1" file="$2"
+    local full="$THIRD_PARTY/$repo/$file"
+    if [[ -f "$full" ]]; then
+        # Flip first "return true" to "return false" or vice versa
+        cp "$full" "$full.bak"
+        perl -i -p0e 's/\breturn true;/return false; \/\/ BUG_INJECTED/' "$full" 2>/dev/null || \
+        perl -i -p0e 's/\breturn false;/return true; \/\/ BUG_INJECTED/' "$full" 2>/dev/null || true
+        log "  Injected flip-boolean bug in $file"
     fi
 }
 
@@ -202,8 +274,9 @@ inject_bug_remove_add() {
     local repo="$1" file="$2"
     local full="$THIRD_PARTY/$repo/$file"
     if [[ -f "$full" ]]; then
-        # Comment out the first .add( call
-        sed -i.bak '0,/\.add(/{s/\.add(/; \/\/ BUG_INJECTED \/\/ .add(/}' "$full" 2>/dev/null || true
+        # Comment out the first .add( call (cross-platform, first match only)
+        cp "$full" "$full.bak"
+        perl -i -p0e 's/\.add\((.+?)\);/; \/\/ BUG_INJECTED (was: .add($1))/s' "$full" 2>/dev/null || true
         log "  Injected remove-add bug in $file"
     fi
 }
@@ -220,86 +293,105 @@ restore_bugs() {
 find_bug_targets() {
     local repo="$1"
     local dir="$THIRD_PARTY/$repo"
-    # Find source files whose name appears in a test file (likely tested directly)
-    find "$dir" -path "*/src/main/java/*" -name "*.java" \
+    # Build a set of test class basenames (without Test.java suffix) for O(1) lookup
+    local -A test_set
+    while IFS= read -r testfile; do
+        local base
+        base=$(basename "$testfile" Test.java)
+        test_set["$base"]=1
+    done < <(find "$dir" -path "*/src/test/java/*" -name "*Test.java" ! -path "*/target/*" 2>/dev/null)
+
+    find "$dir" -path "*/src/main/java/*" -name "*.java" ! -path "*/target/*" \
         | while read -r src; do
-            local name=$(basename "$src" .java)
-            if find "$dir" -path "*/src/test/java/*" -name "${name}Test.java" | grep -q .; then
-                echo "$src"
+            local name
+            name=$(basename "$src" .java)
+            if [[ -n "${test_set[$name]+set}" ]]; then
+                local score
+                score=$(grep -cE "return (true|false)|< |\.add\(|return 0;" "$src" 2>/dev/null || true)
+                if [[ "$score" -gt 0 ]]; then
+                    echo "$score $src"
+                fi
             fi
         done \
-        | shuf | head -5  # Pick up to 5 random targets
+        | sort -rn | awk 'NR<=5{print $2}'  # Pick top-5 most injectable
 }
 
 # ─── Maven Plugin Injection ──────────────────────────────────────────────────
 
 inject_maven_plugin() {
     local repo="$1"
-    local pom="$THIRD_PARTY/$repo/pom.xml"
-    local module="$2"  # optional: specific module
+    local dir="$THIRD_PARTY/$repo"
+    # optional module arg (ignored — we no longer inject into pom.xml)
+    local module="${2:-}"
 
-    if [[ -n "$module" ]]; then
-        pom="$THIRD_PARTY/$repo/$module/pom.xml"
-    fi
+    local mvn_dir="$dir/.mvn"
+    local ext_file="$mvn_dir/extensions.xml"
 
-    if grep -q "test-order-maven-plugin" "$pom" 2>/dev/null; then
-        warn "Plugin already present in $pom"
+    # If the extension is already registered (either via our injection or the repo's own config),
+    # nothing to do — CollectorLifecycleParticipant will fire automatically.
+    if [[ -f "$ext_file" ]] && grep -q "$PLUGIN_ARTIFACT" "$ext_file" 2>/dev/null; then
+        warn "Extension already present in $ext_file"
         return
     fi
 
-    # Backup
-    cp "$pom" "$pom.bak"
+    mkdir -p "$mvn_dir"
 
-    # Use Python for reliable XML-aware injection (sed is too fragile for multi-</plugins> poms)
-    python3 -c "
+    if [[ -f "$ext_file" ]]; then
+        # .mvn/extensions.xml exists but without our plugin — append our extension
+        cp "$ext_file" "$ext_file.bak"
+        python3 -c "
 import xml.etree.ElementTree as ET
-import sys
-
-ns = ''
-ET.register_namespace('', 'http://maven.apache.org/POM/4.0.0')
-ET.register_namespace('xsi', 'http://www.w3.org/2001/XMLSchema-instance')
-
-tree = ET.parse('$pom')
+ET.register_namespace('', 'http://maven.apache.org/EXTENSIONS/1.0.0')
+tree = ET.parse('$ext_file')
 root = tree.getroot()
-
-# Handle namespace
-if root.tag.startswith('{'):
-    ns = root.tag.split('}')[0] + '}'
-
-build = root.find(f'{ns}build')
-if build is None:
-    build = ET.SubElement(root, f'{ns}build')
-
-plugins = build.find(f'{ns}plugins')
-if plugins is None:
-    plugins = ET.SubElement(build, f'{ns}plugins')
-
-# Add test-order-maven-plugin
-plugin = ET.SubElement(plugins, f'{ns}plugin')
-ET.SubElement(plugin, f'{ns}groupId').text = '$PLUGIN_GROUP'
-ET.SubElement(plugin, f'{ns}artifactId').text = '$PLUGIN_ARTIFACT'
-ET.SubElement(plugin, f'{ns}version').text = '$PLUGIN_VERSION'
-executions = ET.SubElement(plugin, f'{ns}executions')
-execution = ET.SubElement(executions, f'{ns}execution')
-goals = ET.SubElement(execution, f'{ns}goals')
-ET.SubElement(goals, f'{ns}goal').text = 'prepare'
-
-tree.write('$pom', xml_declaration=True, encoding='UTF-8')
-" 2>&1 || { err "Failed to inject plugin into $pom"; return 1; }
-
-    ok "Injected test-order-maven-plugin into $pom"
+ns = root.tag.split('}')[0] + '}' if root.tag.startswith('{') else ''
+ext = ET.SubElement(root, f'{ns}extension')
+ET.SubElement(ext, f'{ns}groupId').text = '$PLUGIN_GROUP'
+ET.SubElement(ext, f'{ns}artifactId').text = '$PLUGIN_ARTIFACT'
+ET.SubElement(ext, f'{ns}version').text = '$PLUGIN_VERSION'
+ET.indent(root, space='  ')
+tree.write('$ext_file', xml_declaration=True, encoding='UTF-8')
+" 2>&1 || { err "Failed to append extension to $ext_file"; return 1; }
+        ok "Appended $PLUGIN_ARTIFACT to existing $ext_file"
+    else
+        # Create a fresh extensions.xml
+        cat > "$ext_file" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+  <extension>
+    <groupId>$PLUGIN_GROUP</groupId>
+    <artifactId>$PLUGIN_ARTIFACT</artifactId>
+    <version>$PLUGIN_VERSION</version>
+  </extension>
+</extensions>
+EOF
+        ok "Created $ext_file for $repo"
+    fi
 }
 
 remove_maven_plugin() {
     local repo="$1"
-    local module="$2"
-    local pom="$THIRD_PARTY/$repo/pom.xml"
-    [[ -n "$module" ]] && pom="$THIRD_PARTY/$repo/$module/pom.xml"
+    local dir="$THIRD_PARTY/$repo"
+    local ext_file="$dir/.mvn/extensions.xml"
 
-    if [[ -f "$pom.bak" ]]; then
-        mv "$pom.bak" "$pom"
-        ok "Restored original $pom"
+    # Remove our injected extensions.xml (or restore backup if we appended to an existing one)
+    if [[ -f "$ext_file.bak" ]]; then
+        mv "$ext_file.bak" "$ext_file"
+        ok "Restored $ext_file for $repo"
+    elif [[ -f "$ext_file" ]] && grep -q "$PLUGIN_ARTIFACT" "$ext_file" 2>/dev/null; then
+        rm -f "$ext_file"
+        # If .mvn/ is now empty and was created by us, remove it too
+        rmdir "$dir/.mvn" 2>/dev/null || true
+        ok "Removed $ext_file for $repo"
     fi
+
+    # Legacy cleanup: restore any pom.xml.bak files left by old injection approach
+    local restored=0
+    while IFS= read -r bak; do
+        mv "$bak" "${bak%.bak}"
+        (( restored++ ))
+    done < <(find "$dir" -name "pom.xml.bak" 2>/dev/null)
+    [[ "$restored" -gt 0 ]] && ok "Restored $restored legacy pom.xml backup(s) in $repo"
 }
 
 # ─── Gradle Plugin Injection ─────────────────────────────────────────────────
@@ -410,15 +502,14 @@ phase_learn_maven() {
     # Inject plugin
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Dspotless.check.skip=true -Dcheckstyle.skip=true
-                    -Denforcer.skip=true -Dpmd.skip=true -Drat.skip=true
-                    -Dlicense.skip=true -Danimal.sniffer.skip=true)
+    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+                    -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
     # Run learn
-    log "Running: mvn clean test -Dtestorder.mode=learn ${mvn_args[*]}"
-    if mvn clean test -Dtestorder.mode=learn "${mvn_args[@]}" \
+    log "Running: mvn_learn ${mvn_args[*]}"
+    if mvn_learn "${mvn_args[@]}" \
         2>&1 | tee "$results/learn.log" | tail -5; then
         ok "Learn succeeded for $repo"
     else
@@ -426,7 +517,7 @@ phase_learn_maven() {
     fi
 
     # Check if index was created
-    local idx=$(find "$dir" -name "test-dependencies.lz4" | head -1)
+    local idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit)
     if [[ -n "$idx" ]]; then
         ok "Index created: $idx ($(du -h "$idx" | cut -f1))"
     else
@@ -454,7 +545,7 @@ phase_learn_gradle() {
         warn "Learn had failures for $repo"
     fi
 
-    local idx=$(find "$dir" -name "test-dependencies.lz4" | head -1)
+    local idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit)
     if [[ -n "$idx" ]]; then
         ok "Index created: $idx ($(du -h "$idx" | cut -f1))"
     else
@@ -480,9 +571,8 @@ phase_order_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Dspotless.check.skip=true -Dcheckstyle.skip=true
-                    -Denforcer.skip=true -Dpmd.skip=true -Drat.skip=true
-                    -Dlicense.skip=true -Danimal.sniffer.skip=true)
+    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+                    -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
@@ -525,9 +615,8 @@ phase_select_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Dspotless.check.skip=true -Dcheckstyle.skip=true
-                    -Denforcer.skip=true -Dpmd.skip=true -Drat.skip=true
-                    -Dlicense.skip=true -Danimal.sniffer.skip=true)
+    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+                    -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
@@ -568,9 +657,8 @@ phase_tiered_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Dspotless.check.skip=true -Dcheckstyle.skip=true
-                    -Denforcer.skip=true -Dpmd.skip=true -Drat.skip=true
-                    -Dlicense.skip=true -Danimal.sniffer.skip=true)
+    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+                    -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
@@ -621,17 +709,16 @@ phase_bugs_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Dspotless.check.skip=true -Dcheckstyle.skip=true
-                    -Denforcer.skip=true -Dpmd.skip=true -Drat.skip=true
-                    -Dlicense.skip=true -Danimal.sniffer.skip=true)
+    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+                    -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
     # Step 1: Ensure we have a clean index (learn first if needed)
-    local idx=$(find "$dir" -name "test-dependencies.lz4" | head -1)
+    local idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit)
     if [[ -z "$idx" ]]; then
         log "No index found, running learn first..."
-        mvn clean test -Dtestorder.mode=learn "${mvn_args[@]}" \
+        mvn_learn "${mvn_args[@]}" \
             2>&1 | tee "$results/bug-learn.log" | tail -3
     fi
 
@@ -643,13 +730,13 @@ phase_bugs_maven() {
         return
     fi
 
-    local bug_types=("off_by_one" "null_return" "flip_comparison" "remove_add")
+    local bug_types=("off_by_one" "flip_boolean" "flip_comparison" "remove_add")
     local total_bugs=0
     local bugs_caught_early=0
 
     for target in "${targets[@]}"; do
         local relative="${target#$THIRD_PARTY/$repo/}"
-        local classname=$(echo "$relative" | sed 's|src/main/java/||;s|/|.|g;s|\.java$||')
+        local classname=$(echo "$relative" | sed 's|^src/main/java/||;s|.*/src/main/java/||;s|/|.|g;s|\.java$||')
 
         for bug_type in "${bug_types[@]}"; do
             total_bugs=$((total_bugs + 1))
@@ -658,7 +745,7 @@ phase_bugs_maven() {
             # Inject bug
             case "$bug_type" in
                 off_by_one)     inject_bug_off_by_one "$repo" "$relative" ;;
-                null_return)    inject_bug_null_return "$repo" "$relative" ;;
+                flip_boolean)   inject_bug_flip_boolean "$repo" "$relative" ;;
                 flip_comparison) inject_bug_flip_comparison "$repo" "$relative" ;;
                 remove_add)     inject_bug_remove_add "$repo" "$relative" ;;
             esac
@@ -674,9 +761,11 @@ phase_bugs_maven() {
                 "${mvn_args[@]}" 2>&1) || true
 
             # Check if bug was caught in the selected tests
-            if echo "$select_output" | grep -q "FAILURE\|BUILD FAILURE"; then
+            if echo "$select_output" | grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]"; then
                 bugs_caught_early=$((bugs_caught_early + 1))
                 ok "  Bug caught in top-3 selected tests!"
+            elif ! echo "$select_output" | grep -q "Tests run:"; then
+                warn "  Build failed before tests ran — result unknown"
             else
                 warn "  Bug NOT caught in top-3 (may need full suite)"
             fi
@@ -705,33 +794,38 @@ phase_full_maven() {
     local results=$(result_dir "$repo")
     local module=$(detect_single_module "$repo")
     local pkg=$(detect_test_package "$repo")
-    local src_class=$(detect_source_class "$repo")
 
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Dspotless.check.skip=true -Dcheckstyle.skip=true
-                    -Denforcer.skip=true -Dpmd.skip=true -Drat.skip=true
-                    -Dlicense.skip=true -Danimal.sniffer.skip=true
-                    -Djacoco.skip=true)
-    [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
+    # Base args (no module selector) shared by all goals
+    local compiler_args
+    compiler_args=$(detect_compiler_args "$repo")
+    local base_args=(-B --fail-at-end -Denforcer.skip=true -Djacoco.skip=true
+                     -Dmaven.build.cache.enabled=false)
+    [[ -n "$compiler_args" ]] && base_args+=($compiler_args)
+    [[ -n "$pkg" ]] && base_args+=("-Dtestorder.includePackages=$pkg")
+
+    # Build args for test+compile goals: need -pl $module -am so dependencies compile
+    local mvn_args=("${base_args[@]}")
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
     # 1. Clean
     log "Step 1: Clean test-order data"
     rm -rf "$dir/.test-order" "$dir/target/test-order-deps" 2>/dev/null
+    find "$dir" -maxdepth 2 -name ".test-order.precheck-*" -type d -exec rm -rf {} + 2>/dev/null || true
     [[ -n "$module" ]] && rm -rf "$dir/$module/.test-order" "$dir/$module/target/test-order-deps" 2>/dev/null
     ok "Cleaned test-order data"
 
     # 2. Learn (3 runs to build history)
     for i in 1 2 3; do
         log "Step 2.$i: Learn run $i/3"
-        mvn clean test -Dtestorder.mode=learn "${mvn_args[@]}" \
+        mvn_learn "${mvn_args[@]}" \
             2>&1 | tee "$results/full-learn-$i.log" | tail -3 || warn "Learn run $i had test failures (deps may still be captured)"
     done
 
     # Check if index was actually produced
-    local idx=$(find "$dir" -name "test-dependencies.lz4" 2>/dev/null | head -1)
+    local idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -z "$idx" ]]; then
         warn "No dependency index produced (project may use JUnit 4). Skipping remaining steps."
         remove_maven_plugin "$repo" "$module"
@@ -739,16 +833,40 @@ phase_full_maven() {
     fi
     ok "Index created: $idx ($(du -h "$idx" | cut -f1))"
 
+    # Determine which module actually owns the index.  Command-only goals (dump,
+    # show-order, select, etc.) must run on that exact module so that
+    # ${project.basedir} resolves to the directory containing .test-order/.
+    # We do NOT pass -am here because these goals don't compile anything.
+    local idx_dir
+    idx_dir=$(dirname "$idx")        # .../repo/<mod>/.test-order  OR  .../repo/.test-order
+    idx_dir=$(dirname "$idx_dir")    # .../repo/<mod>              OR  .../repo
+    local idx_module=""
+    if [[ "$idx_dir" != "$dir" ]]; then
+        idx_module=$(basename "$idx_dir")
+    fi
+
+    # Args for command-only goals (no -am, uses idx_module not $module)
+    local cmd_args=("${base_args[@]}")
+    [[ -n "$idx_module" ]] && cmd_args+=(-pl "$idx_module")
+
+    # Args for goals that compile+run tests: add -am so dependencies are built
+    local test_cmd_args=("${cmd_args[@]}")
+    [[ -n "$idx_module" ]] && test_cmd_args+=(-am)
+
+    # Prefer source files from the instrumented module for changed.classes hints
+    local src_class
+    src_class=$(detect_source_class "$repo" "${idx_module:-$module}")
+
     # 3. Dump state
     log "Step 3: Dump state"
-    mvn me.bechberger:test-order-maven-plugin:dump "${mvn_args[@]}" 2>&1 | tee "$results/full-dump.log" | tail -20 || warn "Dump failed"
+    mvn me.bechberger:test-order-maven-plugin:dump "${cmd_args[@]}" 2>&1 | tee "$results/full-dump.log" | tail -20 || warn "Dump failed"
 
     # 4. Show order with a specific change
     log "Step 4: Show order"
     mvn me.bechberger:test-order-maven-plugin:show-order \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
-        "${mvn_args[@]}" \
+        "${cmd_args[@]}" \
         2>&1 | tee "$results/full-show-order.log" | tail -20 || warn "Show-order failed"
 
     # 5. Select
@@ -758,48 +876,118 @@ phase_full_maven() {
         -Dtestorder.changed.classes="$src_class" \
         -Dtestorder.select.topN=5 \
         -Dtestorder.mode=skip \
-        "${mvn_args[@]}" \
+        "${test_cmd_args[@]}" \
         2>&1 | tee "$results/full-select.log" | tail -10 || warn "Select failed"
 
     # 6. Run remaining
     log "Step 6: Run remaining"
     mvn me.bechberger:test-order-maven-plugin:run-remaining test \
-        "${mvn_args[@]}" \
+        "${test_cmd_args[@]}" \
         2>&1 | tee "$results/full-remaining.log" | tail -5 || warn "Run-remaining failed"
 
     # 7. Inject bug and verify detection
     log "Step 7: Bug injection verification"
-    local targets=($(find_bug_targets "$repo"))
-    if [[ ${#targets[@]} -gt 0 ]]; then
-        local target="${targets[0]}"
-        local relative="${target#$THIRD_PARTY/$repo/}"
-        local classname=$(echo "$relative" | sed 's|src/main/java/||;s|/|.|g;s|\.java$||')
-        inject_bug_flip_comparison "$repo" "$relative"
-
-        mvn clean me.bechberger:test-order-maven-plugin:select test \
-            -Dtestorder.changeMode=explicit \
-            -Dtestorder.changed.classes="$classname" \
-            -Dtestorder.select.topN=3 \
-            -Dtestorder.mode=skip \
-            "${mvn_args[@]}" \
-            2>&1 | tee "$results/full-bug-select.log" | tail -10 || warn "Bug-select failed"
-
-        restore_bugs "$repo"
-    else
+    local bug_targets_array=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && bug_targets_array+=("$line")
+    done < <(find_bug_targets "$repo")
+    local bug_injected=false
+    if [[ ${#bug_targets_array[@]} -eq 0 ]]; then
         warn "No suitable bug injection targets found"
-    fi
+    else
+        local all_not_in_index=true
+        for target in "${bug_targets_array[@]}"; do
+            local relative="${target#$THIRD_PARTY/$repo/}"
+            local classname
+            classname=$(echo "$relative" | sed 's|^src/main/java/||;s|.*/src/main/java/||;s|/|.|g;s|\.java$||')
 
+            inject_bug_flip_comparison "$repo" "$relative"
+
+            local bug_out
+            bug_out=$(mvn clean me.bechberger:test-order-maven-plugin:select test \
+                -Dtestorder.changeMode=explicit \
+                -Dtestorder.changed.classes="$classname" \
+                -Dtestorder.select.topN=3 \
+                -Dtestorder.mode=skip \
+                "${test_cmd_args[@]}" \
+                2>&1 | tee "$results/full-bug-select.log") || true
+            echo "$bug_out" | tail -10
+            if echo "$bug_out" | grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]"; then
+                ok "Bug caught in top-3 selected tests! (step 7)"
+                bug_injected=true
+                all_not_in_index=false
+            elif echo "$bug_out" | grep -q "None of the explicitly specified changed classes"; then
+                warn "Bug class $classname not in dependency index (trying next target)"
+            elif ! echo "$bug_out" | grep -q "Tests run:"; then
+                warn "Bug result unknown for $classname — build failed before tests ran (step 7)"
+                bug_injected=true
+                all_not_in_index=false
+            else
+                warn "Bug not caught in top-3 selected tests for $classname (step 7)"
+                bug_injected=true
+                all_not_in_index=false
+            fi
+
+            restore_bugs "$repo"
+            [[ "$bug_injected" == true ]] && break
+        done
+        # If all find_bug_targets were not in the index, try a class from the index directly
+        if [[ "$all_not_in_index" == true ]]; then
+            warn "None of find_bug_targets classes are in the dependency index — trying index-derived class"
+            # Dump index and find a dep class that has a src/main/java source file
+            local idx_class="" idx_rel=""
+            while IFS= read -r candidate; do
+                [[ -z "$candidate" ]] && continue
+                local cand_file
+                cand_file=$(find "$dir" -path "*/src/main/java/*" \
+                    -name "$(echo "$candidate" | sed 's/.*\.//' ).java" \
+                    ! -path "*/target/*" -print -quit 2>/dev/null)
+                if [[ -n "$cand_file" ]]; then
+                    idx_class="$candidate"
+                    idx_rel="$cand_file"
+                    break
+                fi
+            done < <(mvn me.bechberger:test-order-maven-plugin:"$PLUGIN_VERSION":dump \
+                "${cmd_args[@]}" -B -q 2>/dev/null \
+                | awk -F'\t' 'NF==2 && $1!=$2 {print $2}' \
+                | tr ',' '\n' | awk '!/\$|Test$|Tests$|^#|^D|^$/' 2>/dev/null || true)
+            if [[ -n "$idx_class" && -n "$idx_rel" ]]; then
+                local idx_rel_path="${idx_rel#$THIRD_PARTY/$repo/}"
+                inject_bug_flip_comparison "$repo" "$idx_rel_path"
+                local bug_out2
+                bug_out2=$(mvn clean me.bechberger:test-order-maven-plugin:select test \
+                    -Dtestorder.changeMode=explicit \
+                    -Dtestorder.changed.classes="$idx_class" \
+                    -Dtestorder.select.topN=3 \
+                    -Dtestorder.mode=skip \
+                    "${test_cmd_args[@]}" \
+                    2>&1 | tee "$results/full-bug-select-idx.log") || true
+                echo "$bug_out2" | tail -10
+                if echo "$bug_out2" | grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]"; then
+                    ok "Bug caught in top-3 selected tests! (step 7, index-derived)"
+                    bug_injected=true
+                elif ! echo "$bug_out2" | grep -q "Tests run:"; then
+                    warn "Bug result unknown for $idx_class — build failed before tests ran (step 7, index-derived)"
+                else
+                    warn "Bug not caught in top-3 for index-derived class $idx_class (step 7)"
+                fi
+                restore_bugs "$repo"
+            else
+                warn "No index-derived class with a src/main/java source found for bug injection"
+            fi
+        fi
+    fi
     # 8. Compact state
     log "Step 8: Compact"
-    mvn me.bechberger:test-order-maven-plugin:compact "${mvn_args[@]}" 2>&1 | tail -3 || warn "Compact failed"
+    mvn me.bechberger:test-order-maven-plugin:compact "${cmd_args[@]}" 2>&1 | tail -3 || warn "Compact failed"
 
     # 9. Export JSON
     log "Step 9: Export JSON"
-    mvn me.bechberger:test-order-maven-plugin:export-json "${mvn_args[@]}" 2>&1 | tee "$results/full-export.log" | tail -5 || warn "Export failed"
+    mvn me.bechberger:test-order-maven-plugin:export-json "${cmd_args[@]}" 2>&1 | tee "$results/full-export.log" | tail -5 || warn "Export failed"
 
     # 10. Diagnose
     log "Step 10: Diagnose"
-    mvn me.bechberger:test-order-maven-plugin:diagnose "${mvn_args[@]}" 2>&1 | tee "$results/full-diagnose.log" | tail -20 || warn "Diagnose failed"
+    mvn me.bechberger:test-order-maven-plugin:diagnose "${cmd_args[@]}" 2>&1 | tee "$results/full-diagnose.log" | tail -20 || warn "Diagnose failed"
 
     ok "Full workflow completed for $repo"
     remove_maven_plugin "$repo" "$module"
@@ -821,9 +1009,8 @@ phase_auto_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Dspotless.check.skip=true -Dcheckstyle.skip=true
-                    -Denforcer.skip=true -Dpmd.skip=true -Drat.skip=true
-                    -Dlicense.skip=true -Danimal.sniffer.skip=true)
+    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+                    -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
