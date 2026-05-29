@@ -225,37 +225,17 @@ Negative signals to grep for:
 These are ordered by expected impact-per-effort, highest first. Each is
 self-contained — pick one, finish it, ship it. Don't bundle.
 
-### S1. TF-IDF dep weighting (kills two birds with one stone)
+### S1. TF-IDF dep weighting — **DONE (scoring only)**
 
-**Targets**: issues §1 (false-positive selection) and §2 (index size).
+**Status**: IDF weighting is implemented in `TestScorer` — each overlapping
+dep contributes `idf(dep)` to the weighted overlap score instead of 1.
+Near-universal deps (high df) get near-zero weight automatically.
 
-**Idea**: Weight each (test, dep) edge by `idf(dep) = log(N / df(dep))`
-where `N` is total tests and `df(dep)` is how many tests have that dep.
-A dep present in 715/735 tests gets idf ≈ 0.027 (near-zero weight); a
-dep present in 5/735 gets idf ≈ 4.99 (high weight). The scorer in
-`TestScorer` already iterates per-dep — multiplying the per-edge
-contribution by `idf(dep)` is a 5-line change.
-
-**Bonus** for §2: deps with `df(dep) > threshold` (e.g. df > 0.5 * N)
-contribute essentially nothing to scores. They can be **dropped from
-the on-disk index** at write time without changing rankings. For
-jackson-databind that drops ~50 of the top deps and would shrink the
-index by an order of magnitude.
-
-**Where**:
-- `IndexCollectorServer.merge()` / write path — compute df, drop
-  high-frequency deps under a threshold property
-  (`testorder.deps.dropFrequencyThreshold`, default `0.8`).
-- `TestScorer` — multiply per-dep contribution by `idf(dep)` if df is
-  available in `DependencyMap`.
-
-**Risk**: low. The dropped deps don't discriminate today (every test
-"matches"), so rankings only sharpen. Add a unit test that verifies a
-near-universal dep gets ~0 weight.
-
-**Validation**: run `full jackson-databind`, expect index <10 MB and
-the bug-target test to land in top-3. Compare rankings on
-commons-collections (already passes in top-3) — they should stay stable.
+The companion write-time pruning (dropping deps where `df > threshold * N`
+from the index) was considered and explicitly **not implemented**: the
+scoring-side fix is sufficient for ranking, and pruning at write time would
+remove information that may be useful for future features (e.g. per-exercise
+weight, S4). Index size remains as-is.
 
 ### S2. RoaringBitmap-per-class index encoding
 
@@ -377,12 +357,11 @@ soon `detect_extra_args` if S3 lands). Move these to
 
 ## Suggested ordering
 
-1. S1 (TF-IDF + drop high-frequency deps) — quick, high-impact, fixes
-   §1 + §2 simultaneously. **Start here.**
-2. S5 (regression sweep) — protects S1's gains.
+1. ~~S1~~ — done (IDF scoring weight only; write-time pruning won't-do).
+2. S5 (regression sweep) — verify no regressions from recent changes. **Start here.**
 3. S6 (diagnose-selection) — makes future debugging cheaper.
 4. S3 (validate-plugin opt-out) — unblocks netty + similar.
-5. S2 (RoaringBitmap) — only if S1 is insufficient on size.
+5. S2 (RoaringBitmap) — only if index size becomes a problem again.
 6. S7 (override file) — refactor when the per-repo cases multiply.
 7. S4 (exercise weight) — last, biggest blast radius.
 
@@ -673,17 +652,14 @@ Was the test runner skipped?
 
 ## Suggested ordering (combined)
 
-Original ordering still holds for S1–S7. Insertions:
+Original ordering still holds for S2–S7. S1 is done. Insertions:
 
-- After **S1** (TF-IDF), add **S11** (warn on near-universal
-  changed class) — same code path, ~10 lines.
-- After **S5** (regression sweep), add **S10** (caught vs unknown)
-  — same script.
+- **S5** (regression sweep) is now the starting point.
+- After **S5**, add **S10** (caught vs unknown) — same script.
 - After **S6** (diagnose-selection in script), add **S16**
   (`mvn test-order:explain`) — same diagnostic motivation, plugin-side
   version.
-- **S9** (default seed) and **S13** (size warning) are 1-line
-  cleanups; do them anytime.
+- **S9** (default seed) and **S13** (size warning) are done.
 - **S12** (stable index path) needs S5 baselines first.
 - **S15** (better bug targets) and **S17** (proxy excludes) clean
   up the script's failure modes; run after S5.
