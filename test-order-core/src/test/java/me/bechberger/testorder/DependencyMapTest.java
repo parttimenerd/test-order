@@ -698,6 +698,24 @@ class DependencyMapTest {
 	}
 
 	@Test
+	void memberDepsRoundTrip() throws IOException {
+		DependencyMap original = new DependencyMap();
+		original.put("com.example.FooTest", Set.of("com.example.Foo"));
+		original.putMemberDeps("com.example.FooTest", Set.of("com.example.Foo#field1", "com.example.Foo#method1"));
+		original.putMethodMemberDeps("com.example.FooTest#testX",
+				Set.of("com.example.Foo#field1", "com.example.Bar#init"));
+
+		Path indexFile = tempDir.resolve("member-test.lz4");
+		original.save(indexFile);
+
+		DependencyMap loaded = DependencyMap.load(indexFile);
+		assertEquals(Set.of("com.example.Foo#field1", "com.example.Foo#method1"),
+				loaded.getMemberDeps("com.example.FooTest"));
+		assertEquals(Set.of("com.example.Foo#field1", "com.example.Bar#init"),
+				loaded.getMethodMemberDeps("com.example.FooTest", "testX"));
+	}
+
+	@Test
 	void aggregateReadsModuleIdSidecar() throws IOException {
 		Path depsDir = tempDir.resolve("deps");
 		Files.createDirectories(depsDir);

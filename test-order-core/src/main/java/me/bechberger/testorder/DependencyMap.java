@@ -64,6 +64,12 @@ public class DependencyMap {
 	 * Section type: per-test-class owning module id (testClass FQCN → moduleId).
 	 */
 	static final short SECTION_TEST_MODULE_MAP = 7;
+	/**
+	 * Section type: dictionary of member keys, encoded as (classTrieId, suffix
+	 * index) varint pairs. The suffix table is inlined at the front. Member ids in
+	 * MEMBER_DEPS / METHOD_MEMBER_DEPS index into this table.
+	 */
+	static final short SECTION_MEMBER_KEY_TABLE = 8;
 
 	private final Map<String, Set<String>> dependencies;
 
@@ -80,22 +86,42 @@ public class DependencyMap {
 	private volatile Map<String, Set<String>> invertedIndex;
 
 	/**
+	 * Document frequency cache: depClass → number of test classes that depend on
+	 * it. Built lazily alongside invertedIndex; invalidated on put/mergeWith.
+	 */
+	private volatile Map<String, Integer> depFrequencies;
+
+	/**
 	 * Per-method dependencies: className#methodName → deps. Only populated in
 	 * METHOD or MEMBER mode.
 	 */
 	private final Map<String, Set<String>> methodDependencies;
 
 	/**
-	 * Per-test-class member-level deps: testClass → Set<"depClass#member">. Only
-	 * populated in MEMBER mode.
+	 * Dense integer dictionary for member keys. Index = memberKeyId, value =
+	 * "ClassName#member". Shared across memberDepsMap and methodMemberDepsMap. New
+	 * keys are appended on first use.
 	 */
-	private final Map<String, Set<String>> memberDependencies;
+	private final List<String> memberKeyDictionary;
 
 	/**
-	 * Per-test-method member-level deps: testClass#method → Set<"depClass#member">.
-	 * Only populated in MEMBER mode.
+	 * Reverse lookup: "ClassName#member" → memberKeyId. Kept in sync with
+	 * memberKeyDictionary at all times.
 	 */
-	private final Map<String, Set<String>> methodMemberDependencies;
+	private final Map<String, Integer> memberKeyIndex;
+
+	/**
+	 * Per-test-class member-level deps: testClass → RoaringBitmap of memberKeyIds.
+	 * Only populated in MEMBER mode. Materialized to Set<String> on demand via
+	 * getMemberDeps().
+	 */
+	private final Map<String, RoaringBitmap> memberDepsMap;
+
+	/**
+	 * Per-test-method member-level deps: testClass#method → RoaringBitmap of
+	 * memberKeyIds. Only populated in MEMBER mode.
+	 */
+	private final Map<String, RoaringBitmap> methodMemberDepsMap;
 
 	/**
 	 * Per-test-class owning module id: testClass FQCN → "groupId:artifactId" (or
@@ -110,8 +136,10 @@ public class DependencyMap {
 	public DependencyMap() {
 		this.dependencies = new HashMap<>();
 		this.methodDependencies = new HashMap<>();
-		this.memberDependencies = new HashMap<>();
-		this.methodMemberDependencies = new HashMap<>();
+		this.memberKeyDictionary = new ArrayList<>();
+		this.memberKeyIndex = new LinkedHashMap<>();
+		this.memberDepsMap = new HashMap<>();
+		this.methodMemberDepsMap = new HashMap<>();
 		this.testToModule = new HashMap<>();
 		this.testClassesView = Collections.unmodifiableSet(dependencies.keySet());
 	}
@@ -151,8 +179,10 @@ public class DependencyMap {
 			this.dependencies.put(e.getKey(), Collections.unmodifiableSet(new HashSet<>(e.getValue())));
 		}
 		this.methodDependencies = new HashMap<>();
-		this.memberDependencies = new HashMap<>();
-		this.methodMemberDependencies = new HashMap<>();
+		this.memberKeyDictionary = new ArrayList<>();
+		this.memberKeyIndex = new LinkedHashMap<>();
+		this.memberDepsMap = new HashMap<>();
+		this.methodMemberDepsMap = new HashMap<>();
 		this.testToModule = new HashMap<>();
 		this.testClassesView = Collections.unmodifiableSet(this.dependencies.keySet());
 	}
@@ -164,6 +194,7 @@ public class DependencyMap {
 	public void put(String testClass, Set<String> deps) {
 		dependencies.put(testClass, Collections.unmodifiableSet(new HashSet<>(deps)));
 		invertedIndex = null;
+		depFrequencies = null;
 	}
 
 	/**
@@ -276,28 +307,60 @@ public class DependencyMap {
 	// ── Member-level dependencies (MEMBER mode) ────────────────────
 
 	/**
+	 * Returns the memberKeyId for the given key, inserting it into the dictionary
+	 * if it is new.
+	 */
+	private int memberKeyId(String memberKey) {
+		return memberKeyIndex.computeIfAbsent(memberKey, k -> {
+			int id = memberKeyDictionary.size();
+			memberKeyDictionary.add(k);
+			return id;
+		});
+	}
+
+	/** Materializes a bitmap of memberKeyIds into an unmodifiable Set<String>. */
+	private Set<String> materializeMembers(RoaringBitmap bm) {
+		int size = (int) bm.getLongCardinality();
+		Set<String> result = new HashSet<>((int) (size * 1.5) + 1);
+		bm.forEach((int id) -> {
+			if (id >= 0 && id < memberKeyDictionary.size())
+				result.add(memberKeyDictionary.get(id));
+		});
+		return Collections.unmodifiableSet(result);
+	}
+
+	/**
 	 * Store per-test-class member deps. Key: testClass, value: set of
 	 * "depClass#memberName".
 	 */
 	public void putMemberDeps(String testClass, Set<String> memberDeps) {
-		memberDependencies.put(testClass, Collections.unmodifiableSet(new HashSet<>(memberDeps)));
+		if (memberDeps.isEmpty()) {
+			memberDepsMap.remove(testClass);
+			return;
+		}
+		RoaringBitmap bm = new RoaringBitmap();
+		for (String mk : memberDeps)
+			bm.add(memberKeyId(mk));
+		memberDepsMap.put(testClass, bm);
 	}
 
 	/** Get per-test-class member deps. Returns empty set if not available. */
 	public Set<String> getMemberDeps(String testClass) {
-		Set<String> result = memberDependencies.getOrDefault(testClass, Collections.emptySet());
-		if (result.isEmpty()) {
+		RoaringBitmap bm = memberDepsMap.get(testClass);
+		if (bm == null || bm.isEmpty()) {
 			int dollar = testClass.indexOf('$');
 			if (dollar > 0) {
-				result = memberDependencies.getOrDefault(testClass.substring(0, dollar), Collections.emptySet());
+				bm = memberDepsMap.get(testClass.substring(0, dollar));
 			}
 		}
-		return result;
+		if (bm == null || bm.isEmpty())
+			return Collections.emptySet();
+		return materializeMembers(bm);
 	}
 
 	/** Whether this map has any member-level dependency data. */
 	public boolean hasMemberDeps() {
-		return !memberDependencies.isEmpty();
+		return !memberDepsMap.isEmpty();
 	}
 
 	/**
@@ -305,7 +368,14 @@ public class DependencyMap {
 	 * "depClass#memberName".
 	 */
 	public void putMethodMemberDeps(String methodKey, Set<String> memberDeps) {
-		methodMemberDependencies.put(methodKey, Collections.unmodifiableSet(new HashSet<>(memberDeps)));
+		if (memberDeps.isEmpty()) {
+			methodMemberDepsMap.remove(methodKey);
+			return;
+		}
+		RoaringBitmap bm = new RoaringBitmap();
+		for (String mk : memberDeps)
+			bm.add(memberKeyId(mk));
+		methodMemberDepsMap.put(methodKey, bm);
 	}
 
 	// ── Test-class → owning module ───────────────────────────────────
@@ -342,7 +412,8 @@ public class DependencyMap {
 
 	/**
 	 * Merge all entries from another DependencyMap into this one. For each key, the
-	 * dependency sets are unioned (not replaced).
+	 * dependency sets are unioned (not replaced). Member deps are merged using
+	 * RoaringBitmap OR after remapping the other instance's member key IDs.
 	 */
 	public void mergeWith(DependencyMap other) {
 		for (var entry : other.dependencies.entrySet()) {
@@ -365,27 +436,8 @@ public class DependencyMap {
 				methodDependencies.put(entry.getKey(), Collections.unmodifiableSet(merged));
 			}
 		}
-		for (var entry : other.memberDependencies.entrySet()) {
-			Set<String> existing = memberDependencies.get(entry.getKey());
-			if (existing == null) {
-				memberDependencies.put(entry.getKey(), Collections.unmodifiableSet(new HashSet<>(entry.getValue())));
-			} else {
-				Set<String> merged = new HashSet<>(existing);
-				merged.addAll(entry.getValue());
-				memberDependencies.put(entry.getKey(), Collections.unmodifiableSet(merged));
-			}
-		}
-		for (var entry : other.methodMemberDependencies.entrySet()) {
-			Set<String> existing = methodMemberDependencies.get(entry.getKey());
-			if (existing == null) {
-				methodMemberDependencies.put(entry.getKey(),
-						Collections.unmodifiableSet(new HashSet<>(entry.getValue())));
-			} else {
-				Set<String> merged = new HashSet<>(existing);
-				merged.addAll(entry.getValue());
-				methodMemberDependencies.put(entry.getKey(), Collections.unmodifiableSet(merged));
-			}
-		}
+		mergeMemberDepsFrom(other.memberKeyDictionary, other.memberDepsMap, memberDepsMap);
+		mergeMemberDepsFrom(other.memberKeyDictionary, other.methodMemberDepsMap, methodMemberDepsMap);
 		// In a multi-module reactor each test FQCN belongs to exactly one module, so
 		// last-writer-wins is fine. Only overwrite when the incoming entry is
 		// non-empty so a freshly-built empty map can't erase known module data.
@@ -395,36 +447,74 @@ public class DependencyMap {
 			}
 		}
 		invertedIndex = null; // invalidate cache
+		depFrequencies = null;
+	}
+
+	/**
+	 * Merges member-dep bitmaps from {@code srcMap} (whose IDs reference
+	 * {@code srcDict}) into {@code dstMap} (whose IDs reference this instance's
+	 * memberKeyDictionary). IDs are remapped on the fly.
+	 */
+	private void mergeMemberDepsFrom(List<String> srcDict, Map<String, RoaringBitmap> srcMap,
+			Map<String, RoaringBitmap> dstMap) {
+		if (srcMap.isEmpty())
+			return;
+		for (var entry : srcMap.entrySet()) {
+			RoaringBitmap srcBm = entry.getValue();
+			if (srcBm.isEmpty())
+				continue;
+			// Remap IDs from src dictionary to this instance's dictionary
+			int[] remapped = new int[(int) srcBm.getLongCardinality()];
+			int[] k = {0};
+			srcBm.forEach((int srcId) -> {
+				if (srcId >= 0 && srcId < srcDict.size()) {
+					remapped[k[0]++] = memberKeyId(srcDict.get(srcId));
+				}
+			});
+			if (k[0] == 0)
+				continue;
+			int[] ids = k[0] == remapped.length ? remapped : Arrays.copyOf(remapped, k[0]);
+			RoaringBitmap existing = dstMap.get(entry.getKey());
+			if (existing == null) {
+				Arrays.sort(ids);
+				dstMap.put(entry.getKey(), RoaringBitmap.bitmapOf(ids));
+			} else {
+				for (int id : ids)
+					existing.add(id);
+			}
+		}
 	}
 
 	/** Get per-test-method member deps. Returns empty set if not available. */
 	public Set<String> getMethodMemberDeps(String methodKey) {
-		Set<String> result = methodMemberDependencies.getOrDefault(methodKey, Collections.emptySet());
-		if (result.isEmpty()) {
+		RoaringBitmap bm = methodMemberDepsMap.get(methodKey);
+		if (bm == null || bm.isEmpty()) {
 			int dollar = methodKey.indexOf('$');
 			if (dollar > 0) {
 				int hash = methodKey.indexOf('#');
 				if (hash > dollar) {
 					String topLevel = methodKey.substring(0, dollar) + methodKey.substring(hash);
-					result = methodMemberDependencies.getOrDefault(topLevel, Collections.emptySet());
+					bm = methodMemberDepsMap.get(topLevel);
 				}
 			}
 		}
-		return result;
+		if (bm == null || bm.isEmpty())
+			return Collections.emptySet();
+		return materializeMembers(bm);
 	}
 
 	/** Get per-test-method member deps by class and method name. */
 	public Set<String> getMethodMemberDeps(String className, String methodName) {
-		Set<String> result = methodMemberDependencies.getOrDefault(className + "#" + methodName,
-				Collections.emptySet());
-		if (result.isEmpty()) {
+		RoaringBitmap bm = methodMemberDepsMap.get(className + "#" + methodName);
+		if (bm == null || bm.isEmpty()) {
 			int dollar = className.indexOf('$');
 			if (dollar > 0) {
-				result = methodMemberDependencies.getOrDefault(className.substring(0, dollar) + "#" + methodName,
-						Collections.emptySet());
+				bm = methodMemberDepsMap.get(className.substring(0, dollar) + "#" + methodName);
 			}
 		}
-		return result;
+		if (bm == null || bm.isEmpty())
+			return Collections.emptySet();
+		return materializeMembers(bm);
 	}
 
 	/**
@@ -458,11 +548,15 @@ public class DependencyMap {
 				result.dependencies.put(entry.getKey(), Collections.unmodifiableSet(merged));
 			}
 		}
-		// Carry over the auxiliary maps unchanged. They share the same unmodifiable
-		// references — no defensive copy needed since callers cannot mutate them.
+		// Carry over the auxiliary maps unchanged. Member bitmaps reference the same
+		// dictionary IDs — share the dictionary and copy bitmap references.
 		result.methodDependencies.putAll(methodDependencies);
-		result.memberDependencies.putAll(memberDependencies);
-		result.methodMemberDependencies.putAll(methodMemberDependencies);
+		result.memberKeyDictionary.addAll(memberKeyDictionary);
+		result.memberKeyIndex.putAll(memberKeyIndex);
+		for (var e : memberDepsMap.entrySet())
+			result.memberDepsMap.put(e.getKey(), e.getValue().clone());
+		for (var e : methodMemberDepsMap.entrySet())
+			result.methodMemberDepsMap.put(e.getKey(), e.getValue().clone());
 		result.testToModule.putAll(testToModule);
 		return result;
 	}
@@ -500,19 +594,54 @@ public class DependencyMap {
 
 	private Map<String, Set<String>> buildInvertedIndex() {
 		Map<String, Set<String>> idx = new HashMap<>((int) (dependencies.size() / 0.75f) + 1);
+		Map<String, Integer> df = new HashMap<>((int) (dependencies.size() / 0.75f) + 1);
 		for (var entry : dependencies.entrySet()) {
 			String testClass = entry.getKey();
 			for (String dep : entry.getValue()) {
 				idx.computeIfAbsent(dep, k -> new HashSet<>()).add(testClass);
+				df.merge(dep, 1, Integer::sum);
 				// Also index by top-level class for nested class deps
 				int dollar = dep.indexOf('$');
 				if (dollar > 0) {
 					String topLevel = dep.substring(0, dollar);
 					idx.computeIfAbsent(topLevel, k -> new HashSet<>()).add(testClass);
+					df.merge(topLevel, 1, Integer::sum);
 				}
 			}
 		}
+		depFrequencies = df;
 		return idx;
+	}
+
+	/**
+	 * Returns the document-frequency map: depClass → how many test classes depend
+	 * on it. Built lazily (shares a pass with the inverted index).
+	 */
+	public Map<String, Integer> documentFrequencies() {
+		Map<String, Integer> df = depFrequencies;
+		if (df != null)
+			return df;
+		// trigger the shared build — afterwards depFrequencies is set
+		getInvertedIndex();
+		return depFrequencies;
+	}
+
+	/**
+	 * Returns {@code idf(dep) = ln(N / df(dep))}, where {@code N} is the total
+	 * number of test classes. A dep present in every test gets idf ≈ 0; a dep
+	 * present in only one test gets idf = ln(N). Returns {@code 1.0} when the dep
+	 * is not found in the index or the map has fewer than 10 tests (neutral weight
+	 * — IDF requires enough tests to produce meaningful frequency statistics).
+	 */
+	public double idf(String dep) {
+		int n = dependencies.size();
+		if (n < 10)
+			return 1.0;
+		Map<String, Integer> df = documentFrequencies();
+		int count = df.getOrDefault(dep, 0);
+		if (count == 0)
+			return 1.0;
+		return Math.log((double) n / count);
 	}
 
 	/**
@@ -591,7 +720,8 @@ public class DependencyMap {
 		out.write(FORMAT_MAGIC);
 		out.writeShort(FORMAT_VERSION);
 
-		// build trie over all class names (test + dep + method dep class names)
+		// build trie over all class names (test + dep + method dep + member-key class
+		// parts)
 		ClassNameTrie trie = new ClassNameTrie();
 		for (var entry : dependencies.entrySet()) {
 			trie.insert(entry.getKey());
@@ -604,7 +734,28 @@ public class DependencyMap {
 				trie.insert(dep);
 			}
 		}
+		// member key dictionary already has all unique class parts
+		for (String mk : memberKeyDictionary)
+			trie.insert(memberClass(mk));
 		trie.assignIds();
+
+		// Build the suffix deduplication table for MEMBER_KEY_TABLE serialization.
+		// Suffixes ("#member") are deduplicated to avoid repeating them for every
+		// class that has a member with the same name.
+		boolean hasMemberDeps = !memberDepsMap.isEmpty() || !methodMemberDepsMap.isEmpty();
+		String[] memberSuffixTable = new String[0];
+		int[] memberSuffixIds = new int[0]; // parallel to memberKeyDictionary
+		if (hasMemberDeps) {
+			Map<String, Integer> suffixIds = new LinkedHashMap<>();
+			memberSuffixIds = new int[memberKeyDictionary.size()];
+			for (int i = 0; i < memberKeyDictionary.size(); i++) {
+				String mk = memberKeyDictionary.get(i);
+				int hash = mk.indexOf('#');
+				String suffix = hash >= 0 ? mk.substring(hash) : mk;
+				memberSuffixIds[i] = suffixIds.computeIfAbsent(suffix, s -> suffixIds.size());
+			}
+			memberSuffixTable = suffixIds.keySet().toArray(new String[0]);
+		}
 
 		// ordered list of test class IDs (preserves insertion order)
 		List<String> testList = new ArrayList<>(dependencies.keySet());
@@ -637,9 +788,11 @@ public class DependencyMap {
 		int sectionCount = 3; // trie + test classes + dep groups (always present)
 		if (!methodDependencies.isEmpty())
 			sectionCount++;
-		if (!memberDependencies.isEmpty())
+		if (hasMemberDeps)
+			sectionCount++; // SECTION_MEMBER_KEY_TABLE
+		if (!memberDepsMap.isEmpty())
 			sectionCount++;
-		if (!methodMemberDependencies.isEmpty())
+		if (!methodMemberDepsMap.isEmpty())
 			sectionCount++;
 		if (!testToModule.isEmpty())
 			sectionCount++;
@@ -713,42 +866,45 @@ public class DependencyMap {
 			writeSection(out, SECTION_METHOD_DEPS, buf.toByteArray());
 		}
 
-		// ── Section: MEMBER_DEPS (optional) ──────────────────────
-		if (!memberDependencies.isEmpty()) {
-			ByteArrayOutputStream buf = new ByteArrayOutputStream(memberDependencies.size() * 80);
+		// ── Section: MEMBER_KEY_TABLE (optional) ─────────────────
+		if (hasMemberDeps) {
+			int keyCount = memberKeyDictionary.size();
+			ByteArrayOutputStream buf = new ByteArrayOutputStream(keyCount * 6 + 4);
 			DataOutputStream s = new DataOutputStream(buf);
-			List<String> memberKeys = new ArrayList<>(memberDependencies.keySet());
-			s.writeInt(memberKeys.size());
-			for (String testClass : memberKeys) {
-				s.writeUTF(testClass);
-				Set<String> members = memberDependencies.get(testClass);
-				s.writeInt(members.size());
-				for (String memberKey : members) {
-					s.writeUTF(memberKey);
-				}
+			// Inlined suffix table
+			s.writeInt(memberSuffixTable.length);
+			for (String suffix : memberSuffixTable)
+				s.writeUTF(suffix);
+			// Member key entries: (classTrieId, suffixId) varint pairs
+			s.writeInt(keyCount);
+			for (int i = 0; i < keyCount; i++) {
+				String mk = memberKeyDictionary.get(i);
+				int hash = mk.indexOf('#');
+				String className = hash >= 0 ? mk.substring(0, hash) : mk;
+				ClassNameTrie.writeVarInt(s, trie.getId(className));
+				ClassNameTrie.writeVarInt(s, memberSuffixIds[i]);
 			}
+			s.flush();
+			writeSection(out, SECTION_MEMBER_KEY_TABLE, buf.toByteArray());
+		}
+
+		// ── Section: MEMBER_DEPS (optional) ──────────────────────
+		if (!memberDepsMap.isEmpty()) {
+			ByteArrayOutputStream buf = new ByteArrayOutputStream(memberDepsMap.size() * 20);
+			DataOutputStream s = new DataOutputStream(buf);
+			writeMemberSection(s, memberDepsMap);
 			s.flush();
 			writeSection(out, SECTION_MEMBER_DEPS, buf.toByteArray());
 		}
 
 		// ── Section: METHOD_MEMBER_DEPS (optional) ───────────────
-		if (!methodMemberDependencies.isEmpty()) {
-			ByteArrayOutputStream buf = new ByteArrayOutputStream(methodMemberDependencies.size() * 80);
+		if (!methodMemberDepsMap.isEmpty()) {
+			ByteArrayOutputStream buf = new ByteArrayOutputStream(methodMemberDepsMap.size() * 20);
 			DataOutputStream s = new DataOutputStream(buf);
-			List<String> methodMemberKeys = new ArrayList<>(methodMemberDependencies.keySet());
-			s.writeInt(methodMemberKeys.size());
-			for (String methodKey : methodMemberKeys) {
-				s.writeUTF(methodKey);
-				Set<String> members = methodMemberDependencies.get(methodKey);
-				s.writeInt(members.size());
-				for (String memberKey : members) {
-					s.writeUTF(memberKey);
-				}
-			}
+			writeMemberSection(s, methodMemberDepsMap);
 			s.flush();
 			writeSection(out, SECTION_METHOD_MEMBER_DEPS, buf.toByteArray());
 		}
-
 		// ── Section: TEST_MODULE_MAP (optional) ──────────────────
 		if (!testToModule.isEmpty()) {
 			ByteArrayOutputStream buf = new ByteArrayOutputStream(testToModule.size() * 64);
@@ -768,6 +924,106 @@ public class DependencyMap {
 		out.writeShort(type);
 		out.writeInt(payload.length);
 		out.write(payload);
+	}
+
+	/** Extracts the "className" prefix from a "className#memberName" key. */
+	private static String memberClass(String memberKey) {
+		int hash = memberKey.indexOf('#');
+		return hash >= 0 ? memberKey.substring(0, hash) : memberKey;
+	}
+
+	/**
+	 * Writes a member-dep map (bitmap values already use this instance's
+	 * memberKeyDictionary IDs) as row-deduplicated RoaringBitmap rows.
+	 *
+	 * <pre>
+	 * writeInt(rowCount)
+	 * for each row: writeUTF(rowKey)
+	 * writeInt(groupCount)
+	 * for each group:
+	 *   writeInt(memberBitmapBytes); memberBitmap   (RoaringBitmap of memberKeyIds)
+	 *   writeInt(rowBitmapBytes);   rowBitmap       (which rows share this group)
+	 * </pre>
+	 */
+	private static void writeMemberSection(DataOutputStream s, Map<String, RoaringBitmap> map) throws IOException {
+		List<String> rowKeys = new ArrayList<>(map.keySet());
+		int rowCount = rowKeys.size();
+
+		Map<RoaringBitmap, List<Integer>> groups = new LinkedHashMap<>();
+		List<RoaringBitmap> groupOrder = new ArrayList<>();
+		for (int ri = 0; ri < rowCount; ri++) {
+			RoaringBitmap bm = map.get(rowKeys.get(ri));
+			List<Integer> rows = groups.get(bm);
+			if (rows != null) {
+				rows.add(ri);
+			} else {
+				rows = new ArrayList<>();
+				rows.add(ri);
+				groups.put(bm, rows);
+				groupOrder.add(bm);
+			}
+		}
+
+		s.writeInt(rowCount);
+		for (String key : rowKeys)
+			s.writeUTF(key);
+		s.writeInt(groupOrder.size());
+		for (RoaringBitmap memberBm : groupOrder) {
+			// Fetch row list BEFORE runOptimize — runOptimize changes hashCode()
+			// and would break the map lookup.
+			int[] rowIdxs = groups.get(memberBm).stream().mapToInt(Integer::intValue).sorted().toArray();
+			memberBm.runOptimize();
+			s.writeInt(memberBm.serializedSizeInBytes());
+			memberBm.serialize(s);
+
+			RoaringBitmap rowBm = RoaringBitmap.bitmapOf(rowIdxs);
+			s.writeInt(rowBm.serializedSizeInBytes());
+			rowBm.serialize(s);
+		}
+	}
+
+	/** Reads a member section written by {@link #writeMemberSection}. */
+	private static void readMemberSection(DataInputStream s, Map<String, RoaringBitmap> dest, int keyTableSize,
+			Path indexFile) throws IOException {
+		int rowCount = s.readInt();
+		validateCount(rowCount, "memberRowCount");
+		String[] rowKeys = new String[rowCount];
+		for (int i = 0; i < rowCount; i++)
+			rowKeys[i] = s.readUTF();
+		int groupCount = s.readInt();
+		validateCount(groupCount, "memberGroupCount");
+		@SuppressWarnings("unchecked")
+		RoaringBitmap[] rowBitmaps = new RoaringBitmap[rowCount];
+		for (int g = 0; g < groupCount; g++) {
+			int memberBmSize = s.readInt();
+			checkSize(memberBmSize, "member bitmap", indexFile);
+			byte[] memberBmBytes = new byte[memberBmSize];
+			s.readFully(memberBmBytes);
+			RoaringBitmap memberBm = new RoaringBitmap();
+			memberBm.deserialize(new DataInputStream(new ByteArrayInputStream(memberBmBytes)));
+
+			// Validate IDs against the key table size
+			int finalKeyTableSize = keyTableSize;
+			memberBm.forEach((int id) -> {
+				if (id >= finalKeyTableSize)
+					throw new IllegalStateException("member key id " + id + " >= table size " + finalKeyTableSize);
+			});
+
+			int rowBmSize = s.readInt();
+			checkSize(rowBmSize, "row bitmap", indexFile);
+			byte[] rowBmBytes = new byte[rowBmSize];
+			s.readFully(rowBmBytes);
+			RoaringBitmap rowBm = new RoaringBitmap();
+			rowBm.deserialize(new DataInputStream(new ByteArrayInputStream(rowBmBytes)));
+			rowBm.forEach((int ri) -> {
+				if (ri >= 0 && ri < rowCount)
+					rowBitmaps[ri] = memberBm;
+			});
+		}
+		for (int i = 0; i < rowCount; i++) {
+			if (rowBitmaps[i] != null)
+				dest.put(rowKeys[i], rowBitmaps[i]);
+		}
 	}
 
 	/**
@@ -980,39 +1236,44 @@ public class DependencyMap {
 							map.methodDependencies.put(methodKey, Collections.unmodifiableSet(deps));
 						}
 					}
-					case SECTION_MEMBER_DEPS -> {
+					case SECTION_MEMBER_KEY_TABLE -> {
 						byte[] payload = new byte[sectionLength];
 						in.readFully(payload);
 						DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
-						int memberEntryCount = s.readInt();
-						validateCount(memberEntryCount, "memberEntryCount");
-						for (int i = 0; i < memberEntryCount; i++) {
-							String testClass = s.readUTF();
-							int memberCount = s.readInt();
-							validateCount(memberCount, "memberCount");
-							Set<String> members = new HashSet<>(memberCount * 2);
-							for (int j = 0; j < memberCount; j++) {
-								members.add(s.readUTF());
-							}
-							map.memberDependencies.put(testClass, Collections.unmodifiableSet(members));
+						int suffixCount = s.readInt();
+						validateCount(suffixCount, "memberSuffixCount");
+						String[] suffixes = new String[suffixCount];
+						for (int i = 0; i < suffixCount; i++)
+							suffixes[i] = s.readUTF();
+						int keyCount = s.readInt();
+						validateCount(keyCount, "memberKeyCount");
+						ClassNameTrie finalTrie = trie;
+						for (int i = 0; i < keyCount; i++) {
+							int classId = ClassNameTrie.readVarInt(s);
+							int suffixId = ClassNameTrie.readVarInt(s);
+							if (suffixId < 0 || suffixId >= suffixCount)
+								throw new IOException("Invalid suffix id " + suffixId + " in " + indexFile);
+							// populate the dictionary in order — id must equal current size
+							String memberKey = finalTrie.getName(classId) + suffixes[suffixId];
+							map.memberKeyIndex.put(memberKey, map.memberKeyDictionary.size());
+							map.memberKeyDictionary.add(memberKey);
 						}
+					}
+					case SECTION_MEMBER_DEPS -> {
+						byte[] payload = new byte[sectionLength];
+						in.readFully(payload);
+						if (map.memberKeyDictionary.isEmpty())
+							throw new IOException("MEMBER_KEY_TABLE must precede MEMBER_DEPS in " + indexFile);
+						DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
+						readMemberSection(s, map.memberDepsMap, map.memberKeyDictionary.size(), indexFile);
 					}
 					case SECTION_METHOD_MEMBER_DEPS -> {
 						byte[] payload = new byte[sectionLength];
 						in.readFully(payload);
+						if (map.memberKeyDictionary.isEmpty())
+							throw new IOException("MEMBER_KEY_TABLE must precede METHOD_MEMBER_DEPS in " + indexFile);
 						DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
-						int methodMemberCount = s.readInt();
-						validateCount(methodMemberCount, "methodMemberCount");
-						for (int i = 0; i < methodMemberCount; i++) {
-							String methodKey = s.readUTF();
-							int memberCount = s.readInt();
-							validateCount(memberCount, "memberCount");
-							Set<String> members = new HashSet<>(memberCount * 2);
-							for (int j = 0; j < memberCount; j++) {
-								members.add(s.readUTF());
-							}
-							map.methodMemberDependencies.put(methodKey, Collections.unmodifiableSet(members));
-						}
+						readMemberSection(s, map.methodMemberDepsMap, map.memberKeyDictionary.size(), indexFile);
 					}
 					case SECTION_TEST_MODULE_MAP -> {
 						byte[] payload = new byte[sectionLength];
@@ -1195,20 +1456,28 @@ public class DependencyMap {
 			});
 		}
 		for (var entry : memberDeps.entrySet()) {
-			map.memberDependencies.merge(entry.getKey(), entry.getValue(), (existing, incoming) -> {
-				Set<String> merged = new HashSet<>(existing.size() + incoming.size(), 1.0f);
-				merged.addAll(existing);
-				merged.addAll(incoming);
-				return merged;
-			});
+			RoaringBitmap existing = map.memberDepsMap.get(entry.getKey());
+			if (existing == null) {
+				RoaringBitmap bm = new RoaringBitmap();
+				for (String mk : entry.getValue())
+					bm.add(map.memberKeyId(mk));
+				map.memberDepsMap.put(entry.getKey(), bm);
+			} else {
+				for (String mk : entry.getValue())
+					existing.add(map.memberKeyId(mk));
+			}
 		}
 		for (var entry : methodMemberDeps.entrySet()) {
-			map.methodMemberDependencies.merge(entry.getKey(), entry.getValue(), (existing, incoming) -> {
-				Set<String> merged = new HashSet<>(existing.size() + incoming.size(), 1.0f);
-				merged.addAll(existing);
-				merged.addAll(incoming);
-				return merged;
-			});
+			RoaringBitmap existing = map.methodMemberDepsMap.get(entry.getKey());
+			if (existing == null) {
+				RoaringBitmap bm = new RoaringBitmap();
+				for (String mk : entry.getValue())
+					bm.add(map.memberKeyId(mk));
+				map.methodMemberDepsMap.put(entry.getKey(), bm);
+			} else {
+				for (String mk : entry.getValue())
+					existing.add(map.memberKeyId(mk));
+			}
 		}
 
 		if (testToModule != null && !testToModule.isEmpty()) {
@@ -1432,10 +1701,13 @@ public class DependencyMap {
 			try {
 				var entry = task.get();
 				if (entry != null) {
-					// existing may be an unmodifiable set from loadBinary — copy into mutable set
-					Set<String> existing = new HashSet<>(map.memberDependencies.getOrDefault(entry.getKey(), Set.of()));
-					existing.addAll(entry.getValue());
-					map.memberDependencies.put(entry.getKey(), Collections.unmodifiableSet(existing));
+					RoaringBitmap existing = map.memberDepsMap.get(entry.getKey());
+					if (existing == null) {
+						map.putMemberDeps(entry.getKey(), entry.getValue());
+					} else {
+						for (String mk : entry.getValue())
+							existing.add(map.memberKeyId(mk));
+					}
 					memberDepCount++;
 				}
 			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {
@@ -1476,11 +1748,13 @@ public class DependencyMap {
 			try {
 				var entry = task.get();
 				if (entry != null) {
-					// existing may be an unmodifiable set from loadBinary — copy into mutable set
-					Set<String> existing = new HashSet<>(
-							map.methodMemberDependencies.getOrDefault(entry.getKey(), Set.of()));
-					existing.addAll(entry.getValue());
-					map.methodMemberDependencies.put(entry.getKey(), Collections.unmodifiableSet(existing));
+					RoaringBitmap existing = map.methodMemberDepsMap.get(entry.getKey());
+					if (existing == null) {
+						map.putMethodMemberDeps(entry.getKey(), entry.getValue());
+					} else {
+						for (String mk : entry.getValue())
+							existing.add(map.memberKeyId(mk));
+					}
 					methodMemberDepCount++;
 				}
 			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {

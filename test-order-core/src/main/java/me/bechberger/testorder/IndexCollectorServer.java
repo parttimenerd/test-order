@@ -38,6 +38,65 @@ public class IndexCollectorServer implements AutoCloseable {
 	private static final byte PROTOCOL_VERSION_V4 = 4;
 	private static final int MEMBER_ID_OFFSET = 8_000_000;
 
+	/**
+	 * JVM-global registry of running servers keyed by port. Stored as a value in
+	 * {@link System#getProperties()} so it is visible from all classloader realms
+	 * in the same JVM (the extension and plugin Maven realms each load their own
+	 * copy of this class, but they share the system Properties Hashtable).
+	 */
+	private static final String JVM_REGISTRY_KEY = "testorder.IndexCollectorServer.registry";
+
+	@SuppressWarnings("unchecked")
+	private static ConcurrentHashMap<Integer, Object> jvmRegistry() {
+		ConcurrentHashMap<Integer, Object> reg = (ConcurrentHashMap<Integer, Object>) System.getProperties()
+				.get(JVM_REGISTRY_KEY);
+		if (reg == null) {
+			reg = new ConcurrentHashMap<>();
+			System.getProperties().put(JVM_REGISTRY_KEY, reg);
+		}
+		return reg;
+	}
+
+	/**
+	 * Drain and stop the collector for the given port, writing the index file. Can
+	 * be called from any classloader realm as long as the running server was
+	 * registered in the JVM registry. Uses reflection if the server object was
+	 * loaded by a different classloader realm.
+	 */
+	public static void drainByPort(int port, Path indexFile) {
+		Object server = jvmRegistry().remove(port);
+		if (server == null) {
+			return;
+		}
+		try {
+			// Direct cast works when called from the same realm that registered the server.
+			int merged = ((IndexCollectorServer) server).stopAndMerge(indexFile);
+			if (merged > 0) {
+				System.out
+						.println("[test-order] IndexCollectorServer merged " + merged + " test classes via port drain");
+			}
+		} catch (ClassCastException e) {
+			// Cross-realm cast: use reflection to invoke stopAndMerge(Path) on the
+			// server object which belongs to a different ClassRealm.
+			try {
+				java.lang.reflect.Method m = server.getClass().getMethod("stopAndMerge", Path.class);
+				Object result = m.invoke(server, indexFile);
+				int merged = result instanceof Integer ? (Integer) result : 0;
+				if (merged > 0) {
+					System.out.println("[test-order] IndexCollectorServer merged " + merged
+							+ " test classes via cross-realm port drain");
+				}
+			} catch (Exception re) {
+				Throwable cause = (re instanceof java.lang.reflect.InvocationTargetException ite
+						&& ite.getCause() != null) ? ite.getCause() : re;
+				System.err.println("[test-order] drainByPort reflective call failed for port " + port + ": "
+						+ cause.getClass().getSimpleName() + ": " + cause.getMessage());
+			}
+		} catch (Exception | NoClassDefFoundError ex) {
+			System.err.println("[test-order] drainByPort failed for port " + port + ": " + ex.getMessage());
+		}
+	}
+
 	private final ServerSocket serverSocket;
 	private final Thread acceptThread;
 	private final AtomicBoolean running = new AtomicBoolean(true);
@@ -94,18 +153,19 @@ public class IndexCollectorServer implements AutoCloseable {
 		acceptThread.setDaemon(true);
 		acceptThread.start();
 
-		// Safety net: merge on JVM shutdown if not explicitly stopped.
-		// If the plugin classloader is already torn down, writes a fallback file
-		// that the next build run can pick up.
+		// Register in JVM-global registry so afterSessionEnd() (extension realm) can
+		// drain the server even when the extension and plugin realms are separate.
+		jvmRegistry().put(serverSocket.getLocalPort(), this);
+
+		// Safety net: when CollectorLifecycleParticipant.afterSessionEnd() is not
+		// called (e.g. plugin lacks <extensions>true</extensions>), write deps to a
+		// text-based fallback file. The next build run will merge it via
+		// processFallbackFile(). Using only JDK classes here avoids
+		// NoClassDefFoundError from classloader teardown that affects RoaringBitmap
+		// / LZ4 serialization.
 		shutdownHook = new Thread(() -> {
 			if (running.get()) {
-				try {
-					stopAndMerge();
-				} catch (NoClassDefFoundError | Exception e) {
-					System.err.println(
-							"[test-order] merge failed in shutdown hook (classloader teardown) — writing fallback file; will be merged on next run");
-					writeFallbackPayloads();
-				}
+				writeFallbackPayloads();
 			}
 		}, "test-order-collector-shutdown");
 		Runtime.getRuntime().addShutdownHook(shutdownHook);
@@ -160,6 +220,7 @@ public class IndexCollectorServer implements AutoCloseable {
 		if (!running.compareAndSet(true, false)) {
 			return 0; // already stopped
 		}
+		jvmRegistry().remove(serverSocket.getLocalPort());
 		try {
 			acceptThread.join(5000);
 		} catch (InterruptedException e) {
@@ -180,7 +241,23 @@ public class IndexCollectorServer implements AutoCloseable {
 			System.err.println("[test-order] IndexCollectorServer: failed to write index: " + e.getMessage());
 			return 0;
 		}
+		logIndexSize(targetIndexFile, mergedClassDeps.size());
 		return mergedClassDeps.size();
+	}
+
+	private static void logIndexSize(Path indexFile, int testCount) {
+		try {
+			long bytes = java.nio.file.Files.size(indexFile);
+			double mb = bytes / (1024.0 * 1024.0);
+			String sizeStr = mb >= 1.0 ? String.format("%.1f MB", mb) : String.format("%d KB", bytes / 1024);
+			System.out.println("[test-order] Index written: " + sizeStr + " (" + testCount + " tests)");
+			if (mb > 20) {
+				System.out.println("[test-order] WARNING: index is large (" + sizeStr + "). "
+						+ "Consider setting -Dtestorder.deps.dropFrequencyThreshold=0.8 to drop near-universal deps.");
+			}
+		} catch (IOException e) {
+			// size logging is best-effort
+		}
 	}
 
 	/**
@@ -189,6 +266,7 @@ public class IndexCollectorServer implements AutoCloseable {
 	@Override
 	public void close() {
 		running.set(false);
+		jvmRegistry().remove(serverSocket.getLocalPort());
 		closeServerSocket();
 		unregisterShutdownHook();
 		try {
@@ -555,13 +633,50 @@ public class IndexCollectorServer implements AutoCloseable {
 
 	private static void mergeMaps(ConcurrentHashMap<String, Set<String>> target, Map<String, Set<String>> source) {
 		for (var entry : source.entrySet()) {
-			target.merge(entry.getKey(), entry.getValue(), (existing, incoming) -> {
+			Set<String> filtered = new java.util.HashSet<>();
+			for (String dep : entry.getValue()) {
+				if (!isSyntheticClass(dep)) {
+					filtered.add(dep);
+				}
+			}
+			if (filtered.isEmpty()) {
+				continue;
+			}
+			target.merge(entry.getKey(), filtered, (existing, incoming) -> {
 				synchronized (existing) {
 					existing.addAll(incoming);
 				}
 				return existing;
 			});
 		}
+	}
+
+	/**
+	 * Returns true for runtime-generated synthetic class names that should not
+	 * appear in the dependency index: proxies, cglib enhancers, lambda forms, etc.
+	 * These are generated at runtime and carry no stable source-level identity.
+	 */
+	static boolean isSyntheticClass(String className) {
+		if (className == null) {
+			return true;
+		}
+		// cglib: Foo$$EnhancerByCGLIB$$abc123
+		if (className.contains("$$EnhancerByCGLIB$$") || className.contains("$$FastClassByCGLIB$$")) {
+			return true;
+		}
+		// JDK dynamic proxies: com.sun.proxy.$Proxy0, jdk.proxy1.$Proxy2
+		if (className.startsWith("com.sun.proxy.") || className.startsWith("jdk.proxy")) {
+			return true;
+		}
+		// Lambda form classes: java.lang.invoke.LambdaForm$MH, Foo$$Lambda$123
+		if (className.contains("$$Lambda$") || className.startsWith("java.lang.invoke.LambdaForm$")) {
+			return true;
+		}
+		// Hibernate/Spring runtime repackaged classes
+		if (className.startsWith("org.hibernate.repackage.") || className.startsWith("org.springframework.cglib.")) {
+			return true;
+		}
+		return false;
 	}
 
 	/**
