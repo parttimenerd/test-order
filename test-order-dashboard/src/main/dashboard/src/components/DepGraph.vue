@@ -17,7 +17,7 @@ const classHover = useClassHover()
 
 interface GNode extends d3.SimulationNodeDatum {
   id: string; type: string; changed: boolean; shortLabel: string; depCount: number
-  mass?: number; pkg?: string
+  mass?: number; pkg?: string; outerClass?: string
 }
 interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean }
 
@@ -123,7 +123,9 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
   function addNode(id: string, type: string, changed: boolean) {
     if (!nodeMap[id]) {
       const dot = id.lastIndexOf('.')
-      const simpleLabel = dot >= 0 ? id.substring(dot + 1) : id
+      const afterPkg = dot >= 0 ? id.substring(dot + 1) : id
+      // For inner classes (OuterClass$Inner), show as "Outer$Inner" after pkg
+      const simpleLabel = afterPkg
       nodeMap[id] = { id, type, changed: !!changed, shortLabel: simpleLabel, depCount: 0 }
     }
   }
@@ -214,6 +216,10 @@ function initGraph() {
     n.mass = n.type === 'test' || n.type === 'method' ? 2 + 3 * (n.depCount || 0) / maxDeps : n.changed ? 0.5 : 1
     const dotIdx = n.id.lastIndexOf('.')
     n.pkg = dotIdx > 0 ? n.id.substring(0, dotIdx) : '(default)'
+    // Detect inner classes: com.foo.OuterClass$Inner → outerClass = com.foo.OuterClass
+    const afterPkg = dotIdx > 0 ? n.id.substring(dotIdx + 1) : n.id
+    const dollarIdx = afterPkg.indexOf('$')
+    n.outerClass = dollarIdx > 0 ? n.id.substring(0, dotIdx > 0 ? dotIdx + 1 + dollarIdx : dollarIdx) : undefined
     const angle = (i / nodes.length) * 2 * Math.PI
     const r = Math.min(W, H) * 0.25
     n.x = W / 2 + r * Math.cos(angle)
@@ -227,13 +233,47 @@ function initGraph() {
   const hues = ['210,80%', '330,70%', '120,60%', '45,75%', '270,65%', '0,70%', '180,65%', '60,70%', '300,60%', '150,70%']
   pkgNames.forEach((p, i) => pkgColors[p] = `hsla(${hues[i % hues.length].split(',')[0]},${hues[i % hues.length].split(',')[1]},0.08)`)
 
-  const bubbleGroup = g.insert('g', 'g').attr('class', 'pkg-bubbles')
+  // Build outer-class groups: a group exists when ≥2 nodes share the same outerClass
+  // (the outer class node itself, if present, counts as part of its own group)
+  const outerClassMap: Record<string, GNode[]> = {}
+  nodes.forEach(n => {
+    const key = n.outerClass ?? (n.id.includes('$') ? undefined : n.id)
+    // Only group: inner-class nodes (have outerClass) AND their outer class node (if present)
+    if (n.outerClass) {
+      if (!outerClassMap[n.outerClass]) outerClassMap[n.outerClass] = []
+      outerClassMap[n.outerClass].push(n)
+    }
+    // If this node IS the outer class (no $), add it to its own group so it gets pulled in
+    if (!n.outerClass && nodes.some(other => other.outerClass === n.id)) {
+      if (!outerClassMap[n.id]) outerClassMap[n.id] = []
+      outerClassMap[n.id].push(n)
+    }
+  })
+
+  const bubbleGroup = g.append('g').attr('class', 'pkg-bubbles')
+  const subBubbleGroup = g.append('g').attr('class', 'class-bubbles')
   const sim = d3.forceSimulation(nodes)
     .force('link', d3.forceLink<GNode, GLink>(links).id(n => n.id).distance(GRAPH.LINK_DISTANCE))
     .force('charge', d3.forceManyBody().strength(nodes.length > GRAPH.CHARGE_THRESHOLD ? GRAPH.CHARGE_LARGE : GRAPH.CHARGE_SMALL))
     .force('center', d3.forceCenter(W / 2, H / 2))
     .force('collision', d3.forceCollide(GRAPH.COLLISION_RADIUS))
     .velocityDecay(0.4)
+
+  // Clustering force: pull inner-class nodes toward their group centroid
+  const outerClassGroups = Object.entries(outerClassMap).filter(([, m]) => m.length >= 2)
+  if (outerClassGroups.length > 0) {
+    sim.force('classCluster', () => {
+      const strength = 0.15
+      for (const [, members] of outerClassGroups) {
+        const cx = members.reduce((s, n) => s + (n.x || 0), 0) / members.length
+        const cy = members.reduce((s, n) => s + (n.y || 0), 0) / members.length
+        for (const n of members) {
+          n.vx = (n.vx || 0) + (cx - (n.x || 0)) * strength
+          n.vy = (n.vy || 0) + (cy - (n.y || 0)) * strength
+        }
+      }
+    })
+  }
 
   const link = g.append('g').selectAll('line').data(links).join('line')
     .attr('stroke', l => l.changed ? '#f59e0b' : '#334155').attr('stroke-width', 1.5).attr('stroke-opacity', 0.6)
@@ -272,12 +312,15 @@ function initGraph() {
           return c.totalMembers > 0 ? ` · ${c.coveredMembers}/${c.totalMembers} methods` : ''
         })()
       : ''
+    const innerStr = n.outerClass
+      ? `<br><span style="color:#818cf8;font-size:9px">inner class of ${esc(n.outerClass.split('.').pop()!)}</span>`
+      : ''
     const hint = isTest ? '<br><span style="color:#818cf8;font-size:9px">click → go to test</span>'
       : isDep ? `<br><span style="color:#64748b;font-size:9px">click → inspect coverage</span>` : ''
     tip.style('opacity', '1').html(
       `<strong>${esc(n.id)}</strong><br>` +
       `<span style="color:#64748b">${n.type === 'test' ? n.depCount + ' deps' : `dep · ${n.changed ? '<span style=color:#ef4444>changed</span>' : 'unchanged'}${covStr}`}</span>` +
-      `<br><span style="color:#475569;font-size:9px">pkg: ${esc(n.pkg)}</span>${hint}`
+      `<br><span style="color:#475569;font-size:9px">pkg: ${esc(n.pkg)}</span>${innerStr}${hint}`
     )
     classHover.show(n.id, e)
   }).on('mousemove', e => { tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'); classHover.move(e) })
@@ -320,6 +363,39 @@ function initGraph() {
         .data([pkg])
         .join('title')
         .text(p => p)
+    })
+
+    // Sub-bubbles for inner class groups (tighter, dashed border)
+    const subEntries = outerClassGroups
+    const subRects = subBubbleGroup.selectAll<SVGRectElement, [string, GNode[]]>('rect')
+      .data(subEntries, ([outerCls]) => outerCls)
+    subRects.exit().remove()
+    const subEnter = subRects.enter().append('rect')
+      .attr('rx', 7).attr('ry', 7).attr('stroke-width', 1)
+      .attr('stroke-dasharray', '3,2')
+      .attr('fill', 'rgba(99,102,241,.07)')
+      .attr('stroke', 'rgba(99,102,241,.35)')
+    subEnter.merge(subRects).each(function([, members]) {
+      const xs = members.map(n => n.x!), ys = members.map(n => n.y!)
+      const pad = 14
+      const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad
+      const x1 = Math.max(...xs) + pad, y1 = Math.max(...ys) + pad
+      d3.select(this).attr('x', x0).attr('y', y0).attr('width', x1 - x0).attr('height', y1 - y0)
+    })
+    // Sub-bubble labels: the outer class simple name
+    const subLabels = subBubbleGroup.selectAll<SVGTextElement, [string, GNode[]]>('text')
+      .data(subEntries, ([outerCls]) => outerCls)
+    subLabels.exit().remove()
+    const subEnterL = subLabels.enter().append('text')
+      .attr('font-size', '7.5px').attr('fill', '#818cf8').attr('font-weight', '600')
+      .attr('paint-order', 'stroke').attr('stroke', 'rgba(0,0,0,0.7)').attr('stroke-width', '2px')
+    subEnterL.merge(subLabels).each(function([outerCls, members]) {
+      const xs = members.map(n => n.x!), ys = members.map(n => n.y!)
+      const pad = 14
+      const dot = outerCls.lastIndexOf('.')
+      const simpleName = dot >= 0 ? outerCls.substring(dot + 1) : outerCls
+      d3.select(this).attr('x', Math.min(...xs) - pad + 4).attr('y', Math.min(...ys) - pad + 10)
+        .text(simpleName)
     })
   }
 
