@@ -2,6 +2,7 @@ package me.bechberger.testorder.ops;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 
 import me.bechberger.testorder.DependencyMap;
@@ -57,7 +58,8 @@ public final class AggregateOperation {
 		int depsFileCount = 0;
 		try (java.util.stream.Stream<java.nio.file.Path> files = Files.list(depsDir)) {
 			depsFileCount = (int) files.filter(f -> f.getFileName().toString().endsWith(".deps")).count();
-		} catch (IOException ignored) {
+		} catch (NoSuchFileException ignored) {
+			// depsDir hasn't been created yet — agent produced no .deps files
 		}
 
 		if (incremental) {
