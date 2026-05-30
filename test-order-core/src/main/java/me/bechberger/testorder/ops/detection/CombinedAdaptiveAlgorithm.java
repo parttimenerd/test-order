@@ -85,7 +85,6 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 		while (!workQueue.isEmpty() && !ctx.timeBudgetExhausted() && runsUsed < maxRuns) {
 			Action action = workQueue.poll();
 			runsUsed += executeAction(action, ctx, workQueue, knowledge, findings, rng);
-			ctx.recordRun(findings.size());
 
 			// Adaptation: if we're finding lots of brittles, add exclusion probes
 			long brittleCount = findings.stream().filter(r -> r.type() == ODType.BRITTLE).count();
@@ -98,9 +97,8 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 		while (!ctx.timeBudgetExhausted() && runsUsed < maxRuns) {
 			List<String> shuffled = new ArrayList<>(ctx.referenceOrder());
 			Collections.shuffle(shuffled, rng);
-			TestRunResult result = ctx.runner().run(shuffled);
+			TestRunResult result = ctx.run(shuffled, findings.size());
 			runsUsed++;
-			ctx.recordRun(findings.size());
 
 			for (String failed : result.failedTests()) {
 				if (!ctx.passingTests().contains(failed))
@@ -121,7 +119,6 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 			// Process any newly scheduled actions
 			while (!workQueue.isEmpty() && !ctx.timeBudgetExhausted() && runsUsed < maxRuns) {
 				runsUsed += executeAction(workQueue.poll(), ctx, workQueue, knowledge, findings, rng);
-				ctx.recordRun(findings.size());
 			}
 		}
 
@@ -133,7 +130,7 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 		// Run reverse order — cheapest possible OD discovery
 		List<String> reversed = new ArrayList<>(ctx.referenceOrder());
 		Collections.reverse(reversed);
-		TestRunResult result = ctx.runner().run(reversed);
+		TestRunResult result = ctx.run(reversed, findings.size());
 
 		for (String failed : result.failedTests()) {
 			if (!ctx.passingTests().contains(failed))
@@ -199,7 +196,7 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 		String suspect = action.candidates.get(0);
 
 		// Run [suspect, victim] — does victim fail?
-		TestRunResult result = ctx.runner().run(List.of(suspect, action.victim));
+		TestRunResult result = ctx.run(List.of(suspect, action.victim), 0);
 
 		if (result.failed(action.victim)) {
 			tk.confirmedPolluters().add(suspect);
@@ -217,7 +214,7 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 		String setter = action.candidates.get(0);
 
 		// Run [setter, brittle] — does brittle pass? (confirms dependency)
-		TestRunResult result = ctx.runner().run(List.of(setter, action.victim));
+		TestRunResult result = ctx.run(List.of(setter, action.victim), 0);
 
 		if (result.passed(action.victim)) {
 			tk.confirmedSetters().add(setter);
@@ -240,7 +237,7 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 
 		if (!minimal.isEmpty()) {
 			// Verify: does victim pass alone?
-			TestRunResult isolation = ctx.runner().run(List.of(action.victim));
+			TestRunResult isolation = ctx.run(List.of(action.victim), 0);
 			runs++;
 
 			if (isolation.passed(action.victim)) {
@@ -273,11 +270,11 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 		String suspect = action.candidates.get(0);
 
 		// Run [suspect, victim] in that order
-		TestRunResult result = ctx.runner().run(List.of(suspect, action.victim));
+		TestRunResult result = ctx.run(List.of(suspect, action.victim), 0);
 
 		if (result.failed(action.victim)) {
 			// Verify it's not just flaky: run victim alone
-			TestRunResult isolation = ctx.runner().run(List.of(action.victim));
+			TestRunResult isolation = ctx.run(List.of(action.victim), 0);
 			if (isolation.passed(action.victim)) {
 				tk.confirmedPolluters().add(suspect);
 				// Don't add to findings yet — schedule a proper ISOLATE_PAIR to confirm
@@ -295,7 +292,7 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 			Map<String, TestKnowledge> knowledge, Random rng) {
 		List<String> shuffled = new ArrayList<>(ctx.referenceOrder());
 		Collections.shuffle(shuffled, rng);
-		TestRunResult result = ctx.runner().run(shuffled);
+		TestRunResult result = ctx.run(shuffled, 0);
 
 		for (String failed : result.failedTests()) {
 			if (!ctx.passingTests().contains(failed))
@@ -318,7 +315,7 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 
 		List<String> order = new ArrayList<>(ctx.referenceOrder());
 		order.remove(excluded);
-		TestRunResult result = ctx.runner().run(order);
+		TestRunResult result = ctx.run(order, 0);
 
 		for (String failed : result.failedTests()) {
 			if (!ctx.passingTests().contains(failed))

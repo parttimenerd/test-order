@@ -45,8 +45,7 @@ public class RandomReorderingAlgorithm implements DetectionAlgorithm {
 			List<String> shuffled = new ArrayList<>(ctx.referenceOrder());
 			Collections.shuffle(shuffled, rng);
 
-			TestRunResult result = ctx.runner().run(shuffled);
-			ctx.recordRun(findings.size());
+			TestRunResult result = ctx.run(shuffled, findings.size());
 
 			for (String failed : result.failedTests()) {
 				if (!ctx.passingTests().contains(failed))

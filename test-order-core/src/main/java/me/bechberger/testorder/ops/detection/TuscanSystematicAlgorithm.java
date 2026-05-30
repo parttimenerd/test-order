@@ -48,7 +48,7 @@ public class TuscanSystematicAlgorithm implements DetectionAlgorithm {
 				order.add(tests.get((j + row) % n));
 			}
 
-			TestRunResult result = ctx.runner().run(order);
+			TestRunResult result = ctx.run(order, findings.size());
 
 			for (String failed : result.failedTests()) {
 				if (!ctx.passingTests().contains(failed))
@@ -63,7 +63,7 @@ public class TuscanSystematicAlgorithm implements DetectionAlgorithm {
 
 				if (suspect != null) {
 					// Quick verification: [suspect, victim] should fail
-					TestRunResult verify = ctx.runner().run(List.of(suspect, failed));
+					TestRunResult verify = ctx.run(List.of(suspect, failed), findings.size());
 					if (verify.failed(failed)) {
 						findings.add(new ODResult(failed, ODType.VICTIM, List.of(suspect, failed), "Tuscan: " + suspect
 								+ " immediately before " + failed + " causes failure (row " + row + ")", 0.9));

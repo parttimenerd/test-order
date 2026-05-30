@@ -47,7 +47,7 @@ public class IterativeRefinementAlgorithm implements DetectionAlgorithm {
 
 			// Generate an order that violates all edges in the cluster
 			List<String> order = generateViolation(cluster, ctx.referenceOrder());
-			TestRunResult result = ctx.runner().run(order);
+			TestRunResult result = ctx.run(order, findings.size());
 
 			if (result.allPassed())
 				continue; // Cluster is benign
@@ -66,7 +66,7 @@ public class IterativeRefinementAlgorithm implements DetectionAlgorithm {
 
 				if (!minimalPolluters.isEmpty()) {
 					// Verify: does victim pass alone?
-					TestRunResult isolation = ctx.runner().run(List.of(failed));
+					TestRunResult isolation = ctx.run(List.of(failed), findings.size());
 					if (isolation.passed(failed)) {
 						findings.add(new ODResult(failed, ODType.VICTIM, buildChain(minimalPolluters, failed),
 								"Iterative refinement: " + minimalPolluters + " → " + failed, 0.95));

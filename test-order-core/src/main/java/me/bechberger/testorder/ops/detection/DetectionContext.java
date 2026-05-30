@@ -47,6 +47,18 @@ public record DetectionContext(ConflictGraph graph, DependencyMap depMap, TestOr
 		return System.currentTimeMillis() >= deadlineMillis;
 	}
 
+	/** Execute a test run, increment the counter, and log periodic progress. */
+	public TestRunner.TestRunResult run(List<String> order) {
+		return run(order, 0);
+	}
+
+	/** Execute a test run, increment the counter, and log periodic progress. */
+	public TestRunner.TestRunResult run(List<String> order, int findingsSoFar) {
+		TestRunner.TestRunResult result = runner.run(order);
+		recordRun(findingsSoFar);
+		return result;
+	}
+
 	/** Record that a test run was executed and log periodic progress. */
 	public void recordRun(int findingsSoFar) {
 		int count = runCounter.incrementAndGet();

@@ -31,7 +31,7 @@ public class ReverseOrderAlgorithm implements DetectionAlgorithm {
 		List<String> reversed = new ArrayList<>(ctx.referenceOrder());
 		Collections.reverse(reversed);
 
-		TestRunResult result = ctx.runner().run(reversed);
+		TestRunResult result = ctx.run(reversed);
 		List<ODResult> findings = new ArrayList<>();
 
 		for (String failed : result.failedTests()) {

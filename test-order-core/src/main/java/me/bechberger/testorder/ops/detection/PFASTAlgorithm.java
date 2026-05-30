@@ -39,7 +39,7 @@ public class PFASTAlgorithm implements DetectionAlgorithm {
 			List<String> order = new ArrayList<>(ctx.referenceOrder());
 			order.remove(excluded);
 
-			TestRunResult result = ctx.runner().run(order);
+			TestRunResult result = ctx.run(order, findings.size());
 
 			for (String failed : result.failedTests()) {
 				if (!ctx.passingTests().contains(failed))
@@ -48,7 +48,7 @@ public class PFASTAlgorithm implements DetectionAlgorithm {
 					continue;
 
 				// Test Y failed without X → verify: does [X, Y] make Y pass?
-				TestRunResult verify = ctx.runner().run(List.of(excluded, failed));
+				TestRunResult verify = ctx.run(List.of(excluded, failed), findings.size());
 				if (verify.passed(failed)) {
 					confirmed.add(failed);
 					findings.add(new ODResult(failed, ODType.BRITTLE, List.of(excluded, failed),

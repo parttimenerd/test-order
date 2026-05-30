@@ -63,14 +63,14 @@ public class DependenceAwareBoundedAlgorithm implements DetectionAlgorithm {
 				continue;
 
 			// Verify victim passes alone
-			TestRunResult isolation = ctx.runner().run(List.of(victim));
+			TestRunResult isolation = ctx.run(List.of(victim), findings.size());
 			if (!isolation.passed(victim))
 				continue; // Not a victim, just flaky
 
 			// Try candidates in an order that should pollute
 			List<String> testOrder = new ArrayList<>(candidates);
 			testOrder.add(victim);
-			TestRunResult result = ctx.runner().run(testOrder);
+			TestRunResult result = ctx.run(testOrder, findings.size());
 
 			if (result.passed(victim))
 				continue; // No pollution
