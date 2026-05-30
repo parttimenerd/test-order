@@ -44,8 +44,8 @@ public final class SetCoverComputer<T, C> {
 			for (C element : covered) {
 				if (universe.contains(element)) {
 					intersectionSize++;
+					coveredBy.computeIfAbsent(element, ignored -> new ArrayList<>()).add(entry.getKey());
 				}
-				coveredBy.computeIfAbsent(element, ignored -> new ArrayList<>()).add(entry.getKey());
 			}
 			remainingCounts.put(entry.getKey(), intersectionSize);
 			initialCounts.put(entry.getKey(), intersectionSize);

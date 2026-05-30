@@ -245,9 +245,13 @@ public final class ChangeAnalysis {
 				mergedKeys.add(memberKey);
 				mergedByClass.computeIfAbsent(cls, k -> new java.util.LinkedHashSet<>()).add(member);
 			}
+			Map<String, Set<String>> unmodifiableByClass = new java.util.LinkedHashMap<>();
+			for (var e : mergedByClass.entrySet()) {
+				unmodifiableByClass.put(e.getKey(), java.util.Collections.unmodifiableSet(e.getValue()));
+			}
 			changedMembers = new ChangedMembers(java.util.Collections.unmodifiableSet(mergedClasses),
 					java.util.Collections.unmodifiableSet(mergedKeys),
-					java.util.Collections.unmodifiableMap(mergedByClass), typeChanges, staticFieldKeys);
+					java.util.Collections.unmodifiableMap(unmodifiableByClass), typeChanges, staticFieldKeys);
 		}
 
 		// ── Static call-graph expansion (optional) ──────────────────────
