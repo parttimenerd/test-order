@@ -214,18 +214,32 @@ public class MavenRunner {
 			pb.environment().put("MAVEN_OPTS", "");
 
 			Process process = pb.start();
-			String output = new String(process.getInputStream().readAllBytes());
+
+			// Read output asynchronously so waitFor timeout is effective.
+			// readAllBytes() blocks until process closes stdout — if the process hangs,
+			// it never returns, making the timeout below unreachable.
+			final StringBuilder outputBuf = new StringBuilder();
+			Thread outputReader = new Thread(() -> {
+				try {
+					outputBuf.append(new String(process.getInputStream().readAllBytes()));
+				} catch (IOException ignored) {
+				}
+			}, "maven-output-reader");
+			outputReader.setDaemon(true);
+			outputReader.start();
 
 			boolean finished = process.waitFor(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 			if (!finished) {
 				killProcessTree(process);
-				return new MavenResult(-1, output + "\n[TIMEOUT after " + DEFAULT_TIMEOUT_SECONDS + "s]",
+				outputReader.interrupt();
+				return new MavenResult(-1, outputBuf + "\n[TIMEOUT after " + DEFAULT_TIMEOUT_SECONDS + "s]",
 						List.copyOf(command), projectDir);
 			}
 
+			outputReader.join(5_000); // allow trailing output to drain
 			int exitCode = process.exitValue();
 			waitForDescendantsToExit(process);
-			return new MavenResult(exitCode, output, List.copyOf(command), projectDir);
+			return new MavenResult(exitCode, outputBuf.toString(), List.copyOf(command), projectDir);
 		} catch (IOException | InterruptedException e) {
 			throw new RuntimeException("Failed to run Maven: " + command, e);
 		}

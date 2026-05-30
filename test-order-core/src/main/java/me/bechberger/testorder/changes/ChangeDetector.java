@@ -152,11 +152,9 @@ public class ChangeDetector {
 	/**
 	 * Finds the git repository root via {@code git rev-parse --show-toplevel}.
 	 * Falls back to projectRoot if git is unavailable.
-	 */
-	/**
-	 * Cache for git root resolution. The git root is the same for all modules in a
-	 * reactor build, so we cache it per projectRoot to avoid repeated subprocess
-	 * calls.
+	 * <p>
+	 * Cached per projectRoot to avoid repeated subprocess calls in reactor builds
+	 * where the git root is the same for all modules.
 	 */
 	private static final ConcurrentHashMap<Path, Path> gitRootCache = new ConcurrentHashMap<>();
 
