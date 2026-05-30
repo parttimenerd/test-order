@@ -1939,11 +1939,13 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				break;
 			}
 		}
+		List<Path> checked = new ArrayList<>();
 		for (String version : new String[]{pluginVersion, project.getVersion()}) {
 			if (version == null)
 				continue;
 			Path baseDir = Path.of(repoPath).resolve("me/bechberger/test-order-core").resolve(version);
 			Path shadedJar = baseDir.resolve("test-order-core-" + version + "-all.jar");
+			checked.add(shadedJar);
 			if (Files.exists(shadedJar)) {
 				return shadedJar;
 			}
@@ -1957,9 +1959,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.isDirectory(reactorClassesDir)) {
 			return reactorClassesDir;
 		}
+		// Also try the shaded jar using the resolveArtifact path (handles non-standard
+		// repo layouts, classifier installs, etc.)
+		Path shadedViaResolver = resolveArtifactShaded("test-order-core");
+		if (shadedViaResolver != null) {
+			return shadedViaResolver;
+		}
 		// Fallback to unshaded plain jar — risks classpath conflicts but better than
 		// nothing.
-		getLog().warn("[test-order] Shaded test-order-core-all.jar not found — falling back to unshaded jar. "
+		getLog().warn("[test-order] Shaded test-order-core-all.jar not found (checked: " + checked
+				+ ") — falling back to unshaded jar. "
 				+ "If you see NoSuchMethodError or similar, run: mvn install on the test-order project.");
 		return resolveArtifact("test-order-core");
 	}
@@ -2336,6 +2345,50 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 	// ── Artifact resolution ───────────────────────────────────────────
 
+	/**
+	 * Resolves only the shaded (-all.jar) variant of an artifact using the same
+	 * version-lookup logic as {@link #resolveArtifact}. Returns null when not
+	 * found.
+	 */
+	private Path resolveArtifactShaded(String artifactId) {
+		String repoPath = session != null && session.getLocalRepository() != null
+				? session.getLocalRepository().getBasedir()
+				: System.getProperty("user.home", "") + "/.m2/repository";
+		Path localRepo = Path.of(repoPath);
+		String pluginVersion = null;
+		for (Plugin p : project.getBuildPlugins()) {
+			if ("test-order-maven-plugin".equals(p.getArtifactId()) && "me.bechberger".equals(p.getGroupId())) {
+				pluginVersion = p.getVersion();
+				break;
+			}
+		}
+		for (String version : new String[]{pluginVersion, project.getVersion()}) {
+			if (version == null)
+				continue;
+			Path baseDir = localRepo.resolve("me/bechberger").resolve(artifactId).resolve(version);
+			Path shadedJar = baseDir.resolve(artifactId + "-" + version + "-all.jar");
+			if (Files.exists(shadedJar))
+				return shadedJar;
+		}
+		// Try scanning all installed versions, preferring newest
+		Path artifactRepoDir = localRepo.resolve("me/bechberger").resolve(artifactId);
+		if (Files.isDirectory(artifactRepoDir)) {
+			try (Stream<Path> versions = Files.list(artifactRepoDir)) {
+				return versions.filter(Files::isDirectory).sorted(java.util.Comparator.<Path, Long>comparing(d -> {
+					try {
+						return Files.getLastModifiedTime(d).toMillis();
+					} catch (IOException e) {
+						return 0L;
+					}
+				}).reversed()).map(dir -> dir.resolve(artifactId + "-" + dir.getFileName() + "-all.jar"))
+						.filter(Files::exists).findFirst().orElse(null);
+			} catch (IOException e) {
+				// fall through
+			}
+		}
+		return null;
+	}
+
 	protected Path resolveArtifact(String artifactId) throws MojoExecutionException {
 		// Check cache first to avoid repeated filesystem lookups in multi-module builds
 		Path cachedResult = resolvedArtifactCache.get(artifactId);
@@ -2427,15 +2480,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	private Path findBestArtifactJar(Path baseDir, String artifactId, String version) {
-		Path artifactPath = baseDir.resolve(artifactId + "-" + version + ".jar");
-		if (Files.exists(artifactPath))
-			return artifactPath;
-		Path fatJarPath = baseDir.resolve(artifactId + "-" + version + "-jar-with-dependencies.jar");
-		if (Files.exists(fatJarPath))
-			return fatJarPath;
+		// Prefer shaded -all.jar (bundles LZ4 etc.), then jar-with-dependencies, then
+		// plain jar.
 		Path shadedJarPath = baseDir.resolve(artifactId + "-" + version + "-all.jar");
 		if (Files.exists(shadedJarPath))
 			return shadedJarPath;
+		Path fatJarPath = baseDir.resolve(artifactId + "-" + version + "-jar-with-dependencies.jar");
+		if (Files.exists(fatJarPath))
+			return fatJarPath;
+		Path artifactPath = baseDir.resolve(artifactId + "-" + version + ".jar");
+		if (Files.exists(artifactPath))
+			return artifactPath;
 		return null;
 	}
 }

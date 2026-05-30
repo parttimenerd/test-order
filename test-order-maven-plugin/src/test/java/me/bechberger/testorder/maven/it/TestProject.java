@@ -185,7 +185,8 @@ public class TestProject {
 
 	/**
 	 * Load the dependency index (test-dependencies.lz4). Returns null if it doesn't
-	 * exist.
+	 * exist. Also processes the collector-fallback file if present, so that a learn
+	 * run without <extensions>true</extensions> still produces a readable index.
 	 */
 	public DependencyMap loadIndex() {
 		return loadIndex(".test-order/test-dependencies.lz4");
@@ -199,9 +200,22 @@ public class TestProject {
 		// Poll for up to 3 seconds (same approach as loadState).
 		for (int i = 0; i < 6 && !Files.exists(idx); i++) {
 			try {
+				// Also try to process any fallback file that was written when the
+				// CollectorLifecycleParticipant wasn't registered (no extensions=true).
+				try {
+					me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idx);
+				} catch (Exception ignored) {
+				}
 				Thread.sleep(500);
 			} catch (InterruptedException e) {
 				break;
+			}
+		}
+		if (!Files.exists(idx)) {
+			// One final attempt to process the fallback file
+			try {
+				me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idx);
+			} catch (Exception ignored) {
 			}
 		}
 		if (!Files.exists(idx))

@@ -35,8 +35,20 @@ public final class UncertainClassesStore {
 				w.write(fqcn);
 				w.newLine();
 			}
+		} catch (IOException e) {
+			Files.deleteIfExists(tmp);
+			throw e;
 		}
-		Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		try {
+			Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		} catch (IOException e) {
+			try {
+				Files.deleteIfExists(tmp);
+			} catch (IOException suppressed) {
+				e.addSuppressed(suppressed);
+			}
+			throw e;
+		}
 	}
 
 	/**

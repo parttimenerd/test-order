@@ -91,6 +91,15 @@ class AbstractTestOrderMojoTest {
 
 		Path resolved = invokeFindBestArtifactJar(tempDir, "test-order-core", "0.0.1-SNAPSHOT");
 
+		assertThat(resolved).isEqualTo(tempDir.resolve("test-order-core-0.0.1-SNAPSHOT-all.jar"));
+	}
+
+	@Test
+	void findBestArtifactJar_plainJarWhenNoShadedPresent() throws Exception {
+		Files.createFile(tempDir.resolve("test-order-core-0.0.1-SNAPSHOT.jar"));
+
+		Path resolved = invokeFindBestArtifactJar(tempDir, "test-order-core", "0.0.1-SNAPSHOT");
+
 		assertThat(resolved).isEqualTo(tempDir.resolve("test-order-core-0.0.1-SNAPSHOT.jar"));
 	}
 
