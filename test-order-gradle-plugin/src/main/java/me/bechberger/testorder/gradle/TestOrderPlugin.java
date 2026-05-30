@@ -436,7 +436,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         // Check Gradle property / system property override
         String propMode = gradleOrSystemProperty(project, "testorder.mode");
-        if (propMode != null) mode = propMode;
+        if (propMode != null && !propMode.isBlank()) mode = propMode;
 
         PluginContext pctx = buildPluginContext(project, ext);
         Path rootDir = project.getRootProject().getProjectDir().toPath();
