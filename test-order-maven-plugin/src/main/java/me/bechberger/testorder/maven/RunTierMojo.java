@@ -34,7 +34,7 @@ import me.bechberger.testorder.TestSelector;
 public class RunTierMojo extends AbstractTestOrderMojo {
 
 	/** Which tier to run: 2 or 3. */
-	@Parameter(property = MavenPluginConfigKeys.TIERED_CURRENT_TIER, required = true)
+	@Parameter(property = MavenPluginConfigKeys.TIERED_CURRENT_TIER, defaultValue = "0")
 	private int currentTier;
 
 	/** File containing the tier 2 test classes (written by tiered-select). */

@@ -340,7 +340,7 @@ public abstract class TestOrderExtension {
 
         // Validate instrumentation mode
         java.util.Set<String> validInstrModes = java.util.Set.of("CLASS", "FULL", "METHOD", "MEMBER");
-        String instrMode = getInstrumentationMode().getOrElse("FULL");
+        String instrMode = getInstrumentationMode().getOrElse("MEMBER");
         if (!validInstrModes.contains(instrMode.toUpperCase())) {
             logger.warn("[test-order] Invalid instrumentationMode '{}'. Valid values: {}.", instrMode, validInstrModes);
         }
