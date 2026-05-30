@@ -2,6 +2,7 @@ package me.bechberger.testorder.agent;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.objectweb.asm.*;
@@ -30,8 +31,17 @@ public class AsmClassTransformer implements ClassFileTransformer {
 	private final FieldTrackingMode fieldTrackingMode;
 	private final ClassIdMap classIdMap = ClassIdMap.getInstance();
 	private final AtomicBoolean cachesReleased = new AtomicBoolean();
+	/**
+	 * Non-null only in selective learn mode; null means "instrument everything".
+	 */
+	private final Set<String> uncertainClassesDots;
 
 	public AsmClassTransformer(Agent options) {
+		this(options, null);
+	}
+
+	public AsmClassTransformer(Agent options, Set<String> uncertainClasses) {
+		this.uncertainClassesDots = uncertainClasses;
 		this.mode = options.getMode();
 		this.fieldTrackingMode = fieldTrackingModeFor(mode);
 
@@ -120,7 +130,13 @@ public class AsmClassTransformer implements ClassFileTransformer {
 		if (className.equals("module-info") || className.endsWith("/module-info")) {
 			return false;
 		}
-		return filter.shouldInstrument(className);
+		if (!filter.shouldInstrument(className)) {
+			return false;
+		}
+		if (uncertainClassesDots != null) {
+			return uncertainClassesDots.contains(className.replace('/', '.'));
+		}
+		return true;
 	}
 
 	private byte[] doTransform(String className, byte[] classfileBuffer) {

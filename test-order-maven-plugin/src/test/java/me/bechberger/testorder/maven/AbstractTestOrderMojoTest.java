@@ -427,12 +427,106 @@ class AbstractTestOrderMojoTest {
 		assertThat(mojo.skipIfNotExplicitlySelectedReactorProject("select")).isTrue();
 	}
 
+	@Test
+	void resolveShadedCoreJar_prefersReactorClassesDirWhenPresent() throws Exception {
+		// Simulate a reactor build where test-order-core/target/classes exists as a
+		// sibling of the project basedir
+		Path projectBase = tempDir.resolve("my-project");
+		Files.createDirectories(projectBase);
+		Path reactorClasses = tempDir.resolve("test-order-core/target/classes");
+		Files.createDirectories(reactorClasses);
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBasedir()).thenReturn(projectBase.toFile());
+		when(project.getBuildPlugins()).thenReturn(List.of());
+		when(project.getVersion()).thenReturn("1.0.0");
+
+		TestMojo mojo = new TestMojo();
+		mojo.project = project;
+		// no session needed — reactor path is found first
+
+		Path result = invokeResolveShadedCoreJar(mojo);
+		assertThat(result).isEqualTo(reactorClasses);
+	}
+
+	@Test
+	void resolveShadedCoreJar_prefersPluginVersionShadedJar() throws Exception {
+		Path repoRoot = tempDir.resolve("repo");
+		Path shadedJar = repoRoot.resolve("me/bechberger/test-order-core/2.0.0/test-order-core-2.0.0-all.jar");
+		Files.createDirectories(shadedJar.getParent());
+		Files.writeString(shadedJar, "shaded");
+
+		// plain jar also exists — shaded must win
+		Path plainJar = repoRoot.resolve("me/bechberger/test-order-core/2.0.0/test-order-core-2.0.0.jar");
+		Files.writeString(plainJar, "plain");
+
+		Plugin plugin = new Plugin();
+		plugin.setGroupId("me.bechberger");
+		plugin.setArtifactId("test-order-maven-plugin");
+		plugin.setVersion("2.0.0");
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBasedir()).thenReturn(tempDir.resolve("project").toFile());
+		when(project.getBuildPlugins()).thenReturn(List.of(plugin));
+		when(project.getVersion()).thenReturn("1.9.0");
+
+		ArtifactRepository localRepo = mock(ArtifactRepository.class);
+		when(localRepo.getBasedir()).thenReturn(repoRoot.toString());
+		MavenSession session = mock(MavenSession.class);
+		when(session.getLocalRepository()).thenReturn(localRepo);
+
+		TestMojo mojo = new TestMojo();
+		mojo.project = project;
+		mojo.session = session;
+
+		Path result = invokeResolveShadedCoreJar(mojo);
+		assertThat(result).isEqualTo(shadedJar);
+	}
+
+	@Test
+	void resolveShadedCoreJar_fallsBackToProjectVersionWhenPluginVersionJarMissing() throws Exception {
+		Path repoRoot = tempDir.resolve("repo");
+		// Only the project-version shaded jar is present (no plugin-version jar)
+		Path shadedJar = repoRoot.resolve("me/bechberger/test-order-core/1.9.0/test-order-core-1.9.0-all.jar");
+		Files.createDirectories(shadedJar.getParent());
+		Files.writeString(shadedJar, "shaded");
+
+		Plugin plugin = new Plugin();
+		plugin.setGroupId("me.bechberger");
+		plugin.setArtifactId("test-order-maven-plugin");
+		plugin.setVersion("2.0.0"); // 2.0.0 jar absent
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBasedir()).thenReturn(tempDir.resolve("project").toFile());
+		when(project.getBuildPlugins()).thenReturn(List.of(plugin));
+		when(project.getVersion()).thenReturn("1.9.0");
+
+		ArtifactRepository localRepo = mock(ArtifactRepository.class);
+		when(localRepo.getBasedir()).thenReturn(repoRoot.toString());
+		MavenSession session = mock(MavenSession.class);
+		when(session.getLocalRepository()).thenReturn(localRepo);
+
+		TestMojo mojo = new TestMojo();
+		mojo.project = project;
+		mojo.session = session;
+
+		Path result = invokeResolveShadedCoreJar(mojo);
+		assertThat(result).isEqualTo(shadedJar);
+	}
+
 	private Path invokeFindBestArtifactJar(Path baseDir, String artifactId, String version)
 			throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 		Method method = AbstractTestOrderMojo.class.getDeclaredMethod("findBestArtifactJar", Path.class, String.class,
 				String.class);
 		method.setAccessible(true);
 		return (Path) method.invoke(new TestMojo(), baseDir, artifactId, version);
+	}
+
+	private Path invokeResolveShadedCoreJar(AbstractTestOrderMojo mojo)
+			throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+		Method method = AbstractTestOrderMojo.class.getDeclaredMethod("resolveShadedCoreJar");
+		method.setAccessible(true);
+		return (Path) method.invoke(mojo);
 	}
 
 	private static final class TestMojo extends AbstractTestOrderMojo {

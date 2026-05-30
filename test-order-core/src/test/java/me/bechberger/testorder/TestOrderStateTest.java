@@ -525,7 +525,7 @@ class TestOrderStateTest {
 		try (var in = new LZ4BlockInputStream(new ByteArrayInputStream(raw))) {
 			json = new String(in.readAllBytes(), StandardCharsets.UTF_8).strip();
 		}
-		assertTrue(json.contains("\"schemaVersion\":1"));
+		assertTrue(json.matches("(?s).*\"schemaVersion\"\\s*:\\s*1.*"));
 	}
 
 	@Test

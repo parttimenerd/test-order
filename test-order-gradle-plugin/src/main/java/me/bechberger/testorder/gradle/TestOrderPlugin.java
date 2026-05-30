@@ -566,6 +566,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     String.valueOf(project.getGroup()), sourceRoot, project.getLogger());
         }
         final String effectivePackages = includePackages;
+        final boolean selectiveLearn = resolveSelectiveLearn(project, ext);
 
         // doFirst: instrument classes before tests run
         testTask.doFirst("testOrderOfflineInstrument", t -> {
@@ -586,8 +587,39 @@ public class TestOrderPlugin implements Plugin<Project> {
                     ? List.of() : List.of(effectivePackages.split(","));
             me.bechberger.testorder.agent.Agent.InstrumentationMode mode =
                     me.bechberger.testorder.agent.Agent.InstrumentationMode.fromString(instrMode);
+
+            // Selective learn: compute uncertain classes if enabled and index exists
+            java.util.Set<String> uncertainClasses = null;
+            if (selectiveLearn) {
+                java.nio.file.Path idxPath = ext.getIndexFile().get().getAsFile().toPath();
+                boolean indexExists = java.nio.file.Files.exists(idxPath);
+                if (indexExists) {
+                    Path repoRoot = project.getRootProject().getProjectDir().toPath();
+                    java.nio.file.Path hashFilePath = ext.getHashFile().get().getAsFile().toPath();
+                    me.bechberger.testorder.changes.ChangeDetector.Mode changeDetectorMode;
+                    try {
+                        changeDetectorMode = me.bechberger.testorder.changes.ChangeDetectionSupport
+                                .resolveMode(resolveChangeMode(project, ext), hashFilePath);
+                    } catch (java.io.IOException e) {
+                        changeDetectorMode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
+                    }
+                    uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
+                            .computeUncertainClasses(repoRoot, classesDir, changeDetectorMode);
+                    if (uncertainClasses != null && !uncertainClasses.isEmpty()) {
+                        project.getLogger().lifecycle("[test-order] Selective instrument: {} uncertain class(es) will be instrumented",
+                                uncertainClasses.size());
+                    } else if (uncertainClasses != null) {
+                        // empty set — no structural changes; skip offline instrumentation entirely
+                        project.getLogger().lifecycle("[test-order] Selective instrument: no source changes detected; skipping instrumentation");
+                        return;
+                    }
+                } else {
+                    project.getLogger().lifecycle("[test-order] Selective instrument: no existing index — using full instrumentation for initial run");
+                }
+            }
+
             me.bechberger.testorder.agent.OfflineInstrumentor instrumentor =
-                    new me.bechberger.testorder.agent.OfflineInstrumentor(mode, includes, List.of());
+                    new me.bechberger.testorder.agent.OfflineInstrumentor(mode, includes, List.of(), uncertainClasses);
             try {
                 Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
                 Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
@@ -1208,6 +1240,11 @@ public class TestOrderPlugin implements Plugin<Project> {
                             pctx, "order", ciDownloadCb, effectiveDepsDir).execute();
 
                     if (result instanceof AutoWorkflow.Result.OrderSelect os) {
+                        if (os.attachLearnAgent()) {
+                            project.getLogger().warn(
+                                    "[test-order] alwaysLearn=true is currently only supported in the Maven plugin. "
+                                    + "Gradle support is pending — flag has no effect on this run.");
+                        }
                         TestSelector.Selection selection = os.selection();
                         applySelectedTests((Test) t, selection.selected());
                         if (selection.selected().isEmpty()) {
@@ -1787,17 +1824,20 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("");
                 log.lifecycle("CONFIGURATION (build.gradle testOrder { ... }):");
                 log.lifecycle("  mode                    auto | learn | order | optimize | skip");
-                log.lifecycle("  instrumentationMode     CLASS | METHOD | MEMBER");
+                log.lifecycle("  instrumentationMode     MEMBER (default) | CLASS | METHOD");
                 log.lifecycle("  changeMode              auto | since-last-run | since-last-commit | uncommitted | explicit");
                 log.lifecycle("  includePackages         Additional package prefixes to instrument");
                 log.lifecycle("  methodOrderingEnabled   Enable method-level reordering (default: false)");
                 log.lifecycle("  selectTopN              Top-scored tests to always select (default: -1 = all)");
                 log.lifecycle("  selectRandomM           Random diverse fast tests to add (default: 10)");
                 log.lifecycle("  autoLearnRunThreshold   Re-learn after N order runs (default: 10)");
+                log.lifecycle("  autoLearnDiffThreshold  Auto-learn if N+ classes change in one run (default: 0=disabled)");
                 log.lifecycle("  autoOptimizeEvery       Run weight optimization every N runs (default: 10)");
                 log.lifecycle("  autoCompactEvery        Auto-compact every N runs (default: 50)");
                 log.lifecycle("  tieredTier2Fraction     Tier-2 duration/count fraction 0–1 (default: 0.5)");
                 log.lifecycle("  springContextGrouping   Group tests by Spring context (default: false)");
+                log.lifecycle("  selectiveLearn          Only re-instrument changed classes + transitive callees (default: false)");
+                log.lifecycle("  alwaysLearn             Attach learn agent on every ordered run (default: false)");
                 log.lifecycle("");
                 log.lifecycle("SYSTEM PROPERTIES:");
                 log.lifecycle("  -Dtestorder.mode=<mode>           Override mode for this run");
@@ -1805,6 +1845,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  -Dtestorder.skip=true             Disable plugin entirely");
                 log.lifecycle("  -Dtestorder.debug=true            Verbose scoring output");
                 log.lifecycle("  -Dtestorder.changeMode=<mode>     Override change detection");
+                log.lifecycle("  -Dtestorder.learn.selective=true  Only re-instrument changed classes + transitive callees");
                 log.lifecycle("  -Dtestorder.failOnError=true      Fail build on diagnostic errors");
                 log.lifecycle("");
                 log.lifecycle("SCORE TUNING (-Dtestorder.score.<name>=<weight>):");
@@ -1920,6 +1961,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         return PluginContext.builder()
                 .projectRoot(project.getRootProject().getProjectDir().toPath().toAbsolutePath())
+                .repoRoot(project.getRootProject().getProjectDir().toPath().toAbsolutePath())
                 .sourceRoot(sourceRoot)
                 .testSourceRoot(testSourceRoot)
                 .additionalSourceRoots(additionalSourceRoots)
@@ -1953,6 +1995,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .selectedFile(ext.getSelectedFile().get().getAsFile().toPath())
                 .remainingFile(ext.getRemainingFile().get().getAsFile().toPath())
                 .springContextGrouping(ext.getSpringContextGrouping().get())
+                .selectiveLearn(resolveSelectiveLearn(project, ext))
+                .alwaysLearn(resolveAlwaysLearn(project, ext))
                 .verboseFile(ext.getVerboseFile().get() != null && !ext.getVerboseFile().get().isBlank()
                         ? Path.of(ext.getVerboseFile().get()) : null)
                 .projectName(project.getName())
@@ -2300,6 +2344,24 @@ public class TestOrderPlugin implements Plugin<Project> {
             return propChangeMode;
         }
         return ext.getChangeMode().get();
+    }
+
+    /** Resolves selectiveLearn from CLI property override or extension default. */
+    private static boolean resolveSelectiveLearn(Project project, TestOrderExtension ext) {
+        String prop = gradleOrSystemProperty(project, "testorder.learn.selective");
+        if (prop != null && !prop.isBlank()) {
+            return Boolean.parseBoolean(prop);
+        }
+        return ext.getSelectiveLearn().get();
+    }
+
+    /** Resolves alwaysLearn from CLI property override or extension default. */
+    private static boolean resolveAlwaysLearn(Project project, TestOrderExtension ext) {
+        String prop = gradleOrSystemProperty(project, "testorder.auto.alwaysLearn");
+        if (prop != null && !prop.isBlank()) {
+            return Boolean.parseBoolean(prop);
+        }
+        return ext.getAlwaysLearn().get();
     }
 
     private static void runShowReport(Project project, TestOrderExtension ext,

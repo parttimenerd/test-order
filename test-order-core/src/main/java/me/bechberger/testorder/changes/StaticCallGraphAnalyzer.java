@@ -214,6 +214,12 @@ public class StaticCallGraphAnalyzer {
 		// ── Seed: original changed keys, plus any subtype overrides of those keys ──
 		Set<String> seed = new LinkedHashSet<>(original.changedMemberKeys());
 		seed.addAll(original.changedStaticFieldKeys());
+		// Also seed the class-level marker for every changed class so that class-level
+		// reverse edges (annotation values, field-type refs, etc.) propagate to
+		// callers.
+		for (String cls : original.changedClasses()) {
+			seed.add(cls + "#" + CLASS_MARKER);
+		}
 		seed.addAll(propagateToOverrides(seed, scan));
 
 		int seedSize = seed.size();
@@ -480,7 +486,7 @@ public class StaticCallGraphAnalyzer {
 				@Override
 				public MethodVisitor visitMethod(int access, String methodName, String descriptor, String signature,
 						String[] exceptions) {
-					if (className[0] != null) {
+					if (className[0] != null && MemberFilter.shouldTrack(access)) {
 						result.declaredMethods.computeIfAbsent(className[0], k -> new HashSet<>()).add(methodName);
 					}
 					return null; // skip method body in pass 1
@@ -519,7 +525,9 @@ public class StaticCallGraphAnalyzer {
 				@Override
 				public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
 					if (className[0] != null) {
-						addClassRefFromDescriptor(result, descriptor, className[0] + "#" + CLASS_MARKER);
+						String classKey = className[0] + "#" + CLASS_MARKER;
+						addClassRefFromDescriptor(result, descriptor, classKey);
+						return classRefAnnotationVisitor(result, classKey);
 					}
 					return null;
 				}
@@ -539,7 +547,7 @@ public class StaticCallGraphAnalyzer {
 						@Override
 						public AnnotationVisitor visitAnnotation(String annDesc, boolean v) {
 							addClassRefFromDescriptor(result, annDesc, classKey);
-							return null;
+							return classRefAnnotationVisitor(result, classKey);
 						}
 					};
 				}
@@ -568,14 +576,14 @@ public class StaticCallGraphAnalyzer {
 						@Override
 						public AnnotationVisitor visitAnnotation(String annDesc, boolean visible) {
 							addClassRefFromDescriptor(result, annDesc, callerKey);
-							return null;
+							return classRefAnnotationVisitor(result, callerKey);
 						}
 
 						@Override
 						public AnnotationVisitor visitParameterAnnotation(int parameter, String annDesc,
 								boolean visible) {
 							addClassRefFromDescriptor(result, annDesc, callerKey);
-							return null;
+							return classRefAnnotationVisitor(result, callerKey);
 						}
 
 						@Override
@@ -726,6 +734,44 @@ public class StaticCallGraphAnalyzer {
 				addClassRefEdge(result, elem.getClassName(), callerKey);
 			}
 		}
+	}
+
+	/**
+	 * Walks annotation values and records every {@code Class<?>} literal,
+	 * {@code Class<?>[]} array, nested annotation type, and enum-constant type as a
+	 * class-level edge to {@code callerKey}.
+	 *
+	 * <p>
+	 * This is what makes Spring-style annotations produce useful edges:
+	 * {@code @SpringBootTest(classes = MyApp.class)} now records an edge
+	 * {@code Test → MyApp}, where previously only the annotation type itself was
+	 * recorded.
+	 */
+	private static AnnotationVisitor classRefAnnotationVisitor(ScanResult result, String callerKey) {
+		return new AnnotationVisitor(ASM9) {
+			@Override
+			public void visit(String name, Object value) {
+				if (value instanceof Type t) {
+					collectTypeRefs(t, result, callerKey);
+				}
+			}
+
+			@Override
+			public void visitEnum(String name, String descriptor, String value) {
+				addClassRefFromDescriptor(result, descriptor, callerKey);
+			}
+
+			@Override
+			public AnnotationVisitor visitAnnotation(String name, String descriptor) {
+				addClassRefFromDescriptor(result, descriptor, callerKey);
+				return classRefAnnotationVisitor(result, callerKey);
+			}
+
+			@Override
+			public AnnotationVisitor visitArray(String name) {
+				return classRefAnnotationVisitor(result, callerKey);
+			}
+		};
 	}
 
 	/**

@@ -142,7 +142,14 @@ public class UsageStore {
 			INITIAL_TEST_METHOD_CAPACITY);
 
 	private UsageStore() {
-		Runtime.getRuntime().addShutdownHook(new Thread(this::flush));
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			try {
+				flush();
+			} catch (NoClassDefFoundError ignored) {
+				// Classloader already torn down during JVM shutdown — deps were
+				// already sent via the in-process listener path; nothing to do.
+			}
+		}));
 	}
 
 	public static UsageStore getInstance() {

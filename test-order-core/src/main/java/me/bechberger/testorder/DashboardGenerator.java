@@ -1,5 +1,8 @@
 package me.bechberger.testorder;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -50,12 +53,23 @@ public class DashboardGenerator {
 	private final String stateFilePath;
 	private final String indexFilePath;
 	private final String pluginVersion;
+	/**
+	 * Optional: directory containing uncertain-classes*.txt files from
+	 * selective-learn runs.
+	 */
+	private final Path depsDir;
 
 	public DashboardGenerator(String projectName, String stateFilePath, String indexFilePath, String pluginVersion) {
+		this(projectName, stateFilePath, indexFilePath, pluginVersion, null);
+	}
+
+	public DashboardGenerator(String projectName, String stateFilePath, String indexFilePath, String pluginVersion,
+			Path depsDir) {
 		this.projectName = projectName;
 		this.stateFilePath = stateFilePath;
 		this.indexFilePath = indexFilePath;
 		this.pluginVersion = pluginVersion;
+		this.depsDir = depsDir;
 	}
 
 	// ── Public API ────────────────────────────────────────────────────────────
@@ -335,7 +349,71 @@ public class DashboardGenerator {
 			root.put("mutation", mutation);
 		}
 
+		// Static analysis: uncertain classes from selective-learn runs
+		root.put("staticAnalysis", buildStaticAnalysisData());
+
 		return root;
+	}
+
+	/**
+	 * Builds the staticAnalysis section: reads all uncertain-classes*.txt files
+	 * from the depsDir. Returns null when no files exist or depsDir is not set.
+	 */
+	private Map<String, Object> buildStaticAnalysisData() {
+		if (depsDir == null || !Files.isDirectory(depsDir)) {
+			return null;
+		}
+		// Prefix used when writing per-module uncertain-classes files
+		final String MODULE_PREFIX = "uncertain-classes-";
+		final String SUFFIX = ".txt";
+		List<Map<String, Object>> modules = new ArrayList<>();
+		try (var stream = Files.newDirectoryStream(depsDir, "uncertain-classes*.txt")) {
+			for (Path f : stream) {
+				String fname = f.getFileName().toString();
+				// Derive module name from filename:
+				// "uncertain-classes.txt" → "(default)"
+				// "uncertain-classes-groupId_art.txt" → "groupId_art"
+				// anything else (shouldn't exist but be safe) → use full filename
+				String moduleName;
+				if (fname.equals("uncertain-classes.txt")) {
+					moduleName = "(default)";
+				} else if (fname.startsWith(MODULE_PREFIX) && fname.endsWith(SUFFIX)
+						&& fname.length() > MODULE_PREFIX.length() + SUFFIX.length()) {
+					moduleName = fname.substring(MODULE_PREFIX.length(), fname.length() - SUFFIX.length());
+				} else {
+					// Unexpected name pattern — use as-is so it at least shows up
+					moduleName = fname;
+				}
+				List<String> classes = new ArrayList<>();
+				try {
+					for (String line : Files.readAllLines(f)) {
+						String t = line.trim();
+						if (!t.isEmpty()) {
+							classes.add(t);
+						}
+					}
+				} catch (IOException e) {
+					System.err.println("[test-order] Could not read " + f.getFileName() + ": " + e.getMessage());
+				}
+				classes.sort(String::compareTo);
+				Map<String, Object> entry = new LinkedHashMap<>();
+				entry.put("module", moduleName);
+				entry.put("count", classes.size());
+				entry.put("classes", classes);
+				modules.add(entry);
+			}
+		} catch (IOException ignored) {
+		}
+		if (modules.isEmpty()) {
+			return null;
+		}
+		modules.sort(Comparator.comparing(m -> (String) m.get("module")));
+		Map<String, Object> result = new LinkedHashMap<>();
+		result.put("enabled", true);
+		result.put("modules", modules);
+		int total = modules.stream().mapToInt(m -> (int) m.get("count")).sum();
+		result.put("totalUncertainClasses", total);
+		return result;
 	}
 
 	/**

@@ -1555,8 +1555,8 @@ public class DependencyMap {
 	 * <li>Logs aggregation stats</li>
 	 * </ul>
 	 */
-	public static void aggregateFromDepsDirectory(Path depsDir, Path indexFile) throws IOException {
-		aggregateFromDepsDirectory(depsDir, indexFile, null);
+	public static int aggregateFromDepsDirectory(Path depsDir, Path indexFile) throws IOException {
+		return aggregateFromDepsDirectory(depsDir, indexFile, null);
 	}
 
 	/**
@@ -1569,22 +1569,16 @@ public class DependencyMap {
 	 *            target index file
 	 * @param log
 	 *            optional logger (null = use System.out)
+	 * @return number of test classes in the aggregated map after merge, or 0 if
+	 *         nothing was aggregated
 	 */
-	public static void aggregateFromDepsDirectory(Path depsDir, Path indexFile,
+	public static int aggregateFromDepsDirectory(Path depsDir, Path indexFile,
 			me.bechberger.testorder.ops.PluginLog log) throws IOException {
 		if (!Files.isDirectory(depsDir)) {
-			return; // empty directory, skip
+			return 0; // empty directory, skip
 		}
 
-		// Load existing index as base, or start fresh
-		DependencyMap map;
-		if (Files.exists(indexFile)) {
-			map = load(indexFile);
-		} else {
-			map = new DependencyMap();
-		}
-
-		// Collect all dependency files
+		// Collect all dependency files to merge
 		var depFiles = new java.util.ArrayList<Path>();
 		var mdepsFiles = new java.util.ArrayList<Path>();
 		var memberFiles = new java.util.ArrayList<Path>();
@@ -1605,200 +1599,285 @@ public class DependencyMap {
 		}
 
 		if (depFiles.isEmpty() && mdepsFiles.isEmpty() && memberFiles.isEmpty() && methodMemberFiles.isEmpty()) {
-			return; // nothing to aggregate
+			// Nothing to merge — still need to return current index size
+			return Files.exists(indexFile) ? load(indexFile).size() : 0;
 		}
 
-		long startTime = System.currentTimeMillis();
-		long depCount = 0;
-		long methodDepCount = 0;
-		long memberDepCount = 0;
-		long methodMemberDepCount = 0;
-
-		// Load .deps files (each represents one test class → deps)
-		var pool = java.util.concurrent.ForkJoinPool.commonPool();
-		var depTasks = depFiles.parallelStream().map(depFile -> pool.submit(() -> {
-			String testClass = depFile.getFileName().toString();
-			testClass = testClass.substring(0, testClass.length() - 5); // remove .deps
-			try {
-				Set<String> deps;
-				try (Stream<String> lines = Files.lines(depFile)) {
-					deps = lines.filter(line -> !line.trim().isEmpty()).collect(Collectors.toCollection(HashSet::new));
-				}
-				return java.util.Map.entry(testClass, deps);
-			} catch (IOException e) {
-				System.err.println("[test-order] Failed to read " + depFile + ": " + e.getMessage());
-				return null;
-			}
-		})).collect(Collectors.toList());
-
-		// Merge results from dep tasks
-		for (var task : depTasks) {
-			try {
-				var entry = task.get();
-				if (entry != null) {
-					Set<String> existing = map.dependencies.get(entry.getKey());
-					if (existing == null) {
-						map.dependencies.put(entry.getKey(),
-								Collections.unmodifiableSet(new HashSet<>(entry.getValue())));
-					} else {
-						// existing may be an unmodifiable set from loadBinary — copy into mutable set
-						Set<String> merged = new HashSet<>(existing);
-						merged.addAll(entry.getValue());
-						map.dependencies.put(entry.getKey(), Collections.unmodifiableSet(merged));
-					}
-					depCount++;
-				}
-			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {
-				System.err.println("[test-order] Error loading .deps file: " + e.getMessage());
-			}
-		}
-
-		// Load .mdeps files (each represents one test method → deps)
-		var mdepTasks = mdepsFiles.parallelStream().map(mdepFile -> pool.submit(() -> {
-			try {
-				java.util.List<String> lines = new ArrayList<>();
-				try (Stream<String> s = Files.lines(mdepFile)) {
-					s.forEach(lines::add);
-				}
-				if (lines.isEmpty())
-					return null;
-
-				String methodKey = null;
-				Set<String> deps = new HashSet<>();
-				for (String line : lines) {
-					if (line.startsWith("# ")) {
-						methodKey = line.substring(2).trim();
-					} else if (!line.trim().isEmpty()) {
-						deps.add(line.trim());
-					}
-				}
-				if (methodKey != null && !deps.isEmpty()) {
-					return java.util.Map.entry(methodKey, deps);
-				}
-				return null;
-			} catch (IOException e) {
-				System.err.println("[test-order] Failed to read " + mdepFile + ": " + e.getMessage());
-				return null;
-			}
-		})).collect(Collectors.toList());
-
-		// Merge results from mdep tasks
-		for (var task : mdepTasks) {
-			try {
-				var entry = task.get();
-				if (entry != null) {
-					// existing may be an unmodifiable set from loadBinary — copy into mutable set
-					Set<String> existing = new HashSet<>(map.methodDependencies.getOrDefault(entry.getKey(), Set.of()));
-					existing.addAll(entry.getValue());
-					map.methodDependencies.put(entry.getKey(), Collections.unmodifiableSet(existing));
-					methodDepCount++;
-				}
-			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {
-				System.err.println("[test-order] Error loading .mdeps file: " + e.getMessage());
-			}
-		}
-
-		// Load .members files (each represents one test class -> member deps)
-		var memberTasks = memberFiles.parallelStream().map(memberFile -> pool.submit(() -> {
-			String testClass = memberFile.getFileName().toString();
-			testClass = testClass.substring(0, testClass.length() - 8); // remove .members
-			try {
-				Set<String> members;
-				try (Stream<String> lines = Files.lines(memberFile)) {
-					members = lines.map(String::trim).filter(line -> !line.isEmpty() && !line.startsWith("#"))
-							.collect(Collectors.toCollection(HashSet::new));
-				}
-				return java.util.Map.entry(testClass, members);
-			} catch (IOException e) {
-				System.err.println("[test-order] Failed to read " + memberFile + ": " + e.getMessage());
-				return null;
-			}
-		})).collect(Collectors.toList());
-
-		for (var task : memberTasks) {
-			try {
-				var entry = task.get();
-				if (entry != null) {
-					RoaringBitmap existing = map.memberDepsMap.get(entry.getKey());
-					if (existing == null) {
-						map.putMemberDeps(entry.getKey(), entry.getValue());
-					} else {
-						for (String mk : entry.getValue())
-							existing.add(map.memberKeyId(mk));
-					}
-					memberDepCount++;
-				}
-			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {
-				System.err.println("[test-order] Error loading .members file: " + e.getMessage());
-			}
-		}
-
-		// Load .mmembers files (each represents one test method -> member deps)
-		var mmemberTasks = methodMemberFiles.parallelStream().map(mmemberFile -> pool.submit(() -> {
-			try {
-				java.util.List<String> lines = new ArrayList<>();
-				try (Stream<String> s = Files.lines(mmemberFile)) {
-					s.forEach(lines::add);
-				}
-				if (lines.isEmpty())
-					return null;
-
-				String methodKey = null;
-				Set<String> members = new HashSet<>();
-				for (String line : lines) {
-					if (line.startsWith("# ")) {
-						methodKey = line.substring(2).trim();
-					} else if (!line.trim().isEmpty()) {
-						members.add(line.trim());
-					}
-				}
-				if (methodKey != null && !members.isEmpty()) {
-					return java.util.Map.entry(methodKey, members);
-				}
-				return null;
-			} catch (IOException e) {
-				System.err.println("[test-order] Failed to read " + mmemberFile + ": " + e.getMessage());
-				return null;
-			}
-		})).collect(Collectors.toList());
-
-		for (var task : mmemberTasks) {
-			try {
-				var entry = task.get();
-				if (entry != null) {
-					RoaringBitmap existing = map.methodMemberDepsMap.get(entry.getKey());
-					if (existing == null) {
-						map.putMethodMemberDeps(entry.getKey(), entry.getValue());
-					} else {
-						for (String mk : entry.getValue())
-							existing.add(map.memberKeyId(mk));
-					}
-					methodMemberDepCount++;
-				}
-			} catch (java.util.concurrent.ExecutionException | InterruptedException e) {
-				System.err.println("[test-order] Error loading .mmembers file: " + e.getMessage());
-			}
-		}
-
-		// Save aggregated index under file lock (R7-6: prevent corruption in concurrent
-		// -T N builds)
 		Path aggParent = indexFile.toAbsolutePath().getParent();
 		if (aggParent != null) {
 			Files.createDirectories(aggParent);
 		}
-		PersistenceSupport.withFileLock(indexFile, () -> {
-			map.save(indexFile);
-			return null;
-		});
 
-		long duration = System.currentTimeMillis() - startTime;
-		String msg = "[test-order] Aggregated " + depCount + " test classes + " + methodDepCount + " test methods + "
-				+ memberDepCount + " class-member sets + " + methodMemberDepCount
-				+ " method-member sets from deps files in " + duration + "ms";
-		if (log != null) {
-			log.info(msg);
-		} else {
-			System.out.println(msg);
+		// Hold the file lock for the entire load+merge+save cycle so concurrent builds
+		// (e.g. Maven -T N) don't produce a torn index.
+		return PersistenceSupport.withFileLock(indexFile, () -> {
+			// Load existing index as base, or start fresh — inside the lock so we read
+			// the latest committed state.
+			DependencyMap map;
+			if (Files.exists(indexFile)) {
+				map = load(indexFile);
+			} else {
+				map = new DependencyMap();
+			}
+
+			long startTime = System.currentTimeMillis();
+			long depCount = 0;
+			long methodDepCount = 0;
+			long memberDepCount = 0;
+			long methodMemberDepCount = 0;
+
+			// Load .deps files (each represents one test class → deps)
+			var pool = java.util.concurrent.ForkJoinPool.commonPool();
+			var depTasks = depFiles.parallelStream().map(depFile -> pool.submit(() -> {
+				String testClass = depFile.getFileName().toString();
+				testClass = testClass.substring(0, testClass.length() - 5); // remove .deps
+				try {
+					Set<String> deps;
+					try (Stream<String> lines = Files.lines(depFile)) {
+						deps = lines.filter(line -> !line.trim().isEmpty())
+								.collect(Collectors.toCollection(HashSet::new));
+					}
+					return java.util.Map.entry(testClass, deps);
+				} catch (IOException e) {
+					System.err.println("[test-order] Failed to read " + depFile + ": " + e.getMessage());
+					return null;
+				}
+			})).collect(Collectors.toList());
+
+			// Merge results from dep tasks
+			for (var task : depTasks) {
+				try {
+					var entry = task.get();
+					if (entry != null) {
+						Set<String> existing = map.dependencies.get(entry.getKey());
+						if (existing == null) {
+							map.dependencies.put(entry.getKey(),
+									Collections.unmodifiableSet(new HashSet<>(entry.getValue())));
+						} else {
+							// existing may be an unmodifiable set from loadBinary — copy into mutable set
+							Set<String> merged = new HashSet<>(existing);
+							merged.addAll(entry.getValue());
+							map.dependencies.put(entry.getKey(), Collections.unmodifiableSet(merged));
+						}
+						depCount++;
+					}
+				} catch (java.util.concurrent.ExecutionException e) {
+					System.err.println("[test-order] Error loading .deps file: " + e.getMessage());
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					System.err.println("[test-order] Interrupted loading .deps file: " + e.getMessage());
+				}
+			}
+
+			// Load .mdeps files (each represents one test method → deps)
+			var mdepTasks = mdepsFiles.parallelStream().map(mdepFile -> pool.submit(() -> {
+				try {
+					java.util.List<String> lines = new ArrayList<>();
+					try (Stream<String> s = Files.lines(mdepFile)) {
+						s.forEach(lines::add);
+					}
+					if (lines.isEmpty())
+						return null;
+
+					String methodKey = null;
+					Set<String> deps = new HashSet<>();
+					for (String line : lines) {
+						if (line.startsWith("# ")) {
+							methodKey = line.substring(2).trim();
+						} else if (!line.trim().isEmpty()) {
+							deps.add(line.trim());
+						}
+					}
+					if (methodKey != null && !deps.isEmpty()) {
+						return java.util.Map.entry(methodKey, deps);
+					}
+					return null;
+				} catch (IOException e) {
+					System.err.println("[test-order] Failed to read " + mdepFile + ": " + e.getMessage());
+					return null;
+				}
+			})).collect(Collectors.toList());
+
+			// Merge results from mdep tasks
+			for (var task : mdepTasks) {
+				try {
+					var entry = task.get();
+					if (entry != null) {
+						// existing may be an unmodifiable set from loadBinary — copy into mutable set
+						Set<String> existing = new HashSet<>(
+								map.methodDependencies.getOrDefault(entry.getKey(), Set.of()));
+						existing.addAll(entry.getValue());
+						map.methodDependencies.put(entry.getKey(), Collections.unmodifiableSet(existing));
+						methodDepCount++;
+					}
+				} catch (java.util.concurrent.ExecutionException e) {
+					System.err.println("[test-order] Error loading .mdeps file: " + e.getMessage());
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					System.err.println("[test-order] Interrupted loading .mdeps file: " + e.getMessage());
+				}
+			}
+
+			// Load .members files (each represents one test class -> member deps)
+			var memberTasks = memberFiles.parallelStream().map(memberFile -> pool.submit(() -> {
+				String testClass = memberFile.getFileName().toString();
+				testClass = testClass.substring(0, testClass.length() - 8); // remove .members
+				try {
+					Set<String> members;
+					try (Stream<String> lines = Files.lines(memberFile)) {
+						members = lines.map(String::trim).filter(line -> !line.isEmpty() && !line.startsWith("#"))
+								.collect(Collectors.toCollection(HashSet::new));
+					}
+					return java.util.Map.entry(testClass, members);
+				} catch (IOException e) {
+					System.err.println("[test-order] Failed to read " + memberFile + ": " + e.getMessage());
+					return null;
+				}
+			})).collect(Collectors.toList());
+
+			for (var task : memberTasks) {
+				try {
+					var entry = task.get();
+					if (entry != null) {
+						RoaringBitmap existing = map.memberDepsMap.get(entry.getKey());
+						if (existing == null) {
+							map.putMemberDeps(entry.getKey(), entry.getValue());
+						} else {
+							for (String mk : entry.getValue())
+								existing.add(map.memberKeyId(mk));
+						}
+						memberDepCount++;
+					}
+				} catch (java.util.concurrent.ExecutionException e) {
+					System.err.println("[test-order] Error loading .members file: " + e.getMessage());
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					System.err.println("[test-order] Interrupted loading .members file: " + e.getMessage());
+				}
+			}
+
+			// Load .mmembers files (each represents one test method -> member deps)
+			var mmemberTasks = methodMemberFiles.parallelStream().map(mmemberFile -> pool.submit(() -> {
+				try {
+					java.util.List<String> lines = new ArrayList<>();
+					try (Stream<String> s = Files.lines(mmemberFile)) {
+						s.forEach(lines::add);
+					}
+					if (lines.isEmpty())
+						return null;
+
+					String methodKey = null;
+					Set<String> members = new HashSet<>();
+					for (String line : lines) {
+						if (line.startsWith("# ")) {
+							methodKey = line.substring(2).trim();
+						} else if (!line.trim().isEmpty()) {
+							members.add(line.trim());
+						}
+					}
+					if (methodKey != null && !members.isEmpty()) {
+						return java.util.Map.entry(methodKey, members);
+					}
+					return null;
+				} catch (IOException e) {
+					System.err.println("[test-order] Failed to read " + mmemberFile + ": " + e.getMessage());
+					return null;
+				}
+			})).collect(Collectors.toList());
+
+			for (var task : mmemberTasks) {
+				try {
+					var entry = task.get();
+					if (entry != null) {
+						RoaringBitmap existing = map.methodMemberDepsMap.get(entry.getKey());
+						if (existing == null) {
+							map.putMethodMemberDeps(entry.getKey(), entry.getValue());
+						} else {
+							for (String mk : entry.getValue())
+								existing.add(map.memberKeyId(mk));
+						}
+						methodMemberDepCount++;
+					}
+				} catch (java.util.concurrent.ExecutionException e) {
+					System.err.println("[test-order] Error loading .mmembers file: " + e.getMessage());
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					System.err.println("[test-order] Interrupted loading .mmembers file: " + e.getMessage());
+				}
+			}
+
+			// Save aggregated index — already inside the outer file lock.
+			map.save(indexFile);
+
+			// Archive .deps files that have been merged so they don't re-accumulate.
+			// Archiving is best-effort: a failure to move one file never blocks the build.
+			archiveMergedDepsFiles(depsDir, depFiles, mdepsFiles, memberFiles, methodMemberFiles);
+
+			long duration = System.currentTimeMillis() - startTime;
+			String msg = "[test-order] Aggregated " + depCount + " test classes + " + methodDepCount
+					+ " test methods + " + memberDepCount + " class-member sets + " + methodMemberDepCount
+					+ " method-member sets from deps files in " + duration + "ms";
+			if (log != null) {
+				log.info(msg);
+			} else {
+				System.out.println(msg);
+			}
+			return map.size();
+		});
+	}
+
+	/**
+	 * Archives merged .deps/.mdeps/.members/.mmembers files into a
+	 * {@code .archived} subdirectory of {@code depsDir}, with a timestamp prefix.
+	 * Caps the archive at 50 entries by deleting the oldest. All failures are
+	 * swallowed so a move error never blocks the build.
+	 */
+	private static void archiveMergedDepsFiles(Path depsDir, java.util.List<Path> depFiles,
+			java.util.List<Path> mdepsFiles, java.util.List<Path> memberFiles, java.util.List<Path> methodMemberFiles) {
+		var allFiles = new java.util.ArrayList<Path>();
+		allFiles.addAll(depFiles);
+		allFiles.addAll(mdepsFiles);
+		allFiles.addAll(memberFiles);
+		allFiles.addAll(methodMemberFiles);
+		if (allFiles.isEmpty())
+			return;
+
+		Path archiveDir = depsDir.resolve(".archived");
+		try {
+			Files.createDirectories(archiveDir);
+		} catch (IOException e) {
+			return; // can't create archive dir — leave files in place
+		}
+
+		String stamp = java.time.LocalDateTime.now()
+				.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"));
+		for (Path p : allFiles) {
+			try {
+				Files.move(p, archiveDir.resolve(stamp + "-" + p.getFileName()),
+						java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			} catch (IOException ignored) {
+				// best-effort: leave file in place if move fails
+			}
+		}
+
+		// Prune archive to at most 50 files (delete oldest).
+		try (var stream = Files.list(archiveDir)) {
+			var archived = stream.sorted(java.util.Comparator.comparingLong(p -> {
+				try {
+					return java.nio.file.Files.getLastModifiedTime(p).toMillis();
+				} catch (IOException e) {
+					return 0L;
+				}
+			})).collect(java.util.stream.Collectors.toList());
+			if (archived.size() > 50) {
+				for (int i = 0; i < archived.size() - 50; i++) {
+					try {
+						Files.deleteIfExists(archived.get(i));
+					} catch (IOException ignored) {
+					}
+				}
+			}
+		} catch (IOException ignored) {
 		}
 	}
 

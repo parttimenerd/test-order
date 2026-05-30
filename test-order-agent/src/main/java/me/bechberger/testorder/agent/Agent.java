@@ -2,13 +2,12 @@ package me.bechberger.testorder.agent;
 
 import java.io.*;
 import java.lang.instrument.Instrumentation;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.jar.JarFile;
 
 /**
@@ -192,6 +191,9 @@ public class Agent {
 		System.setProperty("testorder.learn", "true");
 		System.setProperty("testorder.instrumentation.mode", options.getMode().name());
 
+		// selective learn: load uncertain-classes file if present
+		Set<String> uncertainClasses = loadUncertainClasses();
+
 		// extract and add runtime jar to bootstrap classpath
 		try {
 			appendRuntimeJarToBootstrap(inst, Agent.class.getClassLoader(), options.getRuntimeJarPath());
@@ -210,7 +212,7 @@ public class Agent {
 		}
 
 		// configure UsageStore via reflection (now on bootstrap classpath)
-		AsmClassTransformer transformer = new AsmClassTransformer(options);
+		AsmClassTransformer transformer = new AsmClassTransformer(options, uncertainClasses);
 		try {
 			Class<?> usageStoreClass = Class.forName("me.bechberger.testorder.agent.runtime.UsageStore", true, null);
 			Object instance = usageStoreClass.getMethod("getInstance").invoke(null);
@@ -229,6 +231,40 @@ public class Agent {
 	static void configureAgentLogger(Path verboseFile, ClassLoader classLoader) throws ReflectiveOperationException {
 		Class<?> loggerClass = Class.forName("me.bechberger.testorder.agent.runtime.AgentLogger", true, classLoader);
 		loggerClass.getMethod("setVerboseFile", String.class).invoke(null, verboseFile.toAbsolutePath().toString());
+	}
+
+	/**
+	 * Reads the uncertain-classes file (if configured via
+	 * {@code testorder.learn.uncertainClassesFile}) and returns the set of FQCNs to
+	 * instrument. Returns {@code null} when the property is absent or the file
+	 * cannot be read — callers treat {@code null} as "instrument everything".
+	 */
+	static Set<String> loadUncertainClasses() {
+		String filePath = System.getProperty("testorder.learn.uncertainClassesFile");
+		if (filePath == null || filePath.isBlank()) {
+			return null;
+		}
+		Path p = Path.of(filePath);
+		if (!Files.isRegularFile(p)) {
+			return null;
+		}
+		try {
+			Set<String> result = new HashSet<>();
+			try (BufferedReader r = new BufferedReader(
+					new InputStreamReader(Files.newInputStream(p), StandardCharsets.UTF_8))) {
+				String line;
+				while ((line = r.readLine()) != null) {
+					String trimmed = line.trim();
+					if (!trimmed.isEmpty()) {
+						result.add(trimmed);
+					}
+				}
+			}
+			return Collections.unmodifiableSet(result);
+		} catch (IOException e) {
+			System.err.println("[test-order] Could not read uncertain-classes file: " + e.getMessage());
+			return null;
+		}
 	}
 
 	static Path appendRuntimeJarToBootstrap(Instrumentation inst, ClassLoader resourceLoader, Path preExtractedJar)

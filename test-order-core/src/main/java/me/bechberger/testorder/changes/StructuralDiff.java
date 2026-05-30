@@ -276,16 +276,41 @@ public class StructuralDiff {
 				Collections.sort(oldHashes);
 				Collections.sort(newHashes);
 
-				if (!oldHashes.equals(newHashes)) {
-					changes.add(new Change(Change.Kind.MODIFIED, Change.Category.METHOD, fqcn, methodName,
-							newList.get(0).isConstructor() ? "constructor body changed" : "method body changed"));
-					// Record old/new body for the first overload pair (best-effort)
+				boolean bodyChanged = !oldHashes.equals(newHashes);
+				boolean signatureChanged = !methodSignatures(oldList).equals(methodSignatures(newList));
+
+				if (bodyChanged || signatureChanged) {
+					Change.Kind kind = bodyChanged && !signatureChanged
+							? Change.Kind.MODIFIED
+							: Change.Kind.SIGNATURE_CHANGED;
+					String label = newList.get(0).isConstructor() ? "constructor" : "method";
+					String detail = switch (kind) {
+						case MODIFIED -> label + " body changed";
+						case SIGNATURE_CHANGED ->
+							bodyChanged ? label + " signature and body changed" : label + " signature changed";
+						default -> label + " changed";
+					};
+					changes.add(new Change(kind, Change.Category.METHOD, fqcn, methodName, detail));
 					String oldBody = !oldList.isEmpty() ? oldList.get(0).compactBody() : null;
 					String newBody = !newList.isEmpty() ? newList.get(0).compactBody() : null;
 					bodyChanges.add(new BodyChange(fqcn, methodName, Change.Category.METHOD, oldBody, newBody));
 				}
 			}
 		}
+	}
+
+	/**
+	 * Computes the set of normalized method signatures for an overload group, used
+	 * to detect signature-only changes (parameter types, return type, modifiers,
+	 * annotations) when the body is unchanged.
+	 */
+	private static Set<String> methodSignatures(List<SourceFileModel.MethodNode> overloads) {
+		Set<String> sigs = new LinkedHashSet<>();
+		for (var m : overloads) {
+			String sig = m.signatureText();
+			sigs.add(sig == null ? "" : normalizeWhitespace(sig));
+		}
+		return sigs;
 	}
 
 	private static void diffFields(SourceFileModel.Model oldModel, SourceFileModel.Model newModel, List<Change> changes,
@@ -323,13 +348,78 @@ public class StructuralDiff {
 				continue;
 			SourceFileModel.FieldNode newField = entry.getValue();
 			if (!Objects.equals(oldField.declarationHash(), newField.declarationHash())) {
-				changes.add(new Change(Change.Kind.MODIFIED, Change.Category.FIELD, newField.enclosingFqcn(),
-						newField.name(), "was: " + oldField.declarationText().strip() + "\n now: "
-								+ newField.declarationText().strip()));
+				Change.Kind kind = classifyFieldChange(oldField.declarationText(), newField.declarationText());
+				changes.add(new Change(kind, Change.Category.FIELD, newField.enclosingFqcn(), newField.name(), "was: "
+						+ oldField.declarationText().strip() + "\n now: " + newField.declarationText().strip()));
 				bodyChanges.add(new BodyChange(newField.enclosingFqcn(), newField.name(), Change.Category.FIELD,
 						oldField.declarationText(), newField.declarationText()));
 			}
 		}
+	}
+
+	/**
+	 * Classifies a field declaration change as either a body-only change
+	 * (initializer differs but type/modifiers identical) or a signature change
+	 * (type or modifiers differ — this is the more impactful case).
+	 *
+	 * <p>
+	 * The split point is the first top-level {@code =} (i.e., not inside generics,
+	 * parens, or brackets). When neither side has an initializer, any difference is
+	 * a signature change.
+	 */
+	private static Change.Kind classifyFieldChange(String oldDecl, String newDecl) {
+		String[] oldParts = splitFieldDecl(oldDecl);
+		String[] newParts = splitFieldDecl(newDecl);
+		boolean prefixDiffers = !Objects.equals(normalizeWhitespace(oldParts[0]), normalizeWhitespace(newParts[0]));
+		// Signature is the more impactful change; if both differ, prefer SIGNATURE.
+		return prefixDiffers ? Change.Kind.SIGNATURE_CHANGED : Change.Kind.MODIFIED;
+	}
+
+	/**
+	 * Splits a field declaration text into {@code [typeAndModifiers, initializer]}
+	 * on the first top-level {@code =}. If there is no initializer, returns
+	 * {@code [decl, ""]}. Top-level means not inside {@code <>}, {@code ()}, or
+	 * {@code []}.
+	 */
+	static String[] splitFieldDecl(String decl) {
+		if (decl == null)
+			return new String[]{"", ""};
+		int depthAngle = 0, depthParen = 0, depthBracket = 0;
+		for (int i = 0; i < decl.length(); i++) {
+			char c = decl.charAt(i);
+			switch (c) {
+				case '<' -> depthAngle++;
+				case '>' -> {
+					if (depthAngle > 0)
+						depthAngle--;
+				}
+				case '(' -> depthParen++;
+				case ')' -> {
+					if (depthParen > 0)
+						depthParen--;
+				}
+				case '[' -> depthBracket++;
+				case ']' -> {
+					if (depthBracket > 0)
+						depthBracket--;
+				}
+				case '=' -> {
+					if (depthAngle == 0 && depthParen == 0 && depthBracket == 0) {
+						// Skip == (equality), >=, <= (already shielded by angle/paren/bracket depth,
+						// but be safe)
+						if (i + 1 < decl.length() && decl.charAt(i + 1) == '=') {
+							i++;
+							continue;
+						}
+						return new String[]{decl.substring(0, i), decl.substring(i + 1)};
+					}
+				}
+				default -> {
+					// no-op
+				}
+			}
+		}
+		return new String[]{decl, ""};
 	}
 
 	private static void diffInitializers(SourceFileModel.Model oldModel, SourceFileModel.Model newModel,

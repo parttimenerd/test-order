@@ -83,10 +83,18 @@ public final class AutoWorkflow {
 		record Learn(String reason) implements Result {
 		}
 
-		/** Plugin should configure ordering + test selection. */
+		/**
+		 * Plugin should configure ordering + test selection.
+		 *
+		 * <p>
+		 * When {@code attachLearnAgent} is true, the plugin should additionally
+		 * configure the learn-mode agent on top of the ordered run so that fresh
+		 * dependency data is recorded into the deps directory and merged incrementally
+		 * on the next run. Triggered by {@link PluginContext#alwaysLearn()}.
+		 */
 		record OrderSelect(SelectOperation.SelectResult selectResult, Map<String, String> ordererConfigMap,
 				Set<String> changedClasses, Set<String> changedTests, Set<String> changedMethods,
-				TestOrderState.ScoringWeights weights) implements Result {
+				TestOrderState.ScoringWeights weights, boolean attachLearnAgent) implements Result {
 
 			public TestSelector.Selection selection() {
 				return selectResult.selection();
@@ -112,6 +120,20 @@ public final class AutoWorkflow {
 	 *             if index/state loading or file I/O fails
 	 */
 	public Result execute() throws IOException {
+
+		// ── 0. alwaysLearn pre-aggregation ──────────────────────────
+		// When alwaysLearn=true and an index already exists, fold any .deps files
+		// recorded during prior runs into the existing index incrementally. The
+		// existing auto-aggregation path in ModeResolverOperation only fires when
+		// no index exists yet.
+		if (ctx.alwaysLearn() && depsDir != null && ctx.indexFile() != null && Files.exists(ctx.indexFile())
+				&& Files.isDirectory(depsDir)) {
+			try {
+				me.bechberger.testorder.ops.AggregateOperation.aggregate(depsDir, ctx.indexFile(), ctx.log(), true);
+			} catch (IOException e) {
+				ctx.log().warn("[test-order] alwaysLearn incremental aggregation failed (ignored): " + e.getMessage());
+			}
+		}
 
 		// ── 1. Mode resolution ──────────────────────────────────────
 		ModeResolverOperation.ModeDecision decision = resolveMode(ctx, requestedMode, ciDownloadCallback, depsDir);
@@ -171,7 +193,7 @@ public final class AutoWorkflow {
 		snapshotHashes(ctx);
 
 		return new Result.OrderSelect(selectResult, configMap, a.changedClasses(), a.changedTests(), a.changedMethods(),
-				a.weights());
+				a.weights(), ctx.alwaysLearn());
 	}
 
 	// ═══════════════════════════════════════════════════════════════

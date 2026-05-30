@@ -20,6 +20,20 @@ public class StructuralChangeAnalyzer {
 	private static final Pattern STATIC_KEYWORD_PATTERN = Pattern.compile("\\bstatic\\b", Pattern.DOTALL);
 
 	/**
+	 * Coarse kind of a member-level change, derived from
+	 * {@link StructuralDiff.Change.Kind}.
+	 */
+	public enum ChangeKind {
+		/** Body changed (method body, field initializer). */
+		BODY,
+		/**
+		 * Signature changed (method params/return type, field type/modifiers, type
+		 * signature).
+		 */
+		SIGNATURE, ADDED, REMOVED
+	}
+
+	/**
 	 * @param changedClasses
 	 *            all FQCNs that have any structural change
 	 * @param changedMemberKeys
@@ -31,16 +45,28 @@ public class StructuralChangeAnalyzer {
 	 *            (added/removed/signature-changed types)
 	 * @param changedStaticFieldKeys
 	 *            changed static fields as {@code "fqcn#fieldName"} keys
+	 * @param memberChangeKinds
+	 *            classification of each {@code "fqcn#memberName"} key. Multiple
+	 *            entries collapse to the most impactful kind (SIGNATURE &gt; BODY).
+	 *            Empty for callers that constructed via the legacy constructor.
 	 */
 	public record ChangedMembers(Set<String> changedClasses, Set<String> changedMemberKeys,
 			Map<String, Set<String>> membersByClass, Set<String> classesWithTypeChanges,
-			Set<String> changedStaticFieldKeys) {
+			Set<String> changedStaticFieldKeys, Map<String, ChangeKind> memberChangeKinds) {
 		public ChangedMembers(Set<String> changedClasses, Set<String> changedMemberKeys,
-				Map<String, Set<String>> membersByClass, Set<String> classesWithTypeChanges) {
-			this(changedClasses, changedMemberKeys, membersByClass, classesWithTypeChanges, Set.of());
+				Map<String, Set<String>> membersByClass, Set<String> classesWithTypeChanges,
+				Set<String> changedStaticFieldKeys) {
+			this(changedClasses, changedMemberKeys, membersByClass, classesWithTypeChanges, changedStaticFieldKeys,
+					Map.of());
 		}
 
-		public static final ChangedMembers EMPTY = new ChangedMembers(Set.of(), Set.of(), Map.of(), Set.of(), Set.of());
+		public ChangedMembers(Set<String> changedClasses, Set<String> changedMemberKeys,
+				Map<String, Set<String>> membersByClass, Set<String> classesWithTypeChanges) {
+			this(changedClasses, changedMemberKeys, membersByClass, classesWithTypeChanges, Set.of(), Map.of());
+		}
+
+		public static final ChangedMembers EMPTY = new ChangedMembers(Set.of(), Set.of(), Map.of(), Set.of(), Set.of(),
+				Map.of());
 	}
 
 	/**
@@ -56,6 +82,7 @@ public class StructuralChangeAnalyzer {
 		Map<String, Set<String>> byClass = new LinkedHashMap<>();
 		Set<String> typeChanged = new LinkedHashSet<>();
 		Set<String> staticFields = new LinkedHashSet<>();
+		Map<String, ChangeKind> kinds = new LinkedHashMap<>();
 
 		for (StructuralDiff.FileDiff diff : diffs) {
 			for (StructuralDiff.Change change : diff.changes()) {
@@ -70,6 +97,7 @@ public class StructuralChangeAnalyzer {
 					String memberKey = change.fqcn() + "#" + memberName;
 					memberKeys.add(memberKey);
 					byClass.computeIfAbsent(change.fqcn(), k -> new LinkedHashSet<>()).add(memberName);
+					kinds.merge(memberKey, mapKind(change.kind()), StructuralChangeAnalyzer::mostImpactful);
 
 					if (change.category() == StructuralDiff.Change.Category.FIELD && isStaticFieldChange(change)) {
 						staticFields.add(memberKey);
@@ -79,7 +107,31 @@ public class StructuralChangeAnalyzer {
 		}
 		return new ChangedMembers(Collections.unmodifiableSet(classes), Collections.unmodifiableSet(memberKeys),
 				Collections.unmodifiableMap(byClass), Collections.unmodifiableSet(typeChanged),
-				Collections.unmodifiableSet(staticFields));
+				Collections.unmodifiableSet(staticFields), Collections.unmodifiableMap(kinds));
+	}
+
+	private static ChangeKind mapKind(StructuralDiff.Change.Kind kind) {
+		return switch (kind) {
+			case ADDED -> ChangeKind.ADDED;
+			case REMOVED -> ChangeKind.REMOVED;
+			case MODIFIED -> ChangeKind.BODY;
+			case SIGNATURE_CHANGED -> ChangeKind.SIGNATURE;
+		};
+	}
+
+	/**
+	 * Picks the more impactful classification when a member appears multiple times.
+	 */
+	private static ChangeKind mostImpactful(ChangeKind a, ChangeKind b) {
+		return rank(a) >= rank(b) ? a : b;
+	}
+
+	private static int rank(ChangeKind k) {
+		return switch (k) {
+			case ADDED, REMOVED -> 3;
+			case SIGNATURE -> 2;
+			case BODY -> 1;
+		};
 	}
 
 	private static boolean isStaticFieldChange(StructuralDiff.Change change) {

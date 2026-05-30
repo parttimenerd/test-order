@@ -11,6 +11,7 @@ import org.objectweb.asm.Attribute;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
@@ -33,15 +34,22 @@ import net.jpountz.lz4.LZ4FrameOutputStream;
  * method's key.
  *
  * <p>
- * On-disk format (one file): LZ4-compressed lines.
+ * On-disk format (one file): LZ4-compressed lines, with a {@code #FORMAT:v2}
+ * header on the first line so older v1 files (no field hashes) are still
+ * readable.
  * <ul>
+ * <li>{@code #FORMAT:v2} — version header (v2 only)</li>
  * <li>{@code #CLASS:<fqcn>\t<hex-sha256>} — one per scanned class</li>
+ * <li>{@code #FIELD:<fqcn>#<fieldName>\t<hex-sha256>} — one per field (v2
+ * only)</li>
  * <li>{@code <methodKey>\t<hex-sha256>} — one per method, where
  * {@code methodKey} is {@code fqcn#methodName+descriptor}</li>
  * </ul>
  * Mirrors the {@code #FILE:} convention used by {@link MethodHashStore}.
  */
 public class BytecodeHashStore {
+
+	private static final String FORMAT_HEADER = "#FORMAT:v2";
 
 	private static final HexFormat HEX_FORMAT = HexFormat.of();
 	private static final ThreadLocal<MessageDigest> SHA256 = ThreadLocal.withInitial(() -> {
@@ -54,15 +62,19 @@ public class BytecodeHashStore {
 
 	private final Map<String, String> classHashes; // FQCN → hex SHA-256
 	private final Map<String, String> methodHashes; // fqcn#name+desc → hex SHA-256
+	private final Map<String, String> fieldHashes; // fqcn#fieldName → hex SHA-256
 
 	public BytecodeHashStore() {
 		this.classHashes = new TreeMap<>();
 		this.methodHashes = new TreeMap<>();
+		this.fieldHashes = new TreeMap<>();
 	}
 
-	private BytecodeHashStore(Map<String, String> classHashes, Map<String, String> methodHashes) {
+	private BytecodeHashStore(Map<String, String> classHashes, Map<String, String> methodHashes,
+			Map<String, String> fieldHashes) {
 		this.classHashes = new TreeMap<>(classHashes);
 		this.methodHashes = new TreeMap<>(methodHashes);
+		this.fieldHashes = new TreeMap<>(fieldHashes);
 	}
 
 	/**
@@ -79,7 +91,8 @@ public class BytecodeHashStore {
 		try (Stream<Path> walk = Files.walk(classesDir)) {
 			classFiles = walk.filter(p -> Files.isRegularFile(p) && p.toString().endsWith(".class")).toList();
 		}
-		record FileResult(String className, String classHash, Map<String, String> methodHashes) {
+		record FileResult(String className, String classHash, Map<String, String> methodHashes,
+				Map<String, String> fieldHashes) {
 		}
 		List<FileResult> results = classFiles.parallelStream().map(file -> {
 			try {
@@ -88,21 +101,25 @@ public class BytecodeHashStore {
 			} catch (Exception e) {
 				return null;
 			}
-		}).filter(Objects::nonNull).map(r -> new FileResult(r.className, r.classHash, r.methodHashes)).toList();
+		}).filter(Objects::nonNull).map(r -> new FileResult(r.className, r.classHash, r.methodHashes, r.fieldHashes))
+				.toList();
 
 		Map<String, String> classMap = new TreeMap<>();
 		Map<String, String> methodMap = new TreeMap<>();
+		Map<String, String> fieldMap = new TreeMap<>();
 		for (FileResult r : results) {
 			if (r.className == null || r.className.isEmpty() || ClassNameFilter.isLibraryType(r.className)) {
 				continue;
 			}
 			classMap.put(r.className, r.classHash);
 			methodMap.putAll(r.methodHashes);
+			fieldMap.putAll(r.fieldHashes);
 		}
-		return new BytecodeHashStore(classMap, methodMap);
+		return new BytecodeHashStore(classMap, methodMap, fieldMap);
 	}
 
-	private record HashResult(String className, String classHash, Map<String, String> methodHashes) {
+	private record HashResult(String className, String classHash, Map<String, String> methodHashes,
+			Map<String, String> fieldHashes) {
 	}
 
 	/**
@@ -114,6 +131,8 @@ public class BytecodeHashStore {
 
 		// Per-method digests: hash opcodes + operands as ASM walks the method body.
 		Map<String, String> perMethod = new TreeMap<>();
+		// Per-field digests: hash declaration metadata.
+		Map<String, String> perField = new TreeMap<>();
 		String[] classNameHolder = new String[1];
 
 		ClassWriter cw = new ClassWriter(0);
@@ -132,10 +151,33 @@ public class BytecodeHashStore {
 			}
 
 			@Override
+			public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+				FieldVisitor downstream = super.visitField(access, name, descriptor, signature, value);
+				if (classNameHolder[0] == null || !MemberFilter.shouldTrack(access)) {
+					return downstream;
+				}
+				MessageDigest md = SHA256.get();
+				md.reset();
+				ByteArrayOutputStream baos = new ByteArrayOutputStream();
+				try (DataOutputStream dos = new DataOutputStream(baos)) {
+					dos.writeInt(access);
+					dos.writeUTF(name == null ? "" : name);
+					dos.writeUTF(descriptor == null ? "" : descriptor);
+					dos.writeUTF(signature == null ? "" : signature);
+					dos.writeUTF(value == null ? "" : String.valueOf(value));
+				} catch (IOException e) {
+					throw new UncheckedIOException(e);
+				}
+				md.update(baos.toByteArray());
+				perField.put(classNameHolder[0] + "#" + name, HEX_FORMAT.formatHex(md.digest()));
+				return downstream;
+			}
+
+			@Override
 			public MethodVisitor visitMethod(int access, String mname, String descriptor, String signature,
 					String[] exceptions) {
 				MethodVisitor downstream = super.visitMethod(access, mname, descriptor, signature, exceptions);
-				if (classNameHolder[0] == null) {
+				if (classNameHolder[0] == null || !MemberFilter.shouldTrack(access)) {
 					return downstream;
 				}
 				return new MethodHashingVisitor(downstream, classNameHolder[0] + "#" + mname + descriptor, perMethod);
@@ -155,7 +197,7 @@ public class BytecodeHashStore {
 		String classHash = HEX_FORMAT.formatHex(md.digest());
 
 		String fqcn = classNameHolder[0];
-		return new HashResult(fqcn, classHash, perMethod);
+		return new HashResult(fqcn, classHash, perMethod, perField);
 	}
 
 	/**
@@ -170,8 +212,15 @@ public class BytecodeHashStore {
 		Path tempFile = PersistenceSupport.temporarySibling(hashFile);
 		try (LZ4FrameOutputStream lz4os = LZ4Support.frameOutputStreamHC(Files.newOutputStream(tempFile));
 				PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os))) {
+			pw.println(FORMAT_HEADER);
 			for (var e : classHashes.entrySet()) {
 				pw.print("#CLASS:");
+				pw.print(e.getKey());
+				pw.print('\t');
+				pw.println(e.getValue());
+			}
+			for (var e : fieldHashes.entrySet()) {
+				pw.print("#FIELD:");
 				pw.print(e.getKey());
 				pw.print('\t');
 				pw.println(e.getValue());
@@ -185,19 +234,38 @@ public class BytecodeHashStore {
 		PersistenceSupport.moveIntoPlace(tempFile, hashFile);
 	}
 
-	/** Loads a previously saved bytecode hash store. */
+	/**
+	 * Loads a previously saved bytecode hash store. Files written by older versions
+	 * (no {@code #FORMAT:} header, no {@code #FIELD:} lines) are read back with an
+	 * empty field map, so the upgrade is transparent.
+	 */
 	public static BytecodeHashStore load(Path hashFile) throws IOException {
 		Map<String, String> classMap = new TreeMap<>();
 		Map<String, String> methodMap = new TreeMap<>();
+		Map<String, String> fieldMap = new TreeMap<>();
 		Path loadPath = PersistenceSupport.resolveLoadPath(hashFile);
 		try (LZ4FrameInputStream lz4is = LZ4Support.frameInputStream(Files.newInputStream(loadPath));
 				BufferedReader br = new BufferedReader(new InputStreamReader(lz4is))) {
 			String line;
+			boolean firstLine = true;
 			while ((line = br.readLine()) != null) {
+				if (firstLine) {
+					firstLine = false;
+					if (line.startsWith("#FORMAT:")) {
+						// Header consumed; continue with the next line.
+						continue;
+					}
+					// v1 file (no header) — fall through to parse this line as content.
+				}
 				if (line.startsWith("#CLASS:")) {
 					int tab = line.indexOf('\t', 7);
 					if (tab > 7) {
 						classMap.put(line.substring(7, tab), line.substring(tab + 1));
+					}
+				} else if (line.startsWith("#FIELD:")) {
+					int tab = line.indexOf('\t', 7);
+					if (tab > 7) {
+						fieldMap.put(line.substring(7, tab), line.substring(tab + 1));
 					}
 				} else {
 					int tab = line.indexOf('\t');
@@ -207,7 +275,7 @@ public class BytecodeHashStore {
 				}
 			}
 		}
-		return new BytecodeHashStore(classMap, methodMap);
+		return new BytecodeHashStore(classMap, methodMap, fieldMap);
 	}
 
 	/**
@@ -269,6 +337,27 @@ public class BytecodeHashStore {
 		return methodKeyWithDescriptor.substring(0, paren);
 	}
 
+	/**
+	 * Returns field keys ({@code fqcn#fieldName}) whose hash differs from
+	 * {@code prev}, plus added/deleted field keys. Returns an empty set when the
+	 * previous store predates field hashing (v1 file).
+	 */
+	public Set<String> getChangedFieldKeys(BytecodeHashStore prev) {
+		Set<String> changed = new TreeSet<>();
+		for (var e : fieldHashes.entrySet()) {
+			String prior = prev.fieldHashes.get(e.getKey());
+			if (prior == null || !prior.equals(e.getValue())) {
+				changed.add(e.getKey());
+			}
+		}
+		for (String prevKey : prev.fieldHashes.keySet()) {
+			if (!fieldHashes.containsKey(prevKey)) {
+				changed.add(prevKey);
+			}
+		}
+		return changed;
+	}
+
 	public Map<String, String> getClassHashes() {
 		return Collections.unmodifiableMap(classHashes);
 	}
@@ -277,8 +366,12 @@ public class BytecodeHashStore {
 		return Collections.unmodifiableMap(methodHashes);
 	}
 
+	public Map<String, String> getFieldHashes() {
+		return Collections.unmodifiableMap(fieldHashes);
+	}
+
 	public boolean isEmpty() {
-		return classHashes.isEmpty() && methodHashes.isEmpty();
+		return classHashes.isEmpty() && methodHashes.isEmpty() && fieldHashes.isEmpty();
 	}
 
 	@Override
@@ -287,12 +380,13 @@ public class BytecodeHashStore {
 			return true;
 		if (!(o instanceof BytecodeHashStore other))
 			return false;
-		return classHashes.equals(other.classHashes) && methodHashes.equals(other.methodHashes);
+		return classHashes.equals(other.classHashes) && methodHashes.equals(other.methodHashes)
+				&& fieldHashes.equals(other.fieldHashes);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(classHashes, methodHashes);
+		return Objects.hash(classHashes, methodHashes, fieldHashes);
 	}
 
 	/**

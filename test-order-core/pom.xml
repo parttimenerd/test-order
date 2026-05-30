@@ -144,6 +144,14 @@
                                     <pattern>org.objectweb.asm</pattern>
                                     <shadedPattern>me.bechberger.testorder.shaded.org.objectweb.asm</shadedPattern>
                                 </relocation>
+                                <relocation>
+                                    <pattern>me.bechberger.util</pattern>
+                                    <shadedPattern>me.bechberger.testorder.shaded.util</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>me.bechberger.femtocli</pattern>
+                                    <shadedPattern>me.bechberger.testorder.shaded.femtocli</shadedPattern>
+                                </relocation>
                             </relocations>
                             <filters>
                                 <filter>
@@ -152,6 +160,28 @@
                                         <exclude>module-info.class</exclude>
                                         <exclude>META-INF/versions/*/module-info.class</exclude>
                                     </excludes>
+                                </filter>
+                                <!-- Exclude test frameworks and PIT from the fat jar — these must come
+                                     from the project's own classpath to avoid version conflicts -->
+                                <filter>
+                                    <artifact>org.pitest:*</artifact>
+                                    <excludes><exclude>**</exclude></excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>org.junit.*:*</artifact>
+                                    <excludes><exclude>**</exclude></excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>org.opentest4j:*</artifact>
+                                    <excludes><exclude>**</exclude></excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>org.testng:*</artifact>
+                                    <excludes><exclude>**</exclude></excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>org.slf4j:*</artifact>
+                                    <excludes><exclude>**</exclude></excludes>
                                 </filter>
                             </filters>
                         </configuration>

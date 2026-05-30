@@ -1,12 +1,15 @@
 package me.bechberger.testorder.ops.workflows;
 
+import java.io.IOException;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import me.bechberger.testorder.AgentArgsBuilder;
 import me.bechberger.testorder.PackageDetectorSupport;
+import me.bechberger.testorder.changes.ChangeDetectionSupport;
+import me.bechberger.testorder.changes.ChangeDetector;
+import me.bechberger.testorder.changes.SelectiveLearnSupport;
+import me.bechberger.testorder.changes.UncertainClassesStore;
 import me.bechberger.testorder.ops.AggregateOperation;
 import me.bechberger.testorder.ops.ChangeDetectionOps;
 import me.bechberger.testorder.ops.HashSnapshotOperation;
@@ -65,6 +68,53 @@ public final class LearnWorkflow {
 		sysProps.put("testorder.instrumentation.mode", ctx.instrumentationMode().toUpperCase());
 		sysProps.put("testorder.state.path", ctx.stateFile().toAbsolutePath().toString());
 
+		if (ctx.selectiveLearn() && ctx.sourceRoot() != null && ctx.classesDir() != null && ctx.depsDir() != null) {
+			// Skip selective instrumentation on first learn run (no index yet) — there is
+			// no previous dependency data to prune against, so full instrumentation is
+			// required to build a useful index.
+			boolean indexExists = ctx.indexFile() != null && java.nio.file.Files.exists(ctx.indexFile());
+			// Use resolveMode so that changeMode=auto correctly picks SINCE_LAST_RUN vs
+			// SINCE_LAST_COMMIT based on whether a hash snapshot already exists.
+			ChangeDetector.Mode changeMode;
+			try {
+				changeMode = ChangeDetectionSupport.resolveMode(ctx.changeMode(), ctx.hashFile());
+			} catch (IOException e) {
+				changeMode = ChangeDetector.Mode.UNCOMMITTED;
+			}
+			// Use repoRoot (git root) if available so cross-module changes are detected;
+			// fall back to module projectRoot so the diff is scoped to this module.
+			Path changeRoot = ctx.repoRoot() != null ? ctx.repoRoot() : ctx.projectRoot();
+			Set<String> uncertain = indexExists
+					? SelectiveLearnSupport.computeUncertainClasses(changeRoot, ctx.classesDir(), changeMode)
+					: null;
+			if (uncertain != null) {
+				// Namespace the file by module ID to avoid races in multi-module reactor
+				// builds where each module runs learn in parallel.
+				String moduleId = ctx.currentModuleId();
+				String fname = (moduleId == null || moduleId.isBlank())
+						? "uncertain-classes.txt"
+						: "uncertain-classes-" + moduleId.replaceAll("[^a-zA-Z0-9._-]", "_") + ".txt";
+				Path uncertainFile = ctx.depsDir().resolve(fname);
+				try {
+					UncertainClassesStore.save(uncertainFile, uncertain);
+					sysProps.put("testorder.learn.uncertainClassesFile", uncertainFile.toAbsolutePath().toString());
+					if (uncertain.isEmpty()) {
+						ctx.log().info("[test-order] Selective learn: no source changes detected; "
+								+ "no classes will be instrumented this run");
+					} else {
+						ctx.log().info("[test-order] Selective learn: " + uncertain.size()
+								+ " uncertain class(es) will be instrumented");
+					}
+				} catch (IOException e) {
+					ctx.log().warn(
+							"[test-order] Selective learn: failed to write uncertain-classes file: " + e.getMessage());
+				}
+			} else {
+				ctx.log().info(
+						"[test-order] Selective learn: no existing index — using full instrumentation for initial run");
+			}
+		}
+
 		List<String> jvmArgs = List.of("--enable-native-access=ALL-UNNAMED");
 
 		if (effectiveInclude != null) {
@@ -92,12 +142,19 @@ public final class LearnWorkflow {
 	/**
 	 * Aggregates .deps files into the binary dependency index.
 	 *
+	 * <p>
+	 * When {@link me.bechberger.testorder.ops.PluginContext#selectiveLearn()} is
+	 * {@code true}, uses incremental (merge) semantics: the existing index is
+	 * loaded and only the newly-recorded test deps are unioned in, preserving
+	 * dependency data for tests that were not re-instrumented this run. When
+	 * {@code false}, the full .deps directory replaces the index.
+	 *
 	 * @return the aggregation result, or {@code null} if no deps directory exists
 	 */
 	public static AggregateOperation.Result aggregate(PluginContext ctx) throws java.io.IOException {
 		if (ctx.depsDir() == null || !java.nio.file.Files.isDirectory(ctx.depsDir())) {
 			return null;
 		}
-		return AggregateOperation.aggregate(ctx.depsDir(), ctx.indexFile(), ctx.log());
+		return AggregateOperation.aggregate(ctx.depsDir(), ctx.indexFile(), ctx.log(), ctx.selectiveLearn());
 	}
 }

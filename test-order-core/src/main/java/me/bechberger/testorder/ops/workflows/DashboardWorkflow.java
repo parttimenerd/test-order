@@ -65,7 +65,8 @@ public final class DashboardWorkflow {
 				a.changedTests(), a.depMap(), ctx.projectName(),
 				ctx.stateFile() != null ? relativize(ctx.projectRoot(), ctx.stateFile()) : "",
 				ctx.indexFile() != null ? relativize(ctx.projectRoot(), ctx.indexFile()) : "", ctx.pluginVersion(),
-				a.loadedWeights().defs(), mlPredictions, healthReport, htmlTemplate, outputFile, ctx.log());
+				a.loadedWeights().defs(), mlPredictions, healthReport, ctx.depsDir(), htmlTemplate, outputFile,
+				ctx.log());
 
 		return outputFile;
 	}

@@ -724,8 +724,10 @@ let hoverTimer: ReturnType<typeof setTimeout> | null = null
 
 function showRowPreview(t: TestEntry, e: MouseEvent) {
   hoverTimer && clearTimeout(hoverTimer)
+  const target = e.currentTarget as HTMLElement
   hoverTimer = setTimeout(() => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    if (!target) return
+    const rect = target.getBoundingClientRect()
     const winW = window.innerWidth
     const popW = 240
     const right = rect.right + popW + 8 > winW

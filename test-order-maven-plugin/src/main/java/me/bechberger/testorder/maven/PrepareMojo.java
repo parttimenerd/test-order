@@ -14,6 +14,7 @@ import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.ErrorCode;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.changes.ChangeDetectionSupport;
+import me.bechberger.testorder.ops.AggregateOperation;
 import me.bechberger.testorder.ops.IndexCompactionOperation;
 import me.bechberger.testorder.ops.workflows.OrderWorkflow;
 
@@ -368,8 +369,39 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			me.bechberger.testorder.agent.Agent.InstrumentationMode iMode = me.bechberger.testorder.agent.Agent.InstrumentationMode
 					.fromString(instrMode);
 			List<String> includeList = includes.isBlank() ? List.of() : List.of(includes.split(","));
+
+			// Selective learn: compute uncertain classes if enabled and index exists
+			java.util.Set<String> uncertainClasses = null;
+			if (selectiveLearn) {
+				Path idxPath = ctx != null ? ctx.resolveIndexFile(indexFile) : java.nio.file.Path.of(indexFile);
+				boolean indexExists = java.nio.file.Files.exists(idxPath);
+				if (indexExists) {
+					me.bechberger.testorder.changes.ChangeDetector.Mode changeDetectorMode;
+					try {
+						Path hf = ctx != null ? ctx.resolveHashFile(hashFile) : null;
+						changeDetectorMode = me.bechberger.testorder.changes.ChangeDetectionSupport
+								.resolveMode(changeMode, hf);
+					} catch (java.io.IOException e) {
+						changeDetectorMode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
+					}
+					Path projectRoot = ctx != null ? ctx.gitRoot() : project.getBasedir().toPath();
+					uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
+							.computeUncertainClasses(projectRoot, classesDir, changeDetectorMode);
+					if (uncertainClasses != null && !uncertainClasses.isEmpty()) {
+						getLog().info("[test-order] Selective instrument: " + uncertainClasses.size()
+								+ " uncertain class(es) will be instrumented");
+					} else if (uncertainClasses != null) {
+						getLog().info(
+								"[test-order] Selective instrument: no source changes detected; skipping instrumentation");
+					}
+				} else {
+					getLog().info(
+							"[test-order] Selective instrument: no existing index — using full instrumentation for initial run");
+				}
+			}
+
 			me.bechberger.testorder.agent.OfflineInstrumentor instrumentor = new me.bechberger.testorder.agent.OfflineInstrumentor(
-					iMode, includeList, List.of());
+					iMode, includeList, List.of(), uncertainClasses);
 			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
 			me.bechberger.testorder.agent.runtime.ClassIdMapping mapping = instrumentor.instrument(classesDir,
 					backupDir);
@@ -484,6 +516,20 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		String mergedChangedCsv = mergedChanged.isEmpty() ? null : String.join(",", mergedChanged);
 		String mergedChangedTestsCsv = mergedChangedTests.isEmpty() ? null : String.join(",", mergedChangedTests);
 
+		// alwaysLearn pre-aggregation: fold .deps from prior runs into existing index
+		if (alwaysLearn) {
+			Path indexPath = resolveIndexPath();
+			Path depsDirPath = ctx.resolveDepsDir(depsDir);
+			if (Files.exists(indexPath) && Files.isDirectory(depsDirPath)) {
+				try {
+					AggregateOperation.aggregate(depsDirPath, indexPath, MavenPluginLog.wrap(getLog()), true);
+				} catch (IOException e) {
+					getLog().warn(
+							"[test-order] alwaysLearn incremental aggregation failed (ignored): " + e.getMessage());
+				}
+			}
+		}
+
 		TestOrderState state = loadState();
 		OrderWorkflow.OrderSetupResult result;
 		try {
@@ -546,6 +592,42 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 		writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 				buildScoreOverrides());
+
+		if (alwaysLearn) {
+			String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
+
+			// When selective learn is also enabled, skip agent attach if there are no
+			// structural changes — instrumenting nothing is wasteful and would incorrectly
+			// reset the runsSinceLearn counter.
+			boolean skipDueToEmptyUncertain = false;
+			if (selectiveLearn) {
+				Path classesDir = java.nio.file.Path.of(project.getBuild().getOutputDirectory());
+				Path projectRoot = ctx != null ? ctx.gitRoot() : project.getBasedir().toPath();
+				me.bechberger.testorder.changes.ChangeDetector.Mode changeDetectorMode;
+				try {
+					changeDetectorMode = me.bechberger.testorder.changes.ChangeDetectionSupport.resolveMode(changeMode,
+							ctx != null ? ctx.resolveHashFile(hashFile) : null);
+				} catch (IOException e) {
+					changeDetectorMode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
+				}
+				Set<String> uncertain = me.bechberger.testorder.changes.SelectiveLearnSupport
+						.computeUncertainClasses(projectRoot, classesDir, changeDetectorMode);
+				if (uncertain != null && uncertain.isEmpty()) {
+					skipDueToEmptyUncertain = true;
+					getLog().info("[test-order] alwaysLearn=true but no structural changes detected"
+							+ " — skipping agent attach (nothing to learn)");
+				}
+			}
+
+			if (!skipDueToEmptyUncertain) {
+				if ("offline".equalsIgnoreCase(instrumentation)) {
+					configureOfflineLearnMode(instrumentationMode, effectiveInclude);
+				} else {
+					configureLearnMode(instrumentationMode, effectiveInclude, true);
+				}
+				getLog().info("[test-order] alwaysLearn=true — agent attached on top of ordered run");
+			}
+		}
 
 		// R17-12: Mark that prepare already ran to prevent duplicate execution
 		// when 'mvn test-order:prepare test' triggers both CLI and lifecycle invocation

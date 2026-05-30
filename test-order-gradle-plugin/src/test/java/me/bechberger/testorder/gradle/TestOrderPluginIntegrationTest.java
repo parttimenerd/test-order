@@ -346,7 +346,7 @@ class TestOrderPluginIntegrationTest {
         assertNotEquals(selected.get(0), remaining.get(0));
         assertEquals(Set.of("com.example.app.CalculatorTest", "com.example.app.StringUtilsTest"),
                 Set.of(selected.get(0), remaining.get(0)));
-        assertTrue(result.getOutput().contains("[test-order] Selected 1 tests, deferred 1"));
+        assertTrue(result.getOutput().contains("[test-order] Selected 1 tests (") && result.getOutput().contains("), deferred 1"));
         assertTrue(Files.exists(projectDir.resolve("build/test-results/testOrderSelect/TEST-" + selected.get(0) + ".xml")));
         assertFalse(Files.exists(projectDir.resolve("build/test-results/testOrderSelect/TEST-" + remaining.get(0) + ".xml")));
     }

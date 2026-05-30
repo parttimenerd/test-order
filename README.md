@@ -396,6 +396,7 @@ The time-saved estimate compares the actual (prioritized) order against alphabet
 | **Coverage analysis** | `mvn test-order:coverage` | Identify least-tested production classes |
 | **Method-level ordering** | `mvn test -Dtestorder.methodOrder.enabled=true` | Reorder methods within each class |
 | **Annotations** | `@AlwaysRun` | Pin critical tests to always run first |
+| **Incremental learn** | `-Dtestorder.auto.alwaysLearn=true` | Keep dependency index fresh without dedicated learn runs (preview — see below) |
 
 <details>
 <summary><strong>Dashboard screenshots</strong></summary>
@@ -409,6 +410,8 @@ The time-saved estimate compares the actual (prioritized) order against alphabet
 ![Dashboard Analytics tab](docs/dashboard-analytics.png)
 
 Full feature reference: [test-order-dashboard/README.md](test-order-dashboard/README.md)
+
+Additional tabs appear when data is available: **ML Health** (failure-probability model), **Mutations** (PIT kill rates), and **Static Analysis** (selective-learn instrumentation scope — classes identified by the call graph as reachable from current changes).
 
 </details>
 
@@ -436,6 +439,31 @@ public class SmokeTest { … }
 ```
 
 JUnit's `@Order` and `@TestMethodOrder` annotations are respected — test-order won't reorder classes/methods that already have explicit ordering.
+
+</details>
+
+<details>
+<summary><strong>Incremental learn (preview)</strong></summary>
+
+Two flags keep the dependency index fresh without dedicated learn runs:
+
+- **`-Dtestorder.auto.alwaysLearn=true`** — attaches the learn agent on top of every ordered run so new dependencies are recorded incrementally. After each run the newly-recorded `.deps` files are merged into the existing index (union semantics), preserving entries for tests that weren't re-instrumented.
+- **`-Dtestorder.learn.selective=true`** — uses static call-graph analysis to instrument only classes reachable from the current changes (changed classes plus their transitive callees, up to 4 hops). Keeps per-run overhead proportional to the size of your change, not the size of the project.
+
+Combine both for low-overhead background index maintenance:
+
+```bash
+# Maven (lifecycle-injected via .mvn/extensions.xml — most common setup)
+mvn test -Dtestorder.auto.alwaysLearn=true -Dtestorder.learn.selective=true
+
+# Maven CLI goal (explicit)
+mvn test-order:auto test -Dtestorder.auto.alwaysLearn=true -Dtestorder.learn.selective=true
+
+# Gradle (selective only — alwaysLearn Gradle support is planned)
+./gradlew test -Dtestorder.learn.selective=true
+```
+
+Both flags default to `false`. When `alwaysLearn=true` and no structural changes are detected (empty uncertain set), the agent attach is skipped automatically — zero overhead on no-change runs.
 
 </details>
 

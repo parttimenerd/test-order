@@ -460,4 +460,95 @@ class StructuralDiffTest {
 				.anyMatch(c -> c.category() == StructuralDiff.Change.Category.METHOD);
 		assertFalse(hasMethodChange, "non-Lombok class should not synthesize method changes");
 	}
+
+	@Test
+	void methodSignatureChangedSameBody() {
+		String oldSource = """
+				package com.example;
+				public class Foo {
+				    public int bar(java.util.List<String> xs) { return xs.size(); }
+				}
+				""";
+		String newSource = """
+				package com.example;
+				public class Foo {
+				    public int bar(java.util.Collection<String> xs) { return xs.size(); }
+				}
+				""";
+		StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), oldSource, newSource);
+		assertTrue(diff.hasChanges());
+
+		var methodChanges = diff.changes().stream().filter(c -> c.category() == StructuralDiff.Change.Category.METHOD)
+				.toList();
+		assertEquals(1, methodChanges.size());
+		assertEquals(StructuralDiff.Change.Kind.SIGNATURE_CHANGED, methodChanges.get(0).kind(),
+				"return type / param type change with identical body should be SIGNATURE_CHANGED");
+		assertEquals("bar", methodChanges.get(0).name());
+	}
+
+	@Test
+	void methodBodyChangedSameSignature() {
+		String oldSource = """
+				package com.example;
+				public class Foo {
+				    public int bar(int x) { return x + 1; }
+				}
+				""";
+		String newSource = """
+				package com.example;
+				public class Foo {
+				    public int bar(int x) { return x * 2; }
+				}
+				""";
+		StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), oldSource, newSource);
+		var methodChanges = diff.changes().stream().filter(c -> c.category() == StructuralDiff.Change.Category.METHOD)
+				.toList();
+		assertEquals(1, methodChanges.size());
+		assertEquals(StructuralDiff.Change.Kind.MODIFIED, methodChanges.get(0).kind(),
+				"body change with unchanged signature should remain MODIFIED");
+	}
+
+	@Test
+	void fieldTypeChangedSameInitializer() {
+		String oldSource = """
+				package com.example;
+				public class Foo {
+				    int x = 5;
+				}
+				""";
+		String newSource = """
+				package com.example;
+				public class Foo {
+				    long x = 5;
+				}
+				""";
+		StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), oldSource, newSource);
+		var fieldChanges = diff.changes().stream().filter(c -> c.category() == StructuralDiff.Change.Category.FIELD)
+				.toList();
+		assertEquals(1, fieldChanges.size());
+		assertEquals(StructuralDiff.Change.Kind.SIGNATURE_CHANGED, fieldChanges.get(0).kind(),
+				"field declared-type change should be SIGNATURE_CHANGED even when initializer is identical");
+	}
+
+	@Test
+	void fieldInitializerChangedSameType() {
+		String oldSource = """
+				package com.example;
+				public class Foo {
+				    int x = 1;
+				}
+				""";
+		String newSource = """
+				package com.example;
+				public class Foo {
+				    int x = 42;
+				}
+				""";
+		StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), oldSource, newSource);
+		var fieldChanges = diff.changes().stream().filter(c -> c.category() == StructuralDiff.Change.Category.FIELD)
+				.toList();
+		assertEquals(1, fieldChanges.size());
+		assertEquals(StructuralDiff.Change.Kind.MODIFIED, fieldChanges.get(0).kind(),
+				"initializer-only change should remain MODIFIED");
+	}
 }

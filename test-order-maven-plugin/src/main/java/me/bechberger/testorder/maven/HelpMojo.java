@@ -71,12 +71,14 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  -Dtestorder.mode=<mode>          auto (default), learn, order, skip\n");
 		sb.append(
 				"  -Dtestorder.changeMode=<mode>    uncommitted (default), since-last-run, since-last-commit, explicit\n");
-		sb.append("  -Dtestorder.instrumentation.mode=<m>  CLASS (default), METHOD, MEMBER\n");
+		sb.append("  -Dtestorder.instrumentation.mode=<m>  MEMBER (default), CLASS, METHOD\n");
 		sb.append(
 				"  -Dtestorder.select.topN=<n>      Number of top-scored tests to select (default: -1, all affected)\n");
 		sb.append("  -Dtestorder.select.randomM=<m>   Random fast tests for coverage diversity (default: 10)\n");
 		sb.append(
 				"  -Dtestorder.autoLearnRunThreshold=<n>  Force full learn every N runs in auto mode (default: 10)\n");
+		sb.append(
+				"  -Dtestorder.autoLearnDiffThreshold=<n>  Auto-learn when N+ classes change in a single run (default: 0=disabled)\n");
 		sb.append("  -Dtestorder.auto.optimizeEvery=<n>     Auto-optimise weights every N runs (default: 10)\n");
 		sb.append("  -Dtestorder.autoCompactEvery=<n>       Auto-compact index every N runs (default: 50)\n");
 		sb.append("  -Dtestorder.tiered.tier2Fraction=<f>  Tier-2 duration/count fraction in [0,1] (default: 0.5)\n");
@@ -90,6 +92,9 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  -Dtestorder.skip=true             Skip the plugin entirely\n");
 		sb.append("  -Dtestorder.debug=true            Verbose scoring output\n");
 		sb.append("  -Dtestorder.failOnError=true      Fail build on diagnostic errors\n");
+		sb.append(
+				"  -Dtestorder.learn.selective=true  Only re-instrument changed classes and their transitive callees\n");
+		sb.append("  -Dtestorder.auto.alwaysLearn=true  Attach learn agent on every ordered run to keep index fresh\n");
 		sb.append("\nDetection properties (detect-dependencies goal):\n");
 		sb.append("  -Dtestorder.detect.algorithm=<a>    combined (default), reverse, random, history,\n");
 		sb.append("                                      pfast, iterative, bounded, tuscan\n");

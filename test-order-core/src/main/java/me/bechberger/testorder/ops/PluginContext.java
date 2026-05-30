@@ -14,6 +14,10 @@ public final class PluginContext {
 
 	// ── Path config ──────────────────────────────────────────────────
 	private final Path projectRoot;
+	/**
+	 * Git repository root — may span multiple modules; null means use projectRoot.
+	 */
+	private final Path repoRoot;
 	private final Path sourceRoot;
 	private final Path testSourceRoot;
 	private final List<Path> additionalSourceRoots; // e.g. Kotlin
@@ -45,6 +49,8 @@ public final class PluginContext {
 	// ── Selection config ─────────────────────────────────────────────
 	private final int topN;
 	private final int randomM;
+	private final boolean selectiveLearn;
+	private final boolean alwaysLearn;
 	private final Long seed;
 	private final Path selectedFile;
 	private final Path remainingFile;
@@ -80,6 +86,7 @@ public final class PluginContext {
 
 	private PluginContext(Builder b) {
 		this.projectRoot = b.projectRoot;
+		this.repoRoot = b.repoRoot;
 		this.sourceRoot = b.sourceRoot;
 		this.testSourceRoot = b.testSourceRoot;
 		this.additionalSourceRoots = b.additionalSourceRoots != null ? List.copyOf(b.additionalSourceRoots) : List.of();
@@ -105,6 +112,8 @@ public final class PluginContext {
 		this.bytecodeAugmentDependencyMapEnabled = b.bytecodeAugmentDependencyMapEnabled;
 		this.topN = b.topN;
 		this.randomM = b.randomM;
+		this.selectiveLearn = b.selectiveLearn;
+		this.alwaysLearn = b.alwaysLearn;
 		this.seed = b.seed;
 		this.selectedFile = b.selectedFile;
 		this.remainingFile = b.remainingFile;
@@ -128,6 +137,14 @@ public final class PluginContext {
 	public Path projectRoot() {
 		return projectRoot;
 	}
+
+	/**
+	 * Git repository root — spans all modules; null if not set (use projectRoot).
+	 */
+	public Path repoRoot() {
+		return repoRoot;
+	}
+
 	public Path sourceRoot() {
 		return sourceRoot;
 	}
@@ -200,8 +217,16 @@ public final class PluginContext {
 	public int topN() {
 		return topN;
 	}
+
 	public int randomM() {
 		return randomM;
+	}
+
+	public boolean selectiveLearn() {
+		return selectiveLearn;
+	}
+	public boolean alwaysLearn() {
+		return alwaysLearn;
 	}
 	public Long seed() {
 		return seed;
@@ -272,6 +297,7 @@ public final class PluginContext {
 
 	public static final class Builder {
 		private Path projectRoot;
+		private Path repoRoot;
 		private Path sourceRoot;
 		private Path testSourceRoot;
 		private List<Path> additionalSourceRoots;
@@ -297,6 +323,8 @@ public final class PluginContext {
 		private boolean bytecodeAugmentDependencyMapEnabled = true;
 		private int topN = -1;
 		private int randomM = 10;
+		private boolean selectiveLearn = false;
+		private boolean alwaysLearn = false;
 		private Long seed;
 		private Path selectedFile;
 		private Path remainingFile;
@@ -321,6 +349,12 @@ public final class PluginContext {
 			this.projectRoot = v;
 			return this;
 		}
+
+		public Builder repoRoot(Path v) {
+			this.repoRoot = v;
+			return this;
+		}
+
 		public Builder sourceRoot(Path v) {
 			this.sourceRoot = v;
 			return this;
@@ -417,8 +451,18 @@ public final class PluginContext {
 			this.topN = v;
 			return this;
 		}
+
 		public Builder randomM(int v) {
 			this.randomM = v;
+			return this;
+		}
+
+		public Builder selectiveLearn(boolean v) {
+			this.selectiveLearn = v;
+			return this;
+		}
+		public Builder alwaysLearn(boolean v) {
+			this.alwaysLearn = v;
 			return this;
 		}
 		public Builder seed(Long v) {

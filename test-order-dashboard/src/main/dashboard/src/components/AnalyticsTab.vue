@@ -482,6 +482,170 @@ function updateTreemapColors() {
     })
 }
 
+/** Fan-out histogram: distribution of test dep-counts. */
+function buildFanOutHistogram() {
+  const container = document.getElementById('fanout-hist')
+  if (!container) return
+  const fo = fanOutDistribution.value
+  d3.select(container).selectAll('*').remove()
+  if (!fo) return
+  const W = container.clientWidth || 600, H = 120
+  const m = { t: 6, r: 8, b: 22, l: 28 }
+  const svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
+  const innerW = W - m.l - m.r, innerH = H - m.t - m.b
+  const x = d3.scaleLinear().domain([0, fo.hist.length]).range([0, innerW])
+  const y = d3.scaleLinear().domain([0, Math.max(1, ...fo.hist)]).range([innerH, 0])
+  const g = svg.append('g').attr('transform', `translate(${m.l},${m.t})`)
+  // Mean line
+  const meanBucket = fo.bw > 0 ? fo.mean / fo.bw : 0
+  if (meanBucket > 0 && meanBucket < fo.hist.length) {
+    g.append('line').attr('x1', x(meanBucket)).attr('x2', x(meanBucket))
+      .attr('y1', 0).attr('y2', innerH).attr('stroke', '#fbbf24').attr('stroke-dasharray', '2,3').attr('stroke-width', 1)
+    g.append('text').attr('x', x(meanBucket) + 3).attr('y', 10).attr('font-size', '8.5px').attr('fill', '#fbbf24').text(`mean ${fo.mean}`)
+  }
+  // Threshold line
+  const thrBucket = fo.bw > 0 ? fo.threshold / fo.bw : 0
+  if (thrBucket > 0 && thrBucket < fo.hist.length) {
+    g.append('line').attr('x1', x(thrBucket)).attr('x2', x(thrBucket))
+      .attr('y1', 0).attr('y2', innerH).attr('stroke', '#ef4444').attr('stroke-dasharray', '2,3').attr('stroke-width', 1)
+    g.append('text').attr('x', x(thrBucket) + 3).attr('y', 22).attr('font-size', '8.5px').attr('fill', '#ef4444').text(`+2σ ${fo.threshold}`)
+  }
+  // Bars
+  g.selectAll('rect').data(fo.hist).join('rect')
+    .attr('x', (_, i) => x(i) + 1).attr('y', (n: number) => y(n))
+    .attr('width', Math.max(1, innerW / fo.hist.length - 2)).attr('height', (n: number) => innerH - y(n))
+    .attr('fill', (_, i) => i * fo.bw >= fo.threshold ? '#ef4444' : '#6366f1')
+    .append('title').text((n: number, i: number) => `${i * fo.bw}–${(i + 1) * fo.bw - 1} deps · ${n} test${n === 1 ? '' : 's'}`)
+  // X axis (a few ticks)
+  const tickCount = Math.min(6, fo.hist.length)
+  const ticks = d3.range(0, fo.hist.length + 1, Math.max(1, Math.floor(fo.hist.length / tickCount)))
+  g.append('g').attr('transform', `translate(0,${innerH})`)
+    .selectAll('text').data(ticks).join('text')
+    .attr('x', d => x(d)).attr('y', 13).attr('font-size', '9px').attr('fill', '#94a3b8').attr('text-anchor', 'middle')
+    .text(d => d * fo.bw)
+  g.append('text').attr('x', innerW / 2).attr('y', innerH + 20).attr('font-size', '8.5px').attr('fill', '#64748b').attr('text-anchor', 'middle').text('dep count')
+  // Y axis
+  g.append('text').attr('x', -2).attr('y', 0).attr('font-size', '9px').attr('fill', '#94a3b8').attr('text-anchor', 'end').attr('dy', '0.7em').text(Math.max(1, ...fo.hist))
+  g.append('text').attr('x', -2).attr('y', innerH).attr('font-size', '9px').attr('fill', '#94a3b8').attr('text-anchor', 'end').attr('dy', '0.3em').text('0')
+}
+
+/** Rank vs Coverage scatter: x = rank, y = total covered classes. */
+function buildRankCoverageScatter() {
+  const container = document.getElementById('rank-cov-scatter')
+  if (!container) return
+  const data = rankCoverageScatter.value
+  d3.select(container).selectAll('*').remove()
+  if (!data.length) return
+  const W = container.clientWidth || 600, H = 300
+  const m = { t: 10, r: 12, b: 30, l: 40 }
+  const svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
+  const innerW = W - m.l - m.r, innerH = H - m.t - m.b
+  const xMax = Math.max(...data.map(p => p.rank), 1)
+  const yMax = Math.max(...data.map(p => p.total), 1)
+  const x = d3.scaleLinear().domain([1, xMax]).range([0, innerW])
+  const y = d3.scaleLinear().domain([0, yMax]).range([innerH, 0]).nice()
+  const g = svg.append('g').attr('transform', `translate(${m.l},${m.t})`)
+  // Top-decile band
+  const decile = Math.max(1, Math.ceil(xMax * 0.1))
+  g.append('rect').attr('x', 0).attr('y', 0).attr('width', x(decile))
+    .attr('height', innerH).attr('fill', 'rgba(99,102,241,0.08)')
+  g.append('text').attr('x', x(decile) - 4).attr('y', 12).attr('font-size', '9px').attr('fill', '#818cf8').attr('text-anchor', 'end').text('top 10%')
+  // Axes
+  g.append('line').attr('x1', 0).attr('y1', innerH).attr('x2', innerW).attr('y2', innerH).attr('stroke', '#334155')
+  g.append('line').attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', innerH).attr('stroke', '#334155')
+  // X ticks
+  const xTicks = x.ticks(6)
+  g.selectAll('text.x-tick').data(xTicks).join('text').attr('class', 'x-tick')
+    .attr('x', d => x(d)).attr('y', innerH + 14).attr('font-size', '9px').attr('fill', '#94a3b8').attr('text-anchor', 'middle').text(d => d)
+  g.append('text').attr('x', innerW / 2).attr('y', innerH + 25).attr('font-size', '9px').attr('fill', '#64748b').attr('text-anchor', 'middle').text('rank (1 = first to run)')
+  // Y ticks
+  const yTicks = y.ticks(5)
+  g.selectAll('text.y-tick').data(yTicks).join('text').attr('class', 'y-tick')
+    .attr('x', -4).attr('y', d => y(d)).attr('dy', '0.32em').attr('font-size', '9px').attr('fill', '#94a3b8').attr('text-anchor', 'end').text(d => d)
+  g.append('text').attr('transform', `translate(-30,${innerH / 2}) rotate(-90)`).attr('font-size', '9px').attr('fill', '#64748b').attr('text-anchor', 'middle').text('classes covered')
+  // Dots — exclusive ones drawn last so they sit on top
+  const sorted = [...data].sort((a, b) => a.exclusive - b.exclusive)
+  g.selectAll('circle').data(sorted).join('circle')
+    .attr('cx', p => x(p.rank)).attr('cy', p => y(p.total))
+    .attr('r', p => 3 + Math.sqrt(p.exclusive))
+    .attr('fill', p => p.exclusive > 0 ? '#ef4444' : '#3b82f6')
+    .attr('fill-opacity', 0.75)
+    .attr('stroke', p => p.exclusive > 0 ? '#7f1d1d' : '#1d4ed8').attr('stroke-width', 0.6)
+    .style('cursor', 'pointer')
+    .on('click', (_e: MouseEvent, p: typeof sorted[number]) => d.navigateToTestFromCov(p.name))
+    .append('title')
+    .text(p => `${dn(p.name)}\nrank ${p.rank} · ${p.total} class${p.total === 1 ? '' : 'es'} covered${p.exclusive > 0 ? ` · ${p.exclusive} exclusive` : ''}`)
+}
+
+/** Cross-package coupling matrix: pkg(test) → pkg(dep) heatmap. */
+function buildPkgCouplingMatrix() {
+  const container = document.getElementById('pkg-coupling-matrix')
+  if (!container) return
+  const data = pkgCouplingMatrix.value
+  d3.select(container).selectAll('*').remove()
+  if (!data) return
+  const N = data.order.length
+  // Cap dimension — show top-N most-active packages by total edges in/out
+  const MAX = 24
+  let order = data.order
+  if (N > MAX) {
+    const scored = data.order.map(p => {
+      let t = 0
+      for (const q of data.order) t += (data.m.get(p)?.get(q) ?? 0) + (data.m.get(q)?.get(p) ?? 0)
+      return { p, t }
+    }).sort((a, b) => b.t - a.t).slice(0, MAX).map(x => x.p)
+    order = scored.sort()
+  }
+  const W = container.clientWidth || 600
+  const labelH = 90, labelW = 140
+  const cell = Math.max(8, Math.min(22, Math.floor((W - labelW - 16) / order.length)))
+  const H = labelH + cell * order.length + 16
+  const svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
+  const g = svg.append('g').attr('transform', `translate(${labelW},${labelH})`)
+  let mx = 0
+  for (const a of order) for (const b of order) {
+    const v = data.m.get(a)?.get(b) ?? 0
+    if (v > mx) mx = v
+  }
+  const color = d3.scaleSequential((t: number) => d3.interpolateInferno(0.15 + 0.7 * t)).domain([0, Math.log(mx + 1) || 1])
+  // Cells
+  const rows = order.flatMap((a, i) => order.map((b, j) => ({ a, b, i, j, v: data.m.get(a)?.get(b) ?? 0 })))
+  g.selectAll('rect').data(rows).join('rect')
+    .attr('x', d => d.j * cell).attr('y', d => d.i * cell)
+    .attr('width', cell - 1).attr('height', cell - 1)
+    .attr('fill', d => d.v === 0 ? 'rgba(51,65,85,0.25)' : color(Math.log(d.v + 1)))
+    .style('cursor', d => d.v > 0 ? 'pointer' : 'default')
+    .on('click', (_e: MouseEvent, d: any) => {
+      if (d.v <= 0) return
+      const tail = d.b.split('.').slice(-2).join('.')
+      d.covSearchQ.value = tail
+    })
+    .append('title')
+    .text(d => `${d.a} → ${d.b}\n${d.v} dep edge${d.v === 1 ? '' : 's'}`)
+  // Diagonal stroke for self-pkg
+  g.selectAll('rect.diag').data(rows.filter(r => r.a === r.b && r.v > 0)).join('rect').attr('class', 'diag')
+    .attr('x', d => d.j * cell).attr('y', d => d.i * cell)
+    .attr('width', cell - 1).attr('height', cell - 1)
+    .attr('fill', 'none').attr('stroke', '#fbbf24').attr('stroke-width', 1)
+    .attr('pointer-events', 'none')
+  // Row labels
+  g.selectAll('text.row').data(order).join('text').attr('class', 'row')
+    .attr('x', -6).attr('y', (_, i) => i * cell + cell / 2 + 3)
+    .attr('font-size', '9px').attr('fill', '#94a3b8').attr('text-anchor', 'end')
+    .text(p => p.split('.').slice(-2).join('.'))
+    .append('title').text(p => p)
+  // Column labels (rotated)
+  g.selectAll('text.col').data(order).join('text').attr('class', 'col')
+    .attr('transform', (_, j) => `translate(${j * cell + cell / 2 + 3},-6) rotate(-50)`)
+    .attr('font-size', '9px').attr('fill', '#94a3b8').attr('text-anchor', 'start')
+    .text(p => p.split('.').slice(-2).join('.'))
+    .append('title').text(p => p)
+  // Caption
+  svg.append('text').attr('x', labelW).attr('y', labelH + cell * order.length + 12)
+    .attr('font-size', '9px').attr('fill', '#64748b')
+    .text(`${order.length} of ${N} packages · darker = more dep edges (log scale, max ${mx})`)
+}
+
 // Coverage: package-level stats
 const covPackageStats = computed(() => {
   if (!d.dd.coverage?.classes) return []
@@ -506,6 +670,12 @@ const covUncoveredCount = computed(() => {
 })
 
 const covPkgSort = ref<'coverage' | 'alpha' | 'tests'>('coverage')
+const redundancyExpanded = ref<Set<number>>(new Set())
+const toggleRedundancy = (i: number) => {
+  const s = new Set(redundancyExpanded.value)
+  if (s.has(i)) s.delete(i); else s.add(i)
+  redundancyExpanded.value = s
+}
 const covPkgStatsSorted = computed(() => {
   const stats = covPackageStats.value
   if (covPkgSort.value === 'alpha') return [...stats].sort((a, b) => a.name.localeCompare(b.name))
@@ -1015,6 +1185,161 @@ const covEfficiency = computed(() => {
   return { overTested, underTested, uncovered, medianTests, total: classes.length }
 })
 
+// Single-Point-of-Failure: classes with exactly one covering test, and tests that
+// are the sole coverer of one or more classes.
+const SPOF_TOP_N = 10
+const singleTestClasses = computed(() => {
+  if (!d.hasCoverage || !d.dd.coverage?.classes?.length) return []
+  return d.dd.coverage.classes
+    .filter(c => c.testCount === 1)
+    .sort((a, b) => a.name.localeCompare(b.name))
+})
+const exclusiveCoverageByTest = computed(() => {
+  if (!d.hasCoverage || !d.dd.coverage?.classes?.length) return []
+  const counts = new Map<string, { count: number; classes: string[] }>()
+  for (const c of d.dd.coverage.classes) {
+    if (c.testCount === 1) {
+      const t = c.tests[0]
+      const e = counts.get(t) ?? { count: 0, classes: [] }
+      e.count++; e.classes.push(c.name)
+      counts.set(t, e)
+    }
+  }
+  return [...counts.entries()]
+    .map(([test, v]) => ({ test, count: v.count, classes: v.classes }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, SPOF_TOP_N)
+})
+
+// What-if: how many classes would be left with zero coverage if all currently
+// selected tests were removed? (i.e. the selection is the only thing covering them)
+const selectionExclusiveLoss = computed(() => {
+  const sel = d.selectedTests.value
+  if (!sel || !sel.size || !d.dd.coverage?.classes?.length) return null
+  let lost = 0
+  for (const c of d.dd.coverage.classes) {
+    if (c.testCount > 0 && c.tests.every(t => sel.has(t))) lost++
+  }
+  return lost
+})
+
+// Dep fan-out distribution: histogram of t.deps.length and outliers (god tests).
+const fanOutDistribution = computed(() => {
+  if (!d.tests.length) return null
+  const counts = d.tests.map(t => t.deps?.length ?? 0)
+  const maxC = Math.max(...counts, 1)
+  const buckets = 20
+  const bw = Math.max(1, Math.ceil(maxC / buckets))
+  const hist = new Array(buckets).fill(0)
+  counts.forEach(n => hist[Math.min(buckets - 1, Math.floor(n / bw))]++)
+  const mean = counts.reduce((s, n) => s + n, 0) / counts.length
+  const sd = Math.sqrt(counts.reduce((s, n) => s + (n - mean) ** 2, 0) / counts.length)
+  const threshold = mean + 2 * sd
+  const outliers = d.tests
+    .map(t => ({ test: t, count: t.deps?.length ?? 0 }))
+    .filter(x => x.count > threshold && x.count > 5)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+  return { hist, bw, max: maxC, mean: Math.round(mean), sd: Math.round(sd), threshold: Math.round(threshold), outliers }
+})
+
+// Rank vs coverage scatter data — does the prioritizer surface coverage-rich tests early?
+const rankCoverageScatter = computed(() => {
+  if (!d.hasCoverage || !d.dd.coverage?.classes?.length || !d.tests.length) return []
+  const excl = new Map<string, number>()
+  const tot = new Map<string, number>()
+  for (const c of d.dd.coverage.classes) {
+    if (c.testCount === 1) excl.set(c.tests[0], (excl.get(c.tests[0]) ?? 0) + 1)
+    for (const t of c.tests) tot.set(t, (tot.get(t) ?? 0) + 1)
+  }
+  return d.tests.map(t => ({
+    name: t.name,
+    rank: t.rank,
+    exclusive: excl.get(t.name) ?? 0,
+    total: tot.get(t.name) ?? 0,
+  }))
+})
+
+// Cross-package coupling matrix — package(test) → package(dep) edge counts.
+const pkgCouplingMatrix = computed(() => {
+  if (!d.tests.length) return null
+  const pkgOf = (n: string) => { const i = n.lastIndexOf('.'); return i > 0 ? n.substring(0, i) : '(default)' }
+  const m = new Map<string, Map<string, number>>()
+  const pkgs = new Set<string>()
+  for (const t of d.tests) {
+    const tp = pkgOf(t.name); pkgs.add(tp)
+    for (const dep of (t.deps || [])) {
+      const dp = pkgOf(dep); pkgs.add(dp)
+      if (!m.has(tp)) m.set(tp, new Map())
+      const row = m.get(tp)!
+      row.set(dp, (row.get(dp) ?? 0) + 1)
+    }
+  }
+  if (pkgs.size < 2) return null
+  const order = [...pkgs].sort()
+  let total = 0; let mx = 0
+  for (const a of order) for (const b of order) {
+    const v = m.get(a)?.get(b) ?? 0
+    total += v; if (v > mx) mx = v
+  }
+  return { order, m, max: mx, total }
+})
+
+// Suite-wide redundancy clusters — groups of tests with Jaccard ≥ 0.8 on covered classes.
+const REDUNDANCY_THRESHOLD = 0.8
+const REDUNDANCY_MAX_TESTS = 500
+const redundancyClusters = computed(() => {
+  if (!d.hasCoverage || !d.dd.coverage?.classes?.length) return []
+  const tCov = new Map<string, Set<string>>()
+  for (const c of d.dd.coverage.classes) {
+    for (const t of c.tests) {
+      let s = tCov.get(t); if (!s) { s = new Set(); tCov.set(t, s) }
+      s.add(c.name)
+    }
+  }
+  const tests = [...tCov.keys()]
+  if (tests.length === 0 || tests.length > REDUNDANCY_MAX_TESTS) return []
+  const parent = new Map(tests.map(t => [t, t]))
+  const find = (x: string): string => {
+    let p = parent.get(x)!
+    while (p !== parent.get(p)) p = parent.get(p)!
+    parent.set(x, p)
+    return p
+  }
+  const union = (a: string, b: string) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb) }
+  for (let i = 0; i < tests.length; i++) {
+    const A = tCov.get(tests[i])!
+    if (A.size < 2) continue
+    for (let j = i + 1; j < tests.length; j++) {
+      const B = tCov.get(tests[j])!
+      if (B.size < 2) continue
+      const small = A.size <= B.size ? A : B
+      const big = small === A ? B : A
+      let inter = 0
+      for (const x of small) if (big.has(x)) inter++
+      if (inter === 0) continue
+      const jac = inter / (A.size + B.size - inter)
+      if (jac >= REDUNDANCY_THRESHOLD) union(tests[i], tests[j])
+    }
+  }
+  const groups = new Map<string, string[]>()
+  for (const t of tests) {
+    const r = find(t)
+    let g = groups.get(r); if (!g) { g = []; groups.set(r, g) }
+    g.push(t)
+  }
+  const clusters: { tests: string[]; shared: string[]; sharedSize: number }[] = []
+  for (const g of groups.values()) {
+    if (g.length < 2) continue
+    g.sort()
+    const sets = g.map(t => tCov.get(t)!)
+    const inter = new Set<string>(sets[0])
+    for (let i = 1; i < sets.length; i++) for (const x of [...inter]) if (!sets[i].has(x)) inter.delete(x)
+    clusters.push({ tests: g, shared: [...inter].sort(), sharedSize: inter.size })
+  }
+  return clusters.sort((a, b) => b.tests.length - a.tests.length || b.sharedSize - a.sharedSize).slice(0, 6)
+})
+
 // First-failure detection heatmap: for each run with failures, which test was first to fail?
 // Shows tests as rows, runs as columns. Each cell: colored if test failed in that run,
 // starred if it was the FIRST failure in that run. Also computes "detection rank" = avg rank
@@ -1309,7 +1634,14 @@ function scoreBar(o: { score: number; failScore: number; depOverlap: number; dep
 
 function initAll() {
   if (d.activeTab.value !== 'analytics') return
-  nextTick(() => { try { initTimeline() } catch (e) { console.error('[dashboard] Timeline failed:', e) }; initDistributions(); buildCoverageTreemap() })
+  nextTick(() => {
+    try { initTimeline() } catch (e) { console.error('[dashboard] Timeline failed:', e) }
+    initDistributions()
+    buildCoverageTreemap()
+    try { buildFanOutHistogram() } catch (e) { console.error('[dashboard] Fan-out failed:', e) }
+    try { buildRankCoverageScatter() } catch (e) { console.error('[dashboard] Rank scatter failed:', e) }
+    try { buildPkgCouplingMatrix() } catch (e) { console.error('[dashboard] Pkg matrix failed:', e) }
+  })
 }
 
 watch(() => d.activeTab.value, (tab) => { if (tab === 'analytics') initAll() })
@@ -2396,6 +2728,11 @@ onMounted(initAll)
             </div>
             <span style="font-size:.72rem;font-weight:700;color:var(--accent-light)">{{ d.selectionCoverage.value.percent }}%</span>
             <span style="font-size:.68rem;color:var(--text-sec)">({{ d.selectionCoverage.value.covered }}/{{ d.selectionCoverage.value.total }} classes)</span>
+            <span v-if="selectionExclusiveLoss && selectionExclusiveLoss > 0"
+                  style="font-size:.68rem;color:var(--red);font-weight:600"
+                  :title="'These classes have no other tests covering them. Removing the selection would leave them with zero coverage.'">
+              · removing this selection would orphan {{ selectionExclusiveLoss }} class{{ selectionExclusiveLoss === 1 ? '' : 'es' }}
+            </span>
           </div>
         </div>
 
@@ -2499,6 +2836,76 @@ onMounted(initAll)
           </div>
         </div>
 
+        <!-- Single-Point-of-Failure -->
+        <div v-if="singleTestClasses.length || exclusiveCoverageByTest.length" style="margin-top:10px;margin-bottom:10px">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-sec);margin-bottom:6px" title="Classes covered by exactly one test (orphan risk) and tests that exclusively cover the most classes (high-leverage tests).">
+            ⚠ Single-Point-of-Failure
+            <span style="font-size:.6rem;font-weight:400;color:var(--text-muted);margin-left:4px">— {{ singleTestClasses.length }} class{{ singleTestClasses.length === 1 ? '' : 'es' }} with one covering test</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div v-if="singleTestClasses.length" class="cov-eff__col cov-eff__col--under">
+              <div class="cov-eff__col-title">Singly-covered classes <span class="cov-eff__col-hint">orphan if their one test is dropped</span></div>
+              <div
+                v-for="cls in singleTestClasses.slice(0, 10)"
+                :key="cls.name"
+                class="cov-eff__row"
+                @click="d.navigateToCovClass(cls.name)"
+                @mouseenter="classHover.show(cls.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()"
+                :title="cls.name + '\nOnly ' + cls.tests[0] + ' covers this class'"
+              >
+                <span class="cov-eff__name">{{ dn(cls.name) }}</span>
+                <span class="cov-eff__count cov-eff__count--under">1</span>
+              </div>
+              <div v-if="singleTestClasses.length > 10" style="font-size:.58rem;color:var(--text-muted);margin-top:3px;padding:0 4px">+{{ singleTestClasses.length - 10 }} more…</div>
+            </div>
+            <div v-if="exclusiveCoverageByTest.length" class="cov-eff__col cov-eff__col--over">
+              <div class="cov-eff__col-title">High-leverage tests <span class="cov-eff__col-hint">exclusive coverage count</span></div>
+              <div
+                v-for="t in exclusiveCoverageByTest"
+                :key="t.test"
+                class="cov-eff__row"
+                @click="d.navigateToTestFromCov(t.test)"
+                @mouseenter="testHover.show(t.test, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
+                :title="t.test + '\nExclusively covers ' + t.count + ' class(es): ' + t.classes.slice(0, 5).join(', ') + (t.classes.length > 5 ? '…' : '')"
+              >
+                <span class="cov-eff__name">{{ dn(t.test) }}</span>
+                <span class="cov-eff__count cov-eff__count--over">{{ t.count }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dep fan-out distribution -->
+        <div v-if="fanOutDistribution" style="margin-top:10px;margin-bottom:10px">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-sec);margin-bottom:6px" title="Distribution of how many production classes each test depends on. Tests far above the mean (god-tests / integration tests) often signal poor isolation.">
+            📊 Dep Fan-out Distribution
+            <span style="font-size:.6rem;font-weight:400;color:var(--text-muted);margin-left:4px">— mean {{ fanOutDistribution.mean }} ± {{ fanOutDistribution.sd }} · max {{ fanOutDistribution.max }}</span>
+          </div>
+          <div id="fanout-hist" style="width:100%;min-height:120px"></div>
+          <div v-if="fanOutDistribution.outliers.length" style="margin-top:6px">
+            <div class="card-label" style="font-size:.6rem;margin-bottom:3px">God-test outliers <span style="color:var(--text-muted);font-weight:400">(&gt; mean + 2σ)</span></div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">
+              <span
+                v-for="o in fanOutDistribution.outliers"
+                :key="o.test.name"
+                class="analytics__class-test-tag analytics__class-test-tag--clickable"
+                @click="d.navigateToTestFromCov(o.test.name)"
+                @mouseenter="testHover.show(o.test.name, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
+                :title="o.test.name + '\n' + o.count + ' deps (' + (o.count / fanOutDistribution!.mean).toFixed(1) + '× mean)'"
+              >{{ dn(o.test.name) }} <span style="color:var(--red);font-weight:700">{{ o.count }}</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rank vs Coverage scatter -->
+        <div v-if="rankCoverageScatter.length" style="margin-top:10px;margin-bottom:10px">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-sec);margin-bottom:6px" title="Each dot is a test. X = priority rank (lower = earlier). Y = total source classes covered. Red dots have exclusive coverage. The dashed line marks the top-decile rank — high-leverage tests should sit left of it.">
+            🎯 Rank vs Coverage
+            <span style="font-size:.6rem;font-weight:400;color:var(--text-muted);margin-left:4px">— validates that coverage-rich tests run early</span>
+          </div>
+          <div id="rank-cov-scatter" style="width:100%;min-height:300px"></div>
+        </div>
+
         <!-- Package breakdown -->
         <div v-if="covPackageStats.length > 1" style="margin-top:10px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
@@ -2549,6 +2956,46 @@ onMounted(initAll)
           </div>
         </div>
 
+        <!-- Redundancy clusters (suite-wide) -->
+        <div v-if="redundancyClusters.length" style="margin-top:10px;margin-bottom:10px">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-sec);margin-bottom:6px" title="Tests grouped by ≥80% Jaccard overlap of their covered source classes. Members of a group are candidates for merging or deletion.">
+            ♻ Redundancy Clusters
+            <span style="font-size:.6rem;font-weight:400;color:var(--text-muted);margin-left:4px">— {{ redundancyClusters.length }} group{{ redundancyClusters.length === 1 ? '' : 's' }} of near-duplicate tests (Jaccard ≥ 0.8)</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div v-for="(g, i) in redundancyClusters" :key="i" class="cov-eff__col" style="padding:6px 8px;cursor:pointer" @click="toggleRedundancy(i)">
+              <div style="display:flex;align-items:center;gap:6px;font-size:.65rem;color:var(--text-sec)">
+                <span style="font-weight:700;color:var(--accent-light)">{{ g.tests.length }} tests</span>
+                <span>·</span>
+                <span>{{ g.shared.length }} shared class{{ g.shared.length === 1 ? '' : 'es' }}</span>
+                <span style="margin-left:auto;font-size:.58rem;color:var(--text-muted)">{{ redundancyExpanded.has(i) ? '▾ collapse' : '▸ expand' }}</span>
+              </div>
+              <div v-if="redundancyExpanded.has(i)" style="margin-top:6px;display:flex;flex-direction:column;gap:3px" @click.stop>
+                <div style="display:flex;flex-wrap:wrap;gap:4px">
+                  <span
+                    v-for="tn in g.tests" :key="tn"
+                    class="analytics__class-test-tag analytics__class-test-tag--clickable"
+                    @click="d.navigateToTestFromCov(tn)"
+                    @mouseenter="testHover.show(tn, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
+                  >{{ dn(tn) }}</span>
+                </div>
+                <div v-if="g.shared.length" style="font-size:.58rem;color:var(--text-muted);margin-top:3px">
+                  Shared: <span v-for="(sc, si) in g.shared.slice(0, 8)" :key="sc" style="color:var(--text-sec)">{{ dn(sc) }}<span v-if="si < Math.min(g.shared.length, 8) - 1">, </span></span><span v-if="g.shared.length > 8"> …+{{ g.shared.length - 8 }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cross-package coupling matrix -->
+        <div v-if="pkgCouplingMatrix" style="margin-top:10px;margin-bottom:10px">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-sec);margin-bottom:6px" title="Heatmap of dep edges from tests in package A (rows) to production classes in package B (columns). Concentrated cells reveal cross-package coupling and architectural seams.">
+            🔗 Cross-Package Coupling
+            <span style="font-size:.6rem;font-weight:400;color:var(--text-muted);margin-left:4px">— {{ pkgCouplingMatrix.order.length }} packages · log-scaled edge counts</span>
+          </div>
+          <div id="pkg-coupling-matrix" style="width:100%;overflow:auto"></div>
+        </div>
+
         <!-- Class detail panel -->
         <div v-if="d.covSelectedClass.value" class="detail-panel" style="margin-top:10px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -2582,7 +3029,22 @@ onMounted(initAll)
             >{{ dn(tn) }} →</span>
           </div>
           <div v-if="d.covSelectedClass.value.members?.length">
-            <div class="card-label" style="margin-bottom:4px">Members ({{ d.covSelectedClass.value.members.length }})</div>
+            <div class="card-label" style="margin-bottom:4px">
+              Members ({{ d.covSelectedClass.value.members.length }})
+              <span style="color:var(--text-muted);font-weight:400">·
+                <span style="color:var(--green)">{{ d.covSelectedClass.value.members.filter(mb => mb.testCount > 0).length }}</span>
+                covered ·
+                <span style="color:var(--red)">{{ d.covSelectedClass.value.members.filter(mb => mb.testCount === 0).length }}</span>
+                untouched
+              </span>
+            </div>
+            <div :title="d.covSelectedClass.value.members.filter(mb => mb.testCount === 0).length + ' untouched method(s) — likely dead code or candidates for tests'" style="display:flex;gap:1px;height:10px;margin:6px 0">
+              <div
+                v-for="mb in d.covSelectedClass.value.members" :key="mb.name"
+                :title="mb.name + ' · ' + mb.testCount + ' test(s)'"
+                :style="{ flex: 1, minWidth: '2px', background: mb.testCount > 0 ? 'var(--green)' : 'rgba(239,68,68,.45)', borderRadius: '1px' }"
+              ></div>
+            </div>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:4px">
               <div v-for="mb in d.covSelectedClass.value.members" :key="mb.name" class="analytics__member-card">
                 <span class="analytics__member-name" :title="mb.name">{{ mb.name }}</span>

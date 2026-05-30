@@ -533,6 +533,35 @@ class StaticCallGraphAnalyzerTest {
 						+ result.changedMemberKeys());
 	}
 
+	// ── Annotation-value edge tests ─────────────────────────────────
+
+	@Test
+	@DisplayName("single Class<?> annotation value produces an edge to the referenced class")
+	void singleClassAnnotationValueEdge() throws Exception {
+		compile("public @interface MyTest { Class<?> value(); }", "class App { public void run() {} }",
+				"@MyTest(value = App.class)\nclass TestCase {}");
+
+		var original = changedMembers("App#run");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedClasses().contains("TestCase"),
+				"TestCase uses App.class in annotation value; should be reached; got: " + result.changedClasses());
+	}
+
+	@Test
+	@DisplayName("Class<?>[] annotation array values produce edges to all referenced classes")
+	void classArrayAnnotationValueEdges() throws Exception {
+		compile("public @interface BootTest { Class<?>[] classes() default {}; }",
+				"class MyApp { public void init() {} }", "class Config {}",
+				"@BootTest(classes = { MyApp.class, Config.class })\nclass MyTest {}");
+
+		var original = changedMembers("MyApp#init");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedClasses().contains("MyTest"),
+				"MyTest references MyApp via annotation array; should be reached; got: " + result.changedClasses());
+	}
+
 	// ── Test fixture helper ──────────────────────────────────────────
 
 	/** Builds a class-level ChangedMembers from a single FQCN. */

@@ -3,9 +3,7 @@ package me.bechberger.testorder.agent;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.objectweb.asm.*;
@@ -41,6 +39,10 @@ public class OfflineInstrumentor {
 	private final Agent.InstrumentationMode mode;
 	private final AsmClassTransformer.FieldTrackingMode fieldTrackingMode;
 	private final ClassIdMap classIdMap;
+	/**
+	 * Non-null only in selective learn mode; null means "instrument everything".
+	 */
+	private final Set<String> uncertainClassesDots;
 
 	private final AtomicInteger transformedCount = new AtomicInteger();
 	private final AtomicInteger skippedCount = new AtomicInteger();
@@ -62,7 +64,12 @@ public class OfflineInstrumentor {
 	 */
 	public OfflineInstrumentor(Agent.InstrumentationMode mode, List<String> includePackages,
 			List<String> excludePackages) {
-		this(mode, includePackages, excludePackages, ClassIdMap.getInstance());
+		this(mode, includePackages, excludePackages, null, ClassIdMap.getInstance());
+	}
+
+	public OfflineInstrumentor(Agent.InstrumentationMode mode, List<String> includePackages,
+			List<String> excludePackages, Set<String> uncertainClasses) {
+		this(mode, includePackages, excludePackages, uncertainClasses, ClassIdMap.getInstance());
 	}
 
 	/**
@@ -70,9 +77,15 @@ public class OfflineInstrumentor {
 	 */
 	OfflineInstrumentor(Agent.InstrumentationMode mode, List<String> includePackages, List<String> excludePackages,
 			ClassIdMap classIdMap) {
+		this(mode, includePackages, excludePackages, null, classIdMap);
+	}
+
+	OfflineInstrumentor(Agent.InstrumentationMode mode, List<String> includePackages, List<String> excludePackages,
+			Set<String> uncertainClasses, ClassIdMap classIdMap) {
 		this.mode = mode;
 		this.fieldTrackingMode = AsmClassTransformer.fieldTrackingModeFor(mode);
 		this.classIdMap = classIdMap;
+		this.uncertainClassesDots = uncertainClasses;
 
 		IntelligentClassFilter.Builder filterBuilder = new IntelligentClassFilter.Builder()
 				.strategy(IntelligentClassFilter.Strategy.SMART).skipTestClasses(true).useHeuristics(true);
@@ -341,7 +354,13 @@ public class OfflineInstrumentor {
 		if (className == null || className.equals("module-info") || className.endsWith("/module-info")) {
 			return false;
 		}
-		return filter.shouldInstrument(className);
+		if (!filter.shouldInstrument(className)) {
+			return false;
+		}
+		if (uncertainClassesDots != null) {
+			return uncertainClassesDots.contains(className.replace('/', '.'));
+		}
+		return true;
 	}
 
 	private byte[] doTransform(String className, byte[] classfileBuffer) {

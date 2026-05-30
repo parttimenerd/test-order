@@ -15,6 +15,7 @@ export interface DashboardState {
   hasCoverage: boolean
   hasML: boolean
   hasMutation: boolean
+  hasStaticAnalysis: boolean
 
   // Reactive UI state
   selectedTest: Ref<TestEntry | null>
@@ -101,6 +102,7 @@ export interface DashboardState {
   clearSelection: () => void
   navigateToTestFromCov: (testName: string) => void
   navigateToCovClass: (className: string) => void
+  setImpactClass: (className: string) => void
   navigateToRun: (runIdx: number) => void
   exportCsv: () => void
   getScoreBreakdown: (testName: string, mode: ScoreMode) => string
@@ -129,6 +131,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const hasCoverage = !!(dd.coverage && dd.coverage.classes && dd.coverage.classes.length)
   const hasML = !!(dd.ml && dd.ml.enabled)
   const hasMutation = !!(dd.mutation && dd.mutation.enabled)
+  const hasStaticAnalysis = !!(dd.staticAnalysis && dd.staticAnalysis.enabled)
 
   const selectedTest = ref<TestEntry | null>(null)
   const selectedTests = ref<Set<string>>(new Set())
@@ -214,6 +217,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   ]
   const GMODES: GraphMode[] = [
     { id: 'focus', label: 'Focus' },
+    { id: 'impact', label: 'Impact (← tests)' },
     { id: 'changed', label: 'Changed subgraph' },
     { id: 'full', label: 'Full' },
   ]
@@ -225,6 +229,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     ]
     if (hasML) tabs.push({ id: 'ml', label: 'ML Health' })
     if (hasMutation) tabs.push({ id: 'mutation', label: 'Mutations' })
+    if (hasStaticAnalysis) tabs.push({ id: 'staticanalysis', label: 'Static Analysis' })
     return tabs
   })
 
@@ -645,7 +650,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       const params = new URLSearchParams(h)
       if (params.has('tab')) {
         const tab = params.get('tab')!
-        if (['tests', 'analytics', 'weights', 'ml', 'mutation'].includes(tab)) activeTab.value = tab
+        if (['tests', 'analytics', 'weights', 'ml', 'mutation', 'staticanalysis'].includes(tab)) activeTab.value = tab
       }
       if (params.has('test')) {
         const tName = params.get('test')!
@@ -858,6 +863,19 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     }
   }
 
+  function setImpactClass(className: string) {
+    const cls = dd.coverage?.classes?.find(c => c.name === className)
+    if (!cls) return
+    covSelectedClass.value = cls
+    graphMode.value = 'impact'
+    activeTab.value = 'tests'
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        document.querySelector('.dep-graph')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 80)
+    }
+  }
+
   function navigateToRun(runIdx: number) {
     analyticsSelectedRunIdx.value = runIdx
     activeTab.value = 'analytics'
@@ -880,7 +898,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   }
 
   return {
-    dd, parseError, hasData, hasCoverage, hasML, hasMutation,
+    dd, parseError, hasData, hasCoverage, hasML, hasMutation, hasStaticAnalysis,
     selectedTest, selectedTests, activeTab, lw, searchQ, sortKey, sortDir,
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
     nameMode, commonPrefix,
@@ -903,7 +921,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     navigateTest, navigateTestDetail, activateFocusedTest, clearSelection,
     getScoreBreakdown, openScoreModal, closeScoreModal,
     exportCsv: exportCsvFn,
-    navigateToTestFromCov, navigateToCovClass, navigateToRun,
+    navigateToTestFromCov, navigateToCovClass, setImpactClass, navigateToRun,
     serverConnected, optimizing, optimizeError, optimizeResult,
     optimizeWeights: optimizeWeightsFn,
   }

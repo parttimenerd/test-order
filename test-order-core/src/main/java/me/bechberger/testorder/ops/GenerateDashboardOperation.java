@@ -91,11 +91,30 @@ public final class GenerateDashboardOperation {
 			String projectName, String stateFileLabel, String indexFileLabel, String pluginVersion,
 			List<TestOrderState.WeightDef> weightDefs, Map<String, Double> mlPredictions, TestHealthReport healthReport,
 			String htmlTemplate, Path outputPath, PluginLog log) throws IOException {
+		return generate(allTests, scorer, state, weights, changed, changedTests, depMap, projectName, stateFileLabel,
+				indexFileLabel, pluginVersion, weightDefs, mlPredictions, healthReport, null, htmlTemplate, outputPath,
+				log);
+	}
+
+	/**
+	 * Generates the dashboard HTML with optional ML data and depsDir for static
+	 * analysis visualization.
+	 *
+	 * @param depsDir
+	 *            directory containing uncertain-classes*.txt files (null if not
+	 *            available)
+	 */
+	public static Path generate(Collection<String> allTests, TestScorer scorer, TestOrderState state,
+			TestOrderState.ScoringWeights weights, Set<String> changed, Set<String> changedTests, DependencyMap depMap,
+			String projectName, String stateFileLabel, String indexFileLabel, String pluginVersion,
+			List<TestOrderState.WeightDef> weightDefs, Map<String, Double> mlPredictions, TestHealthReport healthReport,
+			Path depsDir, String htmlTemplate, Path outputPath, PluginLog log) throws IOException {
 
 		List<ScoredTest> scored = DashboardOperation.scoreAndSort(allTests, scorer, state);
 		long medianDuration = DashboardOperation.computeMedianDuration(scored);
 
-		DashboardGenerator gen = new DashboardGenerator(projectName, stateFileLabel, indexFileLabel, pluginVersion);
+		DashboardGenerator gen = new DashboardGenerator(projectName, stateFileLabel, indexFileLabel, pluginVersion,
+				depsDir);
 		Map<String, Object> data;
 		if (weightDefs != null) {
 			data = gen.buildData(scored, changed, changedTests, state, weights, depMap, medianDuration, weightDefs,

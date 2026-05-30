@@ -72,6 +72,8 @@ final class MavenPluginConfigKeys {
 	static final String EXPLAIN_TEST = "testorder.explain.test";
 	static final String EXPLAIN_TOP_N = "testorder.explain.topN";
 	static final String SHOW_STATIC_ANALYSIS_VERBOSE = "testorder.showStaticAnalysis.verbose";
+	static final String SELECTIVE_LEARN = "testorder.learn.selective";
+	static final String ALWAYS_LEARN = "testorder.auto.alwaysLearn";
 
 	// Dashboard goal keys
 	static final String DASHBOARD_OUTPUT = "testorder.dashboard.output";
@@ -156,10 +158,11 @@ final class MavenPluginConfigKeys {
 			LEGACY_INDEX, LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE, LEGACY_TEST_HASH_FILE,
 			LEGACY_METHOD_HASH_FILE, BYTECODE_HASH_FILE, BYTECODE_CHANGE_DETECTION_ENABLED,
 			BYTECODE_AUGMENT_DEPENDENCY_MAP_ENABLED, LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT, LEGACY_VERBOSE_FILE,
-			LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, "testorder.skip", "testorder.debug",
-			"testorder.history.maxRuns", "testorder.changed.classes.file", "testorder.score.springContextGrouping",
-			"testorder.auto.active", "testorder.remaining.file", "testorder.metrics.output", SERVE_PORT_ALIAS,
-			MUTATIONS_OUTPUT_FILE, MUTATIONS_TIME_BUDGET, MUTATIONS_TARGET_CLASSES,
+			LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, SELECTIVE_LEARN, ALWAYS_LEARN, "testorder.skip",
+			"testorder.debug", "testorder.history.maxRuns", "testorder.changed.classes.file",
+			"testorder.score.springContextGrouping", "testorder.auto.active", "testorder.remaining.file",
+			"testorder.metrics.output", SERVE_PORT_ALIAS, MUTATIONS_OUTPUT_FILE, MUTATIONS_TIME_BUDGET,
+			MUTATIONS_TARGET_CLASSES,
 			// Show goal keys (inline in ShowMojo)
 			SHOW_CLASSES, SHOW_METHODS, SHOW_ML, SHOW_ALL, SHOW_FORMAT, SHOW_FILTER,
 			// CamelCase aliases (silently accepted, see ALIASES map)

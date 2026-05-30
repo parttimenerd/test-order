@@ -208,6 +208,21 @@ public abstract class TestOrderExtension {
     /** Whether to enable Spring context grouping for test scoring. */
     public abstract Property<Boolean> getSpringContextGrouping();
 
+    /**
+     * When true, only instrument classes the static call graph identifies as
+     * potentially affected by current changes — that is, changed classes plus
+     * their transitive callees (up to 4 hops). Default false.
+     */
+    public abstract Property<Boolean> getSelectiveLearn();
+
+    /**
+     * When true, the auto task attaches the learn-mode agent on every run that
+     * would otherwise just be ordered, so the dependency index is incrementally
+     * refined over time. Combine with {@link #getSelectiveLearn()} to limit
+     * instrumentation to changed classes. Default false.
+     */
+    public abstract Property<Boolean> getAlwaysLearn();
+
     /** When true, skip all test-order processing. */
     public abstract Property<Boolean> getSkip();
 
@@ -295,6 +310,8 @@ public abstract class TestOrderExtension {
         getAutoOptimizeEvery().convention(10);
         getAutoCompactEvery().convention(50);
         getSpringContextGrouping().convention(false);
+        getSelectiveLearn().convention(false);
+        getAlwaysLearn().convention(false);
         getSkip().convention(false);
         getTdd().convention(false);
         getAutoRunRemaining().convention(true);

@@ -13,6 +13,7 @@ import AnalyticsTab from './components/AnalyticsTab.vue'
 import WeightsTab from './components/WeightsTab.vue'
 import MLTab from './components/MLTab.vue'
 import MutationTab from './components/MutationTab.vue'
+import StaticAnalysisTab from './components/StaticAnalysisTab.vue'
 import AppFooter from './components/AppFooter.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import ScoreBreakdownPanel from './components/ScoreBreakdownPanel.vue'
@@ -235,6 +236,7 @@ function startResize(e: MouseEvent) {
         <WeightsTab />
         <MLTab />
         <MutationTab />
+        <StaticAnalysisTab />
       </main>
     </div>
     <AppFooter />

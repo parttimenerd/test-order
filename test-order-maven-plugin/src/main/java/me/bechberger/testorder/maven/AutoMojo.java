@@ -172,6 +172,18 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			project.getProperties().setProperty("testorder.remaining.file", remainingPath);
 			project.getProperties().setProperty("testorder.auto.active", "true");
 
+			if (os.attachLearnAgent()) {
+				// alwaysLearn: attach the learn agent on top of the ordered run so the
+				// next run can incrementally merge fresh deps into the existing index.
+				String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
+				if ("offline".equalsIgnoreCase(instrumentation)) {
+					configureOfflineLearnMode(instrumentationMode, effectiveInclude);
+				} else {
+					configureLearnMode(instrumentationMode, effectiveInclude, true);
+				}
+				getLog().info("[test-order] alwaysLearn=true — agent attached on top of ordered run");
+			}
+
 			if (!runRemaining && !selection.remaining().isEmpty()) {
 				getLog().info("[test-order] Remaining tests written to " + remainingFile + ". Run deferred tests with:"
 						+ " mvn test-order:run-remaining test");

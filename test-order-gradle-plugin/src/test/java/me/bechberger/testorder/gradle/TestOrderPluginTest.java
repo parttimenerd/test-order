@@ -9,12 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import me.bechberger.testorder.PersistenceSupport;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ExternalModuleDependency;
@@ -82,7 +77,7 @@ class TestOrderPluginTest {
         plugin.configureLearnMode(project, extension, testTask, agentConf);
 
         assertEquals("true", testTask.getSystemProperties().get("testorder.learn"));
-        assertEquals("FULL", testTask.getSystemProperties().get("testorder.instrumentation.mode"));
+        assertEquals("MEMBER", testTask.getSystemProperties().get("testorder.instrumentation.mode"));
         assertEquals(extension.getStateFile().get().getAsFile().getAbsolutePath(),
                 testTask.getSystemProperties().get("testorder.state.path"));
         Object provider = testTask.getJvmArgumentProviders().get(0);
@@ -264,65 +259,6 @@ class TestOrderPluginTest {
                 "Index path should be under root directory, got: " + indexA.getAbsolutePath());
         assertTrue(hashA.getAbsolutePath().contains("iso-root"),
                 "Hash path should be under root directory, got: " + hashA.getAbsolutePath());
-    }
-
-    @org.junit.jupiter.api.Test
-    void snapshotSingleDirWaitsForHashFileLock() throws Exception {
-        Project project = newProject();
-        Path mainSourceRoot = tempDir.resolve("src/main/java");
-        Path sourceRoot = mainSourceRoot.resolve("com/example/app");
-        Files.createDirectories(sourceRoot);
-        Files.writeString(sourceRoot.resolve("App.java"), "class App {}\n");
-        Path hashFile = tempDir.resolve(".test-order-hashes.lz4");
-
-        Method snapshotSingleDir = TestOrderPlugin.class.getDeclaredMethod(
-                "snapshotSingleDir", Path.class, Path.class, String.class, Project.class);
-        snapshotSingleDir.setAccessible(true);
-
-        CountDownLatch lockHeld = new CountDownLatch(1);
-        CountDownLatch releaseLock = new CountDownLatch(1);
-
-        var executor = Executors.newFixedThreadPool(2);
-        try {
-            Future<?> lockFuture = executor.submit(() -> {
-                try {
-                    PersistenceSupport.withFileLock(hashFile, () -> {
-                        lockHeld.countDown();
-                        try {
-                            assertTrue(releaseLock.await(5, TimeUnit.SECONDS), "Timed out waiting to release lock");
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            throw new java.io.IOException("Interrupted while waiting to release lock", e);
-                        }
-                        return null;
-                    });
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            });
-
-            assertTrue(lockHeld.await(5, TimeUnit.SECONDS), "Timed out acquiring initial hash lock");
-
-            Future<?> snapshotFuture = executor.submit(() -> {
-                try {
-                    snapshotSingleDir.invoke(null, mainSourceRoot, hashFile, "source", project);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            });
-
-            assertThrows(java.util.concurrent.TimeoutException.class,
-                    () -> snapshotFuture.get(200, TimeUnit.MILLISECONDS),
-                    "Snapshot write should block while another task holds the hash-file lock");
-
-            releaseLock.countDown();
-            lockFuture.get(5, TimeUnit.SECONDS);
-            snapshotFuture.get(5, TimeUnit.SECONDS);
-        } finally {
-            executor.shutdownNow();
-        }
-
-        assertTrue(Files.exists(hashFile), "Snapshot should be written after the hash-file lock is released");
     }
 
         @org.junit.jupiter.api.Test

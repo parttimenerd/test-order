@@ -852,4 +852,57 @@ class StructuralChangeAnalyzerTest {
 			assertEquals(staticFields, members.changedStaticFieldKeys());
 		}
 	}
+
+	@Nested
+	@DisplayName("fromDiffs() - memberChangeKinds")
+	class FromDiffsMemberChangeKinds {
+
+		@Test
+		@DisplayName("MODIFIED method change yields BODY kind")
+		void modifiedMethodIsBody() {
+			StructuralDiff.Change c = createChange(StructuralDiff.Change.Kind.MODIFIED,
+					StructuralDiff.Change.Category.METHOD, "com.example.Foo", "bar", "method body changed");
+			var result = StructuralChangeAnalyzer.fromDiffs(List.of(createFileDiff(Path.of("Foo.java"), List.of(c))));
+			assertEquals(StructuralChangeAnalyzer.ChangeKind.BODY,
+					result.memberChangeKinds().get("com.example.Foo#bar"));
+		}
+
+		@Test
+		@DisplayName("SIGNATURE_CHANGED method yields SIGNATURE kind")
+		void signatureChangedMethodIsSignature() {
+			StructuralDiff.Change c = createChange(StructuralDiff.Change.Kind.SIGNATURE_CHANGED,
+					StructuralDiff.Change.Category.METHOD, "com.example.Foo", "bar", "method signature changed");
+			var result = StructuralChangeAnalyzer.fromDiffs(List.of(createFileDiff(Path.of("Foo.java"), List.of(c))));
+			assertEquals(StructuralChangeAnalyzer.ChangeKind.SIGNATURE,
+					result.memberChangeKinds().get("com.example.Foo#bar"));
+		}
+
+		@Test
+		@DisplayName("ADDED yields ADDED kind, REMOVED yields REMOVED kind")
+		void addedRemoved() {
+			StructuralDiff.Change added = createChange(StructuralDiff.Change.Kind.ADDED,
+					StructuralDiff.Change.Category.METHOD, "com.example.Foo", "newOne", "method");
+			StructuralDiff.Change removed = createChange(StructuralDiff.Change.Kind.REMOVED,
+					StructuralDiff.Change.Category.FIELD, "com.example.Foo", "oldField", "int oldField;");
+			var result = StructuralChangeAnalyzer
+					.fromDiffs(List.of(createFileDiff(Path.of("Foo.java"), List.of(added, removed))));
+			assertEquals(StructuralChangeAnalyzer.ChangeKind.ADDED,
+					result.memberChangeKinds().get("com.example.Foo#newOne"));
+			assertEquals(StructuralChangeAnalyzer.ChangeKind.REMOVED,
+					result.memberChangeKinds().get("com.example.Foo#oldField"));
+		}
+
+		@Test
+		@DisplayName("BODY + SIGNATURE on same key collapses to SIGNATURE (more impactful)")
+		void bodyAndSignatureCollapseToSignature() {
+			StructuralDiff.Change body = createChange(StructuralDiff.Change.Kind.MODIFIED,
+					StructuralDiff.Change.Category.METHOD, "com.example.Foo", "bar", "method body changed");
+			StructuralDiff.Change sig = createChange(StructuralDiff.Change.Kind.SIGNATURE_CHANGED,
+					StructuralDiff.Change.Category.METHOD, "com.example.Foo", "bar", "method signature changed");
+			var result = StructuralChangeAnalyzer
+					.fromDiffs(List.of(createFileDiff(Path.of("Foo.java"), List.of(body, sig))));
+			assertEquals(StructuralChangeAnalyzer.ChangeKind.SIGNATURE,
+					result.memberChangeKinds().get("com.example.Foo#bar"));
+		}
+	}
 }

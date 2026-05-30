@@ -197,6 +197,25 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected String changeMode;
 
 	/**
+	 * When true, only instrument classes that the static call graph identifies as
+	 * potentially affected by current changes — that is, changed classes plus their
+	 * transitive callees (up to 4 hops). Requires source/class directories to be
+	 * set. Default false.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.SELECTIVE_LEARN, defaultValue = "false")
+	protected boolean selectiveLearn;
+
+	/**
+	 * When {@code true} (default {@code false}), the auto goal attaches the
+	 * learn-mode agent on every run that would otherwise just be ordered, so the
+	 * dependency index is incrementally refined over time without needing an
+	 * explicit {@code learn} invocation. Combine with {@link #selectiveLearn} to
+	 * limit instrumentation to changed classes.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.ALWAYS_LEARN, defaultValue = "false")
+	protected boolean alwaysLearn;
+
+	/**
 	 * Comma-separated fully-qualified class names of <b>production source</b>
 	 * classes that changed (for explicit change mode). These are used for
 	 * dependency-overlap scoring: tests whose dependencies include one of these
@@ -613,8 +632,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 
 		return PluginContext.builder().projectRoot(project.getBasedir().toPath().toAbsolutePath())
-				.sourceRoot(resolvedSourceRoot).testSourceRoot(resolvedTestSourceRoot)
-				.additionalSourceRoots(additionalSourceRoots)
+				.repoRoot(ctx.gitRoot().toAbsolutePath()).sourceRoot(resolvedSourceRoot)
+				.testSourceRoot(resolvedTestSourceRoot).additionalSourceRoots(additionalSourceRoots)
 				.testClassesDir(toPathOrNull(project.getBuild().getTestOutputDirectory()))
 				.classesDir(toPathOrNull(project.getBuild().getOutputDirectory()))
 				.indexFile(ctx.resolveIndexFile(indexFile)).stateFile(ctx.resolveStateFile(stateFile))
@@ -632,7 +651,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				.currentModuleId(computeCurrentModuleId())
 				.verboseFile(verboseFile != null && !verboseFile.isBlank() ? Path.of(verboseFile) : null)
 				.dependencyFingerprintSupplier(() -> computeMavenDependencyFingerprint())
-				.projectName(project.getArtifactId()).log(pluginLog());
+				.projectName(project.getArtifactId()).selectiveLearn(selectiveLearn).alwaysLearn(alwaysLearn)
+				.log(pluginLog());
 	}
 
 	protected PluginContext buildPluginContext() {
@@ -1615,7 +1635,37 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			List<String> includes = includePackages == null || includePackages.isBlank()
 					? List.of()
 					: List.of(includePackages.split(","));
-			OfflineInstrumentor instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
+
+			// Selective learn: only instrument changed/uncertain classes when enabled
+			Set<String> uncertainClasses = null;
+			if (selectiveLearn) {
+				Path idxPath = ctx != null ? ctx.resolveIndexFile(indexFile) : Path.of(indexFile);
+				boolean indexExists = java.nio.file.Files.exists(idxPath);
+				if (indexExists) {
+					me.bechberger.testorder.changes.ChangeDetector.Mode mode;
+					try {
+						mode = me.bechberger.testorder.changes.ChangeDetectionSupport.resolveMode(changeMode,
+								ctx != null ? ctx.resolveHashFile(hashFile) : null);
+					} catch (java.io.IOException e) {
+						mode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
+					}
+					Path projectRoot = ctx != null ? ctx.gitRoot() : project.getBasedir().toPath();
+					uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
+							.computeUncertainClasses(projectRoot, classesDir, mode);
+					if (uncertainClasses != null && !uncertainClasses.isEmpty()) {
+						getLog().info("[test-order] Selective instrument: " + uncertainClasses.size()
+								+ " uncertain class(es) will be instrumented");
+					} else if (uncertainClasses != null) {
+						getLog().info(
+								"[test-order] Selective instrument: no source changes detected; skipping instrumentation");
+					}
+				} else {
+					getLog().info(
+							"[test-order] Selective instrument: no existing index — using full instrumentation for initial run");
+				}
+			}
+
+			OfflineInstrumentor instrumentor = new OfflineInstrumentor(iMode, includes, List.of(), uncertainClasses);
 			Path backupRoot = targetDir.resolve(".test-order").resolve("classes-backup");
 			ClassIdMapping mapping = instrumentor.instrument(classesDir, backupRoot);
 			boolean ignoreMarker = false;
@@ -1623,7 +1673,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				// All classes have stale marker from prior instrumentation without
 				// a matching mapping. Force re-instrument by ignoring the marker.
 				getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
-				instrumentor = new OfflineInstrumentor(iMode, includes, List.of());
+				instrumentor = new OfflineInstrumentor(iMode, includes, List.of()); // full re-instrument, no selective
 				instrumentor.setIgnoreMarker(true);
 				ignoreMarker = true;
 				mapping = instrumentor.instrument(classesDir, backupRoot);
@@ -1643,7 +1693,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				Path testBackupDir = backupRoot.resolveSibling("classes-backup-test");
 				getLog().info("[test-order] Detected main classes duplicated in test-classes "
 						+ "(JPMS patch-module build) — also instrumenting: " + testClassesDir);
-				OfflineInstrumentor testInstrumentor = new OfflineInstrumentor(iMode, includes, List.of());
+				OfflineInstrumentor testInstrumentor = new OfflineInstrumentor(iMode, includes, List.of(),
+						uncertainClasses);
 				if (ignoreMarker) {
 					testInstrumentor.setIgnoreMarker(true);
 				}
@@ -1860,25 +1911,51 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (isTestNGOnTestClasspath()) {
 			entries.add(resolveModuleOutputOrArtifact("test-order-testng"));
 		}
-		// Anchor on DependencyMap to locate test-order-core (and its bundled
-		// dependencies)
-		entries.add(codeSourcePath(DependencyMap.class));
-		// Dynamically resolve additional runtime jars by class name to avoid
-		// compile-time dependencies
-		for (String className : new String[]{"me.bechberger.femtocli.FemtoCli", "net.jpountz.lz4.LZ4FrameInputStream",
-				"org.roaringbitmap.RoaringBitmap", "io.jenetics.Genotype", "com.github.javaparser.JavaParser",
-				"com.electronwill.nightconfig.core.CommentedConfig", "com.electronwill.nightconfig.toml.TomlParser",
-				"me.bechberger.util.json.Util"}) {
-			try {
-				Class<?> cls = Class.forName(className);
-				Path jar = codeSourcePath(cls);
-				if (jar != null)
-					entries.add(jar);
-			} catch (ClassNotFoundException ignored) {
-				getLog().debug("[test-order] Class not found on plugin classpath: " + className);
+		// Use the shaded (-all) jar for test-order-core so that bundled dependencies
+		// (femtojson, femtocli, …) are relocated and cannot clash with the project's
+		// own version of those libraries on the Surefire test classpath.
+		entries.add(resolveShadedCoreJar());
+		return entries.toArray(Path[]::new);
+	}
+
+	/**
+	 * Resolves the shaded fat-jar for test-order-core (the {@code -all}
+	 * classifier). Falls back to the plain jar or reactor classes dir if the shaded
+	 * jar is not found (e.g. during development without a full install).
+	 */
+	private Path resolveShadedCoreJar() throws MojoExecutionException {
+		// In a reactor build the classes dir is preferred for fast iteration
+		Path reactorClassesDir = project.getBasedir().toPath().getParent().resolve("test-order-core").resolve("target")
+				.resolve("classes");
+		if (Files.isDirectory(reactorClassesDir)) {
+			return reactorClassesDir;
+		}
+		// Prefer the shaded -all jar from the local repo
+		String repoPath = session != null && session.getLocalRepository() != null
+				? session.getLocalRepository().getBasedir()
+				: System.getProperty("user.home", "") + "/.m2/repository";
+		String pluginVersion = null;
+		for (Plugin p : project.getBuildPlugins()) {
+			if ("test-order-maven-plugin".equals(p.getArtifactId()) && "me.bechberger".equals(p.getGroupId())) {
+				pluginVersion = p.getVersion();
+				break;
 			}
 		}
-		return entries.toArray(Path[]::new);
+		for (String version : new String[]{pluginVersion, project.getVersion()}) {
+			if (version == null)
+				continue;
+			Path baseDir = Path.of(repoPath).resolve("me/bechberger/test-order-core").resolve(version);
+			Path shadedJar = baseDir.resolve("test-order-core-" + version + "-all.jar");
+			if (Files.exists(shadedJar)) {
+				return shadedJar;
+			}
+		}
+		// Fallback to unshaded plain jar — this risks classpath conflicts on projects
+		// that ship their own femtojson or femtocli. Should not happen for installed
+		// releases; only expected during plugin development before mvn install runs.
+		getLog().warn("[test-order] Shaded test-order-core-all.jar not found — falling back to unshaded jar. "
+				+ "If you see NoSuchMethodError or similar, run: mvn install on the test-order project.");
+		return resolveArtifact("test-order-core");
 	}
 
 	private Path resolveModuleOutputOrArtifact(String artifactId) throws MojoExecutionException {

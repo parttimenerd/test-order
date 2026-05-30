@@ -768,7 +768,21 @@ public class IndexCollectorServer implements AutoCloseable {
 		if (!java.nio.file.Files.exists(fallbackFile)) {
 			return false;
 		}
-		List<String> lines = java.nio.file.Files.readAllLines(fallbackFile, StandardCharsets.UTF_8);
+		// Atomically claim the file by renaming it before parsing — prevents a second
+		// concurrent module invocation from re-processing the same payloads.
+		Path claimedFile = fallbackFile.resolveSibling(fallbackFile.getFileName() + ".processing");
+		try {
+			java.nio.file.Files.move(fallbackFile, claimedFile, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+		} catch (java.nio.file.NoSuchFileException | java.nio.file.AtomicMoveNotSupportedException e) {
+			// Already claimed by another module, or atomic move not available — either
+			// way the other invocation will handle it; skip silently.
+			if (!java.nio.file.Files.exists(fallbackFile)) {
+				return false;
+			}
+			// Non-atomic fallback: accept the small risk and continue with original path
+			claimedFile = fallbackFile;
+		}
+		List<String> lines = java.nio.file.Files.readAllLines(claimedFile, StandardCharsets.UTF_8);
 		Map<String, Set<String>> classDeps = new HashMap<>();
 		Map<String, Set<String>> methodDeps = new HashMap<>();
 		Map<String, Set<String>> memberDeps = new HashMap<>();
@@ -821,7 +835,7 @@ public class IndexCollectorServer implements AutoCloseable {
 		}
 
 		DependencyMap.mergeFromAgent(indexFile, classDeps, methodDeps, memberDeps, methodMemberDeps, testToModule);
-		java.nio.file.Files.deleteIfExists(fallbackFile);
+		java.nio.file.Files.deleteIfExists(claimedFile);
 		return true;
 	}
 }

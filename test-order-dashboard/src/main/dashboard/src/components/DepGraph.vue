@@ -24,6 +24,7 @@ interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean }
 const searchText = vueRef('')
 const colorByCoverage = vueRef(false)
 const pkgFilter = vueRef('')
+const expandSiblings = vueRef(false)
 let liveNodeSel: d3.Selection<SVGGElement, GNode, SVGGElement, unknown> | null = null
 let liveLinkSel: d3.Selection<SVGLineElement, GLink, SVGGElement, unknown> | null = null
 let liveGraphLinks: GLink[] = []
@@ -140,6 +141,20 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
     return { nodes: Object.values(nodeMap), links }
   }
 
+  if (mode === 'impact') {
+    const cls = d.covSelectedClass.value
+    if (!cls) return { nodes: [], links: [] }
+    addNode(cls.name, 'dep', d.changedSet.has(cls.name))
+    nodeMap[cls.name].depCount = cls.tests.length
+    for (const tName of cls.tests) {
+      addNode(tName, 'test', false)
+      const t = d.tests.find(x => x.name === tName)
+      nodeMap[tName].depCount = t ? (t.deps || []).length : 1
+      links.push({ source: tName, target: cls.name, changed: d.changedSet.has(cls.name) })
+    }
+    return { nodes: Object.values(nodeMap), links }
+  }
+
   if (mode === 'focus') {
     const selNames = d.selectedTests.value!
     const focusTests = selNames.size > 0
@@ -150,6 +165,25 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
       addNode(t.name, 'test', false)
       nodeMap[t.name].depCount = (t.deps || []).length
       ;(t.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep) }) })
+    }
+    if (expandSiblings.value) {
+      const MAX_2HOP = 30
+      const reachedDeps = new Set(focusTests.flatMap(t => t.deps || []))
+      const seen = new Set(focusTests.map(t => t.name))
+      const candidates = d.tests
+        .filter(t => !seen.has(t.name) && (t.deps || []).some(dep => reachedDeps.has(dep)))
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, MAX_2HOP)
+      for (const t of candidates) {
+        seen.add(t.name)
+        addNode(t.name, 'test', false)
+        nodeMap[t.name].depCount = (t.deps || []).length
+        for (const dep of (t.deps || [])) {
+          if (reachedDeps.has(dep)) {
+            links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep) })
+          }
+        }
+      }
     }
   } else if (mode === 'changed') {
     d.tests.forEach(t => {
@@ -201,7 +235,7 @@ function initGraph() {
   liveZoom = null
   liveSvg = null
   if (!nodes.length) {
-    container.innerHTML = '<div class="dep-graph__empty">No dependency data for current selection</div>'
+    container.innerHTML = '<div class="dep-graph__empty">No dependency data for current selection — pick a class in Coverage or shift-click a dep node to use Impact mode</div>'
     return
   }
   const W = container.clientWidth || 700, H = container.clientHeight || 400
@@ -389,11 +423,15 @@ function initGraph() {
     classHover.show(n.id, e)
   }).on('mousemove', e => { tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'); classHover.move(e) })
     .on('mouseout', () => { tip.style('opacity', '0'); classHover.hide() })
-    .on('click', (_e, n) => {
+    .on('click', (e, n) => {
       if (n.type === 'test' || n.type === 'method' || testNames.has(n.id)) {
         d.navigateToTestFromCov(n.id)
       } else if (n.type === 'dep') {
-        d.navigateToCovClass(n.id)
+        if ((e as MouseEvent).shiftKey) {
+          d.setImpactClass(n.id)
+        } else {
+          d.navigateToCovClass(n.id)
+        }
       }
     })
 
@@ -490,7 +528,7 @@ function initGraph() {
   } catch (e) { console.error('[dashboard] Dep graph failed:', e) }
 }
 
-watch([() => d.selectedTest.value, () => d.selectedMethod.value, () => d.graphMode.value, () => d.selectedTests.value], () => {
+watch([() => d.selectedTest.value, () => d.selectedMethod.value, () => d.graphMode.value, () => d.selectedTests.value, () => d.covSelectedClass.value, expandSiblings], () => {
   if (d.activeTab.value === 'tests') nextTick(initGraph)
 })
 
@@ -512,9 +550,18 @@ defineExpose({ initGraph })
         @click="d.setGraphMode(m.id)"
         class="dep-graph__btn"
         :class="{ 'dep-graph__btn--active': d.graphMode.value === m.id }"
+        :disabled="m.id === 'impact' && !d.covSelectedClass.value"
+        :title="m.id === 'impact' ? (d.covSelectedClass.value ? 'Show all tests covering ' + d.covSelectedClass.value.name : 'Pick a class in Coverage or shift-click a dep node first') : ''"
       >
         {{ m.label }}<span v-if="m.id === 'full' && d.totalNodes.value > GRAPH.FULL_MODE_NODE_LIMIT" style="color:var(--orange)"> ({{ d.totalNodes.value }} → pkg)</span>
       </button>
+      <button
+        v-if="d.graphMode.value === 'focus'"
+        class="dep-graph__btn"
+        :class="{ 'dep-graph__btn--active': expandSiblings }"
+        title="Add sibling tests that share at least one dep with the focused tests (capped at 30)"
+        @click="expandSiblings = !expandSiblings"
+      >🔗 +siblings</button>
       <div class="dep-graph__search-wrap">
         <input
           v-model="searchText"

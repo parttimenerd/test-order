@@ -119,6 +119,30 @@ Tune the five scoring components and instantly see rank changes.
 
 **Share via URL** — weight configuration is encoded in the URL hash for easy sharing.
 
+### ML Health
+
+Shown only when ML data is available (requires `mvn test-order:show -Dtestorder.show.ml=true`).
+
+- Summary cards: Healthy / Degrading / Flaky / Failing counts
+- Per-test health table with flakiness score, degradation trend, and recent failure rate
+
+### Mutations
+
+Shown only when mutation kill-rate data is available (requires `mvn test-order:analyze-mutations`).
+
+- Overall kill-share percentage and per-tier summary (High ≥15%, Medium 5–15%, Low >0%, Zero)
+- Per-test kill-rate bar chart and sortable table
+
+### Static Analysis
+
+Shown only when selective-learn data is present (requires running with `-Dtestorder.learn.selective=true`).
+
+- Summary: total uncertain classes and number of modules
+- For multi-module builds: module selector buttons with per-module class counts
+- Searchable class list showing all classes the static call-graph identified as reachable from the current change set (changed classes + transitive callees, up to 4 hops)
+
+Useful for verifying that selective learn is scoping correctly — if important classes are missing from the list, the static graph may need augmentation.
+
 ## KPI bar
 
 Shown at the top of every tab:
@@ -170,6 +194,9 @@ After `npm run build`, run `mvn install -pl test-order-dashboard -am` to package
 | `src/components/AnalyticsTab.vue` | Analytics tab: timeline, run browser, heatmaps, all analysis panels |
 | `src/components/KpiRow.vue` | KPI bar at the top of every tab |
 | `src/components/WeightsTab.vue` | Weights tuning tab |
+| `src/components/MLTab.vue` | ML Health tab (shown when ML data present) |
+| `src/components/MutationTab.vue` | Mutations tab (shown when kill-rate data present) |
+| `src/components/StaticAnalysisTab.vue` | Static Analysis tab (shown when selective-learn data present) |
 | `src/components/AppHeader.vue` | Project header, search button, help modal |
 | `src/components/CommandPalette.vue` | `⌘K` command palette |
 | `src/components/DepGraph.vue` | D3 dependency graph |

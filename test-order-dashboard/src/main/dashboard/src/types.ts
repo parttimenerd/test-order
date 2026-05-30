@@ -152,6 +152,18 @@ export interface MutationData {
   tests: MutationEntry[]
 }
 
+export interface StaticAnalysisModule {
+  module: string
+  count: number
+  classes: string[]
+}
+
+export interface StaticAnalysisData {
+  enabled: boolean
+  totalUncertainClasses: number
+  modules: StaticAnalysisModule[]
+}
+
 export interface DashboardData {
   project: ProjectInfo
   weights: ScoringWeights
@@ -165,6 +177,7 @@ export interface DashboardData {
   coverage: CoverageData | null
   ml: MLData | null
   mutation: MutationData | null
+  staticAnalysis: StaticAnalysisData | null
 }
 
 /** Sort column definition for sidebar */

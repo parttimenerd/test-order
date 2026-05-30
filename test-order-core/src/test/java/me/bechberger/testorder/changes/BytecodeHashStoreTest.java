@@ -98,6 +98,69 @@ class BytecodeHashStoreTest {
 	}
 
 	@Test
+	void syntheticMethodsAreNotHashed() throws Exception {
+		// A lambda generates a private synthetic method on the enclosing class —
+		// it should be filtered out of the per-method hash map.
+		compile(tempDir, "import java.util.function.Supplier;\n"
+				+ "class Foo { public Supplier<Integer> make() { return () -> 42; } }");
+		BytecodeHashStore store = BytecodeHashStore.scan(tempDir);
+		boolean hasSynthetic = store.getMethodHashes().keySet().stream().anyMatch(k -> k.contains("$lambda$"));
+		assertFalse(hasSynthetic,
+				"synthetic lambda methods must not appear in method hashes: " + store.getMethodHashes().keySet());
+	}
+
+	@Test
+	void perFieldHashesArePopulated() throws Exception {
+		compile(tempDir, "class Foo { public int x = 1; public String name = \"hi\"; }");
+		BytecodeHashStore store = BytecodeHashStore.scan(tempDir);
+		assertTrue(store.getFieldHashes().containsKey("Foo#x"), "expected Foo#x: " + store.getFieldHashes());
+		assertTrue(store.getFieldHashes().containsKey("Foo#name"), "expected Foo#name: " + store.getFieldHashes());
+	}
+
+	@Test
+	void fieldTypeChangeFlagsTheField() throws Exception {
+		Path classesA = Files.createDirectory(tempDir.resolve("a"));
+		Path classesB = Files.createDirectory(tempDir.resolve("b"));
+		compile(classesA, "class Foo { public int x = 1; }");
+		compile(classesB, "class Foo { public long x = 1L; }");
+
+		BytecodeHashStore prev = BytecodeHashStore.scan(classesA);
+		BytecodeHashStore curr = BytecodeHashStore.scan(classesB);
+		Set<String> changedFields = curr.getChangedFieldKeys(prev);
+		assertTrue(changedFields.contains("Foo#x"), "Foo#x should be flagged when its type changes: " + changedFields);
+	}
+
+	@Test
+	void v2RoundTripPreservesFields() throws Exception {
+		compile(tempDir, "class Foo { public int x = 1; public String name = \"hi\"; }");
+		BytecodeHashStore store = BytecodeHashStore.scan(tempDir);
+		Path file = tempDir.resolve("bytecode.lz4");
+		store.save(file);
+
+		BytecodeHashStore loaded = BytecodeHashStore.load(file);
+		assertEquals(store.getFieldHashes(), loaded.getFieldHashes(), "field hashes must round-trip");
+		assertEquals(store, loaded);
+	}
+
+	@Test
+	void v1FileLoadsWithEmptyFieldMap() throws Exception {
+		// Hand-craft a v1-format file: no #FORMAT: header, just #CLASS: and method
+		// lines.
+		Path file = tempDir.resolve("v1-bytecode.lz4");
+		try (var lz4os = me.bechberger.testorder.LZ4Support
+				.frameOutputStreamHC(java.nio.file.Files.newOutputStream(file));
+				var pw = new java.io.PrintWriter(new java.io.OutputStreamWriter(lz4os))) {
+			pw.println("#CLASS:Foo\tdeadbeef");
+			pw.println("Foo#bar()V\tcafebabe");
+		}
+
+		BytecodeHashStore loaded = BytecodeHashStore.load(file);
+		assertEquals("deadbeef", loaded.getClassHashes().get("Foo"));
+		assertEquals("cafebabe", loaded.getMethodHashes().get("Foo#bar()V"));
+		assertTrue(loaded.getFieldHashes().isEmpty(), "v1 files have no field map");
+	}
+
+	@Test
 	void commentOnlyEditDoesNotChangeHash() throws Exception {
 		Path classesA = Files.createDirectory(tempDir.resolve("a"));
 		Path classesB = Files.createDirectory(tempDir.resolve("b"));
