@@ -16,8 +16,19 @@ const scopeRatio = computed(() =>
   totalKnownClasses.value > 0 ? Math.round((total.value / totalKnownClasses.value) * 100) : null
 )
 
+// Changed-class set for highlighting directly-changed vs. transitive classes
+const changedClassSet = computed(() => new Set(d.dd.changedClasses ?? []))
+
+// Count directly-changed uncertain classes (changed ∩ uncertain)
+const directlyChangedCount = computed(() => {
+  if (!sa.value || changedClassSet.value.size === 0) return 0
+  return modules.value.reduce((sum, m) =>
+    sum + m.classes.filter(c => changedClassSet.value.has(c)).length, 0)
+})
+
 const searchQ = ref('')
 const selectedModule = ref<string | null>(null)
+const showChangedOnly = ref(false)
 const viewMode = ref<'tree' | 'flat'>('tree')
 
 // Expanded package nodes in tree view
@@ -78,9 +89,11 @@ function buildTree(classes: string[]): PkgNode[] {
 const allActiveClasses = computed(() => activeModule.value?.classes ?? [])
 
 const filteredClasses = computed(() => {
-  if (!searchQ.value.trim()) return allActiveClasses.value
+  let list = allActiveClasses.value
+  if (showChangedOnly.value) list = list.filter(c => changedClassSet.value.has(c))
+  if (!searchQ.value.trim()) return list
   const q = searchQ.value.toLowerCase()
-  return allActiveClasses.value.filter(c => c.toLowerCase().includes(q))
+  return list.filter(c => c.toLowerCase().includes(q))
 })
 
 const tree = computed(() => buildTree(filteredClasses.value))
@@ -125,6 +138,10 @@ function hasCovData(cls: string): boolean {
   return !!d.dd.coverage?.classes?.some(c => c.name === cls)
 }
 
+function isChangedClass(cls: string): boolean {
+  return changedClassSet.value.has(cls)
+}
+
 function goToCoverage(cls: string) {
   d.navigateToCovClass(cls)
 }
@@ -150,6 +167,10 @@ function nodeTotal(node: PkgNode): number {
         <div class="sa-card sa-card--total">
           <div class="sa-card__value">{{ total }}</div>
           <div class="sa-card__label">Uncertain classes</div>
+        </div>
+        <div v-if="directlyChangedCount > 0" class="sa-card" :title="`${directlyChangedCount} of ${total} uncertain classes are directly changed; the rest are transitive callees`">
+          <div class="sa-card__value" style="color:var(--yellow)">{{ directlyChangedCount }}</div>
+          <div class="sa-card__label">Directly changed</div>
         </div>
         <div class="sa-card">
           <div class="sa-card__value">{{ modules.length }}</div>
@@ -201,6 +222,12 @@ function nodeTotal(node: PkgNode): number {
             <button :class="['vt-btn', { 'vt-btn--active': viewMode === 'tree' }]" @click="viewMode = 'tree'" title="Package tree">⊞</button>
             <button :class="['vt-btn', { 'vt-btn--active': viewMode === 'flat' }]" @click="viewMode = 'flat'" title="Flat list">☰</button>
           </div>
+          <button
+            v-if="directlyChangedCount > 0"
+            :class="['tree-ctrl', { 'tree-ctrl--active': showChangedOnly }]"
+            @click="showChangedOnly = !showChangedOnly"
+            :title="showChangedOnly ? 'Show all uncertain classes' : 'Show only directly-changed classes'"
+          >Δ only</button>
           <div v-if="viewMode === 'tree'" style="display:flex;gap:4px;margin-left:auto">
             <button class="tree-ctrl" @click="expandAll" title="Expand all">+</button>
             <button class="tree-ctrl" @click="collapseAll" title="Collapse all">−</button>
@@ -231,6 +258,7 @@ function nodeTotal(node: PkgNode): number {
                 :title="cls"
               >
                 <span class="cls-name">{{ shortClass(cls) }}</span>
+                <span v-if="isChangedClass(cls)" class="changed-badge" title="Directly changed class">Δ</span>
                 <button
                   v-if="hasCovData(cls)"
                   class="cov-link"
@@ -258,6 +286,7 @@ function nodeTotal(node: PkgNode): number {
                     :title="cls"
                   >
                     <span class="cls-name">{{ shortClass(cls) }}</span>
+                    <span v-if="isChangedClass(cls)" class="changed-badge" title="Directly changed class">Δ</span>
                     <button
                       v-if="hasCovData(cls)"
                       class="cov-link"
@@ -285,6 +314,7 @@ function nodeTotal(node: PkgNode): number {
           >
             <span class="cls-pkg">{{ pkgOf(cls) ? pkgOf(cls) + '.' : '' }}</span>
             <span class="cls-name">{{ shortClass(cls) }}</span>
+            <span v-if="isChangedClass(cls)" class="changed-badge" title="Directly changed class">Δ</span>
             <button
               v-if="hasCovData(cls)"
               class="cov-link"
@@ -415,6 +445,7 @@ function nodeTotal(node: PkgNode): number {
   line-height: 1.4;
 }
 .tree-ctrl:hover { border-color: var(--accent, #6366f1); color: var(--text); }
+.tree-ctrl--active { background: color-mix(in srgb, var(--yellow, #f59e0b) 15%, transparent); border-color: var(--yellow, #f59e0b); color: var(--yellow, #f59e0b); }
 
 /* Package rows */
 .pkg-row {
@@ -479,6 +510,18 @@ function nodeTotal(node: PkgNode): number {
 
 .cls-pkg { color: var(--text-muted); font-family: ui-monospace, monospace; font-size: .72rem; }
 .cls-name { color: var(--text); font-weight: 500; font-family: ui-monospace, monospace; }
+
+.changed-badge {
+  font-size: .6rem;
+  color: var(--yellow, #f59e0b);
+  background: color-mix(in srgb, var(--yellow, #f59e0b) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--yellow, #f59e0b) 35%, transparent);
+  border-radius: 3px;
+  padding: 0 4px;
+  flex-shrink: 0;
+  font-weight: 600;
+  line-height: 1.5;
+}
 
 .cov-link {
   margin-left: auto;
