@@ -206,7 +206,8 @@ public class StaticCallGraphAnalyzer {
 		if (original == null || classDirs.isEmpty() || maxDepth <= 0) {
 			return new Report(original, false, 0, 0, null, Map.of(), Map.of());
 		}
-		if (original.changedMemberKeys().isEmpty() && original.changedStaticFieldKeys().isEmpty()) {
+		if (original.changedMemberKeys().isEmpty() && original.changedStaticFieldKeys().isEmpty()
+				&& original.changedClasses().isEmpty()) {
 			return new Report(original, false, 0, 0, null, Map.of(), Map.of());
 		}
 
