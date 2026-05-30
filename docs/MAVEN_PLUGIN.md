@@ -30,7 +30,7 @@ Instead of periodic learn runs, keep the agent attached on every test run:
 ```
 
 **Trade-offs:**
-- **5–20% overhead** from bytecode instrumentation on every run
+- **5–30% overhead** from the Java agent recording test dependencies on every run (varies by instrumentation mode; MEMBER mode, the default, is ~10–30%)
 - **Potential behaviour differences** with timing-sensitive tests or other bytecode transformers
 - **Agent conflicts** possible with JaCoCo, MockitoAgent — test your specific setup
 
@@ -279,12 +279,12 @@ Collect dependency data:
 mvn test -Dtestorder.mode=learn
 ```
 
-By default this uses `CLASS` instrumentation.
-To use a different instrumentation mode:
+By default this uses `MEMBER` instrumentation (the most accurate mode).
+To use a lighter instrumentation mode:
 
 ```bash
 mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=METHOD
-mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=MEMBER
+mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=CLASS
 ```
 
 This run writes/updates `.test-order/test-dependencies.lz4` directly.
@@ -526,7 +526,7 @@ jobs:
 | `depsDir` | `testorder.depsDir` | `${project.build.directory}/test-order-deps` | Directory for `.deps` files |
 | `includePackages` | `testorder.includePackages` | — | Additional comma-separated package prefixes to instrument |
 | `filterByGroupId` | `testorder.filterByGroupId` | `true` | Fall back to groupId when no source packages are detected |
-| `instrumentationMode` | `testorder.instrumentation.mode` | `CLASS` | `CLASS`, `METHOD`, or `MEMBER` |
+| `instrumentationMode` | `testorder.instrumentation.mode` | `MEMBER` | `CLASS`, `METHOD`, or `MEMBER` |
 | `changeMode` | `testorder.changeMode` | `uncommitted` | `auto`, `since-last-run`, `since-last-commit`, `uncommitted`, `explicit` |
 | `changedClasses` | `testorder.changed.classes` | — | Explicit changed class FQCNs |
 | `hashFile` | `testorder.hashFile` | `${project.basedir}/.test-order/hashes.lz4` | LZ4-compressed hash store |
@@ -624,7 +624,7 @@ java -javaagent:test-order-agent.jar=outputDir=target/test-order-deps,includePac
 |---|---|---|
 | `outputDir` | `target/test-order-deps` | Directory for `.deps` files |
 | `includePackages` | — | Semicolon-separated package prefixes to instrument |
-| `mode` | `CLASS` | `CLASS`, `METHOD`, or `MEMBER` |
+| `mode` | `MEMBER` | `CLASS`, `METHOD`, or `MEMBER` |
 
 ## CLI Tool
 

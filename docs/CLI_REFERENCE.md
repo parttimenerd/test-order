@@ -88,10 +88,10 @@ Controls which production code changes are used to select and prioritize tests. 
 ### Mode Details and Trade-offs
 
 #### `auto` (default for Maven plugin)
-Automatically selects the best available strategy: `uncommitted` if in a git repo, `since-last-run` otherwise.
+Automatically selects the best available strategy: `since-last-run` if a hash snapshot from a previous run exists, otherwise `since-last-commit`.
 
-**Pros:** Works out-of-the-box with no configuration; adapts to environment (git vs. no git).  
-**Cons:** Non-deterministic across machines; the selected strategy can change if the git repo is unavailable. If you need reproducible CI results, prefer an explicit mode.
+**Pros:** Works out-of-the-box with no configuration; adapts to whether a previous run snapshot is present.  
+**Cons:** Non-deterministic across machines; the selected strategy can change if the snapshot is absent. If you need reproducible CI results, prefer an explicit mode.
 
 ---
 
@@ -257,7 +257,7 @@ The dashboard is an interactive HTML report with three tabs: **Tests** (ranked l
 
 | Property | Default | Notes |
 |---|---|---|
-| `testorder.instrumentation.mode` | `CLASS` | `CLASS`, `METHOD`, `MEMBER` |
+| `testorder.instrumentation.mode` | `MEMBER` | `CLASS`, `METHOD`, `MEMBER` |
 | `testorder.includePackages` | unset | Restricts instrumentation scope |
 | `testorder.filterByGroupId` | `true` | Falls back to project groupId when package detection is empty |
 | `testorder.methodOrder.enabled` | `false` | Experimental method ordering |

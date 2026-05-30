@@ -231,9 +231,9 @@ Re-run periodically as your project's failure patterns evolve.
 
 | Mode | What it records | Precision | Typical overhead* | Pros | Cons |
 |---|---|---|---|---|---|
-| `CLASS` (default) | Method/constructor entries + foreign static-field accesses | High — class-level method/constructor/shared-state usage | Lower than full foreign-field weaving | Best default: richer signal than method-entry with less runtime drag | No per-test-method or member-level granularity |
+| `CLASS` | Method/constructor entries + foreign static-field accesses | High — class-level method/constructor/shared-state usage | Lower than full foreign-field weaving | Lighter learn runs; richer signal than method-entry with less runtime drag | No per-test-method or member-level granularity |
 | `METHOD` | `CLASS` + per-test-method dependency tracking | Higher — enables method-level overlap scoring | Slightly above `CLASS` | Ordering can consider which test method touches what | Slightly larger index; setup/teardown deps excluded |
-| `MEMBER` | `METHOD` + member-level deps (`class#method`, `class#field`) | Highest — precise method/field impact scoring | ~121% | If a test never calls the changed method, it won't be scored | Roughly 2× the overhead of other modes; largest index |
+| `MEMBER` *(default)* | `METHOD` + member-level deps (`class#method`, `class#field`) | Highest — precise method/field impact scoring | ~121% | If a test never calls the changed method, it won't be scored | Roughly 2× the overhead of other modes; largest index |
 
 \* Historical overhead numbers were measured on the [femtocli](https://github.com/parttimenerd/femtocli) test suite (307 unit tests, baseline ~1.1 s). A second benchmark on `spring-petclinic` is recorded below.
 
@@ -248,7 +248,7 @@ Measured learn-run timings on `spring-petclinic` (5 measured runs per mode, base
 | `METHOD` | 5.473 s | 5.443 s | 0.109 s | 11.1% |
 | `MEMBER` | 5.572 s | 5.445 s | 0.284 s | 13.1% |
 
-`CLASS` is the recommended default — it keeps learn runs lighter by tracking method/constructor calls plus foreign static/shared-state access, while reserving full instance-field/member weaving for `MEMBER`.
+`MEMBER` is the default — it produces the most accurate dependency data by tracking exactly which fields and methods each test touches. Switch to `CLASS` if learn runs are too slow or the index grows too large.
 
 > **Note:** This overhead only applies during **learn** runs — normal test execution (order mode) adds no instrumentation cost.
 > You don't need to re-learn on every build. The dependency index stays valid until the relationship between tests and production code changes significantly (new tests, refactored call graphs, moved classes, etc.).

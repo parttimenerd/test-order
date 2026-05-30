@@ -196,7 +196,9 @@ The recording demonstrates the full workflow on **Spring Petclinic** (~24 test c
 1. **Learn** — A Java agent records which source classes each test exercises. This creates a dependency index (`.test-order/test-dependencies.lz4`).
 2. **Order** — On subsequent runs, the plugin detects changed files (via Git), scores each test by how much it overlaps with those changes, and runs highest-scoring tests first.
 
-The plugin auto-switches between modes: first run learns, subsequent runs reorder. It re-learns automatically when it detects significant classpath changes.
+The plugin auto-switches between modes: first run learns, subsequent runs reorder. It re-learns automatically when new test classes are detected or every 10 runs (configurable).
+
+![Dashboard Tests tab](docs/dashboard-overview.png)
 
 <details>
 <summary><strong>Change detection modes</strong></summary>
@@ -521,9 +523,9 @@ No. By default, all tests still run — they're just **reordered** so the most r
 <summary><strong>Is there runtime overhead?</strong></summary>
 
 - **Order mode** (normal runs): Near-zero. The plugin resolves ordering before tests start.
-- **Learn mode** (first run or after dependency changes): ~5–20% overhead from the Java agent recording class coverage. This runs automatically and infrequently.
+- **Learn mode** (first run or when new test classes are added): ~5–30% overhead from the Java agent recording test dependencies. In `auto` mode (the default), this triggers automatically on first run, when new test classes are detected, and every 10 order-mode runs (`autoLearnRunThreshold`, configurable). Re-running learn manually refreshes the index after significant refactors.
 
-The overhead depends on the instrumentation mode (see below). MEMBER mode (the default) is slightly heavier than CLASS mode but produces more accurate dependency data.
+The overhead depends on the instrumentation mode (see below). MEMBER mode (the default) is heavier than CLASS mode but produces more accurate dependency data.
 
 </details>
 
@@ -659,9 +661,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for PR guidelines, code style, and releas
 
 ## Support & Feedback
 
-This project is open to feature requests/suggestions, bug reports etc.
-via [GitHub issues](https://github.com/parttimenerd/test-order/issues).
-Contribution and feedback are encouraged and always welcome.
+Bug reports, feature requests, and contributions are welcome via [GitHub issues](https://github.com/parttimenerd/test-order/issues).
 
 ## License
 

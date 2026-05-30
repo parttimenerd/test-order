@@ -144,10 +144,10 @@ testOrder {
     mode = "auto"
 
     // Agent instrumentation depth:
-    //   CLASS   — method entries + field accesses (default, good balance)
-    //   METHOD  — like CLASS but records per-method dependencies
-    //   MEMBER  — most detailed: per-method deps + field accesses
-    instrumentationMode = "CLASS"
+    //   MEMBER  — most detailed: per-method deps + field accesses (default)
+    //   METHOD  — like MEMBER but without instance-field tracking
+    //   CLASS   — method entries + field accesses only (lightest)
+    instrumentationMode = "MEMBER"
 
     // Comma-separated package prefixes to instrument.
     // Auto-detected from src/main/java if left empty.
@@ -365,8 +365,6 @@ When enabled, per-test outcomes are recorded into `.test-order/ml/history.lz4` a
 | Property | Default | Description |
 |---|---|---|
 | `testorder.ml.enabled` | `false` | Enable ML history collection and predictions |
-| `testorder.ml.historyDir` | `.test-order/ml/` | Directory for ML history data |
-| `testorder.ml.history.maxRuns` | `2000` | Max runs retained in ring buffer |
 
 ### Viewing ML Results
 

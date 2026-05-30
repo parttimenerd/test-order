@@ -51,7 +51,7 @@ appropriate listener JAR to the test classpath yourself.**
 |------------------------|--------------------------|------------------------------------------------------|
 | `--outputDir`          | `target/test-order-deps` | Directory for `.deps` fallback files                 |
 | `--indexFile`          | `test-dependencies.lz4`  | Binary index for direct merge                        |
-| `--mode`               | `FULL`                   | Instrumentation mode                                 |
+| `--mode`               | `CLASS`                  | Instrumentation mode                                 |
 | `--includePackages`    | *(auto-detect)*          | Semicolon-separated package prefixes to instrument   |
 | `--excludePackages`    | *(none)*                 | Semicolon-separated prefixes to skip                 |
 | `--autoDetectPackages` | `true`                   | Detect user packages from `pom.xml` / `build.gradle` |

@@ -502,7 +502,6 @@ public class TestScorer {
 
 		if (!effectiveChangedForOverlap.isEmpty()) {
 			if (!setCoverBonuses.isEmpty()) {
-				int overlap = cachedOverlapCounts.getOrDefault(testClassName, 0);
 				setCoverPts = setCoverBonuses.getOrDefault(testClassName, 0);
 				totalScore += setCoverPts;
 				// reuse cached overlap classes instead of recomputing
