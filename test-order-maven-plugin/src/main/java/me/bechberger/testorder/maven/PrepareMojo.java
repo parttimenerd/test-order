@@ -358,6 +358,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		if (classesDir == null) {
 			getLog().warn("[test-order] Classes still not found during deferred instrumentation"
 					+ " — tests may fail to record dependencies.");
+			project.getProperties().remove("testorder.offline.pending");
 			return;
 		}
 
@@ -438,6 +439,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 					+ instrumentor.getSkippedCount() + ")");
 			AbstractTestOrderMojo.pendingRestores.add(backupDir);
 		} catch (IOException e) {
+			project.getProperties().remove("testorder.offline.pending");
 			throw new MojoExecutionException("[test-order] Deferred offline instrumentation failed", e);
 		}
 		project.getProperties().remove("testorder.offline.pending");
@@ -578,6 +580,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 									.changedTestClasses(mergedChangedTestsCsv).build(), state);
 							writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 									buildScoreOverrides());
+							project.getProperties().setProperty("testorder.auto.active", "true");
 							return;
 						}
 					} catch (IOException rebuildEx) {
@@ -592,6 +595,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 								.changedTestClasses(mergedChangedTestsCsv).build(), state);
 						writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 								buildScoreOverrides());
+						project.getProperties().setProperty("testorder.auto.active", "true");
 						return;
 					} catch (IOException retryEx) {
 						getLog().debug("[test-order] Recovered index still unreadable: " + retryEx.getMessage());

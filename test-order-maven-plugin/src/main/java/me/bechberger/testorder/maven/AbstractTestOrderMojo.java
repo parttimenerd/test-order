@@ -972,8 +972,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 		java.util.Properties props = session.getUserProperties();
 		String entry = port + ":" + indexFilePath.toAbsolutePath().normalize();
-		String existing = props.getProperty(SESSION_ACTIVE_COLLECTORS_KEY, "");
-		props.setProperty(SESSION_ACTIVE_COLLECTORS_KEY, existing.isEmpty() ? entry : existing + "|" + entry);
+		synchronized (props) {
+			String existing = props.getProperty(SESSION_ACTIVE_COLLECTORS_KEY, "");
+			props.setProperty(SESSION_ACTIVE_COLLECTORS_KEY, existing.isEmpty() ? entry : existing + "|" + entry);
+		}
 	}
 
 	/**
@@ -1536,9 +1538,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			// this learn run completes.
 			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
 			boolean backupHasContent;
-			try {
-				backupHasContent = java.nio.file.Files.isDirectory(backupDir)
-						&& java.nio.file.Files.walk(backupDir).anyMatch(p -> p.toString().endsWith(".class"));
+			try (java.util.stream.Stream<java.nio.file.Path> walkStream = java.nio.file.Files.isDirectory(backupDir)
+					? java.nio.file.Files.walk(backupDir) : java.util.stream.Stream.empty()) {
+				backupHasContent = walkStream.anyMatch(p -> p.toString().endsWith(".class"));
 			} catch (IOException e) {
 				backupHasContent = false;
 			}
@@ -1838,12 +1840,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			return;
 		}
 		java.util.Properties props = session.getUserProperties();
-		String existing = props.getProperty(SESSION_PENDING_RESTORES_KEY, "");
 		String path = backupDir.toAbsolutePath().toString();
-		if (!existing.isEmpty()) {
-			props.setProperty(SESSION_PENDING_RESTORES_KEY, existing + "|" + path);
-		} else {
-			props.setProperty(SESSION_PENDING_RESTORES_KEY, path);
+		synchronized (props) {
+			String existing = props.getProperty(SESSION_PENDING_RESTORES_KEY, "");
+			if (!existing.isEmpty()) {
+				props.setProperty(SESSION_PENDING_RESTORES_KEY, existing + "|" + path);
+			} else {
+				props.setProperty(SESSION_PENDING_RESTORES_KEY, path);
+			}
 		}
 		me.bechberger.testorder.ClassBackupRestorer.register(backupDir);
 	}
@@ -1975,7 +1979,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		project.getProperties().setProperty("maven.test.additionalClasspath", classpath);
 		// Use session user properties (not System.setProperty) to ensure Surefire
 		// sees this for already-planned executions without leaking JVM-globally.
-		if (session.getUserProperties() != null) {
+		if (session != null && session.getUserProperties() != null) {
 			session.getUserProperties().setProperty("maven.test.additionalClasspath", classpath);
 		}
 	}
@@ -2337,10 +2341,13 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				? session.getTopLevelProject()
 				: project;
 
-		String buildId = rootProject.getProperties().getProperty("testorder.internal.buildId");
-		if (buildId == null || buildId.isBlank()) {
-			buildId = java.util.UUID.randomUUID().toString();
-			rootProject.getProperties().setProperty("testorder.internal.buildId", buildId);
+		String buildId;
+		synchronized (rootProject.getProperties()) {
+			buildId = rootProject.getProperties().getProperty("testorder.internal.buildId");
+			if (buildId == null || buildId.isBlank()) {
+				buildId = java.util.UUID.randomUUID().toString();
+				rootProject.getProperties().setProperty("testorder.internal.buildId", buildId);
+			}
 		}
 
 		// Register this module's pending-runs dir + state file for post-merge

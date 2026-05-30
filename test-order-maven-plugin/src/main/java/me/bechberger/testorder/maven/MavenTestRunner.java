@@ -172,6 +172,9 @@ class MavenTestRunner implements TestRunner {
 				proc.destroyForcibly();
 				Thread.currentThread().interrupt();
 				return new TestRunResult(testOrder, Set.of(), new HashSet<>(testOrder));
+			} catch (IOException e) {
+				proc.destroyForcibly();
+				throw e;
 			}
 
 			support.logSubprocessExitIfNeeded(exitCode);
@@ -236,6 +239,9 @@ class MavenTestRunner implements TestRunner {
 				proc.destroyForcibly();
 				Thread.currentThread().interrupt();
 				return new MethodRunResult(testClass, methodOrder, Set.of(), new HashSet<>(methodOrder));
+			} catch (IOException e) {
+				proc.destroyForcibly();
+				throw e;
 			}
 
 			// Parse method-level results from Surefire XML

@@ -1299,13 +1299,31 @@ public class SourceFileModel {
 			}
 			angleDepth[i] = depth;
 			if (c == '>') {
-				// Skip >> and >>> operators (right shift) — not angle brackets
+				// >> and >>> may be right-shift operators OR closing nested generics.
+				// If depth > 0 the chars are closing angle brackets; each > closes one level.
 				if (i + 1 <= declEnd && stripped.charAt(i + 1) == '>') {
-					i++;
-					angleDepth[i] = depth;
-					if (i + 1 <= declEnd && stripped.charAt(i + 1) == '>') {
+					// Consume the extra > chars up front
+					boolean isTriple = i + 2 <= declEnd && stripped.charAt(i + 2) == '>';
+					if (depth == 0) {
+						// Operator context — skip without changing depth
 						i++;
 						angleDepth[i] = depth;
+						if (isTriple) {
+							i++;
+							angleDepth[i] = depth;
+						}
+					} else {
+						// Closing nested generics: decrement for this > ...
+						depth--;
+						// ... then consume and decrement for the next >
+						i++;
+						if (depth > 0) depth--;
+						angleDepth[i] = depth;
+						if (isTriple && i + 1 <= declEnd && stripped.charAt(i + 1) == '>') {
+							i++;
+							if (depth > 0) depth--;
+							angleDepth[i] = depth;
+						}
 					}
 					continue;
 				}

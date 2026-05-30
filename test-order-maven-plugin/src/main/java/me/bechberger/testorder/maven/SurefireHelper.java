@@ -389,7 +389,7 @@ final class SurefireHelper {
 		try {
 			double value = Double.parseDouble(numPart);
 			if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
-				log.debug("[test-order] Surefire <forkCount>" + forkCount
+				log.warn("[test-order] Surefire <forkCount>" + forkCount
 						+ "</forkCount> — multiple forks may write .deps files concurrently in learn mode. "
 						+ "This can corrupt the dependency index. Consider using forkCount=1 for learn runs.");
 			}
@@ -538,9 +538,12 @@ final class SurefireHelper {
 		if (excludes != null && excludes.getChildCount() > 0) {
 			StringBuilder patterns = new StringBuilder();
 			for (int i = 0; i < excludes.getChildCount(); i++) {
-				if (i > 0)
+				String val = excludes.getChild(i).getValue();
+				if (val == null || val.isBlank())
+					continue;
+				if (patterns.length() > 0)
 					patterns.append(", ");
-				patterns.append(excludes.getChild(i).getValue());
+				patterns.append(val);
 			}
 			log.warn("[test-order] Surefire <excludes> is configured (" + patterns
 					+ ") but test-order's select mode overrides it via the <test> parameter. "

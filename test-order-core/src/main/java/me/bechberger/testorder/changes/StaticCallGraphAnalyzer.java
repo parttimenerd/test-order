@@ -287,7 +287,10 @@ public class StaticCallGraphAnalyzer {
 					Collections.unmodifiableMap(classDepthMap), Collections.unmodifiableMap(classParentMap));
 		}
 
-		if (allChangedMemberKeys.equals(original.changedMemberKeys())) {
+		// Early-return: if BFS found no callers beyond the seed, nothing was expanded.
+		// Compare against seed (not original.changedMemberKeys) since seed includes
+		// synthetic entries (CLASS_MARKER, static fields) that are not in changedMemberKeys.
+		if (allChangedMemberKeys.equals(seed)) {
 			return new Report(original, false, seedSize, expandedSize, null, Collections.unmodifiableMap(classDepthMap),
 					Collections.unmodifiableMap(classParentMap));
 		}
@@ -304,6 +307,12 @@ public class StaticCallGraphAnalyzer {
 				if (hash > 0) {
 					String cls = memberKey.substring(0, hash);
 					String member = memberKey.substring(hash + 1);
+					// Skip synthetic seed entries: CLASS_MARKER and static field keys
+					// (static fields are tracked in changedStaticFieldKeys, not membersByClass)
+					if (CLASS_MARKER.equals(member) || original.changedStaticFieldKeys().contains(memberKey)) {
+						allChangedClasses.add(cls);
+						continue;
+					}
 					allChangedClasses.add(cls);
 					membersByClass.computeIfAbsent(cls, k -> new LinkedHashSet<>()).add(member);
 				}
