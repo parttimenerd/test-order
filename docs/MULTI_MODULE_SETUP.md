@@ -558,23 +558,20 @@ lsof | grep ".test-order"
 **Symptom**: Running Module A tests affects Module B test scoring
 
 **Causes**:
-1. Both modules point to same state file
-2. TestOrderExtension.applyDefaults() not called
-3. Custom path configuration overriding defaults
+1. Custom path configuration overriding defaults
+2. Plugin not detecting multi-module mode (single-module fallback paths in use)
 
 **Solution**:
 ```bash
-# Verify state files are separate
-ls -la module-a/.test-order/state.lz4
-ls -la module-b/.test-order/state.lz4
-# Should be in different directories
+# In multi-module mode, there is ONE shared state file at the reactor root.
+# Verify the shared state file is in the reactor root .test-order/
+ls -la .test-order/state.lz4
 
 # Check extension config
 mvn test-order:diagnose  # Shows resolved paths
 
 # Reset to defaults
-rm -rf module-a/.test-order
-rm -rf module-b/.test-order
+rm -rf .test-order
 mvn clean install -Dtestorder.mode=learn
 ```
 

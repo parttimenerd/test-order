@@ -209,7 +209,7 @@ per-test score breakdowns, pass/fail outcomes, and the **APFD** (Average
 Percentage of Faults Detected) metric — a standard measure of how early
 failures were detected.
 
-After accumulating at least 3 runs with failures, use the `optimize` command
+After accumulating at least 5 runs with failures, use the `optimize` command
 to find weights that maximise APFD via genetic algorithm:
 
 ```bash

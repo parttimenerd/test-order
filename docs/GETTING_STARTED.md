@@ -188,13 +188,17 @@ open target/test-order-dashboard/index.html
 open build/test-order-dashboard/index.html
 ```
 
-![Dashboard overview](dashboard-overview.png)
+![Dashboard Tests tab](dashboard-tests-tab.png)
 
 The dashboard has three tabs:
 
 - **Tests** — ranked list of all test classes with score breakdown, run history sparklines, and a detail panel showing per-run pass/fail, position history, similar tests, and source dependencies.
 - **Analytics** — APFD timeline across all runs, per-run drill-down (failures, rank changes, diffs vs previous run), rank heatmap, failure correlation matrix, time budget optimizer, and 15+ further analysis panels. Use `←`/`→` to navigate between runs.
 - **Weights** — tune the five scoring components and instantly preview how ranks change. Share configurations via URL hash.
+
+![Dashboard Analytics tab](dashboard-analytics-tab.png)
+
+![Dashboard Weights tab](dashboard-weights-tab.png)
 
 The **KPI bar** at the top shows APFD, latest failures, pass streak, clean-run count, at-risk tests, estimated time savings, and a suite health grade (A–F). The run history sparkline lets you browse past runs without leaving the page.
 

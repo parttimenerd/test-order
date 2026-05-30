@@ -208,7 +208,7 @@ If `uncommitted` or `since-last-commit` fails (e.g., git not available or no pri
 | `testorder.autoLearnRunThreshold` | `10` | Force re-learn after N order-mode runs (`0` = disabled) |
 | `testorder.autoLearnDiffThreshold` | `0` | Re-learn when changed-class count reaches this (`0` = disabled) |
 | `testorder.auto.optimizeEvery` | `10` | Run weight optimization every N auto runs (`0` = disabled) |
-| `testorder.auto.runRemaining` | `true` | Print hint to run deferred tests (Maven); auto-run remaining tests via `finalizedBy` (Gradle) |
+| `testorder.auto.runRemaining` | `true` (Maven) / `false` (Gradle) | Print hint to run deferred tests (Maven); auto-run remaining tests via `finalizedBy` (Gradle) |
 
 ### Show (unified)
 

@@ -210,12 +210,14 @@ Score weights (`scoreNewTest`, `scoreChangedTest`, etc.) must be set in the `tes
 | `testOrderRunRemaining` | Run deferred tests written by `testOrderSelect` |
 | `testOrderDump` | Dump the binary dependency index as human-readable text |
 | `testOrderAggregate` | Re-aggregate `.deps` files into `test-dependencies.lz4` |
+| `testOrderCompact` | Rebuild index from `.deps` files, removing stale entries |
 | `testOrderClean` | Remove all test-order generated files (index, state, hashes, deps) |
 | `testOrderDiagnose` | Run diagnostic checks on the test-order setup |
 | `testOrderOptimize` | Tune scoring weights based on failure history |
 | `testOrderExportJson` | Export test-order data as JSON for scripting |
 | `testOrderCoverage` | Analyze dependency coverage and identify gaps |
 | `testOrderDetectDependencies` | Detect order-dependent (flaky) tests via reordering strategies |
+| `testOrderAnalyzeMutations` | Run PIT mutation testing and record kill-rate data for scoring |
 | `testOrderMetrics` | Export test-order metrics as JSON for CI/CD dashboards |
 | `testOrderDownload` | Download dependency index from CI artifacts |
 | `testOrderSnapshot` | Create hash snapshot for since-last-run change detection |
@@ -321,7 +323,7 @@ Each test class receives a score. Tests are sorted by descending score (highest 
 |---|---|---|
 | New test bonus | 15 | Bonus for test classes not in the dependency index |
 | Changed test bonus | 9 | Bonus for test classes whose source was modified |
-| Failure bonus | 1–5 | Capped bonus based on recent failure history (exponential decay) |
+| Failure bonus | 5 | Capped bonus based on recent failure history (exponential decay) |
 | Speed bonus | 1 | Continuous log₂ bonus for fast tests (scaled by `duration/median` ratio) |
 | Speed penalty | 1 | Continuous log₂ penalty for slow tests (scaled by `duration/median` ratio) |
 | Dependency overlap | 0–5 | `overlap / √totalDeps × weight` — proportional to changed-code coverage |

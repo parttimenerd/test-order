@@ -405,11 +405,15 @@ The time-saved estimate compares the actual (prioritized) order against alphabet
 
 **Tests tab** — ranked list with score breakdown, run history sparklines, and per-test detail panel:
 
-![Dashboard Tests tab](docs/dashboard-overview.png)
+![Dashboard Tests tab](docs/dashboard-tests-tab.png)
 
 **Analytics tab** — APFD timeline, per-run drill-down, rank heatmap, failure correlation, and 15+ analysis panels:
 
-![Dashboard Analytics tab](docs/dashboard-analytics.png)
+![Dashboard Analytics tab](docs/dashboard-analytics-tab.png)
+
+**Weights tab** — tune scoring components and instantly preview rank changes:
+
+![Dashboard Weights tab](docs/dashboard-weights-tab.png)
 
 Full feature reference: [test-order-dashboard/README.md](test-order-dashboard/README.md)
 
@@ -549,7 +553,7 @@ If your index files grow too large (check `.test-order/test-dependencies.lz4`) o
 mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=CLASS
 
 # Gradle
-./gradlew test -Dtestorder.mode=learn -Dtestorder.instrumentationMode=CLASS
+./gradlew test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=CLASS
 ```
 
 </details>

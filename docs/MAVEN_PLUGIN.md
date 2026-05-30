@@ -624,7 +624,7 @@ java -javaagent:test-order-agent.jar=outputDir=target/test-order-deps,includePac
 |---|---|---|
 | `outputDir` | `target/test-order-deps` | Directory for `.deps` files |
 | `includePackages` | — | Semicolon-separated package prefixes to instrument |
-| `mode` | `MEMBER` | `CLASS`, `METHOD`, or `MEMBER` |
+| `mode` | `CLASS` | `CLASS`, `METHOD`, or `MEMBER` |
 
 ## CLI Tool
 
