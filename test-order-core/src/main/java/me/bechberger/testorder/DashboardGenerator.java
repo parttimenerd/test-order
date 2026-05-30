@@ -272,7 +272,7 @@ public class DashboardGenerator {
 		root.put("runs", runs);
 
 		// coverage: invert dependency map (test→sources) to (source→tests)
-		root.put("coverage", buildCoverageData(depMap));
+		root.put("coverage", depMap != null ? buildCoverageData(depMap) : null);
 
 		// ML section (health report + predictions summary)
 		if (healthReport != null) {
