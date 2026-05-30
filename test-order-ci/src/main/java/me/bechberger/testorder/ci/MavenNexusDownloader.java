@@ -184,10 +184,17 @@ public class MavenNexusDownloader implements DepDownloader {
 				while ((n = in.read(buf)) != -1) {
 					total += n;
 					if (total > MAX_DOWNLOAD_BYTES) {
+						out.close();
+						java.nio.file.Files.deleteIfExists(outputPath);
 						throw new DepDownloadException("Artifact exceeded size limit during download");
 					}
 					out.write(buf, 0, n);
 				}
+			} catch (DepDownloadException e) {
+				throw e;
+			} catch (IOException e) {
+				java.nio.file.Files.deleteIfExists(outputPath);
+				throw e;
 			}
 		}
 		logger.info("Downloaded artifact to: {}", outputPath);
