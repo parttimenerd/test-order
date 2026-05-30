@@ -290,22 +290,15 @@ public class TestScorer {
 		if (effectiveChangedForOverlap.isEmpty() || weight <= 0)
 			return Map.of();
 
-		// Build inverted index: changed class -> set of tests that depend on it
-		Map<String, Set<String>> changedClassToTests = new HashMap<>(
-				(int) (effectiveChangedForOverlap.size() / 0.75f) + 1);
-		for (String changedClass : effectiveChangedForOverlap) {
-			changedClassToTests.put(changedClass, new HashSet<>());
-		}
-
 		// Pre-scan to find which tests touch any changed class (class-level deps only;
-		// member deps use "Class#member" keys so they don't match plain class names here).
+		// member deps use "Class#member" keys so they don't match plain class names
+		// here).
 		Set<String> affectedTests = new HashSet<>();
 		for (String test : testClassNames) {
 			Set<String> deps = depMap.get(test);
 			for (String changedClass : effectiveChangedForOverlap) {
 				if (deps != null && deps.contains(changedClass)) {
 					affectedTests.add(test);
-					changedClassToTests.get(changedClass).add(test);
 					break; // test touches at least one changed class, no need to check further
 				}
 			}
