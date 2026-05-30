@@ -1387,6 +1387,46 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		sysProps += " -D" + me.bechberger.testorder.TestOrderConfig.BUILD_ID + "=" + buildId + " -D"
 				+ me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR + "=" + pendingRunsDir.toAbsolutePath();
 
+		// Selective learn: compute uncertain classes and pass to the agent so it only
+		// instruments classes reachable from the current change set.
+		if (selectiveLearn && java.nio.file.Files.exists(indexFilePath)) {
+			try {
+				Path classesDir = resolveClassesDir();
+				if (classesDir != null) {
+					Path changeRoot = ctx.gitRoot();
+					Path hashFilePath = ctx.resolveHashFile(hashFile);
+					me.bechberger.testorder.changes.ChangeDetector.Mode changeDetectorMode;
+					try {
+						changeDetectorMode = me.bechberger.testorder.changes.ChangeDetectionSupport
+								.resolveMode(changeMode, hashFilePath);
+					} catch (java.io.IOException e2) {
+						changeDetectorMode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
+					}
+					java.util.Set<String> uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
+							.computeUncertainClasses(changeRoot, classesDir, changeDetectorMode);
+					if (uncertainClasses != null) {
+						String fname = (mid == null || mid.isBlank())
+								? "uncertain-classes.txt"
+								: "uncertain-classes-" + mid.replaceAll("[^a-zA-Z0-9._-]", "_") + ".txt";
+						Path uncertainFile = ctx.resolveDepsDir(depsDir).resolve(fname);
+						me.bechberger.testorder.changes.UncertainClassesStore.save(uncertainFile, uncertainClasses);
+						sysProps += " -Dtestorder.learn.uncertainClassesFile=" + uncertainFile.toAbsolutePath();
+						if (uncertainClasses.isEmpty()) {
+							getLog().info(
+									"[test-order] Selective learn: no source changes detected; no classes will be instrumented");
+						} else {
+							getLog().info("[test-order] Selective learn: " + uncertainClasses.size()
+									+ " uncertain class(es) will be instrumented");
+						}
+					}
+				}
+			} catch (java.io.IOException e) {
+				getLog().warn(
+						"[test-order] Selective learn: failed to compute uncertain classes — using full instrumentation: "
+								+ e.getMessage());
+			}
+		}
+
 		if (hasHardcodedSurefireArgLine || hasCliArgLine) {
 			// The Surefire argLine is a hardcoded literal with no Maven property
 			// placeholder.
