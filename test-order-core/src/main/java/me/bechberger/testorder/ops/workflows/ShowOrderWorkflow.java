@@ -96,7 +96,7 @@ public final class ShowOrderWorkflow {
 			return result;
 		}
 
-		Set<String> alwaysRun = ctx.testClassesDir() != null ? AlwaysRunScanner.scan(ctx.testClassesDir()) : Set.of();
+		Set<String> alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
 
 		// Derive a stable seed from the changed-class set when none is explicitly set,
 		// so selection preview is deterministic for the same inputs.

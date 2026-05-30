@@ -18,6 +18,14 @@ public final class AlwaysRunScanner {
 	}
 
 	/**
+	 * Null-safe wrapper: returns an empty set when {@code testClassesDir} is
+	 * {@code null}, otherwise delegates to {@link #scan(Path)}.
+	 */
+	public static Set<String> scanOrEmpty(Path testClassesDir) {
+		return testClassesDir != null ? scan(testClassesDir) : Set.of();
+	}
+
+	/**
 	 * Walks the given test-classes directory and returns the fully-qualified class
 	 * names of all top-level classes annotated with {@code @AlwaysRun}.
 	 *

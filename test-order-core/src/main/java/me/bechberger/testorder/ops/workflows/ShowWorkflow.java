@@ -122,7 +122,7 @@ public final class ShowWorkflow {
 		// ── Class order ──────────────────────────────────────────────
 		ShowOrderWorkflow.ShowOrderResult classOrder = null;
 		if (opts.classes()) {
-			try {
+			classOrder = tryCompute("Class order computation", () -> {
 				TestScorer scorer = analysis.buildScorer();
 				// Filter out classes that have never been observed running and are not in the
 				// dep map — these are typically abstract base classes or classes excluded by
@@ -137,12 +137,10 @@ public final class ShowWorkflow {
 				}
 				List<OrderReportPrinter.RankedTest> ranked = OrderReportPrinter.rankTests(allTests, scorer,
 						analysis.state());
-				classOrder = new ShowOrderWorkflow.ShowOrderResult(ranked, scorer, analysis.changedClasses(),
+				return new ShowOrderWorkflow.ShowOrderResult(ranked, scorer, analysis.changedClasses(),
 						analysis.changedTests(), analysis.weights(), analysis.state(), analysis.depMap(),
 						analysis.changeComplexity());
-			} catch (Exception e) {
-				System.err.println("[test-order] WARN: Class order computation failed: " + e.getMessage());
-			}
+			});
 		}
 
 		// ── Method order ─────────────────────────────────────────────
@@ -153,17 +151,15 @@ public final class ShowWorkflow {
 			showMethods = !analysis.state().getMethodDurations().isEmpty();
 		}
 		if (showMethods) {
-			try {
+			methodOrder = tryCompute("Method order computation", () -> {
 				TestOrderState.MethodScoringWeights weights = analysis.state().methodScoringWeights();
 				List<ClassMethodOrder> classOrders = MethodOrderingEngine.orderAllMethods(analysis.state(),
 						analysis.depMap(), analysis.changedClasses(), analysis.changedMethods(), weights);
-				if (!classOrders.isEmpty()) {
-					methodOrder = new ShowMethodOrderWorkflow.ShowMethodOrderResult(classOrders,
-							analysis.changedClasses(), analysis.changedMethods(), weights);
-				}
-			} catch (Exception e) {
-				System.err.println("[test-order] WARN: Method order computation failed: " + e.getMessage());
-			}
+				return classOrders.isEmpty()
+						? null
+						: new ShowMethodOrderWorkflow.ShowMethodOrderResult(classOrders, analysis.changedClasses(),
+								analysis.changedMethods(), weights);
+			});
 		}
 
 		// ── ML health ────────────────────────────────────────────────
@@ -175,15 +171,25 @@ public final class ShowWorkflow {
 			showMl = Files.exists(mlHistoryDir.resolve("history.lz4"));
 		}
 		if (showMl && mlHistoryDir != null) {
-			try {
-				MLHealthLoader.LoadResult mlResult = MLHealthLoader.load(mlHistoryDir);
-				healthReport = mlResult.healthReport();
-			} catch (Exception e) {
-				System.err.println("[test-order] WARN: ML health loading failed: " + e.getMessage());
-			}
+			final Path histDir = mlHistoryDir;
+			healthReport = tryCompute("ML health loading", () -> MLHealthLoader.load(histDir).healthReport());
 		}
 
 		return new ShowResult(classOrder, methodOrder, healthReport, mlPredictions, analysis);
+	}
+
+	/**
+	 * Runs {@code fn} and returns the result, or returns {@code null} if any
+	 * exception is thrown — logging a standard warning in that case.
+	 */
+	@SuppressWarnings("unchecked")
+	private static <T> T tryCompute(String component, java.util.concurrent.Callable<T> fn) {
+		try {
+			return fn.call();
+		} catch (Exception e) {
+			System.err.println("[test-order] WARN: " + component + " failed: " + e.getMessage());
+			return null;
+		}
 	}
 
 	// ── Print (text) ─────────────────────────────────────────────────
@@ -235,9 +241,7 @@ public final class ShowWorkflow {
 			if (!ranked.isEmpty() && (opts.topN() >= 0 || opts.randomM() > 0)) {
 				out.println();
 				out.println("═══ Selection Preview ════════════════════════════════");
-				Set<String> alwaysRun = ctx.testClassesDir() != null
-						? AlwaysRunScanner.scan(ctx.testClassesDir())
-						: Set.of();
+				Set<String> alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
 				TestSelector.Selection selection = new TestSelector(result.analysis().depMap(),
 						result.analysis().state(), result.analysis().changedClasses(), result.analysis().changedTests(),
 						result.analysis().weights(), new TestSelector.Config(opts.topN(), opts.randomM(), opts.seed()),

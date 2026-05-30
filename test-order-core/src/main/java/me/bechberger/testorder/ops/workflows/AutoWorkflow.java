@@ -148,7 +148,7 @@ public final class AutoWorkflow {
 		// ── 2. Order + select (single analysis pass) ────────────────
 		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.FOR_AUTO);
 
-		var alwaysRun = ctx.testClassesDir() != null ? AlwaysRunScanner.scan(ctx.testClassesDir()) : Set.<String>of();
+		var alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
 
 		SelectOperation.SelectResult selectResult;
 		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0 && ctx.randomM() < 0) {

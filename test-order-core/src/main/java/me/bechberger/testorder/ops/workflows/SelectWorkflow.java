@@ -42,9 +42,7 @@ public final class SelectWorkflow {
 	public static SelectWithAnalysis selectWithAnalysis(PluginContext ctx) throws IOException {
 		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.FOR_SELECTION);
 
-		var alwaysRun = ctx.testClassesDir() != null
-				? AlwaysRunScanner.scan(ctx.testClassesDir())
-				: java.util.Set.<String>of();
+		var alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
 
 		SelectOperation.SelectResult result = SelectOperation.select(new SelectOperation.SelectConfig(a.depMap(),
 				a.state(), a.changedClasses(), a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(),
