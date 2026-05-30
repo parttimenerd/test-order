@@ -362,9 +362,11 @@ public class TestScorer {
 		double killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0;
 
 		Set<String> deps = depMap.get(testClassName);
-		if (deps == null) deps = Set.of();
+		if (deps == null)
+			deps = Set.of();
 		int depTotal = deps.size();
 		int depOverlap = 0;
+		double complexityOvlp = 0.0;
 		int staticFieldOverlap = 0;
 		if (!effectiveChangedForOverlap.isEmpty()) {
 			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(testClassName) : null;
@@ -481,7 +483,8 @@ public class TestScorer {
 
 		// Dependencies
 		Set<String> deps = depMap.get(testClassName);
-		if (deps == null) deps = Set.of();
+		if (deps == null)
+			deps = Set.of();
 		int depTotal = deps.size();
 		Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(testClassName) : null;
 

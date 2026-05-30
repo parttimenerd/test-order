@@ -5,6 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import me.bechberger.testorder.TestOrderLogger;
 
@@ -169,23 +171,32 @@ public class ChangeDetector {
 			pb.directory(projectRoot.toFile());
 			pb.redirectErrorStream(true);
 			Process process = pb.start();
-			try {
-				String output;
+			// Drain stdout on a background thread so that waitFor() can honour the timeout
+			// even when git hangs without producing output (e.g. waiting for an index
+			// lock).
+			AtomicReference<String> outputRef = new AtomicReference<>("");
+			Thread drainer = new Thread(() -> {
 				try (var is = process.getInputStream()) {
-					output = new String(is.readAllBytes()).trim();
+					outputRef.set(new String(is.readAllBytes()).trim());
+				} catch (IOException ignored) {
 				}
-				if (!process.waitFor(GitTimeout.seconds(), java.util.concurrent.TimeUnit.SECONDS)) {
+			}, "test-order-git-root-drain");
+			drainer.setDaemon(true);
+			drainer.start();
+			try {
+				if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
 					process.destroyForcibly();
+					drainer.interrupt();
 					return projectRoot.toAbsolutePath().normalize();
 				}
+				drainer.join(2000);
+				String output = outputRef.get();
 				if (process.exitValue() == 0 && !output.isEmpty()) {
 					return Path.of(output).toAbsolutePath().normalize();
 				}
-			} catch (IOException e) {
-				process.destroyForcibly();
-				// fall through to default
 			} catch (InterruptedException e) {
 				process.destroyForcibly();
+				drainer.interrupt();
 				Thread.currentThread().interrupt();
 				return projectRoot.toAbsolutePath().normalize();
 			}

@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -38,26 +39,36 @@ final class GitSupport {
 		pb.redirectErrorStream(true);
 		Process process = pb.start();
 
-		List<String> lines = new ArrayList<>();
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-			String line;
-			while ((line = reader.readLine()) != null) {
-				String trimmed = line.stripTrailing();
-				if (!trimmed.isEmpty()) {
-					lines.add(trimmed);
+		// Drain stdout on a background thread so that waitFor() can honour the timeout
+		// even when git hangs without producing output (e.g. waiting for an index
+		// lock).
+		List<String> lines = new CopyOnWriteArrayList<>();
+		Thread drainer = new Thread(() -> {
+			try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+				String line;
+				while ((line = reader.readLine()) != null) {
+					String trimmed = line.stripTrailing();
+					if (!trimmed.isEmpty()) {
+						lines.add(trimmed);
+					}
 				}
+			} catch (IOException ignored) {
 			}
-		}
+		}, "test-order-git-drain");
+		drainer.setDaemon(true);
+		drainer.start();
 
 		try {
 			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
 				process.destroyForcibly();
+				drainer.interrupt();
 				if (throwOnError) {
 					throw new IOException(
 							"git command timed out after " + GitTimeout.seconds() + "s: " + String.join(" ", command));
 				}
 				return Collections.emptyList();
 			}
+			drainer.join(2000);
 			if (process.exitValue() != 0) {
 				if (throwOnError) {
 					throw new IOException("git command failed: " + String.join(" ", command) + summarizeError(lines));
@@ -66,13 +77,14 @@ final class GitSupport {
 			}
 		} catch (InterruptedException e) {
 			process.destroyForcibly();
+			drainer.interrupt();
 			Thread.currentThread().interrupt();
 			if (throwOnError) {
 				throw new IOException("git command interrupted: " + String.join(" ", command), e);
 			}
 			return Collections.emptyList();
 		}
-		return lines;
+		return new ArrayList<>(lines);
 	}
 
 	private static String summarizeError(List<String> lines) {
