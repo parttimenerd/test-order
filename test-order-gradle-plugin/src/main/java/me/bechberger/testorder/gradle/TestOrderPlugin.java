@@ -506,7 +506,10 @@ public class TestOrderPlugin implements Plugin<Project> {
             testTask.getJvmArgumentProviders().add(
                     new AgentArgumentProvider(project, ext, agentConf, instrMode.toUpperCase()));
 
-            // Start IndexCollectorServer for socket-based dep collection (agent mode)
+            final boolean selectiveLearn = resolveSelectiveLearn(project, ext);
+
+            // Start IndexCollectorServer for socket-based dep collection (agent mode).
+            // Also writes the uncertain-classes file when selectiveLearn=true.
             testTask.doFirst("testOrderStartCollector", t -> {
                 try {
                     // Set compression level for IndexCollectorServer merge
@@ -524,6 +527,55 @@ public class TestOrderPlugin implements Plugin<Project> {
                 } catch (java.io.IOException ex) {
                     project.getLogger().warn("[test-order] Failed to start IndexCollectorServer: {}",
                             ex.getMessage());
+                }
+
+                // Selective learn: compute and persist the uncertain-classes set so the
+                // online agent can skip classes that the static graph proves are unaffected.
+                if (selectiveLearn) {
+                    java.nio.file.Path idxPath = ext.getIndexFile().get().getAsFile().toPath();
+                    boolean indexExists = java.nio.file.Files.exists(idxPath);
+                    if (indexExists) {
+                        try {
+                            SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
+                            SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+                            Path classesDir = mainSourceSet.getOutput().getClassesDirs().getFiles().stream()
+                                    .map(File::toPath)
+                                    .filter(Files::isDirectory)
+                                    .findFirst()
+                                    .orElse(null);
+                            if (classesDir != null) {
+                                Path repoRoot = project.getRootProject().getProjectDir().toPath();
+                                java.nio.file.Path hashFilePath = ext.getHashFile().get().getAsFile().toPath();
+                                me.bechberger.testorder.changes.ChangeDetector.Mode changeDetectorMode;
+                                try {
+                                    changeDetectorMode = me.bechberger.testorder.changes.ChangeDetectionSupport
+                                            .resolveMode(resolveChangeMode(project, ext), hashFilePath);
+                                } catch (java.io.IOException e) {
+                                    changeDetectorMode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
+                                }
+                                java.util.Set<String> uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
+                                        .computeUncertainClasses(repoRoot, classesDir, changeDetectorMode);
+                                if (uncertainClasses != null) {
+                                    java.nio.file.Path uncertainFile = ext.getDepsDir().get().getAsFile().toPath()
+                                            .resolve("uncertain-classes.txt");
+                                    me.bechberger.testorder.changes.UncertainClassesStore.save(uncertainFile, uncertainClasses);
+                                    testTask.systemProperty("testorder.learn.uncertainClassesFile",
+                                            uncertainFile.toAbsolutePath().toString());
+                                    if (!uncertainClasses.isEmpty()) {
+                                        project.getLogger().lifecycle("[test-order] Selective learn: instrumenting {} uncertain class(es)",
+                                                uncertainClasses.size());
+                                    } else {
+                                        project.getLogger().lifecycle("[test-order] Selective learn: no source changes detected; agent will instrument nothing");
+                                    }
+                                }
+                            }
+                        } catch (java.io.IOException ex) {
+                            project.getLogger().warn("[test-order] Selective learn: failed to compute uncertain classes — using full instrumentation: {}",
+                                    ex.getMessage());
+                        }
+                    } else {
+                        project.getLogger().lifecycle("[test-order] Selective learn: no existing index — using full instrumentation for initial run");
+                    }
                 }
             });
         }
