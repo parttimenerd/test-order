@@ -41,6 +41,18 @@ public final class UncertainClassesStore {
 		}
 		try {
 			Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		} catch (AtomicMoveNotSupportedException ignored) {
+			// Atomic move not supported on this filesystem — fall back to non-atomic.
+			try {
+				Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+			} catch (IOException e2) {
+				try {
+					Files.deleteIfExists(tmp);
+				} catch (IOException suppressed) {
+					e2.addSuppressed(suppressed);
+				}
+				throw e2;
+			}
 		} catch (IOException e) {
 			try {
 				Files.deleteIfExists(tmp);
