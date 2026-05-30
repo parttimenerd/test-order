@@ -139,6 +139,25 @@ Machine-readable, suitable for CI integration, dashboards, and automated process
 **Structure**:
 ```json
 {
+  "metadata": {
+    "module": "<Maven artifact ID>",
+    "algorithm": "<algorithm name>",
+    "testClassCount": 8,
+    "passingTestCount": 6,
+    "runsExecuted": 28,
+    "durationMs": 46000,
+    "durationFormatted": "46s",
+    "conflictEdges": 12,
+    "randomSeed": 42,
+    "timeBudgetSeconds": 120,
+    "timestamp": "2026-05-30T21:00:00Z"
+  },
+  "summary": {
+    "totalFindings": 2,
+    "victims": 1,
+    "brittles": 1,
+    "methodLevelFindings": 0
+  },
   "findings": [
     {
       "victim": "<fully-qualified class name of the affected test>",
@@ -163,6 +182,14 @@ Machine-readable, suitable for CI integration, dashboards, and automated process
 
 | Field | Description |
 |-------|-------------|
+| `metadata.module` | Maven artifact ID of the scanned project |
+| `metadata.algorithm` | Algorithm used for this run |
+| `metadata.runsExecuted` | Number of subprocess test executions |
+| `metadata.conflictEdges` | Edges in the conflict graph (test pairs sharing static fields) |
+| `metadata.timeBudgetSeconds` | Time budget configured for this run |
+| `summary.totalFindings` | Total OD findings (class + method level) |
+| `summary.victims` | Count of VICTIM findings |
+| `summary.brittles` | Count of BRITTLE findings |
 | `findings[].victim` | The order-dependent test class |
 | `findings[].type` | `VICTIM` = fails when polluter runs before it; `BRITTLE` = fails without its setter |
 | `findings[].confidence` | Detection confidence (0.0–1.0). Higher = more certain. 0.99 = confirmed via isolation. 0.7 = detected but polluter not fully isolated. |
@@ -176,6 +203,24 @@ Machine-readable, suitable for CI integration, dashboards, and automated process
 **Real example** (from sample-od-bugs with 8 test classes):
 ```json
 {
+  "metadata": {
+    "module": "sample-od-bugs",
+    "algorithm": "combined-adaptive",
+    "testClassCount": 8,
+    "passingTestCount": 6,
+    "runsExecuted": 28,
+    "durationMs": 46909,
+    "durationFormatted": "46s",
+    "conflictEdges": 0,
+    "randomSeed": 42,
+    "timeBudgetSeconds": 120
+  },
+  "summary": {
+    "totalFindings": 2,
+    "victims": 0,
+    "brittles": 2,
+    "methodLevelFindings": 0
+  },
   "findings": [
     {
       "victim": "com.example.od.VictimTest",
@@ -185,11 +230,11 @@ Machine-readable, suitable for CI integration, dashboards, and automated process
       "dependencyChain": ["com.example.od.SetupTest", "com.example.od.VictimTest"]
     },
     {
-      "victim": "com.example.od.CacheWarmupTest",
-      "type": "VICTIM",
-      "confidence": 0.95,
-      "description": "Minimized: [com.example.od.IntegrationFlowTest] → com.example.od.CacheWarmupTest",
-      "dependencyChain": ["com.example.od.IntegrationFlowTest", "com.example.od.CacheWarmupTest"]
+      "victim": "com.example.od.CacheConsumerTest",
+      "type": "BRITTLE",
+      "confidence": 0.99,
+      "description": "Confirmed brittle: com.example.od.CacheConsumerTest needs com.example.od.CacheWarmupTest",
+      "dependencyChain": ["com.example.od.CacheWarmupTest", "com.example.od.CacheConsumerTest"]
     }
   ],
   "constraints": [
@@ -200,10 +245,10 @@ Machine-readable, suitable for CI integration, dashboards, and automated process
       "reason": "Brittle: com.example.od.VictimTest needs com.example.od.SetupTest"
     },
     {
-      "testA": "com.example.od.IntegrationFlowTest",
-      "testB": "com.example.od.CacheWarmupTest",
-      "type": "MUST_NOT_PRECEDE",
-      "reason": "Victim: com.example.od.IntegrationFlowTest pollutes com.example.od.CacheWarmupTest"
+      "testA": "com.example.od.CacheWarmupTest",
+      "testB": "com.example.od.CacheConsumerTest",
+      "type": "MUST_PRECEDE",
+      "reason": "Brittle: com.example.od.CacheConsumerTest needs com.example.od.CacheWarmupTest"
     }
   ]
 }
@@ -268,26 +313,191 @@ During execution, the plugin logs progress and results:
 <details>
 <summary><strong>CI Integration</strong></summary>
 
-To fail the build on detection (e.g., in a nightly job):
+### Quick Start (fail on detection)
 
 ```bash
-mvn test-order:detect-dependencies -Dtestorder.detect.failOnDetection=true
+mvn test-order:detect-dependencies \
+  -Dtestorder.detect.algorithm=reverse \
+  -Dtestorder.detect.timeBudget=120 \
+  -Dtestorder.detect.failOnDetection=true \
+  -Dspotless.check.skip=true \
+  --batch-mode
 ```
 
-To parse findings programmatically (e.g., in a GitHub Actions workflow):
+Use `--batch-mode` in every CI invocation — it disables ANSI escapes and interactive prompts.
+
+### Dedicated CI Script
+
+`scripts/ci-detect-od-tests.sh` wraps the Maven goal with structured output, GitHub Actions annotations, and clean exit codes:
+
+```bash
+# Warn but don't fail (default — good for initial adoption)
+./scripts/ci-detect-od-tests.sh --time-budget 120
+
+# Fail the build on findings (for enforcement)
+./scripts/ci-detect-od-tests.sh --fail-on-detection --time-budget 120
+
+# Target a specific module in a multi-module build
+./scripts/ci-detect-od-tests.sh --module my-service --time-budget 180
+
+# Fast check using reverse-order algorithm
+./scripts/ci-detect-od-tests.sh --algorithm reverse --time-budget 60
+
+# Full options
+./scripts/ci-detect-od-tests.sh \
+  --algorithm combined \
+  --time-budget 300 \
+  --fail-on-detection \
+  --annotate-github
+```
+
+**Exit codes from the script:**
+| Code | Meaning |
+|------|---------|
+| `0` | No OD bugs found, or `--fail-on-detection` not set |
+| `1` | OD bugs found with `--fail-on-detection` |
+| `2` | Invocation error (bad arguments) |
+
+### GitHub Actions
+
+**Nightly scan (recommended starting point):**
 
 ```yaml
-- name: Detect OD tests
-  run: mvn test-order:detect-dependencies -Dspotless.check.skip=true --batch-mode
+name: OD Test Detection
 
-- name: Check for findings
-  run: |
-    if jq -e '.findings | length > 0' .test-order/detection/od-detection-report.json; then
-      echo "::warning::Order-dependent tests detected!"
-      jq -r '.findings[] | "- \(.type): \(.victim) (\(.description))"' \
-        .test-order/detection/od-detection-report.json
-    fi
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 2am UTC nightly
+  workflow_dispatch:
+
+jobs:
+  detect-od-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Cache Maven repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      - name: Detect OD tests
+        run: |
+          ./scripts/ci-detect-od-tests.sh \
+            --algorithm combined \
+            --time-budget 300 \
+            --fail-on-detection \
+            --annotate-github
+
+      - name: Upload OD detection report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: od-detection-report
+          path: .test-order/detection/
+          retention-days: 30
 ```
+
+**On every PR (fast reverse-order check):**
+
+```yaml
+      - name: Quick OD check (reverse order)
+        run: |
+          ./scripts/ci-detect-od-tests.sh \
+            --algorithm reverse \
+            --time-budget 120 \
+            --annotate-github
+```
+
+The reverse algorithm runs in a single pass and finds the majority of victims — ideal for PR gates where speed matters. Use `combined` for the nightly comprehensive scan.
+
+**Parse findings with `jq` (alternative to the script):**
+
+```yaml
+      - name: Detect OD tests
+        run: |
+          mvn test-order:detect-dependencies \
+            -Dtestorder.detect.algorithm=combined \
+            -Dtestorder.detect.timeBudget=300 \
+            -Dspotless.check.skip=true \
+            --batch-mode
+
+      - name: Parse findings
+        if: always()
+        run: |
+          REPORT=.test-order/detection/od-detection-report.json
+          if [[ ! -f "$REPORT" ]]; then exit 0; fi
+          COUNT=$(jq '.findings | length' "$REPORT")
+          echo "OD findings: $COUNT"
+          if [[ "$COUNT" -gt 0 ]]; then
+            jq -r '.findings[] | "::warning title=OD Test (\(.type)): \(.victim)::\(.description)"' "$REPORT"
+          fi
+```
+
+### GitLab CI
+
+```yaml
+detect-od-tests:
+  stage: test
+  rules:
+    - when: scheduled
+  script:
+    - ./scripts/ci-detect-od-tests.sh --algorithm combined --time-budget 300 --fail-on-detection
+  artifacts:
+    when: always
+    paths:
+      - .test-order/detection/
+    expire_in: 30 days
+```
+
+### Choosing a Time Budget
+
+| Test suite size | Recommended budget | Notes |
+|---|---|---|
+| < 50 classes | 60–120s | Full coverage likely in one pass |
+| 50–200 classes | 120–300s | Combined algorithm covers most permutations |
+| 200–500 classes | 300–600s | Set `--algorithm reverse` for PR gates |
+| 500+ classes | 600s+ per module | Consider scanning changed modules only |
+
+The tool tells you how much budget was actually used and how many runs fit in the window:
+
+```
+[INFO] Each detection run takes ~7s. For full coverage (500 runs), set testorder.detect.timeBudget=3611
+```
+
+Use this output to calibrate your time budget over time.
+
+### Incremental Mode
+
+After the first complete scan, subsequent runs in the same `.test-order/` directory are incremental — previously confirmed findings are carried forward automatically and don't need to be rediscovered. This makes PR-gate scans faster over time.
+
+The report tracks metadata for each run:
+
+```json
+{
+  "metadata": {
+    "runsExecuted": 15,
+    "durationMs": 24800,
+    "conflictEdges": 143
+  }
+}
+```
+
+### CI Best Practices
+
+- **Start with `--algorithm reverse`** for fast initial adoption — it's a single pass and catches most victims.
+- **Graduate to `combined`** once reverse passes cleanly — it has the highest detection rate.
+- **Don't set `failOnDetection=true` immediately** — first run it in warn mode to see what already exists.
+- **Archive the report artifact** — the JSON report accumulates knowledge across runs (incremental mode).
+- **Use `--annotate-github`** (or the `jq` snippet) to surface findings as GitHub check annotations on the PR.
+- **Commit `.test-order/detection/`** if you want to track findings in version control; otherwise add it to `.gitignore`.
 
 </details>
 
