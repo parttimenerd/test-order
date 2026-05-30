@@ -1920,17 +1920,15 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 	/**
 	 * Resolves the shaded fat-jar for test-order-core (the {@code -all}
-	 * classifier). Falls back to the plain jar or reactor classes dir if the shaded
-	 * jar is not found (e.g. during development without a full install).
+	 * classifier). The shaded jar is required because it bundles LZ4 and other
+	 * dependencies; using the reactor classes dir alone causes
+	 * ClassNotFoundException for those transitive deps at test runtime.
+	 * <p>
+	 * Priority: shaded -all jar from local repo &gt; reactor classes dir
+	 * (pre-install development only) &gt; unshaded plain jar (last resort).
 	 */
 	private Path resolveShadedCoreJar() throws MojoExecutionException {
-		// In a reactor build the classes dir is preferred for fast iteration
-		Path reactorClassesDir = project.getBasedir().toPath().getParent().resolve("test-order-core").resolve("target")
-				.resolve("classes");
-		if (Files.isDirectory(reactorClassesDir)) {
-			return reactorClassesDir;
-		}
-		// Prefer the shaded -all jar from the local repo
+		// Prefer the shaded -all jar from the local repo — it bundles LZ4 etc.
 		String repoPath = session != null && session.getLocalRepository() != null
 				? session.getLocalRepository().getBasedir()
 				: System.getProperty("user.home", "") + "/.m2/repository";
@@ -1950,9 +1948,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				return shadedJar;
 			}
 		}
-		// Fallback to unshaded plain jar — this risks classpath conflicts on projects
-		// that ship their own femtojson or femtocli. Should not happen for installed
-		// releases; only expected during plugin development before mvn install runs.
+		// Fall back to reactor classes dir when the shaded jar hasn't been built yet
+		// (e.g. first compile before mvn install). Note: this path is missing LZ4 and
+		// other binary deps, so ClassNotFoundException may occur. Run mvn install first
+		// for reliable behaviour.
+		Path reactorClassesDir = project.getBasedir().toPath().getParent().resolve("test-order-core").resolve("target")
+				.resolve("classes");
+		if (Files.isDirectory(reactorClassesDir)) {
+			return reactorClassesDir;
+		}
+		// Fallback to unshaded plain jar — risks classpath conflicts but better than
+		// nothing.
 		getLog().warn("[test-order] Shaded test-order-core-all.jar not found — falling back to unshaded jar. "
 				+ "If you see NoSuchMethodError or similar, run: mvn install on the test-order project.");
 		return resolveArtifact("test-order-core");
