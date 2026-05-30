@@ -554,12 +554,16 @@ public class TestOrderPlugin implements Plugin<Project> {
                                 } catch (java.io.IOException e) {
                                     changeDetectorMode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
                                 }
-                                java.util.Set<String> uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
-                                        .computeUncertainClasses(repoRoot, classesDir, changeDetectorMode);
+                                me.bechberger.testorder.changes.SelectiveLearnSupport.StaticAnalysisData saData =
+                                        me.bechberger.testorder.changes.SelectiveLearnSupport
+                                                .computeStaticAnalysisData(repoRoot, classesDir, changeDetectorMode);
+                                java.util.Set<String> uncertainClasses = saData != null ? saData.uncertainClasses() : null;
                                 if (uncertainClasses != null) {
                                     java.nio.file.Path uncertainFile = ext.getDepsDir().get().getAsFile().toPath()
                                             .resolve("uncertain-classes.txt");
                                     me.bechberger.testorder.changes.UncertainClassesStore.save(uncertainFile, uncertainClasses);
+                                    me.bechberger.testorder.changes.StaticAnalysisDataStore.save(
+                                            me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(uncertainFile), saData);
                                     testTask.systemProperty("testorder.learn.uncertainClassesFile",
                                             uncertainFile.toAbsolutePath().toString());
                                     if (!uncertainClasses.isEmpty()) {
@@ -643,6 +647,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
             // Selective learn: compute uncertain classes if enabled and index exists
             java.util.Set<String> uncertainClasses = null;
+            me.bechberger.testorder.changes.SelectiveLearnSupport.StaticAnalysisData saData = null;
             if (selectiveLearn) {
                 java.nio.file.Path idxPath = ext.getIndexFile().get().getAsFile().toPath();
                 boolean indexExists = java.nio.file.Files.exists(idxPath);
@@ -656,8 +661,9 @@ public class TestOrderPlugin implements Plugin<Project> {
                     } catch (java.io.IOException e) {
                         changeDetectorMode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
                     }
-                    uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
-                            .computeUncertainClasses(repoRoot, classesDir, changeDetectorMode);
+                    saData = me.bechberger.testorder.changes.SelectiveLearnSupport
+                            .computeStaticAnalysisData(repoRoot, classesDir, changeDetectorMode);
+                    uncertainClasses = saData != null ? saData.uncertainClasses() : null;
                     if (uncertainClasses != null && !uncertainClasses.isEmpty()) {
                         project.getLogger().lifecycle("[test-order] Selective instrument: {} uncertain class(es) will be instrumented",
                                 uncertainClasses.size());
@@ -675,7 +681,12 @@ public class TestOrderPlugin implements Plugin<Project> {
             if (uncertainClasses != null) {
                 try {
                     java.nio.file.Path depsPath = ext.getDepsDir().get().getAsFile().toPath();
-                    me.bechberger.testorder.changes.UncertainClassesStore.save(depsPath.resolve("uncertain-classes.txt"), uncertainClasses);
+                    java.nio.file.Path uncertainFile = depsPath.resolve("uncertain-classes.txt");
+                    me.bechberger.testorder.changes.UncertainClassesStore.save(uncertainFile, uncertainClasses);
+                    if (saData != null) {
+                        me.bechberger.testorder.changes.StaticAnalysisDataStore.save(
+                                me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(uncertainFile), saData);
+                    }
                 } catch (java.io.IOException e2) {
                     project.getLogger().debug("[test-order] Could not write uncertain-classes file: " + e2.getMessage());
                 }

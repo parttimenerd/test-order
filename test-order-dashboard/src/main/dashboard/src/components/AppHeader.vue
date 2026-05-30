@@ -7,11 +7,12 @@ const d = inject<DashboardState>('dashboard')!
 const openPalette = inject<() => void>('openPalette', () => {})
 
 const nameMode = computed(() => d.nameMode.value)
+// Label shows what the button currently does (current mode indicator), title explains the action
 const nameModeLabel = computed(() => nameMode.value === 'short' ? 'abc' : nameMode.value === 'strip' ? 'pkg…' : 'FQCN')
 const nameModeTitle = computed(() => ({
-  short: 'Abbreviated names (e.g. o.j.n.CommentTest) — click for smart strip',
-  strip: 'Common prefix stripped (shows only the unique part) — click for full names',
-  full: 'Full class names — click to abbreviate',
+  short:  'Names: abbreviated (e.g. c.m.u.ValidatorTest) — click to strip common prefix',
+  strip:  'Names: common prefix stripped (unique part only) — click to show full names',
+  full:   'Names: fully qualified — click to abbreviate',
 })[nameMode.value])
 function cycleNameMode() {
   d.nameMode.value = nameMode.value === 'short' ? 'strip' : nameMode.value === 'strip' ? 'full' : 'short'
@@ -131,8 +132,8 @@ const generatedAge = computed(() => {
     <button
       class="app-header__palette-btn"
       @click="openPalette()"
-      title="Quick test search (⌘K / Ctrl+K)"
-    ><kbd>⌘K</kbd> Search tests</button>
+      title="Command palette — search tests, jump to tab, apply filters (⌘K / Ctrl+K)"
+    ><kbd>⌘K</kbd> Jump to…</button>
 
     <!-- Name mode cycle toggle -->
     <button

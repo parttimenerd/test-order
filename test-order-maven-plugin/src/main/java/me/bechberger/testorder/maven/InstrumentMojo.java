@@ -94,6 +94,7 @@ public class InstrumentMojo extends AbstractTestOrderMojo {
 		// existing index is present. On the first learn run there is no index to
 		// prune against, so fall back to full instrumentation.
 		Set<String> uncertainClasses = null;
+		me.bechberger.testorder.changes.SelectiveLearnSupport.StaticAnalysisData saData = null;
 		if (selectiveLearn) {
 			Path idxPath = ctx != null ? ctx.resolveIndexFile(indexFile) : Path.of(indexFile);
 			boolean indexExists = java.nio.file.Files.exists(idxPath);
@@ -109,8 +110,8 @@ public class InstrumentMojo extends AbstractTestOrderMojo {
 				// Use git root (reactor root in multi-module) so cross-module changes are
 				// detected
 				Path projectRoot = ctx != null ? ctx.gitRoot() : project.getBasedir().toPath();
-				uncertainClasses = SelectiveLearnSupport.computeUncertainClasses(projectRoot, classesDir,
-						changeDetectorMode);
+				saData = SelectiveLearnSupport.computeStaticAnalysisData(projectRoot, classesDir, changeDetectorMode);
+				uncertainClasses = saData != null ? saData.uncertainClasses() : null;
 				if (uncertainClasses != null && !uncertainClasses.isEmpty()) {
 					getLog().info("[test-order] Selective instrument: " + uncertainClasses.size()
 							+ " uncertain class(es) will be instrumented");
@@ -132,8 +133,12 @@ public class InstrumentMojo extends AbstractTestOrderMojo {
 					: "uncertain-classes-" + mid.replaceAll("[^a-zA-Z0-9._-]", "_") + ".txt";
 			try {
 				Path depsDirPath = ctx != null ? ctx.resolveDepsDir(depsDir) : Path.of(depsDir);
-				me.bechberger.testorder.changes.UncertainClassesStore.save(depsDirPath.resolve(fname),
-						uncertainClasses);
+				Path uncertainFile = depsDirPath.resolve(fname);
+				me.bechberger.testorder.changes.UncertainClassesStore.save(uncertainFile, uncertainClasses);
+				if (saData != null) {
+					me.bechberger.testorder.changes.StaticAnalysisDataStore.save(
+							me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(uncertainFile), saData);
+				}
 			} catch (IOException e2) {
 				getLog().debug("[test-order] Could not write uncertain-classes file: " + e2.getMessage());
 			}

@@ -1402,14 +1402,18 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					} catch (java.io.IOException e2) {
 						changeDetectorMode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
 					}
-					java.util.Set<String> uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
-							.computeUncertainClasses(changeRoot, classesDir, changeDetectorMode);
+					me.bechberger.testorder.changes.SelectiveLearnSupport.StaticAnalysisData saData = me.bechberger.testorder.changes.SelectiveLearnSupport
+							.computeStaticAnalysisData(changeRoot, classesDir, changeDetectorMode);
+					java.util.Set<String> uncertainClasses = saData != null ? saData.uncertainClasses() : null;
 					if (uncertainClasses != null) {
 						String fname = (mid == null || mid.isBlank())
 								? "uncertain-classes.txt"
 								: "uncertain-classes-" + mid.replaceAll("[^a-zA-Z0-9._-]", "_") + ".txt";
 						Path uncertainFile = ctx.resolveDepsDir(depsDir).resolve(fname);
 						me.bechberger.testorder.changes.UncertainClassesStore.save(uncertainFile, uncertainClasses);
+						me.bechberger.testorder.changes.StaticAnalysisDataStore.save(
+								me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(uncertainFile),
+								saData);
 						sysProps += " -Dtestorder.learn.uncertainClassesFile=" + uncertainFile.toAbsolutePath();
 						if (uncertainClasses.isEmpty()) {
 							getLog().info(
@@ -1678,6 +1682,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 			// Selective learn: only instrument changed/uncertain classes when enabled
 			Set<String> uncertainClasses = null;
+			me.bechberger.testorder.changes.SelectiveLearnSupport.StaticAnalysisData saData = null;
 			if (selectiveLearn) {
 				Path idxPath = ctx != null ? ctx.resolveIndexFile(indexFile) : Path.of(indexFile);
 				boolean indexExists = java.nio.file.Files.exists(idxPath);
@@ -1690,8 +1695,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						mode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
 					}
 					Path projectRoot = ctx != null ? ctx.gitRoot() : project.getBasedir().toPath();
-					uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
-							.computeUncertainClasses(projectRoot, classesDir, mode);
+					saData = me.bechberger.testorder.changes.SelectiveLearnSupport
+							.computeStaticAnalysisData(projectRoot, classesDir, mode);
+					uncertainClasses = saData != null ? saData.uncertainClasses() : null;
 					if (uncertainClasses != null && !uncertainClasses.isEmpty()) {
 						getLog().info("[test-order] Selective instrument: " + uncertainClasses.size()
 								+ " uncertain class(es) will be instrumented");
@@ -1713,8 +1719,13 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						: "uncertain-classes-" + mid2.replaceAll("[^a-zA-Z0-9._-]", "_") + ".txt";
 				try {
 					Path depsDirPath = ctx != null ? ctx.resolveDepsDir(depsDir) : Path.of(depsDir);
-					me.bechberger.testorder.changes.UncertainClassesStore.save(depsDirPath.resolve(fname),
-							uncertainClasses);
+					Path uncertainFile = depsDirPath.resolve(fname);
+					me.bechberger.testorder.changes.UncertainClassesStore.save(uncertainFile, uncertainClasses);
+					if (saData != null) {
+						me.bechberger.testorder.changes.StaticAnalysisDataStore.save(
+								me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(uncertainFile),
+								saData);
+					}
 				} catch (java.io.IOException e2) {
 					getLog().debug("[test-order] Could not write uncertain-classes file: " + e2.getMessage());
 				}

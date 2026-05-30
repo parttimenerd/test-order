@@ -1337,7 +1337,7 @@ function previewScoreBars(t: TestEntry) {
       <!-- Score breakdown + Run history -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="card">
-          <div class="card-label">Score Breakdown <span style="font-size:.58rem;color:var(--text-muted)">(click to expand)</span></div>
+          <div class="card-label">Score Breakdown <span style="font-size:.58rem;color:var(--text-muted)">(hover segments for details)</span></div>
           <div class="test-detail__canvas-wrap" style="height:64px"><canvas id="bd-main"></canvas></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
             <template v-for="c in d.scoreComps.value" :key="c.label">

@@ -372,6 +372,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 			// Selective learn: compute uncertain classes if enabled and index exists
 			java.util.Set<String> uncertainClasses = null;
+			me.bechberger.testorder.changes.SelectiveLearnSupport.StaticAnalysisData saData = null;
 			if (selectiveLearn) {
 				Path idxPath = ctx != null ? ctx.resolveIndexFile(indexFile) : java.nio.file.Path.of(indexFile);
 				boolean indexExists = java.nio.file.Files.exists(idxPath);
@@ -385,8 +386,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 						changeDetectorMode = me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED;
 					}
 					Path projectRoot = ctx != null ? ctx.gitRoot() : project.getBasedir().toPath();
-					uncertainClasses = me.bechberger.testorder.changes.SelectiveLearnSupport
-							.computeUncertainClasses(projectRoot, classesDir, changeDetectorMode);
+					saData = me.bechberger.testorder.changes.SelectiveLearnSupport
+							.computeStaticAnalysisData(projectRoot, classesDir, changeDetectorMode);
+					uncertainClasses = saData != null ? saData.uncertainClasses() : null;
 					if (uncertainClasses != null && !uncertainClasses.isEmpty()) {
 						getLog().info("[test-order] Selective instrument: " + uncertainClasses.size()
 								+ " uncertain class(es) will be instrumented");
@@ -408,8 +410,13 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 						: "uncertain-classes-" + mid.replaceAll("[^a-zA-Z0-9._-]", "_") + ".txt";
 				try {
 					Path depsDirPath = ctx != null ? ctx.resolveDepsDir(depsDir) : java.nio.file.Path.of(depsDir);
-					me.bechberger.testorder.changes.UncertainClassesStore.save(depsDirPath.resolve(fname),
-							uncertainClasses);
+					Path uncertainFile = depsDirPath.resolve(fname);
+					me.bechberger.testorder.changes.UncertainClassesStore.save(uncertainFile, uncertainClasses);
+					if (saData != null) {
+						me.bechberger.testorder.changes.StaticAnalysisDataStore.save(
+								me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(uncertainFile),
+								saData);
+					}
 				} catch (java.io.IOException e2) {
 					getLog().debug("[test-order] Could not write uncertain-classes file: " + e2.getMessage());
 				}

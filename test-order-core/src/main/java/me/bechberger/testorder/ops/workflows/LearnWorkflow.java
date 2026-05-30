@@ -84,9 +84,10 @@ public final class LearnWorkflow {
 			// Use repoRoot (git root) if available so cross-module changes are detected;
 			// fall back to module projectRoot so the diff is scoped to this module.
 			Path changeRoot = ctx.repoRoot() != null ? ctx.repoRoot() : ctx.projectRoot();
-			Set<String> uncertain = indexExists
-					? SelectiveLearnSupport.computeUncertainClasses(changeRoot, ctx.classesDir(), changeMode)
+			SelectiveLearnSupport.StaticAnalysisData saData = indexExists
+					? SelectiveLearnSupport.computeStaticAnalysisData(changeRoot, ctx.classesDir(), changeMode)
 					: null;
+			Set<String> uncertain = saData != null ? saData.uncertainClasses() : null;
 			if (uncertain != null) {
 				// Namespace the file by module ID to avoid races in multi-module reactor
 				// builds where each module runs learn in parallel.
@@ -97,6 +98,8 @@ public final class LearnWorkflow {
 				Path uncertainFile = ctx.depsDir().resolve(fname);
 				try {
 					UncertainClassesStore.save(uncertainFile, uncertain);
+					me.bechberger.testorder.changes.StaticAnalysisDataStore.save(
+							me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(uncertainFile), saData);
 					sysProps.put("testorder.learn.uncertainClassesFile", uncertainFile.toAbsolutePath().toString());
 					if (uncertain.isEmpty()) {
 						ctx.log().info("[test-order] Selective learn: no source changes detected; "

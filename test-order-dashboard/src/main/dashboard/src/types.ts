@@ -152,10 +152,53 @@ export interface MutationData {
   tests: MutationEntry[]
 }
 
+export type MemberChangeKind = 'ADDED' | 'REMOVED' | 'SIGNATURE' | 'BODY'
+
+export interface StaticAnalysisMember {
+  name: string
+  kind: MemberChangeKind
+  isStaticField: boolean
+}
+
+export interface StaticAnalysisFileSummary {
+  path: string
+  added: number
+  removed: number
+  signature: number
+  body: number
+  totalLines: number
+}
+
+export interface StaticAnalysisModuleSummary {
+  filesChanged: number
+  classesChanged: number
+  membersChanged: number
+  added: number
+  removed: number
+  signature: number
+  body: number
+  staticFieldChanges: number
+  totalChangedLines: number
+}
+
+export interface StaticAnalysisClass {
+  name: string
+  depth: number | null
+  parent: string | null
+  hasTypeChange?: boolean
+  members?: StaticAnalysisMember[]   // present for seeds (depth 0); empty/absent otherwise
+  tests?: string[]                    // tests that cover this class (from coverage)
+}
+
 export interface StaticAnalysisModule {
   module: string
   count: number
-  classes: string[]
+  classes: StaticAnalysisClass[]
+  degraded?: boolean
+  seedSize?: number
+  expandedSize?: number
+  summary?: StaticAnalysisModuleSummary
+  fileSummaries?: StaticAnalysisFileSummary[]
 }
 
 export interface StaticAnalysisData {

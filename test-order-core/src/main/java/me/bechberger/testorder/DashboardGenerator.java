@@ -350,7 +350,7 @@ public class DashboardGenerator {
 		}
 
 		// Static analysis: uncertain classes from selective-learn runs
-		root.put("staticAnalysis", buildStaticAnalysisData());
+		root.put("staticAnalysis", buildStaticAnalysisData(depMap));
 
 		return root;
 	}
@@ -358,11 +358,30 @@ public class DashboardGenerator {
 	/**
 	 * Builds the staticAnalysis section: reads all uncertain-classes*.txt files
 	 * from the depsDir. Returns null when no files exist or depsDir is not set.
+	 *
+	 * @param depMap
+	 *            used to cross-join {@code source class → tests} so each entry can
+	 *            list which tests would be re-run if its enclosing class is
+	 *            considered uncertain.
 	 */
-	private Map<String, Object> buildStaticAnalysisData() {
+	private Map<String, Object> buildStaticAnalysisData(DependencyMap depMap) {
 		if (depsDir == null || !Files.isDirectory(depsDir)) {
 			return null;
 		}
+		// Build source-class → tests lookup once.
+		Map<String, List<String>> sourceToTests = new LinkedHashMap<>();
+		if (depMap != null && depMap.size() > 0) {
+			Map<String, Set<String>> tmp = new LinkedHashMap<>();
+			for (String testClass : depMap.testClasses()) {
+				for (String dep : depMap.get(testClass)) {
+					tmp.computeIfAbsent(dep, k -> new TreeSet<>()).add(testClass);
+				}
+			}
+			for (var e : tmp.entrySet()) {
+				sourceToTests.put(e.getKey(), new ArrayList<>(e.getValue()));
+			}
+		}
+
 		// Prefix used when writing per-module uncertain-classes files
 		final String MODULE_PREFIX = "uncertain-classes-";
 		final String SUFFIX = ".txt";
@@ -384,22 +403,157 @@ public class DashboardGenerator {
 					// Unexpected name pattern — use as-is so it at least shows up
 					moduleName = fname;
 				}
-				List<String> classes = new ArrayList<>();
+				List<String> classNames = new ArrayList<>();
 				try {
 					for (String line : Files.readAllLines(f)) {
 						String t = line.trim();
 						if (!t.isEmpty()) {
-							classes.add(t);
+							classNames.add(t);
 						}
 					}
 				} catch (IOException e) {
 					System.err.println("[test-order] Could not read " + f.getFileName() + ": " + e.getMessage());
 				}
-				classes.sort(String::compareTo);
+				classNames.sort(String::compareTo);
+
+				// Try sidecar for depth/parent and richer change data
+				Map<String, Object> saJson = null;
+				try {
+					saJson = me.bechberger.testorder.changes.StaticAnalysisDataStore
+							.load(me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(f));
+				} catch (IOException ignored) {
+				}
+
+				@SuppressWarnings("unchecked")
+				Map<String, Object> depths = saJson != null ? (Map<String, Object>) saJson.get("classDepths") : null;
+				@SuppressWarnings("unchecked")
+				Map<String, Object> parents = saJson != null ? (Map<String, Object>) saJson.get("classParents") : null;
+				@SuppressWarnings("unchecked")
+				Map<String, Object> membersByClass = saJson != null
+						? (Map<String, Object>) saJson.get("membersByClass")
+						: null;
+				@SuppressWarnings("unchecked")
+				Map<String, Object> kinds = saJson != null
+						? (Map<String, Object>) saJson.get("memberChangeKinds")
+						: null;
+				@SuppressWarnings("unchecked")
+				List<Object> typeChangedList = saJson != null
+						? (List<Object>) saJson.get("classesWithTypeChanges")
+						: null;
+				Set<String> typeChangedSet = typeChangedList != null
+						? typeChangedList.stream().map(Object::toString)
+								.collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
+						: Set.of();
+				@SuppressWarnings("unchecked")
+				List<Object> staticFieldKeys = saJson != null
+						? (List<Object>) saJson.get("changedStaticFieldKeys")
+						: null;
+				Set<String> staticFieldSet = staticFieldKeys != null
+						? staticFieldKeys.stream().map(Object::toString)
+								.collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
+						: Set.of();
+
+				List<Object> classEntries = new ArrayList<>();
+				for (String cls : classNames) {
+					Map<String, Object> ce = new LinkedHashMap<>();
+					ce.put("name", cls);
+					Object dv = depths != null ? depths.get(cls) : null;
+					ce.put("depth", dv != null ? ((Number) dv).intValue() : null);
+					ce.put("parent", parents != null ? parents.get(cls) : null);
+					ce.put("hasTypeChange", typeChangedSet.contains(cls));
+
+					// per-class member changes (only seeds carry these)
+					List<Object> memberEntries = new ArrayList<>();
+					Object membersForCls = membersByClass != null ? membersByClass.get(cls) : null;
+					if (membersForCls instanceof List<?> memberList) {
+						for (Object mn : memberList) {
+							String memberName = String.valueOf(mn);
+							Map<String, Object> me = new LinkedHashMap<>();
+							me.put("name", memberName);
+							String key = cls + "#" + memberName;
+							Object kindVal = kinds != null ? kinds.get(key) : null;
+							me.put("kind", kindVal != null ? kindVal.toString() : "BODY");
+							me.put("isStaticField", staticFieldSet.contains(key));
+							memberEntries.add(me);
+						}
+					}
+					ce.put("members", memberEntries);
+
+					// tests covering this class (cross-join with depMap)
+					List<String> tests = sourceToTests.getOrDefault(cls, List.of());
+					ce.put("tests", new ArrayList<>(tests));
+
+					classEntries.add(ce);
+				}
+
 				Map<String, Object> entry = new LinkedHashMap<>();
 				entry.put("module", moduleName);
-				entry.put("count", classes.size());
-				entry.put("classes", classes);
+				entry.put("count", classNames.size());
+				entry.put("classes", classEntries);
+				if (saJson != null) {
+					entry.put("degraded", saJson.get("degraded"));
+					entry.put("seedSize",
+							saJson.get("seedSize") != null ? ((Number) saJson.get("seedSize")).intValue() : null);
+					entry.put("expandedSize",
+							saJson.get("expandedSize") != null
+									? ((Number) saJson.get("expandedSize")).intValue()
+									: null);
+
+					// Per-file summaries (passthrough)
+					@SuppressWarnings("unchecked")
+					List<Object> fileSummaries = (List<Object>) saJson.get("fileSummaries");
+					if (fileSummaries != null) {
+						List<Object> normalized = new ArrayList<>();
+						int filesChanged = 0, addedTotal = 0, removedTotal = 0, sigTotal = 0, bodyTotal = 0,
+								linesTotal = 0;
+						for (Object item : fileSummaries) {
+							if (!(item instanceof Map<?, ?> raw))
+								continue;
+							Map<String, Object> fs = new LinkedHashMap<>();
+							fs.put("path", String.valueOf(raw.get("path")));
+							int a = raw.get("added") instanceof Number n ? n.intValue() : 0;
+							int r = raw.get("removed") instanceof Number n ? n.intValue() : 0;
+							int s = raw.get("signature") instanceof Number n ? n.intValue() : 0;
+							int b = raw.get("body") instanceof Number n ? n.intValue() : 0;
+							int tl = raw.get("totalLines") instanceof Number n ? n.intValue() : 0;
+							fs.put("added", a);
+							fs.put("removed", r);
+							fs.put("signature", s);
+							fs.put("body", b);
+							fs.put("totalLines", tl);
+							normalized.add(fs);
+							filesChanged++;
+							addedTotal += a;
+							removedTotal += r;
+							sigTotal += s;
+							bodyTotal += b;
+							linesTotal += tl;
+						}
+						entry.put("fileSummaries", normalized);
+
+						// Module-level rollup summary
+						int classesChanged = 0;
+						int membersChanged = 0;
+						if (membersByClass != null) {
+							classesChanged = membersByClass.size();
+							for (Object v : membersByClass.values()) {
+								if (v instanceof List<?> l)
+									membersChanged += l.size();
+							}
+						}
+						Map<String, Object> summary = new LinkedHashMap<>();
+						summary.put("filesChanged", filesChanged);
+						summary.put("classesChanged", classesChanged);
+						summary.put("membersChanged", membersChanged);
+						summary.put("added", addedTotal);
+						summary.put("removed", removedTotal);
+						summary.put("signature", sigTotal);
+						summary.put("body", bodyTotal);
+						summary.put("staticFieldChanges", staticFieldSet.size());
+						summary.put("totalChangedLines", linesTotal);
+						entry.put("summary", summary);
+					}
+				}
 				modules.add(entry);
 			}
 		} catch (IOException ignored) {

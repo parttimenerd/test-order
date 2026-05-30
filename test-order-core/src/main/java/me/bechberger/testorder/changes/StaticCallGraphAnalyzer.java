@@ -99,7 +99,11 @@ public class StaticCallGraphAnalyzer {
 	 *            {@code null} if not degraded)
 	 */
 	public record Report(StructuralChangeAnalyzer.ChangedMembers expanded, boolean degraded, int seedSize,
-			int expandedSize, String reason) {
+			int expandedSize, String reason,
+			/** FQCN → BFS hop depth from the nearest seed (0 = directly changed). */
+			Map<String, Integer> classDepths,
+			/** FQCN → nearest BFS-predecessor class (null entry = seed or unknown). */
+			Map<String, String> classParents) {
 	}
 
 	/**
@@ -200,15 +204,15 @@ public class StaticCallGraphAnalyzer {
 			int maxDepth, int degradationRatio) {
 
 		if (original == null || classDirs.isEmpty() || maxDepth <= 0) {
-			return new Report(original, false, 0, 0, null);
+			return new Report(original, false, 0, 0, null, Map.of(), Map.of());
 		}
 		if (original.changedMemberKeys().isEmpty() && original.changedStaticFieldKeys().isEmpty()) {
-			return new Report(original, false, 0, 0, null);
+			return new Report(original, false, 0, 0, null, Map.of(), Map.of());
 		}
 
 		ScanResult scan = scan(classDirs);
 		if (scan.classCount == 0) {
-			return new Report(original, false, 0, 0, null);
+			return new Report(original, false, 0, 0, null, Map.of(), Map.of());
 		}
 
 		// ── Seed: original changed keys, plus any subtype overrides of those keys ──
@@ -226,6 +230,13 @@ public class StaticCallGraphAnalyzer {
 		Set<String> allChangedMemberKeys = new LinkedHashSet<>(seed);
 		Set<String> frontier = new LinkedHashSet<>(seed);
 
+		// Track hop depth and nearest-parent class for the dashboard sidecar.
+		Map<String, Integer> classDepthMap = new LinkedHashMap<>();
+		Map<String, String> classParentMap = new LinkedHashMap<>();
+		for (String cls : original.changedClasses()) {
+			classDepthMap.put(cls, 0);
+		}
+
 		for (int depth = 0; depth < maxDepth && !frontier.isEmpty(); depth++) {
 			Set<String> nextFrontier = new LinkedHashSet<>();
 			for (String callee : frontier) {
@@ -234,6 +245,17 @@ public class StaticCallGraphAnalyzer {
 					for (String caller : callers) {
 						if (allChangedMemberKeys.add(caller)) {
 							nextFrontier.add(caller);
+							// depth/parent tracking at class granularity
+							int h1 = caller.lastIndexOf('#');
+							String callerCls = h1 > 0 ? caller.substring(0, h1) : null;
+							int h2 = callee.lastIndexOf('#');
+							String calleeCls = h2 > 0 ? callee.substring(0, h2) : null;
+							if (callerCls != null && !classDepthMap.containsKey(callerCls)) {
+								classDepthMap.put(callerCls, depth + 1);
+								if (calleeCls != null && !callerCls.equals(calleeCls)) {
+									classParentMap.put(callerCls, calleeCls);
+								}
+							}
 						}
 					}
 				}
@@ -242,6 +264,11 @@ public class StaticCallGraphAnalyzer {
 			for (String o : overrides) {
 				if (allChangedMemberKeys.add(o)) {
 					nextFrontier.add(o);
+					int h = o.lastIndexOf('#');
+					String oCls = h > 0 ? o.substring(0, h) : null;
+					if (oCls != null && !classDepthMap.containsKey(oCls)) {
+						classDepthMap.put(oCls, depth + 1);
+					}
 				}
 			}
 			frontier = nextFrontier;
@@ -255,11 +282,13 @@ public class StaticCallGraphAnalyzer {
 			StructuralChangeAnalyzer.ChangedMembers fallback = classLevelFallback(original, allChangedMemberKeys);
 			String reason = "expansion produced " + expandedSize + " members from " + seedSize + " seeds (>"
 					+ degradationRatio + "× threshold) — falling back to class-level matching";
-			return new Report(fallback, true, seedSize, expandedSize, reason);
+			return new Report(fallback, true, seedSize, expandedSize, reason,
+					Collections.unmodifiableMap(classDepthMap), Collections.unmodifiableMap(classParentMap));
 		}
 
 		if (allChangedMemberKeys.equals(original.changedMemberKeys())) {
-			return new Report(original, false, seedSize, expandedSize, null);
+			return new Report(original, false, seedSize, expandedSize, null, Collections.unmodifiableMap(classDepthMap),
+					Collections.unmodifiableMap(classParentMap));
 		}
 
 		Set<String> allChangedClasses = new LinkedHashSet<>(original.changedClasses());
@@ -289,7 +318,8 @@ public class StaticCallGraphAnalyzer {
 				Collections.unmodifiableSet(allChangedClasses), Collections.unmodifiableSet(allChangedMemberKeys),
 				Collections.unmodifiableMap(unmodifiableByClass), original.classesWithTypeChanges(),
 				original.changedStaticFieldKeys());
-		return new Report(result, false, seedSize, expandedSize, null);
+		return new Report(result, false, seedSize, expandedSize, null, Collections.unmodifiableMap(classDepthMap),
+				Collections.unmodifiableMap(classParentMap));
 	}
 
 	/**

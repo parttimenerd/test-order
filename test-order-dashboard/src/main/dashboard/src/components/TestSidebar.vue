@@ -82,7 +82,7 @@ watch(() => d.selectedTest.value, (t) => {
         <input
           :value="d.searchQ.value"
           @input="d.searchQ.value = ($event.target as HTMLInputElement).value"
-          placeholder="Filter tests…  ( / )"
+          placeholder="Filter…  is:failing  score>5  ( / )"
           data-search-main
           class="sidebar__search"
           title="Search tests. Examples: is:failing  is:slow  score>5  duration<500ms  method:setUp  -is:flaky"
