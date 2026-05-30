@@ -176,8 +176,8 @@ public class MethodLevelDetection {
 			return isolatePolluter(testClass, victim, leftHalf, passingMethods, runner, deadline);
 		}
 
-		// Neither half alone causes failure — might need combination
-		return predecessors.get(predecessors.size() - 1); // Best guess
+		// Neither half alone causes failure — multi-test interaction, cannot isolate
+		return null;
 	}
 
 	/**

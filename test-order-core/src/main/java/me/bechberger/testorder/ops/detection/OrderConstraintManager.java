@@ -123,16 +123,20 @@ public class OrderConstraintManager {
 			}
 		}
 
-		// Simple greedy: if polluter is immediately before victim, swap with next
-		// available
+		// Simple greedy: if polluter is immediately before victim, separate them.
 		for (int i = 0; i < order.size() - 1; i++) {
 			String key = order.get(i) + " → " + order.get(i + 1);
 			if (mustNotPairs.contains(key)) {
-				// Try to move victim later
 				if (i + 2 < order.size()) {
+					// Swap victim with the element after it (move victim one step later)
 					String temp = order.get(i + 1);
 					order.set(i + 1, order.get(i + 2));
 					order.set(i + 2, temp);
+				} else {
+					// Pair is at the end — move victim before the polluter instead
+					String victim = order.remove(i + 1);
+					order.add(i, victim);
+					// i now points to victim; increment will re-check the same polluter position
 				}
 			}
 		}
