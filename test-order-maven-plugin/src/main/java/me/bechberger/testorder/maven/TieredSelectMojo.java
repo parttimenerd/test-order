@@ -10,6 +10,7 @@ import org.apache.maven.plugins.annotations.*;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TieredTestSelector;
+import me.bechberger.testorder.ops.CiSummaryWriter;
 import me.bechberger.testorder.ops.PluginContext;
 import me.bechberger.testorder.ops.TieredSelectOperation;
 import me.bechberger.testorder.ops.workflows.ChangeAnalysis;
@@ -214,6 +215,15 @@ public class TieredSelectMojo extends AbstractTestOrderMojo {
 					+ "this build does not represent full test coverage. Run:");
 			getLog().warn("[test-order]   mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");
 		}
+
+		CiSummaryWriter
+				.writeSummary(
+						new CiSummaryWriter.SummaryInput(analysis.depMap().testClasses().size(), selection.tier1(),
+								java.util.stream.Stream.concat(selection.tier2().stream(), selection.tier3().stream())
+										.toList(),
+								analysis.changedClasses(), analysis.changedTests(), java.util.List.of(),
+								"tiered-select", 1, Path.of(project.getBuild().getDirectory())),
+						pluginLog());
 	}
 
 	/**

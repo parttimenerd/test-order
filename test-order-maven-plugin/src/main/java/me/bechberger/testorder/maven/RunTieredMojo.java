@@ -11,6 +11,7 @@ import org.apache.maven.plugins.annotations.*;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TieredTestSelector;
+import me.bechberger.testorder.ops.CiSummaryWriter;
 import me.bechberger.testorder.ops.PluginContext;
 import me.bechberger.testorder.ops.TieredSelectOperation;
 import me.bechberger.testorder.ops.workflows.ChangeAnalysis;
@@ -191,6 +192,10 @@ public class RunTieredMojo extends AbstractTestOrderMojo {
 		writeOrdererConfigFromMap(configMap);
 
 		project.getProperties().setProperty("testorder.auto.active", "true");
+
+		CiSummaryWriter.writeSummary(new CiSummaryWriter.SummaryInput(analysis.depMap().testClasses().size(), allTests,
+				java.util.List.of(), analysis.changedClasses(), analysis.changedTests(), java.util.List.of(),
+				"run-tiered", 0, Path.of(project.getBuild().getDirectory())), pluginLog());
 
 		SurefireHelper.warnSelectModeFilters(project, getLog());
 		SurefireHelper.configureIncludes(project, allTests, true);

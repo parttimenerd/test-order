@@ -10,6 +10,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
 import me.bechberger.testorder.TestSelector;
+import me.bechberger.testorder.ops.CiSummaryWriter;
 import me.bechberger.testorder.ops.PluginContext;
 import me.bechberger.testorder.ops.workflows.AutoWorkflow;
 
@@ -166,6 +167,11 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			}
 
 			writeOrdererConfig(os.changedClasses(), os.changedTests(), os.changedMethods(), buildScoreOverrides());
+
+			int totalInIndex = os.selection().selected().size() + os.selection().remaining().size();
+			CiSummaryWriter.writeSummary(new CiSummaryWriter.SummaryInput(totalInIndex, os.selection().selected(),
+					os.selection().remaining(), os.changedClasses(), os.changedTests(), java.util.List.of(), "auto", 0,
+					Path.of(project.getBuild().getDirectory())), pluginLog());
 
 			String remainingPath = Path.of(remainingFile).toAbsolutePath().toString();
 			project.getProperties().setProperty(MavenPluginConfigKeys.SELECT_REMAINING_FILE, remainingPath);
