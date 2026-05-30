@@ -331,7 +331,8 @@ public class TestOrderState {
 							readConfigDouble(userConfig, "emaAlpha", DEFAULT_DURATION_ALPHA)),
 					readConfigDouble(userConfig, "methodDurationAlpha",
 							readConfigDouble(userConfig, "emaAlpha", DEFAULT_METHOD_DURATION_ALPHA)),
-					readConfigDouble(userConfig, "failurePruneThreshold", DEFAULT_FAILURE_PRUNE_THRESHOLD));
+					readConfigDouble(userConfig, "failurePruneThreshold", DEFAULT_FAILURE_PRUNE_THRESHOLD),
+					userDefs.size());
 		}
 
 		/** Save to a standalone TOML weights file. */
@@ -368,7 +369,19 @@ public class TestOrderState {
 	 * overrides.
 	 */
 	public record LoadedWeights(ScoringWeights weights, List<WeightDef> defs, double failureDecay,
-			double methodFailureDecay, double durationAlpha, double methodDurationAlpha, double failurePruneThreshold) {
+			double methodFailureDecay, double durationAlpha, double methodDurationAlpha, double failurePruneThreshold,
+			int recognizedKeyCount) {
+
+		/**
+		 * Backward-compatible constructor (recognizedKeyCount defaults to -1 =
+		 * unknown).
+		 */
+		public LoadedWeights(ScoringWeights weights, List<WeightDef> defs, double failureDecay,
+				double methodFailureDecay, double durationAlpha, double methodDurationAlpha,
+				double failurePruneThreshold) {
+			this(weights, defs, failureDecay, methodFailureDecay, durationAlpha, methodDurationAlpha,
+					failurePruneThreshold, -1);
+		}
 	}
 
 	/**

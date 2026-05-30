@@ -26,10 +26,9 @@ public final class WeightResolverOperation {
 		if (weightsFile != null && Files.exists(weightsFile)) {
 			try {
 				TestOrderState.LoadedWeights loaded = TestOrderState.ScoringWeights.loadFromFile(weightsFile);
-				// Validate that the file contained at least some recognized weight keys by
-				// comparing the loaded weights against the all-defaults instance. If every
-				// value is identical, the file likely had no recognized keys.
-				if (loaded.weights().equals(TestOrderState.ScoringWeights.DEFAULT)) {
+				// recognizedKeyCount == 0 means the TOML parsed successfully but contained no
+				// weight keys we know about — almost certainly a misconfigured file.
+				if (loaded.recognizedKeyCount() == 0) {
 					log.warn("[test-order] Weights file " + weightsFile + " contains no recognized weight keys. "
 							+ "Ensure TOML file uses bare key names (e.g. 'speed = 200', not 'testorder.score.speed = 200').");
 				}
