@@ -280,9 +280,14 @@ public class StaticCallGraphAnalyzer {
 			}
 		}
 
+		Map<String, Set<String>> unmodifiableByClass = new LinkedHashMap<>();
+		for (Map.Entry<String, Set<String>> e : membersByClass.entrySet()) {
+			unmodifiableByClass.put(e.getKey(), Collections.unmodifiableSet(e.getValue()));
+		}
+
 		StructuralChangeAnalyzer.ChangedMembers result = new StructuralChangeAnalyzer.ChangedMembers(
 				Collections.unmodifiableSet(allChangedClasses), Collections.unmodifiableSet(allChangedMemberKeys),
-				Collections.unmodifiableMap(membersByClass), original.classesWithTypeChanges(),
+				Collections.unmodifiableMap(unmodifiableByClass), original.classesWithTypeChanges(),
 				original.changedStaticFieldKeys());
 		return new Report(result, false, seedSize, expandedSize, null);
 	}
