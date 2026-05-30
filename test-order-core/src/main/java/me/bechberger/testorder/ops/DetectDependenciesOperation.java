@@ -609,7 +609,8 @@ public final class DetectDependenciesOperation {
 					type = ODType.VICTIM;
 				}
 
-				results.add(new ODResult(victim, type, List.of(victim), desc + " [carried from prior run]", 0.9));
+				String suffix = desc.contains("[carried from prior run]") ? "" : " [carried from prior run]";
+				results.add(new ODResult(victim, type, List.of(victim), desc + suffix, 0.9));
 				idx = victimIdx + 10;
 			}
 		} catch (IOException e) {
