@@ -216,16 +216,8 @@ public final class DetectDependenciesOperation {
 		long perRunMs = System.currentTimeMillis() - refRunStart;
 		log.info("Reference run complete in " + formatDuration(perRunMs) + " — " + ptr.passing().size() + " of "
 				+ referenceOrder.size() + " classes pass");
-		if (config.timeBudgetSeconds() > 0 && perRunMs > 0) {
-			long estimatedRunsHint = Math.max(1,
-					selectAlgorithm(config.algorithm(), log).estimatedRuns(referenceOrder.size(), 0));
-			long suggestedBudgetHint = (perRunMs * estimatedRunsHint) / 1000;
-			if (suggestedBudgetHint > config.timeBudgetSeconds()) {
-				log.info("Each run takes ~" + (perRunMs / 1000) + "s. For full coverage (~" + estimatedRunsHint
-						+ " runs), consider: -Dtestorder.detect.timeBudget=" + suggestedBudgetHint);
-			}
-		}
 		Set<String> passingTests = ptr.passing();
+		int passingTestCount = passingTests.size(); // capture before incremental removeAll
 		referenceOrder = ptr.effectiveOrder();
 		int failedInRef = referenceOrder.size() - passingTests.size();
 		if (passingTests.isEmpty()) {
@@ -263,9 +255,18 @@ public final class DetectDependenciesOperation {
 		DetectionContext ctx = new DetectionContext(graph, depMap, state, referenceOrder, passingTests, runner,
 				deadline, config.randomSeed(), log, new java.util.concurrent.atomic.AtomicInteger(0));
 
-		// Select and run algorithm
+		// Select and run algorithm; use it for the time-budget hint too (avoids a second
+		// selectAlgorithm() call that would throw if the algorithm name is invalid)
 		DetectionAlgorithm algorithm = selectAlgorithm(config.algorithm(), log);
 		int estimatedRuns = algorithm.estimatedRuns(referenceOrder.size(), graph.edgeCount());
+		if (config.timeBudgetSeconds() > 0 && perRunMs > 0) {
+			long estimatedRunsHint = Math.max(1, algorithm.estimatedRuns(referenceOrder.size(), 0));
+			long suggestedBudgetHint = (perRunMs * estimatedRunsHint) / 1000;
+			if (suggestedBudgetHint > config.timeBudgetSeconds()) {
+				log.info("Each run takes ~" + (perRunMs / 1000) + "s. For full coverage (~" + estimatedRunsHint
+						+ " runs), consider: -Dtestorder.detect.timeBudget=" + suggestedBudgetHint);
+			}
+		}
 		log.info("Running algorithm: " + algorithm.name() + " (estimated " + estimatedRuns + " runs, budget: "
 				+ (config.timeBudgetSeconds() > 0 ? config.timeBudgetSeconds() + "s" : "unlimited") + ")");
 
@@ -372,7 +373,7 @@ public final class DetectDependenciesOperation {
 		// Compute metadata
 		long durationMillis = System.currentTimeMillis() - startTime;
 		ReportMetadata metadata = new ReportMetadata(config.moduleName() != null ? config.moduleName() : "unknown",
-				algorithm.name(), referenceOrder.size(), passingTests.size(), actualRuns, durationMillis,
+				algorithm.name(), referenceOrder.size(), passingTestCount, actualRuns, durationMillis,
 				graph != null ? graph.edgeCount() : 0, config.randomSeed(), config.timeBudgetSeconds());
 
 		// Write report
@@ -586,20 +587,22 @@ public final class DetectDependenciesOperation {
 			// Find each victim/type/confidence/description/dependencyChain in the findings
 			// array
 			int idx = arrStart;
+			int constraintsIdx = content.indexOf("\"constraints\"", arrStart); // computed once
 			while (true) {
 				int victimIdx = content.indexOf("\"victim\"", idx);
 				if (victimIdx < 0)
 					break;
 				// Check if we're still in "findings" array (before "constraints" or
 				// "methodFindings")
-				int constraintsIdx = content.indexOf("\"constraints\"", arrStart);
 				if (constraintsIdx > 0 && victimIdx > constraintsIdx)
 					break;
 
 				String victim = extractJsonString(content, victimIdx);
 				int typeIdx = content.indexOf("\"type\"", victimIdx);
-				String typeStr = typeIdx > 0 ? extractJsonString(content, typeIdx) : "VICTIM";
-				int descIdx = content.indexOf("\"description\"", typeIdx > 0 ? typeIdx : victimIdx);
+				// Only use typeIdx if it's still within the findings array (not in constraints)
+				boolean typeInFindings = typeIdx > 0 && (constraintsIdx < 0 || typeIdx < constraintsIdx);
+				String typeStr = typeInFindings ? extractJsonString(content, typeIdx) : "VICTIM";
+				int descIdx = content.indexOf("\"description\"", typeInFindings ? typeIdx : victimIdx);
 				String desc = descIdx > 0 ? extractJsonString(content, descIdx) : "Carried from prior run";
 
 				ODType type;

@@ -264,6 +264,7 @@ public final class MLFeatureExtractor {
 		// Feature 5: changed package overlap — fraction of test's dependency packages
 		// that also contain changed production classes
 		Set<String> deps = depMap.get(testClass);
+		if (deps == null) deps = Set.of();
 		Set<String> depPackages = new HashSet<>();
 		for (String dep : deps) {
 			depPackages.add(extractPackage(dep));
