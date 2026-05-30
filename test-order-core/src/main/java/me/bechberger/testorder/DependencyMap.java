@@ -1035,7 +1035,7 @@ public class DependencyMap {
 			rowBm.deserialize(new DataInputStream(new ByteArrayInputStream(rowBmBytes)));
 			rowBm.forEach((int ri) -> {
 				if (ri >= 0 && ri < rowCount)
-					rowBitmaps[ri] = memberBm;
+					rowBitmaps[ri] = memberBm.clone();
 			});
 		}
 		for (int i = 0; i < rowCount; i++) {

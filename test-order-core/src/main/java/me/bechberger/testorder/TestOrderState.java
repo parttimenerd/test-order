@@ -861,6 +861,7 @@ public class TestOrderState {
 			}
 		}
 		activeClasses.addAll(durationTracker.classDurations().keySet());
+		activeClasses.addAll(durationTracker.methodDurations().keySet());
 		activeClasses.addAll(failureHistory.knownClasses());
 
 		// Filter duration/failure maps for serialization WITHOUT mutating live state.

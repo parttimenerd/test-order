@@ -456,12 +456,16 @@ public class StructuralDiff {
 			List<SourceFileModel.InitializerNode> oldList = oldInits.getOrDefault(fqcn, List.of());
 			List<SourceFileModel.InitializerNode> newList = newInits.getOrDefault(fqcn, List.of());
 
-			Set<String> oldHashes = new HashSet<>();
+			// Use sorted lists (not sets) to detect duplicate-initializer-block count changes.
+			// A Set would collapse identical hashes, masking additions/removals of duplicate blocks.
+			List<String> oldHashes = new ArrayList<>(oldList.size());
 			for (var init : oldList)
 				oldHashes.add(init.bodyHash());
-			Set<String> newHashes = new HashSet<>();
+			Collections.sort(oldHashes);
+			List<String> newHashes = new ArrayList<>(newList.size());
 			for (var init : newList)
 				newHashes.add(init.bodyHash());
+			Collections.sort(newHashes);
 
 			if (!oldHashes.equals(newHashes)) {
 				int added = 0, removed = 0;
@@ -521,7 +525,7 @@ public class StructuralDiff {
 		}
 		ProcessBuilder pb = new ProcessBuilder("git", "cat-file", "--batch");
 		pb.directory(projectRoot.toFile());
-		pb.redirectErrorStream(false);
+		pb.redirectErrorStream(true); // merge stderr into stdout to prevent pipe-buffer deadlock
 		Process process = pb.start();
 		try (BufferedWriter writer = new BufferedWriter(
 				new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8))) {
@@ -544,11 +548,9 @@ public class StructuralDiff {
 				throw new IOException("git cat-file timed out");
 			}
 			if (process.exitValue() != 0) {
-				String error;
-				try (InputStream errorStream = process.getErrorStream()) {
-					error = new String(errorStream.readAllBytes(), StandardCharsets.UTF_8).strip();
-				}
-				throw new IOException("git cat-file failed" + (error.isEmpty() ? "" : ": " + error));
+				// stderr was merged into stdout (redirectErrorStream=true), so there is no
+				// separate error stream to read here.
+				throw new IOException("git cat-file failed (exit " + process.exitValue() + ")");
 			}
 		} catch (InterruptedException e) {
 			process.destroyForcibly();
@@ -575,7 +577,16 @@ public class StructuralDiff {
 			if (parts.length != 3) {
 				throw new IOException("Malformed git cat-file header for " + relPath + ": " + header);
 			}
-			int size = Integer.parseInt(parts[2]);
+			long sizeL;
+			try {
+				sizeL = Long.parseLong(parts[2]);
+			} catch (NumberFormatException e) {
+				throw new IOException("Non-numeric blob size in git cat-file header for " + relPath + ": " + parts[2]);
+			}
+			if (sizeL > Integer.MAX_VALUE) {
+				throw new IOException("Blob too large for in-memory read (" + sizeL + " bytes) for " + relPath);
+			}
+			int size = (int) sizeL;
 			byte[] bytes = buffered.readNBytes(size);
 			if (bytes.length != size) {
 				throw new EOFException("Incomplete git blob for " + relPath);
