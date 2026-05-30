@@ -95,13 +95,11 @@ public final class ChangeDetectionSupport {
 	 * Detect changed production classes.
 	 *
 	 * <p>
-	 * In {@code explicit} mode, the {@code changedClasses} parameter is used
-	 * directly. In {@code auto} mode, explicit changed classes (when provided) take
-	 * precedence over snapshot-based detection, otherwise mode resolves from
-	 * snapshot presence. In all other modes ({@code uncommitted},
-	 * {@code since-last-commit}, {@code since-last-run}), the
-	 * {@code changedClasses} parameter is ignored and git/hash-based detection is
-	 * used.
+	 * When a non-blank {@code changedClasses} string is provided, it always takes
+	 * precedence over any git/hash-based detection, regardless of
+	 * {@code changeMode}. This lets callers override detection in any mode via
+	 * {@code testorder.changed.classes}. When {@code changedClasses} is absent and
+	 * {@code changeMode} is {@code explicit}, returns an empty set.
 	 * </p>
 	 */
 	public static Set<String> detectChangedClasses(String changeMode, Path projectRoot, Path sourceRoot, Path hashFile,

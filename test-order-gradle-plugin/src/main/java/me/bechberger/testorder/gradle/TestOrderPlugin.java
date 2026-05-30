@@ -128,6 +128,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 task.doLast(t -> {
                     Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
                     PluginLog plog = wrapLog(project);
+                    boolean selectiveLearn = resolveSelectiveLearn(project, ext);
                     boolean anyWritten = false;
                     for (Project sub : project.getSubprojects()) {
                         TestOrderExtension subExt = sub.getExtensions().findByType(TestOrderExtension.class);
@@ -136,7 +137,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             if (Files.isDirectory(subDeps)) {
                                 try {
                                     AggregateOperation.Result result =
-                                            AggregateOperation.aggregate(subDeps, indexFile, plog);
+                                            AggregateOperation.aggregate(subDeps, indexFile, plog, selectiveLearn);
                                     if (result.written()) anyWritten = true;
                                 } catch (IOException e) {
                                     plog.warn("[test-order] Failed to aggregate from " + sub.getName()
