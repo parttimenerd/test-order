@@ -29,6 +29,7 @@ mvn test-order:show
 | `select` | Writes selected tests to file without executing tests | CI orchestration, custom runners |
 | `run-remaining` | Executes deferred tests from prior selection | Follow-up confidence run |
 | `tiered-select` | Splits tests into tier 1/2/3 files and runs tier 1 | Three-phase CI fail-fast workflow |
+| `run-tiered` | Runs all three tiers in a single Maven invocation (tiers 1+2+3) | Simpler single-job CI alternative to multi-step tiered flow |
 | `run-tier` | Executes tier 2 or tier 3 from prior tiered selection | Progressive confidence after tier 1 |
 | `show` | Unified view: class order, method order, ML health (auto-detects available data) | Debug prioritization |
 | `reactor-order` | Computes optimal module execution order for multi-module builds | Multi-module CI optimization |
@@ -200,6 +201,7 @@ If `uncommitted` or `since-last-commit` fails (e.g., git not available or no pri
 | `testorder.tiered.tier2File` | `${project.build.directory}/test-order-tier2.txt` | Tier-2 list output |
 | `testorder.tiered.tier3File` | `${project.build.directory}/test-order-tier3.txt` | Tier-3 list output |
 | `testorder.tiered.currentTier` | unset | Required for `run-tier` (`2` or `3`) |
+| `testorder.tiered.shard` | unset | Split tier-3 across N runners: `k/N` (e.g. `2/3`). Tier 1 and 2 run in full on every runner. Works with `run-tier`, `run-tiered`, and the Gradle `testOrderRunTier` task. |
 
 ### Auto Mode
 
@@ -209,6 +211,16 @@ If `uncommitted` or `since-last-commit` fails (e.g., git not available or no pri
 | `testorder.autoLearnDiffThreshold` | `0` | Re-learn when changed-class count reaches this (`0` = disabled) |
 | `testorder.auto.optimizeEvery` | `10` | Run weight optimization every N auto runs (`0` = disabled) |
 | `testorder.auto.runRemaining` | `true` (Maven) / `false` (Gradle) | Print hint to run deferred tests (Maven); auto-run remaining tests via `finalizedBy` (Gradle) |
+
+### CI Summary
+
+Writes per-run summaries to `target/` (Maven) / `build/` (Gradle) after each test selection.
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.ci.summary` | `false` | Enable summary output (`test-order-summary.md`, `.json`, `test-order-selection-report.xml`) |
+| `testorder.ci.githubStepSummary` | `false` | Append Markdown summary to `$GITHUB_STEP_SUMMARY` (GitHub Actions only) |
+| `testorder.ci.prComment` | `false` | Post/update a PR comment with the Markdown summary (requires `GITHUB_TOKEN` env var and GitHub Actions context) |
 
 ### Show (unified)
 
