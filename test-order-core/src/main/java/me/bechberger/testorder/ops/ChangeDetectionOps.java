@@ -170,6 +170,9 @@ public final class ChangeDetectionOps {
 		if (!Files.isDirectory(kotlinRoot)) {
 			return base;
 		}
+		if (hashPath == null) {
+			return base;
+		}
 		Path kotlinHashPath = HashSnapshotOperation.kotlinHashFile(hashPath);
 		try {
 			Set<String> kotlinChanges;

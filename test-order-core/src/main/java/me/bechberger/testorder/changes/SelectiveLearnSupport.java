@@ -7,8 +7,8 @@ import java.util.Set;
 
 /**
  * Shared helper that computes the "uncertain" class set for selective learn
- * mode. Both the online (agent) path via {@code LearnWorkflow} and the offline
- * instrumentation path via {@code InstrumentMojo} / Gradle call this.
+ * mode. Both the online (agent-based, via Maven/Gradle plugin learn mode) and
+ * the offline instrumentation paths call this.
  *
  * <p>
  * The uncertain set is the transitive closure of classes that may be affected
