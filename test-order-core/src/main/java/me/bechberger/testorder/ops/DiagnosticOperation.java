@@ -259,7 +259,7 @@ public final class DiagnosticOperation {
 			me.bechberger.testorder.changes.ChangeDetectionSupport.normalizeMode(config.changeMode());
 
 			// Check if source root exists
-			if (!Files.exists(config.testSourceRoot())) {
+			if (config.testSourceRoot() == null || !Files.exists(config.testSourceRoot())) {
 				return DiagnosticResult.info(ErrorCode.TEST_SOURCE_ROOT_ABSENT,
 						"Test source root not found: " + config.testSourceRoot(),
 						List.of("Verify your test source directory structure", "Default: src/test/java",
