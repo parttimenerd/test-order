@@ -2292,16 +2292,6 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	/**
-	 * Removes stale {@code testorder-config.properties} and
-	 * {@code junit-platform.properties} from {@code target/test-classes/} if they
-	 * were written by an older version of the plugin that used that directory
-	 * instead of {@code target/test-order-runtime/}.
-	 * <p>
-	 * {@code target/test-classes/} is earlier on the Surefire classpath than
-	 * {@code target/test-order-runtime/}, so stale files there silently shadow the
-	 * fresh config and cause the orderer to use wrong paths or no ordering at all.
-	 */
-	/**
 	 * Injects the offline runtime jar
 	 * ({@code target/.test-order/test-order-runtime.jar}) onto the Surefire test
 	 * classpath when it exists.

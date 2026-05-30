@@ -147,8 +147,15 @@ public class TestOrderPlugin implements Plugin<Project> {
                         }
                     }
                     // Also aggregate the root project's own deps
-                    if (aggregateDependencyFiles(project, ext, false)) {
-                        anyWritten = true;
+                    Path rootDeps = ext.getDepsDir().get().getAsFile().toPath();
+                    if (Files.isDirectory(rootDeps)) {
+                        try {
+                            AggregateOperation.Result rootResult =
+                                    AggregateOperation.aggregate(rootDeps, indexFile, plog, selectiveLearn);
+                            if (rootResult.written()) anyWritten = true;
+                        } catch (IOException e) {
+                            plog.warn("[test-order] Failed to aggregate from root project: " + e.getMessage());
+                        }
                     }
                     if (anyWritten) {
                         plog.info("[test-order] Multi-project aggregation complete: " + indexFile);

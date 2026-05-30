@@ -192,7 +192,7 @@ class GradleTestRunner implements TestRunner {
             return JUnitXmlParser.parseClassResults(reportDir, runAll ? List.of() : testOrder,
                     true, JUnitXmlParser.MissingReportPolicy.FAIL);
         } catch (InterruptedException e) {
-            proc.destroyForcibly();
+            if (proc != null) proc.destroyForcibly();
             Thread.currentThread().interrupt();
             return new TestRunResult(testOrder, Set.of(), new HashSet<>(testOrder));
         } catch (IOException e) {
