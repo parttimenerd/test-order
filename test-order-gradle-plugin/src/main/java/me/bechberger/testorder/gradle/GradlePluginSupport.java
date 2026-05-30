@@ -3,6 +3,7 @@ package me.bechberger.testorder.gradle;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.gradle.api.GradleException;
@@ -83,11 +84,7 @@ final class GradlePluginSupport {
      * @return the resolved string value, or null if neither is set
      */
     static String resolveProperty(Project project, String key, Supplier<String> fallback) {
-        String override = TestOrderPlugin.gradleOrSystemProperty(project, key);
-        if (override != null && !override.isBlank()) {
-            return override;
-        }
-        return fallback.get();
+        return resolveProperty(project, key, s -> s, fallback.get());
     }
 
     /**
@@ -100,25 +97,27 @@ final class GradlePluginSupport {
      * @return the resolved integer value
      */
     static int resolveIntProperty(Project project, String key, int fallback, String propertyName) {
-        String override = TestOrderPlugin.gradleOrSystemProperty(project, key);
-        if (override != null && !override.isBlank()) {
+        return resolveProperty(project, key, override -> {
             try {
                 return Integer.parseInt(override);
             } catch (NumberFormatException e) {
                 throw new GradleException("[test-order] Invalid value for " + propertyName + ": '"
                         + override + "' (expected integer)");
             }
-        }
-        return fallback;
+        }, fallback);
     }
 
     /**
      * Resolves a boolean property with CLI override support.
      */
     static boolean resolveBooleanProperty(Project project, String key, boolean fallback) {
+        return resolveProperty(project, key, Boolean::parseBoolean, fallback);
+    }
+
+    private static <T> T resolveProperty(Project project, String key, Function<String, T> parser, T fallback) {
         String override = TestOrderPlugin.gradleOrSystemProperty(project, key);
         if (override != null && !override.isBlank()) {
-            return Boolean.parseBoolean(override);
+            return parser.apply(override);
         }
         return fallback;
     }
