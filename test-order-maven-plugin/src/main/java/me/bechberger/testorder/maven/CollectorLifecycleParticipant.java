@@ -350,9 +350,14 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 
 	@Override
 	public void afterSessionEnd(MavenSession session) {
-		drainCollectors(session);
-		mergePartialRunRecords();
-		restoreInstrumentedClasses(session);
+		try {
+			drainCollectors(session);
+			mergePartialRunRecords();
+		} finally {
+			// Always restore instrumented bytecode — leaving it in place corrupts the
+			// compiled classes directory even if earlier steps threw.
+			restoreInstrumentedClasses(session);
+		}
 	}
 
 	private void drainCollectors(MavenSession session) {
