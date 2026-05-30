@@ -649,7 +649,7 @@ public class TestScorer {
 		if (count % 2 == 1) {
 			return buf[count / 2];
 		}
-		return (buf[count / 2 - 1] + buf[count / 2]) / 2;
+		return buf[count / 2 - 1] / 2 + buf[count / 2] / 2 + (buf[count / 2 - 1] % 2 + buf[count / 2] % 2) / 2;
 	}
 
 	public static String springContextKey(Class<?> testClass) {
