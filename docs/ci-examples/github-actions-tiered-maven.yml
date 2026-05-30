@@ -32,7 +32,10 @@ jobs:
           path: |
             .test-order/
             **/target/test-order-deps/
-          key: test-order-${{ runner.os }}-${{ hashFiles('**/src/**/*.java') }}
+          # Branch-coupled key: PRs inherit from their base branch without busting
+          # the cache on every commit. Keying on source files causes a cache miss on
+          # every push, which defeats the purpose.
+          key: test-order-${{ runner.os }}-${{ github.base_ref || github.ref_name }}
           restore-keys: |
             test-order-${{ runner.os }}-
 
@@ -41,6 +44,8 @@ jobs:
           mvn test-order:tiered-select test \
             -Dtestorder.changeMode=since-last-commit \
             -Dtestorder.tiered.tier2Fraction=0.5 \
+            -Dtestorder.ci.summary=true \
+            -Dtestorder.ci.githubStepSummary=true \
             -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: "Tier 2: Top-scored remaining"
@@ -68,4 +73,4 @@ jobs:
           path: |
             .test-order/
             **/target/test-order-deps/
-          key: test-order-${{ runner.os }}-${{ hashFiles('**/src/**/*.java') }}
+          key: test-order-${{ runner.os }}-${{ github.base_ref || github.ref_name }}

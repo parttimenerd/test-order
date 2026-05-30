@@ -29,14 +29,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .test-order/
-          key: test-order-${{ runner.os }}-${{ hashFiles('**/*.java') }}
+          # Branch-coupled key: PRs inherit from their base branch without busting
+          # the cache on every commit.
+          key: test-order-${{ runner.os }}-${{ github.base_ref || github.ref_name }}
           restore-keys: test-order-${{ runner.os }}-
 
       - name: "Tier 1: Change-affected tests"
         run: |
           ./gradlew testOrderTieredSelect \
             -Dtestorder.changeMode=since-last-commit \
-            -Dtestorder.tiered.tier2Fraction=0.5
+            -Dtestorder.tiered.tier2Fraction=0.5 \
+            -Dtestorder.ci.summary=true \
+            -Dtestorder.ci.githubStepSummary=true
 
       - name: "Tier 2: Top-scored remaining"
         if: success()
@@ -55,4 +59,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .test-order/
-          key: test-order-${{ runner.os }}-${{ hashFiles('**/*.java') }}
+          key: test-order-${{ runner.os }}-${{ github.base_ref || github.ref_name }}
