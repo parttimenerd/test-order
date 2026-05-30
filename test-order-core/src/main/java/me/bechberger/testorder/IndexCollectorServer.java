@@ -48,13 +48,8 @@ public class IndexCollectorServer implements AutoCloseable {
 
 	@SuppressWarnings("unchecked")
 	private static ConcurrentHashMap<Integer, Object> jvmRegistry() {
-		ConcurrentHashMap<Integer, Object> reg = (ConcurrentHashMap<Integer, Object>) System.getProperties()
-				.get(JVM_REGISTRY_KEY);
-		if (reg == null) {
-			reg = new ConcurrentHashMap<>();
-			System.getProperties().put(JVM_REGISTRY_KEY, reg);
-		}
-		return reg;
+		return (ConcurrentHashMap<Integer, Object>) System.getProperties()
+				.computeIfAbsent(JVM_REGISTRY_KEY, k -> new ConcurrentHashMap<>());
 	}
 
 	/**
@@ -690,8 +685,8 @@ public class IndexCollectorServer implements AutoCloseable {
 			return;
 		}
 		for (String testKey : mergedClassDeps.keySet()) {
-			if (!beforeKeys.contains(testKey) || !mergedTestToModule.containsKey(testKey)) {
-				mergedTestToModule.put(testKey, moduleId);
+			if (!beforeKeys.contains(testKey)) {
+				mergedTestToModule.putIfAbsent(testKey, moduleId);
 			}
 		}
 	}
@@ -834,8 +829,11 @@ public class IndexCollectorServer implements AutoCloseable {
 			}
 		}
 
-		DependencyMap.mergeFromAgent(indexFile, classDeps, methodDeps, memberDeps, methodMemberDeps, testToModule);
-		java.nio.file.Files.deleteIfExists(claimedFile);
+		try {
+			DependencyMap.mergeFromAgent(indexFile, classDeps, methodDeps, memberDeps, methodMemberDeps, testToModule);
+		} finally {
+			java.nio.file.Files.deleteIfExists(claimedFile);
+		}
 		return true;
 	}
 }
