@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, computed, ref } from 'vue'
+import { inject, computed, ref, watch } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
 import type { StaticAnalysisClass, StaticAnalysisMember, MemberChangeKind } from '../types'
 
@@ -52,6 +52,20 @@ const showTransitive = ref(false)
 const showAllFiles = ref(false)
 const expandedSeeds = ref<Set<string>>(new Set())
 const expandedPkgs = ref<Set<string>>(new Set())
+
+// Auto-expand seeds whose members or tests match the current search query
+watch(searchQ, (q) => {
+  const trimmed = q.trim().toLowerCase()
+  if (!trimmed) return
+  const toExpand = new Set(expandedSeeds.value)
+  for (const entry of seedEntries.value) {
+    if (entry.name.toLowerCase().includes(trimmed)) continue // name match, expansion not needed
+    const memberMatch = entry.members?.some(m => m.name.toLowerCase().includes(trimmed)) ?? false
+    const testMatch = entry.tests?.some(t => t.toLowerCase().includes(trimmed)) ?? false
+    if (memberMatch || testMatch) toExpand.add(entry.name)
+  }
+  expandedSeeds.value = toExpand
+})
 
 const activeModule = computed(() => {
   if (selectedModule.value) return modules.value.find(m => m.module === selectedModule.value) ?? null
@@ -198,7 +212,7 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
     <template v-else>
       <!-- ─────────── Top summary cards ─────────── -->
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
-        <div class="sa-card sa-card--total">
+        <div class="sa-card sa-card--total" title="Total number of classes that will be re-instrumented this run (directly changed + transitively reachable via call/field graph)">
           <div class="sa-card__value">{{ total }}</div>
           <div class="sa-card__label">Uncertain classes</div>
         </div>
@@ -206,12 +220,12 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
           <div class="sa-card__value" style="color:var(--yellow)">{{ directlyChangedCount }}</div>
           <div class="sa-card__label">Directly changed</div>
         </div>
-        <div class="sa-card">
+        <div class="sa-card" :title="modules.length === 1 ? 'Single-module project' : `${modules.length} Maven/Gradle modules — use the module bar below to filter`">
           <div class="sa-card__value">{{ modules.length }}</div>
           <div class="sa-card__label">Module{{ modules.length !== 1 ? 's' : '' }}</div>
         </div>
-        <div v-if="scopeRatio !== null" class="sa-card" :title="`${total} uncertain / ${totalKnownClasses} total tracked classes`">
-          <div class="sa-card__value" :style="{ color: scopeRatio > 60 ? 'var(--yellow)' : scopeRatio > 30 ? 'var(--text)' : 'var(--green)' }">
+        <div v-if="scopeRatio !== null" class="sa-card" :title="`${total} uncertain / ${totalKnownClasses} total tracked classes — lower is better (fewer classes need re-instrumentation)`">
+          <div class="sa-card__value" :style="{ color: scopeRatio > 60 ? '#ef4444' : scopeRatio > 30 ? 'var(--yellow)' : 'var(--green)' }">
             {{ scopeRatio }}%
           </div>
           <div class="sa-card__label">of tracked scope</div>
@@ -314,12 +328,22 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
 
         <!-- ─────────── Toolbar (search + filters) ─────────── -->
         <div style="display:flex;align-items:center;gap:8px;margin:14px 0 8px;flex-wrap:wrap">
-          <input
-            v-model="searchQ"
-            class="sa-search"
-            placeholder="Filter by class, member, or test…"
-            type="search"
-          />
+          <div style="position:relative;flex:1;min-width:0">
+            <input
+              v-model="searchQ"
+              class="sa-search"
+              placeholder="Filter by class, member, or test…"
+              title="Search across class names, member names, and test names. Matching seeds auto-expand to show context."
+              type="search"
+              @keydown.esc="searchQ = ''"
+            />
+            <button
+              v-if="searchQ"
+              class="sa-search-clear"
+              @click="searchQ = ''"
+              title="Clear search (Esc)"
+            >×</button>
+          </div>
           <button
             :class="['tree-ctrl', { 'tree-ctrl--active': showWithTestsOnly }]"
             @click="showWithTestsOnly = !showWithTestsOnly"
@@ -351,7 +375,8 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
                   >{{ meta.sym }}{{ memberKindCounts(entry.members)[kind] }}</span>
                 </template>
               </span>
-              <span v-if="(entry.tests?.length ?? 0) > 0" class="tests-pill" :title="`${entry.tests!.length} test class(es) cover this`">
+              <span v-if="(entry.tests?.length ?? 0) > 0" class="tests-pill tests-pill--clickable" :title="`${entry.tests!.length} test class(es) cover this — click to expand and see`"
+                @click.stop="expandedSeeds.has(entry.name) ? null : toggleSeed(entry.name)">
                 {{ entry.tests!.length }} test{{ entry.tests!.length !== 1 ? 's' : '' }}
               </span>
               <button
@@ -367,9 +392,9 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
                 <div class="seed-section-label">Members</div>
                 <div v-for="m in entry.members" :key="m.name" class="member-row">
                   <span class="member-kind" :style="{ color: KIND_META[m.kind].color }" :title="KIND_META[m.kind].label">{{ KIND_META[m.kind].sym }}</span>
-                  <span class="member-name">{{ m.name }}</span>
-                  <span v-if="m.isStaticField" class="member-tag">static field</span>
-                  <span class="member-kind-text" :style="{ color: KIND_META[m.kind].color }">{{ KIND_META[m.kind].label }}</span>
+                  <span class="member-name" :title="m.name">{{ m.name }}</span>
+                  <span v-if="m.isStaticField" class="member-tag">static</span>
+                  <span class="member-kind-badge" :style="{ color: KIND_META[m.kind].color, borderColor: 'color-mix(in srgb,' + KIND_META[m.kind].color + ' 30%, transparent)', background: 'color-mix(in srgb,' + KIND_META[m.kind].color + ' 10%, transparent)' }">{{ KIND_META[m.kind].label }}</span>
                 </div>
               </div>
               <div v-else class="seed-detail-note">
@@ -384,7 +409,7 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
                     :key="t"
                     class="test-chip"
                     @click="d.navigateToTestFromCov(t)"
-                    :title="`Navigate to ${t} in Tests tab`"
+                    :title="`${t}\n\nClick to jump to this test in the Tests tab`"
                   >{{ shortClass(t) }}</button>
                 </div>
               </div>
@@ -587,11 +612,18 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
 
 /* Search */
 .sa-search {
-  flex: 1; background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: 6px; padding: 4px 10px; font-size: .8rem; color: var(--text);
+  width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 28px 4px 10px; font-size: .8rem; color: var(--text);
   outline: none; min-width: 0;
 }
 .sa-search:focus { border-color: var(--accent, #6366f1); }
+.sa-search-clear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: .9rem; line-height: 1; padding: 2px 5px; border-radius: 3px;
+  transition: color var(--tr-fast);
+}
+.sa-search-clear:hover { color: var(--text); background: rgba(255,255,255,.06); }
 
 .view-toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .vt-btn {
@@ -637,6 +669,8 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
   border-radius: 8px; padding: 0 6px; flex-shrink: 0; line-height: 1.6;
 }
 .tests-pill--small { font-size: .6rem; padding: 0 4px; line-height: 1.5; border-radius: 6px; }
+.tests-pill--clickable { cursor: pointer; }
+.tests-pill--clickable:hover { background: color-mix(in srgb, var(--accent, #6366f1) 22%, transparent); }
 
 .seed-detail {
   padding: 4px 10px 8px 24px;
@@ -655,12 +689,15 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
   font-size: .76rem; padding: 1px 0;
 }
 .member-kind { font-weight: 700; width: 12px; text-align: center; flex-shrink: 0; }
-.member-name { font-family: ui-monospace, monospace; color: var(--text); }
+.member-name { font-family: ui-monospace, monospace; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .member-tag {
   font-size: .6rem; color: var(--text-muted);
-  border: 1px solid var(--border); border-radius: 3px; padding: 0 4px;
+  border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; flex-shrink: 0;
 }
-.member-kind-text { font-size: .65rem; margin-left: auto; text-transform: lowercase; }
+.member-kind-badge {
+  font-size: .58rem; border: 1px solid; border-radius: 3px;
+  padding: 0 4px; flex-shrink: 0; line-height: 1.5; margin-left: auto; font-weight: 600;
+}
 .tests-chips { display: flex; gap: 4px; flex-wrap: wrap; }
 .test-chip {
   background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent);
