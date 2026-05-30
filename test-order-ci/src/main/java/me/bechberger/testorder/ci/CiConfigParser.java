@@ -62,8 +62,9 @@ public class CiConfigParser {
 			CiConfig config = new CiConfig(configMap);
 
 			// Validate that at least one CI config is provided
-			if (config.getGithub() == null && config.getHttp() == null && config.getGitlab() == null) {
-				throw new CiConfigException("Config must have a 'github', 'gitlab', or 'http' section");
+			if (config.getGithub() == null && config.getHttp() == null && config.getGitlab() == null
+					&& config.getMaven() == null) {
+				throw new CiConfigException("Config must have a 'github', 'gitlab', 'maven', or 'http' section");
 			}
 
 			// Validate GitHub config if present
@@ -80,6 +81,11 @@ public class CiConfigParser {
 			// Validate GitLab config if present
 			if (config.getGitlab() != null && !config.getGitlab().isValid()) {
 				throw new CiConfigException("GitLab config is invalid: missing project-id or job-name");
+			}
+
+			// Validate Maven config if present
+			if (config.getMaven() != null && !config.getMaven().isValid()) {
+				throw new CiConfigException("Maven config is invalid: url, group-id, and artifact-id are required");
 			}
 
 			// Validate proxy config if present

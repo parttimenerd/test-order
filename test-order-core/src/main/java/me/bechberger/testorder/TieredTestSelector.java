@@ -241,4 +241,53 @@ public class TieredTestSelector {
 			TestSelector.writeTestList(selection.tier3(), tier3File);
 		}
 	}
+
+	// ── Sharding utilities ────────────────────────────────────────────
+
+	/**
+	 * Parses a shard spec of the form {@code k/N} (1-based) and returns the k-th
+	 * slice of {@code tests}. Returns the full list if {@code shardSpec} is null or
+	 * blank.
+	 *
+	 * @param tests
+	 *            ordered list of tests to shard
+	 * @param shardSpec
+	 *            shard expression, e.g. {@code "2/3"}
+	 * @return the subset assigned to this shard
+	 * @throws IllegalArgumentException
+	 *             if the spec is malformed or out of range
+	 */
+	public static List<String> applyShard(List<String> tests, String shardSpec) {
+		if (shardSpec == null || shardSpec.isBlank()) {
+			return tests;
+		}
+		String[] parts = shardSpec.trim().split("/", 2);
+		if (parts.length != 2) {
+			throw new IllegalArgumentException(
+					"testorder.tiered.shard must be in the form k/N (e.g. '2/3'), got: " + shardSpec);
+		}
+		int k, n;
+		try {
+			k = Integer.parseInt(parts[0].trim());
+			n = Integer.parseInt(parts[1].trim());
+		} catch (NumberFormatException e) {
+			throw new IllegalArgumentException(
+					"testorder.tiered.shard must be in the form k/N (e.g. '2/3'), got: " + shardSpec, e);
+		}
+		if (n < 1 || k < 1 || k > n) {
+			throw new IllegalArgumentException("testorder.tiered.shard k/N requires 1 <= k <= N, got: " + shardSpec);
+		}
+		if (tests.isEmpty()) {
+			return tests;
+		}
+		int size = tests.size();
+		// Distribute remainder across the first (size % n) shards
+		int base = size / n;
+		int extra = size % n;
+		// shard index is 0-based
+		int idx = k - 1;
+		int start = idx * base + Math.min(idx, extra);
+		int end = start + base + (idx < extra ? 1 : 0);
+		return tests.subList(start, Math.min(end, size));
+	}
 }

@@ -1539,6 +1539,20 @@ public class TestOrderPlugin implements Plugin<Project> {
                         project.getLogger().warn("[test-order] No tests to run (tier-{} list is empty). Re-run: ./gradlew testOrderTieredSelect test", currentTier);
                         applySelectedTests((Test) t, List.of());
                     } else {
+                        // Apply sharding for tier-3
+                        if (currentTier == 3) {
+                            String shardSpec = gradleOrSystemProperty(project, "testorder.tiered.shard");
+                            if (shardSpec != null && !shardSpec.isBlank()) {
+                                try {
+                                    List<String> sharded = me.bechberger.testorder.TieredTestSelector.applyShard(tests, shardSpec);
+                                    project.getLogger().lifecycle("[test-order] Shard {}: running {} of {} tier-3 test classes",
+                                            shardSpec, sharded.size(), tests.size());
+                                    tests = sharded;
+                                } catch (IllegalArgumentException e) {
+                                    throw new GradleException("[test-order] Invalid shard spec: " + e.getMessage());
+                                }
+                            }
+                        }
                         project.getLogger().lifecycle("[test-order] Running {} tier-{} test classes",
                                 tests.size(), currentTier);
                         applySelectedTests((Test) t, tests);

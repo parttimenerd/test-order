@@ -107,6 +107,13 @@ public final class TestOrderConfig {
 	public static final String TIERED_TIER2_FILE = "testorder.tiered.tier2File";
 	public static final String TIERED_TIER3_FILE = "testorder.tiered.tier3File";
 	public static final String TIERED_CURRENT_TIER = "testorder.tiered.currentTier";
+	/**
+	 * Shard tier 3 (and only tier 3) across N parallel runners. Format: {@code k/N}
+	 * where k is 1-based (e.g. {@code 1/3}, {@code 2/3}, {@code 3/3}). When set,
+	 * {@code run-tier} and {@code run-tiered} only execute the k-th slice of tier 3
+	 * tests.
+	 */
+	public static final String TIERED_SHARD = "testorder.tiered.shard";
 
 	// ML predictive test prioritization (opt-in)
 	public static final String ML_ENABLED = "testorder.ml.enabled";

@@ -67,6 +67,10 @@ final class MavenPluginConfigKeys {
 	static final String TIERED_TIER2_FILE = "testorder.tiered.tier2File";
 	static final String TIERED_TIER3_FILE = "testorder.tiered.tier3File";
 	static final String TIERED_CURRENT_TIER = "testorder.tiered.currentTier";
+	static final String TIERED_SHARD = "testorder.tiered.shard";
+	static final String CI_SUMMARY = "testorder.ci.summary";
+	static final String CI_GITHUB_STEP_SUMMARY = "testorder.ci.githubStepSummary";
+	static final String CI_PR_COMMENT = "testorder.ci.prComment";
 	static final String SHOW_ORDER_EXPLAIN = "testorder.showOrder.explain";
 	static final String SHOW_METHOD_ORDER_EXPLAIN = "testorder.showMethodOrder.explain";
 	static final String EXPLAIN_TEST = "testorder.explain.test";
@@ -155,7 +159,7 @@ final class MavenPluginConfigKeys {
 			DASHBOARD_PORT, DASHBOARD_REGENERATE, DASHBOARD_SERVE_SECONDS, DETECT_ALGORITHM, DETECT_TIME_BUDGET,
 			DETECT_STOP_ON_FIRST, DETECT_SEED, DETECT_FAIL_ON_DETECTION, TIERED_TIER2_FRACTION,
 			TIERED_WEIGHT_BY_DURATION, TIERED_TIER1_FILE, TIERED_TIER2_FILE, TIERED_TIER3_FILE, TIERED_CURRENT_TIER,
-			LEGACY_INDEX, LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE, LEGACY_TEST_HASH_FILE,
+			TIERED_SHARD, CI_SUMMARY, CI_GITHUB_STEP_SUMMARY, CI_PR_COMMENT, LEGACY_INDEX, LEGACY_STATE_FILE, LEGACY_DEPS_DIR, LEGACY_HASH_FILE, LEGACY_TEST_HASH_FILE,
 			LEGACY_METHOD_HASH_FILE, BYTECODE_HASH_FILE, BYTECODE_CHANGE_DETECTION_ENABLED,
 			BYTECODE_AUGMENT_DEPENDENCY_MAP_ENABLED, LEGACY_SOURCE_ROOT, LEGACY_TEST_SOURCE_ROOT, LEGACY_VERBOSE_FILE,
 			LEGACY_METHOD_ORDERING_ENABLED, AUTO_COMPACT_EVERY, SELECTIVE_LEARN, ALWAYS_LEARN, "testorder.skip",

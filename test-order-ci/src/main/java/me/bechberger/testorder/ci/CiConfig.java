@@ -15,6 +15,7 @@ public class CiConfig {
 	private final GithubConfig github;
 	private final HttpConfig http;
 	private final GitLabConfig gitlab;
+	private final MavenConfig maven;
 	private final ProxyConfig proxy;
 
 	public CiConfig(Map<String, Object> configMap) {
@@ -24,6 +25,7 @@ public class CiConfig {
 		this.github = parseGithubConfig(ciConfig);
 		this.http = parseHttpConfig(ciConfig);
 		this.gitlab = parseGitLabConfig(ciConfig);
+		this.maven = parseMavenConfig(ciConfig);
 		this.proxy = parseProxyConfig(ciConfig);
 	}
 
@@ -63,6 +65,19 @@ public class CiConfig {
 				(String) glCfg.getOrDefault("branch", "main"), (String) glCfg.get("token-env"));
 	}
 
+	private MavenConfig parseMavenConfig(Map<String, Object> ciConfig) {
+		@SuppressWarnings("unchecked")
+		Map<String, Object> mvnCfg = (Map<String, Object>) ciConfig.get("maven");
+		if (mvnCfg == null) {
+			return null;
+		}
+		return new MavenConfig((String) mvnCfg.get("url"), (String) mvnCfg.get("group-id"),
+				(String) mvnCfg.get("artifact-id"), (String) mvnCfg.getOrDefault("version", "LATEST"),
+				(String) mvnCfg.getOrDefault("classifier", "test-deps"),
+				(String) mvnCfg.getOrDefault("extension", "lz4"), (String) mvnCfg.getOrDefault("auth", "none"),
+				(String) mvnCfg.get("token-env"));
+	}
+
 	private ProxyConfig parseProxyConfig(Map<String, Object> ciConfig) {
 		@SuppressWarnings("unchecked")
 		Map<String, Object> proxyCfg = (Map<String, Object>) ciConfig.get("proxy");
@@ -84,6 +99,10 @@ public class CiConfig {
 
 	public GitLabConfig getGitlab() {
 		return gitlab;
+	}
+
+	public MavenConfig getMaven() {
+		return maven;
 	}
 
 	public ProxyConfig getProxy() {
@@ -218,6 +237,76 @@ public class CiConfig {
 
 		public boolean isValid() {
 			return host != null && !host.isEmpty() && port > 0 && port <= 65535;
+		}
+	}
+
+	/**
+	 * Config for downloading artifacts from a Maven / Nexus / Artifactory
+	 * repository.
+	 *
+	 * <pre>
+	 * ci:
+	 *   maven:
+	 *     url: https://repo.example.com/repository/snapshots
+	 *     group-id: com.example
+	 *     artifact-id: my-service
+	 *     version: LATEST        # LATEST, RELEASE, or a fixed version string
+	 *     classifier: test-deps  # optional; default: test-deps
+	 *     extension: lz4         # optional; default: lz4
+	 *     auth: bearer           # optional: bearer | basic | none; default: none
+	 *     token-env: NEXUS_TOKEN # optional
+	 * </pre>
+	 */
+	public static class MavenConfig {
+		private final String url;
+		private final String groupId;
+		private final String artifactId;
+		private final String version;
+		private final String classifier;
+		private final String extension;
+		private final String auth;
+		private final String tokenEnv;
+
+		public MavenConfig(String url, String groupId, String artifactId, String version, String classifier,
+				String extension, String auth, String tokenEnv) {
+			this.url = url;
+			this.groupId = groupId;
+			this.artifactId = artifactId;
+			this.version = version != null ? version : "LATEST";
+			this.classifier = classifier != null ? classifier : "test-deps";
+			this.extension = extension != null ? extension : "lz4";
+			this.auth = auth != null ? auth : "none";
+			this.tokenEnv = tokenEnv;
+		}
+
+		public String getUrl() {
+			return url;
+		}
+		public String getGroupId() {
+			return groupId;
+		}
+		public String getArtifactId() {
+			return artifactId;
+		}
+		public String getVersion() {
+			return version;
+		}
+		public String getClassifier() {
+			return classifier;
+		}
+		public String getExtension() {
+			return extension;
+		}
+		public String getAuth() {
+			return auth;
+		}
+		public String getTokenEnv() {
+			return tokenEnv;
+		}
+
+		public boolean isValid() {
+			return url != null && !url.isEmpty() && groupId != null && !groupId.isEmpty() && artifactId != null
+					&& !artifactId.isEmpty();
 		}
 	}
 }

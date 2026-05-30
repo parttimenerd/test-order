@@ -45,6 +45,14 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 	@Parameter(property = MavenPluginConfigKeys.TIERED_TIER3_FILE, defaultValue = "${project.build.directory}/test-order-tier3.txt")
 	private String tier3File;
 
+	/**
+	 * Shard tier-3 tests across N parallel runners. Format: {@code k/N}, e.g.
+	 * {@code 2/3} for the second of three runners. Only applies when
+	 * {@code currentTier=3}. Tier 1 and tier 2 are not sharded.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.TIERED_SHARD)
+	private String shard;
+
 	@Override
 	public void execute() throws MojoExecutionException {
 		// Accept -Dtestorder.tier=N as a shorthand alias for
@@ -131,6 +139,23 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 		}
 
 		getLog().info("[test-order] Running " + tests.size() + " tier-" + currentTier + " test classes");
+
+		// Apply sharding for tier-3 to support parallel runners
+		if (currentTier == 3 && shard != null && !shard.isBlank()) {
+			try {
+				List<String> sharded = me.bechberger.testorder.TieredTestSelector.applyShard(tests, shard);
+				getLog().info("[test-order] Shard " + shard + ": running " + sharded.size() + " of " + tests.size()
+						+ " tier-3 tests");
+				tests = sharded;
+			} catch (IllegalArgumentException e) {
+				throw new MojoExecutionException("[test-order] Invalid shard spec: " + e.getMessage());
+			}
+			if (tests.isEmpty()) {
+				getLog().info("[test-order] Shard " + shard + " has no tier-3 tests assigned — skipping.");
+				project.getProperties().setProperty("skipTests", "true");
+				return;
+			}
+		}
 
 		// Write orderer config so tests are still prioritized within the tier
 		if (indexFile != null && !indexFile.isBlank() && Files.exists(ctx.resolveIndexFile(indexFile))) {

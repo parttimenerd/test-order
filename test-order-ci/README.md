@@ -2,8 +2,9 @@
 
 Downloads pre-built dependency indexes from CI systems so that feature branches
 skip the cold-start learn phase. Integrated into the Maven and Gradle plugins —
-when a `.test-order/download-config.yml` exists, **auto mode** downloads the index
-automatically before falling back to learn mode.
+when a `.test-order/download-config.yml` exists (or the current environment is
+auto-detectable), **auto mode** downloads the index automatically before falling
+back to learn mode.
 
 ## Supported providers
 
@@ -11,7 +12,21 @@ automatically before falling back to learn mode.
 |----------|-----------|------|
 | GitHub Actions | `ci.github` | `GITHUB_TOKEN` env var |
 | GitLab CI | `ci.gitlab` | Token env var (configurable) |
+| Maven / Nexus / Artifactory | `ci.maven` | Bearer / Basic / none |
 | Generic HTTP | `ci.http` | Bearer / Basic / none |
+
+## Auto-detect (no config file required)
+
+When running on GitHub Actions or GitLab CI, test-order can detect the provider
+automatically from environment variables — no `download-config.yml` needed:
+
+| Environment | Required env vars | What is inferred |
+|---|---|---|
+| GitHub Actions | `GITHUB_ACTIONS=true`, `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW` or `GITHUB_WORKFLOW_REF` | owner, repo, workflow file, artifact name `test-order-deps` |
+| GitLab CI | `GITLAB_CI=true`, `CI_PROJECT_PATH`, `CI_JOB_NAME` | project path, job name |
+
+Auto-detection is a best-effort fallback. Create a `download-config.yml` to
+override any inferred value (e.g. a custom artifact name or a different branch).
 
 ## Configuration
 
@@ -42,6 +57,24 @@ ci:
     token-env: GITLAB_TOKEN
 ```
 
+### Maven / Nexus / Artifactory
+
+```yaml
+ci:
+  maven:
+    url: https://repo.example.com/repository/snapshots
+    group-id: com.example
+    artifact-id: my-service
+    version: LATEST          # LATEST, RELEASE, or a fixed version
+    classifier: test-deps    # optional; default: test-deps
+    extension: lz4           # optional; default: lz4
+    auth: bearer             # bearer, basic, or none; default: none
+    token-env: NEXUS_TOKEN   # optional
+```
+
+When `version=LATEST` or `version=RELEASE`, the downloader fetches
+`maven-metadata.xml` to resolve the latest published version automatically.
+
 ### Generic HTTP
 
 ```yaml
@@ -61,6 +94,35 @@ proxy:
   type: http              # http or socks5
 ```
 
+## Optional: download state alongside the index
+
+The `state.lz4` file contains test duration history and failure counts, which
+improve scoring quality. You can download it alongside the dependency index:
+
+```java
+// Maven / Gradle plugin integration
+CiDepDownloadManager.downloadIfConfigured(projectDir, indexTarget, stateTarget);
+```
+
+For GitHub Actions and GitLab CI, test-order looks for a companion artifact
+named `<artifact-name>-state` (GitHub) or `test-state.lz4` (GitLab). Upload it
+alongside the dep index in your CI pipeline:
+
+```yaml
+# GitHub Actions — upload both artifacts from main
+- name: Upload dependency index
+  uses: actions/upload-artifact@v4
+  with:
+    name: test-order-deps
+    path: .test-order/test-dependencies.lz4
+
+- name: Upload state
+  uses: actions/upload-artifact@v4
+  with:
+    name: test-order-deps-state
+    path: .test-order/state.lz4
+```
+
 ## Usage
 
 ### Maven
@@ -69,7 +131,7 @@ proxy:
 # Standalone goal — download the index from CI
 mvn test-order:download
 
-# Auto mode — downloads automatically when config is present
+# Auto mode — downloads automatically when config is present (or env is detectable)
 mvn test -Dtestorder.mode=auto
 ```
 
@@ -79,7 +141,7 @@ mvn test -Dtestorder.mode=auto
 # Standalone task
 ./gradlew testOrderDownload
 
-# Auto mode — downloads automatically when config is present
+# Auto mode — downloads automatically when config is present (or env is detectable)
 ./gradlew test
 ```
 
@@ -131,7 +193,16 @@ jobs:
           path: .test-order/test-dependencies.lz4
           retention-days: 30
 
+      - name: Upload state
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-order-deps-state
+          path: .test-order/state.lz4
+          retention-days: 30
+
       # ── PR branches: download index, then order ─────────────
+      # No download-config.yml needed — auto-detected from GITHUB_ACTIONS env vars.
       - name: Run tests (auto — downloads index from main)
         if: github.ref != 'refs/heads/main'
         env:
@@ -139,17 +210,5 @@ jobs:
         run: mvn verify -Dtestorder.mode=auto
 ```
 
-### `.test-order/download-config.yml`
-
-```yaml
-ci:
-  github:
-    owner: acme
-    repo: shop-service
-    workflow: ci.yml
-    artifact-name: test-order-deps
-    branch: main
-```
-
 With this setup every PR gets fast, priority-ordered tests without having to
-run a learn phase first.
+run a learn phase first — and without any `download-config.yml`.
