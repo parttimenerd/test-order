@@ -12,7 +12,7 @@ Each test class receives a score. Tests are sorted by descending score, with fas
 | **Failure bonus** | 5 | `testorder.score.maxFailure` | Cap on failure-based bonus |
 | **Speed bonus** | 1 | `testorder.score.speed` | Bonus for fast tests (logarithmic scale: full bonus at 1/8× median, zero at median) |
 | **Speed penalty** | 1 | `testorder.score.speedPenalty` | Penalty for slow tests (logarithmic scale: full penalty at 8× median, zero at median) |
-| **Dependency overlap** | 5 (max) | `testorder.score.depOverlap` | Max score from dependency overlap (sqrt-normalized: overlap/√totalDeps × weight). Disabled when `coverageBonus > 0`. |
+| **Dependency overlap** | 5 (max) | `testorder.score.depOverlap` | Max score from dependency overlap (sqrt-normalized: overlap/√max(totalDeps,5) × weight). Disabled when `coverageBonus > 0`. |
 | **Change complexity** | 2 (max) | `testorder.score.changeComplexity` | Complexity-weighted overlap using Deflate-compressed file size as information-density proxy. Disabled when `coverageBonus > 0`. |
 | **Static field bonus** | 0 | `testorder.score.staticFieldBonus` | Fixed bonus when a test directly overlaps a changed static field. Only applied with member-level (`MEMBER` mode) overlap data. |
 | **Coverage bonus** | 0 | `testorder.score.coverageBonus` | Greedy set-cover bonus: replaces `depOverlap` + `changeComplexity` with geometrically declining bonuses (×0.8) for tests that collectively cover all changed classes. Set to 0 (default) to use per-test scoring instead. |
@@ -36,9 +36,10 @@ score = (isNew ? newTestBonus : 0)
         killRate ∈ [0, 1] from mutation testing; tests without data are unaffected
 
   overlapScore (when coverageBonus = 0, the default):
-      min(ceil(|dependencies ∩ changedClasses| / √|dependencies| × depOverlap × killMultiplier), depOverlap)
-    + min(ceil(Σ complexity(dep) / √|dependencies| × changeComplexity), changeComplexity)
+      min(ceil(|dependencies ∩ changedClasses| / √max(|dependencies|, 5) × depOverlap × killMultiplier), depOverlap)
+    + min(ceil(Σ complexity(dep) / √max(|dependencies|, 5) × changeComplexity), changeComplexity)
     where killMultiplier = killRate ≥ 0 ? (0.5 + killRate × 0.5) : 1.0
+    (denominator clamped to 5 to prevent over-scoring tests with very small dep sets)
 
   overlapScore (when coverageBonus > 0):
       greedy set-cover bonus: coverageBonus × 0.8^rank  (rank = 0-based position in set-cover order)
