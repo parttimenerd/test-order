@@ -225,57 +225,7 @@ public class GitChangeDetector {
 	}
 
 	private static List<String> runGit(Path workDir, String... args) throws IOException {
-		List<String> command = new ArrayList<>();
-		command.add("git");
-		Collections.addAll(command, args);
-
-		ProcessBuilder pb = new ProcessBuilder(command);
-		pb.directory(workDir.toFile());
-		pb.redirectErrorStream(true); // merge stderr into stdout to prevent pipe buffer deadlock
-		Process process = pb.start();
-
-		List<String> lines = new ArrayList<>();
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-			String line;
-			while ((line = reader.readLine()) != null) {
-				String trimmed = line.stripTrailing();
-				if (!trimmed.isEmpty()) {
-					lines.add(trimmed);
-				}
-			}
-		}
-
-		try {
-			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
-				process.destroyForcibly();
-				throw new IOException(
-						"git command timed out after " + GitTimeout.seconds() + "s: " + String.join(" ", command));
-			}
-			if (process.exitValue() != 0) {
-				throw new IOException("git command failed: " + String.join(" ", command) + summarizeGitError(lines));
-			}
-		} catch (InterruptedException e) {
-			process.destroyForcibly();
-			Thread.currentThread().interrupt();
-			throw new IOException("git command interrupted: " + String.join(" ", command), e);
-		}
-		return lines;
-	}
-
-	private static String summarizeGitError(List<String> lines) {
-		if (lines.isEmpty()) {
-			return "";
-		}
-		String primary = lines.stream().filter(line -> !line.toLowerCase(Locale.ROOT).startsWith("usage:")).findFirst()
-				.orElse(lines.get(0));
-		if (primary.length() > 300) {
-			primary = primary.substring(0, 300) + "...";
-		}
-		int additionalLines = lines.size() - 1;
-		if (additionalLines <= 0) {
-			return " — " + primary;
-		}
-		return " — " + primary + " (" + additionalLines + " more line" + (additionalLines == 1 ? "" : "s") + ")";
+		return GitSupport.runGit(workDir, true, args);
 	}
 
 	/**

@@ -1,9 +1,9 @@
 package me.bechberger.testorder.junit;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.MethodDescriptor;
 import org.junit.jupiter.api.MethodOrderer;
@@ -30,43 +30,21 @@ public class FixedOrderMethodOrderer implements MethodOrderer {
 
 	@Override
 	public void orderMethods(MethodOrdererContext context) {
-		String orderFilePath = System.getProperty(METHOD_ORDER_FILE_PROPERTY);
-		if (orderFilePath == null || orderFilePath.isBlank()) {
-			return; // No order file configured — keep default order
-		}
+		String orderFilePath = FixedOrderSupport.resolveOrderFilePath(METHOD_ORDER_FILE_PROPERTY, false,
+				getClass().getClassLoader());
+		if (orderFilePath == null)
+			return;
 
 		Path orderFile = Path.of(orderFilePath);
-		if (!Files.exists(orderFile)) {
+		if (!Files.exists(orderFile))
 			return;
-		}
 
-		List<String> orderedMethods;
-		try {
-			orderedMethods = Files.readAllLines(orderFile).stream().map(String::trim)
-					.filter(s -> !s.isEmpty() && !s.startsWith("#")).toList();
-		} catch (IOException e) {
-			System.err.println(
-					"[test-order] Warning: failed to read method order file " + orderFile + ": " + e.getMessage());
+		Map<String, Integer> positionMap = FixedOrderSupport.buildPositionMap(orderFile, "method");
+		if (positionMap == null)
 			return;
-		}
 
-		// Build position map: method name → index
-		Map<String, Integer> positionMap = new HashMap<>();
-		for (int i = 0; i < orderedMethods.size(); i++) {
-			positionMap.put(orderedMethods.get(i), i);
-		}
-
-		// Sort descriptors by their position in the order file
 		@SuppressWarnings("unchecked")
 		List<MethodDescriptor> descriptors = (List<MethodDescriptor>) context.getMethodDescriptors();
-		List<MethodDescriptor> sorted = new ArrayList<>(descriptors);
-		sorted.sort(Comparator.comparingInt(d -> {
-			String name = d.getMethod().getName();
-			return positionMap.getOrDefault(name, Integer.MAX_VALUE);
-		}));
-
-		// In-place replacement (JUnit MethodOrderer contract)
-		descriptors.clear();
-		descriptors.addAll(sorted);
+		FixedOrderSupport.applyOrder(descriptors, d -> d.getMethod().getName(), positionMap, false);
 	}
 }

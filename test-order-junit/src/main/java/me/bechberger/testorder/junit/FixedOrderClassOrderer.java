@@ -1,9 +1,9 @@
 package me.bechberger.testorder.junit;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.ClassDescriptor;
 import org.junit.jupiter.api.ClassOrderer;
@@ -30,71 +30,21 @@ public class FixedOrderClassOrderer implements ClassOrderer {
 
 	@Override
 	public void orderClasses(ClassOrdererContext context) {
-		String orderFilePath = System.getProperty(ORDER_FILE_PROPERTY);
-		if (orderFilePath == null || orderFilePath.isBlank()) {
-			// Try classpath properties
-			try {
-				Properties props = new Properties();
-				try (var stream = getClass().getClassLoader().getResourceAsStream("testorder-config.properties")) {
-					if (stream != null) {
-						props.load(stream);
-						orderFilePath = props.getProperty(ORDER_FILE_PROPERTY);
-					}
-				}
-			} catch (IOException e) {
-				System.err
-						.println("[test-order] Warning: failed to read testorder-config.properties: " + e.getMessage());
-			}
-		}
-
-		if (orderFilePath == null || orderFilePath.isBlank()) {
-			return; // No order file configured — keep default order
-		}
+		String orderFilePath = FixedOrderSupport.resolveOrderFilePath(ORDER_FILE_PROPERTY, true,
+				getClass().getClassLoader());
+		if (orderFilePath == null)
+			return;
 
 		Path orderFile = Path.of(orderFilePath);
-		if (!Files.exists(orderFile)) {
+		if (!Files.exists(orderFile))
 			return;
-		}
 
-		List<String> orderedClasses;
-		try {
-			orderedClasses = Files.readAllLines(orderFile).stream().map(String::trim)
-					.filter(s -> !s.isEmpty() && !s.startsWith("#")).toList();
-		} catch (IOException e) {
-			System.err.println(
-					"[test-order] Warning: failed to read class order file " + orderFile + ": " + e.getMessage());
+		Map<String, Integer> positionMap = FixedOrderSupport.buildPositionMap(orderFile, "class");
+		if (positionMap == null)
 			return;
-		}
 
-		// Build position map: class name → index
-		Map<String, Integer> positionMap = new HashMap<>();
-		for (int i = 0; i < orderedClasses.size(); i++) {
-			positionMap.put(orderedClasses.get(i), i);
-		}
-
-		// Sort descriptors by their position in the order file
 		@SuppressWarnings("unchecked")
 		List<ClassDescriptor> descriptors = (List<ClassDescriptor>) context.getClassDescriptors();
-		List<ClassDescriptor> sorted = new ArrayList<>(descriptors);
-		sorted.sort(Comparator.comparingInt(d -> {
-			String name = d.getTestClass().getName();
-			// First check exact match (handles explicitly listed nested classes)
-			Integer pos = positionMap.get(name);
-			if (pos != null)
-				return pos;
-			// Fall back to top-level enclosing class (first $) position
-			int dollar = name.indexOf('$');
-			if (dollar > 0) {
-				String topLevel = name.substring(0, dollar);
-				pos = positionMap.get(topLevel);
-				if (pos != null)
-					return pos;
-			}
-			return Integer.MAX_VALUE;
-		}));
-
-		// In-place replacement (JUnit ClassOrderer contract)
-		descriptors.clear();
-		descriptors.addAll(sorted);
+		FixedOrderSupport.applyOrder(descriptors, d -> d.getTestClass().getName(), positionMap, true);
 	}
 }

@@ -618,37 +618,7 @@ public class StructuralDiff {
 	}
 
 	private static List<String> runGit(Path workDir, String... args) throws IOException {
-		List<String> command = new ArrayList<>();
-		command.add("git");
-		Collections.addAll(command, args);
-
-		ProcessBuilder pb = new ProcessBuilder(command);
-		pb.directory(workDir.toFile());
-		pb.redirectErrorStream(true);
-		Process process = pb.start();
-
-		List<String> lines = new ArrayList<>();
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-			String line;
-			while ((line = reader.readLine()) != null) {
-				String trimmed = line.trim();
-				if (!trimmed.isEmpty())
-					lines.add(trimmed);
-			}
-		}
-		try {
-			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
-				process.destroyForcibly();
-				return Collections.emptyList();
-			}
-			if (process.exitValue() != 0)
-				return Collections.emptyList();
-		} catch (InterruptedException e) {
-			process.destroyForcibly();
-			Thread.currentThread().interrupt();
-			return Collections.emptyList();
-		}
-		return lines;
+		return GitSupport.runGit(workDir, false, args);
 	}
 
 	// ── Text formatting ─────────────────────────────────────────────
