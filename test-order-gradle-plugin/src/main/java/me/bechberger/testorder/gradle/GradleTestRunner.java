@@ -72,6 +72,11 @@ class GradleTestRunner implements TestRunner {
 
     @Override
     public boolean runLearnPhase(String instrumentationMode) {
+        return runLearnPhase(instrumentationMode, null);
+    }
+
+    @Override
+    public boolean runLearnPhase(String instrumentationMode, Path targetIndexFile) {
         log.lifecycle("[test-order] Running learn phase with instrumentation mode: " + instrumentationMode);
 
         List<String> command = new ArrayList<>(List.of(
@@ -80,6 +85,19 @@ class GradleTestRunner implements TestRunner {
                 "-Dtestorder.mode=learn",
                 "-Dtestorder.instrumentation.mode=" + instrumentationMode,
                 "--no-daemon", "--quiet"));
+
+        if (targetIndexFile != null) {
+            // targetIndexFile must be forwarded to the forked test JVM via an init
+            // script — Gradle's -D flags only reach the Gradle process, not the JVM.
+            try {
+                Path initScript = writeInitScript(
+                        "testorder.index.path", targetIndexFile.toAbsolutePath().toString());
+                command.add("--init-script");
+                command.add(initScript.toAbsolutePath().toString());
+            } catch (IOException e) {
+                log.warn("[test-order] Could not write init script for targetIndexFile: " + e.getMessage());
+            }
+        }
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(projectDir.toFile());
