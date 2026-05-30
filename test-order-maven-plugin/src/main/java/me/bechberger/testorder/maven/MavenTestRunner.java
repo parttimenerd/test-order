@@ -29,6 +29,7 @@ class MavenTestRunner implements TestRunner {
 	/** Circular buffer of last N lines of subprocess output for diagnostics. */
 	private static final int OUTPUT_BUFFER_SIZE = 50;
 	private final Deque<String> lastOutputLines = new ArrayDeque<>(OUTPUT_BUFFER_SIZE);
+	private boolean firstFailureOutputShown = false;
 
 	/**
 	 * Common plugin skip flags to prevent unrelated failures blocking test
@@ -201,10 +202,18 @@ class MavenTestRunner implements TestRunner {
 			}
 
 			if (exitCode != 0) {
-				log.warn("[test-order] Subprocess exited with code " + exitCode);
-				log.warn("[test-order] Last output lines:");
-				for (String outputLine : lastOutputLines) {
-					log.warn("  " + outputLine);
+				if (!firstFailureOutputShown) {
+					firstFailureOutputShown = true;
+					log.warn("[test-order] Subprocess exited with code " + exitCode);
+					log.warn("[test-order] Last output lines:");
+					for (String outputLine : lastOutputLines) {
+						log.warn("  " + outputLine);
+					}
+					log.warn("[test-order] (Subsequent subprocess failures during detection"
+							+ " are expected and will not be repeated)");
+				} else {
+					log.debug(
+							"[test-order] Subprocess exited with code " + exitCode + " (expected during OD detection)");
 				}
 			}
 
