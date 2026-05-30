@@ -99,6 +99,7 @@ public class BytecodeHashStore {
 				byte[] bytes = Files.readAllBytes(file);
 				return hashClass(bytes);
 			} catch (Exception e) {
+				System.err.println("[test-order] BytecodeHashStore: failed to hash " + file + ": " + e);
 				return null;
 			}
 		}).filter(Objects::nonNull).map(r -> new FileResult(r.className, r.classHash, r.methodHashes, r.fieldHashes))

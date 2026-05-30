@@ -61,6 +61,7 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:select` | Write selected tests to file; configure Surefire |
 | `test-order:run-remaining` | Execute deferred tests from prior selection |
 | `test-order:tiered-select` | Split tests into tier 1/2/3 files and run tier 1 |
+| `test-order:run-tiered` | Run all three tiers in a single invocation (alternative to multi-step tiered workflow) |
 | `test-order:run-tier` | Execute tier 2 or tier 3 from prior tiered selection |
 | `test-order:show` | Unified view: class order, method order, ML health (auto-detects) |
 | `test-order:explain` | Print detailed per-test score breakdown for the current change set |
