@@ -276,7 +276,6 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 			// Verify it's not just flaky: run victim alone
 			TestRunResult isolation = ctx.run(List.of(action.victim), 0);
 			if (isolation.passed(action.victim)) {
-				tk.confirmedPolluters().add(suspect);
 				// Don't add to findings yet — schedule a proper ISOLATE_PAIR to confirm
 				workQueue.add(new Action(ActionType.ISOLATE_PAIR, 9.5, action.victim, List.of(suspect)));
 				return 2;
