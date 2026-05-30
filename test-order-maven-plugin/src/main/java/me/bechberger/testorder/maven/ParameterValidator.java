@@ -19,67 +19,35 @@ public class ParameterValidator {
 	}
 
 	public void validateChangeMode(String changeMode) throws MojoExecutionException {
-		try {
-			delegate.validateChangeMode(changeMode);
-		} catch (IllegalArgumentException e) {
-			throw new MojoExecutionException(e.getMessage(), e);
-		}
+		exec(() -> delegate.validateChangeMode(changeMode));
 	}
 
 	public void validateInstrumentationMode(String instrumentationMode) throws MojoExecutionException {
-		try {
-			delegate.validateInstrumentationMode(instrumentationMode);
-		} catch (IllegalArgumentException e) {
-			throw new MojoExecutionException(e.getMessage(), e);
-		}
+		exec(() -> delegate.validateInstrumentationMode(instrumentationMode));
 	}
 
 	public void validateFilePath(String filePath, String parameterName) throws MojoExecutionException {
-		try {
-			delegate.validateFilePath(filePath, parameterName);
-		} catch (IllegalArgumentException e) {
-			throw new MojoExecutionException(e.getMessage(), e);
-		}
+		exec(() -> delegate.validateFilePath(filePath, parameterName));
 	}
 
 	public void validateOutputDirectory(String dirPath, String parameterName) throws MojoExecutionException {
-		try {
-			delegate.validateOutputDirectory(dirPath, parameterName);
-		} catch (IllegalArgumentException e) {
-			throw new MojoExecutionException(e.getMessage(), e);
-		}
+		exec(() -> delegate.validateOutputDirectory(dirPath, parameterName));
 	}
 
 	public void validateIntRange(int value, int min, int max, String parameterName) throws MojoExecutionException {
-		try {
-			delegate.validateIntRange(value, min, max, parameterName);
-		} catch (IllegalArgumentException e) {
-			throw new MojoExecutionException(e.getMessage(), e);
-		}
+		exec(() -> delegate.validateIntRange(value, min, max, parameterName));
 	}
 
 	public void validateNonNegative(int value, String parameterName) throws MojoExecutionException {
-		try {
-			delegate.validateNonNegative(value, parameterName);
-		} catch (IllegalArgumentException e) {
-			throw new MojoExecutionException(e.getMessage(), e);
-		}
+		exec(() -> delegate.validateNonNegative(value, parameterName));
 	}
 
 	public void validateMinValue(int value, int min, String parameterName) throws MojoExecutionException {
-		try {
-			delegate.validateMinValue(value, min, parameterName);
-		} catch (IllegalArgumentException e) {
-			throw new MojoExecutionException(e.getMessage(), e);
-		}
+		exec(() -> delegate.validateMinValue(value, min, parameterName));
 	}
 
 	public void validateSelectParameters(int topN, int randomM) throws MojoExecutionException {
-		try {
-			delegate.validateSelectParameters(topN, randomM);
-		} catch (IllegalArgumentException e) {
-			throw new MojoExecutionException(e.getMessage(), e);
-		}
+		exec(() -> delegate.validateSelectParameters(topN, randomM));
 	}
 
 	public void validateExplicitModeRequirements(String changeMode, String changedClasses)
@@ -89,11 +57,7 @@ public class ParameterValidator {
 
 	public void validateExplicitModeRequirements(String changeMode, String changedClasses, String changedTestClasses)
 			throws MojoExecutionException {
-		try {
-			delegate.validateExplicitModeRequirements(changeMode, changedClasses, changedTestClasses);
-		} catch (IllegalArgumentException e) {
-			throw new MojoExecutionException(e.getMessage(), e);
-		}
+		exec(() -> delegate.validateExplicitModeRequirements(changeMode, changedClasses, changedTestClasses));
 	}
 
 	public void warnChangedClassesFormat(String changedClasses) {
@@ -102,5 +66,13 @@ public class ParameterValidator {
 
 	public void warnNegativeWeights(Map<String, Integer> weights) {
 		delegate.warnNegativeWeights(weights);
+	}
+
+	private static void exec(Runnable fn) throws MojoExecutionException {
+		try {
+			fn.run();
+		} catch (IllegalArgumentException e) {
+			throw new MojoExecutionException(e.getMessage(), e);
+		}
 	}
 }

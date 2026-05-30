@@ -8,6 +8,7 @@ import java.util.*;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.*;
 
+import me.bechberger.testorder.changes.ChangeDetectionSupport;
 import me.bechberger.testorder.ops.PluginContext;
 import me.bechberger.testorder.ops.workflows.ShowOrderWorkflow;
 
@@ -48,6 +49,27 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
 	private Long seed;
 
 	/**
+	 * Returns the structural-diff mode string to use for this invocation, or
+	 * {@code null} when structural diff is not applicable.
+	 * <p>
+	 * For {@code auto} mode: returns {@code "since-last-commit"} when no hash
+	 * snapshot exists yet (first run), and {@code null} when a snapshot is
+	 * available (hash-based comparison will be used instead).
+	 */
+	protected String resolveStructuralDiffMode() {
+		Path hashFilePath = ctx.resolveHashFile(hashFile);
+		try {
+			var mode = ChangeDetectionSupport.resolveMode(changeMode, hashFilePath);
+			return switch (mode) {
+				case SINCE_LAST_COMMIT -> "since-last-commit";
+				default -> null;
+			};
+		} catch (IOException e) {
+			return null;
+		}
+	}
+
+	/**
 	 * show-order allows explicit mode with no changedClasses (means "no changes").
 	 */
 	@Override
@@ -86,43 +108,6 @@ public class ShowOrderMojo extends AbstractTestOrderMojo {
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to compute test order", e);
 		}
-	}
-
-	/**
-	 * Resolves the effective change mode for structural diffing. Since-last-run and
-	 * explicit modes have no reliable structural-diff baseline, so structural
-	 * complexity is disabled for those modes rather than using a mismatched git
-	 * comparison.
-	 */
-	protected String resolveStructuralDiffMode() {
-		if (changeMode == null || changeMode.isBlank()) {
-			return null;
-		}
-		return switch (changeMode) {
-			case "since-last-commit" -> "since-last-commit";
-			case "uncommitted" -> "uncommitted";
-			case "explicit", "since-last-run" -> null;
-			case "auto" -> {
-				if (changedClasses != null && !changedClasses.isBlank()) {
-					yield null;
-				}
-				yield Files.exists(ctx.resolveHashFile(hashFile)) ? null : "since-last-commit";
-			}
-			default -> null;
-		};
-	}
-
-	protected List<Path> resolveSourceRoots() {
-		LinkedHashSet<Path> roots = new LinkedHashSet<>();
-		roots.add(resolveSourceRoot());
-
-		Path projectRoot = project.getBasedir().toPath().toAbsolutePath();
-		Path kotlinRoot = projectRoot.resolve("src/main/kotlin");
-		if (Files.isDirectory(kotlinRoot)) {
-			roots.add(kotlinRoot);
-		}
-
-		return roots.stream().filter(Objects::nonNull).filter(Files::isDirectory).toList();
 	}
 
 }

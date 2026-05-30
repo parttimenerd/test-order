@@ -814,6 +814,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		return project.getBasedir().toPath().resolve("src/test/java");
 	}
 
+	protected List<Path> resolveSourceRoots() {
+		LinkedHashSet<Path> roots = new LinkedHashSet<>();
+		roots.add(resolveSourceRoot());
+		Path kotlinRoot = project.getBasedir().toPath().toAbsolutePath().resolve("src/main/kotlin");
+		if (Files.isDirectory(kotlinRoot)) {
+			roots.add(kotlinRoot);
+		}
+		return roots.stream().filter(java.util.Objects::nonNull).filter(Files::isDirectory).toList();
+	}
+
 	// ── State and change detection ────────────────────────────────────
 
 	protected TestOrderState loadState() {

@@ -197,20 +197,4 @@ public class ShowMojo extends AbstractTestOrderMojo {
 		return Boolean.parseBoolean(value);
 	}
 
-	/**
-	 * Resolves source roots for structural analysis. Kept here from the former
-	 * ShowOrderMojo.
-	 */
-	protected List<Path> resolveSourceRoots() {
-		LinkedHashSet<Path> roots = new LinkedHashSet<>();
-		roots.add(resolveSourceRoot());
-
-		Path projectRoot = project.getBasedir().toPath().toAbsolutePath();
-		Path kotlinRoot = projectRoot.resolve("src/main/kotlin");
-		if (Files.isDirectory(kotlinRoot)) {
-			roots.add(kotlinRoot);
-		}
-
-		return roots.stream().filter(Objects::nonNull).filter(Files::isDirectory).toList();
-	}
 }
