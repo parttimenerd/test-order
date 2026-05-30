@@ -1492,6 +1492,17 @@ public class TestOrderPlugin implements Plugin<Project> {
                     project.getLogger().lifecycle("[test-order]   Tier 3 ({} tests): {}",
                             selection.tier3().size(), tier3File);
 
+                    java.util.List<String> deferred = java.util.stream.Stream
+                            .concat(selection.tier2().stream(), selection.tier3().stream()).toList();
+                    me.bechberger.testorder.ops.CiSummaryWriter.writeSummary(
+                            new me.bechberger.testorder.ops.CiSummaryWriter.SummaryInput(
+                                    analysis.depMap().testClasses().size(),
+                                    selection.tier1(), deferred,
+                                    analysis.changedClasses(), analysis.changedTests(),
+                                    java.util.List.of(), "tiered-select", 1,
+                                    project.getLayout().getBuildDirectory().get().getAsFile().toPath()),
+                            wrapLog(project));
+
                 } catch (IOException e) {
                     throw new GradleException("Failed to run tiered test selection", e);
                 }
@@ -1540,8 +1551,11 @@ public class TestOrderPlugin implements Plugin<Project> {
                         applySelectedTests((Test) t, List.of());
                     } else {
                         // Apply sharding for tier-3
+                        String shardSpec = gradleOrSystemProperty(project, "testorder.tiered.shard");
+                        if (shardSpec != null && !shardSpec.isBlank() && currentTier != 3) {
+                            project.getLogger().warn("[test-order] testorder.tiered.shard={} is only applied to tier-3; ignored for tier-{}", shardSpec, currentTier);
+                        }
                         if (currentTier == 3) {
-                            String shardSpec = gradleOrSystemProperty(project, "testorder.tiered.shard");
                             if (shardSpec != null && !shardSpec.isBlank()) {
                                 try {
                                     List<String> sharded = me.bechberger.testorder.TieredTestSelector.applyShard(tests, shardSpec);
@@ -1556,12 +1570,17 @@ public class TestOrderPlugin implements Plugin<Project> {
                         project.getLogger().lifecycle("[test-order] Running {} tier-{} test classes",
                                 tests.size(), currentTier);
                         applySelectedTests((Test) t, tests);
+                        me.bechberger.testorder.ops.CiSummaryWriter.writeSummary(
+                                new me.bechberger.testorder.ops.CiSummaryWriter.SummaryInput(
+                                        tests.size(), tests, java.util.List.of(),
+                                        java.util.Set.of(), java.util.Set.of(),
+                                        java.util.List.of(), "run-tier", currentTier,
+                                        project.getLayout().getBuildDirectory().get().getAsFile().toPath()),
+                                wrapLog(project));
                     }
                 } catch (IOException e) {
                     throw new GradleException("Failed to read tier-" + currentTier + " tests file", e);
                 }
-
-                // Inject orderer config so tests are prioritized within the tier (R7-4)
                 Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
                 if (Files.exists(indexPath)) {
                     ((Test) t).systemProperty("testorder.index.path", indexPath.toAbsolutePath().toString());
@@ -1961,7 +1980,7 @@ public class TestOrderPlugin implements Plugin<Project> {
         me.bechberger.testorder.ml.TestHealthReport healthReport = null;
         Path mlHistoryDir = pctx.stateFile() != null
                 ? pctx.stateFile().getParent().resolve("ml-history")
-                : pctx.projectRoot().resolve(".testorder/ml-history");
+                : pctx.projectRoot().resolve(".test-order/ml-history");
         me.bechberger.testorder.ml.MLHealthLoader.LoadResult mlResult =
                 me.bechberger.testorder.ml.MLHealthLoader.load(mlHistoryDir);
         if (mlResult.hasData()) {
@@ -2479,7 +2498,7 @@ public class TestOrderPlugin implements Plugin<Project> {
         // Resolve ML history dir (same convention as Maven)
         Path mlHistoryDir = pctx.stateFile() != null
                 ? pctx.stateFile().getParent().resolve("ml-history")
-                : pctx.projectRoot().resolve(".testorder/ml-history");
+                : pctx.projectRoot().resolve(".test-order/ml-history");
 
         try {
             ShowWorkflow.ShowResult result = ShowWorkflow.compute(pctx, opts, mlHistoryDir);
