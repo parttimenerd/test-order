@@ -318,11 +318,10 @@ testOrder {
 # Order mode: optimized execution
 ./gradlew clean test
 
-# Show predicted order without running
-./gradlew testOrderShowOrder
+# Show predicted order and scores (unified view)
+./gradlew testOrderShow
 
-# Detailed order breakdown with scores
-./gradlew testOrderExplainOrder
+# Legacy aliases (deprecated): testOrderShowOrder, testOrderExplainOrder
 
 # Generate dashboard
 ./gradlew testOrderDashboard
@@ -461,14 +460,14 @@ jobs:
         run: mvn clean test
       
       - name: Export metrics
-        run: ls -lh .test-order-metrics.json && cat .test-order-metrics.json
+        run: ls -lh target/test-order-metrics.json && cat target/test-order-metrics.json
       
       - name: Upload to artifact
         if: always()
         uses: actions/upload-artifact@v3
         with:
           name: test-metrics
-          path: .test-order-metrics.json
+          path: target/test-order-metrics.json
 ```
 
 ### 4. **Handling Flaky Tests**
@@ -620,7 +619,7 @@ mvn test-order:dashboard
 
 ```bash
 # Maven
-cat target/.test-order-metrics.json | jq '.'
+cat target/test-order-metrics.json | jq '.'
 
 # Gradle
 cat build/test-order-metrics.json | jq '.'

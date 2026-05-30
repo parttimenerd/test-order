@@ -9,7 +9,7 @@ Each test class receives a score. Tests are sorted by descending score, with fas
 |---|---|---|---|
 | **New test bonus** | 15 | `testorder.score.newTest` | Bonus for new test classes not in the dependency index |
 | **Changed test bonus** | 9 | `testorder.score.changedTest` | Bonus for changed test sources |
-| **Failure bonus** | 1–5 | `testorder.score.maxFailure` | Cap on failure-based bonus |
+| **Failure bonus** | 5 | `testorder.score.maxFailure` | Cap on failure-based bonus |
 | **Speed bonus** | 1 | `testorder.score.speed` | Bonus for fast tests (logarithmic scale: full bonus at 1/8× median, zero at median) |
 | **Speed penalty** | 1 | `testorder.score.speedPenalty` | Penalty for slow tests (logarithmic scale: full penalty at 8× median, zero at median) |
 | **Dependency overlap** | 5 (max) | `testorder.score.depOverlap` | Max score from dependency overlap (sqrt-normalized: overlap/√totalDeps × weight). Disabled when `coverageBonus > 0`. |

@@ -10,7 +10,7 @@
 ## Dependencies
 
 - [femtocli](https://github.com/parttimenerd/femtocli) — CLI and agent-args parsing
-- [javassist](https://www.javassist.org/) — bytecode instrumentation
+- [ASM](https://asm.ow2.io/) — bytecode instrumentation (shaded into the agent JAR)
 - [lz4-java](https://github.com/yawkat/lz4-java) — LZ4 Frame compression for file hash snapshots
 - [RoaringBitmap](https://github.com/RoaringBitmap/RoaringBitmap) — compressed bitmap sets for the dependency index
 - JUnit 5 or 6 (provided scope)
@@ -107,7 +107,7 @@ mvn verify -pl test-order-dashboard-ui-tests -Dtestorder.ui=true
 ## Project structure
 
 ```
-test-order-agent/             Java agent (bytecode instrumentation via javassist)
+test-order-agent/             Java agent (bytecode instrumentation via ASM)
 test-order-annotations/       Lightweight annotations (@AlwaysRun, @TestOrder)
 test-order-core/              Core engine: dependency index, scoring, change detection, CLI tool
 test-order-junit/             JUnit extension and listeners/orderers

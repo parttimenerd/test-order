@@ -87,7 +87,7 @@ Controls which production code changes are used to select and prioritize tests. 
 
 ### Mode Details and Trade-offs
 
-#### `auto` (default for Maven plugin)
+#### `auto`
 Automatically selects the best available strategy: `since-last-run` if a hash snapshot from a previous run exists, otherwise `since-last-commit`.
 
 **Pros:** Works out-of-the-box with no configuration; adapts to whether a previous run snapshot is present.  

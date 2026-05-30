@@ -297,14 +297,13 @@ public class TestScorer {
 			changedClassToTests.put(changedClass, new HashSet<>());
 		}
 
-		// Pre-scan to find which tests touch any changed class
+		// Pre-scan to find which tests touch any changed class (class-level deps only;
+		// member deps use "Class#member" keys so they don't match plain class names here).
 		Set<String> affectedTests = new HashSet<>();
 		for (String test : testClassNames) {
 			Set<String> deps = depMap.get(test);
-			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(test) : null;
 			for (String changedClass : effectiveChangedForOverlap) {
-				if ((deps != null && deps.contains(changedClass))
-						|| (memberDeps != null && memberDeps.contains(changedClass))) {
+				if (deps != null && deps.contains(changedClass)) {
 					affectedTests.add(test);
 					changedClassToTests.get(changedClass).add(test);
 					break; // test touches at least one changed class, no need to check further

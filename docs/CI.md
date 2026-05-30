@@ -116,4 +116,3 @@ See [ci-examples/](ci-examples/) for full pipeline configurations:
 | [github-actions-tiered-gradle.yml](ci-examples/github-actions-tiered-gradle.yml) | GitHub Actions | Gradle |
 | [gitlab-ci-tiered.yml](ci-examples/gitlab-ci-tiered.yml) | GitLab CI | Maven + Gradle |
 | [azure-pipelines-tiered.yml](ci-examples/azure-pipelines-tiered.yml) | Azure Pipelines | Maven |
-- Full CI workflow examples: [ci-examples/](ci-examples/).

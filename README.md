@@ -361,7 +361,7 @@ The Gradle equivalent:
 mvn test -Dtestorder.score.killRateBonus=5
 ```
 
-Or persistently in `.test-order/scoring-weights.toml`:
+Or persistently via a weights file (pass `-Dtestorder.weights.file=my-weights.toml` or set `<weightsFile>` in the POM):
 
 ```toml
 [killRateBonus]
