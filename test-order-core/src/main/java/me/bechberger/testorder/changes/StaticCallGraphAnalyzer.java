@@ -756,8 +756,9 @@ public class StaticCallGraphAnalyzer {
 					boundary = end;
 				}
 				String internal = signature.substring(i + 1, boundary);
-				// Strip any '.' (inner class separators in signature form).
-				String fqcn = internal.replace('/', '.').replace('$', '.');
+				// Generic signatures use '/' as package separator and '$' for inner classes,
+				// consistent with bytecode class names. Convert only '/' → '.'.
+				String fqcn = internal.replace('/', '.');
 				addClassRefEdge(result, fqcn, callerKey);
 				i = boundary;
 			} else {

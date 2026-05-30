@@ -308,7 +308,8 @@ public final class ChangeAnalysis {
 									+ " of tests — keeping detailed expansion (no fallback).");
 				}
 				// Re-run expansion without the degradation cap so we get the precise expansion.
-				changedMembers = StaticCallGraphAnalyzer.expand(changedMembers, classDirs, ctx.staticAnalysisDepth());
+				changedMembers = StaticCallGraphAnalyzer
+						.expandWithReport(changedMembers, classDirs, ctx.staticAnalysisDepth(), 0).expanded();
 			}
 		}
 

@@ -342,7 +342,205 @@ class StaticCallGraphAnalyzerTest {
 				"Impl#run should be discovered via interface edge MyIface -> Impl; got " + result.changedMemberKeys());
 	}
 
+	@Test
+	@DisplayName("return type creates a class-level edge from the method")
+	void returnTypeDiscovered() throws Exception {
+		compile("class Response {}", "class Builder { public Response build() { return null; } }");
+
+		var original = classLevelChange("Response");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Builder#build"),
+				"Builder#build should be discovered via return type Response; got " + result.changedMemberKeys());
+	}
+
+	@Test
+	@DisplayName("array of changed type in parameter creates an edge")
+	void arrayParameterTypeDiscovered() throws Exception {
+		compile("class Item {}", "class Processor { public void process(Item[] items) {} }");
+
+		var original = classLevelChange("Item");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Processor#process"),
+				"Processor#process should be reached via Item[] parameter; got " + result.changedMemberKeys());
+	}
+
+	@Test
+	@DisplayName("declared throws clause creates an edge from the throwing method")
+	void declaredThrowsDiscovered() throws Exception {
+		compile("class AppException extends RuntimeException {}",
+				"class Service { public void run() throws AppException {} }");
+
+		var original = classLevelChange("AppException");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Service#run"),
+				"Service#run should be discovered via throws AppException; got " + result.changedMemberKeys());
+	}
+
+	@Test
+	@DisplayName("catch block exception type creates an edge to the catching method")
+	void catchBlockTypeDiscovered() throws Exception {
+		compile("class DomainException extends RuntimeException {}",
+				"class Handler { public void handle() { try { throw new DomainException(); } catch (DomainException e) { e.getMessage(); } } }");
+
+		var original = classLevelChange("DomainException");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Handler#handle"),
+				"Handler#handle should be discovered via catch(DomainException); got " + result.changedMemberKeys());
+	}
+
+	@Test
+	@DisplayName("class literal (Foo.class) creates an edge to the referencing method")
+	void classLiteralDiscovered() throws Exception {
+		compile("class Meta {}", "class Registry { public void register() { Class<?> c = Meta.class; } }");
+
+		var original = classLevelChange("Meta");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Registry#register"),
+				"Registry#register should be discovered via Meta.class literal; got " + result.changedMemberKeys());
+	}
+
+	@Test
+	@DisplayName("static field write (PUTSTATIC) propagates to writer method")
+	void staticFieldWriteDiscovered() throws Exception {
+		compile("class Config { public static int VALUE = 0; }",
+				"class Initializer { public void init() { Config.VALUE = 42; } }");
+
+		// Seed with the static field write target
+		var original = new StructuralChangeAnalyzer.ChangedMembers(Set.of("Config"), Set.of(),
+				Map.of("Config", Set.of()), Set.of(), Set.of("Config#VALUE"));
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Initializer#init"),
+				"Initializer#init should be discovered via PUTSTATIC Config#VALUE; got " + result.changedMemberKeys());
+	}
+
+	@Test
+	@DisplayName("NEW instruction (constructor) creates a class-level edge")
+	void newInstructionDiscovered() throws Exception {
+		compile("class Widget {}", "class Factory { public Object create() { return new Widget(); } }");
+
+		var original = classLevelChange("Widget");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Factory#create"),
+				"Factory#create should be discovered via new Widget(); got " + result.changedMemberKeys());
+	}
+
+	@Test
+	@DisplayName("instanceof check creates an edge to the checking method")
+	void instanceofCheckDiscovered() throws Exception {
+		compile("class Shape {}", "class Checker { public boolean isShape(Object o) { return o instanceof Shape; } }");
+
+		var original = classLevelChange("Shape");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Checker#isShape"),
+				"Checker#isShape should be discovered via instanceof Shape; got " + result.changedMemberKeys());
+	}
+
+	@Test
+	@DisplayName("degradation: expansion exceeding ratio falls back to class-level")
+	void degradationFallback() throws Exception {
+		// Create many classes that all call a single Callee.
+		// ratio=2 means: if expanded > 2×seed, degrade.
+		// Seed: 1 member key. With 5 callers we get 6 keys → 6×seed → degrade at
+		// ratio=2.
+		compile("class Callee { public void compute() {} }",
+				"class C1 { public void a() { new Callee().compute(); } public void b() {} public void c() {} }",
+				"class C2 { public void a() { new Callee().compute(); } public void b() {} public void c() {} }",
+				"class C3 { public void a() { new Callee().compute(); } public void b() {} public void c() {} }",
+				"class C4 { public void a() { new Callee().compute(); } public void b() {} public void c() {} }",
+				"class C5 { public void a() { new Callee().compute(); } public void b() {} public void c() {} }");
+
+		var original = changedMembers("Callee#compute");
+		var report = StaticCallGraphAnalyzer.expandWithReport(original, List.of(tempDir), 1, 2);
+
+		assertTrue(report.degraded(), "Should be degraded (expanded >> 2× seed)");
+		// Fallback should be class-level: Callee at minimum
+		assertTrue(report.expanded().changedClasses().contains("Callee"),
+				"Fallback should still include original changed class");
+	}
+
+	@Test
+	@DisplayName("transitive interface chain: change in grandparent interface reaches implementor")
+	void transitiveInterfaceChain() throws Exception {
+		// GrandIface → SubIface → ImplClass
+		compile("interface GrandIface {}", "interface SubIface extends GrandIface {}",
+				"class ImplClass implements SubIface { public void run() {} }");
+
+		var original = classLevelChange("GrandIface");
+		// Needs depth ≥ 2 to go through SubIface to ImplClass
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 2);
+
+		assertTrue(result.changedClasses().contains("ImplClass"),
+				"ImplClass should be reached transitively via SubIface from GrandIface change; got "
+						+ result.changedClasses());
+	}
+
+	@Test
+	@DisplayName("default interface method change reaches implementing class via override propagation")
+	void defaultMethodOverridePropagated() throws Exception {
+		// MyService declares a default method; Impl overrides it.
+		// If MyService#execute (a concrete default method) changes, Impl#execute should
+		// be flagged as an override.
+		compile("interface MyService { default void execute() {} }",
+				"class Impl implements MyService { public void execute() {} }");
+
+		var original = changedMembers("MyService#execute");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Impl#execute"),
+				"Impl#execute should be discovered as override of default MyService#execute; got "
+						+ result.changedMemberKeys());
+	}
+
+	@Test
+	@DisplayName("generic return type in signature discovers inner-class type reference")
+	void genericReturnTypeWithInnerClassDiscovered() throws Exception {
+		// Container$Item is an inner class; the generic signature references it.
+		// Changing it should reach Container#getItems via the signature edge.
+		compile("import java.util.List;\n" + "class Container {\n" + "  static class Item {}\n"
+				+ "  public List<Item> getItems() { return null; }\n" + "}");
+
+		// The inner class is named Container$Item in bytecode
+		var original = classLevelChange("Container$Item");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedClasses().contains("Container"),
+				"Container should be discovered via generic signature <Container$Item>; got "
+						+ result.changedClasses());
+	}
+
+	@Test
+	@DisplayName("generic return type in signature creates an edge")
+	void genericReturnTypeInSignatureDiscovered() throws Exception {
+		// The generic signature on getItems() references Element.
+		// Even if the return type erasure is Object, the signature attribute contains
+		// it.
+		compile("class Element {}",
+				"import java.util.List;\n" + "class Container { public List<Element> getItems() { return null; } }");
+
+		var original = classLevelChange("Element");
+		var result = StaticCallGraphAnalyzer.expand(original, List.of(tempDir), 1);
+
+		assertTrue(result.changedMemberKeys().contains("Container#getItems"),
+				"Container#getItems should be discovered via generic signature <Element>; got "
+						+ result.changedMemberKeys());
+	}
+
 	// ── Test fixture helper ──────────────────────────────────────────
+
+	/** Builds a class-level ChangedMembers from a single FQCN. */
+	private static StructuralChangeAnalyzer.ChangedMembers classLevelChange(String className) {
+		return new StructuralChangeAnalyzer.ChangedMembers(Set.of(className),
+				Set.of(className + "#" + StaticCallGraphAnalyzer.CLASS_MARKER),
+				Map.of(className, Set.of(StaticCallGraphAnalyzer.CLASS_MARKER)), Set.of(), Set.of());
+	}
 
 	private static StructuralChangeAnalyzer.ChangedMembers changedMembers(String... memberKeys) {
 		Set<String> classes = new LinkedHashSet<>();
