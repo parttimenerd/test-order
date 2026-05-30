@@ -836,8 +836,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		PluginLog plog = pluginLog();
 		if (changedClasses != null && !changedClasses.isBlank() && !"explicit".equalsIgnoreCase(changeMode)) {
 			getLog().warn("[test-order] testorder.changed.classes is set but changeMode='" + changeMode
-					+ "' — explicit class list is merged with detected changes, not used exclusively."
-					+ " To use only the specified classes, add -Dtestorder.changeMode=explicit");
+					+ "' — explicit class list overrides git/hash-based detection entirely."
+					+ " To make this explicit, add -Dtestorder.changeMode=explicit");
 		}
 		Set<String> own = ChangeDetectionOps.detectChangedClassesWithKotlin(changeMode, ctx.gitRoot(),
 				resolveSourceRoot(), ctx.resolveHashFile(hashFile), changedClasses, readOnly, plog);
