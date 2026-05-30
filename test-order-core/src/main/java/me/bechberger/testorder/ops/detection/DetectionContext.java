@@ -77,6 +77,19 @@ public record DetectionContext(ConflictGraph graph, DependencyMap depMap, TestOr
 		return runCounter.get();
 	}
 
+	/**
+	 * Returns a TestRunner wrapper that increments the run counter on every
+	 * execution. Use this when passing the runner to helpers like DeltaDebugging
+	 * that manage their own budget loop.
+	 */
+	public TestRunner countingRunner() {
+		return order -> {
+			TestRunner.TestRunResult result = runner.run(order);
+			recordRun(0);
+			return result;
+		};
+	}
+
 	/** Create a new context with a different deadline. */
 	public DetectionContext withDeadline(long newDeadline) {
 		return new DetectionContext(graph, depMap, state, referenceOrder, passingTests, runner, newDeadline, randomSeed,

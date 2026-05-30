@@ -671,6 +671,16 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
             }
 
+            // Write uncertain-classes.txt for dashboard Static Analysis tab
+            if (uncertainClasses != null) {
+                try {
+                    java.nio.file.Path depsPath = ext.getDepsDir().get().getAsFile().toPath();
+                    me.bechberger.testorder.changes.UncertainClassesStore.save(depsPath.resolve("uncertain-classes.txt"), uncertainClasses);
+                } catch (java.io.IOException e2) {
+                    project.getLogger().debug("[test-order] Could not write uncertain-classes file: " + e2.getMessage());
+                }
+            }
+
             me.bechberger.testorder.agent.OfflineInstrumentor instrumentor =
                     new me.bechberger.testorder.agent.OfflineInstrumentor(mode, includes, List.of(), uncertainClasses);
             try {

@@ -253,6 +253,19 @@ The dashboard is an interactive HTML report with three tabs: **Tests** (ranked l
 | `testorder.score.springContextGrouping` | `false` | Group tests sharing a Spring context |
 | `testorder.score.ema.varianceThreshold` | `0.35` | EMA variance threshold for adaptive smoothing — stored in state file only; setting via `-D` has no effect |
 
+### Selective Learn
+
+Selective learn mode instruments only the classes reachable from the current source changes (changed classes + their transitive callees up to 4 hops via static call-graph analysis). This keeps per-run overhead proportional to the size of your change rather than the project size.
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.learn.selective` | `false` | Enable selective learn mode — only re-instruments changed classes and transitive callees |
+| `testorder.auto.alwaysLearn` | `false` | Always run a learn pass in `auto` mode (combine with `selective` for cheap incremental updates) |
+
+When no structural changes are detected the uncertain-class set is empty and instrumentation is skipped automatically — zero overhead on no-change runs.
+
+The **Static Analysis** tab in the dashboard shows the instrumentation scope from the last selective-learn run (which classes were identified as uncertain, grouped by module). The tab appears automatically when selective-learn data is present.
+
 ### Instrumentation and Filtering
 
 | Property | Default | Notes |

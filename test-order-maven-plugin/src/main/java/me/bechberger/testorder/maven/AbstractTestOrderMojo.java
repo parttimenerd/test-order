@@ -1705,6 +1705,21 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				}
 			}
 
+			// Write uncertain-classes.txt for dashboard Static Analysis tab
+			if (uncertainClasses != null) {
+				String mid2 = computeCurrentModuleId();
+				String fname = (mid2 == null || mid2.isBlank())
+						? "uncertain-classes.txt"
+						: "uncertain-classes-" + mid2.replaceAll("[^a-zA-Z0-9._-]", "_") + ".txt";
+				try {
+					Path depsDirPath = ctx != null ? ctx.resolveDepsDir(depsDir) : Path.of(depsDir);
+					me.bechberger.testorder.changes.UncertainClassesStore.save(depsDirPath.resolve(fname),
+							uncertainClasses);
+				} catch (java.io.IOException e2) {
+					getLog().debug("[test-order] Could not write uncertain-classes file: " + e2.getMessage());
+				}
+			}
+
 			OfflineInstrumentor instrumentor = new OfflineInstrumentor(iMode, includes, List.of(), uncertainClasses);
 			Path backupRoot = targetDir.resolve(".test-order").resolve("classes-backup");
 			ClassIdMapping mapping = instrumentor.instrument(classesDir, backupRoot);

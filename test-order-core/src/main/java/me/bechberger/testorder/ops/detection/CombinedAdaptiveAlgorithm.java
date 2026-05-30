@@ -232,7 +232,7 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 		if (candidates.isEmpty())
 			return 0;
 
-		List<String> minimal = DeltaDebugging.minimize(candidates, action.victim, ctx.runner(), 15);
+		List<String> minimal = DeltaDebugging.minimize(candidates, action.victim, ctx.countingRunner(), 15);
 		int runs = Math.min(15, candidates.size()); // Approximate runs used
 
 		if (!minimal.isEmpty()) {

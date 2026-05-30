@@ -124,6 +124,21 @@ public class InstrumentMojo extends AbstractTestOrderMojo {
 			}
 		}
 
+		// Write uncertain-classes.txt for dashboard Static Analysis tab
+		if (uncertainClasses != null) {
+			String mid = computeCurrentModuleId();
+			String fname = (mid == null || mid.isBlank())
+					? "uncertain-classes.txt"
+					: "uncertain-classes-" + mid.replaceAll("[^a-zA-Z0-9._-]", "_") + ".txt";
+			try {
+				Path depsDirPath = ctx != null ? ctx.resolveDepsDir(depsDir) : Path.of(depsDir);
+				me.bechberger.testorder.changes.UncertainClassesStore.save(depsDirPath.resolve(fname),
+						uncertainClasses);
+			} catch (IOException e2) {
+				getLog().debug("[test-order] Could not write uncertain-classes file: " + e2.getMessage());
+			}
+		}
+
 		try {
 			OfflineInstrumentor instrumentor = new OfflineInstrumentor(mode, includes, excludes, uncertainClasses);
 			ClassIdMapping mapping = instrumentor.instrument(classesDir);

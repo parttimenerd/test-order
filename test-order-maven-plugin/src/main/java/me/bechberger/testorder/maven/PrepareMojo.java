@@ -400,6 +400,21 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				}
 			}
 
+			// Write uncertain-classes.txt for dashboard Static Analysis tab
+			if (uncertainClasses != null) {
+				String mid = computeCurrentModuleId();
+				String fname = (mid == null || mid.isBlank())
+						? "uncertain-classes.txt"
+						: "uncertain-classes-" + mid.replaceAll("[^a-zA-Z0-9._-]", "_") + ".txt";
+				try {
+					Path depsDirPath = ctx != null ? ctx.resolveDepsDir(depsDir) : java.nio.file.Path.of(depsDir);
+					me.bechberger.testorder.changes.UncertainClassesStore.save(depsDirPath.resolve(fname),
+							uncertainClasses);
+				} catch (java.io.IOException e2) {
+					getLog().debug("[test-order] Could not write uncertain-classes file: " + e2.getMessage());
+				}
+			}
+
 			me.bechberger.testorder.agent.OfflineInstrumentor instrumentor = new me.bechberger.testorder.agent.OfflineInstrumentor(
 					iMode, includeList, List.of(), uncertainClasses);
 			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");

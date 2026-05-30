@@ -62,7 +62,7 @@ public class IterativeRefinementAlgorithm implements DetectionAlgorithm {
 				if (predecessors.isEmpty())
 					continue;
 
-				List<String> minimalPolluters = DeltaDebugging.minimize(predecessors, failed, ctx.runner(), 10);
+				List<String> minimalPolluters = DeltaDebugging.minimize(predecessors, failed, ctx.countingRunner(), 10);
 
 				if (!minimalPolluters.isEmpty()) {
 					// Verify: does victim pass alone?

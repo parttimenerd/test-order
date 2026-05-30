@@ -76,7 +76,7 @@ public class DependenceAwareBoundedAlgorithm implements DetectionAlgorithm {
 				continue; // No pollution
 
 			// ddmin to find minimal polluter set
-			List<String> minimal = DeltaDebugging.minimize(candidates, victim, ctx.runner(), 15);
+			List<String> minimal = DeltaDebugging.minimize(candidates, victim, ctx.countingRunner(), 15);
 
 			if (!minimal.isEmpty()) {
 				findings.add(new ODResult(victim, ODType.VICTIM, buildChain(minimal, victim),

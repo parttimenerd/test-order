@@ -264,18 +264,20 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	}
 
 	private static boolean boolProp(MavenSession session, String key) {
-		String v = session.getSystemProperties().getProperty(key);
+		// User properties (-D flags) take precedence over system properties and pom.xml
+		String v = session.getUserProperties().getProperty(key);
 		if (v == null)
-			v = session.getUserProperties().getProperty(key);
+			v = session.getSystemProperties().getProperty(key);
 		if (v == null)
 			v = session.getTopLevelProject().getProperties().getProperty(key);
 		return v != null && (v.isEmpty() || "true".equalsIgnoreCase(v));
 	}
 
 	private static Integer parseIntProp(MavenSession session, String key) {
-		String v = session.getSystemProperties().getProperty(key);
+		// User properties (-D flags) take precedence over system properties and pom.xml
+		String v = session.getUserProperties().getProperty(key);
 		if (v == null)
-			v = session.getUserProperties().getProperty(key);
+			v = session.getSystemProperties().getProperty(key);
 		if (v == null)
 			v = session.getTopLevelProject().getProperties().getProperty(key);
 		if (v == null || v.isBlank())

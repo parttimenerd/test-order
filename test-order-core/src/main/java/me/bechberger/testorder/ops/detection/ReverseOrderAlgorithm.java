@@ -42,7 +42,7 @@ public class ReverseOrderAlgorithm implements DetectionAlgorithm {
 			// Attempt to isolate the polluter via delta debugging
 			List<String> predecessors = result.predecessorsOf(failed);
 			if (!predecessors.isEmpty() && !ctx.timeBudgetExhausted()) {
-				List<String> minimal = DeltaDebugging.minimize(predecessors, failed, ctx.runner(), 20);
+				List<String> minimal = DeltaDebugging.minimize(predecessors, failed, ctx.countingRunner(), 20);
 				if (!minimal.isEmpty()) {
 					String polluter = minimal.get(0);
 					findings.add(new ODResult(failed, ODType.VICTIM, buildChain(minimal, failed),
