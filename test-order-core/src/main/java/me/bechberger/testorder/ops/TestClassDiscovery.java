@@ -12,6 +12,12 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+
 import me.bechberger.testorder.DependencyMap;
 
 /**
@@ -181,6 +187,11 @@ public final class TestClassDiscovery {
 	 * Excludes nested/inner classes (containing {@code $}) because they are
 	 * discovered and run as part of their enclosing outer class, and are never
 	 * recorded as top-level entries in the dependency index.
+	 *
+	 * Also excludes helper/utility classes that carry no test-framework annotations
+	 * (neither on the class itself nor on any of its methods) — they live in the
+	 * test source tree but are never run as tests, so they would otherwise be
+	 * flagged as "new" on every single run.
 	 */
 	public static Set<String> findNewTestClasses(DependencyMap depMap, Path testClassesDir, PluginLog log) {
 		Set<String> moduleTests = scanTestClasses(testClassesDir);
@@ -190,13 +201,70 @@ public final class TestClassDiscovery {
 				continue; // nested/inner class — runs via enclosing class
 			}
 			if (!depMap.testClasses().contains(tc)) {
-				newTests.add(tc);
+				// Only flag as "new test" if bytecode confirms test annotations present.
+				Path classFile = testClassesDir.resolve(tc.replace('.', '/') + ".class");
+				if (hasTestAnnotations(classFile)) {
+					newTests.add(tc);
+				}
 			}
 		}
 		if (!newTests.isEmpty()) {
 			log.debug("[test-order] Found " + newTests.size() + " new test classes not in index");
 		}
 		return newTests;
+	}
+
+	/**
+	 * Known JUnit/TestNG descriptor prefixes that mark a method or class as a test.
+	 */
+	private static final Set<String> TEST_ANNOTATION_PREFIXES = Set.of("Lorg/junit/jupiter/api/Test;",
+			"Lorg/junit/jupiter/params/ParameterizedTest;", "Lorg/junit/jupiter/api/RepeatedTest;",
+			"Lorg/junit/jupiter/api/TestFactory;", "Lorg/junit/jupiter/api/TestTemplate;", "Lorg/junit/Test;",
+			"Lorg/testng/annotations/Test;", "Lkotlin/test/Test;");
+
+	/**
+	 * Returns {@code true} if the compiled class file at {@code classFile} carries
+	 * at least one test-framework annotation on the class or any of its methods.
+	 * Returns {@code true} on any read error so that uncertain classes are not
+	 * silently excluded.
+	 */
+	static boolean hasTestAnnotations(Path classFile) {
+		if (!Files.exists(classFile)) {
+			return true; // conservative: assume it might be a test
+		}
+		try {
+			byte[] bytes = Files.readAllBytes(classFile);
+			boolean[] found = {false};
+			ClassReader cr = new ClassReader(bytes);
+			cr.accept(new ClassVisitor(Opcodes.ASM9) {
+				@Override
+				public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+					if (TEST_ANNOTATION_PREFIXES.contains(descriptor)) {
+						found[0] = true;
+					}
+					return null;
+				}
+
+				@Override
+				public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
+						String[] exceptions) {
+					if (found[0])
+						return null;
+					return new MethodVisitor(Opcodes.ASM9) {
+						@Override
+						public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+							if (TEST_ANNOTATION_PREFIXES.contains(descriptor)) {
+								found[0] = true;
+							}
+							return null;
+						}
+					};
+				}
+			}, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+			return found[0];
+		} catch (IOException e) {
+			return true; // conservative
+		}
 	}
 
 	/**

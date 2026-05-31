@@ -3,6 +3,7 @@ package me.bechberger.testorder.ops;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -122,5 +123,57 @@ class TestClassDiscoveryTest {
 		DependencyMap filtered = TestClassDiscovery.filterToModuleId(depMap, "g:any");
 
 		assertSame(depMap, filtered, "no module map → return original map unchanged");
+	}
+
+	@Test
+	void hasTestAnnotations_trueForThisTestClass() throws URISyntaxException {
+		// TestClassDiscoveryTest itself has @Test methods, so its .class file should
+		// report hasTestAnnotations == true.
+		Path classFile = Path.of(getClass().getProtectionDomain().getCodeSource().getLocation().toURI())
+				.resolve(getClass().getName().replace('.', '/') + ".class");
+		assertTrue(TestClassDiscovery.hasTestAnnotations(classFile), "a class with @Test methods should return true");
+	}
+
+	@Test
+	void hasTestAnnotations_falseForNonTestClass() throws URISyntaxException {
+		// DependencyMap is a pure non-test class — no JUnit annotations.
+		Path classFile = Path.of(DependencyMap.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+				.resolve(DependencyMap.class.getName().replace('.', '/') + ".class");
+		assertFalse(TestClassDiscovery.hasTestAnnotations(classFile),
+				"a class with no @Test methods should return false");
+	}
+
+	@Test
+	void hasTestAnnotations_trueForMissingFile() throws IOException {
+		// A missing file is treated conservatively: assume it might be a test.
+		Path missing = tempDir.resolve("Does/Not/Exist.class");
+		assertTrue(TestClassDiscovery.hasTestAnnotations(missing), "missing class file → conservative true");
+	}
+
+	@Test
+	void findNewTestClasses_excludesHelperClassesWithNoTestAnnotations(@TempDir Path dir)
+			throws IOException, URISyntaxException {
+		// Copy this test class's .class file as the "real test" entry
+		Path testClassesRoot = dir.resolve("test-classes");
+		Path pkg = testClassesRoot.resolve("me/bechberger/testorder/ops");
+		Files.createDirectories(pkg);
+		Path thisClassFile = Path.of(getClass().getProtectionDomain().getCodeSource().getLocation().toURI())
+				.resolve(getClass().getName().replace('.', '/') + ".class");
+		Files.copy(thisClassFile, pkg.resolve("TestClassDiscoveryTest.class"));
+
+		// Also add a helper/utility class that has no @Test methods (use DependencyMap)
+		Path helperClassFile = Path.of(DependencyMap.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+				.resolve(DependencyMap.class.getName().replace('.', '/') + ".class");
+		Files.copy(helperClassFile, pkg.resolve("DependencyMapHelper.class"));
+
+		// Neither class is in the dep map → both are "new" by old logic
+		DependencyMap emptyMap = new DependencyMap();
+
+		Set<String> newTests = TestClassDiscovery.findNewTestClasses(emptyMap, testClassesRoot, PluginLog.NOOP);
+
+		assertTrue(newTests.contains("me.bechberger.testorder.ops.TestClassDiscoveryTest"),
+				"class with @Test should be reported as new test");
+		assertFalse(newTests.contains("me.bechberger.testorder.ops.DependencyMapHelper"),
+				"helper class without @Test should NOT be reported as new test");
 	}
 }
