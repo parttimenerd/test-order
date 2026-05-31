@@ -255,7 +255,8 @@ public final class DetectDependenciesOperation {
 		DetectionContext ctx = new DetectionContext(graph, depMap, state, referenceOrder, passingTests, runner,
 				deadline, config.randomSeed(), log, new java.util.concurrent.atomic.AtomicInteger(0));
 
-		// Select and run algorithm; use it for the time-budget hint too (avoids a second
+		// Select and run algorithm; use it for the time-budget hint too (avoids a
+		// second
 		// selectAlgorithm() call that would throw if the algorithm name is invalid)
 		DetectionAlgorithm algorithm = selectAlgorithm(config.algorithm(), log);
 		int estimatedRuns = algorithm.estimatedRuns(referenceOrder.size(), graph.edgeCount());

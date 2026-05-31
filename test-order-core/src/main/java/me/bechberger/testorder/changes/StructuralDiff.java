@@ -456,8 +456,10 @@ public class StructuralDiff {
 			List<SourceFileModel.InitializerNode> oldList = oldInits.getOrDefault(fqcn, List.of());
 			List<SourceFileModel.InitializerNode> newList = newInits.getOrDefault(fqcn, List.of());
 
-			// Use sorted lists (not sets) to detect duplicate-initializer-block count changes.
-			// A Set would collapse identical hashes, masking additions/removals of duplicate blocks.
+			// Use sorted lists (not sets) to detect duplicate-initializer-block count
+			// changes.
+			// A Set would collapse identical hashes, masking additions/removals of
+			// duplicate blocks.
 			List<String> oldHashes = new ArrayList<>(oldList.size());
 			for (var init : oldList)
 				oldHashes.add(init.bodyHash());

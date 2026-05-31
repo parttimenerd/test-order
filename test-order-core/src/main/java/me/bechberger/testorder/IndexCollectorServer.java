@@ -48,8 +48,8 @@ public class IndexCollectorServer implements AutoCloseable {
 
 	@SuppressWarnings("unchecked")
 	private static ConcurrentHashMap<Integer, Object> jvmRegistry() {
-		return (ConcurrentHashMap<Integer, Object>) System.getProperties()
-				.computeIfAbsent(JVM_REGISTRY_KEY, k -> new ConcurrentHashMap<>());
+		return (ConcurrentHashMap<Integer, Object>) System.getProperties().computeIfAbsent(JVM_REGISTRY_KEY,
+				k -> new ConcurrentHashMap<>());
 	}
 
 	/**

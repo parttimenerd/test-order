@@ -1317,11 +1317,13 @@ public class SourceFileModel {
 						depth--;
 						// ... then consume and decrement for the next >
 						i++;
-						if (depth > 0) depth--;
+						if (depth > 0)
+							depth--;
 						angleDepth[i] = depth;
 						if (isTriple && i + 1 <= declEnd && stripped.charAt(i + 1) == '>') {
 							i++;
-							if (depth > 0) depth--;
+							if (depth > 0)
+								depth--;
 							angleDepth[i] = depth;
 						}
 					}

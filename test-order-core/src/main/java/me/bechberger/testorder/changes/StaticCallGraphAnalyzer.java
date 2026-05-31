@@ -289,7 +289,8 @@ public class StaticCallGraphAnalyzer {
 
 		// Early-return: if BFS found no callers beyond the seed, nothing was expanded.
 		// Compare against seed (not original.changedMemberKeys) since seed includes
-		// synthetic entries (CLASS_MARKER, static fields) that are not in changedMemberKeys.
+		// synthetic entries (CLASS_MARKER, static fields) that are not in
+		// changedMemberKeys.
 		if (allChangedMemberKeys.equals(seed)) {
 			return new Report(original, false, seedSize, expandedSize, null, Collections.unmodifiableMap(classDepthMap),
 					Collections.unmodifiableMap(classParentMap));
