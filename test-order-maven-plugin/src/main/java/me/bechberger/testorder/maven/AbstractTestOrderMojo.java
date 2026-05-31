@@ -1539,7 +1539,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
 			boolean backupHasContent;
 			try (java.util.stream.Stream<java.nio.file.Path> walkStream = java.nio.file.Files.isDirectory(backupDir)
-					? java.nio.file.Files.walk(backupDir) : java.util.stream.Stream.empty()) {
+					? java.nio.file.Files.walk(backupDir)
+					: java.util.stream.Stream.empty()) {
 				backupHasContent = walkStream.anyMatch(p -> p.toString().endsWith(".class"));
 			} catch (IOException e) {
 				backupHasContent = false;
