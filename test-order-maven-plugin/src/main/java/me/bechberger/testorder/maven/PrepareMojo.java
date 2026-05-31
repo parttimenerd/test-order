@@ -250,10 +250,12 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 		// Index exists — check for new test classes and auto-learn thresholds
 		if (shouldSwitchToLearn(idxPath)) {
-			switchToLearnMode();
-			// Index exists (detected new/changed classes against it), so also order using
-			// it
+			// Order using the existing index BEFORE instrumenting (same fix as explicit
+			// learn mode) — if executeOrderMode() ran after switchToLearnMode(), it would
+			// save instrumented bytecode hashes and the next prepare would falsely report
+			// all source classes as changed.
 			executeOrderMode();
+			switchToLearnMode();
 			return;
 		}
 
@@ -496,6 +498,16 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				: null;
 		if (testFilter != null && !testFilter.isBlank()) {
 			getLog().info("[test-order] Skipping ordering overhead — -Dtest=" + testFilter + " filter active.");
+			// Still inject classpath and write TDD config so TddEnforcementExtension is
+			// loaded even when only a subset of tests runs.
+			writeOrdererConfig(java.util.Collections.emptySet(), java.util.Collections.emptySet(),
+					java.util.Collections.emptySet(), java.util.Collections.emptyMap());
+			if (tdd) {
+				appendRuntimeConfigProperty(me.bechberger.testorder.TestOrderConfig.TDD, "true");
+				appendJunitPlatformProperty("junit.jupiter.extensions.autodetection.enabled", "true");
+				getLog().info(
+						"[test-order] TDD enforcement enabled — new/changed tests that pass on first run will fail.");
+			}
 			project.getProperties().setProperty("testorder.auto.active", "true");
 			return;
 		}
@@ -552,6 +564,18 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		Set<String> mergedChangedTests = detectChangedTestClasses();
 		String mergedChangedCsv = mergedChanged.isEmpty() ? null : String.join(",", mergedChanged);
 		String mergedChangedTestsCsv = mergedChangedTests.isEmpty() ? null : String.join(",", mergedChangedTests);
+
+		// Warn if any explicitly specified changed classes are not found in the index.
+		if ("explicit".equalsIgnoreCase(changeMode) && !mergedChanged.isEmpty()) {
+			Path idxPath = resolveIndexPath();
+			if (Files.exists(idxPath)) {
+				try {
+					warnUnknownChangedClasses(mergedChanged, DependencyMap.load(idxPath));
+				} catch (IOException e) {
+					getLog().debug("[test-order] Could not load index to validate explicit classes: " + e.getMessage());
+				}
+			}
+		}
 
 		// alwaysLearn pre-aggregation: fold .deps from prior runs into existing index
 		if (alwaysLearn) {

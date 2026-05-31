@@ -34,6 +34,14 @@ public class TddEnforcementExtension implements AfterTestExecutionCallback {
 	private static volatile Object cachedState; // TestOrderState or Boolean.FALSE (= no state)
 	private static volatile Boolean tddEnabled;
 
+	/**
+	 * Tracks className#methodName keys that have already fired a TDD violation this
+	 * JVM run. Prevents duplicate violations for @ParameterizedTest where each
+	 * invocation shares the same method name.
+	 */
+	private static final java.util.Set<String> alreadyViolated = java.util.Collections
+			.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+
 	private static final Object LOCK = new Object();
 
 	@Override
@@ -73,6 +81,12 @@ public class TddEnforcementExtension implements AfterTestExecutionCallback {
 			methodsForClass = state.getMethodDurations().get(topLevel);
 		}
 		if (methodsForClass != null && !methodsForClass.containsKey(methodName)) {
+			// For @ParameterizedTest: only fire once per method per run to avoid N
+			// identical violations
+			String methodKey = className + "#" + methodName;
+			if (!alreadyViolated.add(methodKey)) {
+				return;
+			}
 			throw new AssertionError(
 					formatViolation("New test METHOD passed without failing first", className, methodName));
 		}
@@ -150,5 +164,6 @@ public class TddEnforcementExtension implements AfterTestExecutionCallback {
 	public static void resetForTesting() {
 		cachedState = null;
 		tddEnabled = null;
+		alreadyViolated.clear();
 	}
 }
