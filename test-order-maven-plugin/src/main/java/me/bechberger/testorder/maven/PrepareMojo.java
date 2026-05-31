@@ -666,6 +666,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 		if (tdd) {
 			appendRuntimeConfigProperty(me.bechberger.testorder.TestOrderConfig.TDD, "true");
+			appendJunitPlatformProperty("junit.jupiter.extensions.autodetection.enabled", "true");
 			getLog().info("[test-order] TDD enforcement enabled — new/changed tests that pass on first run will fail.");
 		}
 

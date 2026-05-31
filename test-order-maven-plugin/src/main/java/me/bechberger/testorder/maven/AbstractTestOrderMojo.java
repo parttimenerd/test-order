@@ -1302,6 +1302,22 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	/**
+	 * Appends a single {@code key=value} line to the runtime
+	 * {@code junit-platform.properties} file.
+	 */
+	protected void appendJunitPlatformProperty(String key, String value) throws MojoExecutionException {
+		Path propsFile = runtimeConfigDir().resolve("junit-platform.properties");
+		if (!Files.exists(propsFile))
+			return;
+		try {
+			Files.writeString(propsFile, key + "=" + escapePropertyValue(value) + "\n",
+					java.nio.file.StandardOpenOption.APPEND);
+		} catch (IOException e) {
+			throw new MojoExecutionException("Failed to append junit-platform property " + key, e);
+		}
+	}
+
+	/**
 	 * Writes a pre-built config map to {@code target/test-classes}
 	 * (junit-platform.properties + testorder-config.properties) and injects the
 	 * test-order runtime classpath. Use this when the config map has already been
