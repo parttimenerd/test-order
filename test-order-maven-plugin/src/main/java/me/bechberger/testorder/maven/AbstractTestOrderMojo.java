@@ -788,8 +788,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * fallback to src/main/java.
 	 */
 	protected Path resolveSourceRoot() {
-		if (sourceRoot != null && !sourceRoot.isBlank())
-			return Path.of(sourceRoot);
+		if (sourceRoot != null && !sourceRoot.isBlank()) {
+			Path p = Path.of(sourceRoot);
+			return p.isAbsolute() ? p : project.getBasedir().toPath().resolve(p).toAbsolutePath();
+		}
 		List<String> roots = project.getCompileSourceRoots();
 		if (roots != null && !roots.isEmpty())
 			return Path.of(roots.get(0));
@@ -806,8 +808,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * fallback to src/test/java.
 	 */
 	protected Path resolveTestSourceRoot() {
-		if (testSourceRoot != null && !testSourceRoot.isBlank())
-			return Path.of(testSourceRoot);
+		if (testSourceRoot != null && !testSourceRoot.isBlank()) {
+			Path p = Path.of(testSourceRoot);
+			return p.isAbsolute() ? p : project.getBasedir().toPath().resolve(p).toAbsolutePath();
+		}
 		List<String> roots = project.getTestCompileSourceRoots();
 		if (roots != null && !roots.isEmpty())
 			return Path.of(roots.get(0));
@@ -1277,6 +1281,24 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 	protected void writeOrdererConfig(Set<String> changed, Set<String> changedTests) throws MojoExecutionException {
 		writeOrdererConfig(changed, changedTests, null);
+	}
+
+	/**
+	 * Appends a single {@code key=value} line to the runtime
+	 * {@code testorder-config.properties} file. Call after
+	 * {@link #writeOrdererConfig} to inject extra properties that are not part of
+	 * the standard config map.
+	 */
+	protected void appendRuntimeConfigProperty(String key, String value) throws MojoExecutionException {
+		Path configFile = runtimeConfigDir().resolve("testorder-config.properties");
+		if (!Files.exists(configFile))
+			return;
+		try {
+			Files.writeString(configFile, key + "=" + escapePropertyValue(value) + "\n",
+					java.nio.file.StandardOpenOption.APPEND);
+		} catch (IOException e) {
+			throw new MojoExecutionException("Failed to append runtime config property " + key, e);
+		}
 	}
 
 	/**

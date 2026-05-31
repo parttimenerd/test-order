@@ -99,6 +99,15 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	@Parameter(property = MavenPluginConfigKeys.AUTO_COMPACT_EVERY, defaultValue = "50")
 	private int autoCompactEvery;
 
+	/**
+	 * Enable TDD enforcement mode. When {@code true}, new test methods that pass on
+	 * the first run are failed artificially with a TDD-violation message, enforcing
+	 * the red-green-refactor cycle. Corresponds to setting the system property
+	 * {@code testorder.tdd=true} in the Surefire JVM.
+	 */
+	@Parameter(property = "testorder.tdd", defaultValue = "false")
+	private boolean tdd;
+
 	private static final Set<String> VALID_MODES = Set.of("auto", "learn", "order", "skip");
 	private static final Set<String> VALID_INSTR_MODES = Set.of("CLASS", "METHOD", "MEMBER");
 
@@ -653,6 +662,11 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				}
 				getLog().info("[test-order] alwaysLearn=true — agent attached on top of ordered run");
 			}
+		}
+
+		if (tdd) {
+			appendRuntimeConfigProperty(me.bechberger.testorder.TestOrderConfig.TDD, "true");
+			getLog().info("[test-order] TDD enforcement enabled — new/changed tests that pass on first run will fail.");
 		}
 
 		// R17-12: Mark that prepare already ran to prevent duplicate execution
