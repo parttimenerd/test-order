@@ -2303,4 +2303,34 @@ class DepsAndScoringTest {
 		var result = scorer.score("com.FooTest");
 		assertEquals(0.75, result.killRate(), 0.001, "kill rate should be preserved in score result");
 	}
+
+	@Test
+	void testScorerContainerClassNotFlaggedAsNew() {
+		// Scenario: LiveModeKeyHandlingTest is an outer class with no test methods of
+		// its own; only its nested classes are in the dep map. Without the fix it would
+		// get isNew=true (and the full newTest bonus) forever.
+		DependencyMap depMap = buildDepMap(Map.of("com.live.LiveModeKeyHandlingTest$KeyEventTests", Set.of("app.Svc"),
+				"com.live.LiveModeKeyHandlingTest$SortingTests", Set.of("app.Other"), "com.util.JvmVersionCheckerTest",
+				Set.of("app.JvmVersionChecker")));
+		TestOrderState state = new TestOrderState();
+
+		TestScorer scorer = new TestScorer(TestOrderState.ScoringWeights.DEFAULT, depMap, state, Set.of(), Set.of(),
+				depMap.testClasses());
+
+		// The outer container class is not in the dep map but has nested classes that
+		// are
+		var containerResult = scorer.score("com.live.LiveModeKeyHandlingTest");
+		assertFalse(containerResult.isNew(),
+				"outer container whose nested classes are in dep map must NOT be flagged as new");
+
+		// A genuinely new test class (no nested classes in dep map) should still be new
+		var genuinelyNewResult = scorer.score("com.other.BrandNewTest");
+		assertTrue(genuinelyNewResult.isNew(), "a genuinely new top-level test class must be flagged as new");
+
+		// Inner classes whose parent is in the dep map should also not be flagged as
+		// new
+		var innerResult = scorer.score("com.live.LiveModeKeyHandlingTest$RenderingTests");
+		assertFalse(innerResult.isNew(),
+				"inner class whose top-level parent has nested classes in dep map must NOT be flagged as new");
+	}
 }

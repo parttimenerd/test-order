@@ -417,7 +417,17 @@ public class TestScorer {
 			score += Math.min((int) Math.ceil(failScore), weights.maxFailure());
 		}
 
-		boolean isNew = !depMap.testClasses().contains(testClassName);
+		// A class is "new" only if neither it nor its top-level enclosing class is
+		// in the dep map, and it is not a pure container class whose nested classes
+		// are in the dep map. Pure containers (e.g. outer classes whose test methods
+		// live entirely in @Nested inner classes) never accumulate run history, so
+		// they would otherwise receive the full newTest bonus on every run.
+		// isKnownContainer() is checked on both the class itself and its top-level
+		// ancestor, covering: (a) top-level container classes, and (b) inner classes
+		// that are siblings of known nested test classes.
+		boolean isNew = !depMap.testClasses().contains(testClassName)
+				&& (topLevel.equals(testClassName) || !depMap.testClasses().contains(topLevel))
+				&& !isKnownContainer(testClassName, depMap) && !isKnownContainer(topLevel, depMap);
 		if (isNew) {
 			score += weights.newTest();
 			LOG.fine(() -> "New test class (not in dependency map): " + testClassName + " — awarded newTest bonus of "
@@ -538,8 +548,11 @@ public class TestScorer {
 		int failurePts = failScore > 0 ? Math.min((int) Math.ceil(failScore), weights.maxFailure()) : 0;
 		totalScore += failurePts;
 
-		// New test
-		boolean isNew = !depMap.testClasses().contains(testClassName);
+		// New test — same logic as score(): inner classes and pure container classes
+		// whose nested classes are known are not considered new.
+		boolean isNew = !depMap.testClasses().contains(testClassName)
+				&& (topLevel.equals(testClassName) || !depMap.testClasses().contains(topLevel))
+				&& !isKnownContainer(testClassName, depMap) && !isKnownContainer(topLevel, depMap);
 		int newTestPts = isNew ? weights.newTest() : 0;
 		totalScore += newTestPts;
 
@@ -713,5 +726,25 @@ public class TestScorer {
 	static String toTopLevel(String className) {
 		int dollar = className.indexOf('$');
 		return dollar > 0 ? className.substring(0, dollar) : className;
+	}
+
+	/**
+	 * Returns {@code true} if {@code className} is a pure container class — i.e. it
+	 * has no {@code $} itself but has at least one known nested test class of the
+	 * form {@code className$*} in the dependency map. Such containers have no test
+	 * methods of their own, so they never accumulate run history and must not be
+	 * penalised as permanently "new".
+	 */
+	private static boolean isKnownContainer(String className, DependencyMap depMap) {
+		if (className.contains("$")) {
+			return false; // already an inner class, not a container
+		}
+		String prefix = className + "$";
+		for (String tc : depMap.testClasses()) {
+			if (tc.startsWith(prefix)) {
+				return true;
+			}
+		}
+		return false;
 	}
 }
