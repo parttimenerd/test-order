@@ -25,6 +25,9 @@ jobs:
           java-version: '17'
           cache: maven
 
+      - name: Set up demo repositories
+        run: bash demo/dcom-presentation/setup-ci.sh
+
       - name: Build and install test-order plugin
         run: mvn -B -ntp -DskipTests install
 
