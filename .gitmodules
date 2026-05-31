@@ -1,0 +1,7 @@
+[submodule "demo/dcom-presentation/cap-sflight"]
+	path = demo/dcom-presentation/cap-sflight
+	url = https://github.com/SAP-samples/cap-sflight.git
+
+[submodule "demo/dcom-presentation/cloud-sdk-java"]
+	path = demo/dcom-presentation/cloud-sdk-java
+	url = https://github.com/SAP/cloud-sdk-java.git
