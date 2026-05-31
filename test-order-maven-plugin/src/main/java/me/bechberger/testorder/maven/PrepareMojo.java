@@ -183,11 +183,15 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		Path idxPath = resolveIndexPath();
 
 		if ("learn".equals(mode)) {
-			// explicit learn mode — always instrument, and also order if an index exists
-			switchToLearnMode();
+			// explicit learn mode — also order if an index exists (must run BEFORE
+			// switchToLearnMode so that bytecode-hashes.lz4 is saved from original
+			// (un-instrumented) bytecode; otherwise the next prepare compares restored
+			// classes against instrumented hashes and falsely reports all 196+ classes as
+			// changed).
 			if (Files.exists(idxPath)) {
 				executeOrderMode();
 			}
+			switchToLearnMode();
 			return;
 		}
 
