@@ -82,7 +82,11 @@ public class GitLabCiDownloader implements DepDownloader {
 
 		@SuppressWarnings("unchecked")
 		Map<String, Object> firstPipeline = (Map<String, Object>) pipelines.get(0);
-		long pipelineId = ((Number) firstPipeline.get("id")).longValue();
+		Object pidObj = firstPipeline.get("id");
+		if (!(pidObj instanceof Number)) {
+			throw new DepDownloadException("Unexpected GitLab API response: pipeline missing numeric 'id'");
+		}
+		long pipelineId = ((Number) pidObj).longValue();
 		logger.info("Found pipeline: {}", pipelineId);
 
 		// Step 2: find the job by name inside that pipeline
@@ -95,7 +99,11 @@ public class GitLabCiDownloader implements DepDownloader {
 			@SuppressWarnings("unchecked")
 			Map<String, Object> job = (Map<String, Object>) elem;
 			if (config.getJobName().equals(job.get("name"))) {
-				jobId = ((Number) job.get("id")).longValue();
+				Object jidObj = job.get("id");
+				if (!(jidObj instanceof Number)) {
+					throw new DepDownloadException("Unexpected GitLab API response: job missing numeric 'id'");
+				}
+				jobId = ((Number) jidObj).longValue();
 				break;
 			}
 		}

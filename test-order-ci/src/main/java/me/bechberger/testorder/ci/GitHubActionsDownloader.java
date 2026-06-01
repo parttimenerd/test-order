@@ -79,7 +79,11 @@ public class GitHubActionsDownloader implements DepDownloader {
 
 			@SuppressWarnings("unchecked")
 			Map<String, Object> firstRun = (Map<String, Object>) runs.get(0);
-			long runId = ((Number) firstRun.get("id")).longValue();
+			Object runIdObj = firstRun.get("id");
+			if (!(runIdObj instanceof Number)) {
+				throw new DepDownloadException("Unexpected GitHub API response: workflow run missing numeric 'id'");
+			}
+			long runId = ((Number) runIdObj).longValue();
 			logger.info("Found latest workflow run: {}", runId);
 
 			// Step 2: List artifacts from the run
@@ -100,7 +104,11 @@ public class GitHubActionsDownloader implements DepDownloader {
 				@SuppressWarnings("unchecked")
 				Map<String, Object> artifact = (Map<String, Object>) artifactElem;
 				if (config.getArtifactName().equals(artifact.get("name"))) {
-					artifactId = ((Number) artifact.get("id")).longValue();
+					Object aidObj = artifact.get("id");
+					if (!(aidObj instanceof Number)) {
+						throw new DepDownloadException("Unexpected GitHub API response: artifact missing numeric 'id'");
+					}
+					artifactId = ((Number) aidObj).longValue();
 					break;
 				}
 			}

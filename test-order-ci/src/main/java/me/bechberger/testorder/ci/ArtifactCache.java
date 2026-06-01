@@ -206,9 +206,15 @@ public class ArtifactCache {
 					continue;
 				}
 				Map<String, Object> entryJson = (Map<String, Object>) e.getValue();
-				CacheEntry entry = new CacheEntry((String) entryJson.get("filename"), (String) entryJson.get("source"),
-						(String) entryJson.get("name"), (String) entryJson.get("timestamp"),
-						(String) entryJson.get("checksum"));
+				// Guard against missing fields in the JSON — treat absent keys as empty string
+				// rather than storing null, which would NPE on getName()/getFilename() callers.
+				CacheEntry entry = new CacheEntry(jsonString(entryJson, "filename"), jsonString(entryJson, "source"),
+						jsonString(entryJson, "name"), jsonString(entryJson, "timestamp"),
+						jsonString(entryJson, "checksum"));
+				if (entry.getFilename().isEmpty() || entry.getName().isEmpty()) {
+					logger.warn("Skipping cache entry with missing filename or name: key={}", e.getKey());
+					continue;
+				}
 				entries.put(e.getKey(), entry);
 			}
 			return entries;
@@ -236,8 +242,18 @@ public class ArtifactCache {
 		String json = PrettyPrinter.prettyPrint(jsonMap);
 		// Write atomically via temp file to avoid corruption on crash
 		Path tempFile = cacheDir.resolve(METADATA_FILE + ".tmp");
-		Files.writeString(tempFile, json);
-		Files.move(tempFile, metadataPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		try {
+			Files.writeString(tempFile, json);
+			Files.move(tempFile, metadataPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		} catch (IOException e) {
+			Files.deleteIfExists(tempFile);
+			throw e;
+		}
+	}
+
+	private static String jsonString(Map<String, Object> map, String key) {
+		Object val = map.get(key);
+		return val instanceof String s ? s : "";
 	}
 
 	/**
