@@ -286,12 +286,23 @@ public class PriorityClassOrderer implements ClassOrderer {
 		// (should not happen in practice), log a warning and skip reordering.
 		@SuppressWarnings("unchecked")
 		List<ClassDescriptor> originalList = (List<ClassDescriptor>) descriptors;
+		List<ClassDescriptor> backup = new java.util.ArrayList<>(originalList);
 		try {
 			originalList.clear();
 			originalList.addAll(mutableDescriptors);
 		} catch (UnsupportedOperationException e) {
 			TestOrderLogger.warn("ClassDescriptors list is unmodifiable — test ordering cannot be applied. "
 					+ "This is unexpected; please report at https://github.com/bechberger/test-order/issues");
+			return;
+		} catch (Exception e) {
+			// Unexpected failure after clear() — restore original order to avoid
+			// silently dropping all tests
+			try {
+				originalList.clear();
+				originalList.addAll(backup);
+			} catch (Exception ignored) {
+			}
+			TestOrderLogger.warn("Test ordering failed unexpectedly: " + e.getMessage());
 			return;
 		}
 
