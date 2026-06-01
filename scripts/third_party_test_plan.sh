@@ -459,7 +459,24 @@ inject_gradle_plugin() {
         cp "$settings_file" "$settings_file.bak"
         # Add mavenLocal() to plugin repositories
         if ! grep -q "mavenLocal" "$settings_file"; then
-            sed -i '' '1i\
+            if grep -q "pluginManagement" "$settings_file"; then
+                # File already has pluginManagement — inject mavenLocal() inside
+                # the existing repositories block (or add one if absent)
+                if grep -q "repositories" "$settings_file"; then
+                    sed -i '' '/repositories {/a\
+        mavenLocal()
+' "$settings_file"
+                else
+                    sed -i '' '/pluginManagement {/a\
+    repositories {\
+        mavenLocal()\
+        gradlePluginPortal()\
+        mavenCentral()\
+    }
+' "$settings_file"
+                fi
+            else
+                sed -i '' '1i\
 pluginManagement {\
     repositories {\
         mavenLocal()\
@@ -468,12 +485,28 @@ pluginManagement {\
     }\
 }\
 ' "$settings_file"
+            fi
         fi
     elif [[ -f "$dir/settings.gradle" ]]; then
         settings_file="$dir/settings.gradle"
         cp "$settings_file" "$settings_file.bak"
         if ! grep -q "mavenLocal" "$settings_file"; then
-            sed -i '' '1i\
+            if grep -q "pluginManagement" "$settings_file"; then
+                if grep -q "repositories" "$settings_file"; then
+                    sed -i '' '/repositories {/a\
+        mavenLocal()
+' "$settings_file"
+                else
+                    sed -i '' '/pluginManagement {/a\
+    repositories {\
+        mavenLocal()\
+        gradlePluginPortal()\
+        mavenCentral()\
+    }
+' "$settings_file"
+                fi
+            else
+                sed -i '' '1i\
 pluginManagement {\
     repositories {\
         mavenLocal()\
@@ -482,6 +515,7 @@ pluginManagement {\
     }\
 }\
 ' "$settings_file"
+            fi
         fi
     fi
 
@@ -587,9 +621,9 @@ phase_learn_gradle() {
     local override_java_home
     override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
 
-    log "Running: ./gradlew test -PtestOrder.mode=learn"
+    log "Running: ./gradlew test -Dtestorder.mode=learn"
     # shellcheck disable=SC2086
-    if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew test -PtestOrder.mode=learn --no-daemon \
+    if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew test -Dtestorder.mode=learn --no-daemon \
         $extra_args \
         2>&1 | tee "$results/learn.log" | tail -5; then
         ok "Learn succeeded for $repo"
