@@ -635,14 +635,22 @@ public class TelemetryListener implements TestExecutionListener {
 			return null;
 		}
 
-		// Build duration lookup: prefer measured durations, fall back to EMA
+		// Build duration lookup: prefer measured durations, fall back to EMA.
+		// pendingDurations is keyed with raw class names (possibly inner classes like
+		// "Outer$Inner") but executionOrder uses normalized top-level names ("Outer").
+		// Build a normalized-key sum map so lookups work for inner classes too.
+		Map<String, Long> normalizedDurationMs = new java.util.HashMap<>();
+		for (var entry : pendingDurations.entrySet()) {
+			String topKey = TestOrderConfigResolver.toTopLevelClassName(entry.getKey());
+			long sum = 0;
+			for (long d : entry.getValue())
+				sum += d;
+			normalizedDurationMs.merge(topKey, sum, Long::sum);
+		}
 		java.util.function.Function<String, long[]> getDuration = tc -> {
-			List<Long> measured = pendingDurations.get(tc);
-			if (measured != null && !measured.isEmpty()) {
-				long sum = 0;
-				for (long d : measured)
-					sum += d;
-				return new long[]{sum / measured.size()};
+			Long measured = normalizedDurationMs.get(tc);
+			if (measured != null && measured > 0) {
+				return new long[]{measured};
 			}
 			long ema = state != null ? state.getDuration(tc, -1) : -1;
 			return new long[]{ema};

@@ -318,7 +318,12 @@ public class TestNGTelemetryListener implements ITestListener {
 
 		String firstFailedClass = null;
 		for (int i = 0; i < executionOrder.size(); i++) {
-			if (failedClassNames.contains(executionOrder.get(i))) {
+			// Normalize to top-level class name: failedClassNames uses top-level names
+			// (via toTopLevelClassName in onTestFailure) but executionOrder may contain
+			// raw inner-class names (e.g. "Outer$Inner"). Without normalization, failures
+			// in inner-class tests would never be found in the execution order.
+			String normalized = TestOrderConfigResolver.toTopLevelClassName(executionOrder.get(i));
+			if (failedClassNames.contains(normalized)) {
 				firstFailedClass = executionOrder.get(i);
 				break;
 			}

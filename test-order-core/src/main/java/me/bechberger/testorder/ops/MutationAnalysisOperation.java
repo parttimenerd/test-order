@@ -445,7 +445,6 @@ public final class MutationAnalysisOperation {
 
 				if (detected && testClass != null) {
 					result.computeIfAbsent(testClass, k -> new MutationStats()).killed++;
-					result.get(testClass).total++;
 				}
 				// Survived mutants: do NOT distribute across all test classes.
 				// Each mutant is counted once in the global total (handled in run()).

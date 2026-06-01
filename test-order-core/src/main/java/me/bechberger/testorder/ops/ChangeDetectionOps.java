@@ -129,7 +129,7 @@ public final class ChangeDetectionOps {
 		try {
 			if (testSourceRoot == null || !Files.isDirectory(testSourceRoot))
 				return Set.of();
-			if (Files.exists(methodHashFile)) {
+			if (methodHashFile != null && Files.exists(methodHashFile)) {
 				MethodHashStore previous = MethodHashStore.load(methodHashFile);
 				MethodHashStore current = MethodHashStore.scanIncremental(testSourceRoot, previous);
 				return current.getChangedMethods(previous);
