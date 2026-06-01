@@ -281,6 +281,77 @@ class TddEnforcementExtensionTest {
 				new Class<?>[]{ExtensionContext.class}, handler);
 	}
 
+	// ── Nested-class TDD enforcement (Bug fix verification) ──────────────────
+
+	/**
+	 * topLevel (TddEnforcementExtensionTest) is in state with a method named
+	 * testSomething. OuterKnown.InnerNew is NOT in state. Even though topLevel is
+	 * known, running a test on InnerNew should fire a CLASS violation because
+	 * InnerNew itself is new.
+	 */
+	@Test
+	void newNestedClassInKnownOuter_throws_evenWhenOuterHasSameMethodName() throws Exception {
+		System.setProperty(TestOrderConfig.TDD, "true");
+		TestOrderState state = new TestOrderState();
+		// Register the topLevel class (toTopLevelClassName strips everything after
+		// first $)
+		// with the same method name that InnerNew also has
+		String topLevelName = me.bechberger.testorder.TestOrderConfigResolver
+				.toTopLevelClassName(OuterKnown.InnerNew.class.getName());
+		state.recordDuration(topLevelName, 100);
+		state.recordMethodDuration(topLevelName, "testSomething", 50);
+		setupState(state);
+
+		TddEnforcementExtension ext = new TddEnforcementExtension();
+		// InnerNew is NOT in state — must fire CLASS violation despite topLevel having
+		// testSomething
+		AssertionError error = assertThrows(AssertionError.class, () -> ext
+				.afterTestExecution(fakeContext(OuterKnown.InnerNew.class, "testSomething", Optional.empty())));
+		assertTrue(error.getMessage().contains("TDD VIOLATION"), error.getMessage());
+		assertTrue(error.getMessage().contains("New test CLASS"), error.getMessage());
+		assertTrue(error.getMessage().contains(OuterKnown.InnerNew.class.getName()), error.getMessage());
+	}
+
+	/** Inner class that IS in state should still pass normally. */
+	@Test
+	void knownNestedClassInKnownOuter_passesForKnownMethod() throws Exception {
+		System.setProperty(TestOrderConfig.TDD, "true");
+		TestOrderState state = new TestOrderState();
+		String topLevelName = me.bechberger.testorder.TestOrderConfigResolver
+				.toTopLevelClassName(OuterKnown.InnerNew.class.getName());
+		state.recordDuration(topLevelName, 100);
+		state.recordDuration(OuterKnown.InnerNew.class.getName(), 80);
+		state.recordMethodDuration(OuterKnown.InnerNew.class.getName(), "testSomething", 40);
+		setupState(state);
+
+		TddEnforcementExtension ext = new TddEnforcementExtension();
+		// InnerNew IS in state — no violation
+		ext.afterTestExecution(fakeContext(OuterKnown.InnerNew.class, "testSomething", Optional.empty()));
+	}
+
+	/**
+	 * Inner class in state but with a NEW method should still fire METHOD
+	 * violation.
+	 */
+	@Test
+	void knownNestedClassInKnownOuter_throwsForNewMethod() throws Exception {
+		System.setProperty(TestOrderConfig.TDD, "true");
+		TestOrderState state = new TestOrderState();
+		String topLevelName = me.bechberger.testorder.TestOrderConfigResolver
+				.toTopLevelClassName(OuterKnown.InnerNew.class.getName());
+		state.recordDuration(topLevelName, 100);
+		state.recordDuration(OuterKnown.InnerNew.class.getName(), 80);
+		state.recordMethodDuration(OuterKnown.InnerNew.class.getName(), "testSomething", 40);
+		setupState(state);
+
+		TddEnforcementExtension ext = new TddEnforcementExtension();
+		// testNewInner is NOT in state for InnerNew — should fire METHOD violation
+		AssertionError error = assertThrows(AssertionError.class,
+				() -> ext.afterTestExecution(fakeContext(OuterKnown.InnerNew.class, "testNewInner", Optional.empty())));
+		assertTrue(error.getMessage().contains("New test METHOD"), error.getMessage());
+		assertTrue(error.getMessage().contains("testNewInner"), error.getMessage());
+	}
+
 	static class KnownTestA {
 		void testOne() {
 		}
@@ -292,6 +363,18 @@ class TddEnforcementExtensionTest {
 
 	static class NewTestClass {
 		void testSomething() {
+		}
+	}
+
+	static class OuterKnown {
+		void testSomething() {
+		}
+
+		static class InnerNew {
+			void testSomething() {
+			}
+			void testNewInner() {
+			}
 		}
 	}
 }

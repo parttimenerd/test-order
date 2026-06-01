@@ -72,14 +72,22 @@ public class TddEnforcementExtension implements AfterTestExecutionCallback {
 					formatViolation("New test CLASS passed without failing first", className, methodName));
 		}
 
+		// If the class is nested and not directly known to state (only topLevel is),
+		// the nested class itself is new — fire a class-level violation rather than
+		// falling back to the outer class's method map (which would mask a new inner
+		// class whose methods happen to share names with the outer class).
+		if (!className.equals(topLevel) && !classDurations.containsKey(className)) {
+			throw new AssertionError(
+					formatViolation("New test CLASS passed without failing first", className, methodName));
+		}
+
 		// Only enforce method-level if the state actually tracks method durations
 		// for this class. Older state files (or agent-only runs) may have
 		// class-level data but no per-method data — flagging every method in that
 		// case would be a false positive.
+		// Note: we do NOT fall back to topLevel's method map here, as a nested class
+		// that IS in state should be tracked independently from its outer class.
 		Map<String, Double> methodsForClass = state.getMethodDurations().get(className);
-		if (methodsForClass == null && !topLevel.equals(className)) {
-			methodsForClass = state.getMethodDurations().get(topLevel);
-		}
 		if (methodsForClass != null && !methodsForClass.containsKey(methodName)) {
 			// For @ParameterizedTest: only fire once per method per run to avoid N
 			// identical violations
