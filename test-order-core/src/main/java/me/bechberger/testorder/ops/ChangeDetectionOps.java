@@ -101,8 +101,31 @@ public final class ChangeDetectionOps {
 	/**
 	 * Detects changed test methods by comparing current method hashes against a
 	 * previous snapshot. Returns a set of {@code className#methodName} keys.
+	 * <p>
+	 * Also checks the Kotlin sibling source root ({@code src/test/kotlin}) when it
+	 * exists, using a separate hash file derived via
+	 * {@link HashSnapshotOperation#kotlinHashFile}.
 	 */
 	public static Set<String> detectChangedMethods(Path testSourceRoot, Path methodHashFile, PluginLog log) {
+		Set<String> changed = detectChangedMethodsSingleRoot(testSourceRoot, methodHashFile, log);
+
+		// Also scan Kotlin sibling (src/test/kotlin)
+		if (testSourceRoot != null && methodHashFile != null) {
+			Path kotlinRoot = testSourceRoot.resolveSibling("kotlin");
+			if (Files.isDirectory(kotlinRoot)) {
+				Path kotlinHashFile = HashSnapshotOperation.kotlinHashFile(methodHashFile);
+				Set<String> kotlinChanged = detectChangedMethodsSingleRoot(kotlinRoot, kotlinHashFile, log);
+				if (!kotlinChanged.isEmpty()) {
+					Set<String> merged = new java.util.LinkedHashSet<>(changed);
+					merged.addAll(kotlinChanged);
+					changed = merged;
+				}
+			}
+		}
+		return changed;
+	}
+
+	private static Set<String> detectChangedMethodsSingleRoot(Path testSourceRoot, Path methodHashFile, PluginLog log) {
 		try {
 			if (testSourceRoot == null || !Files.isDirectory(testSourceRoot))
 				return Set.of();
@@ -121,8 +144,24 @@ public final class ChangeDetectionOps {
 
 	/**
 	 * Saves method-level hash snapshots for test source files.
+	 * <p>
+	 * Also snapshots the Kotlin sibling source root ({@code src/test/kotlin}) when
+	 * it exists, using a separate hash file derived via
+	 * {@link HashSnapshotOperation#kotlinHashFile}.
 	 */
 	public static void snapshotMethodHashes(Path testSourceRoot, Path methodHashFile, PluginLog log) {
+		snapshotMethodHashesSingleRoot(testSourceRoot, methodHashFile, log);
+
+		// Also snapshot Kotlin sibling (src/test/kotlin)
+		if (testSourceRoot != null && methodHashFile != null) {
+			Path kotlinRoot = testSourceRoot.resolveSibling("kotlin");
+			if (Files.isDirectory(kotlinRoot)) {
+				snapshotMethodHashesSingleRoot(kotlinRoot, HashSnapshotOperation.kotlinHashFile(methodHashFile), log);
+			}
+		}
+	}
+
+	private static void snapshotMethodHashesSingleRoot(Path testSourceRoot, Path methodHashFile, PluginLog log) {
 		try {
 			if (testSourceRoot != null && Files.isDirectory(testSourceRoot)) {
 				MethodHashStore store = MethodHashStore.scan(testSourceRoot);
