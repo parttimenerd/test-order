@@ -74,13 +74,15 @@ public class StructuralDiff {
 	 * Diff two source strings directly.
 	 */
 	public static FileDiff diffSources(Path file, String oldSource, String newSource) {
+		boolean isKotlin = file != null && file.toString().endsWith(".kt");
 		String oldPkg = SourceFileModel.extractPackageName(oldSource);
 		String newPkg = SourceFileModel.extractPackageName(newSource);
 
 		SourceFileModel.Model oldModel = oldSource.isEmpty()
 				? new SourceFileModel.Model("", List.of(), List.of(), List.of(), List.of())
-				: SourceFileModel.parse(oldSource, oldPkg, SourceFileModel.Detail.FIELDS);
-		SourceFileModel.Model newModel = SourceFileModel.parse(newSource, newPkg, SourceFileModel.Detail.FIELDS);
+				: SourceFileModel.parse(oldSource, oldPkg, SourceFileModel.Detail.FIELDS, isKotlin);
+		SourceFileModel.Model newModel = SourceFileModel.parse(newSource, newPkg, SourceFileModel.Detail.FIELDS,
+				isKotlin);
 
 		List<Change> changes = new ArrayList<>();
 		List<BodyChange> bodyChanges = new ArrayList<>();
@@ -129,7 +131,7 @@ public class StructuralDiff {
 		String gitRef = hasHeadParent ? "HEAD~1" : "HEAD";
 		List<String> relevantPaths = new ArrayList<>();
 		for (String relPath : changedFiles) {
-			if (!relPath.endsWith(".java")) {
+			if (!relPath.endsWith(".java") && !relPath.endsWith(".kt")) {
 				continue;
 			}
 			Path absFile = gitRoot.resolve(relPath).normalize();
