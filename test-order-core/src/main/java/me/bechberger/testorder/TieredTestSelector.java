@@ -118,6 +118,8 @@ public class TieredTestSelector {
 	private List<ScoredTest> scoreAndSort() {
 		Set<String> allTests = new LinkedHashSet<>(depMap.testClasses());
 		allTests.addAll(changedTestClasses);
+		// Ensure @AlwaysRun classes are included even if not yet in the index
+		allTests.addAll(alwaysRunClasses);
 
 		TestScorer scorer = new TestScorer.Builder(weights, depMap, state, changedClasses, changedTestClasses)
 				.testClassNames(depMap.testClasses()).build();

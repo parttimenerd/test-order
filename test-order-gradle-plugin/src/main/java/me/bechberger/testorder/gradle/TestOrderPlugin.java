@@ -1387,16 +1387,56 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
                 try {
                     List<String> tests = TestSelector.readTestList(remainingFile);
+                    // Rename to .consumed instead of deleting — allows manual recovery if
+                    // infrastructure failure prevents test execution (the file is gone otherwise)
+                    Path consumed = remainingFile.resolveSibling(remainingFile.getFileName() + ".consumed");
+                    Files.move(remainingFile, consumed, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+                    // Validate test classes exist on disk (filter out renamed/deleted classes)
+                    Path testOutputDir = project.getLayout().getBuildDirectory()
+                            .dir("classes/java/test").get().getAsFile().toPath();
+                    if (Files.isDirectory(testOutputDir)) {
+                        List<String> missing = tests.stream()
+                                .filter(tc -> !Files.exists(testOutputDir.resolve(tc.replace('.', '/') + ".class")))
+                                .toList();
+                        if (!missing.isEmpty()) {
+                            project.getLogger().warn(
+                                    "[test-order] {} test class(es) in remaining file not found on disk (renamed/deleted?): {}",
+                                    missing.size(),
+                                    missing.stream().limit(5).reduce((a, b) -> a + ", " + b).orElse(""));
+                            tests = tests.stream()
+                                    .filter(tc -> Files.exists(
+                                            testOutputDir.resolve(tc.replace('.', '/') + ".class")))
+                                    .toList();
+                        }
+                    }
+
                     if (tests.isEmpty()) {
                         project.getLogger().warn("[test-order] Remaining tests file is empty — skipping tests.");
                     } else {
                         project.getLogger().lifecycle("[test-order] Running {} remaining test classes", tests.size());
                     }
                     applySelectedTests((Test) t, tests);
-                    // Delete remaining file after consumption to prevent stale re-runs (parity with Maven)
-                    Files.deleteIfExists(remainingFile);
                 } catch (IOException e) {
                     throw new GradleException("Failed to read remaining tests file", e);
+                }
+                // Inject orderer config so tests are prioritized and listener records results
+                Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
+                if (Files.exists(indexPath)) {
+                    PluginContext pctx = buildPluginContext(project, ext);
+                    Map<String, String> configMap = me.bechberger.testorder.ops.OrdererConfigOperation.buildConfig(
+                            new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
+                                    pctx.indexFile().toAbsolutePath().toString(),
+                                    pctx.stateFile().toAbsolutePath().toString(),
+                                    pctx.weightsFile() != null ? pctx.weightsFile().toAbsolutePath().toString() : null,
+                                    Set.of(), Set.of(), Set.of(),
+                                    pctx.scoreOverrides(), pctx.methodOrderingEnabled(), pctx.springContextGrouping(),
+                                    pctx.projectRoot().toAbsolutePath().toString(),
+                                    pctx.sourceRoot() != null ? pctx.sourceRoot().toAbsolutePath().toString() : null,
+                                    pctx.changeMode()));
+                    for (var entry : configMap.entrySet()) {
+                        ((Test) t).systemProperty(entry.getKey(), entry.getValue());
+                    }
                 }
             });
         });
@@ -1467,10 +1507,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                         applySelectedTests((Test) t, selection.tier2());
                         project.getLogger().lifecycle("[test-order] Tier 1 empty — running {} tier-2 tests directly",
                                 selection.tier2().size());
+                        clearTierFile(tier2File, project);
                     } else if (!selection.tier3().isEmpty()) {
                         applySelectedTests((Test) t, selection.tier3());
                         project.getLogger().lifecycle("[test-order] Tiers 1+2 empty — running {} tier-3 tests directly",
                                 selection.tier3().size());
+                        clearTierFile(tier3File, project);
                     } else {
                         applySelectedTests((Test) t, List.of());
                         project.getLogger().warn("[test-order] No tests to run (all tiers empty). Run in learn mode first: ./gradlew test -Dtestorder.mode=learn");
@@ -1590,9 +1632,27 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
                 Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
                 if (Files.exists(indexPath)) {
-                    ((Test) t).systemProperty("testorder.index.path", indexPath.toAbsolutePath().toString());
-                    ((Test) t).systemProperty("testorder.state.path",
-                            ext.getStateFile().get().getAsFile().getAbsolutePath());
+                    try {
+                        PluginContext pctx = buildPluginContext(project, ext);
+                        me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result analysis =
+                                me.bechberger.testorder.ops.workflows.ChangeAnalysis.analyze(
+                                        pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.FOR_SELECTION);
+                        Map<String, String> configMap = me.bechberger.testorder.ops.OrdererConfigOperation.buildConfig(
+                                new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
+                                        pctx.indexFile().toAbsolutePath().toString(),
+                                        pctx.stateFile().toAbsolutePath().toString(),
+                                        pctx.weightsFile() != null ? pctx.weightsFile().toAbsolutePath().toString() : null,
+                                        analysis.changedClasses(), analysis.changedTests(), Set.of(),
+                                        pctx.scoreOverrides(), pctx.methodOrderingEnabled(), pctx.springContextGrouping(),
+                                        pctx.projectRoot().toAbsolutePath().toString(),
+                                        pctx.sourceRoot() != null ? pctx.sourceRoot().toAbsolutePath().toString() : null,
+                                        pctx.changeMode()));
+                        for (var entry : configMap.entrySet()) {
+                            ((Test) t).systemProperty(entry.getKey(), entry.getValue());
+                        }
+                    } catch (IOException e) {
+                        throw new GradleException("Failed to build orderer config for run-tier", e);
+                    }
                 }
             });
         });
@@ -2614,6 +2674,16 @@ public class TestOrderPlugin implements Plugin<Project> {
                 filter.includeTestsMatching(testClass);
             }
         });
+    }
+
+    private static void clearTierFile(Path tierFile, Project project) {
+        try {
+            if (Files.exists(tierFile)) {
+                Files.writeString(tierFile, "");
+            }
+        } catch (IOException e) {
+            project.getLogger().warn("[test-order] Could not clear tier file {}: {}", tierFile, e.getMessage());
+        }
     }
 
     private static void ensureSupportedChangeMode(String changeMode) {

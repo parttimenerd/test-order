@@ -67,7 +67,9 @@ public final class ExportJsonOperation {
 		if (parent != null) {
 			Files.createDirectories(parent);
 		}
-		Files.writeString(outputPath, json, StandardCharsets.UTF_8);
+		Path temp = me.bechberger.testorder.PersistenceSupport.temporarySibling(outputPath);
+		Files.writeString(temp, json, StandardCharsets.UTF_8);
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(temp, outputPath);
 		log.info("[test-order] Exported " + map.size() + " test classes as JSON → " + outputPath);
 	}
 

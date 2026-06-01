@@ -67,7 +67,7 @@ public final class HashSnapshotOperation {
 
 	private static void snapshotSingle(Path root, Path hashFile, String label, BiConsumer<String, Path> log,
 			BiConsumer<String, String> warn) {
-		if (root == null) {
+		if (root == null || hashFile == null) {
 			return;
 		}
 		try {

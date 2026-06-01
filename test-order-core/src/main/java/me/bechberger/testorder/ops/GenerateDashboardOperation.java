@@ -130,7 +130,9 @@ public final class GenerateDashboardOperation {
 		if (outputParent != null) {
 			Files.createDirectories(outputParent);
 		}
-		Files.writeString(outputPath, html, StandardCharsets.UTF_8);
+		Path temp = me.bechberger.testorder.PersistenceSupport.temporarySibling(outputPath);
+		Files.writeString(temp, html, StandardCharsets.UTF_8);
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(temp, outputPath);
 
 		log.info("[test-order] Dashboard written to: " + outputPath);
 		log.info("[test-order] To open automatically: mvn test-order:dashboard -Dtestorder.dashboard.open=true");

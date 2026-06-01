@@ -112,7 +112,9 @@ public final class CiSummaryWriter {
 		String md = buildMd(input);
 		Path out = input.buildDir().resolve("test-order-summary.md");
 		Files.createDirectories(out.getParent());
-		Files.writeString(out, md, StandardCharsets.UTF_8);
+		Path temp = me.bechberger.testorder.PersistenceSupport.temporarySibling(out);
+		Files.writeString(temp, md, StandardCharsets.UTF_8);
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(temp, out);
 		return out;
 	}
 
@@ -192,7 +194,9 @@ public final class CiSummaryWriter {
 		sb.append("}\n");
 		Path out = input.buildDir().resolve("test-order-summary.json");
 		Files.createDirectories(out.getParent());
-		Files.writeString(out, sb.toString(), StandardCharsets.UTF_8);
+		Path temp = me.bechberger.testorder.PersistenceSupport.temporarySibling(out);
+		Files.writeString(temp, sb.toString(), StandardCharsets.UTF_8);
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(temp, out);
 	}
 
 	// ── JUnit-XML selection report ────────────────────────────────────────────
@@ -221,7 +225,9 @@ public final class CiSummaryWriter {
 		sb.append("</testsuites>\n");
 		Path out = input.buildDir().resolve("test-order-selection-report.xml");
 		Files.createDirectories(out.getParent());
-		Files.writeString(out, sb.toString(), StandardCharsets.UTF_8);
+		Path temp = me.bechberger.testorder.PersistenceSupport.temporarySibling(out);
+		Files.writeString(temp, sb.toString(), StandardCharsets.UTF_8);
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(temp, out);
 	}
 
 	// ── GitHub Step Summary ───────────────────────────────────────────────────
@@ -340,7 +346,7 @@ public final class CiSummaryWriter {
 				int commaOrBrace = afterId.indexOf(',');
 				if (commaOrBrace < 0)
 					commaOrBrace = afterId.indexOf('}');
-				if (commaOrBrace > 0) {
+				if (commaOrBrace >= 0) {
 					return Long.parseLong(afterId.substring(0, commaOrBrace).strip());
 				}
 			} catch (NumberFormatException ignored) {

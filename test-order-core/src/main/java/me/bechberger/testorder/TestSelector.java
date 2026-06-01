@@ -94,6 +94,8 @@ public class TestSelector {
 	private List<ScoredTest> scoreAndSort() {
 		Set<String> allTests = new LinkedHashSet<>(depMap.testClasses());
 		allTests.addAll(changedTestClasses);
+		// Ensure @AlwaysRun classes are included even if not yet in the index
+		allTests.addAll(alwaysRunClasses);
 
 		TestScorer scorer = new TestScorer.Builder(weights, depMap, state, changedClasses, changedTestClasses)
 				.testClassNames(depMap.testClasses()).changeComplexity(changeComplexity).build();
@@ -213,17 +215,19 @@ public class TestSelector {
 
 	// ── File I/O utilities ────────────────────────────────────────────
 
-	/** Writes one test class name per line. */
+	/** Writes one test class name per line, atomically (temp file + rename). */
 	public static void writeTestList(List<String> tests, Path file) throws IOException {
 		Path parent = file.toAbsolutePath().getParent();
 		if (parent != null) {
 			Files.createDirectories(parent);
 		}
-		try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(file))) {
+		Path temp = PersistenceSupport.temporarySibling(file);
+		try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(temp))) {
 			for (String tc : tests) {
 				pw.println(tc);
 			}
 		}
+		PersistenceSupport.moveIntoPlace(temp, file);
 	}
 
 	/** Reads one test class name per line (blank lines and # comments skipped). */

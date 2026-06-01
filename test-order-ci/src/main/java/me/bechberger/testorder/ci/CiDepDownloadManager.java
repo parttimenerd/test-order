@@ -291,6 +291,11 @@ public class CiDepDownloadManager {
 			CiDepDownloadManager mgr = new CiDepDownloadManager(config);
 			Path downloaded = mgr.download();
 			try {
+				long size = Files.size(downloaded);
+				if (size == 0) {
+					logger.warn("CI download returned an empty file — skipping");
+					return Optional.empty();
+				}
 				Files.createDirectories(indexTarget.getParent());
 				Path tempSibling = me.bechberger.testorder.PersistenceSupport.temporarySibling(indexTarget);
 				Files.copy(downloaded, tempSibling, java.nio.file.StandardCopyOption.REPLACE_EXISTING);

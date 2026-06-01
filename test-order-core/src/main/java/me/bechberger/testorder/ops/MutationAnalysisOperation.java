@@ -521,7 +521,9 @@ public final class MutationAnalysisOperation {
 		if (parent != null) {
 			Files.createDirectories(parent);
 		}
-		Files.writeString(outputFile, PrettyPrinter.prettyPrint(root), StandardCharsets.UTF_8);
+		Path temp = me.bechberger.testorder.PersistenceSupport.temporarySibling(outputFile);
+		Files.writeString(temp, PrettyPrinter.prettyPrint(root), StandardCharsets.UTF_8);
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(temp, outputFile);
 		log.info("[test-order] Mutation report written to " + outputFile);
 		return outputFile;
 	}

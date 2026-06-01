@@ -90,7 +90,9 @@ public record TestHealthReport(Map<String, TestHealth> tests, long analyzedAt, i
 					.append(String.format(java.util.Locale.US, "%.3f", th.volatility())).append('|')
 					.append(th.totalRuns()).append('|').append(th.totalFailures()).append('\n');
 		}
-		Files.writeString(reportFile, sb.toString());
+		Path temp = me.bechberger.testorder.PersistenceSupport.temporarySibling(reportFile);
+		Files.writeString(temp, sb.toString());
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(temp, reportFile);
 	}
 
 	/**

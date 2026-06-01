@@ -255,11 +255,15 @@ public final class CoverageOperation {
 			throws IOException {
 		Files.createDirectories(outputDir);
 		Path mdFile = outputDir.resolve("COVERAGE_REPORT.md");
-		Files.writeString(mdFile, generateReport(analysis, threshold));
+		Path mdTemp = me.bechberger.testorder.PersistenceSupport.temporarySibling(mdFile);
+		Files.writeString(mdTemp, generateReport(analysis, threshold));
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(mdTemp, mdFile);
 		log.info("Written: " + mdFile);
 
 		Path jsonFile = outputDir.resolve("coverage-metrics.json");
-		Files.writeString(jsonFile, generateJson(analysis, threshold));
+		Path jsonTemp = me.bechberger.testorder.PersistenceSupport.temporarySibling(jsonFile);
+		Files.writeString(jsonTemp, generateJson(analysis, threshold));
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(jsonTemp, jsonFile);
 		log.info("Written: " + jsonFile);
 	}
 

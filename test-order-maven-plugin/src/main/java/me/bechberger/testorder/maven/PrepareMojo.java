@@ -123,6 +123,13 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		boolean learnCliActive = isLearnCliGoal();
 		if (!learnCliActive) {
 			restoreInstrumentedClasses();
+		} else if (isLearnActiveOnlyViaSentinel()) {
+			// Sentinel is present but no in-memory learn markers exist — we're inside a
+			// nested Maven JVM (e.g. exec-maven-plugin running 'mvn package'). The outer
+			// learn session already instrumented and configured everything; doing any work
+			// here would start a duplicate collector or modify Surefire config incorrectly.
+			getLog().debug("[test-order] Skipping prepare — nested Maven call during outer offline learn run.");
+			return;
 		}
 		if (skip)
 			return;
@@ -735,7 +742,59 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		}
 		// Also treat offline learn as active when AutoMojo has configured it:
 		// restoring classes before tests run would undo the instrumentation.
-		return "true".equals(project.getProperties().getProperty("testorder.offline.learnActive"));
+		if ("true".equals(project.getProperties().getProperty("testorder.offline.learnActive"))) {
+			return true;
+		}
+		// File-based sentinel survives nested Maven JVM processes (e.g.
+		// exec-maven-plugin
+		// running 'mvn package' in a child JVM) where in-memory project properties are
+		// not inherited. Use the classes-backup directory content as the sentinel: it
+		// is non-empty only while a learn session is active (backup contents are
+		// deleted by restoreInstrumentedClasses at session end), so empty residual
+		// directories won't cause false positives.
+		String buildDir = project.getBuild().getDirectory();
+		if (buildDir != null) {
+			java.nio.file.Path backupDir = java.nio.file.Path.of(buildDir).resolve(".test-order")
+					.resolve("classes-backup");
+			if (java.nio.file.Files.isDirectory(backupDir)) {
+				try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files.walk(backupDir)) {
+					if (stream.anyMatch(p -> p.toString().endsWith(".class"))) {
+						return true;
+					}
+				} catch (java.io.IOException ignored) {
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Returns true when learn is active only because of the classes-backup
+	 * directory, meaning we are in a nested Maven JVM (not the outer learn
+	 * session). The outer session has {@code testorder.offline.learnActive} in
+	 * project properties or {@code test-order:learn} on the CLI; the nested JVM has
+	 * neither.
+	 */
+	private boolean isLearnActiveOnlyViaSentinel() {
+		if (session != null && session.getGoals() != null
+				&& session.getGoals().stream().anyMatch(goal -> isGoal(goal, "learn"))) {
+			return false;
+		}
+		if ("true".equals(project.getProperties().getProperty("testorder.offline.learnActive"))) {
+			return false;
+		}
+		String buildDir = project.getBuild().getDirectory();
+		if (buildDir != null) {
+			java.nio.file.Path backupDir = java.nio.file.Path.of(buildDir).resolve(".test-order")
+					.resolve("classes-backup");
+			if (java.nio.file.Files.isDirectory(backupDir)) {
+				try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files.walk(backupDir)) {
+					return stream.anyMatch(p -> p.toString().endsWith(".class"));
+				} catch (java.io.IOException ignored) {
+				}
+			}
+		}
+		return false;
 	}
 
 	/**

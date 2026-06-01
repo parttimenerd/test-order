@@ -225,8 +225,9 @@ public class UsageStore {
 	 */
 	public static void recordMemberUsageIdFast(int memberId) {
 		RecordingState s = activeState;
-		if (s == null)
+		if (s == null) {
 			return;
+		}
 		s.target.recordMember(memberId);
 	}
 
@@ -359,8 +360,6 @@ public class UsageStore {
 	// ── Flush on shutdown ─────────────────────────────────────────────
 
 	private void flush() {
-		AgentLogger.info("[flush] flush() called, perTestTrackers.size()=" + perTestTrackers.size() + ", collectorPort="
-				+ System.getProperty("testorder.collector.port"));
 		if (perTestTrackers.isEmpty()) {
 			return;
 		}

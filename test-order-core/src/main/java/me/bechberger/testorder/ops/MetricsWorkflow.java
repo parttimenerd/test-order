@@ -106,7 +106,9 @@ public final class MetricsWorkflow {
 		if (parent != null) {
 			Files.createDirectories(parent);
 		}
-		Files.writeString(outputFile, metrics.toJson());
+		Path temp = me.bechberger.testorder.PersistenceSupport.temporarySibling(outputFile);
+		Files.writeString(temp, metrics.toJson());
+		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(temp, outputFile);
 		log.info("[test-order] Metrics written to " + outputFile);
 	}
 }

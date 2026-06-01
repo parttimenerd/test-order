@@ -243,7 +243,9 @@ public final class AutoWorkflow {
 		if (optimized != null) {
 			state.setWeights(optimized.weights());
 			state.resetRunsSinceLearn();
-			state.save(stateFile);
+			if (stateFile != null) {
+				state.save(stateFile);
+			}
 			log.info("[test-order] Optimised weights saved: " + optimized.weights().format());
 			return true;
 		}
