@@ -899,6 +899,8 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
         if (ext.getMethodOrderingEnabled().get()) {
             testTask.systemProperty("testorder.methodOrder.enabled", "true");
+            testTask.systemProperty("junit.jupiter.testmethod.order.default",
+                    "me.bechberger.testorder.junit.PriorityMethodOrderer");
         }
         // Score overrides: only inject when the user explicitly configured them
         if (ext.getScoreNewTest().isPresent()) {
@@ -1296,6 +1298,10 @@ public class TestOrderPlugin implements Plugin<Project> {
             // Inject PriorityClassOrderer so ordering works within the subset
             task.systemProperty("junit.jupiter.testclass.order.default",
                     "me.bechberger.testorder.junit.PriorityClassOrderer");
+            if (ext.getMethodOrderingEnabled().get()) {
+                task.systemProperty("junit.jupiter.testmethod.order.default",
+                        "me.bechberger.testorder.junit.PriorityMethodOrderer");
+            }
             String debugFlag = gradleOrSystemProperty(project, "testorder.debug");
             if ("true".equalsIgnoreCase(debugFlag)) {
                 task.systemProperty("testorder.debug", "true");
@@ -1448,6 +1454,10 @@ public class TestOrderPlugin implements Plugin<Project> {
 
             task.systemProperty("junit.jupiter.testclass.order.default",
                     "me.bechberger.testorder.junit.PriorityClassOrderer");
+            if (ext.getMethodOrderingEnabled().get()) {
+                task.systemProperty("junit.jupiter.testmethod.order.default",
+                        "me.bechberger.testorder.junit.PriorityMethodOrderer");
+            }
             String debugFlag = gradleOrSystemProperty(project, "testorder.debug");
             if ("true".equalsIgnoreCase(debugFlag)) {
                 task.systemProperty("testorder.debug", "true");
@@ -1565,6 +1575,10 @@ public class TestOrderPlugin implements Plugin<Project> {
 
             task.systemProperty("junit.jupiter.testclass.order.default",
                     "me.bechberger.testorder.junit.PriorityClassOrderer");
+            if (ext.getMethodOrderingEnabled().get()) {
+                task.systemProperty("junit.jupiter.testmethod.order.default",
+                        "me.bechberger.testorder.junit.PriorityMethodOrderer");
+            }
 
             task.doFirst("testOrderRunTierPrepare", t -> {
                 String tierProp = gradleOrSystemProperty(project, "testorder.tiered.currentTier");

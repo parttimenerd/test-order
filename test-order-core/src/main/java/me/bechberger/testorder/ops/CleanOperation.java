@@ -32,6 +32,9 @@ public final class CleanOperation {
 		int deleted = 0;
 		Set<Path> parentDirs = new java.util.LinkedHashSet<>();
 		for (Path file : files) {
+			if (file == null) {
+				continue;
+			}
 			// Delete the main file plus any sibling lock/temp files left by
 			// PersistenceSupport
 			for (String suffix : List.of("", ".lock", ".tmp")) {

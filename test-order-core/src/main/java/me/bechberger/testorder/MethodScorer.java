@@ -277,7 +277,9 @@ public class MethodScorer {
 		java.util.Arrays.sort(durations, 0, count);
 		int mid = count / 2;
 		if (count % 2 == 0) {
-			return (durations[mid - 1] + durations[mid]) / 2;
+			long a = durations[mid - 1];
+			long b = durations[mid];
+			return a / 2 + b / 2 + (a % 2 + b % 2) / 2;
 		} else {
 			return durations[mid];
 		}

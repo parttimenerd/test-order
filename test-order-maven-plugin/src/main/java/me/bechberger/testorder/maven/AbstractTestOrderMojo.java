@@ -1352,6 +1352,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			Path propsFile = runtimeDir.resolve("junit-platform.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
 				pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.junit.PriorityClassOrderer");
+				if ("true".equals(configMap.get(me.bechberger.testorder.TestOrderConfig.METHOD_ORDER_ENABLED))) {
+					pw.println(
+							"junit.jupiter.testmethod.order.default=me.bechberger.testorder.junit.PriorityMethodOrderer");
+				}
 			}
 			Path configFile = runtimeDir.resolve("testorder-config.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
