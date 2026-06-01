@@ -22,6 +22,8 @@ final class DurationTracker {
 
 	void recordClassDuration(String testClass, long measuredMs, double alpha, double varianceThreshold,
 			double minAdaptiveAlphaFactor) {
+		if (measuredMs < 0)
+			return; // ignore negative durations from clock skew or time adjustment
 		Long previous = classDurations.get(testClass);
 		if (previous == null) {
 			classDurations.put(testClass, measuredMs);
@@ -42,6 +44,8 @@ final class DurationTracker {
 
 	void recordMethodDuration(String className, String methodName, long measuredMs, double alpha,
 			double varianceThreshold, double minAdaptiveAlphaFactor) {
+		if (measuredMs < 0)
+			return; // ignore negative durations from clock skew or time adjustment
 		Map<String, Double> classMethods = methodDurations.computeIfAbsent(className, ignored -> new LinkedHashMap<>());
 		Map<String, Double> classVariances = methodDurationVariances.computeIfAbsent(className,
 				ignored -> new LinkedHashMap<>());
