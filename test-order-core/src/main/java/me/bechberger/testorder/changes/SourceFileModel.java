@@ -89,7 +89,18 @@ public class SourceFileModel {
 					+ "(\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)", // name (group 1)
 			Pattern.MULTILINE);
 
-	// ── Method island regex ──────────────────────────────────────────
+	// Matches Kotlin 'object' declarations and 'companion object' blocks that are
+	// not
+	// captured by TYPE_ISLAND (which only handles Java keywords). Two groups:
+	// group(1) — name for standalone "object NAME {" declarations
+	// group(2) — name for "companion object NAME {" (empty string → use
+	// "Companion")
+	// Applied only when isKotlin=true to avoid false matches on Java 'object'
+	// identifiers.
+	static final Pattern KOTLIN_OBJECT_ISLAND = Pattern.compile("(?<![\\p{javaJavaIdentifierPart}])"
+			+ "(?:companion\\s+object(?:\\s+(\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*))?(?=\\s*[{<])"
+			+ "|object\\s+(\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)(?=\\s*[{<(:]))");
+
 	//
 	// Captures group 1 = method/constructor name
 	// group 2 = terminator: { or ;
@@ -383,7 +394,23 @@ public class SourceFileModel {
 			}
 		}
 		String stripped = stripCommentsAndStrings(source);
-		return parseStripped(stripped, source, packageName, detail);
+		return parseStripped(stripped, source, packageName, detail, false);
+	}
+
+	/**
+	 * Variant that enables Kotlin-specific type discovery (object, companion
+	 * object).
+	 */
+	public static Model parse(String source, String packageName, Detail detail, boolean isKotlin) {
+		if (getParserMode() == ParserMode.JAVAPARSER) {
+			try {
+				return JavaParserModel.parse(source, packageName, detail);
+			} catch (Exception e) {
+				// Fall back to the island-grammar parser
+			}
+		}
+		String stripped = stripCommentsAndStrings(source);
+		return parseStripped(stripped, source, packageName, detail, isKotlin);
 	}
 
 	/**
@@ -397,6 +424,18 @@ public class SourceFileModel {
 	 * Internal: parses already-stripped source text.
 	 */
 	static Model parseStripped(String stripped, String source, String packageName, Detail detail) {
+		return parseStripped(stripped, source, packageName, detail, false);
+	}
+
+	/**
+	 * Internal: parses already-stripped source text.
+	 *
+	 * @param isKotlin
+	 *            when {@code true}, also discovers {@code object} and
+	 *            {@code companion object} declarations that Java's TYPE_ISLAND
+	 *            regex does not cover
+	 */
+	static Model parseStripped(String stripped, String source, String packageName, Detail detail, boolean isKotlin) {
 		int len = stripped.length();
 
 		// ── 1. pre-compute cumulative brace depth and paren depth ──
@@ -413,7 +452,7 @@ public class SourceFileModel {
 		}
 
 		// ── 2. find type islands (depth 0) ───────────────────────
-		List<TypeNode> types = findTypeIslands(stripped, source, braceDepth, packageName);
+		List<TypeNode> types = findTypeIslands(stripped, source, braceDepth, packageName, isKotlin);
 
 		// Collect brace positions claimed by types and methods for
 		// initializer-block detection.
@@ -463,6 +502,11 @@ public class SourceFileModel {
 
 	private static List<TypeNode> findTypeIslands(String stripped, String source, int[] braceDepth,
 			String packageName) {
+		return findTypeIslands(stripped, source, braceDepth, packageName, false);
+	}
+
+	private static List<TypeNode> findTypeIslands(String stripped, String source, int[] braceDepth, String packageName,
+			boolean isKotlin) {
 		List<TypeNode> types = new ArrayList<>();
 		Matcher m = TYPE_ISLAND.matcher(stripped);
 		while (m.find()) {
@@ -502,7 +546,75 @@ public class SourceFileModel {
 			String compactBody = removeCommentsAndEmptyLines(source.substring(bodyStart + 1, bodyEnd));
 			types.add(new TypeNode(kind, simpleName, fqcn, bodyStart, bodyEnd, signature, bodyText, compactBody));
 		}
+
+		// For Kotlin sources, TYPE_ISLAND does not match 'object' declarations (since
+		// 'object' is not a Java keyword). Scan for standalone and companion objects.
+		if (isKotlin) {
+			addKotlinObjectTypeIslands(stripped, source, braceDepth, packageName, types);
+		}
+
 		return types;
+	}
+
+	/**
+	 * Scans for Kotlin {@code object} and {@code companion object} declarations and
+	 * appends corresponding TypeNodes to {@code types}.
+	 * <ul>
+	 * <li>{@code object Foo { }} → TypeNode with simpleName "Foo"</li>
+	 * <li>{@code companion object { }} → TypeNode with simpleName "Companion"</li>
+	 * <li>{@code companion object Factory { }} → TypeNode with simpleName
+	 * "Factory"</li>
+	 * </ul>
+	 */
+	private static void addKotlinObjectTypeIslands(String stripped, String source, int[] braceDepth, String packageName,
+			List<TypeNode> types) {
+		Matcher m = KOTLIN_OBJECT_ISLAND.matcher(stripped);
+		while (m.find()) {
+			// group(1) = companion object name (may be null for anonymous companion)
+			// group(2) = standalone object name
+			boolean isCompanion = m.group(2) == null;
+			String simpleName = isCompanion ? (m.group(1) != null ? m.group(1) : "Companion") : m.group(2);
+
+			// Find the opening brace
+			int bodyStart = stripped.indexOf('{', m.end());
+			if (bodyStart < 0)
+				continue;
+			int matchDepth = braceDepth[m.start()];
+			if (braceDepth[bodyStart] != matchDepth)
+				continue;
+			int bodyEnd = findMatchingBrace(stripped, bodyStart, braceDepth);
+			if (bodyEnd < 0)
+				continue;
+
+			// Build FQCN
+			String fqcn;
+			if (matchDepth == 0) {
+				fqcn = packageName.isEmpty() ? simpleName : packageName + "." + simpleName;
+			} else {
+				TypeNode enclosing = findInnermostEnclosingType(types, m.start());
+				if (enclosing == null)
+					continue;
+				fqcn = enclosing.fqcn + "$" + simpleName;
+			}
+
+			// Skip if we already have a type node covering this same bodyStart
+			// (avoids duplicates if 'object' keyword happened to match TYPE_ISLAND somehow)
+			boolean alreadyCovered = false;
+			for (TypeNode existing : types) {
+				if (existing.bodyStart == bodyStart) {
+					alreadyCovered = true;
+					break;
+				}
+			}
+			if (alreadyCovered)
+				continue;
+
+			String signature = stripped.substring(m.start(), bodyStart).trim();
+			String bodyText = stripped.substring(bodyStart + 1, bodyEnd);
+			String compactBody = removeCommentsAndEmptyLines(source.substring(bodyStart + 1, bodyEnd));
+			types.add(new TypeNode(TypeKind.CLASS, simpleName, fqcn, bodyStart, bodyEnd, signature, bodyText,
+					compactBody));
+		}
 	}
 
 	static List<TypeNode> findKotlinTypeIslands(String stripped, int[] braceDepth, String packageName) {

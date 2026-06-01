@@ -4995,4 +4995,86 @@ class SourceFileModelTest {
 			assertEquals(1, model.types().size());
 		}
 	}
+
+	// ── Kotlin method parsing ─────────────────────────────────────────────
+
+	@Nested
+	class KotlinMethodParsing {
+
+		private static SourceFileModel.Model parseKotlin(String source, String pkg) {
+			return SourceFileModel.parse(source, pkg, SourceFileModel.Detail.METHODS, true);
+		}
+
+		@Test
+		void kotlinClassMethodsExtracted() {
+			String src = """
+					package com.example
+					class MyTest {
+					    fun testSomething() { doStuff() }
+					    fun anotherTest() { doOtherStuff() }
+					}
+					""";
+			var model = parseKotlin(src, "com.example");
+			var methodKeys = model.methodHashes().keySet();
+			assertTrue(methodKeys.contains("com.example.MyTest#testSomething"),
+					"Kotlin class method should be hashed; keys=" + methodKeys);
+			assertTrue(methodKeys.contains("com.example.MyTest#anotherTest"),
+					"Kotlin class method should be hashed; keys=" + methodKeys);
+		}
+
+		@Test
+		void kotlinObjectDeclarationMethodsExtracted() {
+			// Block-body object methods are hashed; expression-body ('= expr') is a
+			// known limitation of the island-grammar parser.
+			String src = """
+					package com.example
+					object TestFactory {
+					    fun setUp() { }
+					    fun tearDown() { cleanup() }
+					}
+					""";
+			var model = parseKotlin(src, "com.example");
+			var methodKeys = model.methodHashes().keySet();
+			assertTrue(methodKeys.contains("com.example.TestFactory#setUp"),
+					"Kotlin object method should be hashed; keys=" + methodKeys);
+			assertTrue(methodKeys.contains("com.example.TestFactory#tearDown"),
+					"Kotlin object method should be hashed; keys=" + methodKeys);
+		}
+
+		@Test
+		void kotlinCompanionObjectMethodsExtracted() {
+			String src = """
+					package com.example
+					class MyTest {
+					    fun testSomething() { }
+					    companion object {
+					        @JvmStatic
+					        fun provideData() { return listOf(1, 2, 3) }
+					    }
+					}
+					""";
+			var model = parseKotlin(src, "com.example");
+			var methodKeys = model.methodHashes().keySet();
+			assertTrue(methodKeys.contains("com.example.MyTest#testSomething"),
+					"Kotlin class method should be hashed; keys=" + methodKeys);
+			boolean hasCompanionMethod = methodKeys.stream().anyMatch(k -> k.contains("provideData"));
+			assertTrue(hasCompanionMethod, "Kotlin companion object method should be hashed; keys=" + methodKeys);
+		}
+
+		@Test
+		void kotlinNamedCompanionObjectMethodsExtracted() {
+			String src = """
+					package com.example
+					class MyTest {
+					    companion object Factory {
+					        fun create() { return MyTest() }
+					    }
+					}
+					""";
+			var model = parseKotlin(src, "com.example");
+			var methodKeys = model.methodHashes().keySet();
+			boolean hasFactoryMethod = methodKeys.stream().anyMatch(k -> k.contains("create"));
+			assertTrue(hasFactoryMethod, "Kotlin named companion object method should be hashed; keys=" + methodKeys);
+		}
+	}
 }

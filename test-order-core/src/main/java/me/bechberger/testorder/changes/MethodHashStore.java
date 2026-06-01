@@ -80,8 +80,9 @@ public class MethodHashStore {
 				String fp = rawSha256(raw);
 				String source = new String(raw, StandardCharsets.UTF_8);
 				String pkg = SourceFileModel.extractPackageName(source);
-				Map<String, String> methods = SourceFileModel.parse(source, pkg, SourceFileModel.Detail.METHODS)
-						.methodHashes();
+				boolean isKotlin = file.toString().endsWith(".kt");
+				Map<String, String> methods = SourceFileModel
+						.parse(source, pkg, SourceFileModel.Detail.METHODS, isKotlin).methodHashes();
 				String relPath = testSourceRoot.relativize(file).toString().replace('\\', '/');
 				return new FileResult(relPath, fp, methods);
 			} catch (Exception e) {
@@ -180,8 +181,9 @@ public class MethodHashStore {
 				try {
 					String source = Files.readString(check.file());
 					String pkg = SourceFileModel.extractPackageName(source);
-					return SourceFileModel.parse(source, pkg, SourceFileModel.Detail.METHODS).methodHashes().entrySet()
-							.stream();
+					boolean isKotlin = check.file().toString().endsWith(".kt");
+					return SourceFileModel.parse(source, pkg, SourceFileModel.Detail.METHODS, isKotlin).methodHashes()
+							.entrySet().stream();
 				} catch (Exception e) {
 					return java.util.stream.Stream.empty();
 				}
