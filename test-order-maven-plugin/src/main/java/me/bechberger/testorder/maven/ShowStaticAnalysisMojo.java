@@ -51,6 +51,7 @@ public class ShowStaticAnalysisMojo extends AbstractTestOrderMojo {
 		}
 
 		ChangedMembers expanded = analysis.changedMembers();
+		ChangedMembers seed = analysis.preSaChangedMembers();
 		Set<String> changedClasses = analysis.changedClasses();
 
 		System.out.println("─── test-order static call-graph analysis ───");
@@ -76,26 +77,16 @@ public class ShowStaticAnalysisMojo extends AbstractTestOrderMojo {
 			return;
 		}
 
-		// Re-derive the seed by dropping anything the expansion added. We don't have
-		// the original seed directly, so recompute it from changedClasses and the
-		// expansion-resistant members (changedStaticFieldKeys + classes' synthetic
-		// keys).
-		// Easier: just rerun expand without static expansion to get the unexpanded set.
 		List<Path> classDirs = new ArrayList<>();
 		if (pctx.classesDir() != null)
 			classDirs.add(pctx.classesDir());
 		if (pctx.testClassesDir() != null)
 			classDirs.add(pctx.testClassesDir());
 
-		// Compute the "seed" as what expand would receive: same logic as
-		// ChangeAnalysis.
-		ChangedMembers seed;
-		if (expanded.changedMemberKeys().isEmpty() || (changedClasses.size() > 0 && allSyntheticOrField(expanded))) {
-			seed = synthesizeSeed(changedClasses, expanded.changedStaticFieldKeys());
-		} else {
-			// Best effort: subtract everything that wouldn't survive a depth-0 reduction.
-			// Run expand with depth=1 on a tiny seed of synthetic keys to estimate, then
-			// fall back to showing the full expanded set as "after".
+		// Use the pre-SA snapshot as the seed. Fall back to synthesized class markers
+		// if SA wasn't enabled (seed == null means SA ran but changedMembers was null
+		// before expansion, which shouldn't happen; null seed also means SA was off).
+		if (seed == null) {
 			seed = synthesizeSeed(changedClasses, expanded.changedStaticFieldKeys());
 		}
 
@@ -105,11 +96,29 @@ public class ShowStaticAnalysisMojo extends AbstractTestOrderMojo {
 		addedClasses.removeAll(seed.changedClasses());
 
 		System.out.println("after expansion (depth " + pctx.staticAnalysisDepth() + "):");
+		System.out.println("  seed members:   " + seed.changedMemberKeys().size());
 		System.out.println("  total members:  " + expanded.changedMemberKeys().size());
 		System.out.println("  newly added:    " + addedKeys.size());
 		System.out.println("  total classes:  " + expanded.changedClasses().size());
 		System.out.println("  classes added:  " + addedClasses.size());
 		System.out.println("  classDirs:      " + classDirs);
+
+		if (!seed.changedMemberKeys().isEmpty()) {
+			System.out.println();
+			System.out.println("seed members (directly changed):");
+			Map<String, List<String>> seedByClass = new LinkedHashMap<>();
+			for (String k : seed.changedMemberKeys()) {
+				int hash = k.lastIndexOf('#');
+				String cls = hash > 0 ? k.substring(0, hash) : k;
+				seedByClass.computeIfAbsent(cls, x -> new ArrayList<>()).add(k);
+			}
+			for (var e : seedByClass.entrySet()) {
+				System.out.println("  " + e.getKey());
+				for (String k : e.getValue()) {
+					System.out.println("    " + k.substring(k.lastIndexOf('#') + 1));
+				}
+			}
+		}
 
 		if (!addedKeys.isEmpty()) {
 			System.out.println();
@@ -135,15 +144,6 @@ public class ShowStaticAnalysisMojo extends AbstractTestOrderMojo {
 				}
 			}
 		}
-	}
-
-	private static boolean allSyntheticOrField(ChangedMembers cm) {
-		for (String k : cm.changedMemberKeys()) {
-			if (!k.endsWith("#" + StaticCallGraphAnalyzer.CLASS_MARKER)) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	private static ChangedMembers synthesizeSeed(Set<String> classes, Set<String> staticFields) {

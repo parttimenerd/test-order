@@ -38,18 +38,31 @@ public final class ChangeAnalysis {
 	public record Result(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTests, Set<String> changedMethods, TestOrderState.ScoringWeights weights,
 			TestOrderState.LoadedWeights loadedWeights, ChangedMembers changedMembers,
-			Map<String, Double> changeComplexity, Set<String> allTests, boolean staticAnalysisDegraded) {
+			Map<String, Double> changeComplexity, Set<String> allTests, boolean staticAnalysisDegraded,
+			ChangedMembers preSaChangedMembers) {
 
 		/**
-		 * Convenience constructor without the static-analysis degradation flag.
-		 * Defaults to {@code false} (not degraded).
+		 * Convenience constructor without the static-analysis degradation flag or
+		 * pre-SA members. Defaults to {@code false} (not degraded) and {@code null} (no
+		 * pre-SA snapshot).
 		 */
 		public Result(DependencyMap depMap, TestOrderState state, Set<String> changedClasses, Set<String> changedTests,
 				Set<String> changedMethods, TestOrderState.ScoringWeights weights,
 				TestOrderState.LoadedWeights loadedWeights, ChangedMembers changedMembers,
 				Map<String, Double> changeComplexity, Set<String> allTests) {
 			this(depMap, state, changedClasses, changedTests, changedMethods, weights, loadedWeights, changedMembers,
-					changeComplexity, allTests, false);
+					changeComplexity, allTests, false, null);
+		}
+
+		/**
+		 * Convenience constructor without pre-SA members snapshot.
+		 */
+		public Result(DependencyMap depMap, TestOrderState state, Set<String> changedClasses, Set<String> changedTests,
+				Set<String> changedMethods, TestOrderState.ScoringWeights weights,
+				TestOrderState.LoadedWeights loadedWeights, ChangedMembers changedMembers,
+				Map<String, Double> changeComplexity, Set<String> allTests, boolean staticAnalysisDegraded) {
+			this(depMap, state, changedClasses, changedTests, changedMethods, weights, loadedWeights, changedMembers,
+					changeComplexity, allTests, staticAnalysisDegraded, null);
 		}
 
 		/** Builds a scorer from this analysis. */
@@ -255,6 +268,7 @@ public final class ChangeAnalysis {
 		}
 
 		// ── Static call-graph expansion (optional) ──────────────────────
+		ChangedMembers preSaChangedMembers = changedMembers;
 		boolean staticAnalysisDegraded = false;
 		if (ctx.staticAnalysisEnabled() && !changed.isEmpty() && ctx.classesDir() != null) {
 			var classDirs = new java.util.ArrayList<java.nio.file.Path>(2);
@@ -351,7 +365,7 @@ public final class ChangeAnalysis {
 				: Set.of();
 
 		return new Result(depMap, state, changed, changedTests, changedMethods, sw, lw, changedMembers,
-				changeComplexityMap, allTests, staticAnalysisDegraded);
+				changeComplexityMap, allTests, staticAnalysisDegraded, preSaChangedMembers);
 	}
 
 	// ── Internals ───────────────────────────────────────────────────
