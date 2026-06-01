@@ -140,17 +140,7 @@ public class FileHashStore {
 		String normalized = SourceFileModel.normalizeForHashing(source);
 		MessageDigest md = SHA256.get();
 		md.reset();
-
-		// Use CharsetEncoder to avoid creating intermediate byte array from getBytes()
-		java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(Math.min(normalized.length() * 4, 65536));
-		java.nio.charset.CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder();
-		java.nio.CharBuffer charBuf = java.nio.CharBuffer.wrap(normalized);
-		encoder.reset();
-		encoder.encode(charBuf, buffer, true);
-		encoder.flush(buffer);
-		buffer.flip();
-		md.update(buffer);
-
+		md.update(normalized.getBytes(StandardCharsets.UTF_8));
 		return HEX_FORMAT.formatHex(md.digest());
 	}
 
