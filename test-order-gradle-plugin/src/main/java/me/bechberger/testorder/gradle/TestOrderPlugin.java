@@ -1766,12 +1766,18 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setDescription("Remove all test-order generated files "
                     + "(index, state, hashes, deps dir)");
             task.doLast(t -> {
-                List<Path> files = List.of(
+                Path hashFilePath = ext.getHashFile().get().getAsFile().toPath();
+                Path testHashFilePath = ext.getTestHashFile().get().getAsFile().toPath();
+                Path methodHashFilePath = ext.getMethodHashFile().get().getAsFile().toPath();
+                List<Path> files = new ArrayList<>(List.of(
                         ext.getIndexFile().get().getAsFile().toPath(),
                         ext.getStateFile().get().getAsFile().toPath(),
-                        ext.getHashFile().get().getAsFile().toPath(),
-                        ext.getTestHashFile().get().getAsFile().toPath(),
-                        ext.getMethodHashFile().get().getAsFile().toPath());
+                        hashFilePath,
+                        testHashFilePath,
+                        methodHashFilePath));
+                files.add(HashSnapshotOperation.kotlinHashFile(hashFilePath));
+                files.add(HashSnapshotOperation.kotlinHashFile(testHashFilePath));
+                files.add(HashSnapshotOperation.kotlinHashFile(methodHashFilePath));
                 List<Path> dirs = List.of(ext.getDepsDir().get().getAsFile().toPath());
                 CleanOperation.clean(files, dirs, wrapLog(project));
             });

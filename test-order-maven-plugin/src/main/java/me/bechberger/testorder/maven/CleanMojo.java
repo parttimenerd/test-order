@@ -33,9 +33,22 @@ public class CleanMojo extends AbstractTestOrderMojo {
 		}
 
 		Path stateFilePath = ctx.resolveStateFile(stateFile);
-		List<Path> files = List.of(ctx.resolveIndexFile(indexFile), stateFilePath,
-				me.bechberger.testorder.PersistenceSupport.lockSibling(stateFilePath), ctx.resolveHashFile(hashFile),
-				ctx.resolveTestHashFile(testHashFile), ctx.resolveMethodHashFile(methodHashFile));
+		Path hashFilePath = ctx.resolveHashFile(hashFile);
+		Path testHashFilePath = ctx.resolveTestHashFile(testHashFile);
+		Path methodHashFilePath = ctx.resolveMethodHashFile(methodHashFile);
+		List<Path> files = new ArrayList<>(List.of(ctx.resolveIndexFile(indexFile), stateFilePath,
+				me.bechberger.testorder.PersistenceSupport.lockSibling(stateFilePath), hashFilePath, testHashFilePath,
+				methodHashFilePath));
+		// Also include Kotlin sibling hash files
+		if (hashFilePath != null) {
+			files.add(me.bechberger.testorder.ops.HashSnapshotOperation.kotlinHashFile(hashFilePath));
+		}
+		if (testHashFilePath != null) {
+			files.add(me.bechberger.testorder.ops.HashSnapshotOperation.kotlinHashFile(testHashFilePath));
+		}
+		if (methodHashFilePath != null) {
+			files.add(me.bechberger.testorder.ops.HashSnapshotOperation.kotlinHashFile(methodHashFilePath));
+		}
 
 		List<Path> dirs = new ArrayList<>(List.of(ctx.resolveDepsDir(depsDir)));
 
