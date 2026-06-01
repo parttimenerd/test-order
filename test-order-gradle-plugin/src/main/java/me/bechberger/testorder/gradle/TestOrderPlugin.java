@@ -128,7 +128,6 @@ public class TestOrderPlugin implements Plugin<Project> {
                 task.doLast(t -> {
                     Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
                     PluginLog plog = wrapLog(project);
-                    boolean selectiveLearn = resolveSelectiveLearn(project, ext);
                     boolean anyWritten = false;
                     for (Project sub : project.getSubprojects()) {
                         TestOrderExtension subExt = sub.getExtensions().findByType(TestOrderExtension.class);
@@ -136,8 +135,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                             Path subDeps = subExt.getDepsDir().get().getAsFile().toPath();
                             if (Files.isDirectory(subDeps)) {
                                 try {
+                                    // Always use incremental=true when combining multiple subprojects
+                                    // so each subproject's data is merged (union) into the shared index
+                                    // rather than replacing it. Without this, only the last subproject's
+                                    // data survives.
                                     AggregateOperation.Result result =
-                                            AggregateOperation.aggregate(subDeps, indexFile, plog, selectiveLearn);
+                                            AggregateOperation.aggregate(subDeps, indexFile, plog, true);
                                     if (result.written()) anyWritten = true;
                                 } catch (IOException e) {
                                     plog.warn("[test-order] Failed to aggregate from " + sub.getName()
@@ -151,7 +154,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     if (Files.isDirectory(rootDeps)) {
                         try {
                             AggregateOperation.Result rootResult =
-                                    AggregateOperation.aggregate(rootDeps, indexFile, plog, selectiveLearn);
+                                    AggregateOperation.aggregate(rootDeps, indexFile, plog, true);
                             if (rootResult.written()) anyWritten = true;
                         } catch (IOException e) {
                             plog.warn("[test-order] Failed to aggregate from root project: " + e.getMessage());
