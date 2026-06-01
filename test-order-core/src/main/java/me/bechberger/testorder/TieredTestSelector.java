@@ -78,14 +78,10 @@ public class TieredTestSelector {
 		List<ScoredTest> scored = scoreAndSort();
 
 		// ── Tier 1: change-affected ─────────────────────────────────
+		// Single pass over the score-sorted list so tier 1 preserves score order.
 		Set<String> tier1Set = new LinkedHashSet<>();
 		for (ScoredTest s : scored) {
-			if (alwaysRunClasses.contains(s.name())) {
-				tier1Set.add(s.name());
-			}
-		}
-		for (ScoredTest s : scored) {
-			if (s.isNew() || s.isChanged() || s.depOverlap() > 0) {
+			if (alwaysRunClasses.contains(s.name()) || s.isNew() || s.isChanged() || s.depOverlap() > 0) {
 				tier1Set.add(s.name());
 			}
 		}
