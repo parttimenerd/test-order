@@ -49,6 +49,11 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 
 	@Override
 	public void afterProjectsRead(MavenSession session) {
+		// Signal to mojos that the lifecycle extension is active so they can use
+		// the aggregated partial-run path (pending-runs/*.part merged at session end).
+		if (session != null) {
+			session.getUserProperties().setProperty("testorder.extensionActive", "true");
+		}
 		try {
 			ensurePrepareGoalBound(session);
 		} catch (Exception | NoClassDefFoundError e) {
