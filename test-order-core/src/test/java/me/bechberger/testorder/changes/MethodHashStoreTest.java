@@ -634,4 +634,61 @@ class MethodHashStoreTest {
 		assertTrue(keys.get(0).compareTo(keys.get(1)) < 0);
 		assertTrue(keys.get(1).compareTo(keys.get(2)) < 0);
 	}
+
+	// ─── Bug regression: inner class methods carried over on incremental scan ──
+
+	/**
+	 * Regression for bug: scanIncremental dropped inner class method hashes when
+	 * the containing file was unchanged, because classToFile only mapped top-level
+	 * class names. On subsequent scans inner class methods appeared as "changed" on
+	 * every run.
+	 */
+	@Test
+	void scanIncrementalCarriesOverInnerClassMethodsForUnchangedFile() throws IOException {
+		Path srcRoot = tempDir.resolve("src");
+		Files.createDirectories(srcRoot);
+		Files.writeString(srcRoot.resolve("Outer.java"),
+				"public class Outer {\n" + "  public void outerMethod() { return; }\n"
+						+ "  public static class Inner {\n" + "    public void innerMethod() { return; }\n" + "  }\n"
+						+ "}\n");
+
+		// First full scan
+		MethodHashStore first = MethodHashStore.scan(srcRoot);
+		assertTrue(first.containsMethod("Outer#outerMethod"), "outer method should be present");
+		assertTrue(first.containsMethod("Outer$Inner#innerMethod"), "inner class method should be present");
+
+		// Incremental scan with no file changes
+		MethodHashStore second = MethodHashStore.scanIncremental(srcRoot, first);
+		assertTrue(second.containsMethod("Outer$Inner#innerMethod"),
+				"inner class method should be carried over for unchanged file");
+
+		// getChangedMethods must report no changes when nothing changed
+		Set<String> changed = second.getChangedMethods(first);
+		assertFalse(changed.contains("Outer$Inner#innerMethod"),
+				"inner class method must NOT appear as changed when file is unchanged");
+		assertTrue(changed.isEmpty(), "no methods should appear changed: " + changed);
+	}
+
+	@Test
+	void scanIncrementalDetectsRealChangeInInnerClassMethod() throws IOException {
+		Path srcRoot = tempDir.resolve("src");
+		Files.createDirectories(srcRoot);
+		Path outerFile = srcRoot.resolve("Outer.java");
+		Files.writeString(outerFile, "public class Outer {\n" + "  public void outerMethod() { return; }\n"
+				+ "  public static class Inner {\n" + "    public void innerMethod() { return; }\n" + "  }\n" + "}\n");
+
+		MethodHashStore first = MethodHashStore.scan(srcRoot);
+
+		// Modify the inner class method body
+		Files.writeString(outerFile,
+				"public class Outer {\n" + "  public void outerMethod() { return; }\n"
+						+ "  public static class Inner {\n" + "    public void innerMethod() { int x = 42; }\n"
+						+ "  }\n" + "}\n");
+
+		MethodHashStore second = MethodHashStore.scanIncremental(srcRoot, first);
+		Set<String> changed = second.getChangedMethods(first);
+
+		assertTrue(changed.contains("Outer$Inner#innerMethod"),
+				"changed inner class method should be detected: " + changed);
+	}
 }

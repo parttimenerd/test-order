@@ -162,7 +162,11 @@ public class MethodHashStore {
 			int hash = methodKey.indexOf('#');
 			if (hash > 0) {
 				String className = methodKey.substring(0, hash);
-				String owningFile = classToFile.get(className);
+				// Strip inner class suffix ($Inner) to find the owning source file
+				String topLevelClass = className.contains("$")
+						? className.substring(0, className.indexOf('$'))
+						: className;
+				String owningFile = classToFile.get(topLevelClass);
 				if (owningFile != null && unchangedFiles.contains(owningFile)) {
 					hashes.put(methodKey, entry.getValue());
 				}
