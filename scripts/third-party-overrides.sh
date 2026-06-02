@@ -106,9 +106,9 @@ detect_gradle_extra_args() {
         # Note: :mockito-integration-tests:android-tests uses testDebugUnitTest, not :test.
         mockito) echo "--continue -x :mockito-extensions:mockito-android:test -x :mockito-integration-tests:android-tests:testDebugUnitTest -x :mockito-integration-tests:graalvm-tests:test" ;;
         # micronaut-core: no spotbugsMain task (uses spotless instead); checkstyle present.
-        # The :micronaut-core subproject uses ScopedValue (JDK preview API); needs --enable-preview.
+        # ScopedValue is stable on JDK 25 (no longer preview); no extra flags needed.
         # inject-java and test-suite have pre-existing JDK test failures; exclude them.
-        micronaut-core) echo "--continue -x checkstyleMain -x checkstyleTest -x :micronaut-inject-java:test -x :test-suite:test -Pcompiler.args=--enable-preview" ;;
+        micronaut-core) echo "--continue -x checkstyleMain -x checkstyleTest -x :micronaut-inject-java:test -x :test-suite:test" ;;
         # hibernate-orm: no checkstyle/spotbugs tasks; uses Gradle 9.5.
         hibernate-orm) echo "--continue" ;;
         # Default: exclude common static-analysis tasks that may slow or break the build.
@@ -132,9 +132,9 @@ detect_gradle_java_home() {
         # mockito uses Gradle 8.14.2 which fails with Kotlin DSL compilation on JDK 25
         # (IntelliJ's JavaVersion.parse doesn't understand "25.0.x").
         mockito) _sdkman_java_home "21-sapmchn" ;;
-        # micronaut-core uses Gradle 9.4 whose bundled Kotlin compiler also fails to parse
-        # JDK 25 version string "25.0.x"; run under JDK 21.
-        micronaut-core) _sdkman_java_home "21-sapmchn" ;;
+        # micronaut-core uses Gradle 9.4; earlier SAP JDK 25 builds printed "25.0.x" which
+        # IntelliJ's JavaVersion.parse couldn't parse. Current 25+36-LTS prints "25" and works.
+        micronaut-core) _sdkman_java_home "25-sapmchn" ;;
         *) echo "" ;;
     esac
 }
@@ -179,6 +179,16 @@ detect_gradle_settings_remove() {
         # which fails on aarch64 macOS (no download URL). Remove it so Gradle falls back
         # to using the JDK specified via org.gradle.java.installations.paths (in gradle.properties).
         okhttp) echo "foojay-resolver-convention" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Return a path to a Gradle init script to pass via --init-script, or empty string.
+# Used for per-repo workarounds that require build-logic changes (e.g. compiler flags).
+# The script directory is resolved relative to this file's location.
+detect_gradle_init_script() {
+    local repo="$1"
+    case "$repo" in
         *) echo "" ;;
     esac
 }

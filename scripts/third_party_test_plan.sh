@@ -832,6 +832,11 @@ _gradle_phase_init() {
     results=$(result_dir "$repo")
     extra_args=$(detect_gradle_extra_args "$repo" 2>/dev/null || echo "")
     override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
+    local init_script
+    init_script=$(detect_gradle_init_script "$repo" 2>/dev/null || echo "")
+    if [[ -n "$init_script" ]]; then
+        extra_args="${extra_args:+$extra_args }--init-script $init_script"
+    fi
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -967,9 +972,10 @@ phase_bugs_gradle() {
     log "Running select with bug in $classname"
     local bug_log="$results/bug-select.log"
     # shellcheck disable=SC2086
-    # cleanTestOrderSelect (and cleanTest) forces re-execution: after patch the source changes,
-    # but without cleaning Gradle's incremental task tracking considers testOrderSelect UP-TO-DATE.
-    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest cleanTestOrderSelect testOrderSelect \
+    # cleanTestOrderSelect forces re-execution of testOrderSelect: after patch the source
+    # changes, but Gradle's incremental tracking may consider testOrderSelect UP-TO-DATE
+    # when production class files change (class dirs on classpath aren't always tracked).
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTestOrderSelect testOrderSelect \
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$classname" \

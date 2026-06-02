@@ -1,0 +1,10 @@
+--- a/resilience4j-bulkhead/src/main/java/io/github/resilience4j/bulkhead/BulkheadConfig.java
++++ b/resilience4j-bulkhead/src/main/java/io/github/resilience4j/bulkhead/BulkheadConfig.java
+@@ -30,7 +30,7 @@ public class BulkheadConfig implements Serializable {
+     private static final long serialVersionUID = -9139631465007403460L;
+
+-    public static final int DEFAULT_MAX_CONCURRENT_CALLS = 25;
++    public static final int DEFAULT_MAX_CONCURRENT_CALLS = 1;
+     public static final Duration DEFAULT_MAX_WAIT_DURATION = Duration.ofSeconds(0);
+     public static final boolean DEFAULT_WRITABLE_STACK_TRACE_ENABLED = true;
+     public static final boolean DEFAULT_FAIR_CALL_HANDLING_STRATEGY_ENABLED = true;

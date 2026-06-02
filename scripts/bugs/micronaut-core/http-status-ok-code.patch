@@ -1,0 +1,10 @@
+--- a/http/src/main/java/io/micronaut/http/HttpStatus.java
++++ b/http/src/main/java/io/micronaut/http/HttpStatus.java
+@@ -30,7 +30,7 @@ public enum HttpStatus implements HttpStatusProvider {
+     PROCESSING(102, "Processing"),
+     EARLY_HINTS(103, "Early Hints"),
+-    OK(200, "Ok"),
++    OK(201, "Ok"),
+     CREATED(201, "Created"),
+     ACCEPTED(202, "Accepted"),
+     NON_AUTHORITATIVE_INFORMATION(203, "Non-Authoritative Information"),
