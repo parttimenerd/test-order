@@ -151,7 +151,10 @@ detect_gradle_properties_extra() {
         okhttp) printf "org.gradle.java.installations.paths=%s\norg.gradle.java.installations.auto-download=false\n" "$(_sdkman_java_home "21-sapmchn")" ;;
         # junit5 uses Gradle 9.5 with gradle-daemon-jvm.properties toolchainVersion=25.
         # Point Gradle to the local SAP JDK 25 so it does not try to auto-download.
-        junit5) printf "org.gradle.java.installations.paths=%s\norg.gradle.java.installations.auto-download=false\n" "$(_sdkman_java_home "25-sapmchn")" ;;
+        # Disable Develocity Predictive Test Selection (PTS): when PTS is active, Gradle
+        # uses a custom launcher (LauncherMain) that does not register ServiceLoader-based
+        # TestExecutionListeners, so TelemetryListener never fires and 0 deps are tracked.
+        junit5) printf "org.gradle.java.installations.paths=%s\norg.gradle.java.installations.auto-download=false\njunit.develocity.predictiveTestSelection.enabled=false\n" "$(_sdkman_java_home "25-sapmchn")" ;;
         *) echo "" ;;
     esac
 }
