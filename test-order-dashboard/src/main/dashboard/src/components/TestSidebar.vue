@@ -255,6 +255,9 @@ watch(() => d.selectedTest.value, (t) => {
       <span title="Previous/next test when viewing detail"><kbd>←</kbd><kbd>→</kbd> browse</span>
       <span title="Focus mode — hide sidebar for full-width detail"><kbd>z</kbd> focus</span>
       <span title="Blame mode — highlight tests linked to changed classes"><kbd>b</kbd> blame</span>
+      <span title="Focus search (also Ctrl/Cmd+F)"><kbd>/</kbd> search</span>
+      <span title="Switch to dependency graph view"><kbd>g</kbd> graph</span>
+      <span v-if="d.hasMethodData" title="Toggle method mode in dep graph (select/deselect first method)"><kbd>m</kbd> method</span>
     </div>
   </aside>
 </template>

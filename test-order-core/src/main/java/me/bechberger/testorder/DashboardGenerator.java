@@ -215,6 +215,12 @@ public class DashboardGenerator {
 						m.put("name", methodName);
 						m.put("deps", new ArrayList<>(mDeps));
 						m.put("depCount", mDeps.size());
+						if (depMap.hasMemberDeps()) {
+							Set<String> mMemberDeps = depMap.getMethodMemberDeps(key);
+							m.put("memberDeps", mMemberDeps != null ? new ArrayList<>(mMemberDeps) : null);
+						} else {
+							m.put("memberDeps", null);
+						}
 						methods.add(m);
 					}
 				}

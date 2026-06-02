@@ -1457,6 +1457,10 @@ function previewScoreBars(t: TestEntry) {
           >
             <span class="test-detail__method-name" :title="m.name">{{ m.name }}</span>
             <span class="test-detail__method-deps">{{ m.depCount }} deps</span>
+            <div v-if="m.memberDeps && m.memberDeps.length" style="margin-top:4px;font-size:.58rem;color:var(--text-muted);line-height:1.4">
+              <span style="color:var(--accent-light)">prod methods:</span>
+              {{ m.memberDeps.slice(0, 3).map(k => k.includes('#') ? k.substring(k.lastIndexOf('.') + 1) : k).join(', ') }}<span v-if="m.memberDeps.length > 3"> +{{ m.memberDeps.length - 3 }} more</span>
+            </div>
           </div>
         </div>
       </div>

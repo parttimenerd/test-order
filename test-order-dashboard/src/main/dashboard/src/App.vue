@@ -99,11 +99,12 @@ function onKeydown(e: KeyboardEvent) {
     return
   }
 
-  // "/" focuses sidebar search
-  if (e.key === '/' && !isInput) {
+  // "/" or Ctrl/Cmd+F focuses sidebar search
+  if ((e.key === '/' && !isInput) || ((e.metaKey || e.ctrlKey) && e.key === 'f')) {
     e.preventDefault()
     const el = document.querySelector<HTMLInputElement>('[data-search-main]')
     el?.focus()
+    el?.select()
     return
   }
 
@@ -149,6 +150,22 @@ function onKeydown(e: KeyboardEvent) {
     case '3': dashboard.setTab('weights'); break
     case '4': dashboard.setTab('ml'); break
     case '5': dashboard.setTab('mutation'); break
+    case 'g':
+      dashboard.setTab('tests')
+      dashboard.setGraphMode('focus')
+      break
+    case 'm':
+      if (dashboard.selectedTest.value && dashboard.hasMethodData.value) {
+        const methods = dashboard.selectedTest.value.methods
+        if (methods && methods.length > 0) {
+          if (dashboard.selectedMethod.value) {
+            dashboard.selectMethod(dashboard.selectedMethod.value, null)
+          } else {
+            dashboard.selectMethod(methods[0], null)
+          }
+        }
+      }
+      break
     case 'f':
       dashboard.setBadgeFilter(dashboard.badgeFilter.value === 'failing' ? null : 'failing')
       break

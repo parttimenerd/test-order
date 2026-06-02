@@ -123,7 +123,8 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
   const links: GLink[] = []
   function addNode(id: string, type: string, changed: boolean) {
     if (!nodeMap[id]) {
-      const dot = id.lastIndexOf('.')
+      const hash = id.indexOf('#')
+      const dot = hash >= 0 ? id.lastIndexOf('.', hash) : id.lastIndexOf('.')
       const afterPkg = dot >= 0 ? id.substring(dot + 1) : id
       // For inner classes (OuterClass$Inner), show as "Outer$Inner" after pkg
       const simpleLabel = afterPkg
@@ -136,8 +137,18 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
     const testName = d.selectedTest.value.name
     const nodeId = testName + '#' + m.name
     addNode(nodeId, 'method', false)
-    nodeMap[nodeId].depCount = (m.deps || []).length
-    ;(m.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: nodeId, target: dep, changed: d.changedSet.has(dep) }) })
+    if (m.memberDeps && m.memberDeps.length > 0) {
+      nodeMap[nodeId].depCount = m.memberDeps.length
+      m.memberDeps.forEach(memberKey => {
+        const cls = memberKey.includes('#') ? memberKey.substring(0, memberKey.indexOf('#')) : memberKey
+        const isChanged = d.changedSet.has(cls)
+        addNode(memberKey, 'member', isChanged)
+        links.push({ source: nodeId, target: memberKey, changed: isChanged })
+      })
+    } else {
+      nodeMap[nodeId].depCount = (m.deps || []).length
+      ;(m.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: nodeId, target: dep, changed: d.changedSet.has(dep) }) })
+    }
     return { nodes: Object.values(nodeMap), links }
   }
 
@@ -403,6 +414,7 @@ function initGraph() {
   node.on('mouseover', (e, n) => {
     const isTest = n.type === 'test' || n.type === 'method' || testNames.has(n.id)
     const isDep = n.type === 'dep'
+    const isMember = n.type === 'member'
     const hasCov = isDep && d.coverageByName.value.has(n.id)
     const covStr = hasCov
       ? (() => {
@@ -414,18 +426,25 @@ function initGraph() {
       ? `<br><span style="color:#818cf8;font-size:9px">inner class of ${esc(n.outerClass.split('.').pop()!)}</span>`
       : ''
     const hint = isTest ? '<br><span style="color:#818cf8;font-size:9px">click → go to test</span>'
-      : isDep ? `<br><span style="color:#64748b;font-size:9px">click → inspect coverage</span>` : ''
+      : isDep ? `<br><span style="color:#64748b;font-size:9px">click → inspect coverage</span>`
+      : isMember ? `<br><span style="color:#64748b;font-size:9px">click → inspect class coverage</span>` : ''
+    const nodeDetail = isMember
+      ? `member · ${n.changed ? '<span style=color:#ef4444>class changed</span>' : 'class unchanged'}`
+      : n.type === 'test' ? n.depCount + ' deps' : `dep · ${n.changed ? '<span style=color:#ef4444>changed</span>' : 'unchanged'}${covStr}`
     tip.style('opacity', '1').html(
       `<strong>${esc(n.id)}</strong><br>` +
-      `<span style="color:#64748b">${n.type === 'test' ? n.depCount + ' deps' : `dep · ${n.changed ? '<span style=color:#ef4444>changed</span>' : 'unchanged'}${covStr}`}</span>` +
+      `<span style="color:#64748b">${nodeDetail}</span>` +
       `<br><span style="color:#475569;font-size:9px">pkg: ${esc(n.pkg)}</span>${innerStr}${hint}`
     )
-    classHover.show(n.id, e)
+    classHover.show(n.type === 'member' && n.id.includes('#') ? n.id.substring(0, n.id.indexOf('#')) : n.id, e)
   }).on('mousemove', e => { tip.style('left', (e.offsetX + 12) + 'px').style('top', (e.offsetY - 10) + 'px'); classHover.move(e) })
     .on('mouseout', () => { tip.style('opacity', '0'); classHover.hide() })
     .on('click', (e, n) => {
       if (n.type === 'test' || n.type === 'method' || testNames.has(n.id)) {
         d.navigateToTestFromCov(n.id)
+      } else if (n.type === 'member') {
+        const cls = n.id.includes('#') ? n.id.substring(0, n.id.indexOf('#')) : n.id
+        d.navigateToCovClass(cls)
       } else if (n.type === 'dep') {
         if ((e as MouseEvent).shiftKey) {
           d.setImpactClass(n.id)

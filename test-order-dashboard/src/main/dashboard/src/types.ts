@@ -40,6 +40,7 @@ export interface MethodEntry {
   name: string
   deps: string[]
   depCount: number
+  memberDeps: string[] | null
 }
 
 export interface TestEntry {
