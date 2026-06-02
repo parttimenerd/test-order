@@ -549,11 +549,11 @@ pluginManagement {\
     # For multi-module projects, also apply the plugin to subprojects so that
     # each subproject's Test task is configured (root plugins{} only covers the
     # root project). Detect multi-module by: (a) explicit allprojects {} in the
-    # build file, or (b) include() calls in the settings file.
+    # build file, or (b) include() / include 'x' calls in the settings file.
     local is_multi_module=false
     if grep -q "^allprojects {" "$build_file"; then
         is_multi_module=true
-    elif [[ -n "$settings_file" ]] && grep -q 'include(' "$settings_file"; then
+    elif [[ -n "$settings_file" ]] && grep -qE "include\s*[\('\"']" "$settings_file"; then
         is_multi_module=true
     fi
     if [[ "$is_multi_module" == "true" ]]; then
