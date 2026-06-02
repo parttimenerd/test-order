@@ -574,9 +574,9 @@ buildscript {\
     # root project).
     if [[ "$is_multi_module" == "true" ]]; then
         if [[ "$build_file" == *.kts ]]; then
-            printf '\nsubprojects { apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"
+            printf '\nsubprojects { repositories { mavenLocal() }; apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"
         else
-            printf '\nsubprojects { apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
+            printf '\nsubprojects { repositories { mavenLocal() }; apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
         fi
         log "  → multi-module: added subprojects apply block to $build_file"
     fi
@@ -697,7 +697,7 @@ phase_learn_gradle() {
     local override_java_home
     override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
 
-    log "Running: ./gradlew cleanTest test --no-build-cache --no-configuration-cache -Dtestorder.mode=learn"
+    log "Running: ./gradlew cleanTest test --no-build-cache --no-configuration-cache -Dtestorder.mode=learn${extra_args:+ $extra_args}"
     # shellcheck disable=SC2086
     if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test -Dtestorder.mode=learn --no-daemon --no-build-cache --no-configuration-cache \
         $extra_args \

@@ -106,8 +106,9 @@ detect_gradle_extra_args() {
         # Note: :mockito-integration-tests:android-tests uses testDebugUnitTest, not :test.
         mockito) echo "--continue -x :mockito-extensions:mockito-android:test -x :mockito-integration-tests:android-tests:testDebugUnitTest -x :mockito-integration-tests:graalvm-tests:test" ;;
         # micronaut-core: no spotbugsMain task (uses spotless instead); checkstyle present.
-        # inject-java and test-suite have pre-existing JDK 25 test failures; exclude them.
-        micronaut-core) echo "--continue -x checkstyleMain -x checkstyleTest -x :micronaut-inject-java:test -x :test-suite:test" ;;
+        # The :micronaut-core subproject uses ScopedValue (JDK preview API); needs --enable-preview.
+        # inject-java and test-suite have pre-existing JDK test failures; exclude them.
+        micronaut-core) echo "--continue -x checkstyleMain -x checkstyleTest -x :micronaut-inject-java:test -x :test-suite:test -Pcompiler.args=--enable-preview" ;;
         # Default: exclude common static-analysis tasks that may slow or break the build.
         # Most Gradle repos have these tasks; resilience4j is the known exception.
         *) echo "--continue -x checkstyleMain -x checkstyleTest -x spotbugsMain" ;;
