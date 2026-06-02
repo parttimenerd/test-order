@@ -924,9 +924,6 @@ phase_bugs_gradle() {
     cd "$dir"
     inject_gradle_plugin "$repo"
 
-    local src_class
-    src_class=$(detect_source_class_gradle "$repo")
-
     # Ensure we have an index
     local idx
     idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
