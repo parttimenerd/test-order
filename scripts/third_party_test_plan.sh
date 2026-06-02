@@ -727,6 +727,14 @@ phase_learn_gradle() {
     local idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit)
     if [[ -n "$idx" ]]; then
         ok "Index created: $idx ($(du -h "$idx" | cut -f1))"
+        # Clean up accumulated .deps files — can be GB-scale for large projects.
+        # The index captures all the information we need.
+        local deps_count
+        deps_count=$(find "$dir" -name "test-order-deps" -type d 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$deps_count" -gt 0 ]]; then
+            find "$dir" -name "test-order-deps" -type d -exec rm -rf {} + 2>/dev/null || true
+            log "  Cleaned $deps_count test-order-deps dir(s)"
+        fi
     else
         err "No index created for $repo"
     fi
