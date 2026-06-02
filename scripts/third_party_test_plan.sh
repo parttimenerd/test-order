@@ -648,9 +648,9 @@ phase_learn_gradle() {
     local override_java_home
     override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
 
-    log "Running: ./gradlew test -Dtestorder.mode=learn"
+    log "Running: ./gradlew cleanTest test --no-build-cache -Dtestorder.mode=learn"
     # shellcheck disable=SC2086
-    if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew test -Dtestorder.mode=learn --no-daemon \
+    if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test -Dtestorder.mode=learn --no-daemon --no-build-cache \
         $extra_args \
         2>&1 | tee "$results/learn.log" | tail -5; then
         ok "Learn succeeded for $repo"
