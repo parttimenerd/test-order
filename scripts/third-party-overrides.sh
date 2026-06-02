@@ -5,6 +5,20 @@
 #
 # Each function receives $repo as its first argument.
 
+# Resolve the JAVA_HOME for a given SDKMAN candidate identifier (e.g. "21-sapmchn").
+# Falls back to /usr/libexec/java_home -v X if SDKMAN is not available.
+_sdkman_java_home() {
+    local candidate="$1"
+    local version="${candidate%%-*}"   # e.g. "21" from "21-sapmchn"
+    if [[ -d "${SDKMAN_DIR:-$HOME/.sdkman}/candidates/java/$candidate" ]]; then
+        echo "${SDKMAN_DIR:-$HOME/.sdkman}/candidates/java/$candidate"
+    elif command -v /usr/libexec/java_home &>/dev/null; then
+        /usr/libexec/java_home -v "$version" 2>/dev/null || echo ""
+    else
+        echo ""
+    fi
+}
+
 # Return extra Maven args required by a repo to compile on the current JDK.
 detect_compiler_args() {
     local repo="$1"
@@ -91,6 +105,9 @@ detect_gradle_extra_args() {
         # Exclude android modules (need Android SDK) and GraalVM tests (need native image).
         # Note: :mockito-integration-tests:android-tests uses testDebugUnitTest, not :test.
         mockito) echo "--continue -x :mockito-extensions:mockito-android:test -x :mockito-integration-tests:android-tests:testDebugUnitTest -x :mockito-integration-tests:graalvm-tests:test" ;;
+        # micronaut-core: no spotbugsMain task (uses spotless instead); checkstyle present.
+        # inject-java and test-suite have pre-existing JDK 25 test failures; exclude them.
+        micronaut-core) echo "--continue -x checkstyleMain -x checkstyleTest -x :micronaut-inject-java:test -x :test-suite:test" ;;
         # Default: exclude common static-analysis tasks that may slow or break the build.
         # Most Gradle repos have these tasks; resilience4j is the known exception.
         *) echo "--continue -x checkstyleMain -x checkstyleTest -x spotbugsMain" ;;
@@ -103,14 +120,17 @@ detect_gradle_java_home() {
     local repo="$1"
     case "$repo" in
         # neonbee uses Gradle 8.5 which does not support JDK 25 (class file major version 69).
-        # Fall back to JDK 21 (sapmachine-21 is available on this machine).
-        neonbee) echo "/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home" ;;
+        # Fall back to JDK 21.
+        neonbee) _sdkman_java_home "21-sapmchn" ;;
         # junit5 requires JDK 21 (its Gradle build targets Java 8–17 source but the
         # Gradle wrapper version needs JDK ≤ 21 to run reliably).
-        junit5) echo "/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home" ;;
+        junit5) _sdkman_java_home "21-sapmchn" ;;
         # mockito uses Gradle 8.14.2 which fails with Kotlin DSL compilation on JDK 25
         # (IntelliJ's JavaVersion.parse doesn't understand "25.0.x").
-        mockito) echo "/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home" ;;
+        mockito) _sdkman_java_home "21-sapmchn" ;;
+        # micronaut-core uses Gradle 9.4 whose bundled Kotlin compiler also fails to parse
+        # JDK 25 version string "25.0.x"; run under JDK 21.
+        micronaut-core) _sdkman_java_home "21-sapmchn" ;;
         *) echo "" ;;
     esac
 }
@@ -124,7 +144,7 @@ detect_gradle_properties_extra() {
         # okhttp uses foojay-resolver for JDK toolchain provisioning AND a gradle-daemon-jvm.properties
         # that locks the daemon vendor to ADOPTIUM (Eclipse Temurin) which is unavailable on aarch64 macOS.
         # Declare SAPMachine JDK 21 and disable auto-download; the daemon-jvm file is patched by inject_gradle_plugin.
-        okhttp) printf "org.gradle.java.installations.paths=/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home\norg.gradle.java.installations.auto-download=false\n" ;;
+        okhttp) printf "org.gradle.java.installations.paths=%s\norg.gradle.java.installations.auto-download=false\n" "$(_sdkman_java_home "21-sapmchn")" ;;
         *) echo "" ;;
     esac
 }

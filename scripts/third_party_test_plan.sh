@@ -535,10 +535,33 @@ pluginManagement {\
         printf '\ndependencyResolutionManagement { repositories { mavenLocal() } }\n' >> "$settings_file"
     fi
 
-    # Inject plugin application
+    # Detect multi-module early — it affects injection strategy.
+    local is_multi_module=false
+    if grep -q "^allprojects {" "$build_file"; then
+        is_multi_module=true
+    elif [[ -n "$settings_file" ]] && grep -qE "include\s*[\('\"']" "$settings_file"; then
+        is_multi_module=true
+    fi
+
+    # Inject plugin application.
+    #
+    # For Groovy multi-module: use buildscript{} + subprojects{apply plugin:} instead
+    # of plugins{id "..."}.  Injecting into plugins{} applies the plugin to the root
+    # project, which often lacks the java plugin and fails with "testRuntimeOnly not
+    # found".  buildscript{} only puts the jar on the classpath; subprojects{} then
+    # applies it only to subprojects that have the java plugin.
     if [[ "$build_file" == *.kts ]]; then
         sed -i '' '/^plugins {/a\
     id("me.bechberger.test-order") version "'"$PLUGIN_VERSION"'"
+' "$build_file"
+    elif [[ "$is_multi_module" == "true" ]]; then
+        # Groovy DSL multi-module: prepend buildscript{} before the first plugins{} line
+        sed -i '' '/^plugins {/i\
+buildscript {\
+    repositories { mavenLocal() }\
+    dependencies { classpath "me.bechberger:test-order-gradle-plugin:'"$PLUGIN_VERSION"'" }\
+}\
+
 ' "$build_file"
     else
         sed -i '' '/^plugins {/a\
@@ -548,14 +571,7 @@ pluginManagement {\
 
     # For multi-module projects, also apply the plugin to subprojects so that
     # each subproject's Test task is configured (root plugins{} only covers the
-    # root project). Detect multi-module by: (a) explicit allprojects {} in the
-    # build file, or (b) include() / include 'x' calls in the settings file.
-    local is_multi_module=false
-    if grep -q "^allprojects {" "$build_file"; then
-        is_multi_module=true
-    elif [[ -n "$settings_file" ]] && grep -qE "include\s*[\('\"']" "$settings_file"; then
-        is_multi_module=true
-    fi
+    # root project).
     if [[ "$is_multi_module" == "true" ]]; then
         if [[ "$build_file" == *.kts ]]; then
             printf '\nsubprojects { apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"

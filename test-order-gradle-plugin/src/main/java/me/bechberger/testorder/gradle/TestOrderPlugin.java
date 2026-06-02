@@ -115,11 +115,17 @@ public class TestOrderPlugin implements Plugin<Project> {
         Configuration agentConf = configured.agentConfiguration();
 
         utilityTaskRegistrar.register(project, ext, agentConf);
-        project.afterEvaluate(p -> {
-            ext.validateConfiguration(p.getLogger());
-            configureTestTasks(p, ext, agentConf,
+        if (project.getState().getExecuted()) {
+            ext.validateConfiguration(project.getLogger());
+            configureTestTasks(project, ext, agentConf,
                     learnModeConfigurator, orderModeConfigurator);
-        });
+        } else {
+            project.afterEvaluate(p -> {
+                ext.validateConfiguration(p.getLogger());
+                configureTestTasks(p, ext, agentConf,
+                        learnModeConfigurator, orderModeConfigurator);
+            });
+        }
 
         // Multi-project: register aggregate task that collects deps from all subprojects
         if (!project.getSubprojects().isEmpty()) {
@@ -225,15 +231,25 @@ public class TestOrderPlugin implements Plugin<Project> {
         project.getDependencies().add("testRuntimeOnly", coreDep);
 
         // TestNG support: add after evaluation so user dependencies are resolved
-        project.afterEvaluate(p -> {
-            if (isTestNGOnTestClasspath(p)) {
-                ExternalModuleDependency testngDep = (ExternalModuleDependency) p.getDependencies().create(
+        if (project.getState().getExecuted()) {
+            if (isTestNGOnTestClasspath(project)) {
+                ExternalModuleDependency testngDep = (ExternalModuleDependency) project.getDependencies().create(
                         GROUP_ID + ":test-order-testng:" + VERSION);
                 testngDep.setTransitive(false);
-                p.getDependencies().add("testRuntimeOnly", testngDep);
-                p.getLogger().lifecycle("[test-order] TestNG detected — adding test-order-testng support");
+                project.getDependencies().add("testRuntimeOnly", testngDep);
+                project.getLogger().lifecycle("[test-order] TestNG detected — adding test-order-testng support");
             }
-        });
+        } else {
+            project.afterEvaluate(p -> {
+                if (isTestNGOnTestClasspath(p)) {
+                    ExternalModuleDependency testngDep = (ExternalModuleDependency) p.getDependencies().create(
+                            GROUP_ID + ":test-order-testng:" + VERSION);
+                    testngDep.setTransitive(false);
+                    p.getDependencies().add("testRuntimeOnly", testngDep);
+                    p.getLogger().lifecycle("[test-order] TestNG detected — adding test-order-testng support");
+                }
+            });
+        }
     }
 
     /**
