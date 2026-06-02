@@ -550,7 +550,15 @@ pluginManagement {\
     # project, which often lacks the java plugin and fails with "testRuntimeOnly not
     # found".  buildscript{} only puts the jar on the classpath; subprojects{} then
     # applies it only to subprojects that have the java plugin.
-    if [[ "$build_file" == *.kts ]]; then
+    if [[ "$build_file" == *.kts ]] && [[ "$is_multi_module" == "true" ]]; then
+        # Kotlin DSL multi-module: declare with apply=false so the plugin is on the classpath
+        # but NOT applied to the root project (which may lack the Java plugin / testRuntimeOnly).
+        # The subprojects block below then applies only to subprojects that have the java plugin.
+        sed -i '' '/^plugins {/a\
+    id("me.bechberger.test-order") version "'"$PLUGIN_VERSION"'" apply false
+' "$build_file"
+    elif [[ "$build_file" == *.kts ]]; then
+        # Kotlin DSL single-module: root project has Java plugin, apply directly.
         sed -i '' '/^plugins {/a\
     id("me.bechberger.test-order") version "'"$PLUGIN_VERSION"'"
 ' "$build_file"
@@ -583,10 +591,13 @@ buildscript {\
 
     if [[ "$is_multi_module" == "true" ]]; then
         if [[ "$build_file" == *.kts ]]; then
+            # Use plugins.withId("java") so the plugin is only applied to subprojects
+            # that actually have the Java plugin. Subprojects without Java (e.g. BOM-only,
+            # build-logic plugins) have null testClassesDirs and would crash testOrderSelect.
             if [[ "$use_settings_repos" == "true" ]]; then
-                printf '\nsubprojects { apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"
+                printf '\nsubprojects { plugins.withId("java") { apply(plugin = "me.bechberger.test-order") } }\n' >> "$build_file"
             else
-                printf '\nsubprojects { repositories { mavenLocal() }; apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"
+                printf '\nsubprojects { repositories { mavenLocal() }; plugins.withId("java") { apply(plugin = "me.bechberger.test-order") } }\n' >> "$build_file"
             fi
         else
             if [[ "$use_settings_repos" == "true" ]]; then
@@ -742,9 +753,326 @@ phase_learn_gradle() {
     remove_gradle_plugin "$repo"
 }
 
+# Detect a source class for Gradle repos using the dump task (if index exists)
+# or by scanning source files.  Outputs an FQCN suitable for -Dtestorder.changed.classes.
+detect_source_class_gradle() {
+    local repo="$1"
+    local dir="$THIRD_PARTY/$repo"
+
+    # Try reading from the index via testOrderDump
+    local idx_file
+    idx_file=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    if [[ -n "$idx_file" ]]; then
+        local override_java_home
+        override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
+        local extra_args
+        extra_args=$(detect_gradle_extra_args "$repo" 2>/dev/null || echo "")
+        local from_index
+        # shellcheck disable=SC2086
+        from_index=$(JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderDump \
+            --no-build-cache --no-configuration-cache \
+            $extra_args \
+            2>/dev/null \
+            | awk -F'\t' 'NF==2 && $1!=$2 {print $2}' \
+            | tr ',' '\n' | awk '!/\$|Test$|Tests$|^#|^D|^$/{print; exit}' 2>/dev/null || true)
+        if [[ -n "$from_index" ]]; then
+            echo "$from_index"
+            return
+        fi
+    fi
+
+    # Fall back: scan source files
+    find "$dir" -path "*/src/main/java/*.java" \
+        ! -path "*/build/*" ! -path "*/src/test/*" \
+        ! -name "package-info.java" ! -name "module-info.java" \
+        -print -quit 2>/dev/null \
+        | sed 's|.*/src/main/java/||;s|/|.|g;s|\.java$||'
+}
+
+# ─── Gradle phase helpers ─────────────────────────────────────────────────────
+
+# Shared setup for Gradle phases: sets dir, results, extra_args, override_java_home.
+# Caller must `cd "$dir"` after.
+_gradle_phase_init() {
+    local repo="$1"
+    dir="$THIRD_PARTY/$repo"
+    results=$(result_dir "$repo")
+    extra_args=$(detect_gradle_extra_args "$repo" 2>/dev/null || echo "")
+    override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PHASE 2: Order — Run tests in dependency-optimized order
 # ═══════════════════════════════════════════════════════════════════════════════
+
+phase_order_gradle() {
+    local repo="$1"
+    section "ORDER: $repo (Gradle)"
+    local dir results extra_args override_java_home
+    _gradle_phase_init "$repo"
+
+    cd "$dir"
+    inject_gradle_plugin "$repo"
+
+    local src_class
+    src_class=$(detect_source_class_gradle "$repo")
+
+    log "Running: ./gradlew cleanTest test -Dtestorder.mode=order -Dtestorder.changeMode=explicit -Dtestorder.changed.classes=$src_class"
+    # shellcheck disable=SC2086
+    if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test \
+        --no-build-cache --no-configuration-cache \
+        -Dtestorder.mode=order \
+        -Dtestorder.changeMode=explicit \
+        -Dtestorder.changed.classes="$src_class" \
+        $extra_args \
+        2>&1 | tee "$results/order.log" | tail -5; then
+        ok "Order mode succeeded for $repo"
+    else
+        warn "Order mode had failures for $repo"
+    fi
+
+    log "Running: ./gradlew testOrderShowOrder"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderShowOrder \
+        --no-build-cache --no-configuration-cache \
+        -Dtestorder.changeMode=explicit \
+        -Dtestorder.changed.classes="$src_class" \
+        $extra_args \
+        2>&1 | tee "$results/show-order.log" | tail -20 || warn "Show-order failed"
+
+    remove_gradle_plugin "$repo"
+}
+
+phase_select_gradle() {
+    local repo="$1"
+    section "SELECT + RUN-REMAINING: $repo (Gradle)"
+    local dir results extra_args override_java_home
+    _gradle_phase_init "$repo"
+
+    cd "$dir"
+    inject_gradle_plugin "$repo"
+
+    local src_class
+    src_class=$(detect_source_class_gradle "$repo")
+
+    log "Running: ./gradlew testOrderSelect -Dtestorder.select.topN=5"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderSelect \
+        --no-build-cache --no-configuration-cache \
+        -Dtestorder.changeMode=explicit \
+        -Dtestorder.changed.classes="$src_class" \
+        -Dtestorder.select.topN=5 \
+        -Dtestorder.select.randomM=2 \
+        $extra_args \
+        2>&1 | tee "$results/select.log" | tail -10 || warn "Select failed"
+
+    log "Running: ./gradlew testOrderRunRemaining"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderRunRemaining \
+        --no-build-cache --no-configuration-cache \
+        $extra_args \
+        2>&1 | tee "$results/run-remaining.log" | tail -5 || warn "Run-remaining failed"
+
+    ok "Select + run-remaining completed for $repo"
+    remove_gradle_plugin "$repo"
+}
+
+phase_bugs_gradle() {
+    local repo="$1"
+    section "BUG INJECTION: $repo (Gradle)"
+    local dir results extra_args override_java_home
+    _gradle_phase_init "$repo"
+
+    cd "$dir"
+    inject_gradle_plugin "$repo"
+
+    local src_class
+    src_class=$(detect_source_class_gradle "$repo")
+
+    # Ensure we have an index
+    local idx
+    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    if [[ -z "$idx" ]]; then
+        log "No index found, running learn first..."
+        # shellcheck disable=SC2086
+        JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test \
+            --no-build-cache --no-configuration-cache \
+            -Dtestorder.mode=learn \
+            $extra_args \
+            2>&1 | tee "$results/bug-learn.log" | tail -3 || true
+        idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    fi
+
+    # Apply pre-written patch if available
+    local bugs_dir="$BUGS_DIR/$repo"
+    if [[ ! -d "$bugs_dir" ]]; then
+        warn "No patch directory for $repo — skipping bug injection (add scripts/bugs/$repo/*.patch)"
+        remove_gradle_plugin "$repo"
+        return
+    fi
+
+    # Safety: reverse any leftover patches
+    for pf in "$bugs_dir"/*.patch; do
+        [[ -f "$pf" ]] || continue
+        patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" 2>/dev/null || true
+    done
+
+    local patch_result
+    patch_result=$(inject_bug_patch "$repo") || true
+    if [[ -z "$patch_result" ]]; then
+        warn "No applicable patch for $repo"
+        remove_gradle_plugin "$repo"
+        return
+    fi
+
+    local classname patch_file
+    classname=$(echo "$patch_result" | cut -f1)
+    patch_file=$(echo "$patch_result" | cut -f2)
+
+    log "Running select with bug in $classname"
+    local bug_log="$results/bug-select.log"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderSelect \
+        --no-build-cache --no-configuration-cache \
+        -Dtestorder.changeMode=explicit \
+        -Dtestorder.changed.classes="$classname" \
+        -Dtestorder.select.topN=3 \
+        $extra_args \
+        2>&1 | tee "$bug_log" | tail -10 || true
+
+    if grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]" "$bug_log" 2>/dev/null; then
+        ok "Bug caught in top-3 selected tests!"
+    elif ! grep -q "Tests run:" "$bug_log" 2>/dev/null; then
+        warn "Bug result unknown — build failed before tests ran"
+    else
+        warn "Bug NOT caught in top-3 selected tests for $classname"
+    fi
+
+    restore_bug_patch "$repo" "$patch_file"
+    remove_gradle_plugin "$repo"
+}
+
+phase_full_gradle() {
+    local repo="$1"
+    section "FULL WORKFLOW: $repo (Gradle)"
+    local dir results extra_args override_java_home
+    _gradle_phase_init "$repo"
+
+    cd "$dir"
+    inject_gradle_plugin "$repo"
+
+    # 1. Clean
+    log "Step 1: Clean test-order data"
+    find "$dir" -name "test-dependencies.lz4" ! -path "*precheck*" -delete 2>/dev/null || true
+    find "$dir" -name "test-order-deps" -type d -exec rm -rf {} + 2>/dev/null || true
+    ok "Cleaned test-order data"
+
+    # 2. Learn (3 runs)
+    for i in 1 2 3; do
+        log "Step 2.$i: Learn run $i/3"
+        # shellcheck disable=SC2086
+        JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test \
+            --no-build-cache --no-configuration-cache \
+            -Dtestorder.mode=learn \
+            $extra_args \
+            2>&1 | tee "$results/full-learn-$i.log" | tail -3 || warn "Learn run $i had failures"
+    done
+
+    local idx
+    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    if [[ -z "$idx" ]]; then
+        warn "No dependency index produced. Skipping remaining steps."
+        remove_gradle_plugin "$repo"
+        return 0
+    fi
+    ok "Index created: $idx ($(du -h "$idx" | cut -f1))"
+
+    # Clean up deps dirs
+    local deps_count
+    deps_count=$(find "$dir" -name "test-order-deps" -type d 2>/dev/null | wc -l | tr -d ' ')
+    [[ "$deps_count" -gt 0 ]] && find "$dir" -name "test-order-deps" -type d -exec rm -rf {} + 2>/dev/null || true
+
+    local src_class
+    src_class=$(detect_source_class_gradle "$repo")
+
+    # 3. Dump
+    log "Step 3: Dump state"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderDump \
+        --no-build-cache --no-configuration-cache \
+        $extra_args \
+        2>&1 | tee "$results/full-dump.log" | tail -20 || warn "Dump failed"
+
+    # 4. Show order
+    log "Step 4: Show order"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderShowOrder \
+        --no-build-cache --no-configuration-cache \
+        -Dtestorder.changeMode=explicit \
+        -Dtestorder.changed.classes="$src_class" \
+        $extra_args \
+        2>&1 | tee "$results/full-show-order.log" | tail -20 || warn "Show-order failed"
+
+    # 5. Select
+    log "Step 5: Select top-5"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest testOrderSelect \
+        --no-build-cache --no-configuration-cache \
+        -Dtestorder.changeMode=explicit \
+        -Dtestorder.changed.classes="$src_class" \
+        -Dtestorder.select.topN=5 \
+        $extra_args \
+        2>&1 | tee "$results/full-select.log" | tail -10 || warn "Select failed"
+
+    # 6. Run remaining
+    log "Step 6: Run remaining"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderRunRemaining \
+        --no-build-cache --no-configuration-cache \
+        $extra_args \
+        2>&1 | tee "$results/full-remaining.log" | tail -5 || warn "Run-remaining failed"
+
+    # 7. Bug injection
+    log "Step 7: Bug injection verification"
+    local bugs_dir_7="$BUGS_DIR/$repo"
+    if [[ -d "$bugs_dir_7" ]]; then
+        for pf in "$bugs_dir_7"/*.patch; do
+            [[ -f "$pf" ]] || continue
+            patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" 2>/dev/null || true
+        done
+        local patch_result
+        patch_result=$(inject_bug_patch "$repo") || true
+        if [[ -n "$patch_result" ]]; then
+            local classname patch_file
+            classname=$(echo "$patch_result" | cut -f1)
+            patch_file=$(echo "$patch_result" | cut -f2)
+            local bug_log="$results/full-bug-select.log"
+            # shellcheck disable=SC2086
+            JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderSelect \
+                --no-build-cache --no-configuration-cache \
+                -Dtestorder.changeMode=explicit \
+                -Dtestorder.changed.classes="$classname" \
+                -Dtestorder.select.topN=3 \
+                $extra_args \
+                2>&1 | tee "$bug_log" | tail -10 || true
+            if grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]" "$bug_log" 2>/dev/null; then
+                ok "Bug caught in top-3 selected tests! (step 7)"
+            elif ! grep -q "Tests run:" "$bug_log" 2>/dev/null; then
+                warn "Bug result unknown — build failed before tests ran (step 7)"
+            else
+                warn "Bug not caught in top-3 for $classname (step 7)"
+            fi
+            restore_bug_patch "$repo" "$patch_file"
+        else
+            warn "No applicable patch for $repo — skipping bug injection (add scripts/bugs/$repo/*.patch)"
+        fi
+    else
+        warn "No patch directory for $repo — skipping bug injection (add scripts/bugs/$repo/*.patch)"
+    fi
+
+    ok "Full workflow completed for $repo"
+    remove_gradle_plugin "$repo"
+}
 
 phase_order_maven() {
     local repo="$1"
@@ -1234,6 +1562,10 @@ run_for_repo() {
     elif is_gradle_repo "$repo"; then
         case "$phase" in
             learn)   phase_learn_gradle "$repo" ;;
+            order)   phase_order_gradle "$repo" ;;
+            select)  phase_select_gradle "$repo" ;;
+            bugs)    phase_bugs_gradle "$repo" ;;
+            full)    phase_full_gradle "$repo" ;;
             *)       warn "Gradle phase '$phase' not yet implemented for $repo" ;;
         esac
     else
