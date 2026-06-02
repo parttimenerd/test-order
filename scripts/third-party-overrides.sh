@@ -72,6 +72,13 @@ detect_gradle_extra_args() {
         # bypassing constructors, so the injected $testorder$tracker field is never initialized.
         # Neonbee learn will produce an index only for classes that avoid these paths.
         neonbee) echo "--continue" ;;
+        # junit5's platform-tooling-support-tests need pre-built JARs in a specific
+        # local Maven repo layout. Skip them — they test distribution packaging, not
+        # unit functionality, and fail with "Failed to find JAR file" on dev machines.
+        # jupiter-tests:ExtensionRegistryTests counts auto-detected extensions and
+        # expects exactly 9; our agent registers itself via ServiceLoader making it 10.
+        # Since this is meta-testing JUnit internals (not user code), exclude it.
+        junit5) echo "--continue -x :platform-tooling-support-tests:test -x :jupiter-tests:test" ;;
         # Default: exclude common static-analysis tasks that may slow or break the build.
         # Most Gradle repos have these tasks; resilience4j is the known exception.
         *) echo "--continue -x checkstyleMain -x checkstyleTest -x spotbugsMain" ;;
@@ -86,6 +93,9 @@ detect_gradle_java_home() {
         # neonbee uses Gradle 8.5 which does not support JDK 25 (class file major version 69).
         # Fall back to JDK 21 (sapmachine-21 is available on this machine).
         neonbee) echo "/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home" ;;
+        # junit5 requires JDK 21 (its Gradle build targets Java 8–17 source but the
+        # Gradle wrapper version needs JDK ≤ 21 to run reliably).
+        junit5) echo "/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home" ;;
         *) echo "" ;;
     esac
 }

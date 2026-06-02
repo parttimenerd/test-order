@@ -452,20 +452,33 @@ inject_gradle_plugin() {
 
     cp "$build_file" "$build_file.bak"
 
-    # Also inject into settings.gradle for plugin resolution
+    # Inject mavenLocal() into settings files so Gradle can resolve both:
+    #   (a) the test-order plugin itself (pluginManagement.repositories)
+    #   (b) test-order JARs added to testImplementation/testRuntimeOnly
+    #       (dependencyResolutionManagement.repositories)
+    #
+    # Strategy:
+    #   pluginManagement: inject into existing block, or prepend a new one.
+    #   dependencyResolutionManagement: always append a new block at end of file
+    #     (Gradle merges multiple dependencyResolutionManagement blocks safely).
     local settings_file=""
     if [[ -f "$dir/settings.gradle.kts" ]]; then
         settings_file="$dir/settings.gradle.kts"
         cp "$settings_file" "$settings_file.bak"
-        # Add mavenLocal() to plugin repositories
+        # 1. pluginManagement: inject mavenLocal() into existing block or prepend new block
         if ! grep -q "mavenLocal" "$settings_file"; then
             if grep -q "pluginManagement" "$settings_file"; then
-                # File already has pluginManagement — inject mavenLocal() inside
-                # the existing repositories block (or add one if absent)
                 if grep -q "repositories" "$settings_file"; then
-                    sed -i '' '/repositories {/a\
-        mavenLocal()
-' "$settings_file"
+                    # Inject after the FIRST repositories { line that is inside pluginManagement
+                    python3 -c "
+import re, sys
+content = open('$settings_file').read()
+# Find pluginManagement block and inject mavenLocal into its repositories
+def inject(m):
+    return m.group(0).replace('repositories {', 'repositories {\n        mavenLocal()', 1)
+content = re.sub(r'pluginManagement\s*\{[^}]*repositories\s*\{', inject, content, count=1, flags=re.DOTALL)
+open('$settings_file', 'w').write(content)
+"
                 else
                     sed -i '' '/pluginManagement {/a\
     repositories {\
@@ -487,6 +500,8 @@ pluginManagement {\
 ' "$settings_file"
             fi
         fi
+        # 2. dependencyResolutionManagement: append a new block so test-order JARs resolve
+        printf '\ndependencyResolutionManagement { repositories { mavenLocal() } }\n' >> "$settings_file"
     elif [[ -f "$dir/settings.gradle" ]]; then
         settings_file="$dir/settings.gradle"
         cp "$settings_file" "$settings_file.bak"
@@ -517,6 +532,7 @@ pluginManagement {\
 ' "$settings_file"
             fi
         fi
+        printf '\ndependencyResolutionManagement { repositories { mavenLocal() } }\n' >> "$settings_file"
     fi
 
     # Inject plugin application
@@ -530,12 +546,23 @@ pluginManagement {\
 ' "$build_file"
     fi
 
-    # For multi-module projects that have an allprojects {} block, also apply
-    # the plugin to subprojects via legacy apply style so that each subproject's
-    # Test task is configured (root plugins{} only covers the root project).
+    # For multi-module projects, also apply the plugin to subprojects so that
+    # each subproject's Test task is configured (root plugins{} only covers the
+    # root project). Detect multi-module by: (a) explicit allprojects {} in the
+    # build file, or (b) include() calls in the settings file.
+    local is_multi_module=false
     if grep -q "^allprojects {" "$build_file"; then
-        printf '\nallprojects { apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
-        log "  → multi-module: added allprojects apply block to $build_file"
+        is_multi_module=true
+    elif [[ -n "$settings_file" ]] && grep -q 'include(' "$settings_file"; then
+        is_multi_module=true
+    fi
+    if [[ "$is_multi_module" == "true" ]]; then
+        if [[ "$build_file" == *.kts ]]; then
+            printf '\nsubprojects { apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"
+        else
+            printf '\nallprojects { apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
+        fi
+        log "  → multi-module: added subprojects apply block to $build_file"
     fi
 
     ok "Injected test-order-gradle-plugin into $build_file"

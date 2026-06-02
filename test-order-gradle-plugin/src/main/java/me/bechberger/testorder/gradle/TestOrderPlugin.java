@@ -771,8 +771,12 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
         });
 
-        // Add runtime jar to test classpath (UsageStore accessible without agent)
-        Configuration runtimeConf = createHiddenConfiguration(project, "testOrderOfflineRuntime", false);
+        // Add runtime jar to test classpath (UsageStore accessible without agent).
+        // Use a per-task name so that multiple Test tasks in the same project each
+        // get their own configuration — avoids "cannot mutate after resolved" errors
+        // when a second task's configureEach fires after the first config was resolved.
+        String runtimeConfName = "testOrderOfflineRuntime_" + testTask.getName();
+        Configuration runtimeConf = createHiddenConfiguration(project, runtimeConfName, false);
         project.getDependencies().add(runtimeConf.getName(),
                 GROUP_ID + ":test-order-agent:" + VERSION);
         testTask.setClasspath(testTask.getClasspath().plus(runtimeConf));
