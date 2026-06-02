@@ -154,6 +154,42 @@ public final class ChangeAnalysis {
 		Set<String> changed = prodChangeFuture.join();
 		Set<String> changedTests = testChangeFuture.join();
 
+		// ── Cross-module change propagation ─────────────────────────
+		// In multi-module builds, test modules (e.g. jupiter-tests) or modules with
+		// tests that cover sibling production modules must also see changes from those
+		// sibling modules. additionalSourceRoots contains sibling production source
+		// roots added by the Gradle/Maven plugin. We scan them here and merge any
+		// detected changes into `changed` so that tests depending on changed sibling
+		// classes receive the correct depOverlap score boost.
+		//
+		// since-last-run mode is skipped for additional roots because we have no
+		// per-root hash file; the primary root's hash file covers only that root.
+		// For git-based modes (uncommitted, since-last-commit) git covers all roots.
+		if (!ctx.additionalSourceRoots().isEmpty() && !"since-last-run".equalsIgnoreCase(ctx.changeMode())
+				&& !"explicit".equalsIgnoreCase(ctx.changeMode())) {
+			List<java.util.concurrent.CompletableFuture<Set<String>>> siblingFutures = new ArrayList<>();
+			for (Path siblingRoot : ctx.additionalSourceRoots()) {
+				if (!Files.isDirectory(siblingRoot))
+					continue;
+				siblingFutures.add(java.util.concurrent.CompletableFuture
+						.supplyAsync(() -> ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(),
+								ctx.projectRoot(), siblingRoot, null, null, true, ctx.log())));
+			}
+			if (!siblingFutures.isEmpty()) {
+				Set<String> mergedChanged = new java.util.LinkedHashSet<>(changed);
+				for (var f : siblingFutures) {
+					mergedChanged.addAll(f.join());
+				}
+				if (mergedChanged.size() > changed.size()) {
+					ctx.log()
+							.debug("[test-order] cross-module change propagation added "
+									+ (mergedChanged.size() - changed.size()) + " class(es) from "
+									+ siblingFutures.size() + " sibling source root(s).");
+					changed = mergedChanged;
+				}
+			}
+		}
+
 		// ── Bytecode change detection (Step 1) ──────────────────────
 		// Cross-checks compiled .class files for source-invisible changes
 		// (annotation processors, generated code, dependency-version bumps).
