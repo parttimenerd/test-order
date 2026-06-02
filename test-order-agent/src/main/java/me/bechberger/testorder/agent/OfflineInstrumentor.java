@@ -88,7 +88,7 @@ public class OfflineInstrumentor {
 		this.uncertainClassesDots = uncertainClasses;
 
 		IntelligentClassFilter.Builder filterBuilder = new IntelligentClassFilter.Builder()
-				.strategy(IntelligentClassFilter.Strategy.SMART).skipTestClasses(true).useHeuristics(true);
+				.strategy(IntelligentClassFilter.Strategy.SMART).skipTestClasses(false).useHeuristics(true);
 
 		for (String pkg : includePackages) {
 			filterBuilder.explicitInclude(pkg);

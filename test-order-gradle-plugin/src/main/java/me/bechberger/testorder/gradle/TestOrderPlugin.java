@@ -69,6 +69,14 @@ public class TestOrderPlugin implements Plugin<Project> {
     static final String GROUP_ID = "me.bechberger";
     static final String VERSION = "0.0.1-SNAPSHOT";
 
+    /**
+     * Stores active IndexCollectorServer instances keyed by task path.
+     * Uses a static map to avoid calling task.getExtensions() at execution time,
+     * which is incompatible with the Gradle configuration cache (Gradle 9+).
+     */
+    private static final java.util.concurrent.ConcurrentHashMap<String, me.bechberger.testorder.IndexCollectorServer>
+            COLLECTOR_REGISTRY = new java.util.concurrent.ConcurrentHashMap<>();
+
     /** Wraps a Gradle {@link org.gradle.api.logging.Logger} as a {@link PluginLog}. */
     private static PluginLog wrapLog(Project project) {
         return new PluginLog() {
@@ -532,7 +540,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             new me.bechberger.testorder.IndexCollectorServer(indexFilePath);
                     testTask.systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
-                    testTask.getExtensions().getExtraProperties().set("testOrderCollector", collector);
+                    COLLECTOR_REGISTRY.put(testTask.getPath(), collector);
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
                             collector.getPort());
                 } catch (java.io.IOException ex) {
@@ -602,10 +610,9 @@ public class TestOrderPlugin implements Plugin<Project> {
         });
         testTask.doLast("aggregateDeps", t -> {
             // Stop IndexCollectorServer if running (agent mode)
-            Object collectorObj = testTask.getExtensions().getExtraProperties().has("testOrderCollector")
-                    ? testTask.getExtensions().getExtraProperties().get("testOrderCollector")
-                    : null;
-            if (collectorObj instanceof me.bechberger.testorder.IndexCollectorServer collector) {
+            me.bechberger.testorder.IndexCollectorServer collector =
+                    COLLECTOR_REGISTRY.remove(testTask.getPath());
+            if (collector != null) {
                 int merged = collector.stopAndMerge();
                 if (merged > 0) {
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
@@ -644,6 +651,9 @@ public class TestOrderPlugin implements Plugin<Project> {
                     .filter(Files::isDirectory)
                     .findFirst()
                     .orElse(null);
+            project.getLogger().debug("[test-order] classesDir for {}: {} (all: {})",
+                    project.getPath(), classesDir,
+                    mainSourceSet.getOutput().getClassesDirs().getFiles());
 
             if (classesDir == null) {
                 project.getLogger().warn("[test-order] No compiled classes directory found — skipping offline instrumentation");
@@ -734,8 +744,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             new me.bechberger.testorder.IndexCollectorServer(indexFilePath, mappingFile);
                     testTask.systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
-                    // Store server reference for doLast cleanup
-                    testTask.getExtensions().getExtraProperties().set("testOrderCollector", collector);
+                    COLLECTOR_REGISTRY.put(testTask.getPath(), collector);
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
                             collector.getPort());
                 } catch (IOException ex) {
@@ -759,10 +768,9 @@ public class TestOrderPlugin implements Plugin<Project> {
                 project.getLogger().warn("[test-order] Failed to restore classes: {}", e.getMessage());
             }
             // Stop IndexCollectorServer and merge (if it was started)
-            Object collectorObj = testTask.getExtensions().getExtraProperties().has("testOrderCollector")
-                    ? testTask.getExtensions().getExtraProperties().get("testOrderCollector")
-                    : null;
-            if (collectorObj instanceof me.bechberger.testorder.IndexCollectorServer collector) {
+            me.bechberger.testorder.IndexCollectorServer collector =
+                    COLLECTOR_REGISTRY.remove(testTask.getPath());
+            if (collector != null) {
                 int merged = collector.stopAndMerge();
                 if (merged > 0) {
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
@@ -2220,13 +2228,22 @@ public class TestOrderPlugin implements Plugin<Project> {
         if (sourceSets != null) {
             SourceSet main = sourceSets.findByName(SourceSet.MAIN_SOURCE_SET_NAME);
             if (main != null) {
+                // Check Java source dirs first (most projects)
                 for (File dir : main.getJava().getSrcDirs()) {
                     if (dir.isDirectory()) return dir.toPath();
                 }
+                // getAllSource() includes resources — exclude them explicitly
+                java.util.Set<File> resources = main.getResources().getSrcDirs();
+                for (File dir : main.getAllSource().getSourceDirectories()) {
+                    if (!resources.contains(dir) && dir.isDirectory()) return dir.toPath();
+                }
             }
         }
-        // Fallback
-        return project.getProjectDir().toPath().resolve("src/main/java");
+        // Fallback: check src/main/kotlin before src/main/java
+        Path projectDir = project.getProjectDir().toPath();
+        Path kotlinDir = projectDir.resolve("src/main/kotlin");
+        if (kotlinDir.toFile().isDirectory()) return kotlinDir;
+        return projectDir.resolve("src/main/java");
     }
 
     /** Resolves the test Java source root for the project. */
@@ -2239,10 +2256,18 @@ public class TestOrderPlugin implements Plugin<Project> {
                 for (File dir : test.getJava().getSrcDirs()) {
                     if (dir.isDirectory()) return dir.toPath();
                 }
+                // getAllSource() includes resources — exclude them explicitly
+                java.util.Set<File> resources = test.getResources().getSrcDirs();
+                for (File dir : test.getAllSource().getSourceDirectories()) {
+                    if (!resources.contains(dir) && dir.isDirectory()) return dir.toPath();
+                }
             }
         }
-        // Fallback
-        return project.getProjectDir().toPath().resolve("src/test/java");
+        // Fallback: check src/test/kotlin before src/test/java
+        Path projectDir = project.getProjectDir().toPath();
+        Path kotlinDir = projectDir.resolve("src/test/kotlin");
+        if (kotlinDir.toFile().isDirectory()) return kotlinDir;
+        return projectDir.resolve("src/test/java");
     }
 
     /** Resolves the main Kotlin source root for the project, falling back to src/main/kotlin. */
@@ -2679,8 +2704,12 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
         }
         task.useJUnitPlatform();
-        task.shouldRunAfter(project.getTasks().named("test"));
-        task.dependsOn(project.getTasks().named("testClasses"));
+        if (project.getTasks().findByName("test") != null) {
+            task.shouldRunAfter(project.getTasks().named("test"));
+        }
+        if (project.getTasks().findByName("testClasses") != null) {
+            task.dependsOn(project.getTasks().named("testClasses"));
+        }
         task.systemProperty("testorder.state.path",
                 ext.getStateFile().get().getAsFile().getAbsolutePath());
     }

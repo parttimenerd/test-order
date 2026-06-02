@@ -560,9 +560,42 @@ pluginManagement {\
         if [[ "$build_file" == *.kts ]]; then
             printf '\nsubprojects { apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"
         else
-            printf '\nallprojects { apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
+            printf '\nsubprojects { apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
         fi
         log "  → multi-module: added subprojects apply block to $build_file"
+    fi
+
+    # Inject any extra gradle.properties lines required by this repo.
+    local extra_props=""
+    type detect_gradle_properties_extra &>/dev/null && extra_props=$(detect_gradle_properties_extra "$repo" 2>/dev/null || echo "")
+    if [[ -n "$extra_props" ]]; then
+        local props_file="$dir/gradle.properties"
+        if [[ -f "$props_file" ]]; then
+            cp "$props_file" "$props_file.bak"
+        fi
+        printf '\n%s\n' "$extra_props" >> "$props_file"
+        log "  → injected extra gradle.properties: $extra_props"
+    fi
+
+    # Remove any lines from settings files that must be stripped for the build to work.
+    local remove_pattern=""
+    type detect_gradle_settings_remove &>/dev/null && remove_pattern=$(detect_gradle_settings_remove "$repo" 2>/dev/null || echo "")
+    if [[ -n "$remove_pattern" && -n "$settings_file" ]]; then
+        # settings_file already backed up above; just modify in place
+        sed -i '' "/$remove_pattern/d" "$settings_file"
+        log "  → removed lines matching '$remove_pattern' from $settings_file"
+    fi
+
+    # Override the daemon JVM vendor in gradle/gradle-daemon-jvm.properties if needed.
+    local daemon_vendor=""
+    type detect_gradle_daemon_jvm_vendor &>/dev/null && daemon_vendor=$(detect_gradle_daemon_jvm_vendor "$repo" 2>/dev/null || echo "")
+    if [[ -n "$daemon_vendor" ]]; then
+        local daemon_jvm_file="$dir/gradle/gradle-daemon-jvm.properties"
+        if [[ -f "$daemon_jvm_file" ]]; then
+            cp "$daemon_jvm_file" "$daemon_jvm_file.bak"
+            sed -i '' "s/^toolchainVendor=.*/toolchainVendor=$daemon_vendor/" "$daemon_jvm_file"
+            log "  → patched gradle-daemon-jvm.properties: toolchainVendor=$daemon_vendor"
+        fi
     fi
 
     ok "Injected test-order-gradle-plugin into $build_file"
@@ -572,7 +605,7 @@ remove_gradle_plugin() {
     local repo="$1"
     local dir="$THIRD_PARTY/$repo"
 
-    for f in build.gradle build.gradle.kts settings.gradle settings.gradle.kts; do
+    for f in build.gradle build.gradle.kts settings.gradle settings.gradle.kts gradle.properties gradle/gradle-daemon-jvm.properties; do
         if [[ -f "$dir/$f.bak" ]]; then
             mv "$dir/$f.bak" "$dir/$f"
         fi
@@ -648,9 +681,9 @@ phase_learn_gradle() {
     local override_java_home
     override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
 
-    log "Running: ./gradlew cleanTest test --no-build-cache -Dtestorder.mode=learn"
+    log "Running: ./gradlew cleanTest test --no-build-cache --no-configuration-cache -Dtestorder.mode=learn"
     # shellcheck disable=SC2086
-    if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test -Dtestorder.mode=learn --no-daemon --no-build-cache \
+    if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test -Dtestorder.mode=learn --no-daemon --no-build-cache --no-configuration-cache \
         $extra_args \
         2>&1 | tee "$results/learn.log" | tail -5; then
         ok "Learn succeeded for $repo"

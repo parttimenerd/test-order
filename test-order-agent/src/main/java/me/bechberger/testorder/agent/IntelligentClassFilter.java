@@ -339,6 +339,10 @@ public class IntelligentClassFilter {
 				|| simpleName.endsWith("TestCase");
 	}
 
+	public Set<String> getExplicitIncludes() {
+		return explicitIncludes;
+	}
+
 	/**
 	 * Clear the filter cache.
 	 */

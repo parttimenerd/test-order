@@ -79,6 +79,18 @@ detect_gradle_extra_args() {
         # expects exactly 9; our agent registers itself via ServiceLoader making it 10.
         # Since this is meta-testing JUnit internals (not user code), exclude it.
         junit5) echo "--continue -x :platform-tooling-support-tests:test -x :jupiter-tests:test" ;;
+        # okhttp uses foojay-resolver for JDK toolchain provisioning AND a gradle-daemon-jvm.properties
+        # that locks the daemon vendor to ADOPTIUM (Eclipse Temurin) which is unavailable on aarch64 macOS.
+        # Declare SAPMachine JDK 21 and disable auto-download; the daemon-jvm file is patched by inject_gradle_plugin.
+        # android/graal/module-test modules are conditionally included (gradle.properties flags);
+        # android-test is included when ANDROID_HOME is set (it is on this machine) but the build
+        # fails due to conflicting SDK paths. Exclude android test tasks; okcurl requires GraalVM.
+        okhttp) echo "--continue -x :okcurl:test -x :android-test:testDebugUnitTest -x :android-test-app:testDebugUnitTest" ;;
+        # mockito uses Gradle 8.14.2 which fails with Kotlin DSL compilation on JDK 25
+        # (IntelliJ's JavaVersion.parse doesn't understand "25.0.x").
+        # Exclude android modules (need Android SDK) and GraalVM tests (need native image).
+        # Note: :mockito-integration-tests:android-tests uses testDebugUnitTest, not :test.
+        mockito) echo "--continue -x :mockito-extensions:mockito-android:test -x :mockito-integration-tests:android-tests:testDebugUnitTest -x :mockito-integration-tests:graalvm-tests:test" ;;
         # Default: exclude common static-analysis tasks that may slow or break the build.
         # Most Gradle repos have these tasks; resilience4j is the known exception.
         *) echo "--continue -x checkstyleMain -x checkstyleTest -x spotbugsMain" ;;
@@ -96,6 +108,47 @@ detect_gradle_java_home() {
         # junit5 requires JDK 21 (its Gradle build targets Java 8–17 source but the
         # Gradle wrapper version needs JDK ≤ 21 to run reliably).
         junit5) echo "/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home" ;;
+        # mockito uses Gradle 8.14.2 which fails with Kotlin DSL compilation on JDK 25
+        # (IntelliJ's JavaVersion.parse doesn't understand "25.0.x").
+        mockito) echo "/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Return extra lines to append to gradle.properties during injection.
+# Used when a Gradle build property (not a JVM arg) is needed for the build to run.
+# The caller (inject_gradle_plugin) handles backup/restore of gradle.properties.
+detect_gradle_properties_extra() {
+    local repo="$1"
+    case "$repo" in
+        # okhttp uses foojay-resolver for JDK toolchain provisioning AND a gradle-daemon-jvm.properties
+        # that locks the daemon vendor to ADOPTIUM (Eclipse Temurin) which is unavailable on aarch64 macOS.
+        # Declare SAPMachine JDK 21 and disable auto-download; the daemon-jvm file is patched by inject_gradle_plugin.
+        okhttp) printf "org.gradle.java.installations.paths=/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21/Contents/Home\norg.gradle.java.installations.auto-download=false\n" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Return a vendor string to override in gradle/gradle-daemon-jvm.properties.
+# If non-empty, inject_gradle_plugin will replace toolchainVendor in that file.
+detect_gradle_daemon_jvm_vendor() {
+    local repo="$1"
+    case "$repo" in
+        # okhttp specifies toolchainVendor=ADOPTIUM (Eclipse Temurin) in gradle-daemon-jvm.properties.
+        # Eclipse Temurin is unavailable on aarch64 macOS; use SAP SE (sapmachine-21).
+        okhttp) echo "SAP" ;;
+        *) echo "" ;;
+    esac
+}
+# Used when a settings plugin causes build failures on this machine.
+# The pattern is passed to `sed -i '' "/pattern/d"`.
+detect_gradle_settings_remove() {
+    local repo="$1"
+    case "$repo" in
+        # foojay-resolver-convention tries to download Eclipse Temurin from foojay.io,
+        # which fails on aarch64 macOS (no download URL). Remove it so Gradle falls back
+        # to using the JDK specified via org.gradle.java.installations.paths (in gradle.properties).
+        okhttp) echo "foojay-resolver-convention" ;;
         *) echo "" ;;
     esac
 }
