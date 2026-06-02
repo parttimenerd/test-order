@@ -2728,6 +2728,10 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
         task.systemProperty("testorder.state.path",
                 ext.getStateFile().get().getAsFile().getAbsolutePath());
+        // Clear any task-level include patterns that were added by build conventions
+        // (e.g. include("**/*Test.class")) so that applySelectedTests can override
+        // the set of classes to run without being blocked by naming restrictions.
+        task.doFirst("clearIncludes", t -> ((Test) t).setIncludes(java.util.Collections.emptySet()));
     }
 
     private static void applySelectedTests(Test task, List<String> tests) {

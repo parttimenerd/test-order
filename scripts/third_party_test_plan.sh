@@ -967,7 +967,9 @@ phase_bugs_gradle() {
     log "Running select with bug in $classname"
     local bug_log="$results/bug-select.log"
     # shellcheck disable=SC2086
-    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderSelect \
+    # cleanTestOrderSelect (and cleanTest) forces re-execution: after patch the source changes,
+    # but without cleaning Gradle's incremental task tracking considers testOrderSelect UP-TO-DATE.
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest cleanTestOrderSelect testOrderSelect \
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$classname" \
