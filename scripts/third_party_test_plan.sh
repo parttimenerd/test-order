@@ -572,11 +572,28 @@ buildscript {\
     # For multi-module projects, also apply the plugin to subprojects so that
     # each subproject's Test task is configured (root plugins{} only covers the
     # root project).
+    #
+    # Only include repositories { mavenLocal() } in the subprojects block when
+    # dependencyResolutionManagement is NOT already in settings (i.e. the project
+    # uses per-project repositories).  When dependencyResolutionManagement is
+    # present, adding project-level repos shadows the settings-level repos and
+    # breaks dependencies like google-java-format (hibernate-orm).
+    local use_settings_repos=false
+    [[ -n "$settings_file" ]] && grep -q "dependencyResolutionManagement" "$settings_file" && use_settings_repos=true
+
     if [[ "$is_multi_module" == "true" ]]; then
         if [[ "$build_file" == *.kts ]]; then
-            printf '\nsubprojects { repositories { mavenLocal() }; apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"
+            if [[ "$use_settings_repos" == "true" ]]; then
+                printf '\nsubprojects { apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"
+            else
+                printf '\nsubprojects { repositories { mavenLocal() }; apply(plugin = "me.bechberger.test-order") }\n' >> "$build_file"
+            fi
         else
-            printf '\nsubprojects { repositories { mavenLocal() }; apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
+            if [[ "$use_settings_repos" == "true" ]]; then
+                printf '\nsubprojects { apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
+            else
+                printf '\nsubprojects { repositories { mavenLocal() }; apply plugin: "me.bechberger.test-order" }\n' >> "$build_file"
+            fi
         fi
         log "  → multi-module: added subprojects apply block to $build_file"
     fi

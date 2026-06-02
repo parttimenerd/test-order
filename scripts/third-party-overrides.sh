@@ -109,6 +109,8 @@ detect_gradle_extra_args() {
         # The :micronaut-core subproject uses ScopedValue (JDK preview API); needs --enable-preview.
         # inject-java and test-suite have pre-existing JDK test failures; exclude them.
         micronaut-core) echo "--continue -x checkstyleMain -x checkstyleTest -x :micronaut-inject-java:test -x :test-suite:test -Pcompiler.args=--enable-preview" ;;
+        # hibernate-orm: no checkstyle/spotbugs tasks; uses Gradle 9.5.
+        hibernate-orm) echo "--continue" ;;
         # Default: exclude common static-analysis tasks that may slow or break the build.
         # Most Gradle repos have these tasks; resilience4j is the known exception.
         *) echo "--continue -x checkstyleMain -x checkstyleTest -x spotbugsMain" ;;
@@ -146,6 +148,8 @@ detect_gradle_properties_extra() {
         # that locks the daemon vendor to ADOPTIUM (Eclipse Temurin) which is unavailable on aarch64 macOS.
         # Declare SAPMachine JDK 21 and disable auto-download; the daemon-jvm file is patched by inject_gradle_plugin.
         okhttp) printf "org.gradle.java.installations.paths=%s\norg.gradle.java.installations.auto-download=false\n" "$(_sdkman_java_home "21-sapmchn")" ;;
+        # hibernate-orm test suite is large; default daemon heap causes OOM.
+        hibernate-orm) printf "org.gradle.jvmargs=-Xmx4g\n" ;;
         *) echo "" ;;
     esac
 }
