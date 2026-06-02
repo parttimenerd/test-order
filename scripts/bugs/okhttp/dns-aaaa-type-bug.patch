@@ -1,0 +1,10 @@
+--- a/okhttp-dnsoverhttps/src/main/kotlin/okhttp3/dnsoverhttps/DnsRecordCodec.kt
++++ b/okhttp-dnsoverhttps/src/main/kotlin/okhttp3/dnsoverhttps/DnsRecordCodec.kt
+@@ -27,7 +27,7 @@ internal object DnsRecordCodec {
+   private const val SERVFAIL = 2
+   private const val NXDOMAIN = 3
+   const val TYPE_A = 0x0001
+-  const val TYPE_AAAA = 0x001c
++  const val TYPE_AAAA = 0x0001
+   private const val TYPE_PTR = 0x000c
+   private val ASCII = Charsets.US_ASCII

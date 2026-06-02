@@ -245,6 +245,38 @@ detect_single_module() {
 BUGS_DIR="$SCRIPT_DIR/bugs"
 
 # Apply the first applicable patch for $repo.
+# Returns 0 if a log file (Maven or Gradle format) contains test failures.
+log_has_test_failures() {
+    local log_file="$1"
+    # Maven: "Tests run: X, Failures: N" or "Tests run: X, Errors: N" where N != 0
+    if grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]" "$log_file" 2>/dev/null; then
+        return 0
+    fi
+    # Gradle JUnit 5 verbose: "ClassName > method() FAILED" lines
+    if grep -qE "^[A-Za-z].* > .+\(\) FAILED$" "$log_file" 2>/dev/null; then
+        return 0
+    fi
+    # Gradle summary: "N tests completed, M failed" where M != 0
+    if grep -qE "^[0-9]+ tests? completed, [0-9]+ failed" "$log_file" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# Returns 0 if a log file shows that tests actually ran (Maven or Gradle format).
+log_has_tests_run() {
+    local log_file="$1"
+    # Maven: "Tests run:" summary line
+    grep -q "Tests run:" "$log_file" 2>/dev/null && return 0
+    # Gradle: any test task result — PASSED, FAILED, or SKIPPED
+    grep -qE "^[A-Za-z].* > .+\(\) (PASSED|FAILED|SKIPPED)$" "$log_file" 2>/dev/null && return 0
+    # Gradle: "N tests completed" summary
+    grep -qE "^[0-9]+ tests? completed" "$log_file" 2>/dev/null && return 0
+    # Gradle: "> Task :module:test" ran (not SKIPPED/UP-TO-DATE) means tests attempted
+    grep -qE "^> Task :[^:]+:test$" "$log_file" 2>/dev/null && return 0
+    return 1
+}
+
 # Prints "CLASSNAME\tPATCH_FILE" on success, returns 0.
 # Returns 1 if no patch applies.
 inject_bug_patch() {
@@ -273,7 +305,8 @@ inject_bug_patch() {
             local changed_file
             changed_file=$(grep '^+++ ' "$patch_file" | head -1 | sed 's|^+++ b/||;s|^+++ ||;s|\t.*||')
             local fqcn
-            fqcn=$(echo "$changed_file" | sed 's|.*src/main/java/||;s|/|.|g;s|\.java$||')
+            # Handle both Java (src/main/java) and Kotlin (src/main/kotlin) source roots
+            fqcn=$(echo "$changed_file" | sed 's|.*src/main/java/||;s|.*src/main/kotlin/||;s|/|.|g;s|\.java$||;s|\.kt$||')
             log "  Applied patch $(basename "$patch_file") → $fqcn" >&2
             printf '%s\t%s\n' "$fqcn" "$patch_file"
             return 0
@@ -911,11 +944,13 @@ phase_bugs_gradle() {
         return
     fi
 
-    # Safety: reverse any leftover patches
+    # Safety: reverse any leftover patches and clean up .rej files
     for pf in "$bugs_dir"/*.patch; do
         [[ -f "$pf" ]] || continue
-        patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" 2>/dev/null || true
+        patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" >/dev/null 2>&1 || true
     done
+    # Remove any .rej files from failed reverse attempts (they confuse subsequent patch dry-runs)
+    find "$dir" -name "*.rej" -delete 2>/dev/null || true
 
     local patch_result
     patch_result=$(inject_bug_patch "$repo") || true
@@ -940,9 +975,9 @@ phase_bugs_gradle() {
         $extra_args \
         2>&1 | tee "$bug_log" | tail -10 || true
 
-    if grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]" "$bug_log" 2>/dev/null; then
+    if log_has_test_failures "$bug_log"; then
         ok "Bug caught in top-3 selected tests!"
-    elif ! grep -q "Tests run:" "$bug_log" 2>/dev/null; then
+    elif ! log_has_tests_run "$bug_log"; then
         warn "Bug result unknown — build failed before tests ran"
     else
         warn "Bug NOT caught in top-3 selected tests for $classname"
@@ -1038,8 +1073,9 @@ phase_full_gradle() {
     if [[ -d "$bugs_dir_7" ]]; then
         for pf in "$bugs_dir_7"/*.patch; do
             [[ -f "$pf" ]] || continue
-            patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" 2>/dev/null || true
+            patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" >/dev/null 2>&1 || true
         done
+        find "$dir" -name "*.rej" -delete 2>/dev/null || true
         local patch_result
         patch_result=$(inject_bug_patch "$repo") || true
         if [[ -n "$patch_result" ]]; then
@@ -1055,9 +1091,9 @@ phase_full_gradle() {
                 -Dtestorder.select.topN=3 \
                 $extra_args \
                 2>&1 | tee "$bug_log" | tail -10 || true
-            if grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]" "$bug_log" 2>/dev/null; then
+            if log_has_test_failures "$bug_log"; then
                 ok "Bug caught in top-3 selected tests! (step 7)"
-            elif ! grep -q "Tests run:" "$bug_log" 2>/dev/null; then
+            elif ! log_has_tests_run "$bug_log"; then
                 warn "Bug result unknown — build failed before tests ran (step 7)"
             else
                 warn "Bug not caught in top-3 for $classname (step 7)"
@@ -1275,17 +1311,19 @@ phase_bugs_maven() {
                 -Dtestorder.mode=skip \
                 "${mvn_args[@]}" 2>&1) || true
 
+            local bug_log_m="$results/bug-${total_bugs}-${bug_type}.log"
+            echo "$select_output" > "$bug_log_m"
+
             # Check if bug was caught in the selected tests
-            if echo "$select_output" | grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]"; then
+            if log_has_test_failures "$bug_log_m"; then
                 bugs_caught_early=$((bugs_caught_early + 1))
                 ok "  Bug caught in top-3 selected tests!"
-            elif ! echo "$select_output" | grep -q "Tests run:"; then
+            elif ! log_has_tests_run "$bug_log_m"; then
                 warn "  Build failed before tests ran — result unknown"
             else
                 warn "  Bug NOT caught in top-3 (may need full suite)"
             fi
 
-            echo "$select_output" > "$results/bug-${total_bugs}-${bug_type}.log"
 
             # Restore
             restore_bugs "$repo"
@@ -1418,7 +1456,7 @@ phase_full_maven() {
     if [[ -d "$bugs_dir_7" ]]; then
         for pf in "$bugs_dir_7"/*.patch; do
             [[ -f "$pf" ]] || continue
-            patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" 2>/dev/null || true
+            patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" >/dev/null 2>&1 || true
         done
         # Remove any .rej files left by failed reverse-patch attempts
         find "$dir" -name "*.rej" -delete 2>/dev/null || true
@@ -1452,11 +1490,10 @@ phase_full_maven() {
             "${test_cmd_args[@]}" \
             2>&1 | tee "$results/full-bug-select.log") || true
         echo "$bug_out" | tail -10
-        log "DEBUG: bug_out length=${#bug_out}, Tests run count=$(echo "$bug_out" | grep -c 'Tests run:' || echo 0)"
         # NOTE: grep on the file rather than $bug_out — $bug_out may be missing
         # some bytes due to bash command-substitution buffering in multi-module builds.
         local bug_log="$results/full-bug-select.log"
-        if grep -q "Tests run:.*Failures: [^0]\|Tests run:.*Errors: [^0]" "$bug_log" 2>/dev/null; then
+        if log_has_test_failures "$bug_log"; then
             ok "Bug caught in top-3 selected tests! (step 7)"
             bug_injected=true
         elif grep -q "None of the explicitly specified changed classes" "$bug_log" 2>/dev/null; then
@@ -1464,7 +1501,7 @@ phase_full_maven() {
             local n_tests
             n_tests=$(grep -c $'\t' "$results/full-dump.log" 2>/dev/null || echo "?")
             log "    Index has ~$n_tests test entries"
-        elif ! grep -q "Tests run:" "$bug_log" 2>/dev/null; then
+        elif ! log_has_tests_run "$bug_log"; then
             warn "Bug result unknown for $classname — build failed before tests ran (step 7)"
             bug_injected=true
         else

@@ -1,0 +1,1 @@
+is-potential-junit4-class-bug.patch

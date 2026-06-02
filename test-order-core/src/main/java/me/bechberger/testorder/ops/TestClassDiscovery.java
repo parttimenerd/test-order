@@ -264,6 +264,10 @@ public final class TestClassDiscovery {
 			return found[0];
 		} catch (IOException e) {
 			return true; // conservative
+		} catch (IllegalArgumentException e) {
+			// ASM cannot parse this class file (e.g. compiled with a newer Java version
+			// than this ASM version supports). Treat as non-test to avoid crashing the build.
+			return false;
 		}
 	}
 

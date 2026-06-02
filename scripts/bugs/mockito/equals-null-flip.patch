@@ -1,0 +1,11 @@
+--- a/mockito-core/src/main/java/org/mockito/internal/matchers/apachecommons/EqualsBuilder.java
++++ b/mockito-core/src/main/java/org/mockito/internal/matchers/apachecommons/EqualsBuilder.java
+@@ -231,7 +231,7 @@ public class EqualsBuilder {
+             return true;
+         }
+         if (lhs == null || rhs == null) {
+-            return false;
++            return true;
+         }
+         // Find the leaf class since there may be transients in the leaf
+         // class or in classes between the leaf and root.

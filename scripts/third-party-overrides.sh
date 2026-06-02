@@ -125,9 +125,10 @@ detect_gradle_java_home() {
         # neonbee uses Gradle 8.5 which does not support JDK 25 (class file major version 69).
         # Fall back to JDK 21.
         neonbee) _sdkman_java_home "21-sapmchn" ;;
-        # junit5 requires JDK 21 (its Gradle build targets Java 8–17 source but the
-        # Gradle wrapper version needs JDK ≤ 21 to run reliably).
-        junit5) _sdkman_java_home "21-sapmchn" ;;
+        # junit5 uses Gradle 9.5 with gradle-daemon-jvm.properties toolchainVersion=25.
+        # The daemon JVM and project compilation both require JDK 25.
+        # Gradle 9.5 works fine with JDK 25.
+        junit5) _sdkman_java_home "25-sapmchn" ;;
         # mockito uses Gradle 8.14.2 which fails with Kotlin DSL compilation on JDK 25
         # (IntelliJ's JavaVersion.parse doesn't understand "25.0.x").
         mockito) _sdkman_java_home "21-sapmchn" ;;
@@ -148,8 +149,9 @@ detect_gradle_properties_extra() {
         # that locks the daemon vendor to ADOPTIUM (Eclipse Temurin) which is unavailable on aarch64 macOS.
         # Declare SAPMachine JDK 21 and disable auto-download; the daemon-jvm file is patched by inject_gradle_plugin.
         okhttp) printf "org.gradle.java.installations.paths=%s\norg.gradle.java.installations.auto-download=false\n" "$(_sdkman_java_home "21-sapmchn")" ;;
-        # hibernate-orm test suite is large; default daemon heap causes OOM.
-        hibernate-orm) printf "org.gradle.jvmargs=-Xmx4g\n" ;;
+        # junit5 uses Gradle 9.5 with gradle-daemon-jvm.properties toolchainVersion=25.
+        # Point Gradle to the local SAP JDK 25 so it does not try to auto-download.
+        junit5) printf "org.gradle.java.installations.paths=%s\norg.gradle.java.installations.auto-download=false\n" "$(_sdkman_java_home "25-sapmchn")" ;;
         *) echo "" ;;
     esac
 }
