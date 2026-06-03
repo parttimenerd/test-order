@@ -132,17 +132,31 @@ class ClassNameTrie {
 
 	private void writeNode(DataOutputStream out, Node node, java.nio.ByteBuffer buffer,
 			java.nio.charset.CharsetEncoder encoder) throws IOException {
-		// Encode label into reusable buffer
-		buffer.clear();
-		encoder.reset();
-		java.nio.CharBuffer charBuf = java.nio.CharBuffer.wrap(node.label);
-		java.nio.charset.CoderResult result = encoder.encode(charBuf, buffer, true);
-		encoder.flush(buffer);
+		// Encode label into reusable buffer; fall back to direct getBytes() for labels
+		// longer than the buffer capacity (avoids silent truncation on overflow).
+		byte[] labelBytes;
+		int labelLen;
+		int maxBytes = (int) (node.label.length() * encoder.maxBytesPerChar());
+		if (maxBytes <= buffer.capacity()) {
+			buffer.clear();
+			encoder.reset();
+			java.nio.CharBuffer charBuf = java.nio.CharBuffer.wrap(node.label);
+			encoder.encode(charBuf, buffer, true);
+			encoder.flush(buffer);
+			labelLen = buffer.position();
+			buffer.flip();
+			labelBytes = null; // use buffer
+		} else {
+			labelBytes = node.label.getBytes(StandardCharsets.UTF_8);
+			labelLen = labelBytes.length;
+		}
 
-		int labelLen = buffer.position();
 		writeVarInt(out, labelLen);
-		buffer.flip();
-		out.write(buffer.array(), 0, labelLen);
+		if (labelBytes != null) {
+			out.write(labelBytes, 0, labelLen);
+		} else {
+			out.write(buffer.array(), 0, labelLen);
+		}
 
 		// encode terminal: 0 = not terminal, otherwise classId + 1
 		writeVarInt(out, node.terminal ? node.classId + 1 : 0);
