@@ -155,6 +155,11 @@ detect_gradle_properties_extra() {
         # uses a custom launcher (LauncherMain) that does not register ServiceLoader-based
         # TestExecutionListeners, so TelemetryListener never fires and 0 deps are tracked.
         junit5) printf "org.gradle.java.installations.paths=%s\norg.gradle.java.installations.auto-download=false\njunit.develocity.predictiveTestSelection.enabled=false\n" "$(_sdkman_java_home "25-sapmchn")" ;;
+        # hibernate-orm: index is ~58MB; the default -Xmx2g daemon heap OOMs during testOrderSelect
+        # (OOM in NativeFileWatcher running in the Gradle daemon). Bump daemon heap to 6g.
+        # Note: toolchain.launcher.jvmargs (test JVM) is left at default (2g) — overriding it
+        # caused GradleWorkerMain classpath errors in the forked worker process.
+        hibernate-orm) echo "org.gradle.jvmargs=-Dlog4j2.disableJmx=true -Xmx6g -XX:MaxMetaspaceSize=256m -Duser.language=en -Duser.country=US -Duser.timezone=UTC -Dfile.encoding=UTF-8" ;;
         *) echo "" ;;
     esac
 }
@@ -189,6 +194,21 @@ detect_gradle_settings_remove() {
 detect_gradle_init_script() {
     local repo="$1"
     case "$repo" in
+        *) echo "" ;;
+    esac
+}
+
+# Return extra Gradle CLI args used ONLY during the bug-injection phase (phase_bugs_gradle).
+# Used to exclude tasks that are spuriously pulled into the execution graph during bug injection.
+# These exclusions are intentionally NOT applied to the learn/order/select phases.
+detect_gradle_bugs_extra_args() {
+    local repo="$1"
+    case "$repo" in
+        # hibernate-orm: when the plugin is applied to all subprojects, :hibernate-testing:test
+        # is pulled into the graph even when scoped to :hibernate-core:testOrderSelect.
+        # :hibernate-testing:test has no direct link to MathHelper and its failure blocks
+        # :hibernate-core:testOrderSelect from running. Exclude it for bug injection only.
+        hibernate-orm) echo "-x :hibernate-testing:test" ;;
         *) echo "" ;;
     esac
 }

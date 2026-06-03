@@ -921,6 +921,11 @@ phase_bugs_gradle() {
     local dir results extra_args override_java_home
     _gradle_phase_init "$repo"
 
+    # Bugs-only extra args: additional exclusions specific to the bug injection phase
+    local bugs_extra_args=""
+    type detect_gradle_bugs_extra_args &>/dev/null && bugs_extra_args=$(detect_gradle_bugs_extra_args "$repo" 2>/dev/null || echo "")
+    [[ -n "$bugs_extra_args" ]] && extra_args="${extra_args:+$extra_args }$bugs_extra_args"
+
     cd "$dir"
     inject_gradle_plugin "$repo"
 
@@ -968,11 +973,29 @@ phase_bugs_gradle() {
 
     log "Running select with bug in $classname"
     local bug_log="$results/bug-select.log"
+
+    # For multi-module builds, scope to the subproject that owns the patched file.
+    # This avoids triggering unrelated `test` tasks in downstream subprojects (which
+    # become stale when a patched upstream class changes, causing spurious failures).
+    local task_prefix=""
+    local patch_target
+    patch_target=$(grep '^+++ ' "$patch_file" | head -1 | sed 's|^+++ b/||;s|^+++ ||;s|\t.*||')
+    local first_segment
+    first_segment=$(echo "$patch_target" | cut -d/ -f1)
+    # If the first segment contains src/main (single-module) the patch is at the root; no prefix.
+    # Otherwise, if the segment is a known subproject directory, use it as the prefix.
+    if [[ -n "$first_segment" && -d "$dir/$first_segment" && "$first_segment" != "src" ]]; then
+        task_prefix=":${first_segment}:"
+    fi
+
+    local clean_task="${task_prefix}cleanTestOrderSelect"
+    local select_task="${task_prefix}testOrderSelect"
+
     # shellcheck disable=SC2086
     # cleanTestOrderSelect forces re-execution of testOrderSelect: after patch the source
     # changes, but Gradle's incremental tracking may consider testOrderSelect UP-TO-DATE
     # when production class files change (class dirs on classpath aren't always tracked).
-    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTestOrderSelect testOrderSelect \
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "$clean_task" "$select_task" \
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$classname" \
@@ -1088,8 +1111,15 @@ phase_full_gradle() {
             classname=$(echo "$patch_result" | cut -f1)
             patch_file=$(echo "$patch_result" | cut -f2)
             local bug_log="$results/full-bug-select.log"
+            # Scope to the subproject owning the patched file to avoid stale downstream test tasks.
+            local bp_target bp_segment bp_task_prefix=""
+            bp_target=$(grep '^+++ ' "$patch_file" | head -1 | sed 's|^+++ b/||;s|^+++ ||;s|\t.*||')
+            bp_segment=$(echo "$bp_target" | cut -d/ -f1)
+            if [[ -n "$bp_segment" && -d "$dir/$bp_segment" && "$bp_segment" != "src" ]]; then
+                bp_task_prefix=":${bp_segment}:"
+            fi
             # shellcheck disable=SC2086
-            JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderSelect \
+            JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "${bp_task_prefix}testOrderSelect" \
                 --no-build-cache --no-configuration-cache \
                 -Dtestorder.changeMode=explicit \
                 -Dtestorder.changed.classes="$classname" \

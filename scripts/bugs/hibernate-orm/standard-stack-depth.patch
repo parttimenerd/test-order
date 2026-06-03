@@ -1,0 +1,10 @@
+--- a/hibernate-core/src/main/java/org/hibernate/internal/util/collections/StandardStack.java
++++ b/hibernate-core/src/main/java/org/hibernate/internal/util/collections/StandardStack.java
+@@ -98,6 +98,6 @@ public final class StandardStack<T> implements Stack<T> {
+
+ 	@Override
+ 	public int depth() {
+-		return top;
++		return top + 1;
+ 	}
+
