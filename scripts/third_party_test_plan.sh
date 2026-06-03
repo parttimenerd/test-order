@@ -985,7 +985,19 @@ phase_bugs_gradle() {
     # If the first segment contains src/main (single-module) the patch is at the root; no prefix.
     # Otherwise, if the segment is a known subproject directory, use it as the prefix.
     if [[ -n "$first_segment" && -d "$dir/$first_segment" && "$first_segment" != "src" ]]; then
-        task_prefix=":${first_segment}:"
+        # Allow per-repo override for repos that rename subprojects (e.g. micronaut-core
+        # prepends "micronaut-" via useStandardizedProjectNames), or use "ROOT" to skip
+        # subproject scoping when the test catching the bug lives in a different module.
+        local subproject_prefix_override=""
+        type detect_gradle_subproject_prefix &>/dev/null && \
+            subproject_prefix_override=$(detect_gradle_subproject_prefix "$repo" "$first_segment" 2>/dev/null || echo "")
+        if [[ "$subproject_prefix_override" == "ROOT" ]]; then
+            task_prefix=""   # root-level tasks: cleanTestOrderSelect testOrderSelect
+        elif [[ -n "$subproject_prefix_override" ]]; then
+            task_prefix="$subproject_prefix_override"
+        else
+            task_prefix=":${first_segment}:"
+        fi
     fi
 
     local clean_task="${task_prefix}cleanTestOrderSelect"
@@ -1116,7 +1128,16 @@ phase_full_gradle() {
             bp_target=$(grep '^+++ ' "$patch_file" | head -1 | sed 's|^+++ b/||;s|^+++ ||;s|\t.*||')
             bp_segment=$(echo "$bp_target" | cut -d/ -f1)
             if [[ -n "$bp_segment" && -d "$dir/$bp_segment" && "$bp_segment" != "src" ]]; then
-                bp_task_prefix=":${bp_segment}:"
+                local bp_prefix_override=""
+                type detect_gradle_subproject_prefix &>/dev/null && \
+                    bp_prefix_override=$(detect_gradle_subproject_prefix "$repo" "$bp_segment" 2>/dev/null || echo "")
+                if [[ "$bp_prefix_override" == "ROOT" ]]; then
+                    bp_task_prefix=""
+                elif [[ -n "$bp_prefix_override" ]]; then
+                    bp_task_prefix="$bp_prefix_override"
+                else
+                    bp_task_prefix=":${bp_segment}:"
+                fi
             fi
             # shellcheck disable=SC2086
             JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "${bp_task_prefix}testOrderSelect" \
@@ -1295,78 +1316,88 @@ phase_bugs_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
-                    -Dmaven.build.cache.enabled=false)
-    [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
+    local compiler_args
+    compiler_args=$(detect_compiler_args "$repo")
+    local extra_mvn_args=""
+    type detect_extra_mvn_args &>/dev/null && extra_mvn_args=$(detect_extra_mvn_args "$repo")
+    local base_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+                     -Dmaven.build.cache.enabled=false)
+    [[ -n "$compiler_args" ]] && base_args+=($compiler_args)
+    if [[ -n "$extra_mvn_args" ]]; then
+        eval "base_args+=($extra_mvn_args)"
+    fi
+    [[ -n "$pkg" ]] && base_args+=("-Dtestorder.includePackages=$pkg")
+
+    local mvn_args=("${base_args[@]}")
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
-    # Step 1: Ensure we have a clean index (learn first if needed)
-    local idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit)
+    # Ensure we have an index (learn first if needed)
+    local idx
+    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -z "$idx" ]]; then
         log "No index found, running learn first..."
         mvn_learn "${mvn_args[@]}" \
             2>&1 | tee "$results/bug-learn.log" | tail -3
+        idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+        if [[ -z "$idx" ]]; then
+            warn "No index produced — cannot run bug injection"
+            remove_maven_plugin "$repo" "$module"
+            return 1
+        fi
     fi
 
-    # Step 2: Find targets and inject bugs
-    local targets=($(find_bug_targets "$repo"))
-    if [[ ${#targets[@]} -eq 0 ]]; then
-        warn "No suitable bug targets found in $repo"
-        remove_maven_plugin "$repo" "$module"
-        return
-    fi
+    # Determine which module owns the index for command-only goals
+    local idx_dir
+    idx_dir=$(dirname "$idx")        # .../repo/<mod>/.test-order OR .../repo/.test-order
+    idx_dir=$(dirname "$idx_dir")    # .../repo/<mod>             OR .../repo
+    local idx_module=""
+    [[ "$idx_dir" != "$dir" ]] && idx_module=$(basename "$idx_dir")
 
-    local bug_types=("off_by_one" "flip_boolean" "flip_comparison" "remove_add")
-    local total_bugs=0
-    local bugs_caught_early=0
+    local cmd_args=("${base_args[@]}")
+    [[ -n "$idx_module" ]] && cmd_args+=(-pl "$idx_module")
 
-    for target in "${targets[@]}"; do
-        local relative="${target#$THIRD_PARTY/$repo/}"
-        local classname=$(echo "$relative" | sed 's|^src/main/java/||;s|.*/src/main/java/||;s|/|.|g;s|\.java$||')
+    local test_cmd_args=("${cmd_args[@]}")
+    [[ -n "$idx_module" ]] && test_cmd_args+=(-am)
 
-        for bug_type in "${bug_types[@]}"; do
-            total_bugs=$((total_bugs + 1))
-            log "Bug #$total_bugs: $bug_type in $classname"
-
-            # Inject bug
-            case "$bug_type" in
-                off_by_one)     inject_bug_off_by_one "$repo" "$relative" ;;
-                flip_boolean)   inject_bug_flip_boolean "$repo" "$relative" ;;
-                flip_comparison) inject_bug_flip_comparison "$repo" "$relative" ;;
-                remove_add)     inject_bug_remove_add "$repo" "$relative" ;;
-            esac
-
-            # Run select with the changed class → should pick the right test
-            log "  Running select with changed=$classname"
-            local select_output
-            select_output=$(mvn clean me.bechberger:test-order-maven-plugin:select test \
-                -Dtestorder.changeMode=explicit \
-                -Dtestorder.changed.classes="$classname" \
-                -Dtestorder.select.topN=3 \
-                -Dtestorder.mode=skip \
-                "${mvn_args[@]}" 2>&1) || true
-
-            local bug_log_m="$results/bug-${total_bugs}-${bug_type}.log"
-            echo "$select_output" > "$bug_log_m"
-
-            # Check if bug was caught in the selected tests
-            if log_has_test_failures "$bug_log_m"; then
-                bugs_caught_early=$((bugs_caught_early + 1))
-                ok "  Bug caught in top-3 selected tests!"
-            elif ! log_has_tests_run "$bug_log_m"; then
-                warn "  Build failed before tests ran — result unknown"
-            else
-                warn "  Bug NOT caught in top-3 (may need full suite)"
-            fi
-
-
-            # Restore
-            restore_bugs "$repo"
+    # Reverse any stale patches before applying fresh one
+    local bugs_dir="$BUGS_DIR/$repo"
+    if [[ -d "$bugs_dir" ]]; then
+        for pf in "$bugs_dir"/*.patch; do
+            [[ -f "$pf" ]] || continue
+            patch -d "$dir" -p1 -R --no-backup-if-mismatch --forward -s < "$pf" >/dev/null 2>&1 || true
         done
-    done
+        find "$dir" -name "*.rej" -delete 2>/dev/null || true
+    fi
 
-    log "Bug injection results: $bugs_caught_early / $total_bugs caught in top-3"
-    echo "$bugs_caught_early / $total_bugs" > "$results/bug-summary.txt"
+    local patch_result
+    patch_result=$(inject_bug_patch "$repo") || true
+    if [[ -n "$patch_result" ]]; then
+        local classname patch_file
+        classname=$(echo "$patch_result" | cut -f1)
+        patch_file=$(echo "$patch_result" | cut -f2)
+        log "Running select with bug in $classname"
+        local bug_log="$results/bug-select.log"
+        # shellcheck disable=SC2086
+        mvn clean me.bechberger:test-order-maven-plugin:select test \
+            -Dtestorder.changeMode=explicit \
+            -Dtestorder.changed.classes="$classname" \
+            -Dtestorder.select.topN=3 \
+            -Dtestorder.mode=skip \
+            "${test_cmd_args[@]}" \
+            2>&1 | tee "$bug_log" | tail -10 || true
+        if log_has_test_failures "$bug_log"; then
+            ok "Bug caught in top-3 selected tests!"
+        elif grep -q "None of the explicitly specified changed classes" "$bug_log" 2>/dev/null; then
+            warn "Bug class $classname not in dependency index"
+        elif ! log_has_tests_run "$bug_log"; then
+            warn "Bug result unknown — build failed before tests ran"
+        else
+            warn "Bug NOT caught in top-3 selected tests for $classname"
+        fi
+        restore_bug_patch "$repo" "$patch_file"
+    else
+        warn "No patch available for $repo — add scripts/bugs/$repo/*.patch"
+    fi
 
     remove_maven_plugin "$repo" "$module"
 }

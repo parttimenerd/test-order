@@ -198,7 +198,24 @@ detect_gradle_init_script() {
     esac
 }
 
-# Return extra Gradle CLI args used ONLY during the bug-injection phase (phase_bugs_gradle).
+# Map a subproject directory name to its Gradle project path segment.
+# Used by phase_bugs_gradle when the build's useStandardizedProjectNames (or similar)
+# renames subprojects so that the directory name differs from the project path.
+# Return the full ":project-path:" prefix (with colons), or empty to use the dir name.
+# Return the sentinel "ROOT" to skip subproject scoping and use the root-level task.
+detect_gradle_subproject_prefix() {
+    local repo="$1"
+    local dir_name="$2"   # first path segment from the patch +++ line
+    case "$repo" in
+        # micronaut-core: HttpStatus lives in "http" module, but the integration tests that
+        # assert HttpStatus.OK.getCode()==200 live in "http-client". Scoping to :micronaut-http:
+        # would only run the http module's unit tests (none of which test status codes directly).
+        # Use root-level testOrderSelect so all modules' tests are candidates.
+        micronaut-core) echo "ROOT" ;;
+        *) echo "" ;;
+    esac
+}
+
 # Used to exclude tasks that are spuriously pulled into the execution graph during bug injection.
 # These exclusions are intentionally NOT applied to the learn/order/select phases.
 detect_gradle_bugs_extra_args() {

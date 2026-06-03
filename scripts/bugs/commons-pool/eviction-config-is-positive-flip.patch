@@ -1,0 +1,9 @@
+--- a/src/main/java/org/apache/commons/pool3/impl/EvictionConfig.java
++++ b/src/main/java/org/apache/commons/pool3/impl/EvictionConfig.java
+@@ -65,7 +65,7 @@ public class EvictionConfig {
+     public EvictionConfig(final Duration idleEvictDuration, final Duration idleSoftEvictDuration, final int minIdle) {
+-        this.idleEvictDuration = PoolImplUtils.isPositive(idleEvictDuration) ? idleEvictDuration : MAX_DURATION;
++        this.idleEvictDuration = !PoolImplUtils.isPositive(idleEvictDuration) ? idleEvictDuration : MAX_DURATION;
+         this.idleSoftEvictDuration = PoolImplUtils.isPositive(idleSoftEvictDuration) ? idleSoftEvictDuration : MAX_DURATION;
+         this.minIdle = minIdle;
+     }
