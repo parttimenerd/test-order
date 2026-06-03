@@ -279,11 +279,11 @@ public class MethodHashStore {
 			return true;
 		if (!(o instanceof MethodHashStore other))
 			return false;
-		return hashes.equals(other.hashes);
+		return hashes.equals(other.hashes) && fileFingerprints.equals(other.fileFingerprints);
 	}
 
 	@Override
 	public int hashCode() {
-		return hashes.hashCode();
+		return 31 * hashes.hashCode() + fileFingerprints.hashCode();
 	}
 }
