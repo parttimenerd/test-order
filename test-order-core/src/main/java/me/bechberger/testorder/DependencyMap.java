@@ -1273,6 +1273,8 @@ public class DependencyMap {
 						for (int i = 0; i < keyCount; i++) {
 							int classId = ClassNameTrie.readVarInt(s);
 							int suffixId = ClassNameTrie.readVarInt(s);
+							if (classId < 0 || classId >= finalTrie.size())
+								throw new IOException("Invalid class id " + classId + " in " + indexFile);
 							if (suffixId < 0 || suffixId >= suffixCount)
 								throw new IOException("Invalid suffix id " + suffixId + " in " + indexFile);
 							// populate the dictionary in order — id must equal current size

@@ -100,6 +100,9 @@ class MavenTestRunner implements TestRunner {
 				Thread.currentThread().interrupt();
 				log.warn("[test-order] Learn phase interrupted");
 				return false;
+			} catch (IOException e) {
+				proc.destroyForcibly();
+				throw e;
 			}
 		} catch (IOException e) {
 			log.warn("[test-order] Learn phase failed: " + e.getMessage());
