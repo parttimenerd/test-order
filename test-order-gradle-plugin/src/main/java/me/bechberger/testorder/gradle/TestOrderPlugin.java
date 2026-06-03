@@ -1313,14 +1313,8 @@ public class TestOrderPlugin implements Plugin<Project> {
             // For the standalone select task, default to NOT auto-running remaining (parity
             // with Maven's select goal). Users can opt in via -Dtestorder.auto.runRemaining=true.
             // The implicit auto mode in the 'test' task still uses the extension default (true).
-            boolean runRemaining = false;
             String propRunRemaining = gradleOrSystemProperty(project, "testorder.auto.runRemaining");
-            if (propRunRemaining != null) {
-                runRemaining = Boolean.parseBoolean(propRunRemaining);
-            } else {
-                // Only use extension default if explicitly set by user (not the convention)
-                runRemaining = false;
-            }
+            boolean runRemaining = propRunRemaining != null && Boolean.parseBoolean(propRunRemaining);
             final boolean effectiveRunRemaining = runRemaining;
             if (runRemaining) {
                 task.finalizedBy("testOrderRunRemaining");
@@ -1871,10 +1865,10 @@ public class TestOrderPlugin implements Plugin<Project> {
                             + gradleOrSystemProperty(project, "testorder.dashboard.serveSeconds")
                             + "' — must be a number");
                 }
-            if (serveSeconds < 0) {
-                throw new GradleException(
-                    "[test-order] testorder.dashboard.serveSeconds must be >= 0");
-            }
+                if (serveSeconds < 0) {
+                    throw new GradleException(
+                            "[test-order] testorder.dashboard.serveSeconds must be >= 0");
+                }
                 String regenerate = Optional
                         .ofNullable(gradleOrSystemProperty(project, "testorder.dashboard.regenerate"))
                         .orElse("auto");
@@ -2116,7 +2110,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     /** Starts a local HTTP server serving the self-contained dashboard HTML. */
-        private void serveDashboard(Project project, Path dashboardDir, Path statePath, int port, int serveSeconds, boolean openBrowser) {
+    private void serveDashboard(Project project, Path dashboardDir, Path statePath, int port, int serveSeconds, boolean openBrowser) {
         Path htmlPath = dashboardDir.resolve("index.html");
         try {
             DashboardServerOperation.start(htmlPath, statePath, port, wrapLog(project), null, serveSeconds, openBrowser);
