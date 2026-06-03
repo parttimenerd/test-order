@@ -160,15 +160,17 @@ class GradleTestRunner implements TestRunner {
             // and forward the order file path as a system property to the forked JVM.
             // Gradle's -D flags only set system properties on the Gradle process, NOT
             // on the forked test JVM — so an init script is the correct mechanism.
-            Path initScript = writeInitScript(
-                    "testorder.fixed.order.file", orderFile.toAbsolutePath().toString());
+            // testorder.mode=skip must also be forwarded via the init script so the
+            // telemetry listener in the forked JVM does not corrupt the state file
+            // with artificial data from detection probe runs.
+            Path initScript = writeInitScript(Map.of(
+                    "testorder.fixed.order.file", orderFile.toAbsolutePath().toString(),
+                    "testorder.mode", "skip"));
 
             List<String> command = new ArrayList<>(List.of(
                     gradleCommand(), "test",
                     "--no-daemon", "--quiet",
-                    "--init-script", initScript.toAbsolutePath().toString(),
-                    // Skip test-order ordering in the subprocess (we control order ourselves)
-                    "-Dtestorder.mode=skip"));
+                    "--init-script", initScript.toAbsolutePath().toString()));
 
             if (!runAll) {
                 for (String fqcn : testOrder) {
@@ -212,15 +214,15 @@ class GradleTestRunner implements TestRunner {
             support.setupRuntimeConfigForMethods();
             support.cleanReports();
 
-            Path initScript = writeInitScript(
-                    "testorder.fixed.method.order.file", methodOrderFile.toAbsolutePath().toString());
+            Path initScript = writeInitScript(Map.of(
+                    "testorder.fixed.method.order.file", methodOrderFile.toAbsolutePath().toString(),
+                    "testorder.mode", "skip"));
 
             List<String> command = new ArrayList<>(List.of(
                     gradleCommand(), "test",
                     "--tests", testClass,
                     "--no-daemon", "--quiet",
-                    "--init-script", initScript.toAbsolutePath().toString(),
-                    "-Dtestorder.mode=skip"));
+                    "--init-script", initScript.toAbsolutePath().toString()));
 
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(projectDir.toFile());
@@ -321,26 +323,33 @@ class GradleTestRunner implements TestRunner {
     /**
      * Write a Gradle init script that configures the test task in the subprocess to:
      * 1. Add runtimeDir to the test classpath (so junit-platform.properties is found)
-     * 2. Set the given system property on the forked test JVM
+     * 2. Set the given system properties on the forked test JVM
      * <p>
      * Gradle's {@code -D} flags only set properties on the Gradle process, NOT on the
      * forked test JVM. An init script with {@code test.systemProperty()} is the correct
      * mechanism to forward properties to the forked JVM.
      */
     private Path writeInitScript(String sysPropKey, String sysPropValue) throws IOException {
+        return writeInitScript(Map.of(sysPropKey, sysPropValue));
+    }
+
+    private Path writeInitScript(Map<String, String> sysProps) throws IOException {
         Files.createDirectories(runtimeDir);
         Path initScript = runtimeDir.resolve("detect-init.gradle");
         String escapedRuntimeDir = runtimeDir.toAbsolutePath().toString()
                 .replace("\\", "/").replace("'", "\\'");
-        String escapedValue = sysPropValue
-                .replace("\\", "/").replace("'", "\\'");
-        Files.writeString(initScript,
-                "allprojects {\n"
-                + "    tasks.withType(Test).configureEach {\n"
-                + "        classpath += files('" + escapedRuntimeDir + "')\n"
-                + "        systemProperty '" + sysPropKey + "', '" + escapedValue + "'\n"
-                + "    }\n"
-                + "}\n");
+        StringBuilder sb = new StringBuilder();
+        sb.append("allprojects {\n");
+        sb.append("    tasks.withType(Test).configureEach {\n");
+        sb.append("        classpath += files('").append(escapedRuntimeDir).append("')\n");
+        for (Map.Entry<String, String> entry : sysProps.entrySet()) {
+            String escapedKey = entry.getKey().replace("'", "\\'");
+            String escapedValue = entry.getValue().replace("\\", "/").replace("'", "\\'");
+            sb.append("        systemProperty '").append(escapedKey).append("', '").append(escapedValue).append("'\n");
+        }
+        sb.append("    }\n");
+        sb.append("}\n");
+        Files.writeString(initScript, sb.toString());
         return initScript;
     }
 }
