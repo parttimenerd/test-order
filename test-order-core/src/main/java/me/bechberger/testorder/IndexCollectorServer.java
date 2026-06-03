@@ -109,6 +109,7 @@ public class IndexCollectorServer implements AutoCloseable {
 	/** Maps each test FQCN to the moduleId of the fork that recorded it. */
 	private final ConcurrentHashMap<String, String> mergedTestToModule = new ConcurrentHashMap<>();
 	private final AtomicInteger receivedCount = new AtomicInteger();
+	private final AtomicInteger activeHandlers = new AtomicInteger();
 
 	/**
 	 * Start the collector server on a random available port on localhost.
@@ -221,6 +222,18 @@ public class IndexCollectorServer implements AutoCloseable {
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		}
+		// Wait for any in-progress handler threads to finish writing to the maps.
+		// Handler threads are short-lived (read socket data → merge), so a brief
+		// spin-wait is sufficient to avoid a race between their writes and our read.
+		long deadline = System.currentTimeMillis() + 3000;
+		while (activeHandlers.get() > 0 && System.currentTimeMillis() < deadline) {
+			try {
+				Thread.sleep(10);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				break;
+			}
+		}
 		closeServerSocket();
 		unregisterShutdownHook();
 
@@ -290,7 +303,14 @@ public class IndexCollectorServer implements AutoCloseable {
 		while (running.get()) {
 			try {
 				Socket client = serverSocket.accept();
-				Thread handler = new Thread(() -> handleClient(client), "test-order-collector-handler");
+				activeHandlers.incrementAndGet();
+				Thread handler = new Thread(() -> {
+					try {
+						handleClient(client);
+					} finally {
+						activeHandlers.decrementAndGet();
+					}
+				}, "test-order-collector-handler");
 				handler.setDaemon(true);
 				handler.start();
 			} catch (SocketTimeoutException e) {
