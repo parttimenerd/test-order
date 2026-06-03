@@ -2227,67 +2227,6 @@ public class SourceFileModel {
 		return i;
 	}
 
-	private static int skipTextBlock(String source, StringBuilder sb, int i, int len) {
-		sb.append(' ').append(' ').append(' ');
-		i += 3;
-		while (i < len) {
-			// Handle escape sequences (especially \" which must not trigger
-			// premature closure of the text block)
-			if (source.charAt(i) == '\\' && i + 1 < len) {
-				sb.append(' ').append(' ');
-				i += 2;
-				continue;
-			}
-			// Check for closing """
-			if (i + 2 < len && source.charAt(i) == '"' && source.charAt(i + 1) == '"' && source.charAt(i + 2) == '"') {
-				sb.append(' ').append(' ').append(' ');
-				i += 3;
-				return i;
-			}
-			sb.append(source.charAt(i) == '\n' ? '\n' : ' ');
-			i++;
-		}
-		return i;
-	}
-
-	private static int skipStringLiteral(String source, StringBuilder sb, int i, int len) {
-		sb.append(' ');
-		i++;
-		while (i < len && source.charAt(i) != '"') {
-			if (source.charAt(i) == '\\' && i + 1 < len) {
-				sb.append(' ').append(' ');
-				i += 2;
-			} else {
-				sb.append(source.charAt(i) == '\n' ? '\n' : ' ');
-				i++;
-			}
-		}
-		if (i < len) {
-			sb.append(' ');
-			i++;
-		}
-		return i;
-	}
-
-	private static int skipCharLiteral(String source, StringBuilder sb, int i, int len) {
-		sb.append(' ');
-		i++;
-		while (i < len && source.charAt(i) != '\'') {
-			if (source.charAt(i) == '\\' && i + 1 < len) {
-				sb.append(' ').append(' ');
-				i += 2;
-			} else {
-				sb.append(' ');
-				i++;
-			}
-		}
-		if (i < len) {
-			sb.append(' ');
-			i++;
-		}
-		return i;
-	}
-
 	// ── Comment-only stripping (preserves strings) ──────────────────
 
 	/**
