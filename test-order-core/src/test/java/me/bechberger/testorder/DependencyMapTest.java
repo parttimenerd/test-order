@@ -779,4 +779,23 @@ class DependencyMapTest {
 		assertTrue(affected.contains("com.example.TestB"),
 				"newly merged test must be affected after cache invalidation");
 	}
+
+	@Test
+	void idf_notNegativeWhenTestDependsOnMultipleInnerClassesOfSameParent() {
+		// A test that depends on both Foo$Bar and Foo$Baz should give df("Foo") == 1,
+		// not 2. Before the fix, df.merge was called once per inner-class dep, so
+		// df["Foo"] could exceed n (number of test classes), yielding idf < 0.
+		DependencyMap map = new DependencyMap();
+		// 3 tests, each with 2 inner-class deps sharing the same top-level parent
+		map.put("com.example.TestA", Set.of("app.Outer$Inner1", "app.Outer$Inner2"));
+		map.put("com.example.TestB", Set.of("app.Outer$Inner1", "app.Other$X"));
+		map.put("com.example.TestC", Set.of("app.Other$X", "app.Other$Y"));
+
+		// df("app.Outer") should be 2 (TestA + TestB), not 3 (TestA counted twice +
+		// TestB)
+		assertEquals(2, map.documentFrequencies().get("app.Outer"),
+				"df for top-level parent must count test classes, not dep occurrences");
+		// idf must be non-negative: ln(3/2) ≈ 0.41
+		assertTrue(map.idf("app.Outer") >= 0.0, "idf must not be negative when df <= n");
+	}
 }

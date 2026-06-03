@@ -612,20 +612,24 @@ public class DependencyMap {
 
 	private Map<String, Set<String>> buildInvertedIndex() {
 		Map<String, Set<String>> idx = new HashMap<>((int) (dependencies.size() / 0.75f) + 1);
-		Map<String, Integer> df = new HashMap<>((int) (dependencies.size() / 0.75f) + 1);
 		for (var entry : dependencies.entrySet()) {
 			String testClass = entry.getKey();
 			for (String dep : entry.getValue()) {
 				idx.computeIfAbsent(dep, k -> new HashSet<>()).add(testClass);
-				df.merge(dep, 1, Integer::sum);
 				// Also index by top-level class for nested class deps
 				int dollar = dep.indexOf('$');
 				if (dollar > 0) {
 					String topLevel = dep.substring(0, dollar);
 					idx.computeIfAbsent(topLevel, k -> new HashSet<>()).add(testClass);
-					df.merge(topLevel, 1, Integer::sum);
 				}
 			}
+		}
+		// Derive df from the inverted index so each test class is counted once per dep,
+		// even when multiple inner-class deps (Foo$Bar, Foo$Baz) share the same
+		// top-level.
+		Map<String, Integer> df = new HashMap<>((int) (idx.size() / 0.75f) + 1);
+		for (var e : idx.entrySet()) {
+			df.put(e.getKey(), e.getValue().size());
 		}
 		depFrequencies = df;
 		return idx;
