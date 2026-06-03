@@ -95,13 +95,24 @@ LARGE_REPOS=(
 
 # Known-working repos for regression sweeps (must produce an index + catch bugs)
 REGRESSION_REPOS=(
+    # Maven repos
     "jackson-databind"
     "commons-collections"
     "commons-text"
     "commons-io"
+    "commons-pool"
     "jsoup"
     "logging-log4j2"
     "javaparser"
+    "spring-petclinic"
+    "spring-ai"
+    # Gradle repos
+    "junit5"
+    "okhttp"
+    "mockito"
+    "resilience4j"
+    "micronaut-core"
+    "hibernate-orm"
 )
 
 PLUGIN_VERSION="0.0.1-SNAPSHOT"
