@@ -1462,13 +1462,13 @@ public class DependencyMap {
 
 		final DependencyMap map = Files.exists(indexFile) ? loadOrCreateFresh(indexFile) : new DependencyMap();
 
-		// Merge in-place without redundant copying
+		// Merge in-place without redundant copying; preserve unmodifiable-set invariant
 		for (var entry : deps.entrySet()) {
 			map.dependencies.merge(entry.getKey(), entry.getValue(), (existing, incoming) -> {
 				Set<String> merged = new HashSet<>(existing.size() + incoming.size(), 1.0f);
 				merged.addAll(existing);
 				merged.addAll(incoming);
-				return merged;
+				return Collections.unmodifiableSet(merged);
 			});
 		}
 		for (var entry : methodDeps.entrySet()) {
@@ -1476,7 +1476,7 @@ public class DependencyMap {
 				Set<String> merged = new HashSet<>(existing.size() + incoming.size(), 1.0f);
 				merged.addAll(existing);
 				merged.addAll(incoming);
-				return merged;
+				return Collections.unmodifiableSet(merged);
 			});
 		}
 		for (var entry : memberDeps.entrySet()) {

@@ -376,6 +376,15 @@ public class TestScorer {
 				depOverlap = cachedOverlapCounts.getOrDefault(testClassName, 0);
 				int rawSetCover = setCoverBonuses.getOrDefault(testClassName, 0);
 				score += (int) Math.round(rawSetCover * killMultiplier);
+				// Complexity bonus uses cached overlap classes (set-cover pre-computed them)
+				if (!changeComplexity.isEmpty() && depOverlap > 0) {
+					Set<String> cachedOvlp = cachedOverlapClasses.getOrDefault(testClassName, Set.of());
+					for (String dep : cachedOvlp) {
+						complexityOvlp += changeComplexity.getOrDefault(dep, 0.0);
+					}
+					int rawComplexity = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
+					score += (int) Math.round(rawComplexity * killMultiplier);
+				}
 			} else {
 				Set<String> overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps,
 						changedMembers, effectiveChangedForOverlap);
