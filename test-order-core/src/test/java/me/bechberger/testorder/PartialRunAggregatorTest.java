@@ -218,7 +218,41 @@ class PartialRunAggregatorTest {
 		assertTrue(o.hasStaticFieldOverlap());
 	}
 
-	// ── regression: double-decay in aggregated mode ────────────────────────
+	@Test
+	void learnRunWithEmptyOutcomesDoesNotIncrementRunsSinceLearn() throws IOException {
+		Path pendingDir = dir.resolve("pending");
+		Path stateFile = dir.resolve("state.lz4");
+		String buildId = "build-learn-empty";
+
+		// A learn-mode fork that ran no tests (empty outcomes)
+		var emptyRecord = new TestOrderState.RunRecord(System.currentTimeMillis(), 0, 0, -1, 1.0, List.of());
+		PartialRunAggregator.writePartial(pendingDir, buildId, emptyRecord, true /* isLearnRun */);
+		boolean merged = PartialRunAggregator.mergeAndApply(pendingDir, buildId, stateFile);
+
+		assertTrue(merged, "A partial with buildId but no outcomes must still be considered merged");
+
+		TestOrderState loaded = TestOrderState.load(stateFile);
+		assertEquals(0, loaded.runsSinceLearn(), "Empty-outcomes learn run must not increment runsSinceLearn");
+	}
+
+	@Test
+	void allParsablePartialsFailedDoesNotDeleteFiles() throws IOException {
+		Path pendingDir = dir.resolve("pending");
+		String buildId = "build-bad-only";
+		Files.createDirectories(pendingDir);
+
+		// Write a partial that will fail to parse (no buildId line)
+		Files.writeString(pendingDir.resolve(buildId + "-bad.part"), "timestamp=12345\n");
+
+		boolean merged = PartialRunAggregator.mergeAndApply(pendingDir, buildId, dir.resolve("state.lz4"));
+
+		assertFalse(merged, "Should return false when nothing could be parsed");
+		// Files should NOT be deleted — they may be salvageable
+		try (var stream = Files.list(pendingDir)) {
+			assertEquals(1, stream.filter(p -> p.toString().endsWith(".part")).count(),
+					"Unparseable partial files must not be deleted");
+		}
+	}
 
 	/**
 	 * In aggregated (multi-fork) mode, two forks each fail a different class. With

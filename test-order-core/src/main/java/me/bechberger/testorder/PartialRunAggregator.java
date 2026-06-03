@@ -115,7 +115,8 @@ public final class PartialRunAggregator {
 		}
 
 		if (partials.isEmpty()) {
-			deletePartFiles(partFiles);
+			// All files failed to parse — don't delete them; they may be salvageable or
+			// useful for diagnostics.
 			return false;
 		}
 
@@ -228,7 +229,7 @@ public final class PartialRunAggregator {
 			}
 		}
 
-		if (buildId == null || outcomes.isEmpty()) {
+		if (buildId == null) {
 			return null;
 		}
 		return new ParsedPartial(buildId, timestamp, isLearnRun, outcomes);

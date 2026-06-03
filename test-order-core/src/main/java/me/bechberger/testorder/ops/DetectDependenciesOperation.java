@@ -603,8 +603,10 @@ public final class DetectDependenciesOperation {
 				// Only use typeIdx if it's still within the findings array (not in constraints)
 				boolean typeInFindings = typeIdx > 0 && (constraintsIdx < 0 || typeIdx < constraintsIdx);
 				String typeStr = typeInFindings ? extractJsonString(content, typeIdx) : "VICTIM";
-				int descIdx = content.indexOf("\"description\"", typeInFindings ? typeIdx : victimIdx);
-				String desc = descIdx > 0 ? extractJsonString(content, descIdx) : "Carried from prior run";
+				int descSearchFrom = typeInFindings ? typeIdx : victimIdx;
+				int descIdx = content.indexOf("\"description\"", descSearchFrom);
+				boolean descInFindings = descIdx > 0 && (constraintsIdx < 0 || descIdx < constraintsIdx);
+				String desc = descInFindings ? extractJsonString(content, descIdx) : "Carried from prior run";
 
 				ODType type;
 				try {

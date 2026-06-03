@@ -167,58 +167,59 @@ public class GitChangeDetector {
 		Process process = pb.start();
 
 		Map<String, String> results = new java.util.HashMap<>();
-		try (var os = process.getOutputStream(); InputStream is = process.getInputStream()) {
-			// Write object names (commitRef:path) to stdin
-			var writer = new java.io.PrintWriter(os, true);
-			for (String filePath : filePaths) {
-				writer.println(commitRef + ":" + filePath);
-			}
-			writer.flush();
-			os.close(); // close stdin to signal EOF
+		try {
+			try (var os = process.getOutputStream(); InputStream is = process.getInputStream()) {
+				// Write object names (commitRef:path) to stdin
+				var writer = new java.io.PrintWriter(os, true);
+				for (String filePath : filePaths) {
+					writer.println(commitRef + ":" + filePath);
+				}
+				writer.flush();
+				os.close(); // close stdin to signal EOF
 
-			// Read output: header lines followed by object content.
-			// git cat-file --batch reports sizes in BYTES. We read everything as raw
-			// bytes to keep the stream byte-aligned. Using BufferedReader for headers
-			// would cause it to buffer ahead into the body, breaking alignment.
-			for (String filePath : filePaths) {
-				String headerLine = readRawLine(is);
-				if (headerLine == null)
-					break;
-				// Format: "<object> <type> <size>"
-				String[] parts = headerLine.split(" ");
-				if (parts.length < 3)
-					continue;
-				try {
-					int size = Integer.parseInt(parts[2]);
-					if (size < 0)
-						continue; // git cat-file returns -1 for missing objects
+				// Read output: header lines followed by object content.
+				// git cat-file --batch reports sizes in BYTES. We read everything as raw
+				// bytes to keep the stream byte-aligned. Using BufferedReader for headers
+				// would cause it to buffer ahead into the body, breaking alignment.
+				for (String filePath : filePaths) {
+					String headerLine = readRawLine(is);
+					if (headerLine == null)
+						break;
+					// Format: "<object> <type> <size>"
+					String[] parts = headerLine.split(" ");
+					if (parts.length < 3)
+						continue;
+					try {
+						int size = Integer.parseInt(parts[2]);
+						if (size < 0)
+							continue; // git cat-file returns -1 for missing objects
 
-					// Read exactly `size` bytes — always, to keep stream aligned for next entry.
-					byte[] contentBytes = new byte[size];
-					int totalRead = 0;
-					while (totalRead < size) {
-						int n = is.read(contentBytes, totalRead, size - totalRead);
-						if (n < 0)
-							break;
-						totalRead += n;
+						// Read exactly `size` bytes — always, to keep stream aligned for next entry.
+						byte[] contentBytes = new byte[size];
+						int totalRead = 0;
+						while (totalRead < size) {
+							int n = is.read(contentBytes, totalRead, size - totalRead);
+							if (n < 0)
+								break;
+							totalRead += n;
+						}
+						// Consume the trailing newline byte that git appends after each object body
+						is.read();
+						if (totalRead == size) {
+							results.put(filePath, new String(contentBytes, StandardCharsets.UTF_8));
+						}
+					} catch (NumberFormatException ignored) {
 					}
-					// Consume the trailing newline byte that git appends after each object body
-					is.read();
-					if (totalRead == size) {
-						results.put(filePath, new String(contentBytes, StandardCharsets.UTF_8));
-					}
-				} catch (NumberFormatException ignored) {
 				}
 			}
-		}
-
-		try {
 			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
 				process.destroyForcibly();
 			}
 		} catch (InterruptedException e) {
 			process.destroyForcibly();
 			Thread.currentThread().interrupt();
+		} finally {
+			process.destroyForcibly();
 		}
 
 		return results;

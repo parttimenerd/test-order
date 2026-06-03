@@ -435,6 +435,9 @@ public final class MutationAnalysisOperation {
 					if (dotEngine >= 0) {
 						testClass = testClass.substring(0, dotEngine);
 					}
+					// Normalise inner-class separator: PIT may emit "Outer$Inner", we use
+					// "Outer.Inner"
+					testClass = testClass.replace('$', '.');
 					// Match against known test classes (fallback for package mismatches)
 					if (!knownTestClasses.contains(testClass)) {
 						testClass = matchKnownClass(testClass, knownTestClasses);

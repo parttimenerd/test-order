@@ -542,13 +542,11 @@ public class StructuralDiff {
 		}
 
 		Map<String, String> contents;
-		try (BufferedInputStream input = new BufferedInputStream(process.getInputStream())) {
-			contents = parseGitBatchResponse(relPaths, input);
-		}
-
 		try {
+			try (BufferedInputStream input = new BufferedInputStream(process.getInputStream())) {
+				contents = parseGitBatchResponse(relPaths, input);
+			}
 			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
-				process.destroyForcibly();
 				throw new IOException("git cat-file timed out");
 			}
 			if (process.exitValue() != 0) {
@@ -557,9 +555,10 @@ public class StructuralDiff {
 				throw new IOException("git cat-file failed (exit " + process.exitValue() + ")");
 			}
 		} catch (InterruptedException e) {
-			process.destroyForcibly();
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while reading git blobs", e);
+		} finally {
+			process.destroyForcibly();
 		}
 		return contents;
 	}
