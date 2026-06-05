@@ -73,6 +73,7 @@ dashboard UI.  Numbering continues from BUGS.md (last fixed = BUG-22).
 | BUG-83 | Maven plugin — `buildId.substring(0, 8)` without length guard could throw `StringIndexOutOfBoundsException` | Low | **Fixed** |
 | BUG-84 | Core — `PersistenceSupport` lost `OverlappingFileLockException` cause after 50 retries, producing unhelpful "after 50 attempts" error | Low | **Fixed** |
 | BUG-85 | Core — `CiSummaryWriter` `GITHUB_REF.split("/")[2]` without bounds check; throws `ArrayIndexOutOfBoundsException` for malformed PR refs | Low | **Fixed** |
+| BUG-86 | Core — `StructuralDiff` initializer diff used `contains()` for classifying ADDED/REMOVED/MODIFIED; misclassified duplicate-hash additions as REMOVED | Medium | **Fixed** |
 
 ---
 
@@ -833,3 +834,11 @@ Also updated `chartIdxToRunIdx` with a proper `runOffset` to correctly map filte
 **Root cause:** `ref.split("/")[2]` — `split("/")` on trailing slashes discards empty trailing tokens, so `"refs/pull/".split("/")` yields a 2-element array, making index 2 out-of-bounds. The `startsWith("refs/pull/")` guard ensures the prefix matches but doesn't guarantee there is a PR number segment.  
 **Fix:** Added `if (parts.length > 2)` bounds check before accessing `parts[2]`.  
 **Files:** `test-order-core/.../CiSummaryWriter.java` line 268
+
+### BUG-86: `StructuralDiff` initializer diff misclassified duplicate-hash additions as REMOVED
+
+**Source:** Core — `StructuralDiff.java`  
+**Symptom:** If a class gains a second initializer block with the same body hash as an existing one (e.g., two identical static initializers), the change is classified as REMOVED instead of ADDED. This causes test-order to believe code was deleted when it was actually added, potentially skipping tests that depend on the new initializer.  
+**Root cause:** The classification used `!oldHashes.contains(h)` to count `added` — but `List.contains()` returns `true` even when the old list has fewer occurrences than the new. For `old=[A,B]` → `new=[A,A,B]`: the second `A` in new is not detected as added because `oldHashes.contains("A")` is `true`. Both `added=0` and `removed=0`, falling into the `else` (REMOVED) branch despite neither hash being removed. The comment in the code notes "use sorted lists to detect duplicate counts" but the counting logic didn't follow through.  
+**Fix:** Replaced `contains()` with frequency-map comparison using `groupingBy(counting())` to correctly count per-hash occurrence changes.  
+**Files:** `test-order-core/.../StructuralDiff.java` lines 474-481

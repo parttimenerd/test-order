@@ -472,12 +472,17 @@ public class StructuralDiff {
 			Collections.sort(newHashes);
 
 			if (!oldHashes.equals(newHashes)) {
+				// Count occurrences of each hash to correctly classify duplicate-block changes.
+				Map<String, Long> oldFreq = oldHashes.stream()
+						.collect(java.util.stream.Collectors.groupingBy(h -> h, java.util.stream.Collectors.counting()));
+				Map<String, Long> newFreq = newHashes.stream()
+						.collect(java.util.stream.Collectors.groupingBy(h -> h, java.util.stream.Collectors.counting()));
 				int added = 0, removed = 0;
 				for (String h : newHashes)
-					if (!oldHashes.contains(h))
+					if (newFreq.getOrDefault(h, 0L) > oldFreq.getOrDefault(h, 0L))
 						added++;
 				for (String h : oldHashes)
-					if (!newHashes.contains(h))
+					if (oldFreq.getOrDefault(h, 0L) > newFreq.getOrDefault(h, 0L))
 						removed++;
 				if (removed > 0 && added > 0) {
 					changes.add(new Change(Change.Kind.MODIFIED, Change.Category.INITIALIZER, fqcn, memberName,
