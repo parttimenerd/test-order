@@ -1,5 +1,6 @@
 package me.bechberger.testorder.maven;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -17,6 +18,9 @@ import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
 
+import me.bechberger.testorder.SourceRootScanner;
+import me.bechberger.testorder.agent.runtime.ClassIdMap;
+import me.bechberger.testorder.agent.runtime.ClassIdMapping;
 import me.bechberger.testorder.ops.ChangeDetectionOps;
 import me.bechberger.testorder.ops.PluginLog;
 import me.bechberger.testorder.ops.ReactorOrderOperation;
@@ -55,6 +59,21 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			session.getUserProperties().setProperty("testorder.extensionActive", "true");
 		}
 		try {
+			restoreLeftoverInstrumentation(session);
+		} catch (Exception | NoClassDefFoundError e) {
+			System.err.println("[test-order] startup restore failed: " + e);
+		}
+		try {
+			installRuntimeRealmInjector(session);
+		} catch (Exception | NoClassDefFoundError e) {
+			System.err.println("[test-order] runtime-realm injector install failed: " + e);
+		}
+		try {
+			prepareReactorClassIdMap(session);
+		} catch (Exception | NoClassDefFoundError e) {
+			System.err.println("[test-order] reactor class-id map pre-pass failed: " + e);
+		}
+		try {
 			ensurePrepareGoalBound(session);
 		} catch (Exception | NoClassDefFoundError e) {
 			System.err.println("[test-order] prepare-goal binding failed: " + e);
@@ -68,6 +87,196 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			tryReorderReactor(session);
 		} catch (Exception | NoClassDefFoundError e) {
 			System.err.println("[test-order] reactor reorder failed: " + e);
+		}
+	}
+
+	/**
+	 * Installs an {@link ExecutionListener} that imports
+	 * {@code me.bechberger.testorder.agent.runtime} into every plugin's
+	 * {@code ClassRealm} just before that plugin executes.
+	 * <p>
+	 * Prevents {@code NoClassDefFoundError: UsageStore} when other plugins (e.g.
+	 * {@code openapi-generator-maven-plugin}, log4j2's plugin-descriptor
+	 * generator) load instrumented bytecode in the same Maven JVM. Their realms
+	 * normally only import {@code maven.api} and can't see our agent runtime.
+	 * <p>
+	 * Importing rather than copying URLs ensures every realm sees the same
+	 * {@code UsageStore} class, so the static maps are shared across the session.
+	 */
+	private void installRuntimeRealmInjector(MavenSession session) {
+		if (session == null) {
+			return;
+		}
+		ExecutionListener prev = session.getRequest().getExecutionListener();
+		// Use the participant's own classloader (the test-order extension realm) as
+		// the source — it has UsageStore via the test-order-agent dependency.
+		ClassLoader extensionRealm = getClass().getClassLoader();
+		RuntimeRealmInjector injector = new RuntimeRealmInjector(prev, extensionRealm);
+		session.getRequest().setExecutionListener(injector);
+	}
+
+	/**
+	 * Pre-allocates a single reactor-wide class-id map covering every {@code .java}
+	 * file across every module's compile + test source roots. Ensures cross-module
+	 * edges are recorded with correct IDs: a classId baked into module-A's
+	 * instrumented bytecode means the same FQN when module-B's fork records it.
+	 * <p>
+	 * Without this, each module's prepare assigns IDs in isolation; module-A's
+	 * {@code Library} might be ID 5 while module-B's {@code Service} is ALSO ID 5
+	 * in module-B's map, so {@code ServiceTest -> Library} edges get
+	 * mis-attributed.
+	 * <p>
+	 * Per-module {@code prepare} mojos load this file under a file lock, register
+	 * any classes the source scan missed (inner classes, generated types) past the
+	 * current max ID, and save the (possibly grown) map back.
+	 */
+	// Package-private for unit testing.
+	void prepareReactorClassIdMap(MavenSession session) {
+		if (session == null || session.getProjects() == null || session.getProjects().isEmpty()) {
+			return;
+		}
+		MavenProject top = session.getTopLevelProject();
+		if (top == null || top.getBasedir() == null) {
+			// Degenerate session (e.g. unit-test fixtures with no top-level project).
+			// Without a stable reactor root we can't pick a single shared map path —
+			// skip rather than fall back to a per-cwd path that other modules wouldn't see.
+			return;
+		}
+		// Reactor root = multiModuleProjectDirectory when set, BUT only when the user
+		// actually invoked Maven from that directory (executionRootDirectory == mmDir).
+		// Without this discriminator, a standalone sub-project that happens to be
+		// nested inside an unrelated Maven tree (with a .mvn/ marker higher up) would
+		// write its class-id-map to the outer project's .test-order/ directory.
+		// This mirrors the same guard in ReactorContext (line 62).
+		Path reactorRoot;
+		try {
+			java.io.File mmDirFile = session.getRequest().getMultiModuleProjectDirectory();
+			Path mmDir = mmDirFile != null ? mmDirFile.toPath().normalize() : null;
+			Path execRoot;
+			try {
+				String er = session.getExecutionRootDirectory();
+				execRoot = er != null ? Path.of(er).normalize() : null;
+			} catch (RuntimeException e2) {
+				execRoot = null;
+			}
+			boolean isRealMultiModule = session.getProjects().size() > 1;
+			boolean isInferredMulti = !isRealMultiModule && mmDir != null && execRoot != null
+					&& mmDir.equals(execRoot)
+					&& !top.getBasedir().toPath().normalize().equals(mmDir)
+					&& java.nio.file.Files.isDirectory(mmDir.resolve(SHARED_DIR_NAME));
+			if (isRealMultiModule && mmDir != null) {
+				reactorRoot = mmDir;
+			} else if (isInferredMulti) {
+				reactorRoot = mmDir;
+			} else {
+				reactorRoot = top.getBasedir().toPath().normalize();
+			}
+		} catch (RuntimeException e) {
+			reactorRoot = top.getBasedir().toPath().normalize();
+		}
+		Path sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
+		Path mappingFile = sharedDir.resolve("class-id-map.bin");
+
+		ClassIdMap map = ClassIdMap.createForBenchmark();
+
+		// Pre-seed from any existing reactor map so IDs survive across runs (a class
+		// removed between builds would otherwise reshuffle IDs of everything after it).
+		if (Files.exists(mappingFile)) {
+			try {
+				ClassIdMapping existing = ClassIdMapping.load(mappingFile);
+				map.bulkLoadClasses(existing.toClassMap());
+			} catch (IOException e) {
+				System.err.println("[test-order] reactor class-id map: could not load existing " + mappingFile
+						+ " — starting fresh: " + e.getMessage());
+			}
+		}
+
+		int registered = 0;
+		Set<String> allFqns = new LinkedHashSet<>();
+		for (MavenProject project : session.getProjects()) {
+			if (project == null) {
+				continue;
+			}
+			List<String> compileRoots = project.getCompileSourceRoots();
+			if (compileRoots != null) {
+				for (String root : compileRoots) {
+					if (root == null || root.isBlank()) {
+						continue;
+					}
+					allFqns.addAll(SourceRootScanner.scanFqns(Path.of(root)));
+				}
+			}
+			List<String> testRoots = project.getTestCompileSourceRoots();
+			if (testRoots != null) {
+				for (String root : testRoots) {
+					if (root == null || root.isBlank()) {
+						continue;
+					}
+					allFqns.addAll(SourceRootScanner.scanFqns(Path.of(root)));
+				}
+			}
+		}
+		for (String fqn : allFqns) {
+			int id = map.getOrRegisterClass(fqn);
+			if (id >= 0) {
+				registered++;
+			}
+		}
+
+		if (registered == 0 && !Files.exists(mappingFile)) {
+			// No sources scanned and no prior file — nothing to write.
+			return;
+		}
+
+		try {
+			Files.createDirectories(sharedDir);
+			ClassIdMapping mapping = ClassIdMapping.fromClassIdMap(map, map.getNextClassId(), map.getNextMemberId());
+			mapping.save(mappingFile);
+			System.out.println("[test-order] Reactor class-id map: pre-allocated " + registered
+					+ " class IDs across " + session.getProjects().size() + " module(s) → " + mappingFile);
+		} catch (IOException e) {
+			System.err.println("[test-order] reactor class-id map: save failed: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Walks every project's {@code target/.test-order/classes-backup*} directory
+	 * and restores any leftover {@code .instrumented} markers from a previously
+	 * crashed/aborted session. Without this, instrumented bytecode from a failed
+	 * build would persist on disk and break subsequent {@code mvn test} runs that
+	 * don't recompile (since other plugins would hit {@code NoClassDefFoundError}
+	 * on {@code UsageStore} call-sites).
+	 */
+	private void restoreLeftoverInstrumentation(MavenSession session) {
+		if (session == null || session.getProjects() == null) {
+			return;
+		}
+		int restored = 0;
+		for (MavenProject project : session.getProjects()) {
+			if (project == null || project.getBuild() == null) {
+				continue;
+			}
+			Path targetDir = Path.of(project.getBuild().getDirectory());
+			Path backupRoot = targetDir.resolve(".test-order").resolve("classes-backup");
+			Path backupTest = targetDir.resolve(".test-order").resolve("classes-backup-test");
+			for (Path backup : new Path[] { backupRoot, backupTest }) {
+				try {
+					if (Files.exists(backup.resolve(".instrumented"))) {
+						boolean ok = me.bechberger.testorder.ClassBackupRestorer.restore(backup);
+						if (ok) {
+							restored++;
+							System.err.println("[test-order] Restored leftover instrumentation: " + backup);
+						}
+					}
+				} catch (Exception e) {
+					System.err.println(
+							"[test-order] Failed to restore leftover backup " + backup + ": " + e.getMessage());
+				}
+			}
+		}
+		if (restored > 0) {
+			System.err.println("[test-order] Recovered from previous crashed session: restored " + restored
+					+ " backup(s)");
 		}
 	}
 
@@ -174,7 +383,11 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			return;
 		}
 
-		Path reactorRoot = session.getTopLevelProject().getBasedir().toPath();
+		MavenProject top = session.getTopLevelProject();
+		if (top == null || top.getBasedir() == null) {
+			return;
+		}
+		Path reactorRoot = top.getBasedir().toPath();
 		Path sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
 		Path indexFile = sharedDir.resolve(INDEX_FILE);
 		Path stateFile = sharedDir.resolve(STATE_FILE);
@@ -385,7 +598,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 				}
 				try {
 					int port = Integer.parseInt(entry.substring(0, colon));
-					java.nio.file.Path indexFile = java.nio.file.Path.of(entry.substring(colon + 1));
+					java.nio.file.Path indexFile = java.nio.file.Path.of(entry.substring(colon + 1)).normalize();
 					// Try to drain via the local (possibly shared) static map first.
 					me.bechberger.testorder.IndexCollectorServer collector = AbstractTestOrderMojo.activeCollectors
 							.remove(indexFile);
@@ -458,7 +671,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 						buildId, agg.stateFile());
 				if (merged) {
 					System.out.println("[test-order] Aggregated per-fork run records into one RunRecord for build "
-							+ buildId.substring(0, 8) + "...");
+							+ (buildId.length() > 8 ? buildId.substring(0, 8) + "..." : buildId));
 				}
 			} catch (Exception e) {
 				System.err.println("[test-order] CollectorLifecycleParticipant: partial run merge failed for "

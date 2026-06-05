@@ -68,6 +68,9 @@ dashboard UI.  Numbering continues from BUGS.md (last fixed = BUG-22).
 | BUG-78 | Core — `DashboardGenerator` serialized null SA file path as the string `"null"` instead of null | Low | **Fixed** |
 | BUG-79 | Core — `TestOrderState` wrote empty `methodDurations`/`methodDurationVariances` maps to state file when all classes pruned | Low | **Fixed** |
 | BUG-80 | Dashboard UI + Core — Mutation score card showed tautological "100%" (sum of kill-share fractions); real score (`totalKilled/totalMutants`) never persisted or displayed | Medium | **Fixed** |
+| BUG-81 | Maven plugin — `CollectorLifecycleParticipant` session-drain path not normalized, causing collector lookup miss and data loss | High | **Fixed** |
+| BUG-82 | Maven plugin — `tryReorderReactor` called `getTopLevelProject()` without null check (inconsistent with sibling method) | Low | **Fixed** |
+| BUG-83 | Maven plugin — `buildId.substring(0, 8)` without length guard could throw `StringIndexOutOfBoundsException` | Low | **Fixed** |
 
 ---
 
@@ -788,3 +791,27 @@ Also updated `chartIdxToRunIdx` with a proper `runOffset` to correctly map filte
 4. `types.ts`: Added those three optional fields to `MutationData` interface.  
 5. `MutationTab.vue`: Replaced `overallRate` with `overallKillRate` (from server data), renamed card label to "Mutation score", added `totalKilled/totalMutants` sub-label.  
 **Files:** `TestOrderState.java`, `MutationAnalysisOperation.java`, `DashboardGenerator.java`, `types.ts`, `MutationTab.vue`
+
+### BUG-81: `CollectorLifecycleParticipant` session-drain used non-normalized path, causing collector lookup miss
+
+**Source:** Maven plugin — `CollectorLifecycleParticipant.java`  
+**Symptom:** In a multi-JVM or forked build, the session-end drain loop could fail to find and stop IndexCollectorServer instances, leaving them running and causing merged dependency data to not be written to disk. Data loss: test-class dependency edges from the failed-to-drain collector would be missing from the index.  
+**Root cause:** `AbstractTestOrderMojo.startCollector()` stores collectors in `activeCollectors` keyed by `indexFilePath.toAbsolutePath().normalize()` (line 990). The `registerCollectorInSession()` also serializes the path as `toAbsolutePath().normalize()` into the Maven session properties (line 1017). However, the drain loop in `CollectorLifecycleParticipant` reconstructed the path with `Path.of(entry.substring(colon+1))` (line 597) — no `.normalize()` call — so the `ConcurrentHashMap.remove()` could miss the entry if the path string contained any non-canonical segments.  
+**Fix:** Added `.normalize()` to the path reconstruction at line 597.  
+**Files:** `test-order-maven-plugin/.../CollectorLifecycleParticipant.java` line 597
+
+### BUG-82: `tryReorderReactor` called `getTopLevelProject()` without null check
+
+**Source:** Maven plugin — `CollectorLifecycleParticipant.java`  
+**Symptom:** Potential NPE in degenerate Maven sessions (e.g., test fixtures, unusual reactor configs) where `getTopLevelProject()` returns null.  
+**Root cause:** `tryReorderReactor()` called `session.getTopLevelProject().getBasedir().toPath()` at line 386 without null-checking `getTopLevelProject()`. The sibling method `prepareReactorClassIdMap()` correctly guards this with `if (top == null || top.getBasedir() == null) return`.  
+**Fix:** Added consistent null guard for `getTopLevelProject()` before line 386.  
+**Files:** `test-order-maven-plugin/.../CollectorLifecycleParticipant.java` lines 383-387
+
+### BUG-83: `buildId.substring(0, 8)` without length guard
+
+**Source:** Maven plugin — `CollectorLifecycleParticipant.java`  
+**Symptom:** `StringIndexOutOfBoundsException` in the run-aggregation log message if `buildId` is shorter than 8 characters.  
+**Root cause:** `buildId.substring(0, 8)` at the aggregation log line assumed the ID is always ≥ 8 chars. Build IDs from UUIDs are always 36 chars, but the fallback path (key without `|`) could in theory produce shorter strings.  
+**Fix:** Changed to `buildId.length() > 8 ? buildId.substring(0, 8) + "..." : buildId`.  
+**Files:** `test-order-maven-plugin/.../CollectorLifecycleParticipant.java` line ~671
