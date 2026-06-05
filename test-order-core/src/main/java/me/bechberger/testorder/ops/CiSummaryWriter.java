@@ -324,38 +324,111 @@ public final class CiSummaryWriter {
 		}
 	}
 
-	private static Long findExistingCommentId(String json) {
-		// Minimal JSON scan without pulling in a full parser: look for
-		// {"id": N, ..., "body": "...MARKER..."}
-		// We scan for the marker string and then backtrack to find the id field
-		// in the same comment object.
-		int pos = 0;
-		while (true) {
-			int markerIdx = json.indexOf(COMMENT_MARKER, pos);
-			if (markerIdx < 0)
-				return null;
-			// Find the containing object's "id" field by searching backwards
-			int objectStart = json.lastIndexOf('{', markerIdx);
-			if (objectStart < 0)
-				return null;
-			String segment = json.substring(objectStart, markerIdx);
-			int idIdx = segment.indexOf("\"id\":");
-			if (idIdx < 0) {
-				pos = markerIdx + 1;
-				continue;
+	static Long findExistingCommentId(String json) {
+		// Minimal JSON scan without pulling in a full parser.
+		// GitHub returns an array of comment objects:
+		//   [{"id": 12345, "user": {"id": 789, ...}, "body": "...MARKER..."}, ...]
+		// Strategy: scan forward through the top-level array elements. For each
+		// comment object ({...}), check whether its "body" value contains the marker.
+		// If so, return its top-level "id" field value.
+		// BUG-92: the old backward-walk picked the innermost "id" (e.g. "user".id)
+		// because it found the nested object's '{' first. This forward scan tracks
+		// brace depth properly so "id" is only read at depth 1 (direct comment field).
+		int n = json.length();
+		int i = 0;
+		// Skip to opening '[' of the array
+		while (i < n && json.charAt(i) != '[') i++;
+		if (i >= n) return null;
+		i++; // past '['
+
+		while (i < n) {
+			// Skip whitespace and commas between elements
+			while (i < n && (json.charAt(i) == ' ' || json.charAt(i) == '\n' || json.charAt(i) == '\r'
+					|| json.charAt(i) == '\t' || json.charAt(i) == ',')) {
+				i++;
 			}
-			try {
-				String afterId = segment.substring(idIdx + 5).stripLeading();
-				int commaOrBrace = afterId.indexOf(',');
-				if (commaOrBrace < 0)
-					commaOrBrace = afterId.indexOf('}');
-				if (commaOrBrace >= 0) {
-					return Long.parseLong(afterId.substring(0, commaOrBrace).strip());
+			if (i >= n || json.charAt(i) == ']') break;
+			if (json.charAt(i) != '{') { i++; continue; }
+
+			// Found a comment object — scan it to collect id and body
+			Long commentId = null;
+			boolean bodyHasMarker = false;
+			int depth = 0;
+			while (i < n) {
+				char c = json.charAt(i);
+				if (c == '{') {
+					depth++;
+					i++;
+				} else if (c == '}') {
+					depth--;
+					i++;
+					if (depth == 0) break; // end of this top-level element
+				} else if (c == '"') {
+					// Parse a JSON string
+					int keyStart = i + 1;
+					i++; // skip opening '"'
+					while (i < n) {
+						char sc = json.charAt(i);
+						i++;
+						if (sc == '\\') { i++; } // skip escaped char
+						else if (sc == '"') break;
+					}
+					int keyEnd = i - 1; // index of closing '"' was i-1 before last i++
+					String key = json.substring(keyStart, keyEnd);
+
+					// Check if this is a top-level key (depth==1) of interest
+					if (depth == 1) {
+						// Consume ':' and whitespace
+						while (i < n && (json.charAt(i) == ' ' || json.charAt(i) == ':')) i++;
+						if ("id".equals(key) && i < n && (Character.isDigit(json.charAt(i)) || json.charAt(i) == '-')) {
+							int numStart = i;
+							while (i < n && (Character.isDigit(json.charAt(i)) || json.charAt(i) == '-')) i++;
+							try {
+								commentId = Long.parseLong(json.substring(numStart, i));
+							} catch (NumberFormatException ignored) {}
+						} else if ("body".equals(key) && i < n && json.charAt(i) == '"') {
+							// Parse the body string value and check for marker
+							i++; // skip opening '"'
+							int bodyStart = i;
+							while (i < n) {
+								char sc = json.charAt(i);
+								i++;
+								if (sc == '\\') { i++; }
+								else if (sc == '"') break;
+							}
+							String bodyValue = json.substring(bodyStart, i - 1);
+							if (bodyValue.contains(COMMENT_MARKER)) {
+								bodyHasMarker = true;
+							}
+						}
+					} else {
+						// Non-top-level: skip the value (it was already consumed as part of
+						// the key string parse above for string keys, but if it was a key we
+						// might need to skip the value). Actually for nested objects the value
+						// will be parsed naturally by the outer loop's depth tracking.
+						// However, for non-object string values we need to consume them here.
+						// Skip ':' and whitespace, then skip the value if it's a string.
+						while (i < n && (json.charAt(i) == ' ' || json.charAt(i) == ':')) i++;
+						if (i < n && json.charAt(i) == '"') {
+							i++; // skip opening '"'
+							while (i < n) {
+								char sc = json.charAt(i); i++;
+								if (sc == '\\') i++;
+								else if (sc == '"') break;
+							}
+						}
+						// If the value is a number, object, or array, the outer loop handles it
+					}
+				} else {
+					i++;
 				}
-			} catch (NumberFormatException ignored) {
 			}
-			pos = markerIdx + 1;
+
+			if (bodyHasMarker && commentId != null) {
+				return commentId;
+			}
 		}
+		return null;
 	}
 
 	// ── Helpers ──────────────────────────────────────────────────────────────
