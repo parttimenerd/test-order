@@ -71,6 +71,7 @@ dashboard UI.  Numbering continues from BUGS.md (last fixed = BUG-22).
 | BUG-81 | Maven plugin — `CollectorLifecycleParticipant` session-drain path not normalized, causing collector lookup miss and data loss | High | **Fixed** |
 | BUG-82 | Maven plugin — `tryReorderReactor` called `getTopLevelProject()` without null check (inconsistent with sibling method) | Low | **Fixed** |
 | BUG-83 | Maven plugin — `buildId.substring(0, 8)` without length guard could throw `StringIndexOutOfBoundsException` | Low | **Fixed** |
+| BUG-84 | Core — `PersistenceSupport` lost `OverlappingFileLockException` cause after 50 retries, producing unhelpful "after 50 attempts" error | Low | **Fixed** |
 
 ---
 
@@ -815,3 +816,11 @@ Also updated `chartIdxToRunIdx` with a proper `runOffset` to correctly map filte
 **Root cause:** `buildId.substring(0, 8)` at the aggregation log line assumed the ID is always ≥ 8 chars. Build IDs from UUIDs are always 36 chars, but the fallback path (key without `|`) could in theory produce shorter strings.  
 **Fix:** Changed to `buildId.length() > 8 ? buildId.substring(0, 8) + "..." : buildId`.  
 **Files:** `test-order-maven-plugin/.../CollectorLifecycleParticipant.java` line ~671
+
+### BUG-84: `PersistenceSupport` lost `OverlappingFileLockException` cause after 50 retries
+
+**Source:** Core — `PersistenceSupport.java`  
+**Symptom:** If all 50 lock attempts fail with `OverlappingFileLockException`, the thrown `IOException` has the generic message "Could not acquire lock … after 50 attempts" with no cause attached — making it hard to diagnose that the issue was a lock contention loop.  
+**Root cause:** The retry loop only saved `IOException` as `lastIo` but not `OverlappingFileLockException` (different exception hierarchy). After 50 overlapping-lock failures the cause was discarded.  
+**Fix:** Track `lastOverlap` separately; attach it as the cause with `initCause()` when throwing the timeout error.  
+**Files:** `test-order-core/.../PersistenceSupport.java` lines 126-148

@@ -119,16 +119,39 @@ public final class PersistenceSupport {
 			if (parent != null) {
 				Files.createDirectories(parent);
 			}
-			try (FileChannel channel = FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-					FileLock ignored = channel.lock()) {
-				setOwnerOnlyPermissions(lockFile);
-				HELD_LOCKS.get().add(lockFile);
-				try {
-					return action.call();
-				} finally {
-					HELD_LOCKS.get().remove(lockFile);
+			// Retry on OverlappingFileLockException: another thread/fork in the same
+			// JVM is mid-lock on this file. Synchronized(jvmLock) serializes our own
+			// threads, but mvnd's parallel reactor + surefire's class-loader sharing
+			// can leave a stray channel lock visible to the JDK across module builds.
+			IOException lastIo = null;
+			java.nio.channels.OverlappingFileLockException lastOverlap = null;
+			for (int attempt = 0; attempt < 50; attempt++) {
+				try (FileChannel channel = FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+						FileLock ignored = channel.lock()) {
+					setOwnerOnlyPermissions(lockFile);
+					HELD_LOCKS.get().add(lockFile);
+					try {
+						return action.call();
+					} finally {
+						HELD_LOCKS.get().remove(lockFile);
+					}
+				} catch (java.nio.channels.OverlappingFileLockException ofle) {
+					lastOverlap = ofle;
+					try {
+						Thread.sleep(20L + attempt * 10L);
+					} catch (InterruptedException ie) {
+						Thread.currentThread().interrupt();
+						throw new IOException("Interrupted while waiting for lock on " + lockFile, ie);
+					}
+				} catch (IOException io) {
+					lastIo = io;
+					break;
 				}
 			}
+			if (lastIo != null) throw lastIo;
+			IOException ex = new IOException("Could not acquire lock on " + lockFile + " after 50 attempts");
+			if (lastOverlap != null) ex.initCause(lastOverlap);
+			throw ex;
 		}
 	}
 
