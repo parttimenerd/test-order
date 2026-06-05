@@ -9,12 +9,10 @@ const mutation = computed(() => d.dd.mutation)
 const tests = computed(() => mutation.value?.tests ?? [])
 const summary = computed(() => mutation.value?.summary ?? { high: 0, medium: 0, low: 0, none: 0 })
 
-// Overall kill rate = sum of per-test rates / total (since rates are fractions of total killed)
-const overallRate = computed(() => {
-  const ts = tests.value
-  if (!ts.length) return 0
-  return ts.reduce((acc, t) => acc + t.killRate, 0)
-})
+// Overall mutation score = totalKilled / totalMutants (from PIT run)
+const overallKillRate = computed(() => mutation.value?.overallKillRate ?? 0)
+const totalMutants = computed(() => mutation.value?.totalMutants ?? 0)
+const totalKilled = computed(() => mutation.value?.totalKilled ?? 0)
 
 function tierColor(rate: number): string {
   if (rate >= 0.15) return 'var(--green, #22c55e)'
@@ -38,8 +36,9 @@ function tierLabel(rate: number): string {
     <!-- Summary cards -->
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       <div class="mut-card mut-card--overall">
-        <div class="mut-card__value">{{ (overallRate * 100).toFixed(1) }}%</div>
-        <div class="mut-card__label">Overall kill share</div>
+        <div class="mut-card__value">{{ (overallKillRate * 100).toFixed(1) }}%</div>
+        <div class="mut-card__label">Mutation score</div>
+        <div v-if="totalMutants > 0" style="font-size:.62rem;color:var(--text-muted);margin-top:2px">{{ totalKilled }}/{{ totalMutants }} killed</div>
       </div>
       <div class="mut-card mut-card--high">
         <div class="mut-card__value">{{ summary.high }}</div>

@@ -321,9 +321,16 @@ public class DashboardGenerator {
 			Map<String, Object> mutation = new LinkedHashMap<>();
 			mutation.put("enabled", true);
 
+			// Overall mutation score from persisted totals
+			int totalMutants = state.getMutationTotalMutants();
+			int totalKilled = state.getMutationTotalKilled();
+			mutation.put("totalMutants", totalMutants);
+			mutation.put("totalKilled", totalKilled);
+			mutation.put("overallKillRate",
+					totalMutants > 0 ? Math.round((double) totalKilled / totalMutants * 10000.0) / 10000.0 : 0.0);
+
 			// Summary: count tests by kill-rate tier
 			int high = 0, medium = 0, low = 0, none = 0;
-			int totalKilledByTests = 0;
 			for (double rate : killRates.values()) {
 				if (rate >= 0.15)
 					high++;
@@ -333,7 +340,6 @@ public class DashboardGenerator {
 					low++;
 				else
 					none++;
-				totalKilledByTests += (int) Math.round(rate * 100); // approx, just for display
 			}
 			Map<String, Object> summary = new LinkedHashMap<>();
 			summary.put("high", high);
@@ -516,7 +522,7 @@ public class DashboardGenerator {
 							if (!(item instanceof Map<?, ?> raw))
 								continue;
 							Map<String, Object> fs = new LinkedHashMap<>();
-							fs.put("path", String.valueOf(raw.get("path")));
+							fs.put("path", raw.get("path") instanceof String s ? s : null);
 							int a = raw.get("added") instanceof Number n ? n.intValue() : 0;
 							int r = raw.get("removed") instanceof Number n ? n.intValue() : 0;
 							int s = raw.get("signature") instanceof Number n ? n.intValue() : 0;

@@ -161,6 +161,7 @@ public final class MutationAnalysisOperation {
 			try {
 				TestOrderState state = TestOrderState.load(config.stateFile());
 				state.setKillRates(killRates);
+				state.setMutationTotals(totalMutants, totalKilled);
 				state.save(config.stateFile());
 				log.info("[test-order] Kill rates saved to state file: " + config.stateFile());
 			} catch (IOException e) {
@@ -435,13 +436,12 @@ public final class MutationAnalysisOperation {
 					if (dotEngine >= 0) {
 						testClass = testClass.substring(0, dotEngine);
 					}
-					// Normalise inner-class separator: PIT may emit "Outer$Inner", we use
-					// "Outer.Inner"
-					testClass = testClass.replace('$', '.');
-					// Match against known test classes (fallback for package mismatches)
-					if (!knownTestClasses.contains(testClass)) {
-						testClass = matchKnownClass(testClass, knownTestClasses);
-					}
+					// Normalise inner-class separator: PIT emits "Outer$Inner" which already
+						// matches the dep-map format — no replacement needed.
+						// Match against known test classes (fallback for package mismatches)
+						if (!knownTestClasses.contains(testClass)) {
+							testClass = matchKnownClass(testClass, knownTestClasses);
+						}
 				}
 
 				if (detected && testClass != null) {

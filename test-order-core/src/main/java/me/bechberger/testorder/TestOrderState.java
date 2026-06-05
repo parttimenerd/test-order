@@ -488,11 +488,15 @@ public class TestOrderState {
 	 * Per-test-class mutation kill rates, populated by the analyze-mutations goal.
 	 */
 	private Map<String, Double> killRates = new java.util.HashMap<>();
+	/** Total mutants from last PIT run (0 when not yet run). */
+	private int mutationTotalMutants = 0;
+	/** Total killed mutants from last PIT run (0 when not yet run). */
+	private int mutationTotalKilled = 0;
 	/**
 	 * True when addRunRecord was called since the last save — enables decay even on
 	 * all-pass runs.
 	 */
-	private boolean pendingRunCompleted;
+	private volatile boolean pendingRunCompleted;
 
 	public TestOrderState() {
 		this.config = new StateConfiguration();
@@ -520,6 +524,14 @@ public class TestOrderState {
 	/** Replaces the mutation kill rates (called by analyze-mutations). */
 	public void setKillRates(Map<String, Double> rates) {
 		this.killRates = new java.util.HashMap<>(rates);
+	}
+
+	public int getMutationTotalMutants() { return mutationTotalMutants; }
+	public int getMutationTotalKilled() { return mutationTotalKilled; }
+
+	public void setMutationTotals(int totalMutants, int totalKilled) {
+		this.mutationTotalMutants = totalMutants;
+		this.mutationTotalKilled = totalKilled;
 	}
 
 	// ── Configuration ─────────────────────────────────────────────────
@@ -781,10 +793,16 @@ public class TestOrderState {
 	// ── Persistence ──────────────────────────────────────────────────
 
 	public void save(Path file) throws IOException {
-		StateSerializer.save(file, this);
-		// Invalidate cache so the next load() re-reads the updated file.
 		Path abs = file.toAbsolutePath();
-		STATE_LOAD_CACHE.keySet().removeIf(k -> k.path().equals(abs));
+		try {
+			StateSerializer.save(file, this);
+		} finally {
+			// Invalidate cache unconditionally: on success so the next load re-reads the
+			// updated file; on failure so a subsequent load does not return the partially-
+			// mutated in-memory object (which has pendingRunCompleted=true but was never
+			// persisted, causing an extra decay round on the next successful save).
+			STATE_LOAD_CACHE.keySet().removeIf(k -> k.path().equals(abs));
+		}
 	}
 
 	/**
@@ -800,9 +818,12 @@ public class TestOrderState {
 	 * session end instead, via {@link #addRunRecord}.
 	 */
 	public void saveAggregatedFork(Path file) throws IOException {
-		StateSerializer.save(file, this, false);
 		Path abs = file.toAbsolutePath();
-		STATE_LOAD_CACHE.keySet().removeIf(k -> k.path().equals(abs));
+		try {
+			StateSerializer.save(file, this, false);
+		} finally {
+			STATE_LOAD_CACHE.keySet().removeIf(k -> k.path().equals(abs));
+		}
 	}
 
 	Map<String, Object> toPersistedRoot() {
@@ -915,7 +936,9 @@ public class TestOrderState {
 				}
 				mdMap.put(classEntry.getKey(), methods);
 			}
-			root.put("methodDurations", mdMap);
+			if (!mdMap.isEmpty()) {
+				root.put("methodDurations", mdMap);
+			}
 		}
 		if (!durationTracker.methodDurationVariances().isEmpty()) {
 			Map<String, Object> mdvMap = new LinkedHashMap<>();
@@ -928,7 +951,9 @@ public class TestOrderState {
 				}
 				mdvMap.put(classEntry.getKey(), methods);
 			}
-			root.put("methodDurationVariances", mdvMap);
+			if (!mdvMap.isEmpty()) {
+				root.put("methodDurationVariances", mdvMap);
+			}
 		}
 
 		// method failure scores: decay historical only when new run data exists, add
@@ -946,6 +971,8 @@ public class TestOrderState {
 		// mutation kill rates (only persist when present)
 		if (!killRates.isEmpty()) {
 			root.put("killRates", new LinkedHashMap<>(killRates));
+			root.put("mutationTotalMutants", mutationTotalMutants);
+			root.put("mutationTotalKilled", mutationTotalKilled);
 		}
 
 		persistedFailureScores = mergedFailures;
@@ -1136,6 +1163,8 @@ public class TestOrderState {
 				rates.put(e.getKey(), safeDouble(e.getValue(), 0.0, "killRates." + e.getKey()));
 			}
 			state.killRates = rates;
+			state.mutationTotalMutants = safeInt(root.get("mutationTotalMutants"), 0, "mutationTotalMutants");
+			state.mutationTotalKilled = safeInt(root.get("mutationTotalKilled"), 0, "mutationTotalKilled");
 		}
 
 		state.runHistory.trimToMax(state.config.historyMaxRuns());

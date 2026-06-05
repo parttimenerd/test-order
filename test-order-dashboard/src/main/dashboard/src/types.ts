@@ -151,6 +151,9 @@ export interface MutationData {
   enabled: boolean
   summary: MutationSummary
   tests: MutationEntry[]
+  totalMutants?: number
+  totalKilled?: number
+  overallKillRate?: number
 }
 
 export type MemberChangeKind = 'ADDED' | 'REMOVED' | 'SIGNATURE' | 'BODY'
