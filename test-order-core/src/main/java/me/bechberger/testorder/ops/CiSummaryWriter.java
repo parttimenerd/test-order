@@ -263,7 +263,10 @@ public final class CiSummaryWriter {
 			// Try to derive from GITHUB_REF: refs/pull/123/merge
 			String ref = System.getenv("GITHUB_REF");
 			if (ref != null && ref.startsWith("refs/pull/")) {
-				prNumber = ref.split("/")[2];
+				String[] parts = ref.split("/");
+				if (parts.length > 2) {
+					prNumber = parts[2];
+				}
 			}
 		}
 		if (repo == null || repo.isBlank() || prNumber == null || prNumber.isBlank()) {

@@ -72,6 +72,7 @@ dashboard UI.  Numbering continues from BUGS.md (last fixed = BUG-22).
 | BUG-82 | Maven plugin — `tryReorderReactor` called `getTopLevelProject()` without null check (inconsistent with sibling method) | Low | **Fixed** |
 | BUG-83 | Maven plugin — `buildId.substring(0, 8)` without length guard could throw `StringIndexOutOfBoundsException` | Low | **Fixed** |
 | BUG-84 | Core — `PersistenceSupport` lost `OverlappingFileLockException` cause after 50 retries, producing unhelpful "after 50 attempts" error | Low | **Fixed** |
+| BUG-85 | Core — `CiSummaryWriter` `GITHUB_REF.split("/")[2]` without bounds check; throws `ArrayIndexOutOfBoundsException` for malformed PR refs | Low | **Fixed** |
 
 ---
 
@@ -824,3 +825,11 @@ Also updated `chartIdxToRunIdx` with a proper `runOffset` to correctly map filte
 **Root cause:** The retry loop only saved `IOException` as `lastIo` but not `OverlappingFileLockException` (different exception hierarchy). After 50 overlapping-lock failures the cause was discarded.  
 **Fix:** Track `lastOverlap` separately; attach it as the cause with `initCause()` when throwing the timeout error.  
 **Files:** `test-order-core/.../PersistenceSupport.java` lines 126-148
+
+### BUG-85: `CiSummaryWriter` GITHUB_REF split without bounds check
+
+**Source:** Core — `CiSummaryWriter.java`  
+**Symptom:** `ArrayIndexOutOfBoundsException` when `GITHUB_REF` is set to a malformed pull-request reference (e.g., `refs/pull/` with no PR number). The exception aborts PR comment posting with no useful error message.  
+**Root cause:** `ref.split("/")[2]` — `split("/")` on trailing slashes discards empty trailing tokens, so `"refs/pull/".split("/")` yields a 2-element array, making index 2 out-of-bounds. The `startsWith("refs/pull/")` guard ensures the prefix matches but doesn't guarantee there is a PR number segment.  
+**Fix:** Added `if (parts.length > 2)` bounds check before accessing `parts[2]`.  
+**Files:** `test-order-core/.../CiSummaryWriter.java` line 268
