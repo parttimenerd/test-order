@@ -69,7 +69,7 @@ public final class ClassCoverage implements Comparable<ClassCoverage> {
 
 	/** Whether member-level coverage data is available. */
 	public boolean hasMemberCoverage() {
-		return !allMembers.isEmpty();
+		return !exercisedMembers.isEmpty();
 	}
 
 	/** All known members of this class. */

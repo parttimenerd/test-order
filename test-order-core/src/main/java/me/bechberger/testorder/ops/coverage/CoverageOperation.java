@@ -98,7 +98,10 @@ public final class CoverageOperation {
 				for (var me : memberMap.entrySet()) {
 					memberTestMap.put(me.getKey(), new ArrayList<>(me.getValue()));
 				}
-				entries.add(new ClassCoverage(prodClass, tests, exercised, exercised, memberTestMap));
+				// allMembers is unknown from instrumentation data alone (we only know
+				// which members were exercised, not the total member count). Pass Set.of()
+				// so memberCoveragePercent() returns -1 rather than a misleading 100%.
+				entries.add(new ClassCoverage(prodClass, tests, Set.of(), exercised, memberTestMap));
 			} else {
 				entries.add(new ClassCoverage(prodClass, tests));
 			}
@@ -138,9 +141,12 @@ public final class CoverageOperation {
 		sb.append("| Below threshold (<").append(threshold).append(" tests) | ")
 				.append(analysis.belowThreshold(threshold).size()).append(" |\n");
 		if (stats.hasMemberData()) {
-			sb.append("| Total members tracked | ").append(stats.totalMembers()).append(" |\n");
-			sb.append("| Members exercised | ").append(stats.exercisedMembers()).append(" |\n");
-			sb.append("| Member coverage | ").append(stats.memberCoveragePercent()).append("% |\n");
+			sb.append("| Total members exercised | ").append(stats.exercisedMembers()).append(" |\n");
+			int pct = stats.memberCoveragePercent();
+			if (pct >= 0) {
+				sb.append("| Total members tracked | ").append(stats.totalMembers()).append(" |\n");
+				sb.append("| Member coverage | ").append(pct).append("% |\n");
+			}
 		}
 		sb.append('\n');
 
@@ -152,11 +158,13 @@ public final class CoverageOperation {
 				sb.append("| Class | Tests | Member Coverage | Uncovered Members |\n");
 				sb.append("|-------|------:|----------------:|-------------------|\n");
 				for (ClassCoverage c : belowThreshold) {
+					int pct = c.memberCoveragePercent();
 					String memberCov = c.hasMemberCoverage()
-							? c.memberCoveragePercent() + "% (" + c.exercisedMembers().size() + "/"
-									+ c.allMembers().size() + ")"
+							? (pct >= 0
+									? pct + "% (" + c.exercisedMembers().size() + "/" + c.allMembers().size() + ")"
+									: c.exercisedMembers().size() + " exercised")
 							: "n/a";
-					String uncovered = c.hasMemberCoverage() ? String.join(", ", c.uncoveredMembers()) : "";
+					String uncovered = (c.hasMemberCoverage() && pct >= 0) ? String.join(", ", c.uncoveredMembers()) : "";
 					sb.append("| `").append(c.fullyQualifiedName()).append("` | ").append(c.testCount()).append(" | ")
 							.append(memberCov).append(" | ").append(uncovered).append(" |\n");
 				}
@@ -173,8 +181,8 @@ public final class CoverageOperation {
 		// By-package breakdown
 		sb.append("## Coverage by Package\n\n");
 		if (stats.hasMemberData()) {
-			sb.append("| Package | Classes | Avg Tests | Members | Member Coverage |\n");
-			sb.append("|---------|--------:|----------:|--------:|----------------:|\n");
+			sb.append("| Package | Classes | Avg Tests | Members Exercised |\n");
+			sb.append("|---------|--------:|----------:|------------------:|\n");
 		} else {
 			sb.append("| Package | Classes | Avg Tests |\n");
 			sb.append("|---------|--------:|----------:|\n");
@@ -183,12 +191,10 @@ public final class CoverageOperation {
 			List<ClassCoverage> pkgClasses = pe.getValue();
 			double avg = pkgClasses.stream().mapToInt(ClassCoverage::testCount).average().orElse(0);
 			if (stats.hasMemberData()) {
-				int totalM = pkgClasses.stream().mapToInt(c -> c.allMembers().size()).sum();
 				int exercisedM = pkgClasses.stream().mapToInt(c -> c.exercisedMembers().size()).sum();
-				String memberPct = totalM > 0 ? ((int) (100.0 * exercisedM / totalM)) + "%" : "n/a";
 				sb.append("| `").append(pe.getKey()).append("` | ").append(pkgClasses.size()).append(" | ")
-						.append(String.format(java.util.Locale.US, "%.1f", avg)).append(" | ").append(totalM)
-						.append(" | ").append(memberPct).append(" |\n");
+						.append(String.format(java.util.Locale.US, "%.1f", avg)).append(" | ").append(exercisedM)
+						.append(" |\n");
 			} else {
 				sb.append("| `").append(pe.getKey()).append("` | ").append(pkgClasses.size()).append(" | ")
 						.append(String.format(java.util.Locale.US, "%.1f", avg)).append(" |\n");
@@ -219,9 +225,12 @@ public final class CoverageOperation {
 		summary.put("threshold", threshold);
 		summary.put("belowThreshold", analysis.belowThreshold(threshold).size());
 		if (stats.hasMemberData()) {
-			summary.put("totalMembers", stats.totalMembers());
 			summary.put("exercisedMembers", stats.exercisedMembers());
-			summary.put("memberCoveragePercent", stats.memberCoveragePercent());
+			int pct = stats.memberCoveragePercent();
+			if (pct >= 0) {
+				summary.put("totalMembers", stats.totalMembers());
+				summary.put("memberCoveragePercent", pct);
+			}
 		}
 		root.put("summary", summary);
 
@@ -234,10 +243,13 @@ public final class CoverageOperation {
 			entry.put("testCount", c.testCount());
 			entry.put("tests", new ArrayList<>(c.exercisingTests()));
 			if (c.hasMemberCoverage()) {
-				entry.put("memberCoveragePercent", c.memberCoveragePercent());
 				entry.put("exercisedMembers", c.exercisedMembers().size());
-				entry.put("totalMembers", c.allMembers().size());
-				entry.put("uncoveredMembers", new ArrayList<>(c.uncoveredMembers()));
+				int pct = c.memberCoveragePercent();
+				if (pct >= 0) {
+					entry.put("memberCoveragePercent", pct);
+					entry.put("totalMembers", c.allMembers().size());
+					entry.put("uncoveredMembers", new ArrayList<>(c.uncoveredMembers()));
+				}
 			}
 			classes.add(entry);
 		}
@@ -280,8 +292,13 @@ public final class CoverageOperation {
 		out.println("Avg tests/class:    " + String.format(java.util.Locale.US, "%.1f", stats.avgTestsPerClass()));
 		out.println("Below threshold (<" + threshold + " tests): " + analysis.belowThreshold(threshold).size());
 		if (stats.hasMemberData()) {
-			out.println("Member coverage:    " + stats.exercisedMembers() + "/" + stats.totalMembers() + " ("
-					+ stats.memberCoveragePercent() + "%)");
+			int pct = stats.memberCoveragePercent();
+			if (pct >= 0) {
+				out.println("Member coverage:    " + stats.exercisedMembers() + "/" + stats.totalMembers() + " ("
+						+ pct + "%)");
+			} else {
+				out.println("Member coverage:    " + stats.exercisedMembers() + " exercised (total unknown)");
+			}
 		}
 		out.println();
 	}
