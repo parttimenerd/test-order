@@ -29,8 +29,13 @@ import me.bechberger.testorder.ci.CiDepDownloadManager;
 @Mojo(name = "download", requiresProject = true)
 public class DownloadMojo extends AbstractTestOrderMojo {
 
-	/** Track whether download already ran in this reactor build. */
-	private static volatile boolean downloadedInReactor = false;
+	/**
+	 * Session-scoped key to track whether the download already ran in this reactor
+	 * build. Stored in session user properties (not a static field) so it is
+	 * automatically scoped to the current Maven session — avoids the flag
+	 * persisting across builds when using the Maven daemon (mvnd).
+	 */
+	private static final String SESSION_DOWNLOADED_KEY = "testorder.internal.downloadedInReactor";
 
 	/**
 	 * When {@code true}, a failed download (no config, no artifact, no token) is
@@ -50,8 +55,11 @@ public class DownloadMojo extends AbstractTestOrderMojo {
 			return;
 		}
 
-		// Only download once per reactor build — the index is shared
-		if (downloadedInReactor) {
+		// Only download once per reactor build — the index is shared.
+		// Use session user properties (not a static field) so the flag is scoped
+		// to this Maven session and does not persist across mvnd daemon builds.
+		if (session != null && session.getUserProperties() != null
+				&& "true".equals(session.getUserProperties().getProperty(SESSION_DOWNLOADED_KEY))) {
 			getLog().debug("[test-order] Download already completed for this reactor build.");
 			return;
 		}
@@ -82,7 +90,9 @@ public class DownloadMojo extends AbstractTestOrderMojo {
 		Optional<Path> result = CiDepDownloadManager.downloadIfConfigured(reactorRoot, indexTarget);
 
 		if (result.isPresent()) {
-			downloadedInReactor = true;
+			if (session != null && session.getUserProperties() != null) {
+				session.getUserProperties().setProperty(SESSION_DOWNLOADED_KEY, "true");
+			}
 			getLog().info("[test-order] CI index written to " + result.get());
 		} else {
 			if (fallbackToLearn) {

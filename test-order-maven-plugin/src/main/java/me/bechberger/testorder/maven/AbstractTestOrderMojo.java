@@ -446,36 +446,55 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * suggestions. Checks both user properties (-D on CLI) and system properties.
 	 * Deduplicates per session to avoid repeating warnings across mojo invocations.
 	 */
-	private static final Set<String> WARNED_PROPERTIES = java.util.Collections
-			.synchronizedSet(new java.util.HashSet<>());
+	private static final String SESSION_WARNED_PROPERTIES_KEY = "testorder.internal.warnedProperties";
 
 	private void warnUnknownProperties() {
 		if (session == null) {
 			return;
 		}
-		if (session.getUserProperties() != null) {
-			for (String info : MavenPluginConfigKeys.findAliasedProperties(session.getUserProperties())) {
-				if (WARNED_PROPERTIES.add(info)) {
-					getLog().info("[test-order] " + info);
-				}
+		// Use session user properties as the deduplication set so the warning appears
+		// exactly once per Maven session. A static Set would suppress re-warnings in
+		// subsequent builds when the Maven daemon (mvnd) keeps the JVM alive.
+		java.util.Properties props = session.getUserProperties();
+		if (props == null) {
+			return;
+		}
+		for (String info : MavenPluginConfigKeys.findAliasedProperties(props)) {
+			if (addToSessionWarnedSet(props, info)) {
+				getLog().info("[test-order] " + info);
 			}
-			for (String warning : MavenPluginConfigKeys.findUnknownProperties(session.getUserProperties())) {
-				if (WARNED_PROPERTIES.add(warning)) {
-					getLog().warn("[test-order] " + warning);
-				}
+		}
+		for (String warning : MavenPluginConfigKeys.findUnknownProperties(props)) {
+			if (addToSessionWarnedSet(props, warning)) {
+				getLog().warn("[test-order] " + warning);
 			}
 		}
 		if (session.getSystemProperties() != null) {
 			for (String warning : MavenPluginConfigKeys.findUnknownProperties(session.getSystemProperties())) {
 				// Only warn if not already covered by user properties
-				if (session.getUserProperties() == null || !session.getUserProperties().stringPropertyNames().stream()
-						.anyMatch(k -> warning.contains("'" + k + "'"))) {
-					if (WARNED_PROPERTIES.add(warning)) {
+				if (!props.stringPropertyNames().stream().anyMatch(k -> warning.contains("'" + k + "'"))) {
+					if (addToSessionWarnedSet(props, warning)) {
 						getLog().warn("[test-order] " + warning);
 					}
 				}
 			}
 		}
+	}
+
+	private static boolean addToSessionWarnedSet(java.util.Properties props, String message) {
+		String key = Integer.toHexString(message.hashCode());
+		String existing = props.getProperty(SESSION_WARNED_PROPERTIES_KEY, "");
+		if (existing.contains("|" + key + "|")) {
+			return false;
+		}
+		synchronized (props) {
+			String current = props.getProperty(SESSION_WARNED_PROPERTIES_KEY, "");
+			if (current.contains("|" + key + "|")) {
+				return false;
+			}
+			props.setProperty(SESSION_WARNED_PROPERTIES_KEY, current + "|" + key + "|");
+		}
+		return true;
 	}
 
 	/**
