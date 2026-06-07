@@ -32,7 +32,7 @@ Terminal font: **20pt+**. Test on the projector before the session.
 | 0:10  | "normally we run all tests" — BeforePlugin    | Slides    |
 | 0:30  | DepGraph — learn pass explanation             | Slides    |
 | 1:00  | `./add-test-order.sh` — plugin + learn data   | Terminal  |
-| 1:20  | `mvn test-order:select test` — magic beat     | VS Code   |
+| 1:20  | `mvn test-order:affected test` — magic beat     | VS Code   |
 | 2:00  | Copilot "fix the bug" — agentic demo          | VS Code   |
 | 3:00  | LocalWorkflow slide                           | Slides    |
 | 3:20  | CIWorkflow slide                              | Slides    |
@@ -45,7 +45,7 @@ Terminal font: **20pt+**. Test on the projector before the session.
 | Command | What happens | Wall time |
 |---------|-------------|-----------|
 | `mvn clean test` | Full clean build + all tests | **5:00+** |
-| `mvn test-order:select test` | 7 affected test classes — **with bug** | **~25s (red)** |
+| `mvn test-order:affected test` | 7 affected test classes — **with bug** | **~25s (red)** |
 | same after fix | same 7 classes | **~25s (green)** |
 
 ---
@@ -73,7 +73,7 @@ cd /path/to/demo/dcom-presentation
 ./add-test-order.sh      # adds plugin to pom.xml, copies in learn index, shows diff
 ./make-change.sh         # inverts the tenant check, leaves it uncommitted
 cd cloud-sdk-java
-mvn test-order:select test
+mvn test-order:affected test
 ```
 
 Narrate while select runs (~25s):
@@ -95,7 +95,7 @@ Total time: 25s
 Switch to **VS Code**. Show `.github/copilot-instructions.md` tab.
 
 > "Here's the entire AI integration. One file. Three lines:
->  'After every code change, run: mvn test-order:select test'"
+>  'After every code change, run: mvn test-order:affected test'"
 
 Type the Copilot prompt:
 ```
@@ -130,7 +130,7 @@ fix the bug
 | "no index" on select | Run `./prepare.sh` again (learn pass needed) |
 | Tests take too long | Check `JAVA_HOME` is JDK 21 |
 | Plugin not found | `cd ../../ && mvn install -DskipTests -pl test-order-maven-plugin -am` |
-| Copilot doesn't run tests | Narrate + run `mvn test-order:select test` manually |
+| Copilot doesn't run tests | Narrate + run `mvn test-order:affected test` manually |
 | Bug already fixed before demo | `./reset.sh && ./make-change.sh` |
 | Nuclear reset | `./reset.sh && ./add-test-order.sh && ./make-change.sh` |
 

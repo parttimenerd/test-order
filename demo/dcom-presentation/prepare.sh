@@ -34,6 +34,7 @@ pom_enable() {
                  . "                        <groupId>me.bechberger</groupId>\n"
                  . "                        <artifactId>test-order-maven-plugin</artifactId>\n"
                  . "                        <version>0.0.1-SNAPSHOT</version>\n"
+                 . "                        <extensions>true</extensions>\n"
                  . "                        <configuration>\n"
                  . "                                <topN>7</topN>\n"
                  . "                                <seed>42</seed>\n"
@@ -155,26 +156,26 @@ AUTH_PROVIDER="$MODULE/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivit
 # Cycle 1
 sed -i '' 's/return Objects.equals(currentTenantId, providerTenantId);/return !Objects.equals(currentTenantId, providerTenantId);/' "$RESOLVER"
 git add "$RESOLVER" && git commit -m "bug: invert tenant check" -q 2>/dev/null || true
-mvn test-order:select test -pl "$MODULE" -Dmaven.test.failure.ignore=true -q 2>/dev/null || true
+mvn test-order:affected test -pl "$MODULE" -Dmaven.test.failure.ignore=true -q 2>/dev/null || true
 sed -i '' 's/return !Objects.equals(currentTenantId, providerTenantId);/return Objects.equals(currentTenantId, providerTenantId);/' "$RESOLVER"
 git add "$RESOLVER" && git commit -m "fix: restore tenant check" -q 2>/dev/null || true
-mvn test-order:select test -pl "$MODULE" -q 2>/dev/null || true
+mvn test-order:affected test -pl "$MODULE" -q 2>/dev/null || true
 
 # Cycle 2
 sed -i '' 's/if( attributes == null || !JWT_ATTR_XSUAA/if( attributes != null \&\& JWT_ATTR_XSUAA/' "$RESOLVER"
 git add "$RESOLVER" && git commit -m "bug: invert XSUAA attribute check" -q 2>/dev/null || true
-mvn test-order:select test -pl "$MODULE" -Dmaven.test.failure.ignore=true -q 2>/dev/null || true
+mvn test-order:affected test -pl "$MODULE" -Dmaven.test.failure.ignore=true -q 2>/dev/null || true
 sed -i '' 's/if( attributes != null \&\& JWT_ATTR_XSUAA/if( attributes == null || !JWT_ATTR_XSUAA/' "$RESOLVER"
 git add "$RESOLVER" && git commit -m "fix: restore XSUAA attribute check" -q 2>/dev/null || true
-mvn test-order:select test -pl "$MODULE" -q 2>/dev/null || true
+mvn test-order:affected test -pl "$MODULE" -q 2>/dev/null || true
 
 # Cycle 3
 sed -i '' 's/if( !tokens.isEmpty() ) {/if( tokens.isEmpty() ) {/' "$AUTH_PROVIDER"
 git add "$AUTH_PROVIDER" && git commit -m "bug: invert token presence check" -q 2>/dev/null || true
-mvn test-order:select test -pl "$MODULE" -Dmaven.test.failure.ignore=true -q 2>/dev/null || true
+mvn test-order:affected test -pl "$MODULE" -Dmaven.test.failure.ignore=true -q 2>/dev/null || true
 sed -i '' 's/if( tokens.isEmpty() ) {/if( !tokens.isEmpty() ) {/' "$AUTH_PROVIDER"
 git add "$AUTH_PROVIDER" && git commit -m "fix: restore token presence check" -q 2>/dev/null || true
-mvn test-order:select test -pl "$MODULE" -q 2>/dev/null || true
+mvn test-order:affected test -pl "$MODULE" -q 2>/dev/null || true
 
 git checkout -- . 2>/dev/null || true
 git add -A && git commit -m "Restore after history cycles" --allow-empty -q 2>/dev/null || true
@@ -212,6 +213,16 @@ rm -rf "$PREPARED_DIR"
 cp -r "$SDK_DIR/$MODULE/.test-order" "$PREPARED_DIR"
 rm -f "$PREPARED_DIR/"*.lock
 echo "  ✓ Wifi fallback baked to $MODULE/.prepared-test-order/"
+
+# ── 9. Warm up mvnd daemon ────────────────────────────────────────────────────
+
+echo ""
+if command -v mvnd &>/dev/null; then
+    echo "▶ Warming up mvnd daemon (cloud-sdk-java)..."
+    cd "$SDK_DIR"
+    mvnd test-order:affected test -pl "$MODULE" -q 2>/dev/null || true
+    echo "  ✓ mvnd daemon warm — on-stage affected runs will be ~30x faster (~0.4s vs ~12s cold)"
+fi
 
 # ── done ──────────────────────────────────────────────────────────────────────
 

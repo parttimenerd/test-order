@@ -148,7 +148,7 @@ layout: full
   [diff scrolls — audience sees one plugin block added; learn data copied in]
 
 → Switch to VS Code. Run in terminal:
-  mvn test-order:select test
+  mvn test-order:affected test
   [only the affected test classes execute]
 
 "We see that we only executed the few tests that have been affected by our change.
@@ -158,7 +158,7 @@ layout: full
 "Let's try it out:"
 
 → Type in VS Code Copilot: "fix the bug" and paste the error message.
-  [agent runs mvn test-order:select test automatically]
+  [agent runs mvn test-order:affected test automatically]
 
 "With the plugin we, by default first execute the likely affected tests, then tests
  that cover a lot of the code base and have shown to be effective bug finders and

@@ -33,6 +33,7 @@ else
                  . "\t\t\t\t<groupId>me.bechberger</groupId>\n"
                  . "\t\t\t\t<artifactId>test-order-maven-plugin</artifactId>\n"
                  . "\t\t\t\t<version>0.0.1-SNAPSHOT</version>\n"
+                 . "\t\t\t\t<extensions>true</extensions>\n"
                  . "\t\t\t\t<configuration>\n"
                  . "\t\t\t\t\t<topN>7</topN>\n"
                  . "\t\t\t\t\t<seed>42</seed>\n"
