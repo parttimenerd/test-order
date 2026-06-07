@@ -94,6 +94,13 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		SurefireHelper.warnConflictingRunOrder(project, getLog());
 		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
 
+		// Warn when 'test' phase is not in the goal list — auto alone doesn't run tests
+		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
+				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
+			getLog().warn("[test-order] The 'auto' goal configures Surefire but does not execute tests."
+					+ " Include the test phase: mvn test-order:auto test");
+		}
+
 		// R16-4 (auto parity): When user filters to specific tests via -Dtest,
 		// delegate entirely to Surefire — don't override with auto-selection.
 		String userTestFilter = session != null && session.getUserProperties() != null
@@ -141,7 +148,8 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		} catch (IllegalArgumentException e) {
 			throw new MojoExecutionException(e.getMessage(), e);
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to execute auto workflow", e);
+			throw new MojoExecutionException("[test-order] Failed to execute auto workflow: " + e.getMessage()
+					+ ". Run 'mvn test-order:diagnose' for setup details.", e);
 		}
 
 		// ── Apply framework-specific result ─────────────────────────

@@ -137,7 +137,8 @@ public class SelectMojo extends AbstractTestOrderMojo {
 			result = combined.result();
 			analysis = combined.analysis();
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to select tests", e);
+			throw new MojoExecutionException("[test-order] Failed to select tests: " + e.getMessage()
+					+ ". Run 'mvn test-order:diagnose' for setup details.", e);
 		}
 		TestSelector.Selection selection = result.selection();
 

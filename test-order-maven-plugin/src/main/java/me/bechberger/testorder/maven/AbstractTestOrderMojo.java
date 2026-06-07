@@ -370,7 +370,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		try {
 			ctx.ensureSharedDirectories();
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to create shared directories", e);
+			throw new MojoExecutionException("[test-order] Failed to create shared directories: " + e.getMessage()
+					+ ". Check disk space and write permissions on " + project.getBasedir(), e);
 		}
 		validateCacheDirectoryWritable();
 		validateOutputDirectoriesWritable();
@@ -1378,7 +1379,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				}
 			}
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to write orderer config", e);
+			throw new MojoExecutionException("[test-order] Failed to write orderer config: " + e.getMessage()
+					+ ". Check write permissions on the target directory.", e);
 		}
 		suggestSpringContextGrouping();
 	}
@@ -1465,7 +1467,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				}
 			}
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to write orderer config", e);
+			throw new MojoExecutionException("[test-order] Failed to write orderer config: " + e.getMessage()
+					+ ". Check write permissions on the target directory.", e);
 		}
 		suggestSpringContextGrouping();
 	}
@@ -1995,7 +1998,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			registerPendingRestoreInSession(backupRoot);
 			registerPendingRestoreInSession(backupRoot.resolveSibling("classes-backup-test"));
 		} catch (IOException e) {
-			throw new MojoExecutionException("[test-order] Offline instrumentation failed", e);
+			throw new MojoExecutionException("[test-order] Offline instrumentation failed: " + e.getMessage()
+					+ ". Check disk space and that the target/classes directory is writable.", e);
 		}
 	}
 
@@ -2361,7 +2365,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					: existing.stripTrailing() + "\n" + listenerFqcn + "\n";
 			Files.writeString(serviceFile, content);
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to write TelemetryListener service file", e);
+			throw new MojoExecutionException("[test-order] Failed to write TelemetryListener service file: "
+					+ e.getMessage() + ". Check write permissions on " + serviceFile.getParent(), e);
 		}
 	}
 
@@ -2484,7 +2489,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				Files.writeString(serviceFile, listener + "\n" + interceptor + "\n");
 			}
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to write TestNG listener service file", e);
+			throw new MojoExecutionException("[test-order] Failed to write TestNG listener service file: "
+					+ e.getMessage() + ". Check write permissions on the test-classes directory.", e);
 		}
 	}
 

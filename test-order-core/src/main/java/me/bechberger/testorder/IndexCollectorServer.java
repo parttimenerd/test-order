@@ -905,7 +905,9 @@ public class IndexCollectorServer implements AutoCloseable {
 				}
 			}
 			System.err.println("[test-order] Wrote fallback payloads to " + fallbackFile
-					+ " — will be processed on next build run");
+					+ " — will be merged on the next build run.");
+			System.err.println("[test-order] TIP: If you see this every run, add <extensions>true</extensions> to the"
+					+ " test-order-maven-plugin declaration in your pom.xml.");
 		} catch (IOException e) {
 			System.err.println("[test-order] Failed to write fallback payloads: " + e.getMessage());
 		}

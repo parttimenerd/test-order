@@ -128,13 +128,20 @@ For full YAML examples: [ci-examples/](ci-examples/)
 
 ## Troubleshooting quick-fixes
 
+**First step — always run:** `mvn test-order:diagnose`  
+It checks index health, permissions, package filters, and prints actionable fix steps.
+
 | Symptom | Fix |
 |---------|-----|
-| "Wrote fallback payloads" every run | Add `<extensions>true</extensions>` to plugin declaration |
-| Tests always in default order | Check `.test-order/test-dependencies.lz4` exists; re-run learn |
-| `No plugin found for prefix 'test-order'` | Add `me.bechberger` to `<pluginGroups>` in `settings.xml` |
-| All scores 0 | Run with `-Dtestorder.debug=true` — likely no changed classes detected |
-| Empty index after learn | Set `-Dtestorder.includePackages=com.yourpackage` |
-| JaCoCo 0% coverage | Change Surefire `<argLine>` to `@{argLine}` |
+| "Wrote fallback payloads" every run | Add `<extensions>true</extensions>` to the plugin block in `pom.xml` |
+| Tests always in default order | Check `.test-order/test-dependencies.lz4` exists; re-run `mvn test` |
+| `No plugin found for prefix 'test-order'` | Add `me.bechberger` to `<pluginGroups>` in `~/.m2/settings.xml` |
+| All scores 0, no reordering | Run with `-Dtestorder.debug=true` — likely no changed classes detected |
+| Empty or tiny index after learn | Set `-Dtestorder.includePackages=com.yourpackage` (package filter too narrow) |
+| JaCoCo reports 0% coverage | Change Surefire `<argLine>` to `@{argLine}` |
+| `Failed to execute auto workflow` | Run `mvn test-order:diagnose`; check permissions on `.test-order/` |
+| Tests skipped unexpectedly | Cold-start without index — `affected`/tiered goals fall back to all tests; run `mvn test` first |
+
+Nuclear reset: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 
 Nuclear option: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`

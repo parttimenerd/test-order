@@ -156,6 +156,15 @@ public final class DiagnosticOperation {
 
 				// Check index coverage vs actual compiled test classes (B11)
 				int indexedCount = map.size();
+				if (indexedCount == 0) {
+					return DiagnosticResult.error(ErrorCode.INDEX_EMPTY,
+							"Index has 0 test classes — learn mode ran but recorded no dependencies",
+							List.of("Most likely cause: the package filter excludes all your test classes.",
+									"Fix: add the package filter explicitly:",
+									"  mvn test -Dtestorder.mode=learn -Dtestorder.includePackages=com.yourcompany",
+									"Or check that your source packages match the project groupId (used as fallback filter)",
+									"Run 'mvn test-order:diagnose' for further analysis"));
+				}
 				int actualCount = countTestClasses(config.testClassesDir());
 				if (actualCount > 0 && indexedCount < actualCount / 10) {
 					return DiagnosticResult.error(ErrorCode.INDEX_EMPTY,
@@ -163,6 +172,8 @@ public final class DiagnosticOperation {
 									+ " test classes (<10%) — learn mode likely did not complete successfully",
 							List.of("Re-run learn mode: mvn test -Dtestorder.mode=learn",
 									"If using reuseForks=false, ensure each forked JVM can write to .test-order/",
+									"If your source packages don't match the project's groupId, set the filter explicitly:",
+									"  -Dtestorder.includePackages=com.yourcompany",
 									"Check for errors in the previous learn run output"));
 				}
 
@@ -281,10 +292,18 @@ public final class DiagnosticOperation {
 			return null;
 		}
 		return DiagnosticResult.info(me.bechberger.testorder.ErrorCode.FALLBACK_PAYLOAD_PENDING,
-				"Unprocessed fallback payloads from a previous learn run exist at " + fallbackFile.toAbsolutePath(),
-				List.of("These will be merged on the next run that uses the test-order plugin.",
-						"If this file is old, it may indicate learn mode is not working correctly.",
-						"To merge manually: mvn test-order:compact (or run any test-order goal)"));
+				"Unprocessed fallback payload from a previous learn run (\"Wrote fallback payloads\" in log)",
+				List.of(
+						"Most likely cause: <extensions>true</extensions> is missing from the plugin declaration.",
+						"Fix: add <extensions>true</extensions> to the test-order-maven-plugin block in pom.xml:",
+						"  <plugin>",
+						"    <groupId>me.bechberger</groupId>",
+						"    <artifactId>test-order-maven-plugin</artifactId>",
+						"    <extensions>true</extensions>   ← add this line",
+						"    ...",
+						"  </plugin>",
+						"Without it, the index is written one build late (results are still correct but noisy).",
+						"The pending payload at " + fallbackFile.toAbsolutePath() + " will be merged on the next run."));
 	}
 
 	/**

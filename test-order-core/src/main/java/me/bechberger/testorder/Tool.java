@@ -31,7 +31,23 @@ public class Tool implements Runnable {
 
 	@Override
 	public void run() {
-		System.err.println("Specify a subcommand. Use --help for usage.");
+		System.err.println("Usage: test-order <subcommand> [options]");
+		System.err.println();
+		System.err.println("Subcommands:");
+		System.err.println("  aggregate     Aggregate .deps files into a dependency index");
+		System.err.println("  affected      List test classes affected by changed classes");
+		System.err.println("  stats         Print dependency index statistics");
+		System.err.println("  hash-snapshot Scan source tree and save file hash snapshot");
+		System.err.println("  changed       Detect changed source files");
+		System.err.println("  run           Detect changes and print affected test classes");
+		System.err.println("  dump          Dump a binary dependency index as human-readable text");
+		System.err.println("  export-json   Export a binary dependency index as JSON");
+		System.err.println("  optimize      Analyse run history and optimise scoring weights");
+		System.err.println("  select        (deprecated — use 'affected') Select a fast subset of tests");
+		System.err.println("  struct-diff   Structural diff of Java files (types, methods, fields)");
+		System.err.println("  advise        Analyse per-method dependency overlap and suggest splits");
+		System.err.println();
+		System.err.println("Run 'test-order <subcommand> --help' for subcommand-specific options.");
 		System.exit(1);
 	}
 
@@ -448,7 +464,7 @@ public class Tool implements Runnable {
 
 	}
 
-	@Command(name = "select", description = "Select a fast subset of tests (new + top-n + m diverse fast tests)", mixinStandardHelpOptions = true)
+	@Command(name = "select", description = "DEPRECATED — use 'affected' instead. Select a fast subset of tests (new + top-n + m diverse fast tests)", mixinStandardHelpOptions = true)
 	static class Select implements Callable<Integer> {
 		@Parameters(description = "Dependency index file")
 		Path indexFile;
@@ -484,6 +500,7 @@ public class Tool implements Runnable {
 
 		@Override
 		public Integer call() {
+			System.err.println("Warning: 'select' is deprecated — use 'mvn test-order:affected test' in Maven instead.");
 			if (topN < -1) {
 				System.err.println("Error: --top-n must be >= -1 (got " + topN + "). Use -1 for all affected tests.");
 				return 1;

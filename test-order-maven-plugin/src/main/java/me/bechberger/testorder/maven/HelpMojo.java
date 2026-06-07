@@ -40,8 +40,8 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("  auto             Auto local dev mode: learn if needed, then run selected subset\n");
 		sb.append("  learn            Explicitly run in learn mode: instrument tests and build dependency index\n");
 		sb.append("  instrument       Offline instrumentation: transform classes at build time (no agent needed)\n");
-		sb.append("  select           Select a fast CI subset (top-n + random diverse fast tests)\n");
-		sb.append("  run-remaining    Run the tests deferred by a previous select invocation\n");
+		sb.append("  affected         Select the change-affected subset (top-n + random diverse fast tests)\n");
+		sb.append("  run-remaining    Run the tests deferred by a previous affected/tiered-select invocation\n");
 		sb.append("  tiered-select    Select tests into tier1/tier2/tier3 CI phases\n");
 		sb.append("  run-tier         Run tier 2 or tier 3 from a previous tiered-select run\n");
 		sb.append("  show             Unified view: class order, method order, and ML health\n");
@@ -131,8 +131,8 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("\nTypical usage:\n");
 		sb.append("  Quick start: mvn clean test                    (auto-learns dependency index)\n");
 		sb.append("  Next runs:   mvn clean test                    (auto-orders by priority)\n");
-		sb.append("  CI fast:     mvn test-order:affected test        (run only high-priority subset)\n");
-		sb.append("  CI rest:     mvn test-order:run-remaining test (run deferred tests)\n");
+		sb.append("  CI fast:     mvn test-order:affected test       (run only high-priority subset)\n");
+		sb.append("  CI rest:     mvn test-order:run-remaining test  (run deferred tests)\n");
 		sb.append("  CI tiered:   mvn test-order:tiered-select test (run tier-1 first)\n");
 		sb.append("               mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2\n");
 		sb.append("               mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3\n");
