@@ -387,6 +387,31 @@ The shared index (test-dependencies.lz4) is only written during aggregation (aft
 
 ---
 
+## Automatic Reactor Reordering
+
+The `CollectorLifecycleParticipant` lifecycle extension (automatically active when the plugin is on the classpath) can reorder Maven reactor modules at build startup so modules with the most affected tests run first:
+
+```bash
+# Enable reactor reordering (reorder modules by affected test count, but still run all)
+mvn test -Dtestorder.reactorReorder=true
+
+# Reorder AND skip modules with no affected tests (run only top N)
+mvn test -Dtestorder.reactorReorder=true -DtestorderReactorTopN=5
+
+# Dry-run: print the planned reorder without actually reordering
+mvn test -Dtestorder.reactorReorder=true -Dtestorder.reactorReorder.dryRun=true
+```
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.reactorReorder` | `false` | Enable lifecycle-level reactor module reordering |
+| `testorder.reactorTopN` | unset | Limit execution to the top N modules by affected test count; remaining modules get `skipTests=true` |
+| `testorder.reactorReorder.dryRun` | `false` | Print reorder plan without modifying the reactor |
+
+> Requires at least one prior learn run so the plugin has dependency data to score modules against the current change set.
+
+---
+
 ## Best Practices
 
 ### 1. **Initial Setup Checklist**

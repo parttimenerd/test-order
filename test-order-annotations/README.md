@@ -46,7 +46,7 @@ class PaymentServiceTest { … }
 ### `@AlwaysRun`
 
 Guarantees a test class or method is **always included in select-mode subsets**
-(`test-order:select` / `test-order:auto`), regardless of score. In order mode,
+(`test-order:affected` / `test-order:auto`), regardless of score. In order mode,
 `@AlwaysRun` classes are pinned to the front of the execution order (before all
 score-driven tests). Among multiple `@AlwaysRun` classes, alphabetical order is used.
 

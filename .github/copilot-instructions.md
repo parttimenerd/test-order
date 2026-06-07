@@ -13,13 +13,13 @@ run only the tests affected by recent code changes.
 |------|-------------|---------|
 | **auto** (default) | Normal development; learns if no index exists, otherwise selects | `mvn test` |
 | **learn** | After large refactors or dependency changes; rebuilds the index | `mvn test-order:learn test` or `mvn test -Dtestorder.mode=learn` |
-| **select** | Quick check: run only tests affected by uncommitted changes | `mvn test-order:select test` |
+| **affected** | Quick check: run only tests affected by uncommitted changes | `mvn test-order:affected test` |
 | **run-remaining** | Run the deferred (non-selected) tests afterwards | `mvn test-order:run-remaining test` |
 
 ### Quick-check workflow (few files changed)
 
 ```sh
-mvn test-order:select test
+mvn test-order:affected test
 ```
 
 This detects uncommitted git changes, looks up which tests depend on those
@@ -32,7 +32,7 @@ mvn test-order:learn test
 ```
 
 This re-instruments all tests and rebuilds the dependency index.
-Follow-up runs can then use `select`/`auto` again.
+Follow-up runs can then use `affected`/`auto` again.
 
 ### Change detection modes (`-Dtestorder.changeMode=...`)
 

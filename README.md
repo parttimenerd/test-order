@@ -32,7 +32,7 @@ git --version   # Any recent version
 
 ## Quick Start
 
-> **ℹ️ Invoking goals from the CLI.** The README uses the short prefix form `mvn test-order:<goal>` (e.g., `mvn test-order:select`) throughout. There are three ways to run these goals; pick whichever fits your setup.
+> **ℹ️ Invoking goals from the CLI.** The README uses the short prefix form `mvn test-order:<goal>` (e.g., `mvn test-order:affected`) throughout. There are three ways to run these goals; pick whichever fits your setup.
 >
 > **Option A — Use the fully-qualified form (no setup).** Always works:
 >
@@ -165,7 +165,7 @@ If your learn run is slow (large projects), you can commit `.test-order/test-dep
 | Show ranking | `mvn test-order:show` | `./gradlew testOrderShow` |
 | Dashboard | `mvn test-order:dashboard` | `./gradlew testOrderDashboard` |
 | Diagnose setup | `mvn test-order:diagnose` | `./gradlew testOrderDiagnose` |
-| **Select change-affected tests** | `mvn test-order:select test` | `./gradlew testOrderSelect` |
+| **Select change-affected tests** | `mvn test-order:affected test` | `./gradlew testOrderSelect` |
 | Run deferred (remaining) tests | `mvn test-order:run-remaining test` | `./gradlew testOrderRunRemaining` |
 | Detect flaky tests | `mvn test-order:detect-dependencies` | `./gradlew testOrderDetectDependencies` |
 | **Mutation testing** | `mvn test-order:analyze-mutations` | `./gradlew testOrderAnalyzeMutations` |
@@ -300,7 +300,7 @@ Cache `.test-order/` between CI runs so PRs benefit from the existing index:
 | Workflow | Commands |
 |---|---|
 | **Simple** (all tests, reordered) | `mvn test` |
-| **Two-phase** (affected first, rest later) | `mvn test-order:select test` then `mvn test-order:run-remaining test` |
+| **Two-phase** (affected first, rest later) | `mvn test-order:affected test` then `mvn test-order:run-remaining test` |
 | **Three-tier** (fastest feedback → broader → full) | See [docs/ci-examples/](docs/ci-examples/) |
 
 > **Cold start?** Use `mvn test-order:download` to fetch the dependency index from a previous CI run. See [test-order-ci/README.md](test-order-ci/README.md).
@@ -519,7 +519,7 @@ Nuclear option: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 <details>
 <summary><strong>Does test-order skip tests?</strong></summary>
 
-No. By default, all tests still run — they're just **reordered** so the most relevant ones execute first. If a test fails, you see it sooner. If you want to actually select a subset, use `mvn test-order:select test` (runs only high-priority tests) followed by `mvn test-order:run-remaining test`.
+No. By default, all tests still run — they're just **reordered** so the most relevant ones execute first. If a test fails, you see it sooner. If you want to actually select a subset, use `mvn test-order:affected test` (runs only high-priority tests) followed by `mvn test-order:run-remaining test`.
 
 </details>
 
@@ -608,6 +608,25 @@ By default, test-order stores data in `.test-order/` inside your project, which 
 
 </details>
 
+<details>
+<summary><strong>Every learn run prints "Wrote fallback payloads" — is something broken?</strong></summary>
+
+No, but it means the Maven lifecycle extension is not active. Add `<extensions>true</extensions>` to the plugin declaration:
+
+```xml
+<plugin>
+  <groupId>me.bechberger</groupId>
+  <artifactId>test-order-maven-plugin</artifactId>
+  <version>...</version>
+  <extensions>true</extensions>   <!-- ← add this -->
+  ...
+</plugin>
+```
+
+Without it, `CollectorLifecycleParticipant.afterSessionEnd()` never runs, so the JVM shutdown hook writes a `.collector-fallback` file instead. The fallback is processed correctly on the next build, so results are still correct — but you see the noisy message on every run and the index is written one build late. Adding `<extensions>true</extensions>` makes the learn pass write the index directly without the fallback.
+
+</details>
+
 ## AI Coding Assistant Integration
 
 If you use GitHub Copilot, Claude Code, or similar AI coding assistants, add the following to your project instructions (`.github/copilot-instructions.md`, `CLAUDE.md`, etc.) so the assistant knows how to run tests efficiently:
@@ -620,7 +639,7 @@ If you use GitHub Copilot, Claude Code, or similar AI coding assistants, add the
 
 This project uses test-order for affected-test selection.
 
-- **Quick check** (few files changed): `mvn test-order:select test`
+- **Quick check** (few files changed): `mvn test-order:affected test`
   Runs only tests affected by uncommitted changes. Use for fast feedback.
 - **After large changes** (new dependencies, refactors): `mvn test-order:learn test`
   Rebuilds the dependency index. Required after major structural changes.

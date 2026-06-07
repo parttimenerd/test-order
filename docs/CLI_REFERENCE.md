@@ -231,6 +231,7 @@ Writes per-run summaries to `target/` (Maven) / `build/` (Gradle) after each tes
 | `testorder.show.ml` | `auto` | Include ML health analysis (`true`/`false`/`auto` = show if history exists) |
 | `testorder.show.all` | `false` | Force all sections on (equivalent to classes+methods+ml) |
 | `testorder.showOrder.explain` | `false` | Show per-test scoring breakdown |
+| `testorder.showMethodOrder.explain` | `false` | Show per-method scoring breakdown (for `show-method-order` goal) |
 | `testorder.showOrder.fullNames` | `false` | Use fully qualified class names |
 | `testorder.show.format` | `text` | Output format: `text` or `json` |
 | `testorder.show.filter` | unset | Glob pattern to restrict output. Matches the full FQCN — use `*` to match any prefix (e.g. `*Service*,*Controller*`). Comma-separated patterns use OR semantics. Matching is case-insensitive. |
@@ -241,6 +242,22 @@ Writes per-run summaries to `target/` (Maven) / `build/` (Gradle) after each tes
 |---|---|---|
 | `testorder.reactor.suggest` | `false` | Output only the `-pl` argument (machine-parseable for scripts) |
 | `testorder.reactor.topN` | `5` | Number of top tests to display per module |
+
+### Reactor Auto-Reordering (Maven lifecycle extension)
+
+The lifecycle extension can reorder Maven reactor modules at build startup so modules with affected tests run first:
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.reactorReorder` | `false` | Enable lifecycle-level reactor module reordering by affected test count |
+| `testorder.reactorTopN` | unset | Run only top N modules; set `skipTests=true` on the rest |
+| `testorder.reactorReorder.dryRun` | `false` | Print planned reorder without modifying the reactor |
+
+### Show Static Analysis
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.showStaticAnalysis.verbose` | `false` | Show full per-class reachability expansion (for `show-static-analysis` goal) |
 
 ### Dashboard
 
@@ -317,6 +334,18 @@ ML data is shown in:
 | `testorder.score.staticFieldBonus` | `0` | Fixed bonus for tests overlapping a changed static field (requires `MEMBER` mode) |
 | `testorder.score.coverageBonus` | `0` | Greedy set-cover bonus; when >0 replaces `depOverlap`+`changeComplexity` |
 | `testorder.weights.file` | unset | Path to TOML weights file; overrides all `testorder.score.*` properties when set |
+
+### Download
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.download.fallbackToLearn` | `false` | Automatically switch to learn mode when the index file cannot be downloaded |
+
+### Metrics
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.metrics.output` | `${project.build.directory}/test-order-metrics.json` | Output path for the JSON metrics export |
 
 ## Common Recipes
 

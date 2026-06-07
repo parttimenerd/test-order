@@ -58,12 +58,13 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:prepare` | Validates setup and writes plugin/runtime configuration |
 | `test-order:learn` | Attach agent for learn mode (pair with `test` phase) |
 | `test-order:auto` | Main workflow: select high-value subset and run it |
-| `test-order:select` | Write selected tests to file; configure Surefire |
+| `test-order:affected` | Write selected tests to file; configure Surefire |
 | `test-order:run-remaining` | Execute deferred tests from prior selection |
 | `test-order:tiered-select` | Split tests into tier 1/2/3 files and run tier 1 |
 | `test-order:run-tiered` | Run all three tiers in a single invocation (alternative to multi-step tiered workflow) |
 | `test-order:run-tier` | Execute tier 2 or tier 3 from prior tiered selection |
 | `test-order:show` | Unified view: class order, method order, ML health (auto-detects) |
+| `test-order:show-method-order` | Show method-level priority order (legacy; prefer `test-order:show -Dtestorder.show.methods=true`) |
 | `test-order:explain` | Print detailed per-test score breakdown for the current change set |
 | `test-order:show-static-analysis` | Show static call-graph expansion details (verbose) |
 | `test-order:reactor-order` | Compute optimal module execution order for multi-module builds |
@@ -84,7 +85,7 @@ Auto-detection (enabled by default) analyses `pom.xml` / `build.gradle*` plus `s
 | `test-order:detect-dependencies` | Detect order-dependent tests via reordering strategies |
 | `test-order:help` | Display all goals and common properties |
 
-> `test-order:learn` only prepares learn mode — always pair it with the `test` phase to actually execute tests. Similarly, `test-order:select` configures Surefire but needs `test` to run the selected subset.
+> `test-order:learn` only prepares learn mode — always pair it with the `test` phase to actually execute tests. Similarly, `test-order:affected` configures Surefire but needs `test` to run the selected subset.
 
 ## Show Goal
 
@@ -438,7 +439,7 @@ Split your test suite into two Maven invocations for fast feedback:
 
 ```bash
 # Phase 1 — run the critical subset (fail-fast)
-mvn test-order:select test
+mvn test-order:affected test
 
 # Phase 2 — if phase 1 passed, run everything else
 mvn test-order:run-remaining test
@@ -503,7 +504,7 @@ jobs:
   # Every PR: two-phase workflow
   test-fast:
     steps:
-      - run: mvn test-order:select test
+      - run: mvn test-order:affected test
   test-remaining:
     needs: test-fast
     steps:

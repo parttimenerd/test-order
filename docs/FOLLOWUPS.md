@@ -106,11 +106,12 @@ selection: every test will "match" any change to it.
   — on-disk representation.
 
 **Possible directions** (discuss before implementing):
-- **High-frequency dep cap (recommended):** during merge in
+- **High-frequency dep cap (implemented):** during merge in
   `IndexCollectorServer`, drop deps where `count(dep) / count(tests) >
   threshold` (e.g. 0.5 or 0.8). Configurable via
   `-Dtestorder.deps.dropFrequencyThreshold=0.5`. This addresses both
   index-size AND the "82% of tests match" scoring problem in §1.
+  Member deps for dropped classes are also filtered (`filterMemberDeps`).
 - **Whitelist filtering**: respect `testorder.includePackages` on the
   *target* class, not just the test class. Today
   `includePackages=tools.jackson.databind` is satisfied by every
@@ -397,7 +398,7 @@ review those logs alongside if any of these need clarification.
 ### S8. Honor `testorder.select.topN` strictly (or rename it)
 
 **Observation**: step 7 invokes
-`mvn test-order:select test -Dtestorder.select.topN=3
+`mvn test-order:affected test -Dtestorder.select.topN=3
 -Dtestorder.changed.classes=tools.jackson.databind.introspect.POJOPropertiesCollector`.
 The log says **"Selected 13 tests, deferred 722"** — 13, not 3.
 

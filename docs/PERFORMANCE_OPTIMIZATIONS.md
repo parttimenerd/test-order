@@ -21,7 +21,7 @@ Only items marked **TODO** are included.
 2. Merge new dependency sets in memory (via `Map.merge()` with `HashSet` union)
 3. Re-save the entire index
 
-This is the critical path for the majority of users — typical workflows (`mvn test`, `mvn test-order:select test`) do not call `test-order:aggregate`, so `tryDirectMerge()` in the flush path is the only way the index gets updated. Removing it would silently stop the index from being updated.
+This is the critical path for the majority of users — typical workflows (`mvn test`, `mvn test-order:affected test`) do not call `test-order:aggregate`, so `tryDirectMerge()` in the flush path is the only way the index gets updated. Removing it would silently stop the index from being updated.
 
 **Why it's expensive**: `DependencyMap.loadBinary()` decompresses and deserializes the full LZ4-compressed binary index (ClassNameTrie + RoaringBitmaps for every test). For a medium project with 200 tests and 500 deps per test, this is a non-trivial amount of work just to add 10–20 new entries from the current fork's results.
 
@@ -73,7 +73,7 @@ introduce a better format
 **Location**: `Tool.java` / `SelectMojo` — wherever `DependencyMap.load(indexPath)` is called in select mode  
 **Files**: `test-order-core/.../Tool.java`, `test-order-maven-plugin/.../maven/SelectMojo.java`
 
-**Problem**: In a Maven multi-module reactor, `mvn test-order:select test` is executed once per module. Each execution starts a fresh JVM (via the Maven plugin classloader) and calls `DependencyMap.load(indexPath)`. If all modules share the same `.test-order/test-dependencies.lz4` index — the common case — the same file is decompressed and deserialized once per module.
+**Problem**: In a Maven multi-module reactor, `mvn test-order:affected test` is executed once per module. Each execution starts a fresh JVM (via the Maven plugin classloader) and calls `DependencyMap.load(indexPath)`. If all modules share the same `.test-order/test-dependencies.lz4` index — the common case — the same file is decompressed and deserialized once per module.
 
 `DependencyMap.load()` involves:
 1. LZ4 decompression of the index file
