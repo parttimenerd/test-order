@@ -137,6 +137,9 @@ class CiConfigParserTest {
 
 	@Test
 	void testDefaultBranch(@TempDir Path tempDir) throws Exception {
+		// When `branch:` is omitted, CiConfig deliberately leaves it null so that
+		// GitHubActionsDownloader skips the &branch= filter — works on repos whose
+		// default branch is not "main" (see commit 995e82ec).
 		String yaml = """
 				ci:
 				  github:
@@ -150,6 +153,6 @@ class CiConfigParserTest {
 		Files.writeString(configFile, yaml);
 
 		CiConfig config = CiConfigParser.parse(configFile);
-		assertEquals("main", config.getGithub().getBranch());
+		assertNull(config.getGithub().getBranch());
 	}
 }
