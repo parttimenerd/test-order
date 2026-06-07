@@ -64,6 +64,20 @@ final class ReactorContext {
 			inferredMulti = true;
 		}
 
+		// Tertiary detection: -pl <module> in a project without `.mvn/`. Maven then
+		// sets multiModuleProjectDirectory to the module dir, hiding the reactor.
+		// Walk up from the module looking for an ancestor that has both a pom.xml
+		// and a `.test-order/` directory. Only treat it as the reactor root when the
+		// user invoked mvn from that directory (executionRootDir == walkedRoot) — this
+		// avoids firing for a third-party project nested inside an unrelated repo.
+		if (!explicitMulti && !inferredMulti && executionRootDir != null) {
+			Path walkedRoot = findReactorRootWithSharedDir(projectDir);
+			if (walkedRoot != null && walkedRoot.equals(executionRootDir)) {
+				inferredMulti = true;
+				mmDir = walkedRoot;
+			}
+		}
+
 		this.multiModule = explicitMulti || inferredMulti;
 		// Normalize the reactor root so all derived paths are canonical. Without this,
 		// `<reactorRoot>/.test-order/class-id-map.bin` resolved by different modules
@@ -75,6 +89,23 @@ final class ReactorContext {
 				: project.getBasedir().toPath();
 		this.reactorRoot = (inferredMulti ? mmDir : topLevel).normalize();
 		this.sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
+	}
+
+	/**
+	 * Walks up from {@code start} looking for an ancestor directory that contains
+	 * both a {@code pom.xml} and a {@code .test-order/} directory. Returns the
+	 * deepest such ancestor (the closest reactor root with an existing index), or
+	 * {@code null} if none is found before hitting the filesystem root.
+	 */
+	private static Path findReactorRootWithSharedDir(Path start) {
+		Path dir = start.getParent();
+		while (dir != null) {
+			if (Files.isRegularFile(dir.resolve("pom.xml")) && Files.isDirectory(dir.resolve(SHARED_DIR_NAME))) {
+				return dir.normalize();
+			}
+			dir = dir.getParent();
+		}
+		return null;
 	}
 
 	private static Path resolveExecutionRootDir(MavenSession session) {

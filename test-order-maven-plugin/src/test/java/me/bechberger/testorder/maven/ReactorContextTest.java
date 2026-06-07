@@ -309,6 +309,60 @@ class ReactorContextTest {
 		assertThat(ctx.resolveStateFile(null)).isEqualTo(jsoupDir.resolve(".test-order/state.lz4"));
 	}
 
+	@Test
+	void inferredMultiModule_walksUpToReactorRootWithoutMvnDir() throws IOException {
+		// Simulate a multi-module repo without `.mvn/` (e.g. cloud-sdk-java demo):
+		// running `mvn -pl <module> test-order:affected test` from the reactor root.
+		// Maven falls back to setting multiModuleProjectDirectory to the module dir,
+		// hiding the reactor. We must walk up to find the real root (which has
+		// pom.xml + .test-order/) and treat it as multi-module.
+		Path rootDir = tempDir.resolve("sdk-root");
+		Path moduleDir = rootDir.resolve("module-x");
+		Files.createDirectories(rootDir.resolve(".test-order"));
+		Files.writeString(rootDir.resolve("pom.xml"), "<project/>");
+		Files.createDirectories(moduleDir);
+
+		MavenProject moduleX = mockProject("module-x", moduleDir);
+		when(session.getProjects()).thenReturn(List.of(moduleX));
+		when(session.getTopLevelProject()).thenReturn(moduleX);
+		when(session.getExecutionRootDirectory()).thenReturn(rootDir.toString());
+
+		var request = mock(org.apache.maven.execution.MavenExecutionRequest.class);
+		when(session.getRequest()).thenReturn(request);
+		// No .mvn/ → Maven falls back to module dir as multiModuleProjectDirectory
+		when(request.getMultiModuleProjectDirectory()).thenReturn(moduleDir.toFile());
+
+		ReactorContext ctx = new ReactorContext(session, moduleX);
+		assertThat(ctx.isMultiModule()).isTrue();
+		assertThat(ctx.resolveIndexFile(null)).isEqualTo(rootDir.resolve(".test-order/test-dependencies.lz4"));
+		assertThat(ctx.resolveStateFile(null)).isEqualTo(rootDir.resolve(".test-order/state.lz4"));
+	}
+
+	@Test
+	void inferredMultiModule_walkUpDoesNotFireWhenInvokedFromModuleDir() throws IOException {
+		// Same physical layout as above, but the user `cd`s into module-x and runs
+		// mvn from there. executionRootDir is then the module dir, NOT the root.
+		// We must NOT treat the outer dir as a reactor root in this case — the user
+		// might be working on the module standalone.
+		Path rootDir = tempDir.resolve("sdk-root2");
+		Path moduleDir = rootDir.resolve("module-x");
+		Files.createDirectories(rootDir.resolve(".test-order"));
+		Files.writeString(rootDir.resolve("pom.xml"), "<project/>");
+		Files.createDirectories(moduleDir);
+
+		MavenProject moduleX = mockProject("module-x", moduleDir);
+		when(session.getProjects()).thenReturn(List.of(moduleX));
+		when(session.getTopLevelProject()).thenReturn(moduleX);
+		when(session.getExecutionRootDirectory()).thenReturn(moduleDir.toString());
+
+		var request = mock(org.apache.maven.execution.MavenExecutionRequest.class);
+		when(session.getRequest()).thenReturn(request);
+		when(request.getMultiModuleProjectDirectory()).thenReturn(moduleDir.toFile());
+
+		ReactorContext ctx = new ReactorContext(session, moduleX);
+		assertThat(ctx.isMultiModule()).isFalse();
+	}
+
 	// --- helper ---
 
 	private MavenProject mockProject(String artifactId, Path basedir) {
