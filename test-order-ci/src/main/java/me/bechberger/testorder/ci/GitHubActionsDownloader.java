@@ -63,18 +63,29 @@ public class GitHubActionsDownloader implements DepDownloader {
 		try {
 			// Step 1: Get latest workflow run
 			String encodedWorkflow = URLEncoder.encode(config.getWorkflow(), StandardCharsets.UTF_8);
-			String encodedBranch = URLEncoder.encode(config.getBranch(), StandardCharsets.UTF_8);
-			String workflowRunUrl = String.format(
-					"%s/repos/%s/%s/actions/workflows/%s/runs?status=success&branch=%s&per_page=1", GH_API_BASE,
-					config.getOwner(), config.getRepo(), encodedWorkflow, encodedBranch);
+			String branch = config.getBranch();
+			String workflowRunUrl;
+			if (branch != null && !branch.isEmpty()) {
+				String encodedBranch = URLEncoder.encode(branch, StandardCharsets.UTF_8);
+				workflowRunUrl = String.format(
+						"%s/repos/%s/%s/actions/workflows/%s/runs?status=success&branch=%s&per_page=1", GH_API_BASE,
+						config.getOwner(), config.getRepo(), encodedWorkflow, encodedBranch);
+			} else {
+				// No branch filter — return latest successful run on any branch.
+				// This is the safe default for auto-detected configs where the default
+				// branch name is unknown (not "main" in all repos).
+				workflowRunUrl = String.format("%s/repos/%s/%s/actions/workflows/%s/runs?status=success&per_page=1",
+						GH_API_BASE, config.getOwner(), config.getRepo(), encodedWorkflow);
+			}
 
 			Map<String, Object> runResponse = fetchJson(workflowRunUrl);
 			@SuppressWarnings("unchecked")
 			List<Object> runs = (List<Object>) runResponse.get("workflow_runs");
 
 			if (runs == null || runs.isEmpty()) {
-				throw new DepDownloadException(String.format("No successful workflow runs found for %s on branch %s",
-						config.getWorkflow(), config.getBranch()));
+				String branchDesc = (branch != null && !branch.isEmpty()) ? " on branch " + branch : " on any branch";
+				throw new DepDownloadException(
+						String.format("No successful workflow runs found for %s%s", config.getWorkflow(), branchDesc));
 			}
 
 			@SuppressWarnings("unchecked")

@@ -52,6 +52,22 @@ public class CiDepDownloadManager {
 		this.mavenToken = config.getMaven() != null && config.getMaven().getTokenEnv() != null
 				? getEnv(config.getMaven().getTokenEnv())
 				: null;
+		warnMissingTokenEnvVars(config);
+	}
+
+	private void warnMissingTokenEnvVars(CiConfig config) {
+		if (config.getGitlab() != null && config.getGitlab().getTokenEnv() != null && gitlabToken == null) {
+			logger.warn("[test-order] GitLab token env var '{}' is not set — download may fail with 401/403",
+					config.getGitlab().getTokenEnv());
+		}
+		if (config.getHttp() != null && config.getHttp().getTokenEnv() != null && httpToken == null) {
+			logger.warn("[test-order] HTTP token env var '{}' is not set — download may fail with 401/403",
+					config.getHttp().getTokenEnv());
+		}
+		if (config.getMaven() != null && config.getMaven().getTokenEnv() != null && mavenToken == null) {
+			logger.warn("[test-order] Maven token env var '{}' is not set — download may fail with 401/403",
+					config.getMaven().getTokenEnv());
+		}
 	}
 
 	private static OkHttpClient buildHttpClient(CiConfig.ProxyConfig proxyConfig) {
@@ -62,7 +78,8 @@ public class CiDepDownloadManager {
 		int readTimeout = getTimeoutProperty("testorder.ci.read.timeout.seconds", 60);
 		int writeTimeout = getTimeoutProperty("testorder.ci.write.timeout.seconds", 30);
 		OkHttpClient.Builder builder = new OkHttpClient.Builder().connectTimeout(connectTimeout, TimeUnit.SECONDS)
-				.readTimeout(readTimeout, TimeUnit.SECONDS).writeTimeout(writeTimeout, TimeUnit.SECONDS);
+				.readTimeout(readTimeout, TimeUnit.SECONDS).writeTimeout(writeTimeout, TimeUnit.SECONDS)
+				.dns(CiHttpClientFactory.SSRF_SAFE_DNS);
 		Proxy.Type proxyType = "socks5".equalsIgnoreCase(proxyConfig.getType()) ? Proxy.Type.SOCKS : Proxy.Type.HTTP;
 		builder.proxy(new Proxy(proxyType, new InetSocketAddress(proxyConfig.getHost(), proxyConfig.getPort())));
 		return builder.build();
@@ -175,7 +192,17 @@ public class CiDepDownloadManager {
 					ghMap.put("repo", parts[1]);
 					ghMap.put("workflow", workflowFile);
 					ghMap.put("artifact-name", "test-order-deps");
-					ghMap.put("branch", "main");
+					// Use GITHUB_REF_NAME as branch hint when running on a push event
+					// (GITHUB_EVENT_NAME=push). On PRs it is "N/merge" — not a real branch —
+					// so we omit the branch filter and let the API return the latest successful
+					// run from any branch. GITHUB_BASE_REF is the PR target branch but the
+					// artifact was uploaded by a prior push run, so it may not match.
+					String eventName = System.getenv("GITHUB_EVENT_NAME");
+					String refName = System.getenv("GITHUB_REF_NAME");
+					if ("push".equals(eventName) && refName != null && !refName.isEmpty() && !refName.contains("/")) {
+						ghMap.put("branch", refName);
+					}
+					// No branch key → GitHubActionsDownloader omits &branch= filter
 					ciMap.put("github", ghMap);
 					cfg.put("ci", ciMap);
 					return new CiConfig(cfg);
@@ -298,8 +325,13 @@ public class CiDepDownloadManager {
 				}
 				Files.createDirectories(indexTarget.getParent());
 				Path tempSibling = me.bechberger.testorder.PersistenceSupport.temporarySibling(indexTarget);
-				Files.copy(downloaded, tempSibling, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-				me.bechberger.testorder.PersistenceSupport.moveIntoPlace(tempSibling, indexTarget);
+				try {
+					Files.copy(downloaded, tempSibling, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+					me.bechberger.testorder.PersistenceSupport.moveIntoPlace(tempSibling, indexTarget);
+				} catch (Exception copyEx) {
+					Files.deleteIfExists(tempSibling);
+					throw copyEx;
+				}
 			} finally {
 				Files.deleteIfExists(downloaded);
 			}

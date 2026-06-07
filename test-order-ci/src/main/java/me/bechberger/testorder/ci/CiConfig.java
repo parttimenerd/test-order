@@ -38,7 +38,7 @@ public class CiConfig {
 
 		return new GithubConfig((String) ghConfig.get("owner"), (String) ghConfig.get("repo"),
 				(String) ghConfig.get("workflow"), (String) ghConfig.get("artifact-name"),
-				(String) ghConfig.getOrDefault("branch", "main"));
+				(String) ghConfig.get("branch"));
 	}
 
 	private HttpConfig parseHttpConfig(Map<String, Object> ciConfig) {
