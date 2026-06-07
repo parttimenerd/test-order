@@ -73,8 +73,8 @@ public class HelpMojo extends AbstractMojo {
 				"  -Dtestorder.changeMode=<mode>    uncommitted (default), since-last-run, since-last-commit, explicit\n");
 		sb.append("  -Dtestorder.instrumentation.mode=<m>  MEMBER (default), CLASS, METHOD\n");
 		sb.append(
-				"  -Dtestorder.select.topN=<n>      Number of top-scored tests to select (default: -1, all affected)\n");
-		sb.append("  -Dtestorder.select.randomM=<m>   Random fast tests for coverage diversity (default: 10)\n");
+				"  -Dtestorder.affected.topN=<n>    Number of top-scored tests to select (default: -1, all affected)\n");
+		sb.append("  -Dtestorder.affected.randomM=<m> Random fast tests for coverage diversity (default: 10)\n");
 		sb.append(
 				"  -Dtestorder.autoLearnRunThreshold=<n>  Force full learn every N runs in auto mode (default: 10)\n");
 		sb.append(

@@ -9,6 +9,7 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.*;
 
 import me.bechberger.testorder.ops.PluginContext;
+import me.bechberger.testorder.ops.WarnOnce;
 import me.bechberger.testorder.ops.workflows.ShowJsonFormatter;
 import me.bechberger.testorder.ops.workflows.ShowWorkflow;
 
@@ -109,6 +110,17 @@ public class ShowMojo extends AbstractTestOrderMojo {
 			autoAggregateOrFail(idxPath);
 		}
 
+		try {
+			me.bechberger.testorder.DependencyMap depMap = me.bechberger.testorder.DependencyMap.load(idxPath);
+			if (depMap.testClasses().isEmpty()) {
+				getLog().info("[test-order] No dependency index found — run `mvn test` "
+						+ "(auto-detects learn mode) or `mvn -Dtestorder.mode=learn test` first.");
+				return;
+			}
+		} catch (IOException e) {
+			throw new MojoExecutionException("Failed to read dependency index at " + idxPath, e);
+		}
+
 		// auto-enable explain when debug mode is active
 		boolean effectiveExplain = explain
 				|| "true".equalsIgnoreCase(project.getProperties().getProperty("testorder.debug"))
@@ -182,7 +194,11 @@ public class ShowMojo extends AbstractTestOrderMojo {
 			return new ShowWorkflow.ShowResult(result.classOrder(), result.methodOrder(), result.healthReport(),
 					predictions, result.analysis());
 		} catch (Exception e) {
-			getLog().debug("[test-order] ML predictions failed: " + e.getMessage());
+			WarnOnce.warn(MavenPluginLog.wrap(getLog()), "ml-train-failure", "[test-order] ML predictions unavailable: "
+					+ e.getMessage() + " — rerun with -Dtestorder.verbose=true for stack traces.");
+			if (Boolean.getBoolean("testorder.verbose")) {
+				e.printStackTrace();
+			}
 			return result;
 		}
 	}

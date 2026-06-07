@@ -197,6 +197,15 @@ public class AutoMojo extends AbstractTestOrderMojo {
 					os.selection().remaining(), os.changedClasses(), os.changedTests(), java.util.List.of(), "auto", 0,
 					Path.of(project.getBuild().getDirectory())), pluginLog());
 
+			// Pre-test summary — Maven doesn't re-enter the mojo after Surefire, so we
+			// log selection-time stats. Pass/fail data is in Surefire's own summary.
+			if (os.selectResult().summary() != null && totalInIndex > 0) {
+				getLog().info("[test-order] Selection Summary:");
+				for (String line : os.selectResult().summary().format().split("\n")) {
+					getLog().info(line);
+				}
+			}
+
 			String remainingPath = Path.of(remainingFile).toAbsolutePath().toString();
 			project.getProperties().setProperty(MavenPluginConfigKeys.SELECT_REMAINING_FILE, remainingPath);
 			project.getProperties().setProperty("testorder.remaining.file", remainingPath);
@@ -230,11 +239,7 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		ParameterValidator validator = new ParameterValidator(getLog());
 		validator.validateInstrumentationMode(instrumentationMode);
 		validator.validateSelectParameters(topN, randomM);
-		if (optimizeEvery < 0)
-			throw new MojoExecutionException("[test-order] optimizeEvery cannot be negative: " + optimizeEvery);
-		if (autoLearnRunThreshold < 0)
-			throw new MojoExecutionException(
-					"[test-order] autoLearnRunThreshold cannot be negative: " + autoLearnRunThreshold);
+		validator.validateAutoLearnThresholds(autoLearnRunThreshold, autoLearnDiffThreshold, optimizeEvery);
 	}
 
 	private boolean isPrepareGoalBound() {

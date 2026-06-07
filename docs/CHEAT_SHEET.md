@@ -60,7 +60,7 @@ plugins { id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT' }
 | What | Command |
 |------|---------|
 | Normal run (auto learn/order) | `./gradlew test` |
-| Run only affected tests | `./gradlew testOrderSelect` |
+| Run only affected tests | `./gradlew testOrderAffected` |
 | Then run deferred tests | `./gradlew testOrderRunRemaining` |
 | Force re-learn (after big refactor) | `./gradlew test -Dtestorder.mode=learn` |
 | Skip test-order entirely | `./gradlew test -Dtestorder.skip=true` |
@@ -122,7 +122,7 @@ For full YAML examples: [ci-examples/](ci-examples/)
 | `testorder.skip` | `false` | Skip test-order entirely |
 | `testorder.debug` | `false` | Verbose output showing change detection and ordering decisions |
 | `testorder.autoLearnRunThreshold` | `10` | Force re-learn after N order-mode runs |
-| `testorder.select.topN` | `-1` | Max number of tests for `affected` goal (`-1` = all affected) |
+| `testorder.affected.topN` | `-1` | Max number of tests for `affected` goal (`-1` = all affected) |
 
 ---
 

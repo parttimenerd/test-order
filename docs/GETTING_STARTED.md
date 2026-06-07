@@ -30,7 +30,10 @@ Add to your `pom.xml` inside `<build><plugins>`:
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
   <version>0.0.1-SNAPSHOT</version>
-  <extensions>true</extensions>  <!-- required: registers the lifecycle participant that writes the index -->
+  <extensions>true</extensions>  <!-- required: lets the plugin participate in Maven's lifecycle resolution.
+                                       Without it, prepare can't auto-bind to process-test-classes and learn mode
+                                       silently does nothing — the most common "Wrote fallback payloads" cause.
+                                       See CHEAT_SHEET.md (Troubleshooting) if you hit that message. -->
   <executions>
     <execution>
       <goals><goal>prepare</goal></goals>
@@ -147,6 +150,10 @@ Tests that exercise your changed code now run first. If something breaks, you'll
 ---
 
 ## Step 4: Inspect the prioritization
+
+> **Prerequisite:** `show` reads the dependency index, so it requires a prior
+> learn run to have happened. If you see "no index found", run `mvn test`
+> (or `mvn -Dtestorder.mode=learn test`) once first.
 
 See exactly how tests are ranked:
 

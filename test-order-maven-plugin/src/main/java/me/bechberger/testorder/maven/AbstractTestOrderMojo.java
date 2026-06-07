@@ -39,6 +39,7 @@ import me.bechberger.testorder.ops.HashSnapshotOperation;
 import me.bechberger.testorder.ops.OrdererConfigOperation;
 import me.bechberger.testorder.ops.PluginContext;
 import me.bechberger.testorder.ops.PluginLog;
+import me.bechberger.testorder.ops.WarnOnce;
 
 /**
  * Base class for test-order Mojos that share common configuration parameters
@@ -535,8 +536,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				.entrySet()) {
 			String legacyVal = props.getProperty(entry.getKey());
 			if (legacyVal != null && !legacyVal.isBlank()) {
-				getLog().warn("[test-order] Deprecated property '" + entry.getKey() + "' — use '" + entry.getValue()
-						+ "' instead.");
+				WarnOnce.warn(MavenPluginLog.wrap(getLog()), "deprecated-prop:" + entry.getKey(),
+						"[test-order] Deprecated property '" + entry.getKey() + "' — use '" + entry.getValue()
+								+ "' instead.");
 			}
 		}
 	}

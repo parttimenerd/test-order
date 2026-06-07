@@ -88,7 +88,9 @@ public final class CiSummaryWriter {
 				postPrComment(md, log);
 			}
 		} catch (IOException e) {
-			log.warn("[test-order] Failed to write CI summary: " + e.getMessage());
+			log.warn("[test-order] Failed to write CI summary: " + e.getMessage()
+					+ ". Check disk space and write permissions on the build directory."
+					+ " CI reporting is disabled for this run.");
 		}
 	}
 

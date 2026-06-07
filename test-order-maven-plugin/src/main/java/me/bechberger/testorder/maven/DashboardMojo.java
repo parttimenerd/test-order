@@ -13,6 +13,7 @@ import org.apache.maven.plugins.annotations.*;
 
 import me.bechberger.testorder.dashboard.DashboardResources;
 import me.bechberger.testorder.ops.PluginContext;
+import me.bechberger.testorder.ops.WarnOnce;
 import me.bechberger.testorder.ops.workflows.DashboardWorkflow;
 
 /**
@@ -45,6 +46,17 @@ public class DashboardMojo extends AbstractTestOrderMojo {
 		Path idxPath = resolveIndexPath();
 		if (!Files.exists(idxPath)) {
 			autoAggregateOrFail(idxPath);
+		}
+
+		try {
+			me.bechberger.testorder.DependencyMap depMap = me.bechberger.testorder.DependencyMap.load(idxPath);
+			if (depMap.testClasses().isEmpty()) {
+				getLog().info("[test-order] No dependency index found — run `mvn test` "
+						+ "(auto-detects learn mode) or `mvn -Dtestorder.mode=learn test` first.");
+				return;
+			}
+		} catch (IOException e) {
+			throw new MojoExecutionException("Failed to read dependency index at " + idxPath, e);
 		}
 
 		PluginContext pctx = buildPluginContextBuilder().pluginVersion(getPluginVersion()).build();
@@ -84,7 +96,12 @@ public class DashboardMojo extends AbstractTestOrderMojo {
 									.trainAndPredict(historyFile, depMap, Set.of(), Set.of(), testClasses);
 						}
 					} catch (Exception e) {
-						getLog().debug("[test-order] ML predictions for dashboard failed: " + e.getMessage());
+						WarnOnce.warn(MavenPluginLog.wrap(getLog()), "ml-train-failure",
+								"[test-order] ML predictions unavailable: " + e.getMessage()
+										+ " — rerun with -Dtestorder.verbose=true for stack traces.");
+						if (Boolean.getBoolean("testorder.verbose")) {
+							e.printStackTrace();
+						}
 					}
 				}
 			}

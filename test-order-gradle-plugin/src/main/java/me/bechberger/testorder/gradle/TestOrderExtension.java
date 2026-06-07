@@ -246,8 +246,8 @@ public abstract class TestOrderExtension {
      * In auto mode, whether to run deferred (remaining) tests after selected tests.
      * <p>
      * Default: {@code true} for the regular 'test' task (runs all tests).
-     * The standalone 'testOrderSelect' task defaults to {@code false} (matching Maven's
-     * select goal behavior) — use {@code -Dtestorder.auto.runRemaining=true} to override.
+     * The standalone 'testOrderAffected' task defaults to {@code false} (matching Maven's
+     * affected goal behavior) — use {@code -Dtestorder.auto.runRemaining=true} to override.
      */
     public abstract Property<Boolean> getAutoRunRemaining();
 

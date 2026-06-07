@@ -117,6 +117,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	@Override
 	public void execute() throws MojoExecutionException {
 		initContext();
+		new ParameterValidator(getLog()).validateAutoLearnThresholds(autoLearnRunThreshold, autoLearnDiffThreshold, 0);
 		// Always restore previously instrumented classes (even when skip=true)
 		// to prevent NoClassDefFoundError from stale instrumented bytecode.
 		// Exception: when the 'learn' CLI goal is active, the learn mojo has already
@@ -577,8 +578,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				: null;
 		if (topNProp != null) {
 			getLog().warn(
-					"[test-order] -Dtestorder.select.topN is ignored in 'order' mode (all tests run, just re-ordered). "
-							+ "Did you mean: mvn test-order:affected test -Dtestorder.select.topN=" + topNProp + "?");
+					"[test-order] -Dtestorder.affected.topN is ignored in 'order' mode (all tests run, just re-ordered). "
+							+ "Did you mean: mvn test-order:affected test -Dtestorder.affected.topN=" + topNProp + "?");
 		}
 
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());

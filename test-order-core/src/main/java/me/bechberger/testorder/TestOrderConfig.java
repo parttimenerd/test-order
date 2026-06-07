@@ -91,11 +91,11 @@ public final class TestOrderConfig {
 	public static final String MODE = "testorder.mode";
 	public static final String INCLUDE_PACKAGES = "testorder.includePackages";
 	public static final String FILTER_BY_GROUP_ID = "testorder.filterByGroupId";
-	public static final String SELECT_TOP_N = "testorder.select.topN";
-	public static final String SELECT_RANDOM_M = "testorder.select.randomM";
-	public static final String SELECT_SEED = "testorder.select.seed";
-	public static final String SELECT_REMAINING_FILE = "testorder.select.remainingFile";
-	public static final String SELECTED_FILE = "testorder.select.selectedFile";
+	public static final String SELECT_TOP_N = "testorder.affected.topN";
+	public static final String SELECT_RANDOM_M = "testorder.affected.randomM";
+	public static final String SELECT_SEED = "testorder.affected.seed";
+	public static final String SELECT_REMAINING_FILE = "testorder.affected.remainingFile";
+	public static final String SELECTED_FILE = "testorder.affected.selectedFile";
 	public static final String AUTO_LEARN_RUN_THRESHOLD = "testorder.autoLearnRunThreshold";
 	public static final String AUTO_LEARN_DIFF_THRESHOLD = "testorder.autoLearnDiffThreshold";
 	public static final String DUMP_OUTPUT = "testorder.dump.output";

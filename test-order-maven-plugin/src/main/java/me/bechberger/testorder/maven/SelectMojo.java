@@ -100,7 +100,7 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		// Inform when topN=-1 (default) will run all tests in priority order
 		if (topN == -1) {
 			getLog().info("[test-order] topN=-1 (default) runs all tests in priority order (no subset selection). "
-					+ "To run only the top N, set -Dtestorder.select.topN=N (e.g., topN=10).");
+					+ "To run only the top N, set -Dtestorder.affected.topN=N (e.g., topN=10).");
 		}
 
 		// Warn if 'test' phase is likely not going to run
@@ -187,7 +187,7 @@ public class SelectMojo extends AbstractTestOrderMojo {
 				getLog().warn(
 						"[test-order] " + selection.remaining().size() + " tests were NOT selected and will NOT run.");
 				getLog().warn("[test-order] To run them: mvn test-order:run-remaining test"
-						+ " -Dtestorder.select.remainingFile=target/test-order-remaining.txt");
+						+ " -Dtestorder.affected.remainingFile=target/test-order-remaining.txt");
 				getLog().warn("[test-order] To always run remaining automatically, add"
 						+ " -Dtestorder.auto.runRemaining=true or set <runRemaining>true</runRemaining> in plugin config.");
 			}

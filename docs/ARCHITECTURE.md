@@ -96,7 +96,7 @@ Use built-in controls before adding custom code:
 
 - change detection mode (`testorder.changeMode`)
 - explicit changed class contract (`testorder.changed.classes`)
-- selection size (`testorder.select.topN`, `testorder.select.randomM`)
+- selection size (`testorder.affected.topN`, `testorder.affected.randomM`)
 - instrumentation scope (`testorder.includePackages`)
 - scoring overrides (`testorder.score.*` and weights file)
 

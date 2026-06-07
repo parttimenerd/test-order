@@ -44,11 +44,11 @@ final class MavenPluginConfigKeys {
 	static final String MODE = "testorder.mode";
 	static final String INCLUDE_PACKAGES = "testorder.includePackages";
 	static final String FILTER_BY_GROUP_ID = "testorder.filterByGroupId";
-	static final String SELECT_TOP_N = "testorder.select.topN";
-	static final String SELECT_RANDOM_M = "testorder.select.randomM";
-	static final String SELECT_SEED = "testorder.select.seed";
-	static final String SELECT_REMAINING_FILE = "testorder.select.remainingFile";
-	static final String SELECTED_FILE = "testorder.select.selectedFile";
+	static final String SELECT_TOP_N = "testorder.affected.topN";
+	static final String SELECT_RANDOM_M = "testorder.affected.randomM";
+	static final String SELECT_SEED = "testorder.affected.seed";
+	static final String SELECT_REMAINING_FILE = "testorder.affected.remainingFile";
+	static final String SELECTED_FILE = "testorder.affected.selectedFile";
 	static final String AUTO_RUN_REMAINING = "testorder.auto.runRemaining";
 	static final String AUTO_OPTIMIZE_EVERY = "testorder.auto.optimizeEvery";
 	static final String INSTRUMENTATION = "testorder.instrumentation"; // online | offline
@@ -141,7 +141,7 @@ final class MavenPluginConfigKeys {
 			"testorder.changedClasses", CHANGED_CLASSES,
 			// testorder.showOrder.format → testorder.show.format
 			"testorder.showOrder.format", SHOW_FORMAT,
-			// testorder.showOrder.topN → testorder.select.topN
+			// testorder.showOrder.topN → testorder.affected.topN
 			"testorder.showOrder.topN", SELECT_TOP_N,
 			// testorder.tier → testorder.tiered.currentTier (shorthand for run-tier)
 			"testorder.tier", TIERED_CURRENT_TIER);

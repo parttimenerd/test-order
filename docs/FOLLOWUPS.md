@@ -395,10 +395,10 @@ These come from concrete observations in
 `target/third-party-results/jackson-databind/20260529_001213/` —
 review those logs alongside if any of these need clarification.
 
-### S8. Honor `testorder.select.topN` strictly (or rename it)
+### S8. Honor `testorder.affected.topN` strictly (or rename it)
 
 **Observation**: step 7 invokes
-`mvn test-order:affected test -Dtestorder.select.topN=3
+`mvn test-order:affected test -Dtestorder.affected.topN=3
 -Dtestorder.changed.classes=tools.jackson.databind.introspect.POJOPropertiesCollector`.
 The log says **"Selected 13 tests, deferred 722"** — 13, not 3.
 
@@ -413,7 +413,7 @@ and `TestSelector` (look for `topN` usage). Compare to
 
 **Action**:
 - Either honor topN strictly (cap final list at N + alwaysRun) —
-- Or rename the property to `testorder.select.minTopN` / similar so
+- Or rename the property to `testorder.affected.minTopN` / similar so
   the name reflects "*at least* N" semantics.
 - Either way: log the breakdown. e.g.:
   `[test-order] topN=3 → 3 affected (top scores) + 8 ties + 2 always-run = 13 total`.
@@ -426,7 +426,7 @@ selection counts — bump a minor version if behavior changes.
 **Observation**: every full run logs:
 ```
 [WARNING] [test-order] Selection is non-deterministic (no seed set).
-                       Set testorder.select.seed for reproducible CI runs.
+                       Set testorder.affected.seed for reproducible CI runs.
 ```
 The full pipeline emits this 6+ times. It's noise unless the user
 acted on it — but the user can't reasonably set a seed for every
@@ -435,7 +435,7 @@ invocation.
 **Idea**: when no seed is set, derive one from a stable input — e.g.
 `hash(changedClasses ∪ indexFile.mtime)` or just `0`. Log "seed
 derived from changed-set" instead of warning. Add the property
-`testorder.select.requireExplicitSeed=true` for users who want the
+`testorder.affected.requireExplicitSeed=true` for users who want the
 warning back (CI environments that pin reproducibility).
 
 **Where**:
@@ -536,7 +536,7 @@ average for that index file.
 
 ### S14. Document that `topN=-1` means "all affected, not all tests"
 
-**Observation**: `HelpMojo` says `-Dtestorder.select.topN=<n>
+**Observation**: `HelpMojo` says `-Dtestorder.affected.topN=<n>
 (default: -1, all affected)`. From the log "Selected 13, deferred
 722" the user sees the deferred number is what would be skipped.
 Two interpretations sources of confusion:
@@ -675,3 +675,28 @@ Original ordering still holds for S2–S7. S1 is done. Insertions:
 - **S15** (better bug targets) and **S17** (proxy excludes) clean
   up the script's failure modes; run after S5.
 - **S8** and **S14** are small contract/doc fixes; ship anytime.
+
+## UX round-2 follow-ups (deferred)
+
+Captured during the round-2 UX pass (auto decision logging, end-of-run summary,
+property rename, Gradle parity, sample READMEs). These are out of scope for
+that round but worth tracking.
+
+- **Schema/version migration messaging** — `TestOrderState.java:1062-1065` and
+  `StateDowngradeException` throw cryptic errors when an older state file is
+  loaded. Translate to actionable guidance ("delete `.test-order/` and re-run
+  learn mode" or "downgrade not supported").
+- **`DiagnosticReportPrinter` sort by severity** — currently prints findings
+  in detection order. Group/sort by severity (ERROR → WARN → INFO) so the
+  most actionable issues are at the top.
+- **Dashboard empty-state messaging** — `DashboardGenerator.java:572` renders
+  an empty dashboard when no data is present. Show a clear "no runs recorded
+  yet — run `mvn test-order:auto test`" panel instead.
+- **Multi-module reactor `-am` hint** — `AbstractTestOrderMojo.java:597-600`
+  detects single-module invocation in a multi-module reactor; the message
+  should explicitly mention `-am`/`-amd` so users know how to bring in
+  upstream/downstream modules.
+- **Property naming audit beyond `select` namespace** — `tiered.*`,
+  `score.*`, `auto.*`, and various camelCase legacy keys still drift in
+  style. Pick one convention (probably dotted lower-case), document it, and
+  rename the rest in a follow-up wave.

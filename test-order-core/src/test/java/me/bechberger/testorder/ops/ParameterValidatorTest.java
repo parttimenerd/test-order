@@ -107,4 +107,37 @@ class ParameterValidatorTest {
 		assertDoesNotThrow(() -> v.validateChangeMode(null));
 		assertDoesNotThrow(() -> v.validateChangeMode(""));
 	}
+
+	// ── validateAutoLearnThresholds ───────────────────────────────────────────
+
+	@Test
+	void validateAutoLearnThresholds_negativeRunThreshold_throws() {
+		ParameterValidator v = new ParameterValidator(new CapturingLog());
+		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+				() -> v.validateAutoLearnThresholds(-1, 0, 0));
+		assertTrue(e.getMessage().contains("autoLearnRunThreshold"), "message should name the offending param");
+	}
+
+	@Test
+	void validateAutoLearnThresholds_negativeDiffThreshold_throws() {
+		ParameterValidator v = new ParameterValidator(new CapturingLog());
+		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+				() -> v.validateAutoLearnThresholds(0, -5, 0));
+		assertTrue(e.getMessage().contains("autoLearnDiffThreshold"), "message should name the offending param");
+	}
+
+	@Test
+	void validateAutoLearnThresholds_negativeOptimizeEvery_throws() {
+		ParameterValidator v = new ParameterValidator(new CapturingLog());
+		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+				() -> v.validateAutoLearnThresholds(0, 0, -1));
+		assertTrue(e.getMessage().contains("optimizeEvery"), "message should name the offending param");
+	}
+
+	@Test
+	void validateAutoLearnThresholds_zeroAndPositiveAccepted() {
+		ParameterValidator v = new ParameterValidator(new CapturingLog());
+		assertDoesNotThrow(() -> v.validateAutoLearnThresholds(0, 0, 0));
+		assertDoesNotThrow(() -> v.validateAutoLearnThresholds(10, 5, 50));
+	}
 }

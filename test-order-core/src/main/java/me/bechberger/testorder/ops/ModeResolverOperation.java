@@ -162,6 +162,8 @@ public final class ModeResolverOperation {
 			if (!compiledTestsPresent && !sourceTestsPresent) {
 				return new ModeDecision("skip", "No test classes found — skipping", false);
 			}
+			log.info("[test-order] No index file found — auto-selecting learn mode."
+					+ " This run will be slower; subsequent runs will be reordered using the index.");
 			return new ModeDecision("learn", "No index file found — auto-selecting learn mode", false);
 		}
 
@@ -170,7 +172,8 @@ public final class ModeResolverOperation {
 		try {
 			depMap = DependencyMap.load(config.indexPath());
 			if (depMap.size() == 0) {
-				log.warn("[test-order] Dependency index contains no tests — continuing in order mode");
+				log.warn("[test-order] Dependency index contains no tests — continuing in order mode."
+						+ " Run 'mvn test-order:diagnose' to inspect index contents.");
 			}
 		} catch (IOException e) {
 			log.warn("[test-order] Failed to load index for validation: " + e.getMessage());
@@ -191,7 +194,8 @@ public final class ModeResolverOperation {
 				if (newTests.size() > 5)
 					names += " (... " + (newTests.size() - 5) + " more)";
 				log.info("[test-order] New test class(es) detected: " + names
-						+ " — switching to learn mode automatically.");
+						+ " — switching to learn mode automatically."
+						+ " The index has no data for these classes; learn-mode collects deps before scoring.");
 				return new ModeDecision("learn", "New test classes detected: " + names, false);
 			}
 		}
@@ -218,7 +222,8 @@ public final class ModeResolverOperation {
 						saveState(fpState, config.statePath(), log);
 					} else if (!storedFingerprint.equals(currentFingerprint)) {
 						// Fingerprint changed — trigger learn
-						log.info("[test-order] Dependency change detected — switching to learn mode automatically.");
+						log.info("[test-order] Dependency change detected — switching to learn mode automatically."
+								+ " pom.xml/build.gradle inputs changed — re-running the dependency walk.");
 						fpState.setDependencyFingerprint(currentFingerprint);
 						fpState.resetRunsSinceLearn();
 						boolean saved = saveState(fpState, config.statePath(), log);
@@ -244,7 +249,8 @@ public final class ModeResolverOperation {
 				if (config.autoLearnRunThreshold() > 0 && state.runsSinceLearn() >= config.autoLearnRunThreshold()) {
 					log.info("[test-order] Run count since last learn (" + state.runsSinceLearn()
 							+ ") reached threshold (" + config.autoLearnRunThreshold()
-							+ ") — switching to learn mode automatically.");
+							+ ") — switching to learn mode automatically."
+							+ " This run re-learns to refresh scoring; subsequent runs return to order mode.");
 					state.resetRunsSinceLearn();
 					boolean saved = saveState(state, config.statePath(), log);
 					return new ModeDecision("learn",
@@ -256,7 +262,8 @@ public final class ModeResolverOperation {
 					Set<String> changedNow = config.changedClassesSupplier().get();
 					if (changedNow.size() >= config.autoLearnDiffThreshold()) {
 						log.info("[test-order] Changed-class count (" + changedNow.size() + ") reached threshold ("
-								+ config.autoLearnDiffThreshold() + ") — switching to learn mode automatically.");
+								+ config.autoLearnDiffThreshold() + ") — switching to learn mode automatically."
+								+ " Significant churn detected — re-learning before scoring.");
 						state.resetRunsSinceLearn();
 						boolean saved = saveState(state, config.statePath(), log);
 						return new ModeDecision("learn",

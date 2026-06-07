@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+- **Property namespace renamed:** `testorder.select.*` → `testorder.affected.*`. Affected keys: `topN`, `randomM`, `seed`, `selectedFile`, `remainingFile`. CI configurations and shell aliases pinning `-Dtestorder.select.topN` (and friends) must be updated. No backward-compatibility shim is provided — using the old names yields an "unknown property" warning with a suggestion to the new name.
+- **Gradle task renamed:** `testOrderSelect` removed; use `testOrderAffected` instead. No backward-compatibility alias is provided. Build scripts invoking `testOrderSelect` will fail with "task not found" — replace with `testOrderAffected`. Task output paths under `build/test-results/` move from `testOrderSelect/` to `testOrderAffected/` accordingly.
+
 ### Added
 - Source packages from `src/main/java` are now **always auto-detected** and used as the instrumentation filter — zero configuration needed in most cases
 - `includePackages` is now **additive** — user-specified prefixes are merged with auto-detected source packages instead of replacing them

@@ -165,7 +165,7 @@ If your learn run is slow (large projects), you can commit `.test-order/test-dep
 | Show ranking | `mvn test-order:show` | `./gradlew testOrderShow` |
 | Dashboard | `mvn test-order:dashboard` | `./gradlew testOrderDashboard` |
 | Diagnose setup | `mvn test-order:diagnose` | `./gradlew testOrderDiagnose` |
-| **Select change-affected tests** | `mvn test-order:affected test` | `./gradlew testOrderSelect` |
+| **Select change-affected tests** | `mvn test-order:affected test` | `./gradlew testOrderAffected` |
 | Run deferred (remaining) tests | `mvn test-order:run-remaining test` | `./gradlew testOrderRunRemaining` |
 | Detect flaky tests | `mvn test-order:detect-dependencies` | `./gradlew testOrderDetectDependencies` |
 | **Mutation testing** | `mvn test-order:analyze-mutations` | `./gradlew testOrderAnalyzeMutations` |

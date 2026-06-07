@@ -206,8 +206,8 @@ Score weights (`scoreNewTest`, `scoreChangedTest`, etc.) must be set in the `tes
 | `testOrderShowOrder` | _(deprecated → use `testOrderShow`)_ Display predicted test execution order |
 | `testOrderTieredSelect` | Run tier-1 tests and write tier-2/tier-3 files for three-phase CI |
 | `testOrderRunTier` | Run tier 2 or tier 3 from a previous `testOrderTieredSelect` |
-| `testOrderSelect` | Run the prioritized subset and write remaining tests to disk |
-| `testOrderRunRemaining` | Run deferred tests written by `testOrderSelect` |
+| `testOrderAffected` | Run the prioritized subset and write remaining tests to disk |
+| `testOrderRunRemaining` | Run deferred tests written by `testOrderAffected` |
 | `testOrderDump` | Dump the binary dependency index as human-readable text |
 | `testOrderAggregate` | Re-aggregate `.deps` files into `test-dependencies.lz4` |
 | `testOrderCompact` | Rebuild index from `.deps` files, removing stale entries |

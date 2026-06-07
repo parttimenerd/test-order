@@ -267,7 +267,7 @@ public final class DiagnosticOperation {
 	private static DiagnosticResult checkChangeDetection(DiagnosticConfig config) {
 		try {
 			// Validate change mode
-			me.bechberger.testorder.changes.ChangeDetectionSupport.normalizeMode(config.changeMode());
+			String mode = me.bechberger.testorder.changes.ChangeDetectionSupport.normalizeMode(config.changeMode());
 
 			// Check if source root exists
 			if (config.testSourceRoot() == null || !Files.exists(config.testSourceRoot())) {
@@ -277,6 +277,16 @@ public final class DiagnosticOperation {
 								"This is expected for POM-only parent modules"));
 			}
 
+			// Git-availability check for git-backed change modes
+			if (("since-last-commit".equals(mode) || "uncommitted".equals(mode)) && !hasGitDir(config.projectRoot())) {
+				return DiagnosticResult.info(ErrorCode.GIT_NOT_AVAILABLE,
+						"Change mode '" + mode + "' requires git, but no .git directory was found from "
+								+ config.projectRoot().toAbsolutePath(),
+						List.of("Run from inside a git working tree, or",
+								"Switch to a non-git mode: -Dtestorder.changeMode=since-last-run",
+								"Initialize git in this project: git init"));
+			}
+
 			return DiagnosticResult.success("Change detection mode '" + config.changeMode() + "' is valid");
 		} catch (IOException e) {
 			return DiagnosticResult.error(ErrorCode.CHANGE_MODE_INVALID,
@@ -284,6 +294,20 @@ public final class DiagnosticOperation {
 					List.of("Valid modes: auto, since-last-run, since-last-commit, uncommitted, explicit",
 							"Set via -Dtestorder.changeMode=<mode>"));
 		}
+	}
+
+	private static boolean hasGitDir(Path start) {
+		if (start == null)
+			return false;
+		Path p = start.toAbsolutePath();
+		while (p != null) {
+			Path candidate = p.resolve(".git");
+			if (Files.exists(candidate)) {
+				return true;
+			}
+			p = p.getParent();
+		}
+		return false;
 	}
 
 	private static DiagnosticResult checkFallbackPayload(DiagnosticConfig config) {

@@ -391,7 +391,7 @@ class BugVerificationIT {
 
 		MavenResult result = project.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=0", "-Dtestorder.select.randomM=0");
+				"-Dtestorder.affected.topN=0", "-Dtestorder.affected.randomM=0");
 
 		if (result.isSuccess()) {
 			// Parse total tests run from ALL "Tests run:" lines
@@ -427,8 +427,8 @@ class BugVerificationIT {
 		project.deleteIfExists(".test-order/state.lz4");
 
 		MavenResult result = project.maven().run("clean", "test-order:auto", "test", "-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0",
-				"-Dtestorder.auto.runRemaining=false");
+				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.affected.topN=1",
+				"-Dtestorder.affected.randomM=0", "-Dtestorder.auto.runRemaining=false");
 		assertThat(result).succeeded();
 
 		// Remaining file should exist with 2 deferred test classes
@@ -496,8 +496,8 @@ class BugVerificationIT {
 
 		// select with explicit change → only CartTest should be selected
 		MavenResult result = project.maven().run("clean", "test-order:affected", "test",
-				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + CART, "-Dtestorder.select.topN=1",
-				"-Dtestorder.select.randomM=0");
+				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + CART, "-Dtestorder.affected.topN=1",
+				"-Dtestorder.affected.randomM=0");
 		assertThat(result).succeeded();
 
 		// The selected file should contain FQCNs (with dots)
@@ -859,7 +859,7 @@ class BugVerificationIT {
 
 		MavenResult result = project.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0");
+				"-Dtestorder.affected.topN=1", "-Dtestorder.affected.randomM=0");
 		assertThat(result).succeeded();
 
 		String selected = project.readFile("target/test-order-selected.txt");

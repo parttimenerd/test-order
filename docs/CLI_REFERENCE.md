@@ -155,6 +155,17 @@ If `uncommitted` or `since-last-commit` fails (e.g., git not available or no pri
 
 ## Core Properties
 
+### Property groups at a glance
+
+Jump to the relevant table below — properties are organized by purpose:
+
+- **Mode** — what the plugin does each run: [General](#general), [Files and Paths](#files-and-paths), [Auto Mode](#auto-mode). See also [Operation Modes (`testorder.mode`)](#operation-modes-testordermode) above.
+- **Change detection** — what counts as "changed": [Selection and Change Detection](#selection-and-change-detection), [Reactor Auto-Reordering](#reactor-auto-reordering-maven-lifecycle-extension). See also [Change Detection Modes](#change-detection-modes) above.
+- **Learn** — controlling instrumentation and dependency capture: [Selective Learn](#selective-learn), [Instrumentation and Filtering](#instrumentation-and-filtering).
+- **Scoring** — how tests are ranked: [Scoring Overrides](#scoring-overrides), [ML (Machine Learning) Predictions](#ml-machine-learning-predictions), [Show (unified)](#show-unified).
+- **CI** — pipeline and reporting: [Tiered CI](#tiered-ci), [CI Summary](#ci-summary), [Reactor Order](#reactor-order), [Download](#download), [Metrics](#metrics), [Advanced](#advanced).
+- **Dashboard** — interactive HTML report: [Dashboard](#dashboard), [Show Static Analysis](#show-static-analysis).
+
 ### General
 
 | Property | Default | Notes |
@@ -184,11 +195,11 @@ If `uncommitted` or `since-last-commit` fails (e.g., git not available or no pri
 | `testorder.changed.classes.file` | unset | Path to file of changed class FQCNs (one per line); merged with `testorder.changed.classes` |
 | `testorder.changed.test.classes` | unset | Comma-separated changed test class FQCNs |
 | `testorder.changed.methods` | unset | Comma-separated changed methods in `className#methodName` format |
-| `testorder.select.topN` | `-1` | Top-ranked tests to include (`-1` = all affected) |
-| `testorder.select.randomM` | `10` | Diversity sampling |
-| `testorder.select.seed` | unset | Reproducible random selection |
-| `testorder.select.selectedFile` | `${project.build.directory}/test-order-selected.txt` | Selected list output |
-| `testorder.select.remainingFile` | `${project.build.directory}/test-order-remaining.txt` | Deferred list output |
+| `testorder.affected.topN` | `-1` | Top-ranked tests to include (`-1` = all affected) |
+| `testorder.affected.randomM` | `10` | Diversity sampling |
+| `testorder.affected.seed` | unset | Reproducible random selection |
+| `testorder.affected.selectedFile` | `${project.build.directory}/test-order-selected.txt` | Selected list output |
+| `testorder.affected.remainingFile` | `${project.build.directory}/test-order-remaining.txt` | Deferred list output |
 | `testorder.exportJson.output` | unset | Output path for `export-json` goal (stdout when unset) |
 
 ### Tiered CI
@@ -335,6 +346,32 @@ ML data is shown in:
 | `testorder.score.coverageBonus` | `0` | Greedy set-cover bonus; when >0 replaces `depOverlap`+`changeComplexity` |
 | `testorder.weights.file` | unset | Path to TOML weights file; overrides all `testorder.score.*` properties when set |
 
+### Method-Level Scoring Overrides
+
+When method-level ordering is active (the default for JUnit 5/6), these per-component weights tune how individual test methods are ranked within a class. Method scores combine the same change/coverage/speed signals as class scores, but at method granularity using telemetry from `MEMBER`-mode instrumentation.
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.method.score.changedMethod` | `15` | Bonus for methods that touch a changed source method |
+| `testorder.method.score.coverageBonus` | `0` | Greedy set-cover bonus across method telemetry |
+| `testorder.method.score.depOverlap` | `5` | Max score from method-level dependency overlap |
+| `testorder.method.score.failureRecency` | `5` | Bonus for methods that recently failed |
+| `testorder.method.score.fast` | `1` | Bonus for fast methods (full at 1/8× median runtime) |
+| `testorder.method.score.newMethod` | `12` | Bonus for methods absent from the dependency index |
+| `testorder.method.score.slow` | `1` | Penalty for slow methods (full at 8× median runtime) |
+
+### Build Identification
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.build.id` | unset | Optional opaque identifier stamped onto the run record (e.g. CI build number). Surfaces in the dashboard and JSON exports for traceability. |
+
+### Verbosity (CLI only)
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.verbose` | `false` | Print full stack traces for non-fatal warnings (e.g. ML training failures). Plugin-side suppression of WARN messages is not currently plumbed — this flag controls extra detail in the standalone CLI only. |
+
 ### Download
 
 | Property | Default | Notes |
@@ -354,8 +391,8 @@ ML data is shown in:
 ```bash
 mvn test-order:auto test \
   -Dtestorder.changeMode=uncommitted \
-  -Dtestorder.select.topN=5 \
-  -Dtestorder.select.randomM=0
+  -Dtestorder.affected.topN=5 \
+  -Dtestorder.affected.randomM=0
 ```
 
 ### PR/CI subset
@@ -363,8 +400,8 @@ mvn test-order:auto test \
 ```bash
 mvn test-order:auto test \
   -Dtestorder.changeMode=since-last-commit \
-  -Dtestorder.select.topN=30 \
-  -Dtestorder.select.randomM=10
+  -Dtestorder.affected.topN=30 \
+  -Dtestorder.affected.randomM=10
 ```
 
 ### Explicit CI contract
@@ -437,8 +474,8 @@ jobs:
         run: |
           mvn test-order:auto test \
             -Dtestorder.changeMode=since-last-commit \
-            -Dtestorder.select.topN=20 \
-            -Dtestorder.select.randomM=10
+            -Dtestorder.affected.topN=20 \
+            -Dtestorder.affected.randomM=10
 
       - name: Run deferred tests
         if: success()
@@ -550,8 +587,8 @@ java -jar test-order-core.jar struct-diff src/main/java/com/example/Service.java
 
 - `testorder.changeMode` must be one of the supported modes.
 - `testorder.changed.classes` is required when `changeMode=explicit`. If omitted, a warning is printed and the empty set is returned (no tests selected beyond new and `@AlwaysRun` tests).
-- `testorder.select.topN` must be `>= -1` (`-1` = all affected, positive = exact count, `0` = no top-scored tests but new and `@AlwaysRun` tests still run — a warning is emitted).
-- `testorder.select.randomM` must be `>= 0`.
+- `testorder.affected.topN` must be `>= -1` (`-1` = all affected, positive = exact count, `0` = no top-scored tests but new and `@AlwaysRun` tests still run — a warning is emitted).
+- `testorder.affected.randomM` must be `>= 0`.
 - `testorder.instrumentation.mode` must be one of: `CLASS`, `METHOD`, `MEMBER`.
 - `testorder.coverage.threshold` must be `>= 1` (minimum number of exercising tests for a class to be "well-tested").
 

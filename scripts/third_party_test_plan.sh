@@ -904,14 +904,14 @@ phase_select_gradle() {
     local src_class
     src_class=$(detect_source_class_gradle "$repo")
 
-    log "Running: ./gradlew testOrderSelect -Dtestorder.select.topN=5"
+    log "Running: ./gradlew testOrderSelect -Dtestorder.affected.topN=5"
     # shellcheck disable=SC2086
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderSelect \
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
-        -Dtestorder.select.topN=5 \
-        -Dtestorder.select.randomM=2 \
+        -Dtestorder.affected.topN=5 \
+        -Dtestorder.affected.randomM=2 \
         $extra_args \
         2>&1 | tee "$results/select.log" | tail -10 || warn "Select failed"
 
@@ -1022,7 +1022,7 @@ phase_bugs_gradle() {
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$classname" \
-        -Dtestorder.select.topN=3 \
+        -Dtestorder.affected.topN=3 \
         $extra_args \
         2>&1 | tee "$bug_log" | tail -10 || true
 
@@ -1106,7 +1106,7 @@ phase_full_gradle() {
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
-        -Dtestorder.select.topN=5 \
+        -Dtestorder.affected.topN=5 \
         $extra_args \
         2>&1 | tee "$results/full-select.log" | tail -10 || warn "Select failed"
 
@@ -1155,7 +1155,7 @@ phase_full_gradle() {
                 --no-build-cache --no-configuration-cache \
                 -Dtestorder.changeMode=explicit \
                 -Dtestorder.changed.classes="$classname" \
-                -Dtestorder.select.topN=3 \
+                -Dtestorder.affected.topN=3 \
                 $extra_args \
                 2>&1 | tee "$bug_log" | tail -10 || true
             if log_has_test_failures "$bug_log"; then
@@ -1239,12 +1239,12 @@ phase_select_maven() {
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
     # Phase 1: Select top-N tests
-    log "Running: mvn clean me.bechberger:test-order-maven-plugin:affected test -Dtestorder.select.topN=5"
+    log "Running: mvn clean me.bechberger:test-order-maven-plugin:affected test -Dtestorder.affected.topN=5"
     mvn clean me.bechberger:test-order-maven-plugin:affected test \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
-        -Dtestorder.select.topN=5 \
-        -Dtestorder.select.randomM=2 \
+        -Dtestorder.affected.topN=5 \
+        -Dtestorder.affected.randomM=2 \
         -Dtestorder.mode=skip \
         "${mvn_args[@]}" \
         2>&1 | tee "$results/select.log" | tail -10
@@ -1392,7 +1392,7 @@ phase_bugs_maven() {
         mvn clean me.bechberger:test-order-maven-plugin:affected test \
             -Dtestorder.changeMode=explicit \
             -Dtestorder.changed.classes="$classname" \
-            -Dtestorder.select.topN=3 \
+            -Dtestorder.affected.topN=3 \
             -Dtestorder.mode=skip \
             "${test_cmd_args[@]}" \
             2>&1 | tee "$bug_log" | tail -10 || true
@@ -1515,7 +1515,7 @@ phase_full_maven() {
     mvn clean me.bechberger:test-order-maven-plugin:affected test \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
-        -Dtestorder.select.topN=5 \
+        -Dtestorder.affected.topN=5 \
         -Dtestorder.mode=skip \
         "${test_cmd_args[@]}" \
         2>&1 | tee "$results/full-select.log" | tail -10 || warn "Select failed"
@@ -1562,7 +1562,7 @@ phase_full_maven() {
         bug_out=$(mvn clean me.bechberger:test-order-maven-plugin:affected test \
             -Dtestorder.changeMode=explicit \
             -Dtestorder.changed.classes="$classname" \
-            -Dtestorder.select.topN=3 \
+            -Dtestorder.affected.topN=3 \
             -Dtestorder.mode=skip \
             "${test_cmd_args[@]}" \
             2>&1 | tee "$results/full-bug-select.log") || true

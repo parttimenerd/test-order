@@ -23,7 +23,7 @@ import me.bechberger.testorder.ops.PluginLog;
 /**
  * CLI tool for managing test-order dependency indexes and change detection.
  */
-@Command(name = "test-order", mixinStandardHelpOptions = true, version = "0.1.0", description = "Manage JUnit test ordering based on dependency telemetry", subcommands = {
+@Command(name = "test-order", mixinStandardHelpOptions = true, description = "Manage JUnit test ordering based on dependency telemetry", subcommands = {
 		Tool.Aggregate.class, Tool.Affected.class, Tool.Stats.class, Tool.HashSnapshot.class, Tool.Changed.class,
 		Tool.Run.class, Tool.Dump.class, Tool.ExportJson.class, Tool.Optimize.class, Tool.Select.class,
 		Tool.StructDiff.class, Tool.Advise.class})
@@ -52,7 +52,27 @@ public class Tool implements Runnable {
 	}
 
 	public static void main(String[] args) {
-		System.exit(FemtoCli.run(new Tool(), args));
+		String resolvedVersion = resolveVersion();
+		System.exit(FemtoCli.builder().commandConfig(c -> c.version = resolvedVersion).run(new Tool(), args));
+	}
+
+	/**
+	 * Reads the build version from the Maven-generated pom.properties bundled in
+	 * the JAR. Falls back to "unknown" when running outside a packaged JAR (e.g.
+	 * tests, IDE).
+	 */
+	static String resolveVersion() {
+		try (var in = Tool.class.getResourceAsStream("/META-INF/maven/me.bechberger/test-order-core/pom.properties")) {
+			if (in != null) {
+				java.util.Properties props = new java.util.Properties();
+				props.load(in);
+				String v = props.getProperty("version");
+				if (v != null && !v.isBlank())
+					return v;
+			}
+		} catch (IOException ignored) {
+		}
+		return "unknown";
 	}
 
 	/**
@@ -75,6 +95,32 @@ public class Tool implements Runnable {
 			return false;
 		}
 		return true;
+	}
+
+	/**
+	 * True when {@code -Dtestorder.verbose=true} is set; surfaces stack traces in
+	 * error paths.
+	 */
+	static boolean isVerbose() {
+		return Boolean.parseBoolean(System.getProperty("testorder.verbose", "false"));
+	}
+
+	/**
+	 * Print a contextual error message for a Tool subcommand. Prefixes the
+	 * subcommand name, includes the exception message, and points to a recovery
+	 * hint. Stack trace is surfaced only when {@code -Dtestorder.verbose=true}.
+	 */
+	private static int reportError(String subcommand, String action, String hint, Throwable e) {
+		System.err.println("[test-order " + subcommand + "] " + action + ": " + e.getMessage());
+		if (hint != null && !hint.isBlank()) {
+			System.err.println("Hint: " + hint);
+		}
+		if (isVerbose()) {
+			e.printStackTrace(System.err);
+		} else {
+			System.err.println("Run with -Dtestorder.verbose=true for the full stack trace.");
+		}
+		return 1;
 	}
 
 	@Command(name = "aggregate", description = "Aggregate .deps files into a dependency index", mixinStandardHelpOptions = true)
@@ -110,8 +156,9 @@ public class Tool implements Runnable {
 				System.out.printf("Aggregated %d test classes → %s%n", map.size(), output);
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("aggregate", "Failed to aggregate .deps files",
+						"Run mvn test-order:diagnose, or check write permissions on the deps directory and output path",
+						e);
 			}
 		}
 	}
@@ -139,8 +186,9 @@ public class Tool implements Runnable {
 				}
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("affected", "Failed to load index or compute affected tests",
+						"Run mvn test-order:diagnose. The index may be missing or corrupted; re-run learn mode to rebuild it",
+						e);
 			}
 		}
 	}
@@ -161,8 +209,9 @@ public class Tool implements Runnable {
 				System.out.printf(Locale.US, "Avg deps per test:     %.1f%n", map.averageDeps());
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("stats", "Failed to load dependency index",
+						"Run mvn test-order:diagnose to check index health, or re-run learn mode if the file is corrupted",
+						e);
 			}
 		}
 	}
@@ -190,8 +239,9 @@ public class Tool implements Runnable {
 				System.out.printf("Snapshot: %d files → %s%n", store.getHashes().size(), hashFile);
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("hash-snapshot", "Failed to scan source tree or write hash file",
+						"Check read permissions on the source root and write permissions on the hash file's parent directory",
+						e);
 			}
 		}
 	}
@@ -233,11 +283,12 @@ public class Tool implements Runnable {
 				}
 				return 0;
 			} catch (IllegalArgumentException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("changed", "Invalid change-detection mode",
+						"Valid modes: since-last-run, since-last-commit, uncommitted, explicit", e);
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("changed", "Failed to detect changes",
+						"Verify the project root, source root, and hash file paths; ensure the hash file is readable",
+						e);
 			}
 		}
 	}
@@ -294,11 +345,11 @@ public class Tool implements Runnable {
 				}
 				return 0;
 			} catch (IllegalArgumentException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("run", "Invalid change-detection mode",
+						"Valid modes: since-last-run, since-last-commit, uncommitted, explicit", e);
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("run", "Failed to detect changes or load index",
+						"Verify the index, project root, source root, and hash file paths", e);
 			}
 		}
 	}
@@ -335,8 +386,8 @@ public class Tool implements Runnable {
 				}
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("dump", "Failed to read or write dependency index",
+						"Check the index path is readable and the output path is writable", e);
 			}
 		}
 	}
@@ -391,8 +442,8 @@ public class Tool implements Runnable {
 				}
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("export-json", "Failed to export index/state as JSON",
+						"Check the index, state, and output paths are accessible", e);
 			}
 		}
 	}
@@ -457,8 +508,9 @@ public class Tool implements Runnable {
 				}
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("optimize", "Failed to load state or save optimised weights",
+						"Check the state file path is readable and writable; need at least a few learn runs of history",
+						e);
 			}
 		}
 
@@ -551,8 +603,8 @@ public class Tool implements Runnable {
 				}
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("select", "Failed to load index/state or write test lists",
+						"Did you run learn mode first? mvn test -Dtestorder.mode=learn", e);
 			}
 		}
 	}
@@ -602,8 +654,8 @@ public class Tool implements Runnable {
 				}
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("struct-diff", "Failed to compute structural diff",
+						"Verify the git repository root is correct and the working tree is accessible", e);
 			}
 		}
 	}
@@ -663,8 +715,9 @@ public class Tool implements Runnable {
 				}
 				return 0;
 			} catch (IOException e) {
-				System.err.println("Error: " + e.getMessage());
-				return 1;
+				return reportError("advise", "Failed to load index or compute method-level advice",
+						"Per-method advice requires method-level instrumentation: mvn test -Dtestorder.instrumentationMode=METHOD -Dtestorder.mode=learn",
+						e);
 			}
 		}
 	}

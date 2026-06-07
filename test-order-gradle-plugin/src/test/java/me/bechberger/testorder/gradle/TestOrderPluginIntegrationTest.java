@@ -325,18 +325,18 @@ class TestOrderPluginIntegrationTest {
     }
 
     @Test
-    @DisplayName("testOrderSelect runs the prioritized subset and writes selection files")
+    @DisplayName("testOrderAffected runs the prioritized subset and writes selection files")
     void selectTaskRunsSubset() throws IOException {
         scaffoldProject();
         runner("test", "-Dtestorder.mode=learn").build();
 
-        BuildResult result = runner("testOrderSelect",
+        BuildResult result = runner("testOrderAffected",
                 "-Dtestorder.changeMode=explicit",
                 "-Dtestorder.changed.classes=com.example.app.Calculator",
-                "-Dtestorder.select.topN=1",
-                "-Dtestorder.select.randomM=0").build();
+                "-Dtestorder.affected.topN=1",
+                "-Dtestorder.affected.randomM=0").build();
 
-        assertEquals(SUCCESS, result.task(":testOrderSelect").getOutcome());
+        assertEquals(SUCCESS, result.task(":testOrderAffected").getOutcome());
         assertTrue(Files.exists(projectDir.resolve("build/test-order-selected.txt")));
         assertTrue(Files.exists(projectDir.resolve("build/test-order-remaining.txt")));
         List<String> selected = Files.readAllLines(projectDir.resolve("build/test-order-selected.txt"));
@@ -347,8 +347,8 @@ class TestOrderPluginIntegrationTest {
         assertEquals(Set.of("com.example.app.CalculatorTest", "com.example.app.StringUtilsTest"),
                 Set.of(selected.get(0), remaining.get(0)));
         assertTrue(result.getOutput().contains("[test-order] Selected 1 tests (") && result.getOutput().contains("), deferred 1"));
-        assertTrue(Files.exists(projectDir.resolve("build/test-results/testOrderSelect/TEST-" + selected.get(0) + ".xml")));
-        assertFalse(Files.exists(projectDir.resolve("build/test-results/testOrderSelect/TEST-" + remaining.get(0) + ".xml")));
+        assertTrue(Files.exists(projectDir.resolve("build/test-results/testOrderAffected/TEST-" + selected.get(0) + ".xml")));
+        assertFalse(Files.exists(projectDir.resolve("build/test-results/testOrderAffected/TEST-" + remaining.get(0) + ".xml")));
     }
 
     @Test
@@ -356,11 +356,11 @@ class TestOrderPluginIntegrationTest {
     void runRemainingTaskRunsDeferredTests() throws IOException {
         scaffoldProject();
         runner("test", "-Dtestorder.mode=learn").build();
-        runner("testOrderSelect",
+        runner("testOrderAffected",
                 "-Dtestorder.changeMode=explicit",
                 "-Dtestorder.changed.classes=com.example.app.Calculator",
-                "-Dtestorder.select.topN=1",
-                "-Dtestorder.select.randomM=0",
+                "-Dtestorder.affected.topN=1",
+                "-Dtestorder.affected.randomM=0",
                 "-Dtestorder.auto.runRemaining=false").build();
 
         // Read remaining file BEFORE testOrderRunRemaining consumes and deletes it
@@ -375,24 +375,24 @@ class TestOrderPluginIntegrationTest {
     }
 
     @Test
-    @DisplayName("testOrderSelect failure skips auto-finalized testOrderRunRemaining")
+    @DisplayName("testOrderAffected failure skips auto-finalized testOrderRunRemaining")
     void selectFailureSkipsAutoRunRemaining() throws IOException {
         scaffoldProject();
 
-        BuildResult result = runner("testOrderSelect",
+        BuildResult result = runner("testOrderAffected",
                 "-Dtestorder.mode=order",
                 "-Dtestorder.changeMode=explicit",
                 "-Dtestorder.changed.classes=com.example.app.Calculator",
                 "-Dtestorder.auto.runRemaining=true").buildAndFail();
 
-        assertEquals(FAILED, result.task(":testOrderSelect").getOutcome());
+        assertEquals(FAILED, result.task(":testOrderAffected").getOutcome());
         assertEquals(SKIPPED, result.task(":testOrderRunRemaining").getOutcome());
         assertTrue(result.getOutput().contains("Select requires an index/dependency baseline"));
         assertFalse(result.getOutput().contains("Cannot call Task.onlyIf"));
     }
 
     @Test
-    @DisplayName("testOrderSelect with zero matched tests executes cleanly without mutation errors")
+    @DisplayName("testOrderAffected with zero matched tests executes cleanly without mutation errors")
     void selectWithZeroMatchedTestsExecutesCleanly() throws IOException {
         scaffoldProject();
 

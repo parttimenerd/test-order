@@ -50,6 +50,11 @@ public class ParameterValidator {
 		exec(() -> delegate.validateSelectParameters(topN, randomM));
 	}
 
+	public void validateAutoLearnThresholds(int runThreshold, int diffThreshold, int optimizeEvery)
+			throws MojoExecutionException {
+		exec(() -> delegate.validateAutoLearnThresholds(runThreshold, diffThreshold, optimizeEvery));
+	}
+
 	public void validateExplicitModeRequirements(String changeMode, String changedClasses)
 			throws MojoExecutionException {
 		validateExplicitModeRequirements(changeMode, changedClasses, null);

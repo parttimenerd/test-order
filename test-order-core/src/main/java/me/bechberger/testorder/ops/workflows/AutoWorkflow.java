@@ -153,8 +153,8 @@ public final class AutoWorkflow {
 		SelectOperation.SelectResult selectResult;
 		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0 && ctx.randomM() == 0) {
 			var allTests = new ArrayList<>(a.depMap().testClasses());
-			selectResult = new SelectOperation.SelectResult(
-					new TestSelector.Selection(allTests, java.util.List.of(), 0), true);
+			selectResult = SelectOperation.SelectResult.of(new TestSelector.Selection(allTests, java.util.List.of(), 0),
+					true);
 			ctx.log().info("[test-order] No changed classes detected — running tests in default order.");
 		} else {
 			if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {

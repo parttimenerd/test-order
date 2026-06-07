@@ -113,13 +113,13 @@ mvn test-order:show -Dtestorder.show.format=json
 | `testorder.showOrder.fullNames` | `false` | Print fully-qualified class names |
 | `testorder.show.format` | `text` | Output format: `text` or `json` |
 | `testorder.show.filter` | — | Glob filter for test class names — matches the full FQCN; use `*` as wildcard (e.g. `*Service*,*Repository`) |
-| `testorder.select.topN` | `-1` | Show only top N tests (`-1` = all) |
-| `testorder.select.randomM` | `10` | Include M random diverse tests |
-| `testorder.select.seed` | — | Random seed for `randomM` |
+| `testorder.affected.topN` | `-1` | Show only top N tests (`-1` = all) |
+| `testorder.affected.randomM` | `10` | Include M random diverse tests |
+| `testorder.affected.seed` | — | Random seed for `randomM` |
 | `testorder.show.all` | `false` | Enable all sections (classes + methods + ML) |
 
 > **CamelCase aliases:** `testorder.showOrder.format` is accepted as an alias for `testorder.show.format`,
-> and `testorder.showOrder.topN` is accepted as an alias for `testorder.select.topN`.
+> and `testorder.showOrder.topN` is accepted as an alias for `testorder.affected.topN`.
 > Both aliases log an info-level message pointing to the canonical name.
 
 ## Explain Goal
@@ -459,11 +459,11 @@ All other classes go to `target/test-order-remaining.txt`.
 
 | Parameter | Property | Default | Description |
 |---|---|---|---|
-| `topN` | `testorder.select.topN` | `-1` | Number of top-scored affected tests to include (`-1` = all affected, positive = exact count, `0` = no top-scored tests; new and `@AlwaysRun` tests still included, a warning is emitted). |
-| `randomM` | `testorder.select.randomM` | `10` | Number of random fast tests for coverage diversity |
-| `seed` | `testorder.select.seed` | — | Random seed for reproducible selection |
-| `remainingFile` | `testorder.select.remainingFile` | `target/test-order-remaining.txt` | File for deferred test classes |
-| `selectedFile` | `testorder.select.selectedFile` | `target/test-order-selected.txt` | File for selected test classes |
+| `topN` | `testorder.affected.topN` | `-1` | Number of top-scored affected tests to include (`-1` = all affected, positive = exact count, `0` = no top-scored tests; new and `@AlwaysRun` tests still included, a warning is emitted). |
+| `randomM` | `testorder.affected.randomM` | `10` | Number of random fast tests for coverage diversity |
+| `seed` | `testorder.affected.seed` | — | Random seed for reproducible selection |
+| `remainingFile` | `testorder.affected.remainingFile` | `target/test-order-remaining.txt` | File for deferred test classes |
+| `selectedFile` | `testorder.affected.selectedFile` | `target/test-order-selected.txt` | File for selected test classes |
 
 ## Auto Mode (Combined Goal)
 

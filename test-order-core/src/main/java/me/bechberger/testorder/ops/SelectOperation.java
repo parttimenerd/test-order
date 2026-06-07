@@ -28,7 +28,57 @@ public final class SelectOperation {
 	}
 
 	/** Result of test selection. */
-	public record SelectResult(TestSelector.Selection selection, boolean allSelected) {
+	public record SelectResult(TestSelector.Selection selection, boolean allSelected, SelectionSummary summary) {
+
+		/**
+		 * Backward-compatible factory without summary (for synthesized full-run
+		 * results).
+		 */
+		public static SelectResult of(TestSelector.Selection selection, boolean allSelected) {
+			return new SelectResult(selection, allSelected, SelectionSummary.from(selection, 0, 0, 0, 0));
+		}
+	}
+
+	/**
+	 * Counts and the top-scored test name from a selection. Both Maven and Gradle
+	 * plugins log {@link #format()} so the end-of-run summary is consistent.
+	 */
+	public record SelectionSummary(int selectedCount, int deferredCount, String topScorerName, int scoredCount,
+			int newCount, int alwaysRunCount, int fastCount) {
+
+		/** Total tests in the index for this selection (selected + deferred). */
+		public int totalCount() {
+			return selectedCount + deferredCount;
+		}
+
+		/** Percentage of tests selected (0 when total is 0). */
+		public int percentSelected() {
+			int total = totalCount();
+			return total == 0 ? 0 : (100 * selectedCount) / total;
+		}
+
+		static SelectionSummary from(TestSelector.Selection selection, int scoredCount, int newCount,
+				int alwaysRunCount, int fastCount) {
+			String top = selection.selected().isEmpty() ? null : selection.selected().get(0);
+			return new SelectionSummary(selection.selected().size(), selection.remaining().size(), top, scoredCount,
+					newCount, alwaysRunCount, fastCount);
+		}
+
+		/** Multi-line summary block prefixed with "[test-order] ". */
+		public String format() {
+			StringBuilder sb = new StringBuilder();
+			int total = totalCount();
+			sb.append("[test-order] Selected ").append(selectedCount).append(" / ").append(total).append(" tests");
+			if (total > 0)
+				sb.append(" (").append(percentSelected()).append("%)");
+			if (topScorerName != null)
+				sb.append("\n[test-order] Top: ").append(topScorerName);
+			if (deferredCount > 0)
+				sb.append("\n[test-order] ").append(deferredCount).append(" deferred — see remaining-file");
+			sb.append("\n[test-order] Run `mvn test-order:show` for the full ranking,"
+					+ " or `mvn test-order:dashboard` for HTML.");
+			return sb.toString();
+		}
 	}
 
 	/**
@@ -48,7 +98,7 @@ public final class SelectOperation {
 		}
 		// When no explicit seed is provided, derive one from the changed-class set so
 		// selection is deterministic for the same inputs. Users who need to pin
-		// reproducibility across machines can still set testorder.select.seed
+		// reproducibility across machines can still set testorder.affected.seed
 		// explicitly.
 		Long effectiveSeed = config.seed();
 		if (effectiveSeed == null && config.topN() > 0 && config.randomM() > 0) {
@@ -114,19 +164,24 @@ public final class SelectOperation {
 		}
 
 		boolean allSelected = selection.remaining().isEmpty();
+		int alwaysRunCount = 0;
+		int newCount = 0;
+		int fastCount = selection.randomFastCount();
+		int scoredCount = 0;
+		if (!selection.selected().isEmpty() || !selection.remaining().isEmpty()) {
+			alwaysRunCount = (int) selection.selected().stream().filter(t -> config.alwaysRunClasses().contains(t))
+					.count();
+			newCount = (int) selection.selected().stream()
+					.filter(t -> !config.depMap().testClasses().contains(t) && !config.alwaysRunClasses().contains(t))
+					.count();
+			scoredCount = selection.selected().size() - alwaysRunCount - newCount - fastCount;
+		}
 		if (selection.selected().isEmpty() && selection.remaining().isEmpty()) {
 			// no tests in depMap — nothing to report
 		} else if (allSelected) {
 			config.log().info("[test-order] Selected all " + selection.selected().size()
 					+ " affected tests (topN=-1, running in priority order)");
 		} else {
-			int alwaysRunCount = (int) selection.selected().stream().filter(t -> config.alwaysRunClasses().contains(t))
-					.count();
-			int newCount = (int) selection.selected().stream()
-					.filter(t -> !config.depMap().testClasses().contains(t) && !config.alwaysRunClasses().contains(t))
-					.count();
-			int fastCount = selection.randomFastCount();
-			int scoredCount = selection.selected().size() - alwaysRunCount - newCount - fastCount;
 			StringBuilder bd = new StringBuilder();
 			if (scoredCount > 0)
 				bd.append(scoredCount).append(" scored");
@@ -149,6 +204,7 @@ public final class SelectOperation {
 					+ selection.remaining().size());
 		}
 
-		return new SelectResult(selection, allSelected);
+		SelectionSummary summary = SelectionSummary.from(selection, scoredCount, newCount, alwaysRunCount, fastCount);
+		return new SelectResult(selection, allSelected, summary);
 	}
 }

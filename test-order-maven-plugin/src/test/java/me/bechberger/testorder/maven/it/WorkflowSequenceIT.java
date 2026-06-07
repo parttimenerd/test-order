@@ -125,7 +125,7 @@ class WorkflowSequenceIT {
 	void fullPipelineSelect() {
 		MavenResult result = shopProject.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=2", "-Dtestorder.select.randomM=1", "-Dtestorder.mode=skip");
+				"-Dtestorder.affected.topN=2", "-Dtestorder.affected.randomM=1", "-Dtestorder.mode=skip");
 		assertThat(result).succeeded();
 
 		// Selected file should exist
@@ -398,7 +398,7 @@ class WorkflowSequenceIT {
 		// Select with topN=1 — should pick the highest scored test
 		MavenResult selectResult = shopProject.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
+				"-Dtestorder.affected.topN=1", "-Dtestorder.affected.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(selectResult).succeeded();
 
 		String selected = shopProject.readFile("target/test-order-selected.txt");
@@ -424,14 +424,14 @@ class WorkflowSequenceIT {
 		// Cycle 1
 		MavenResult select1 = shopProject.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
+				"-Dtestorder.affected.topN=1", "-Dtestorder.affected.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(select1).succeeded();
 		MavenResult remaining1 = shopProject.maven().runRemaining();
 
 		// Cycle 2 (different change)
 		MavenResult select2 = shopProject.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + INVOICE,
-				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
+				"-Dtestorder.affected.topN=1", "-Dtestorder.affected.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(select2).succeeded();
 		MavenResult remaining2 = shopProject.maven().runRemaining();
 

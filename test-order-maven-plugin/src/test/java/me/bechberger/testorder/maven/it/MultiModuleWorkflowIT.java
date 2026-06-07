@@ -235,7 +235,7 @@ class MultiModuleWorkflowIT {
 	void reactorSelectWithCrossModuleDeps() {
 		MavenResult result = multiProject.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + USER_SERVICE,
-				"-Dtestorder.select.topN=10", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
+				"-Dtestorder.affected.topN=10", "-Dtestorder.affected.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(result).succeeded();
 		// Build should pass regardless of whether selection is per-module or
 		// reactor-wide

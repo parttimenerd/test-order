@@ -160,6 +160,25 @@ public final class ParameterValidator {
 	}
 
 	/**
+	 * Validates auto-learn / optimize threshold parameters. Each must be
+	 * non-negative; 0 disables the corresponding behaviour.
+	 */
+	public void validateAutoLearnThresholds(int runThreshold, int diffThreshold, int optimizeEvery) {
+		if (runThreshold < 0) {
+			throw new IllegalArgumentException(
+					"[test-order] testorder.autoLearnRunThreshold must be >= 0 (0 disables); got " + runThreshold);
+		}
+		if (diffThreshold < 0) {
+			throw new IllegalArgumentException(
+					"[test-order] testorder.autoLearnDiffThreshold must be >= 0 (0 disables); got " + diffThreshold);
+		}
+		if (optimizeEvery < 0) {
+			throw new IllegalArgumentException(
+					"[test-order] testorder.auto.optimizeEvery must be >= 0 (0 disables); got " + optimizeEvery);
+		}
+	}
+
+	/**
 	 * Validates that explicit mode has required changedClasses parameter.
 	 */
 	public void validateExplicitModeRequirements(String changeMode, String changedClasses) {

@@ -148,7 +148,7 @@ class SelectMojoTest {
 
 		assertDoesNotThrow(() -> mojo.execute());
 
-		String remainingPath = project.getProperties().getProperty("testorder.select.remainingFile");
+		String remainingPath = project.getProperties().getProperty("testorder.affected.remainingFile");
 		assertNotNull(remainingPath, "remaining file property should be published when deferred tests exist");
 		assertEquals(remainingPath, project.getProperties().getProperty("testorder.remaining.file"));
 		assertTrue(Files.exists(Path.of(remainingPath)), "remaining file should exist on disk");

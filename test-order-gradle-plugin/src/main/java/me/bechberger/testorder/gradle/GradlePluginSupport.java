@@ -79,7 +79,7 @@ final class GradlePluginSupport {
      * Checks Gradle project property / system property first, then falls back to extension default.
      *
      * @param project  the Gradle project
-     * @param key      the property key (e.g., "testorder.select.topN")
+     * @param key      the property key (e.g., "testorder.affected.topN")
      * @param fallback the extension default value supplier
      * @return the resolved string value, or null if neither is set
      */

@@ -107,7 +107,7 @@ class BugReproducerIT {
 		// select with topN=-1 (default) and randomM=0 to isolate topN behavior
 		MavenResult result = shopProject.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
-				"-Dtestorder.select.topN=-1", "-Dtestorder.select.randomM=0");
+				"-Dtestorder.affected.topN=-1", "-Dtestorder.affected.randomM=0");
 		assertThat(result).succeeded();
 
 		// Product change affects ALL 3 tests (Product→Cart→Invoice chain)
@@ -130,8 +130,8 @@ class BugReproducerIT {
 		// the plugin should fail with a helpful message rather than silently selecting
 		// nothing.
 		MavenResult result = shopProject.maven().run("test-order:affected", "-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=com.example.shop.NonExistentClass", "-Dtestorder.select.topN=-1",
-				"-Dtestorder.select.randomM=0");
+				"-Dtestorder.changed.classes=com.example.shop.NonExistentClass", "-Dtestorder.affected.topN=-1",
+				"-Dtestorder.affected.randomM=0");
 		assertThat(result.exitCode()).as("Should fail when all changed classes are unknown").isNotZero();
 		assertThat(result.output()).contains("None of the explicitly specified changed classes exist");
 	}
@@ -144,8 +144,8 @@ class BugReproducerIT {
 		// running "clean test-order:affected test" triggers prepare mojo auto-learn
 		// which can conflict with select's surefire configuration.
 		MavenResult result = shopProject.maven().run("test-order:affected", "-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.select.topN=0", "-Dtestorder.select.randomM=2",
-				"-Dtestorder.select.seed=42");
+				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.affected.topN=0",
+				"-Dtestorder.affected.randomM=2", "-Dtestorder.affected.seed=42");
 		assertThat(result).succeeded();
 
 		String selected = shopProject.readFile("target/test-order-selected.txt");
@@ -170,8 +170,8 @@ class BugReproducerIT {
 		// Use select-only (no test execution) to avoid prepare mojo auto-learn
 		// conflicts
 		MavenResult result = exampleProject.maven().run("test-order:affected", "-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + CALCULATOR, "-Dtestorder.select.topN=0",
-				"-Dtestorder.select.randomM=100"); // way more than available
+				"-Dtestorder.changed.classes=" + CALCULATOR, "-Dtestorder.affected.topN=0",
+				"-Dtestorder.affected.randomM=100"); // way more than available
 		assertThat(result).succeeded();
 
 		// Should not crash — just select what's available
@@ -307,7 +307,8 @@ class BugReproducerIT {
 
 		// Select without index — should fail gracefully
 		MavenResult result = shopProject.maven().run("test-order:affected", "-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0");
+				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.affected.topN=1",
+				"-Dtestorder.affected.randomM=0");
 
 		// Either it auto-aggregates or fails with a meaningful message
 		// It should NOT crash with NPE or ArrayIndexOutOfBoundsException
@@ -352,7 +353,7 @@ class BugReproducerIT {
 		// conflicting with select's surefire configuration
 		MavenResult selectResult = shopProject.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + INVOICE,
-				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
+				"-Dtestorder.affected.topN=1", "-Dtestorder.affected.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(selectResult).succeeded();
 
 		// Immediately run-remaining
@@ -390,15 +391,15 @@ class BugReproducerIT {
 	void selectSeedProducesReproducibleResults() {
 		// Run select only (no test execution) to avoid state mutation between runs
 		MavenResult r1 = shopProject.maven().run("test-order:affected", "-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=2",
-				"-Dtestorder.select.seed=12345");
+				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.affected.topN=1",
+				"-Dtestorder.affected.randomM=2", "-Dtestorder.affected.seed=12345");
 		assertThat(r1).succeeded();
 		String selected1 = shopProject.readFile("target/test-order-selected.txt");
 
 		// Run 2 with same seed — no test execution means state unchanged
 		MavenResult r2 = shopProject.maven().run("test-order:affected", "-Dtestorder.changeMode=explicit",
-				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=2",
-				"-Dtestorder.select.seed=12345");
+				"-Dtestorder.changed.classes=" + PRODUCT, "-Dtestorder.affected.topN=1",
+				"-Dtestorder.affected.randomM=2", "-Dtestorder.affected.seed=12345");
 		assertThat(r2).succeeded();
 		String selected2 = shopProject.readFile("target/test-order-selected.txt");
 

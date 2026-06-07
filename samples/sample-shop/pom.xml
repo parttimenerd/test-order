@@ -44,7 +44,8 @@
             <plugin>
                 <groupId>me.bechberger</groupId>
                 <artifactId>test-order-maven-plugin</artifactId>
-                <version>${project.version}</version>
+                <!-- pinned to match other samples; bump on release -->
+                <version>0.0.1-SNAPSHOT</version>
                 <extensions>true</extensions>
                 <executions>
                     <execution>

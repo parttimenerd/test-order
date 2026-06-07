@@ -43,7 +43,7 @@ Follow-up runs can then use `affected`/`auto` again.
 
 ### Other useful flags
 
-- `-Dtestorder.select.topN=20` — limit to top 20 affected tests
+- `-Dtestorder.affected.topN=20` — limit to top 20 affected tests
 - `-Dtestorder.skip=true` — disable the plugin entirely
 - `mvn test-order:diagnose` — check plugin setup and configuration
 - `mvn test-order:show` — inspect test order & scoring without running

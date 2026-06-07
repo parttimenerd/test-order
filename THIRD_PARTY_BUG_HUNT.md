@@ -198,7 +198,7 @@ no silent failures, no cryptic stack traces):
 |----------|--------|
 | Missing `test-dependencies.lz4` | Falls back to learn mode with clear warning |
 | Truncated/corrupt index (8 bytes) | Detects corruption, triggers re-learn |
-| `test-order:select` with no prior learn | Clear "run learn first" message |
+| `test-order:affected` with no prior learn | Clear "run learn first" message |
 | Inside non-git directory | Falls back to hash-based detection with warning |
 | Stale `.class-id-map.bin.lock` | Harmless — OS FileLock is process-scoped, auto-released |
 | `test-order:diagnose` healthy state | Clean report with no spurious warnings |

@@ -37,6 +37,39 @@ class DiagnosticOperationTest {
 	}
 
 	@Test
+	void warnsWhenGitModeRequestedButNoGitDirFound() throws IOException {
+		Path baseDir = tempDir.resolve(".test-order");
+		Path testSourceRoot = tempDir.resolve("src/test/java");
+		Files.createDirectories(testSourceRoot);
+
+		DiagnosticOperation.DiagnosticConfig config = new DiagnosticOperation.DiagnosticConfig(tempDir,
+				baseDir.resolve("test-order.idx"), baseDir.resolve("test-order.state"), baseDir.resolve("source.hash"),
+				baseDir.resolve("test.hash"), baseDir.resolve("method.hash"), baseDir.resolve("deps"), testSourceRoot,
+				"since-last-commit", PluginLog.NOOP);
+
+		DiagnosticOperation.DiagnosticReport report = DiagnosticOperation.diagnose(config);
+
+		assertTrue(report.results().stream().anyMatch(r -> r.code() == ErrorCode.GIT_NOT_AVAILABLE),
+				"expected a GIT_NOT_AVAILABLE diagnostic when change mode is git-backed but no .git is present");
+	}
+
+	@Test
+	void doesNotWarnAboutGitWhenChangeModeIsAuto() throws IOException {
+		Path baseDir = tempDir.resolve(".test-order");
+		Path testSourceRoot = tempDir.resolve("src/test/java");
+		Files.createDirectories(testSourceRoot);
+
+		DiagnosticOperation.DiagnosticConfig config = new DiagnosticOperation.DiagnosticConfig(tempDir,
+				baseDir.resolve("test-order.idx"), baseDir.resolve("test-order.state"), baseDir.resolve("source.hash"),
+				baseDir.resolve("test.hash"), baseDir.resolve("method.hash"), baseDir.resolve("deps"), testSourceRoot,
+				"since-last-run", PluginLog.NOOP);
+
+		DiagnosticOperation.DiagnosticReport report = DiagnosticOperation.diagnose(config);
+
+		assertTrue(report.results().stream().noneMatch(r -> r.code() == ErrorCode.GIT_NOT_AVAILABLE));
+	}
+
+	@Test
 	void reportsCorruptedIndexWithRecoverySuggestions() throws IOException {
 		Path baseDir = tempDir.resolve(".test-order");
 		Files.createDirectories(baseDir);

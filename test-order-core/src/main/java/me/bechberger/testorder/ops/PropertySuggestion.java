@@ -21,8 +21,8 @@ public final class PropertySuggestion {
 			"testorder.changed.classes.file", "testorder.index.path", "testorder.state.path", "testorder.source.root",
 			"testorder.project.root", "testorder.autoLearnRunThreshold", "testorder.autoLearnDiffThreshold",
 			"testorder.auto.optimizeEvery", "testorder.autoCompactEvery", "testorder.auto.runRemaining",
-			"testorder.auto.active", "testorder.select.topN", "testorder.select.randomM", "testorder.select.seed",
-			"testorder.select.remainingFile", "testorder.select.selectedFile", "testorder.tiered.tier2Fraction",
+			"testorder.auto.active", "testorder.affected.topN", "testorder.affected.randomM", "testorder.affected.seed",
+			"testorder.affected.remainingFile", "testorder.affected.selectedFile", "testorder.tiered.tier2Fraction",
 			"testorder.tiered.weightByDuration", "testorder.tiered.tier1File", "testorder.tiered.tier2File",
 			"testorder.tiered.tier3File", "testorder.tiered.currentTier", "testorder.showOrder.explain",
 			"testorder.showOrder.fullNames", "testorder.showMethodOrder.explain", "testorder.explain.test",
@@ -92,10 +92,10 @@ public final class PropertySuggestion {
 		}
 
 		// Common alias: testorder.select.maxTests / testorder.select.limit →
-		// testorder.select.topN
+		// testorder.affected.topN (also accepts old testorder.select.* names)
 		if (unknownLower.endsWith(".maxtests") || unknownLower.endsWith(".limit") || unknownLower.endsWith(".max")
 				|| unknownLower.endsWith(".count")) {
-			return "testorder.select.topN";
+			return "testorder.affected.topN";
 		}
 
 		// Common alias: testorder.showOrder.format → testorder.show.format
@@ -128,7 +128,7 @@ public final class PropertySuggestion {
 			}
 		}
 
-		// Suffix match (e.g. testorder.topN → testorder.select.topN)
+		// Suffix match (e.g. testorder.topN → testorder.affected.topN)
 		if (unknownLower.startsWith("testorder.")) {
 			String suffix = unknownLower.substring("testorder.".length());
 			String suffixMatch = null;

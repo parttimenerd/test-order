@@ -24,3 +24,22 @@
 - **ML predictions**: [MAVEN_PLUGIN.md § ML Failure Predictions](MAVEN_PLUGIN.md#ml-failure-predictions)
 - **Show command**: [MAVEN_PLUGIN.md § Show Goal](MAVEN_PLUGIN.md#show-goal)
 - **Dashboard**: [CLI_REFERENCE.md § Dashboard](CLI_REFERENCE.md#dashboard)
+
+## Where do I start?
+
+Pick the path that matches your role:
+
+- **New user, just want to try it** → [GETTING_STARTED.md](GETTING_STARTED.md), then poke at [`samples/sample-basic`](../samples/sample-basic/README.md).
+- **Already have a project, want a quick lookup** → [CHEAT_SHEET.md](CHEAT_SHEET.md) (one-page command/property reference).
+- **CI engineer wiring this into a pipeline** → [CI.md](CI.md) plus [ci-examples/](ci-examples/).
+- **Multi-module reactor maintainer** → [MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md).
+- **Tuning scoring or weights** → [SCORING.md](SCORING.md), then the dashboard's Weights tab.
+- **Hunting a flaky test** → [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) + [`samples/sample-od-bugs`](../samples/sample-od-bugs/README.md).
+- **Something is broken** → [CHEAT_SHEET.md § Troubleshooting](CHEAT_SHEET.md), then `mvn test-order:diagnose`.
+- **Contributing or building from source** → [DEVELOPMENT.md](DEVELOPMENT.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Known limitations
+
+Active rough edges, deferred work, and known compromises live in
+[FOLLOWUPS.md](FOLLOWUPS.md). Skim it before filing a feature request — the
+limitation may already be tracked.

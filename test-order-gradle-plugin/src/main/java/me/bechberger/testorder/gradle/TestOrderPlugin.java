@@ -1000,11 +1000,11 @@ public class TestOrderPlugin implements Plugin<Project> {
         // All config (including change detection) runs at execution time
         testTask.doFirst("configureOrderViaWorkflow", t -> {
             // Warn if topN is set in pure order mode — it only applies to select tasks
-            String topNProp = gradleOrSystemProperty(project, "testorder.select.topN");
+            String topNProp = gradleOrSystemProperty(project, "testorder.affected.topN");
             if (topNProp != null) {
-                project.getLogger().warn("[test-order] testorder.select.topN is ignored in order mode "
+                project.getLogger().warn("[test-order] testorder.affected.topN is ignored in order mode "
                         + "(all tests run, just re-ordered). "
-                        + "Did you mean: ./gradlew testOrderSelect -Dtestorder.select.topN=" + topNProp + "?");
+                        + "Did you mean: ./gradlew testOrderAffected -Dtestorder.affected.topN=" + topNProp + "?");
             }
 
             PluginContext pctx = buildPluginContext(project, ext);
@@ -1291,6 +1291,22 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.doLast(t -> runShowMethodOrderReport(project, ext, true));
         });
 
+        // Unified explain task: dispatches to class-level or method-level explanation
+        // based on whether -Ptest contains '#' (method) or not (class).
+        project.getTasks().register("testOrderExplain", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Explain why a test (or method) was scored — uses -Ptest=<FQCN> or -Ptest=<FQCN#method>");
+            task.doLast(t -> {
+                String target = gradleOrSystemProperty(project, "test");
+                if (target != null && target.contains("#")) {
+                    runShowMethodOrderReport(project, ext, true);
+                } else {
+                    runShowOrderReport(project, ext, true, false);
+                }
+            });
+        });
+
         project.getTasks().register("testOrderOptimize", task -> {
             task.setGroup("test-order");
             task.setDescription("Optimise scoring weights from the recorded run history");
@@ -1322,7 +1338,7 @@ public class TestOrderPlugin implements Plugin<Project> {
             });
         });
 
-        project.getTasks().register("testOrderSelect", Test.class, task -> {
+        project.getTasks().register("testOrderAffected", Test.class, task -> {
             configureDerivedTestTask(project, ext, task);
             task.setGroup("test-order");
             task.setDescription("Run the prioritized selected subset of tests and write remaining tests to disk");
@@ -1349,7 +1365,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 task.systemProperty("testorder.debug", "true");
             }
 
-            task.doFirst("testOrderSelectAndOrder", t -> {
+            task.doFirst("testOrderAffectedPrepare", t -> {
                 PluginContext pctx = buildPluginContext(project, ext);
                 // Provide CI download callback and depsDir for auto-aggregation (R7-7/R7-15)
                 Path rootDir = project.getRootProject().getProjectDir().toPath();
@@ -1382,6 +1398,14 @@ public class TestOrderPlugin implements Plugin<Project> {
                                     + "This may indicate no code changes were detected, or topN/randomM are misconfigured.");
                         }
 
+                        // End-of-selection summary (parity with Maven AutoMojo)
+                        var summary = os.selectResult().summary();
+                        if (summary != null && summary.totalCount() > 0) {
+                            for (String line : summary.format().split("\n")) {
+                                project.getLogger().lifecycle(line);
+                            }
+                        }
+
                         if (!effectiveRunRemaining && !selection.remaining().isEmpty()) {
                             project.getLogger().warn(
                                     "[test-order] {} tests were NOT selected and will NOT run.",
@@ -1405,7 +1429,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     } else if (result instanceof AutoWorkflow.Result.Learn learnResult) {
                         throw new GradleException("[test-order] Select cannot proceed in learn mode. "
                                 + learnResult.reason()
-                                + " Run testOrderLearn first, then rerun testOrderSelect.");
+                                + " Run testOrderLearn first, then rerun testOrderAffected.");
                     } else {
                         throw new GradleException("[test-order] Select expected order mode but got: "
                                 + result.getClass().getSimpleName());
@@ -1420,9 +1444,9 @@ public class TestOrderPlugin implements Plugin<Project> {
         project.getTasks().register("testOrderRunRemaining", Test.class, task -> {
             configureDerivedTestTask(project, ext, task);
             task.setGroup("test-order");
-            task.setDescription("Run only the deferred tests written by testOrderSelect");
+            task.setDescription("Run only the deferred tests written by testOrderAffected");
             task.onlyIf("skip auto-finalized run-remaining when select failed", t -> {
-                Task selectTask = project.getTasks().findByName("testOrderSelect");
+                Task selectTask = project.getTasks().findByName("testOrderAffected");
                 return selectTask == null || selectTask.getState().getFailure() == null;
             });
             task.doFirst("testOrderRunRemainingPrepare", t -> {
@@ -2026,13 +2050,13 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  1) First run:   ./gradlew test");
                 log.lifecycle("  2) Inspect:     ./gradlew testOrderShow");
                 log.lifecycle("  3) Dashboard:   ./gradlew testOrderDashboard");
-                log.lifecycle("  CI fast path:   ./gradlew testOrderSelect && ./gradlew testOrderRunRemaining");
+                log.lifecycle("  CI fast path:   ./gradlew testOrderAffected && ./gradlew testOrderRunRemaining");
                 log.lifecycle("");
                 log.lifecycle("TASKS:");
                 log.lifecycle("  test                         Run tests with auto mode (learn or order)");
                 log.lifecycle("  testOrderLearn               Force learn mode (collect dependencies)");
-                log.lifecycle("  testOrderSelect              Run prioritized test subset");
-                log.lifecycle("  testOrderRunRemaining        Run deferred tests from testOrderSelect");
+                log.lifecycle("  testOrderAffected            Run prioritized test subset");
+                log.lifecycle("  testOrderRunRemaining        Run deferred tests from testOrderAffected");
                 log.lifecycle("  testOrderTieredSelect        Three-tier CI test selection");
                 log.lifecycle("  testOrderRunTier             Run tier 2 or 3 from tiered-select");
                 log.lifecycle("  testOrderShow                Unified view: class order, method order, ML health");
@@ -2782,13 +2806,13 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static int resolveSelectTopN(Project project, TestOrderExtension ext) {
-        String override = gradleOrSystemProperty(project, "testorder.select.topN");
+        String override = gradleOrSystemProperty(project, "testorder.affected.topN");
         if (override != null && !override.isBlank()) {
             int value;
             try {
                 value = Integer.parseInt(override);
             } catch (NumberFormatException e) {
-                throw new GradleException("[test-order] Invalid value for testorder.select.topN: '"
+                throw new GradleException("[test-order] Invalid value for testorder.affected.topN: '"
                         + override + "' (expected integer)");
             }
             if (value == 0) {
@@ -2803,12 +2827,12 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static int resolveSelectRandomM(Project project, TestOrderExtension ext) {
-        String override = gradleOrSystemProperty(project, "testorder.select.randomM");
+        String override = gradleOrSystemProperty(project, "testorder.affected.randomM");
         if (override != null && !override.isBlank()) {
             try {
                 return Integer.parseInt(override);
             } catch (NumberFormatException e) {
-                throw new GradleException("[test-order] Invalid value for testorder.select.randomM: '"
+                throw new GradleException("[test-order] Invalid value for testorder.affected.randomM: '"
                         + override + "' (expected integer)");
             }
         }
