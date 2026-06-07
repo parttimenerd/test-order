@@ -617,7 +617,12 @@ public final class DetectDependenciesOperation {
 
 				String suffix = desc.contains("[carried from prior run]") ? "" : " [carried from prior run]";
 				results.add(new ODResult(victim, type, List.of(victim), desc + suffix, 0.9));
-				idx = victimIdx + 10;
+				// Advance past the closing quote of the victim string value to avoid
+				// re-finding the same "victim" key on the next iteration.
+				int colonAfterVictim = content.indexOf(':', victimIdx);
+				int openQuote = colonAfterVictim > 0 ? content.indexOf('"', colonAfterVictim + 1) : -1;
+				int closeQuote = openQuote > 0 ? content.indexOf('"', openQuote + 1) : -1;
+				idx = closeQuote > 0 ? closeQuote + 1 : victimIdx + victim.length() + 10;
 			}
 		} catch (IOException e) {
 			// Ignore

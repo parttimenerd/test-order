@@ -124,6 +124,11 @@ public class OrderConstraintManager {
 		}
 
 		// Simple greedy: if polluter is immediately before victim, separate them.
+		// After any swap we re-check the same position once (i--) so cascading
+		// violations are not missed (e.g. P→V1 and P→V2: after V1 is moved away,
+		// we re-check whether the new element at i+1 is also a victim of P).
+		// A second re-check is skipped to avoid cycling on contradictory constraints.
+		boolean recheck = false;
 		for (int i = 0; i < order.size() - 1; i++) {
 			String key = order.get(i) + " → " + order.get(i + 1);
 			if (mustNotPairs.contains(key)) {
@@ -136,8 +141,16 @@ public class OrderConstraintManager {
 					// Pair is at the end — move victim before the polluter instead
 					String victim = order.remove(i + 1);
 					order.add(i, victim);
-					// i now points to victim; increment will re-check the same polluter position
 				}
+				// Re-check the same position once; skip double-recheck to avoid cycling.
+				if (!recheck) {
+					i--;
+					recheck = true;
+				} else {
+					recheck = false;
+				}
+			} else {
+				recheck = false;
 			}
 		}
 	}

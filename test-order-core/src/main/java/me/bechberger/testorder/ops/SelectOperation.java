@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
@@ -39,11 +38,10 @@ public final class SelectOperation {
 	 *             if writing test lists fails
 	 */
 	public static SelectResult select(SelectConfig config) throws IOException {
-		// R14-6: Warn if randomM is explicitly configured but topN=-1 makes it a no-op
-		// Only warn when topN is *not* the default (-1), meaning the user set randomM
-		// without also setting topN — or when topN=-1 is explicitly combined with
-		// randomM.
-		// Skip this warning for default configuration to avoid noise on every run.
+		// Warn when topN=-1 (all tests) is combined with a non-default randomM, since
+		// randomM has no effect in that case. Skip when randomM is also the default
+		// (10)
+		// to avoid noise on every run.
 		if (config.topN() == -1 && config.randomM() > 0 && config.randomM() != 10) {
 			config.log().warn("[test-order] randomM=" + config.randomM()
 					+ " has no effect when topN=-1 (all tests selected). Set topN to a positive number to use random sampling.");
@@ -74,8 +72,7 @@ public final class SelectOperation {
 			if (totalTests > 0) {
 				List<String> weakSignalClasses = new ArrayList<>();
 				for (String changed : config.changedClasses()) {
-					long matchCount = config.depMap().testClasses().stream()
-							.filter(t -> config.depMap().get(t).contains(changed)).count();
+					long matchCount = config.depMap().getAffectedTests(Set.of(changed)).size();
 					if (matchCount > totalTests / 2) {
 						weakSignalClasses.add(changed + " (" + (100 * matchCount / totalTests) + "%)");
 					}
@@ -125,7 +122,8 @@ public final class SelectOperation {
 		} else {
 			int alwaysRunCount = (int) selection.selected().stream().filter(t -> config.alwaysRunClasses().contains(t))
 					.count();
-			int newCount = (int) selection.selected().stream().filter(t -> !config.depMap().testClasses().contains(t))
+			int newCount = (int) selection.selected().stream()
+					.filter(t -> !config.depMap().testClasses().contains(t) && !config.alwaysRunClasses().contains(t))
 					.count();
 			int fastCount = selection.randomFastCount();
 			int scoredCount = selection.selected().size() - alwaysRunCount - newCount - fastCount;

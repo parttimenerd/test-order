@@ -232,7 +232,8 @@ public class ChangeDetector {
 			return Collections.emptySet();
 		}
 		Set<String> result = new TreeSet<>();
-		for (String cls : explicitClasses.split(",")) {
+		String sep = explicitClasses.contains(",") || !explicitClasses.contains(";") ? "," : ";";
+		for (String cls : explicitClasses.split(sep)) {
 			String trimmed = cls.trim();
 			if (!trimmed.isEmpty()) {
 				result.add(trimmed);
