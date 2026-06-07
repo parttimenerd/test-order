@@ -381,6 +381,17 @@ public final class ChangeAnalysis {
 				StaticCallGraphAnalyzer.ScanResult testScan = StaticCallGraphAnalyzer
 						.scanPublic(java.util.List.of(ctx.testClassesDir()));
 				Map<String, Set<String>> aug = BytecodeDependencyAugmenter.computeAugmentation(testScan, depMap);
+				// Filter augmented deps by includePackages so framework classes (JUnit etc.)
+				// aren't re-added
+				String incPkgs = ctx.includePackages();
+				if (incPkgs != null && !incPkgs.isBlank()) {
+					String[] prefixes = incPkgs.split("[,;]+");
+					aug = aug.entrySet().stream().collect(java.util.stream.Collectors.toMap(java.util.Map.Entry::getKey,
+							e -> e.getValue().stream().filter(dep -> java.util.Arrays.stream(prefixes)
+									.anyMatch(pfx -> dep.startsWith(pfx) && (dep.length() == pfx.length()
+											|| dep.charAt(pfx.length()) == '.' || dep.charAt(pfx.length()) == '$')))
+									.collect(java.util.stream.Collectors.toSet())));
+				}
 				if (!aug.isEmpty()) {
 					int total = 0;
 					for (Set<String> v : aug.values()) {

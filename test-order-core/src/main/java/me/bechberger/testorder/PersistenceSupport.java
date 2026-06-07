@@ -126,8 +126,8 @@ public final class PersistenceSupport {
 			IOException lastIo = null;
 			java.nio.channels.OverlappingFileLockException lastOverlap = null;
 			for (int attempt = 0; attempt < 50; attempt++) {
-				try (FileChannel channel = FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-						FileLock ignored = channel.lock()) {
+				try (FileChannel channel = FileChannel.open(lockFile, StandardOpenOption.CREATE,
+						StandardOpenOption.WRITE); FileLock ignored = channel.lock()) {
 					setOwnerOnlyPermissions(lockFile);
 					HELD_LOCKS.get().add(lockFile);
 					try {
@@ -148,9 +148,11 @@ public final class PersistenceSupport {
 					break;
 				}
 			}
-			if (lastIo != null) throw lastIo;
+			if (lastIo != null)
+				throw lastIo;
 			IOException ex = new IOException("Could not acquire lock on " + lockFile + " after 50 attempts");
-			if (lastOverlap != null) ex.initCause(lastOverlap);
+			if (lastOverlap != null)
+				ex.initCause(lastOverlap);
 			throw ex;
 		}
 	}

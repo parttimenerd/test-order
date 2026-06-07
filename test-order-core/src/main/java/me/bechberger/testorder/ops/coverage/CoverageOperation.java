@@ -164,7 +164,9 @@ public final class CoverageOperation {
 									? pct + "% (" + c.exercisedMembers().size() + "/" + c.allMembers().size() + ")"
 									: c.exercisedMembers().size() + " exercised")
 							: "n/a";
-					String uncovered = (c.hasMemberCoverage() && pct >= 0) ? String.join(", ", c.uncoveredMembers()) : "";
+					String uncovered = (c.hasMemberCoverage() && pct >= 0)
+							? String.join(", ", c.uncoveredMembers())
+							: "";
 					sb.append("| `").append(c.fullyQualifiedName()).append("` | ").append(c.testCount()).append(" | ")
 							.append(memberCov).append(" | ").append(uncovered).append(" |\n");
 				}
@@ -294,8 +296,8 @@ public final class CoverageOperation {
 		if (stats.hasMemberData()) {
 			int pct = stats.memberCoveragePercent();
 			if (pct >= 0) {
-				out.println("Member coverage:    " + stats.exercisedMembers() + "/" + stats.totalMembers() + " ("
-						+ pct + "%)");
+				out.println("Member coverage:    " + stats.exercisedMembers() + "/" + stats.totalMembers() + " (" + pct
+						+ "%)");
 			} else {
 				out.println("Member coverage:    " + stats.exercisedMembers() + " exercised (total unknown)");
 			}

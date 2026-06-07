@@ -175,6 +175,7 @@ public class DashboardGenerator {
 		root.put("changedTestClasses", new ArrayList<>(changedTests));
 
 		// test entries
+		Map<String, Double> killRates = state.getKillRates();
 		List<Object> tests = new ArrayList<>();
 		for (int i = 0; i < scored.size(); i++) {
 			ScoredTest st = scored.get(i);
@@ -199,7 +200,7 @@ public class DashboardGenerator {
 			t.put("deps", deps != null ? new ArrayList<>(deps) : new ArrayList<>());
 			if (depMap.hasMemberDeps()) {
 				Set<String> memberDeps = depMap.getMemberDeps(st.name());
-				t.put("memberDeps", memberDeps != null ? new ArrayList<>(memberDeps) : null);
+				t.put("memberDeps", memberDeps.isEmpty() ? null : new ArrayList<>(memberDeps));
 			} else {
 				t.put("memberDeps", null);
 			}
@@ -234,7 +235,6 @@ public class DashboardGenerator {
 				t.put("mlPFail", pFail != null ? Math.round(pFail * 10000.0) / 10000.0 : null);
 			}
 			// Mutation kill rate (if available)
-			Map<String, Double> killRates = state.getKillRates();
 			if (!killRates.isEmpty()) {
 				Double kr = killRates.get(st.name());
 				t.put("killRate", kr != null ? Math.round(kr * 10000.0) / 10000.0 : null);
@@ -316,7 +316,6 @@ public class DashboardGenerator {
 		}
 
 		// Mutation testing section (from state kill rates)
-		Map<String, Double> killRates = state.getKillRates();
 		if (!killRates.isEmpty()) {
 			Map<String, Object> mutation = new LinkedHashMap<>();
 			mutation.put("enabled", true);
@@ -577,7 +576,7 @@ public class DashboardGenerator {
 		Map<String, Object> result = new LinkedHashMap<>();
 		result.put("enabled", true);
 		result.put("modules", modules);
-		int total = modules.stream().mapToInt(m -> (int) m.get("count")).sum();
+		int total = modules.stream().mapToInt(m -> ((Number) m.get("count")).intValue()).sum();
 		result.put("totalUncertainClasses", total);
 		return result;
 	}
@@ -621,7 +620,10 @@ public class DashboardGenerator {
 			return 0;
 		Arrays.sort(durations);
 		int mid = durations.length / 2;
-		return durations.length % 2 == 0 ? (durations[mid - 1] + durations[mid]) / 2 : durations[mid];
+		// Use overflow-safe formula: a + (b - a) / 2 instead of (a + b) / 2.
+		return durations.length % 2 == 0
+				? durations[mid - 1] + (durations[mid] - durations[mid - 1]) / 2
+				: durations[mid];
 	}
 
 	/**

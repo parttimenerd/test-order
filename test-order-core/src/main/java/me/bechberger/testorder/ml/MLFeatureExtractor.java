@@ -299,7 +299,7 @@ public final class MLFeatureExtractor {
 		int depOverlapCount = 0;
 		if (!deps.isEmpty() && !changedClasses.isEmpty()) {
 			for (String dep : deps) {
-				if (changedClasses.contains(dep)) {
+				if (DependencyMap.changedClassesContains(changedClasses, dep)) {
 					depOverlapCount++;
 				}
 			}

@@ -7,9 +7,12 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Pure-JDK utility for restoring offline-instrumented class backups. Mirrors
@@ -27,10 +30,24 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Named static inner classes ({@link CopyVisitor}, {@link DeleteVisitor}) are
  * used instead of anonymous classes so they can be pre-loaded by name before
  * Maven's classloader teardown, guaranteeing the shutdown hook can run them.
+ *
+ * <p>
+ * <b>Defensive guarantees:</b>
+ * <ul>
+ * <li>Per-backup {@link ReentrantLock} serializes concurrent restore attempts
+ * (e.g. {@code afterSessionEnd} racing the shutdown hook).</li>
+ * <li>Restore completes the file copy phase fully before deleting the marker;
+ * this means a crash mid-restore leaves the marker in place and the next
+ * session's {@code restoreLeftoverInstrumentation} sweep will retry.</li>
+ * <li>If <i>any</i> file copy fails, the marker is preserved so a follow-up
+ * sweep can finish the job. We refuse to leave a half-instrumented classpath
+ * silently.</li>
+ * </ul>
  */
 public final class ClassBackupRestorer {
 
 	private static final Set<Path> pendingBackups = ConcurrentHashMap.newKeySet();
+	private static final ConcurrentHashMap<Path, ReentrantLock> backupLocks = new ConcurrentHashMap<>();
 	private static final AtomicBoolean shutdownHookRegistered = new AtomicBoolean(false);
 
 	private ClassBackupRestorer() {
@@ -44,7 +61,8 @@ public final class ClassBackupRestorer {
 		if (backupDir == null) {
 			return;
 		}
-		pendingBackups.add(backupDir);
+		Path normalized = backupDir.toAbsolutePath().normalize();
+		pendingBackups.add(normalized);
 		if (shutdownHookRegistered.compareAndSet(false, true)) {
 			preloadClasses();
 			Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -80,19 +98,26 @@ public final class ClassBackupRestorer {
 	 * Called from the lifecycle participant when available.
 	 */
 	public static void restoreAll() {
-		for (Path backup : pendingBackups) {
+		// Iterate over a snapshot — restore() may take a per-backup lock and we
+		// don't want to hold the iterator while another thread modifies the set.
+		List<Path> snapshot = new ArrayList<>(pendingBackups);
+		for (Path backup : snapshot) {
 			try {
 				restore(backup);
+				pendingBackups.remove(backup);
 			} catch (Exception e) {
 				System.err.println(
 						"[test-order] ClassBackupRestorer: restore failed for " + backup + ": " + e.getMessage());
 			}
 		}
-		pendingBackups.clear();
 	}
 
 	/**
 	 * Restores a single backup directory.
+	 *
+	 * <p>
+	 * Acquires a per-backup lock so concurrent calls from the lifecycle participant
+	 * and the JVM shutdown hook serialize correctly.
 	 *
 	 * @return true if the backup was present and restored
 	 */
@@ -100,19 +125,76 @@ public final class ClassBackupRestorer {
 		if (backupDir == null || !Files.isDirectory(backupDir)) {
 			return false;
 		}
+		Path normalized = backupDir.toAbsolutePath().normalize();
+		ReentrantLock lock = backupLocks.computeIfAbsent(normalized, k -> new ReentrantLock());
+		lock.lock();
+		try {
+			return restoreLocked(normalized);
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	private static boolean restoreLocked(Path backupDir) throws IOException {
 		Path marker = backupDir.resolve(".instrumented");
 		if (!Files.exists(marker)) {
 			return false;
 		}
-		Path classesDir = Path.of(Files.readString(marker).trim());
+		String classesDirString;
+		try {
+			classesDirString = Files.readString(marker).trim();
+		} catch (IOException e) {
+			System.err.println("[test-order] ClassBackupRestorer: cannot read marker at " + marker
+					+ "; preserving for retry: " + e.getMessage());
+			return false;
+		}
+		if (classesDirString.isEmpty()) {
+			System.err.println("[test-order] ClassBackupRestorer: marker at " + marker + " is empty; deleting");
+			Files.deleteIfExists(marker);
+			return false;
+		}
+		Path classesDir = Path.of(classesDirString);
+		if (!Files.isDirectory(classesDir)) {
+			// Classes dir gone (e.g. mvn clean removed target/classes). Backup is
+			// stranded — clean it up so we don't keep retrying forever.
+			System.err.println("[test-order] ClassBackupRestorer: target classes dir " + classesDir
+					+ " no longer exists; cleaning up stranded backup " + backupDir);
+			Files.deleteIfExists(marker);
+			try {
+				Files.walkFileTree(backupDir, new DeleteVisitor(backupDir));
+			} catch (IOException ignored) {
+			}
+			return false;
+		}
 
-		Files.walkFileTree(backupDir, new CopyVisitor(backupDir, classesDir));
+		// Phase 1: copy all backed-up files to the classes dir. Track failures —
+		// if anything fails, the marker stays in place so the next session retries.
+		CopyVisitor visitor = new CopyVisitor(backupDir, classesDir);
+		Files.walkFileTree(backupDir, visitor);
+		if (visitor.failures > 0) {
+			System.err.println("[test-order] ClassBackupRestorer: " + visitor.failures
+					+ " file(s) failed to restore in " + backupDir + "; marker preserved for retry on next build");
+			return false;
+		}
 
-		// Delete marker so the restore is detected as complete
-		Files.deleteIfExists(marker);
+		// Phase 2: only after a fully successful copy do we delete the marker.
+		// This way a crash mid-copy leaves the marker so we retry next time.
+		try {
+			Files.deleteIfExists(marker);
+		} catch (IOException e) {
+			System.err.println(
+					"[test-order] ClassBackupRestorer: failed to delete marker at " + marker + ": " + e.getMessage());
+			// Even though the copy succeeded, leave the marker — a duplicate
+			// restore on the next run is harmless.
+			return true;
+		}
 
-		// Clean up backup directory (best-effort)
-		Files.walkFileTree(backupDir, new DeleteVisitor(backupDir));
+		// Phase 3: delete the backup contents (best-effort). Stale backup files
+		// don't break correctness; they just waste disk.
+		try {
+			Files.walkFileTree(backupDir, new DeleteVisitor(backupDir));
+		} catch (IOException ignored) {
+		}
 
 		return true;
 	}
@@ -120,6 +202,7 @@ public final class ClassBackupRestorer {
 	static final class CopyVisitor extends SimpleFileVisitor<Path> {
 		private final Path backupDir;
 		private final Path classesDir;
+		int failures;
 
 		CopyVisitor(Path backupDir, Path classesDir) {
 			this.backupDir = backupDir;
@@ -132,9 +215,13 @@ public final class ClassBackupRestorer {
 				try {
 					Path relative = backupDir.relativize(file);
 					Path target = classesDir.resolve(relative);
-					Files.createDirectories(target.getParent());
+					Path parent = target.getParent();
+					if (parent != null) {
+						Files.createDirectories(parent);
+					}
 					Files.copy(file, target, StandardCopyOption.REPLACE_EXISTING);
 				} catch (IOException e) {
+					failures++;
 					System.err.println(
 							"[test-order] ClassBackupRestorer: failed to restore " + file + ": " + e.getMessage());
 				}

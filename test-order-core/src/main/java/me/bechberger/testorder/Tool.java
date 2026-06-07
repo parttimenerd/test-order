@@ -40,11 +40,12 @@ public class Tool implements Runnable {
 	}
 
 	/**
-	 * Splits a comma-separated class list, trimming whitespace and ignoring
-	 * empty/duplicate entries.
+	 * Splits a comma-separated (or semicolon-separated) class list, trimming
+	 * whitespace and ignoring empty/duplicate entries.
 	 */
 	private static Set<String> splitClasses(String csv) {
-		return Arrays.stream(csv.split(",")).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet());
+		String sep = csv.contains(",") || !csv.contains(";") ? "," : ";";
+		return Arrays.stream(csv.split(sep)).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet());
 	}
 
 	/**
@@ -358,10 +359,8 @@ public class Tool implements Runnable {
 				};
 				Path resolvedState = stateFile;
 				if (resolvedState == null) {
-					// Try to auto-detect state file next to the index
-					Path candidate = indexFile.getParent() != null
-							? indexFile.getParent().resolve("state.lz4")
-							: Path.of(".test-order/state.lz4");
+					// The state file is always written to .test-order/state.lz4 relative to cwd
+					Path candidate = Path.of(".test-order/state.lz4");
 					if (java.nio.file.Files.exists(candidate)) {
 						resolvedState = candidate;
 					}
@@ -580,7 +579,7 @@ public class Tool implements Runnable {
 					List<StructuralDiff.FileDiff> diffs = StructuralDiff.diffSinceLastCommit(root);
 					System.out.print(StructuralDiff.formatReport(diffs));
 				} else {
-					List<StructuralDiff.FileDiff> diffs = StructuralDiff.diffUncommitted(root);
+					List<StructuralDiff.FileDiff> diffs = StructuralDiff.diffUncommitted(root, gitRef);
 					System.out.print(StructuralDiff.formatReport(diffs));
 				}
 				return 0;

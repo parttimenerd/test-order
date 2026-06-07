@@ -244,12 +244,20 @@ public final class ParameterValidator {
 	 * semicolons are accepted as a fallback).
 	 */
 	public void warnChangedClassesFormat(String changedClasses) {
+		warnChangedClassesFormat(changedClasses, "testorder.changed.classes");
+	}
+
+	/**
+	 * Variant that allows the caller to supply the property name used in the
+	 * warning message (e.g. {@code "testorder.changed.test.classes"}).
+	 */
+	public void warnChangedClassesFormat(String changedClasses, String propertyName) {
 		if (changedClasses == null || changedClasses.isBlank()) {
 			return;
 		}
 		if (!changedClasses.contains(",") && changedClasses.contains(";")) {
-			log.warn("[test-order] testorder.changed.classes uses semicolons as separators, but only commas are"
-					+ " documented. Semicolons are accepted as a fallback. Prefer:" + " -Dtestorder.changed.classes="
+			log.warn("[test-order] " + propertyName + " uses semicolons as separators, but only commas are"
+					+ " documented. Semicolons are accepted as a fallback. Prefer:" + " -D" + propertyName + "="
 					+ changedClasses.replace(';', ','));
 		}
 	}

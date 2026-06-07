@@ -188,7 +188,7 @@ public class MethodScorer {
 		}
 		long intersectionSize = 0;
 		for (String dep : methodDeps) {
-			if (changedClasses.contains(dep))
+			if (DependencyMap.changedClassesContains(changedClasses, dep))
 				intersectionSize++;
 		}
 		if (intersectionSize == 0)

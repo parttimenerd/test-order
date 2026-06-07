@@ -84,7 +84,8 @@ public final class TestOrderConfigResolver {
 		Set<String> result = new LinkedHashSet<>();
 		String explicit = getConfig(TestOrderConfig.CHANGED_CLASSES);
 		if (explicit != null && !explicit.isBlank()) {
-			for (String cls : explicit.split(",")) {
+			String sep = explicit.contains(",") || !explicit.contains(";") ? "," : ";";
+			for (String cls : explicit.split(sep)) {
 				String trimmed = cls.trim();
 				if (!trimmed.isEmpty())
 					result.add(trimmed);
@@ -115,7 +116,8 @@ public final class TestOrderConfigResolver {
 		Set<String> result = new LinkedHashSet<>();
 		String explicit = getConfig(TestOrderConfig.CHANGED_TEST_CLASSES);
 		if (explicit != null && !explicit.isBlank()) {
-			for (String cls : explicit.split(",")) {
+			String sep = explicit.contains(",") || !explicit.contains(";") ? "," : ";";
+			for (String cls : explicit.split(sep)) {
 				String trimmed = cls.trim();
 				if (!trimmed.isEmpty())
 					result.add(trimmed);

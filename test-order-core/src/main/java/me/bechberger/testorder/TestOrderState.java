@@ -190,6 +190,10 @@ public class TestOrderState {
 					max = ((Number) table.get("max")).intValue();
 				if (min == -1 && max == -1 && table.contains("range")) {
 					List<Number> range = table.get("range");
+					if (range.size() != 2) {
+						throw new IllegalArgumentException("Weight '" + name
+								+ "': range must have exactly 2 elements [min, max], got " + range.size());
+					}
 					min = range.get(0).intValue();
 					max = range.get(1).intValue();
 				}
@@ -526,8 +530,12 @@ public class TestOrderState {
 		this.killRates = new java.util.HashMap<>(rates);
 	}
 
-	public int getMutationTotalMutants() { return mutationTotalMutants; }
-	public int getMutationTotalKilled() { return mutationTotalKilled; }
+	public int getMutationTotalMutants() {
+		return mutationTotalMutants;
+	}
+	public int getMutationTotalKilled() {
+		return mutationTotalKilled;
+	}
 
 	public void setMutationTotals(int totalMutants, int totalKilled) {
 		this.mutationTotalMutants = totalMutants;

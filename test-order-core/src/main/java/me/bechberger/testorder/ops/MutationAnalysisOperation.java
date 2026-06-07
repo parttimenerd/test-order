@@ -437,11 +437,11 @@ public final class MutationAnalysisOperation {
 						testClass = testClass.substring(0, dotEngine);
 					}
 					// Normalise inner-class separator: PIT emits "Outer$Inner" which already
-						// matches the dep-map format — no replacement needed.
-						// Match against known test classes (fallback for package mismatches)
-						if (!knownTestClasses.contains(testClass)) {
-							testClass = matchKnownClass(testClass, knownTestClasses);
-						}
+					// matches the dep-map format — no replacement needed.
+					// Match against known test classes (fallback for package mismatches)
+					if (!knownTestClasses.contains(testClass)) {
+						testClass = matchKnownClass(testClass, knownTestClasses);
+					}
 				}
 
 				if (detected && testClass != null) {
