@@ -293,17 +293,14 @@ public final class DiagnosticOperation {
 		}
 		return DiagnosticResult.info(me.bechberger.testorder.ErrorCode.FALLBACK_PAYLOAD_PENDING,
 				"Unprocessed fallback payload from a previous learn run (\"Wrote fallback payloads\" in log)",
-				List.of(
-						"Most likely cause: <extensions>true</extensions> is missing from the plugin declaration.",
+				List.of("Most likely cause: <extensions>true</extensions> is missing from the plugin declaration.",
 						"Fix: add <extensions>true</extensions> to the test-order-maven-plugin block in pom.xml:",
-						"  <plugin>",
-						"    <groupId>me.bechberger</groupId>",
+						"  <plugin>", "    <groupId>me.bechberger</groupId>",
 						"    <artifactId>test-order-maven-plugin</artifactId>",
-						"    <extensions>true</extensions>   ← add this line",
-						"    ...",
-						"  </plugin>",
+						"    <extensions>true</extensions>   ← add this line", "    ...", "  </plugin>",
 						"Without it, the index is written one build late (results are still correct but noisy).",
-						"The pending payload at " + fallbackFile.toAbsolutePath() + " will be merged on the next run."));
+						"The pending payload at " + fallbackFile.toAbsolutePath()
+								+ " will be merged on the next run."));
 	}
 
 	/**

@@ -353,7 +353,8 @@ class ToolTest {
 		String output = new String(outputBytes);
 
 		assertEquals(1, exit, "Running Tool without subcommand should exit with status 1");
-		assertTrue(output.contains("Specify a subcommand"), "Expected missing-subcommand message, got: " + output);
+		assertTrue(output.contains("Usage: test-order <subcommand>"),
+				"Expected missing-subcommand message, got: " + output);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

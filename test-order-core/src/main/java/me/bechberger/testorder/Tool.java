@@ -500,7 +500,8 @@ public class Tool implements Runnable {
 
 		@Override
 		public Integer call() {
-			System.err.println("Warning: 'select' is deprecated — use 'mvn test-order:affected test' in Maven instead.");
+			System.err
+					.println("Warning: 'select' is deprecated — use 'mvn test-order:affected test' in Maven instead.");
 			if (topN < -1) {
 				System.err.println("Error: --top-n must be >= -1 (got " + topN + "). Use -1 for all affected tests.");
 				return 1;

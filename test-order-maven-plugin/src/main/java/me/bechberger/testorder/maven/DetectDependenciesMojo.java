@@ -65,8 +65,7 @@ public class DetectDependenciesMojo extends AbstractTestOrderMojo {
 		// Without this guard, Maven invokes execute() on every module (non-aggregator),
 		// causing O(N²) detection runs and N redundant reactor installs.
 		if (session != null && session.getProjects() != null && session.getProjects().size() > 1
-				&& session.getTopLevelProject() != null
-				&& !project.equals(session.getTopLevelProject())) {
+				&& session.getTopLevelProject() != null && !project.equals(session.getTopLevelProject())) {
 			getLog().debug("[test-order] Skipping detect-dependencies — handled by reactor root.");
 			return;
 		}
