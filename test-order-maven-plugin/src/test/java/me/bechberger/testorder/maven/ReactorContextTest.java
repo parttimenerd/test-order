@@ -342,15 +342,46 @@ class ReactorContextTest {
 	void inferredMultiModule_walkUpDoesNotFireWhenInvokedFromModuleDir() throws IOException {
 		// Same physical layout as above, but the user `cd`s into module-x and runs
 		// mvn from there. executionRootDir is then the module dir, NOT the root.
-		// We must NOT treat the outer dir as a reactor root in this case — the user
-		// might be working on the module standalone.
+		// However, because module-x's Maven parent chain leads to root-dir, we DO
+		// treat it as a multi-module reactor — this is the actual demo flow
+		// (cd into a submodule, run `mvn test-order:affected test`).
 		Path rootDir = tempDir.resolve("sdk-root2");
 		Path moduleDir = rootDir.resolve("module-x");
 		Files.createDirectories(rootDir.resolve(".test-order"));
 		Files.writeString(rootDir.resolve("pom.xml"), "<project/>");
 		Files.createDirectories(moduleDir);
 
+		MavenProject root = mockProject("sdk-root2", rootDir);
 		MavenProject moduleX = mockProject("module-x", moduleDir);
+		when(moduleX.getParent()).thenReturn(root);
+		when(session.getProjects()).thenReturn(List.of(moduleX));
+		when(session.getTopLevelProject()).thenReturn(moduleX);
+		when(session.getExecutionRootDirectory()).thenReturn(moduleDir.toString());
+
+		var request = mock(org.apache.maven.execution.MavenExecutionRequest.class);
+		when(session.getRequest()).thenReturn(request);
+		when(request.getMultiModuleProjectDirectory()).thenReturn(moduleDir.toFile());
+
+		ReactorContext ctx = new ReactorContext(session, moduleX);
+		assertThat(ctx.isMultiModule()).isTrue();
+		assertThat(ctx.resolveIndexFile(null)).isEqualTo(rootDir.resolve(".test-order/test-dependencies.lz4"));
+	}
+
+	@Test
+	void inferredMultiModule_walkUpDoesNotFireWithoutParentChainOrExecRootMatch() throws IOException {
+		// Module physically inside an outer dir that has pom.xml + .test-order/, but
+		// the module's Maven parent is unrelated AND the user invoked mvn from the
+		// module dir. Must NOT treat the outer as a reactor root — same shape as the
+		// third-party-nested-project case but with executionRootDir == module.
+		Path rootDir = tempDir.resolve("sdk-root3");
+		Path moduleDir = rootDir.resolve("module-x");
+		Files.createDirectories(rootDir.resolve(".test-order"));
+		Files.writeString(rootDir.resolve("pom.xml"), "<project/>");
+		Files.createDirectories(moduleDir);
+
+		MavenProject moduleX = mockProject("module-x", moduleDir);
+		// No parent → not part of the outer reactor
+		when(moduleX.getParent()).thenReturn(null);
 		when(session.getProjects()).thenReturn(List.of(moduleX));
 		when(session.getTopLevelProject()).thenReturn(moduleX);
 		when(session.getExecutionRootDirectory()).thenReturn(moduleDir.toString());

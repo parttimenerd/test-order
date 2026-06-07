@@ -64,15 +64,17 @@ final class ReactorContext {
 			inferredMulti = true;
 		}
 
-		// Tertiary detection: -pl <module> in a project without `.mvn/`. Maven then
-		// sets multiModuleProjectDirectory to the module dir, hiding the reactor.
-		// Walk up from the module looking for an ancestor that has both a pom.xml
-		// and a `.test-order/` directory. Only treat it as the reactor root when the
-		// user invoked mvn from that directory (executionRootDir == walkedRoot) — this
-		// avoids firing for a third-party project nested inside an unrelated repo.
-		if (!explicitMulti && !inferredMulti && executionRootDir != null) {
+		// Tertiary detection: -pl <module> in a project without `.mvn/`, OR running
+		// mvn directly from a module directory. Maven then sets
+		// multiModuleProjectDirectory to the module dir, hiding the reactor. Walk up
+		// from the module looking for an ancestor that has both a pom.xml and a
+		// `.test-order/` directory. To avoid firing for a third-party project nested
+		// inside an unrelated repo, only treat the walked root as the reactor root
+		// when this project's Maven parent chain leads back to it (the parent POM's
+		// basedir matches the walked root) OR the user invoked mvn from there.
+		if (!explicitMulti && !inferredMulti) {
 			Path walkedRoot = findReactorRootWithSharedDir(projectDir);
-			if (walkedRoot != null && walkedRoot.equals(executionRootDir)) {
+			if (walkedRoot != null && (walkedRoot.equals(executionRootDir) || isParentChain(project, walkedRoot))) {
 				inferredMulti = true;
 				mmDir = walkedRoot;
 			}
@@ -106,6 +108,25 @@ final class ReactorContext {
 			dir = dir.getParent();
 		}
 		return null;
+	}
+
+	/**
+	 * Returns {@code true} if the project's Maven parent chain leads to a project
+	 * whose basedir is {@code candidate}. This confirms the project is genuinely a
+	 * submodule of the candidate root (not a third-party project nested inside an
+	 * unrelated Maven tree).
+	 */
+	private static boolean isParentChain(MavenProject project, Path candidate) {
+		MavenProject p = project.getParent();
+		int safety = 32;
+		while (p != null && safety-- > 0) {
+			File base = p.getBasedir();
+			if (base != null && base.toPath().normalize().equals(candidate)) {
+				return true;
+			}
+			p = p.getParent();
+		}
+		return false;
 	}
 
 	private static Path resolveExecutionRootDir(MavenSession session) {
