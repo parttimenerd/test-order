@@ -12,7 +12,7 @@ import me.bechberger.testorder.TestSelector;
 
 /**
  * Configures Surefire to run the remaining test classes that were deferred by a
- * previous {@code test-order:select} or {@code test-order:auto} goal.
+ * previous {@code test-order:affected} or {@code test-order:auto} goal.
  * <p>
  * Usage: {@code mvn test-order:run-remaining test}
  */

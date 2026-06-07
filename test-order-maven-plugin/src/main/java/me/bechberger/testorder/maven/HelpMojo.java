@@ -131,7 +131,7 @@ public class HelpMojo extends AbstractMojo {
 		sb.append("\nTypical usage:\n");
 		sb.append("  Quick start: mvn clean test                    (auto-learns dependency index)\n");
 		sb.append("  Next runs:   mvn clean test                    (auto-orders by priority)\n");
-		sb.append("  CI fast:     mvn test-order:select test        (run only high-priority subset)\n");
+		sb.append("  CI fast:     mvn test-order:affected test        (run only high-priority subset)\n");
 		sb.append("  CI rest:     mvn test-order:run-remaining test (run deferred tests)\n");
 		sb.append("  CI tiered:   mvn test-order:tiered-select test (run tier-1 first)\n");
 		sb.append("               mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2\n");

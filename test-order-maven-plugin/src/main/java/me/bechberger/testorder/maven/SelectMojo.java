@@ -19,9 +19,9 @@ import me.bechberger.testorder.ops.workflows.SelectWorkflow;
  * <p>
  * Configures Surefire to run only the selected subset.
  * <p>
- * Usage: {@code mvn test-order:select test}
+ * Usage: {@code mvn test-order:affected test}
  */
-@Mojo(name = "select", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES)
+@Mojo(name = "affected", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES)
 public class SelectMojo extends AbstractTestOrderMojo {
 
 	/**
@@ -64,13 +64,27 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
-		if (skipIfNotExplicitlySelectedReactorProject("select"))
+		if (skipIfNotExplicitlySelectedReactorProject("affected"))
 			return;
 
 		// R15-2: Skip POM-packaging modules — they have no tests and their selection
 		// decisions don't propagate to sub-modules, confusing users.
 		if ("pom".equals(project.getPackaging())) {
 			getLog().debug("[test-order] Skipping select goal — POM module: " + project.getArtifactId());
+			return;
+		}
+
+		// R16-4 (affected parity): When user filters to specific tests via -Dtest,
+		// skip selection entirely — the user's explicit filter takes precedence and
+		// test-order selection would only produce a misleading "N tests not selected"
+		// warning for tests that are still going to run via -Dtest.
+		String userTestFilter = session != null && session.getUserProperties() != null
+				? session.getUserProperties().getProperty("test")
+				: null;
+		if (userTestFilter != null && !userTestFilter.isBlank()) {
+			getLog().info("[test-order] Skipping selection — -Dtest=" + userTestFilter + " filter active. "
+					+ "test-order will not override your explicit test selection.");
+			project.getProperties().setProperty("testorder.auto.active", "true");
 			return;
 		}
 
@@ -92,8 +106,8 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		// Warn if 'test' phase is likely not going to run
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
 				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
-			getLog().warn("[test-order] The 'select' goal configures Surefire but does not execute tests."
-					+ " Include the test phase: mvn test-order:select test");
+			getLog().warn("[test-order] The 'affected' goal configures Surefire but does not execute tests."
+					+ " Include the test phase: mvn test-order:affected test");
 		}
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
 
@@ -103,7 +117,7 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		if (!Files.exists(idxPath)) {
 			autoAggregateOrFail(idxPath);
 		}
-		ensureReadableIndex(idxPath, "select", false);
+		ensureReadableIndex(idxPath, "affected", false);
 
 		if ("explicit".equalsIgnoreCase(changeMode)) {
 			try {

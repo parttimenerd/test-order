@@ -43,16 +43,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	 * Comma-separated additional package prefixes to instrument (merged with
 	 * auto-detected source packages)
 	 */
-	@Parameter(property = MavenPluginConfigKeys.INCLUDE_PACKAGES)
-	private String includePackages;
-
-	/**
-	 * When true (default) and no source packages are detected, fall back to the
-	 * project groupId as an instrumentation filter. Source packages from
-	 * src/main/java are always auto-detected.
-	 */
-	@Parameter(property = MavenPluginConfigKeys.FILTER_BY_GROUP_ID, defaultValue = "true")
-	private boolean filterByGroupId;
+	// NOTE: includePackages and filterByGroupId are declared in
+	// AbstractTestOrderMojo
 
 	/**
 	 * Instrumentation mode: MEMBER (default), CLASS, or METHOD.
@@ -110,6 +102,17 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 
 	private static final Set<String> VALID_MODES = Set.of("auto", "learn", "order", "skip");
 	private static final Set<String> VALID_INSTR_MODES = Set.of("CLASS", "METHOD", "MEMBER");
+
+	// REACTOR_MAP_INTRA_JVM_LOCK is inherited from AbstractTestOrderMojo — do NOT
+	// redeclare it here. A local `private static final Object` in this subclass
+	// would be a separate monitor from the one used by AbstractTestOrderMojo
+	// (which also serializes runOfflineInstrumentation), defeating the intra-JVM
+	// mutual exclusion needed for `mvn -T`.
+
+	@Override
+	protected String resolveEffectiveIncludePackages() {
+		return resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
+	}
 
 	@Override
 	public void execute() throws MojoExecutionException {
@@ -368,13 +371,19 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	 */
 	private void performDeferredOfflineInstrumentation() throws MojoExecutionException {
 		Path targetDir = Path.of(project.getBuild().getDirectory());
-		Path mappingFile = targetDir.resolve(".test-order").resolve("class-id-map.bin");
+		// Reactor-wide class-id map: lives at
+		// <reactorRoot>/.test-order/class-id-map.bin.
+		// Single-module builds: reactor root == project root, so this is just
+		// <project>/.test-order/class-id-map.bin (no behaviour change).
+		Path mappingFile = ctx != null
+				? ctx.resolveClassIdMapFile()
+				: targetDir.resolve(".test-order").resolve("class-id-map.bin");
+		Path lockFile = mappingFile.resolveSibling(mappingFile.getFileName() + ".lock");
 
-		if (java.nio.file.Files.exists(mappingFile)) {
-			getLog().debug("[test-order] Mapping file already exists — skipping deferred instrumentation.");
-			project.getProperties().remove("testorder.offline.pending");
-			return;
-		}
+		// The "skip if mapping exists" optimization no longer applies: the reactor
+		// pre-pass writes a stub mapping in afterProjectsRead, but we still need to
+		// instrument THIS module's classes. The instrumented bytecode itself is
+		// guarded by the .instrumented marker in the backup dir.
 
 		Path classesDir = resolveClassesDir();
 		if (classesDir == null) {
@@ -448,18 +457,56 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			me.bechberger.testorder.agent.OfflineInstrumentor instrumentor = new me.bechberger.testorder.agent.OfflineInstrumentor(
 					iMode, includeList, List.of(), uncertainClasses);
 			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
-			me.bechberger.testorder.agent.runtime.ClassIdMapping mapping = instrumentor.instrument(classesDir,
-					backupDir);
-			if (instrumentor.getTransformedCount() == 0 && instrumentor.getSkippedCount() > 0) {
-				getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
-				instrumentor = new me.bechberger.testorder.agent.OfflineInstrumentor(iMode, includeList, List.of());
-				instrumentor.setIgnoreMarker(true);
-				mapping = instrumentor.instrument(classesDir, backupDir);
+
+			// Reactor-wide ID space: serialize across modules. The intra-JVM monitor
+			// covers Maven -T (parallel modules in one JVM, where FileLock would
+			// throw OverlappingFileLockException). The FileLock inside covers
+			// concurrent Maven CLIs (separate JVMs).
+			Files.createDirectories(mappingFile.getParent());
+			me.bechberger.testorder.agent.runtime.ClassIdMapping mapping;
+			synchronized (REACTOR_MAP_INTRA_JVM_LOCK) {
+				try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(lockFile.toFile(), "rw");
+						java.nio.channels.FileLock fileLock = raf.getChannel().lock()) {
+					if (Files.exists(mappingFile)) {
+						try {
+							me.bechberger.testorder.agent.runtime.ClassIdMapping reactor = me.bechberger.testorder.agent.runtime.ClassIdMapping
+									.load(mappingFile);
+							me.bechberger.testorder.agent.runtime.ClassIdMap.getInstance()
+									.bulkLoadClasses(reactor.toClassMap());
+							if (reactor.memberCount() > 0) {
+								me.bechberger.testorder.agent.runtime.ClassIdMap.getInstance()
+										.bulkLoadMembers(reactor.toMemberMap());
+							}
+						} catch (IOException e) {
+							getLog().warn("[test-order] Could not load reactor class-id map (will rebuild): "
+									+ e.getMessage());
+						}
+					}
+					mapping = instrumentor.instrument(classesDir, backupDir);
+					if (instrumentor.getTransformedCount() == 0 && instrumentor.getSkippedCount() > 0) {
+						getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
+						instrumentor = new me.bechberger.testorder.agent.OfflineInstrumentor(iMode, includeList,
+								List.of());
+						instrumentor.setIgnoreMarker(true);
+						mapping = instrumentor.instrument(classesDir, backupDir);
+					}
+					// Save the singleton's full state back so any IDs newly registered for
+					// this module (inner classes, generated types) are visible to other
+					// modules' prepares and to the test forks.
+					me.bechberger.testorder.agent.runtime.ClassIdMap singleton = me.bechberger.testorder.agent.runtime.ClassIdMap
+							.getInstance();
+					me.bechberger.testorder.agent.runtime.ClassIdMapping fullMapping = me.bechberger.testorder.agent.runtime.ClassIdMapping
+							.fromClassIdMap(singleton, singleton.getNextClassId(), singleton.getNextMemberId());
+					fullMapping.save(mappingFile);
+				}
 			}
-			mapping.save(mappingFile);
 			getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes" + " (skipped "
 					+ instrumentor.getSkippedCount() + ")");
 			AbstractTestOrderMojo.pendingRestores.add(backupDir);
+			registerPendingRestoreInSession(backupDir);
+			Path testBackupDir = backupDir.resolveSibling("classes-backup-test");
+			AbstractTestOrderMojo.pendingRestores.add(testBackupDir);
+			registerPendingRestoreInSession(testBackupDir);
 		} catch (IOException e) {
 			project.getProperties().remove("testorder.offline.pending");
 			throw new MojoExecutionException("[test-order] Deferred offline instrumentation failed", e);
@@ -531,7 +578,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		if (topNProp != null) {
 			getLog().warn(
 					"[test-order] -Dtestorder.select.topN is ignored in 'order' mode (all tests run, just re-ordered). "
-							+ "Did you mean: mvn test-order:select test -Dtestorder.select.topN=" + topNProp + "?");
+							+ "Did you mean: mvn test-order:affected test -Dtestorder.select.topN=" + topNProp + "?");
 		}
 
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
@@ -728,7 +775,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			return false;
 		}
 		return session.getGoals().stream()
-				.anyMatch(goal -> isGoal(goal, "select") || isGoal(goal, "auto") || isGoal(goal, "learn")
+				.anyMatch(goal -> isGoal(goal, "affected") || isGoal(goal, "auto") || isGoal(goal, "learn")
 						|| isGoal(goal, "run-remaining") || isGoal(goal, "run-tier") || isGoal(goal, "tiered-select"));
 	}
 

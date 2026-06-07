@@ -89,7 +89,8 @@ public class DashboardMojo extends AbstractTestOrderMojo {
 				}
 			}
 
-			new DashboardWorkflow(pctx, template, outPath.getParent(), mlPredictions, healthReport).generate(outPath);
+			new DashboardWorkflow(pctx, template, outPath.toAbsolutePath().getParent(), mlPredictions, healthReport)
+					.generate(outPath);
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to write dashboard to " + outPath, e);
 		}

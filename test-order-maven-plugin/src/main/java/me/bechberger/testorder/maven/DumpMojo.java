@@ -27,6 +27,11 @@ public class DumpMojo extends AbstractTestOrderMojo {
 		if (skip)
 			return;
 		Path idxPath = resolveIndexPath();
+		// Drain any still-running collectors so their in-memory edges are flushed
+		// to the index before we read it. In multi-module reactors the downstream
+		// module's collector would otherwise only drain at session end, AFTER this
+		// aggregator goal runs at verify phase.
+		drainAllActiveCollectors();
 		if (!Files.exists(idxPath)) {
 			throw new MojoExecutionException("Dependency index not found: " + idxPath);
 		}

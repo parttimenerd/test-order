@@ -10,7 +10,7 @@
           <goal>prepare</goal>
           <goal>auto</goal>
           <goal>learn</goal>
-          <goal>select</goal>
+          <goal>affected</goal>
           <goal>run-remaining</goal>
           <goal>run-tier</goal>
           <goal>tiered-select</goal>

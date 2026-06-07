@@ -108,6 +108,18 @@ public class RunTieredMojo extends AbstractTestOrderMojo {
 			throw new MojoExecutionException("[test-order] tiered.tier2Fraction must be in [0, 1]: " + tier2Fraction);
 		}
 
+		// R16-4 (run-tiered parity): When user filters to specific tests via -Dtest,
+		// skip tiered selection entirely — the user's explicit filter takes precedence.
+		String userTestFilter = session != null && session.getUserProperties() != null
+				? session.getUserProperties().getProperty("test")
+				: null;
+		if (userTestFilter != null && !userTestFilter.isBlank()) {
+			getLog().info("[test-order] Skipping run-tiered selection — -Dtest=" + userTestFilter
+					+ " filter active. test-order will not override your explicit test selection.");
+			project.getProperties().setProperty("testorder.auto.active", "true");
+			return;
+		}
+
 		Path idxPath = resolveIndexPath();
 		if (!Files.exists(idxPath)) {
 			autoAggregateOrFail(idxPath);

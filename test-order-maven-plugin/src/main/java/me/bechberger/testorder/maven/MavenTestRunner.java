@@ -154,7 +154,7 @@ class MavenTestRunner implements TestRunner {
 			File workDir = resolveWorkDir();
 			if (isSubmodule()) {
 				command.add(2, "-pl");
-				command.add(3, project.getArtifactId());
+				command.add(3, ":" + project.getArtifactId());
 			}
 			ProcessBuilder pb = new ProcessBuilder(command);
 			pb.directory(workDir);
@@ -221,7 +221,7 @@ class MavenTestRunner implements TestRunner {
 			File workDir = resolveWorkDir();
 			if (isSubmodule()) {
 				command.add(2, "-pl");
-				command.add(3, project.getArtifactId());
+				command.add(3, ":" + project.getArtifactId());
 			}
 
 			ProcessBuilder pb = new ProcessBuilder(command);

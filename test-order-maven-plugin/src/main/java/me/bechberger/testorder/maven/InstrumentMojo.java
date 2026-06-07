@@ -14,7 +14,6 @@ import org.apache.maven.plugins.annotations.Parameter;
 
 import me.bechberger.testorder.agent.Agent;
 import me.bechberger.testorder.agent.OfflineInstrumentor;
-import me.bechberger.testorder.agent.runtime.ClassIdMapping;
 import me.bechberger.testorder.changes.SelectiveLearnSupport;
 
 /**
@@ -146,15 +145,49 @@ public class InstrumentMojo extends AbstractTestOrderMojo {
 
 		try {
 			OfflineInstrumentor instrumentor = new OfflineInstrumentor(mode, includes, excludes, uncertainClasses);
-			ClassIdMapping mapping = instrumentor.instrument(classesDir);
 
-			// Write mapping file
-			Path mappingDir = Path.of(project.getBuild().getDirectory(), ".test-order");
-			Path mappingFile = mappingDir.resolve("class-id-map.bin");
-			mapping.save(mappingFile);
+			// Reactor-wide mapping path (single ID space across all modules).
+			// Single-module: reactor root == project root, identical to old layout.
+			Path mappingFile = ctx != null
+					? ctx.resolveClassIdMapFile()
+					: Path.of(project.getBuild().getDirectory(), ".test-order").resolve("class-id-map.bin");
+			Path lockFile = mappingFile.resolveSibling(mappingFile.getFileName() + ".lock");
+			java.nio.file.Files.createDirectories(mappingFile.getParent());
 
-			getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes" + " (skipped "
-					+ instrumentor.getSkippedCount() + ")" + ", mapping: " + mappingFile);
+			// Serialize load → instrument → save across modules (same pattern as
+			// PrepareMojo). Without this, two InstrumentMojo executions in mvn -T
+			// would race on the singleton ClassIdMap and overwrite each other's entries.
+			synchronized (REACTOR_MAP_INTRA_JVM_LOCK) {
+				try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(lockFile.toFile(), "rw");
+						java.nio.channels.FileLock fileLock = raf.getChannel().lock()) {
+					// Pre-load any IDs already allocated by earlier modules so this
+					// module's instrumentation assigns IDs past the current max.
+					if (java.nio.file.Files.exists(mappingFile)) {
+						try {
+							me.bechberger.testorder.agent.runtime.ClassIdMapping existing = me.bechberger.testorder.agent.runtime.ClassIdMapping
+									.load(mappingFile);
+							me.bechberger.testorder.agent.runtime.ClassIdMap.getInstance()
+									.bulkLoadClasses(existing.toClassMap());
+							if (existing.memberCount() > 0) {
+								me.bechberger.testorder.agent.runtime.ClassIdMap.getInstance()
+										.bulkLoadMembers(existing.toMemberMap());
+							}
+						} catch (IOException e) {
+							getLog().warn("[test-order] Could not load existing reactor class-id map (will rebuild): "
+									+ e.getMessage());
+						}
+					}
+					instrumentor.instrument(classesDir);
+					// Save the singleton's FULL state (not just what this module added).
+					me.bechberger.testorder.agent.runtime.ClassIdMap singleton = me.bechberger.testorder.agent.runtime.ClassIdMap
+							.getInstance();
+					me.bechberger.testorder.agent.runtime.ClassIdMapping fullMapping = me.bechberger.testorder.agent.runtime.ClassIdMapping
+							.fromClassIdMap(singleton, singleton.getNextClassId(), singleton.getNextMemberId());
+					fullMapping.save(mappingFile);
+					getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes"
+							+ " (skipped " + instrumentor.getSkippedCount() + ")" + ", mapping: " + mappingFile);
+				}
+			}
 		} catch (IOException e) {
 			throw new MojoExecutionException("Offline instrumentation failed", e);
 		}

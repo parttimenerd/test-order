@@ -38,7 +38,7 @@
         <executions>
           <execution>
             <goals>
-              <goal>select</goal>
+              <goal>affected</goal>
             </goals>
           </execution>
         </executions>
