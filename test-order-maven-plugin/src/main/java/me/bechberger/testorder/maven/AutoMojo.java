@@ -94,6 +94,18 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		SurefireHelper.warnConflictingRunOrder(project, getLog());
 		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
 
+		// R16-4 (auto parity): When user filters to specific tests via -Dtest,
+		// delegate entirely to Surefire — don't override with auto-selection.
+		String userTestFilter = session != null && session.getUserProperties() != null
+				? session.getUserProperties().getProperty("test")
+				: null;
+		if (userTestFilter != null && !userTestFilter.isBlank()) {
+			getLog().info("[test-order] Skipping auto selection — -Dtest=" + userTestFilter
+					+ " filter active. test-order will not override your explicit test selection.");
+			project.getProperties().setProperty("testorder.auto.active", "true");
+			return;
+		}
+
 		// Resolve effective mode: CLI property override wins
 		String modeOverride = session != null && session.getUserProperties() != null
 				? session.getUserProperties().getProperty(MavenPluginConfigKeys.MODE)
@@ -115,10 +127,14 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		// ── Execute shared workflow ─────────────────────────────────
 		AutoWorkflow.Result result;
 		try {
+			// Use reactor root for CI config lookup — download-config.yml lives at the
+			// reactor root, not per-module. Mirrors the behaviour of DownloadMojo.
+			Path ciConfigRoot = session != null && session.getTopLevelProject() != null
+					? session.getTopLevelProject().getBasedir().toPath()
+					: project.getBasedir().toPath();
 			result = new AutoWorkflow(pctx, mode, () -> {
-				if (me.bechberger.testorder.ci.CiConfigParser.configExistsIn(project.getBasedir().toPath())) {
-					me.bechberger.testorder.ci.CiDepDownloadManager
-							.downloadIfConfigured(project.getBasedir().toPath(), idxPath)
+				if (me.bechberger.testorder.ci.CiConfigParser.configExistsIn(ciConfigRoot)) {
+					me.bechberger.testorder.ci.CiDepDownloadManager.downloadIfConfigured(ciConfigRoot, idxPath)
 							.ifPresent(p -> getLog().info("[test-order] CI index downloaded to " + p));
 				}
 			}, Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath) ? depsDirPath : null).execute();
@@ -195,6 +211,11 @@ public class AutoMojo extends AbstractTestOrderMojo {
 						+ " mvn test-order:run-remaining test");
 			}
 		}
+	}
+
+	@Override
+	protected String resolveEffectiveIncludePackages() {
+		return resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
 	}
 
 	private void validateAutoMojoParameters() throws MojoExecutionException {
