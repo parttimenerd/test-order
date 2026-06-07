@@ -40,6 +40,7 @@
                 <groupId>me.bechberger</groupId>
                 <artifactId>test-order-maven-plugin</artifactId>
                 <version>0.0.1-SNAPSHOT</version>
+                <extensions>true</extensions>
                 <executions>
                     <execution>
                         <goals>
