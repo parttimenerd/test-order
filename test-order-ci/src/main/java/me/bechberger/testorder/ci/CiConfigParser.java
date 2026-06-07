@@ -98,6 +98,9 @@ public class CiConfigParser {
 			throw e;
 		} catch (IOException e) {
 			throw new CiConfigException("Error reading config file: " + e.getMessage(), e);
+		} catch (RuntimeException e) {
+			throw new CiConfigException("Error parsing config file " + configPath + ": " + e.getClass().getSimpleName()
+					+ ": " + e.getMessage(), e);
 		}
 	}
 

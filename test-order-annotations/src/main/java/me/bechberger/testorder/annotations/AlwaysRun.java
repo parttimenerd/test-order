@@ -23,7 +23,7 @@ import java.lang.annotation.Target;
  *
  * The class is pinned before all score-driven tests (same position as
  * {@link TestOrder.Priority#FIRST}) <b>and</b> is guaranteed to be included
- * when using {@code test-order:select} or {@code test-order:auto}.
+ * when using {@code test-order:affected} or {@code test-order:auto}.
  *
  * <h3>Method-level</h3>
  *

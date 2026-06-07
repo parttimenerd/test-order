@@ -522,8 +522,11 @@ public class TelemetryListener implements TestExecutionListener {
 			}
 		} catch (ClassNotFoundException e) {
 			// OfflineInstrumentor not on classpath — skip silently (online mode agent)
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			Throwable cause = e.getCause() != null ? e.getCause() : e;
+			TestOrderLogger.warn("[telemetry] Failed to restore offline backup: {}", cause.toString());
 		} catch (Exception e) {
-			TestOrderLogger.warn("[telemetry] Failed to restore offline backup: {}", e.getMessage());
+			TestOrderLogger.warn("[telemetry] Failed to restore offline backup: {}", e.toString());
 		}
 	}
 
