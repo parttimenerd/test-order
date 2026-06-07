@@ -212,7 +212,8 @@ final class ReactorContext {
 		if (configured == null || configured.isBlank()) {
 			return fallback;
 		}
-		return Path.of(configured);
+		Path p = Path.of(configured);
+		return p.isAbsolute() ? p : project.getBasedir().toPath().resolve(p).toAbsolutePath().normalize();
 	}
 
 	// --- Cross-module change propagation ---
