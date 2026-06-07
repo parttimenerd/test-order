@@ -313,8 +313,10 @@ final class SurefireHelper {
 	static boolean isHardcodedArgLine(String argLine) {
 		if (argLine == null || argLine.isBlank())
 			return false;
-		return !argLine.contains("${argLine}") && !argLine.contains("@{argLine}")
-				&& !argLine.contains("test-order-agent");
+		// Any ${...} or @{...} placeholder means the value is property-expanded at
+		// fork time — not hardcoded. This covers @{argLine}, ${argLine},
+		// ${jacoco.agent.argLine}, and any other plugin-managed property.
+		return !argLine.contains("${") && !argLine.contains("@{") && !argLine.contains("test-order-agent");
 	}
 
 	/**
@@ -389,7 +391,7 @@ final class SurefireHelper {
 		try {
 			double value = Double.parseDouble(numPart);
 			if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
-				log.debug("[test-order] Surefire <forkCount>" + forkCount
+				log.warn("[test-order] Surefire <forkCount>" + forkCount
 						+ "</forkCount> — multiple forks may write .deps files concurrently in learn mode. "
 						+ "This can corrupt the dependency index. Consider using forkCount=1 for learn runs.");
 			}

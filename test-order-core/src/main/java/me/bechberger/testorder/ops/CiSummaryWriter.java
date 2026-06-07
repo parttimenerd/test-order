@@ -296,6 +296,10 @@ public final class CiSummaryWriter {
 					.header("Accept", "application/vnd.github+json").GET().build();
 			java.net.http.HttpResponse<String> listResp = client.send(listReq,
 					java.net.http.HttpResponse.BodyHandlers.ofString());
+			if (listResp.statusCode() == 429) {
+				log.warn("[test-order] GitHub API rate-limited; skipping PR comment update");
+				return;
+			}
 			if (listResp.statusCode() != 200) {
 				log.warn("[test-order] Failed to list PR comments: HTTP " + listResp.statusCode());
 				return;
@@ -314,7 +318,9 @@ public final class CiSummaryWriter {
 					.method(method, java.net.http.HttpRequest.BodyPublishers.ofString(jsonBody)).build();
 			java.net.http.HttpResponse<String> postResp = client.send(postReq,
 					java.net.http.HttpResponse.BodyHandlers.ofString());
-			if (postResp.statusCode() >= 200 && postResp.statusCode() < 300) {
+			if (postResp.statusCode() == 429) {
+				log.warn("[test-order] GitHub API rate-limited; PR comment not posted");
+			} else if (postResp.statusCode() >= 200 && postResp.statusCode() < 300) {
 				log.info("[test-order] PR comment " + (existingId != null ? "updated" : "posted") + " on #" + prNumber);
 			} else {
 				log.warn("[test-order] Failed to post PR comment: HTTP " + postResp.statusCode());
@@ -327,7 +333,7 @@ public final class CiSummaryWriter {
 	static Long findExistingCommentId(String json) {
 		// Minimal JSON scan without pulling in a full parser.
 		// GitHub returns an array of comment objects:
-		//   [{"id": 12345, "user": {"id": 789, ...}, "body": "...MARKER..."}, ...]
+		// [{"id": 12345, "user": {"id": 789, ...}, "body": "...MARKER..."}, ...]
 		// Strategy: scan forward through the top-level array elements. For each
 		// comment object ({...}), check whether its "body" value contains the marker.
 		// If so, return its top-level "id" field value.
@@ -337,8 +343,10 @@ public final class CiSummaryWriter {
 		int n = json.length();
 		int i = 0;
 		// Skip to opening '[' of the array
-		while (i < n && json.charAt(i) != '[') i++;
-		if (i >= n) return null;
+		while (i < n && json.charAt(i) != '[')
+			i++;
+		if (i >= n)
+			return null;
 		i++; // past '['
 
 		while (i < n) {
@@ -347,8 +355,12 @@ public final class CiSummaryWriter {
 					|| json.charAt(i) == '\t' || json.charAt(i) == ',')) {
 				i++;
 			}
-			if (i >= n || json.charAt(i) == ']') break;
-			if (json.charAt(i) != '{') { i++; continue; }
+			if (i >= n || json.charAt(i) == ']')
+				break;
+			if (json.charAt(i) != '{') {
+				i++;
+				continue;
+			}
 
 			// Found a comment object — scan it to collect id and body
 			Long commentId = null;
@@ -362,7 +374,8 @@ public final class CiSummaryWriter {
 				} else if (c == '}') {
 					depth--;
 					i++;
-					if (depth == 0) break; // end of this top-level element
+					if (depth == 0)
+						break; // end of this top-level element
 				} else if (c == '"') {
 					// Parse a JSON string
 					int keyStart = i + 1;
@@ -370,8 +383,11 @@ public final class CiSummaryWriter {
 					while (i < n) {
 						char sc = json.charAt(i);
 						i++;
-						if (sc == '\\') { i++; } // skip escaped char
-						else if (sc == '"') break;
+						if (sc == '\\') {
+							i++;
+						} // skip escaped char
+						else if (sc == '"')
+							break;
 					}
 					int keyEnd = i - 1; // index of closing '"' was i-1 before last i++
 					String key = json.substring(keyStart, keyEnd);
@@ -379,13 +395,16 @@ public final class CiSummaryWriter {
 					// Check if this is a top-level key (depth==1) of interest
 					if (depth == 1) {
 						// Consume ':' and whitespace
-						while (i < n && (json.charAt(i) == ' ' || json.charAt(i) == ':')) i++;
+						while (i < n && (json.charAt(i) == ' ' || json.charAt(i) == ':'))
+							i++;
 						if ("id".equals(key) && i < n && (Character.isDigit(json.charAt(i)) || json.charAt(i) == '-')) {
 							int numStart = i;
-							while (i < n && (Character.isDigit(json.charAt(i)) || json.charAt(i) == '-')) i++;
+							while (i < n && (Character.isDigit(json.charAt(i)) || json.charAt(i) == '-'))
+								i++;
 							try {
 								commentId = Long.parseLong(json.substring(numStart, i));
-							} catch (NumberFormatException ignored) {}
+							} catch (NumberFormatException ignored) {
+							}
 						} else if ("body".equals(key) && i < n && json.charAt(i) == '"') {
 							// Parse the body string value and check for marker
 							i++; // skip opening '"'
@@ -393,8 +412,10 @@ public final class CiSummaryWriter {
 							while (i < n) {
 								char sc = json.charAt(i);
 								i++;
-								if (sc == '\\') { i++; }
-								else if (sc == '"') break;
+								if (sc == '\\') {
+									i++;
+								} else if (sc == '"')
+									break;
 							}
 							String bodyValue = json.substring(bodyStart, i - 1);
 							if (bodyValue.contains(COMMENT_MARKER)) {
@@ -408,13 +429,17 @@ public final class CiSummaryWriter {
 						// will be parsed naturally by the outer loop's depth tracking.
 						// However, for non-object string values we need to consume them here.
 						// Skip ':' and whitespace, then skip the value if it's a string.
-						while (i < n && (json.charAt(i) == ' ' || json.charAt(i) == ':')) i++;
+						while (i < n && (json.charAt(i) == ' ' || json.charAt(i) == ':'))
+							i++;
 						if (i < n && json.charAt(i) == '"') {
 							i++; // skip opening '"'
 							while (i < n) {
-								char sc = json.charAt(i); i++;
-								if (sc == '\\') i++;
-								else if (sc == '"') break;
+								char sc = json.charAt(i);
+								i++;
+								if (sc == '\\')
+									i++;
+								else if (sc == '"')
+									break;
 							}
 						}
 						// If the value is a number, object, or array, the outer loop handles it

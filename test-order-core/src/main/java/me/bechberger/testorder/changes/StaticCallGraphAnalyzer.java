@@ -679,7 +679,13 @@ public class StaticCallGraphAnalyzer {
 						@Override
 						public void visitTypeInsn(int opcode, String type) {
 							// NEW, ANEWARRAY, CHECKCAST, INSTANCEOF — all reference a type by name.
-							addClassRefEdge(result, type.replace('/', '.'), callerKey);
+							// CHECKCAST/INSTANCEOF on array types pass an array descriptor like
+							// "[Lcom/foo/Bar;" — unwrap via descriptor parsing rather than raw replace.
+							if (type.charAt(0) == '[') {
+								addClassRefFromDescriptor(result, type, callerKey);
+							} else {
+								addClassRefEdge(result, type.replace('/', '.'), callerKey);
+							}
 						}
 
 						@Override
@@ -775,7 +781,11 @@ public class StaticCallGraphAnalyzer {
 		if (t.getSort() == Type.OBJECT) {
 			addClassRefEdge(result, t.getClassName(), callerKey);
 		} else if (t.getSort() == Type.ARRAY) {
+			// Unwrap nested arrays (e.g. Object[][]) to reach the element type
 			Type elem = t.getElementType();
+			while (elem.getSort() == Type.ARRAY) {
+				elem = elem.getElementType();
+			}
 			if (elem.getSort() == Type.OBJECT) {
 				addClassRefEdge(result, elem.getClassName(), callerKey);
 			}

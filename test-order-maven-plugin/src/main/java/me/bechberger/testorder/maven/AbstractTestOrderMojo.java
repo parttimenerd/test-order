@@ -66,6 +66,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	static final ConcurrentHashMap<String, PendingAggregation> pendingAggregations = new ConcurrentHashMap<>();
 
 	/**
+	 * Per-JVM lock that serializes the load → instrument → save sequence on the
+	 * reactor class-id map across threads in the SAME Maven JVM. Necessary for
+	 * {@code mvn -T N} where multiple modules' prepares run concurrently in one
+	 * JVM: {@link java.nio.channels.FileLock} is process-level and would throw
+	 * {@link java.nio.channels.OverlappingFileLockException} if two threads
+	 * acquired it simultaneously. The FileLock is still used INSIDE this monitor
+	 * for cross-JVM safety (e.g. concurrent Maven CLIs).
+	 */
+	static final Object REACTOR_MAP_INTRA_JVM_LOCK = new Object();
+
+	/**
 	 * Backup directories of class trees that were offline-instrumented during this
 	 * Maven session. Drained by {@link CollectorLifecycleParticipant} at session
 	 * end so subsequent {@code mvn} invocations (without {@code clean}) see
@@ -97,6 +108,21 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 */
 	@Parameter(property = MavenPluginConfigKeys.INDEX_PATH, defaultValue = "${project.basedir}/.test-order/test-dependencies.lz4")
 	protected String indexFile;
+
+	/**
+	 * Comma-separated list of package prefixes that have source code available.
+	 * Dependencies outside these prefixes are excluded from the dependency map.
+	 * When not set, auto-detected from src/main/java.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.INCLUDE_PACKAGES)
+	protected String includePackages;
+
+	/**
+	 * When true (default) and no source packages are detected, fall back to the
+	 * project groupId as an instrumentation filter.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.FILTER_BY_GROUP_ID, defaultValue = "true")
+	protected boolean filterByGroupId = true;
 
 	/**
 	 * Path to the state file for persisting test execution history and weights.
@@ -366,13 +392,22 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	private void processPendingFallback() {
 		Path idxPath = ctx.resolveIndexFile(indexFile);
 		try {
-			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
+			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath,
+					resolveEffectiveIncludePackages())) {
 				getLog().info(
 						"[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
 			}
 		} catch (IOException e) {
 			getLog().warn("[test-order] Failed to process collector fallback payloads: " + e.getMessage());
 		}
+	}
+
+	/**
+	 * Returns the effective includePackages filter for fallback processing.
+	 * Subclasses may override.
+	 */
+	protected String resolveEffectiveIncludePackages() {
+		return resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
 	}
 
 	/**
@@ -387,14 +422,15 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		// Validate explicit mode requirements
 		validator.validateExplicitModeRequirements(changeMode, changedClasses, changedTestClasses);
 
-		// Warn about semicolons in changedClasses (semicolons are accepted as a
-		// fallback separator, but commas are the documented format)
+		// Warn about semicolons in changedClasses/changedTestClasses (semicolons are
+		// accepted as a fallback separator, but commas are the documented format)
 		validator.warnChangedClassesFormat(changedClasses);
+		validator.warnChangedClassesFormat(changedTestClasses, MavenPluginConfigKeys.CHANGED_TEST_CLASSES);
 
 		// Validate file paths if provided — weightsFile is an output of 'optimize' that
 		// may not exist yet, so warn (don't fail) if missing.
 		if (weightsFile != null && !weightsFile.isBlank()) {
-			java.nio.file.Path wPath = java.nio.file.Paths.get(weightsFile);
+			java.nio.file.Path wPath = project.getBasedir().toPath().resolve(weightsFile);
 			if (!java.nio.file.Files.exists(wPath)) {
 				getLog().warn("[test-order] weightsFile not found: " + wPath.toAbsolutePath()
 						+ " — using default weights. Run 'mvn test-order:optimize' to generate it,"
@@ -644,7 +680,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				.bytecodeChangeDetectionEnabled(bytecodeChangeDetectionEnabled)
 				.bytecodeAugmentDependencyMapEnabled(bytecodeAugmentDependencyMapEnabled).changeMode(changeMode)
 				.changedClasses(changedClasses).changedTestClasses(changedTestClasses)
-				.weightsFile(weightsFile != null && !weightsFile.isBlank() ? Path.of(weightsFile) : null)
+				.includePackages(resolveEffectiveIncludePackages())
+				.weightsFile(weightsFile != null && !weightsFile.isBlank()
+						? project.getBasedir().toPath().resolve(weightsFile).toAbsolutePath()
+						: null)
 				.scoreOverrides(buildScoreOverrides()).methodOrderingEnabled(methodOrderingEnabled)
 				.springContextGrouping(springContextGrouping).staticAnalysisEnabled(staticAnalysisEnabled)
 				.staticAnalysisDepth(staticAnalysisDepth).groupId(project.getGroupId())
@@ -794,7 +833,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 		List<String> roots = project.getCompileSourceRoots();
 		if (roots != null && !roots.isEmpty())
-			return Path.of(roots.get(0));
+			return Path.of(roots.get(0)).toAbsolutePath();
 		Path fallback = project.getBasedir().toPath().resolve("src/main/java");
 		if (!Files.isDirectory(fallback)) {
 			getLog().info("[test-order] Source root '" + fallback
@@ -814,7 +853,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 		List<String> roots = project.getTestCompileSourceRoots();
 		if (roots != null && !roots.isEmpty())
-			return Path.of(roots.get(0));
+			return Path.of(roots.get(0)).toAbsolutePath();
 		return project.getBasedir().toPath().resolve("src/test/java");
 	}
 
@@ -888,7 +927,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				resolveTestSourceRoot(), ctx.resolveTestHashFile(testHashFile), readOnly, plog);
 		if (changedTestClasses != null && !changedTestClasses.isBlank()) {
 			Set<String> explicit = new LinkedHashSet<>();
-			for (String cls : changedTestClasses.split(",")) {
+			// Accept semicolons as a fallback separator (same as changedClasses)
+			String separator = changedTestClasses.contains(",") || !changedTestClasses.contains(";") ? "," : ";";
+			for (String cls : changedTestClasses.split(separator)) {
 				String trimmed = cls.trim();
 				if (!trimmed.isEmpty()) {
 					explicit.add(trimmed);
@@ -942,9 +983,12 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		try {
 			// Always pass the mapping file path so the collector can lazily load it
 			// after deferred offline instrumentation completes (CLI goals run before
-			// compile).
-			Path targetDir = Path.of(project.getBuild().getDirectory());
-			Path mappingFile = targetDir.resolve(".test-order").resolve("class-id-map.bin");
+			// compile). Reactor-wide map: same path across every module's fork so
+			// classIds baked into module-A's bytecode resolve correctly when module-B
+			// records edges.
+			Path mappingFile = ctx != null
+					? ctx.resolveClassIdMapFile()
+					: Path.of(project.getBuild().getDirectory()).resolve(".test-order").resolve("class-id-map.bin");
 
 			me.bechberger.testorder.IndexCollectorServer collector = new me.bechberger.testorder.IndexCollectorServer(
 					indexFilePath, mappingFile);
@@ -1002,6 +1046,31 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		return 0;
 	}
 
+	/**
+	 * Drain every still-running IndexCollectorServer in this JVM, regardless of
+	 * which module started it. Needed for aggregator goals (dump, select) that read
+	 * the shared reactor-level index: in a multi-module build, the downstream
+	 * module's prepare-phase collector is normally only drained at session end by
+	 * {@link CollectorLifecycleParticipant}, which runs AFTER verify-phase
+	 * aggregator goals. Calling this before reading the index ensures all in-flight
+	 * test-class edges have been merged into the file.
+	 */
+	protected int drainAllActiveCollectors() {
+		int total = 0;
+		for (Path key : new java.util.ArrayList<>(activeCollectors.keySet())) {
+			me.bechberger.testorder.IndexCollectorServer collector = activeCollectors.remove(key);
+			if (collector != null) {
+				int merged = collector.stopAndMerge();
+				total += merged;
+				if (merged > 0) {
+					getLog().info("[test-order] IndexCollectorServer merged " + merged
+							+ " test classes via socket (drained for aggregator)");
+				}
+			}
+		}
+		return total;
+	}
+
 	protected void autoAggregate(Path depsDirPath, Path idxPath) throws MojoExecutionException {
 		// Stop any running socket collector first — its data is merged directly into
 		// the index
@@ -1009,7 +1078,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		// Process any fallback payload file from a previous run's failed shutdown hook
 		try {
-			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
+			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath,
+					resolveEffectiveIncludePackages())) {
 				getLog().info("[test-order] Processed fallback collector payloads from previous run");
 				collectorMerged++; // count as having existing data
 			}
@@ -1099,7 +1169,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		// Process unconditionally: even if index exists, the fallback carries data
 		// from the most recent learn run that failed to merge.
 		try {
-			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath)) {
+			if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(idxPath,
+					resolveEffectiveIncludePackages())) {
 				getLog().info(
 						"[test-order] Processed collector fallback payloads from previous learn run → " + idxPath);
 			}
@@ -1157,13 +1228,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	// ── Weights ───────────────────────────────────────────────────────
 
 	protected TestOrderState.ScoringWeights resolveWeights(TestOrderState state) {
-		return me.bechberger.testorder.ops.WeightResolverOperation.resolveWeights(
-				weightsFile != null && !weightsFile.isBlank() ? Path.of(weightsFile) : null, state, pluginLog());
+		return me.bechberger.testorder.ops.WeightResolverOperation
+				.resolveWeights(weightsFile != null && !weightsFile.isBlank()
+						? project.getBasedir().toPath().resolve(weightsFile).toAbsolutePath()
+						: null, state, pluginLog());
 	}
 
 	protected TestOrderState.LoadedWeights resolveLoadedWeights(TestOrderState state) {
-		return me.bechberger.testorder.ops.WeightResolverOperation.resolveLoadedWeights(
-				weightsFile != null && !weightsFile.isBlank() ? Path.of(weightsFile) : null, state, pluginLog());
+		return me.bechberger.testorder.ops.WeightResolverOperation
+				.resolveLoadedWeights(weightsFile != null && !weightsFile.isBlank()
+						? project.getBasedir().toPath().resolve(weightsFile).toAbsolutePath()
+						: null, state, pluginLog());
 	}
 
 	/**
@@ -1244,10 +1319,13 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		Path resolvedSourceRoot = resolveSourceRoot();
 
 		// Build framework-agnostic config map via shared operation
+		String resolvedWeightsFile = weightsFile != null && !weightsFile.isBlank()
+				? project.getBasedir().toPath().resolve(weightsFile).toAbsolutePath().toString()
+				: weightsFile;
 		Map<String, String> configMap = OrdererConfigOperation.buildConfig(
 				new OrdererConfigOperation.OrdererInput(ctx.resolveIndexFile(indexFile).toAbsolutePath().toString(),
-						ctx.resolveStateFile(stateFile).toAbsolutePath().toString(), weightsFile, changed, changedTests,
-						changedMethods, scoreOverrides, methodOrderingEnabled, springContextGrouping,
+						ctx.resolveStateFile(stateFile).toAbsolutePath().toString(), resolvedWeightsFile, changed,
+						changedTests, changedMethods, scoreOverrides, methodOrderingEnabled, springContextGrouping,
 						project.getBasedir().toPath().toAbsolutePath().toString(),
 						resolvedSourceRoot.toAbsolutePath().toString(), changeMode));
 
@@ -1268,6 +1346,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			Path propsFile = runtimeDir.resolve("junit-platform.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
 				pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.junit.PriorityClassOrderer");
+				if (methodOrderingEnabled) {
+					pw.println(
+							"junit.jupiter.testmethod.order.default=me.bechberger.testorder.junit.PriorityMethodOrderer");
+				}
 			}
 
 			Path configFile = runtimeDir.resolve("testorder-config.properties");
@@ -1395,12 +1477,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		boolean hasCliArgLine = session != null && session.getUserProperties() != null
 				&& session.getUserProperties().getProperty("argLine") != null;
 
-		String projectArgLine = project.getProperties().getProperty("argLine", "").trim();
+		// Detect the argLine property name early so projectArgLine reads from the right
+		// property (e.g. "jacoco.agent.argLine" instead of "argLine")
+		boolean isFailsafeEarly = "maven-failsafe-plugin".equals(surefire.getArtifactId());
+		String detectedArgLineProp = detectArgLinePropertyName(surefireArgLine, isFailsafeEarly);
+		String projectArgLine = project.getProperties().getProperty(detectedArgLineProp, "").trim();
 
 		// Guard against double attachment (e.g. prepare bound in POM and also invoked
 		// on CLI)
+		String debugPropertyForGuard = isFailsafeEarly ? "maven.failsafe.debug" : "maven.surefire.debug";
 		String existingArgLine = (surefireArgLine + " " + projectArgLine).trim();
-		String existingDebug = project.getProperties().getProperty("maven.surefire.debug", "").trim();
+		String existingDebug = project.getProperties().getProperty(debugPropertyForGuard, "").trim();
 		if (existingArgLine.contains("test-order-agent") || existingDebug.contains("test-order-agent")) {
 			getLog().info("[test-order] Learn mode agent already configured — skipping duplicate attachment.");
 			return;
@@ -1431,6 +1518,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		Path indexFilePath = ctx.resolveIndexFile(indexFile);
 		me.bechberger.testorder.IndexCollectorServer collector = startCollector(indexFilePath);
 		if (collector != null) {
+			collector.setIncludePackages(includePackages);
 			collectorPortProp = " -D" + me.bechberger.testorder.TestOrderConfig.COLLECTOR_PORT + "="
 					+ collector.getPort();
 		}
@@ -1517,9 +1605,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			project.getProperties().setProperty(debugProperty, debugValue);
 		} else {
 			// R10-9: Detect if Failsafe uses a custom argLine property (e.g.
-			// ${failsafe.argLine})
-			boolean isFailsafe = "maven-failsafe-plugin".equals(surefire.getArtifactId());
-			String argLineProperty = detectArgLinePropertyName(surefireArgLine, isFailsafe);
+			// ${failsafe.argLine}). Re-use the property name detected above.
+			String argLineProperty = detectedArgLineProp;
 			String mergedProjectArgLine = (projectArgLine + " " + agentString + sysProps).trim();
 			project.getProperties().setProperty(argLineProperty, mergedProjectArgLine);
 			if (session != null && session.getUserProperties() != null) {
@@ -1534,7 +1621,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				String mergedSurefireArgLine = (surefireArgLine + " " + placeholder).trim();
 				SurefireHelper.setChild(config, "argLine", mergedSurefireArgLine);
 			}
-			if (isFailsafe && !"argLine".equals(argLineProperty)) {
+			if (isFailsafeEarly && !"argLine".equals(argLineProperty)) {
 				getLog().info("[test-order] Failsafe detected with custom argLine property '" + argLineProperty
 						+ "'. Injecting agent via that property.");
 			}
@@ -1562,7 +1649,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected void configureOfflineLearnMode(String instrumentationMode, String includePackages)
 			throws MojoExecutionException {
 		Path targetDir = Path.of(project.getBuild().getDirectory());
-		Path mappingFile = targetDir.resolve(".test-order").resolve("class-id-map.bin");
+		// Reactor-wide map (single ID space across all modules). Single-module
+		// builds: reactor root == project root, so still under <project>/.test-order/.
+		Path mappingFile = ctx != null
+				? ctx.resolveClassIdMapFile()
+				: targetDir.resolve(".test-order").resolve("class-id-map.bin");
 
 		if (!java.nio.file.Files.exists(mappingFile)) {
 			// Auto-instrument: run offline instrumentation inline
@@ -1599,12 +1690,12 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				if (classesDir != null) {
 					getLog().info(
 							"[test-order] Re-instrumenting for offline learn mode (no backup found): " + classesDir);
-					try {
-						// Delete stale mapping so re-instrumentation starts fresh
-						java.nio.file.Files.deleteIfExists(mappingFile);
-					} catch (IOException e) {
-						getLog().warn("[test-order] Could not delete stale mapping: " + e.getMessage());
-					}
+					// Do NOT delete the mapping file here: in a multi-module build it is the
+					// reactor-wide class-id-map.bin shared by all modules. Deleting it would
+					// wipe every other module's pre-allocated IDs, causing cross-module edges
+					// to be mis-attributed or dropped. runOfflineInstrumentation loads the
+					// existing map (if any), instruments, and saves the union — so the
+					// stale-marker case is handled by the setIgnoreMarker path inside it.
 					runOfflineInstrumentation(instrumentationMode, includePackages, classesDir, targetDir, mappingFile);
 				}
 			} else {
@@ -1637,6 +1728,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		String collectorPortProp = "";
 		me.bechberger.testorder.IndexCollectorServer collector = startCollector(indexFile);
 		if (collector != null) {
+			collector.setIncludePackages(includePackages);
 			collectorPortProp = " -D" + me.bechberger.testorder.TestOrderConfig.COLLECTOR_PORT + "="
 					+ collector.getPort();
 		}
@@ -1797,47 +1889,81 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 			OfflineInstrumentor instrumentor = new OfflineInstrumentor(iMode, includes, List.of(), uncertainClasses);
 			Path backupRoot = targetDir.resolve(".test-order").resolve("classes-backup");
-			ClassIdMapping mapping = instrumentor.instrument(classesDir, backupRoot);
+
+			// Reactor-wide ID space: serialize across modules. The intra-JVM monitor
+			// covers Maven -T (parallel modules in one JVM, where FileLock would
+			// throw OverlappingFileLockException). The FileLock inside covers
+			// concurrent Maven CLIs (separate JVMs).
+			Path lockFile = mappingFile.resolveSibling(mappingFile.getFileName() + ".lock");
+			java.nio.file.Files.createDirectories(mappingFile.getParent());
+			ClassIdMapping mapping;
 			boolean ignoreMarker = false;
-			if (instrumentor.getTransformedCount() == 0 && instrumentor.getSkippedCount() > 0) {
-				// All classes have stale marker from prior instrumentation without
-				// a matching mapping. Force re-instrument by ignoring the marker.
-				getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
-				instrumentor = new OfflineInstrumentor(iMode, includes, List.of()); // full re-instrument, no selective
-				instrumentor.setIgnoreMarker(true);
-				ignoreMarker = true;
-				mapping = instrumentor.instrument(classesDir, backupRoot);
-			}
-			int mainCount = instrumentor.getTransformedCount();
-			int mainSkipped = instrumentor.getSkippedCount();
+			int mainCount;
+			int mainSkipped;
+			synchronized (REACTOR_MAP_INTRA_JVM_LOCK) {
+				try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(lockFile.toFile(), "rw");
+						java.nio.channels.FileLock fileLock = raf.getChannel().lock()) {
+					if (java.nio.file.Files.exists(mappingFile)) {
+						try {
+							ClassIdMapping reactor = ClassIdMapping.load(mappingFile);
+							me.bechberger.testorder.agent.runtime.ClassIdMap.getInstance()
+									.bulkLoadClasses(reactor.toClassMap());
+							if (reactor.memberCount() > 0) {
+								me.bechberger.testorder.agent.runtime.ClassIdMap.getInstance()
+										.bulkLoadMembers(reactor.toMemberMap());
+							}
+						} catch (IOException e) {
+							getLog().warn("[test-order] Could not load reactor class-id map (will rebuild): "
+									+ e.getMessage());
+						}
+					}
+					mapping = instrumentor.instrument(classesDir, backupRoot);
+					if (instrumentor.getTransformedCount() == 0 && instrumentor.getSkippedCount() > 0) {
+						// All classes have stale marker from prior instrumentation without
+						// a matching mapping. Force re-instrument by ignoring the marker.
+						getLog().info("[test-order] Detected stale instrumentation (no mapping). Re-instrumenting...");
+						instrumentor = new OfflineInstrumentor(iMode, includes, List.of()); // full re-instrument, no
+																							// selective
+						instrumentor.setIgnoreMarker(true);
+						ignoreMarker = true;
+						mapping = instrumentor.instrument(classesDir, backupRoot);
+					}
+					mainCount = instrumentor.getTransformedCount();
+					mainSkipped = instrumentor.getSkippedCount();
 
-			// Some build configurations (notably JPMS projects compiling tests on
-			// module-path with --patch-module — e.g. jackson-databind) recompile main
-			// sources into target/test-classes/ during test-compile. Surefire then
-			// loads the test-classes/ copies first, shadowing our instrumented main
-			// classes. Detect and instrument those duplicates too, sharing the same
-			// class/member id map so the runtime sees consistent IDs.
-			Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
-			if (java.nio.file.Files.isDirectory(testClassesDir) && !testClassesDir.equals(classesDir)
-					&& hasShadowingMainClasses(classesDir, testClassesDir)) {
-				Path testBackupDir = backupRoot.resolveSibling("classes-backup-test");
-				getLog().info("[test-order] Detected main classes duplicated in test-classes "
-						+ "(JPMS patch-module build) — also instrumenting: " + testClassesDir);
-				OfflineInstrumentor testInstrumentor = new OfflineInstrumentor(iMode, includes, List.of(),
-						uncertainClasses);
-				if (ignoreMarker) {
-					testInstrumentor.setIgnoreMarker(true);
+					// JPMS test-classes shadow handling (kept inside the lock so the saved
+					// snapshot includes those entries too).
+					Path testClassesDir = Path.of(project.getBuild().getTestOutputDirectory());
+					if (java.nio.file.Files.isDirectory(testClassesDir) && !testClassesDir.equals(classesDir)
+							&& hasShadowingMainClasses(classesDir, testClassesDir)) {
+						Path testBackupDir = backupRoot.resolveSibling("classes-backup-test");
+						getLog().info("[test-order] Detected main classes duplicated in test-classes "
+								+ "(JPMS patch-module build) — also instrumenting: " + testClassesDir);
+						OfflineInstrumentor testInstrumentor = new OfflineInstrumentor(iMode, includes, List.of(),
+								uncertainClasses);
+						if (ignoreMarker) {
+							testInstrumentor.setIgnoreMarker(true);
+						}
+						ClassIdMapping testMapping = testInstrumentor.instrument(testClassesDir, testBackupDir);
+						// Merge: testMapping comes from the same singleton ClassIdMap, so its
+						// class/member maps already include all entries from the main pass.
+						// We only need to keep the latest mapping (it's a snapshot of the singleton).
+						mapping = testMapping;
+						getLog().info("[test-order] Also instrumented " + testInstrumentor.getTransformedCount()
+								+ " classes in test-classes (skipped " + testInstrumentor.getSkippedCount() + ")");
+					}
+
+					// Save the singleton's full state so any IDs newly registered for this
+					// module (inner classes, generated types) are visible to other modules'
+					// prepares and to the test forks. Avoids overwriting prior modules'
+					// IDs with a per-module-only snapshot.
+					me.bechberger.testorder.agent.runtime.ClassIdMap singleton = me.bechberger.testorder.agent.runtime.ClassIdMap
+							.getInstance();
+					ClassIdMapping fullMapping = ClassIdMapping.fromClassIdMap(singleton, singleton.getNextClassId(),
+							singleton.getNextMemberId());
+					fullMapping.save(mappingFile);
 				}
-				ClassIdMapping testMapping = testInstrumentor.instrument(testClassesDir, testBackupDir);
-				// Merge: testMapping comes from the same singleton ClassIdMap, so its
-				// class/member maps already include all entries from the main pass.
-				// We only need to keep the latest mapping (it's a snapshot of the singleton).
-				mapping = testMapping;
-				getLog().info("[test-order] Also instrumented " + testInstrumentor.getTransformedCount()
-						+ " classes in test-classes (skipped " + testInstrumentor.getSkippedCount() + ")");
 			}
-
-			mapping.save(mappingFile);
 			getLog().info("[test-order] Instrumented " + mainCount + " classes" + " (skipped " + mainSkipped + ")");
 			// Register backup dirs so CollectorLifecycleParticipant restores pristine
 			// bytecode at session end. Without this, a subsequent `mvn test` (no clean)

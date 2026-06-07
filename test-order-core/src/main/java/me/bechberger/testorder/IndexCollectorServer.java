@@ -97,6 +97,11 @@ public class IndexCollectorServer implements AutoCloseable {
 	private final AtomicBoolean running = new AtomicBoolean(true);
 	private final Path indexFile;
 	private final Path mappingFile; // ClassIdMapping file for v2 protocol
+	/**
+	 * Package prefixes for classes that have source; deps outside these are
+	 * dropped. Null means keep all.
+	 */
+	private volatile String[] sourcePackagePrefixes; // set via setIncludePackages
 	private volatile String[] classNames; // lazily loaded from mappingFile
 	private volatile String[] memberNames; // lazily loaded from mappingFile
 	private final Thread shutdownHook;
@@ -141,9 +146,17 @@ public class IndexCollectorServer implements AutoCloseable {
 		preloadMergeClasses();
 
 		serverSocket = new ServerSocket();
-		serverSocket.setReuseAddress(true);
-		serverSocket.bind(new InetSocketAddress("127.0.0.1", 0));
-		serverSocket.setSoTimeout(500); // 500ms accept timeout for responsive shutdown
+		try {
+			serverSocket.setReuseAddress(true);
+			serverSocket.bind(new InetSocketAddress("127.0.0.1", 0));
+			serverSocket.setSoTimeout(500); // 500ms accept timeout for responsive shutdown
+		} catch (IOException e) {
+			try {
+				serverSocket.close();
+			} catch (IOException ignored) {
+			}
+			throw e;
+		}
 
 		acceptThread = new Thread(this::acceptLoop, "test-order-index-collector");
 		acceptThread.setDaemon(true);
@@ -196,6 +209,20 @@ public class IndexCollectorServer implements AutoCloseable {
 	}
 
 	/**
+	 * Set the package prefixes that have source available (comma-separated, e.g.
+	 * {@code "com.example,org.myapp"}). Dependency entries outside these prefixes
+	 * are dropped from the index — they belong to libraries without source and
+	 * contribute nothing to change detection.
+	 */
+	public void setIncludePackages(String includePackages) {
+		if (includePackages == null || includePackages.isBlank()) {
+			this.sourcePackagePrefixes = null;
+		} else {
+			this.sourcePackagePrefixes = includePackages.split("[,;]+");
+		}
+	}
+
+	/**
 	 * Stop accepting connections and merge all received data into the index file.
 	 *
 	 * @return the number of test classes merged
@@ -241,16 +268,122 @@ public class IndexCollectorServer implements AutoCloseable {
 			return 0;
 		}
 
+		Map<String, Set<String>> classDepsToWrite = applyFrequencyThreshold(mergedClassDeps);
+		Map<String, Set<String>> memberDepsToWrite = classDepsToWrite == mergedClassDeps
+				? mergedMemberDeps
+				: filterMemberDeps(mergedMemberDeps, classDepsToWrite);
+		Map<String, Set<String>> methodMemberDepsToWrite = classDepsToWrite == mergedClassDeps
+				? mergedMethodMemberDeps
+				: filterMemberDeps(mergedMethodMemberDeps, classDepsToWrite);
+
 		// Write the already-merged index
 		try {
-			DependencyMap.mergeFromAgent(targetIndexFile, mergedClassDeps, mergedMethodDeps, mergedMemberDeps,
-					mergedMethodMemberDeps, mergedTestToModule);
+			DependencyMap.mergeFromAgent(targetIndexFile, classDepsToWrite, mergedMethodDeps, memberDepsToWrite,
+					methodMemberDepsToWrite, mergedTestToModule);
 		} catch (IOException e) {
 			System.err.println("[test-order] IndexCollectorServer: failed to write index: " + e.getMessage());
 			return 0;
 		}
-		logIndexSize(targetIndexFile, mergedClassDeps.size());
-		return mergedClassDeps.size();
+		logIndexSize(targetIndexFile, classDepsToWrite.size());
+		return classDepsToWrite.size();
+	}
+
+	/**
+	 * Applies the {@code testorder.deps.dropFrequencyThreshold} filter. If the
+	 * property is set to a value in (0, 1), any dep class that appears in more than
+	 * {@code threshold * totalTests} test entries is removed from every test's dep
+	 * set. This reduces index size and prevents near-universal deps from flooding
+	 * the scorer. Returns the input map unchanged if the property is not set or the
+	 * threshold is not in the valid range.
+	 */
+	private static Map<String, Set<String>> applyFrequencyThreshold(Map<String, Set<String>> classDeps) {
+		double threshold = parseDropFrequencyThreshold();
+		if (Double.isNaN(threshold)) {
+			return classDeps;
+		}
+		int total = classDeps.size();
+		if (total == 0) {
+			return classDeps;
+		}
+		int maxCount = (int) Math.ceil(threshold * total);
+
+		// Count how many tests each dep appears in
+		Map<String, Integer> depFreq = new HashMap<>();
+		for (Set<String> deps : classDeps.values()) {
+			for (String dep : deps) {
+				depFreq.merge(dep, 1, Integer::sum);
+			}
+		}
+
+		Set<String> toDrop = new java.util.HashSet<>();
+		for (Map.Entry<String, Integer> e : depFreq.entrySet()) {
+			if (e.getValue() > maxCount) {
+				toDrop.add(e.getKey());
+			}
+		}
+		if (toDrop.isEmpty()) {
+			return classDeps;
+		}
+
+		int droppedDeps = toDrop.size();
+		Map<String, Set<String>> filtered = new java.util.LinkedHashMap<>(classDeps.size());
+		for (Map.Entry<String, Set<String>> e : classDeps.entrySet()) {
+			Set<String> orig = e.getValue();
+			Set<String> kept = new java.util.LinkedHashSet<>(orig);
+			kept.removeAll(toDrop);
+			filtered.put(e.getKey(), kept);
+		}
+		System.out.println("[test-order] Frequency filter (threshold=" + threshold + "): dropped " + droppedDeps
+				+ " high-frequency dep(s) present in >" + (int) (threshold * 100) + "% of " + total + " tests.");
+		return filtered;
+	}
+
+	/**
+	 * Removes member-dep entries ({@code "fqcn#member"}) for any class that was
+	 * dropped from the class-level deps. This keeps member deps consistent with the
+	 * filtered class deps so the scorer doesn't see member deps for classes it
+	 * won't score against.
+	 */
+	private static Map<String, Set<String>> filterMemberDeps(Map<String, Set<String>> memberDeps,
+			Map<String, Set<String>> filteredClassDeps) {
+		// Build the set of all dep classes remaining after the frequency filter
+		Set<String> keptClasses = new java.util.HashSet<>();
+		for (Set<String> deps : filteredClassDeps.values()) {
+			keptClasses.addAll(deps);
+		}
+		Map<String, Set<String>> result = new java.util.LinkedHashMap<>(memberDeps.size());
+		for (Map.Entry<String, Set<String>> e : memberDeps.entrySet()) {
+			Set<String> orig = e.getValue();
+			Set<String> kept = new java.util.LinkedHashSet<>();
+			for (String memberKey : orig) {
+				int hash = memberKey.lastIndexOf('#');
+				String cls = hash > 0 ? memberKey.substring(0, hash) : memberKey;
+				if (keptClasses.contains(cls)) {
+					kept.add(memberKey);
+				}
+			}
+			if (!kept.isEmpty()) {
+				result.put(e.getKey(), kept);
+			}
+		}
+		return result;
+	}
+
+	private static double parseDropFrequencyThreshold() {
+		String prop = System.getProperty("testorder.deps.dropFrequencyThreshold");
+		if (prop == null || prop.isBlank()) {
+			return Double.NaN;
+		}
+		try {
+			double v = Double.parseDouble(prop);
+			if (v > 0.0 && v < 1.0) {
+				return v;
+			}
+		} catch (NumberFormatException ignored) {
+		}
+		System.err.println("[test-order] Invalid testorder.deps.dropFrequencyThreshold value: " + prop
+				+ " (must be in (0, 1)) — frequency filter disabled.");
+		return Double.NaN;
 	}
 
 	private static void logIndexSize(Path indexFile, int testCount) {
@@ -318,6 +451,11 @@ public class IndexCollectorServer implements AutoCloseable {
 			} catch (IOException e) {
 				if (running.get()) {
 					System.err.println("[test-order] IndexCollectorServer accept error: " + e.getMessage());
+					try {
+						Thread.sleep(100);
+					} catch (InterruptedException ie) {
+						Thread.currentThread().interrupt();
+					}
 				}
 			}
 		}
@@ -646,11 +784,12 @@ public class IndexCollectorServer implements AutoCloseable {
 		return new String(buf, 0, len, StandardCharsets.UTF_8);
 	}
 
-	private static void mergeMaps(ConcurrentHashMap<String, Set<String>> target, Map<String, Set<String>> source) {
+	private void mergeMaps(ConcurrentHashMap<String, Set<String>> target, Map<String, Set<String>> source) {
+		String[] prefixes = this.sourcePackagePrefixes;
 		for (var entry : source.entrySet()) {
 			Set<String> filtered = new java.util.HashSet<>();
 			for (String dep : entry.getValue()) {
-				if (!isSyntheticClass(dep)) {
+				if (!isSyntheticClass(dep) && hasSource(dep, prefixes)) {
 					filtered.add(dep);
 				}
 			}
@@ -664,6 +803,20 @@ public class IndexCollectorServer implements AutoCloseable {
 				return existing;
 			});
 		}
+	}
+
+	/** Returns true if {@code className} should be kept as a dependency entry. */
+	private static boolean hasSource(String className, String[] prefixes) {
+		if (prefixes == null || prefixes.length == 0) {
+			return true;
+		}
+		for (String prefix : prefixes) {
+			if (className.startsWith(prefix) && (className.length() == prefix.length()
+					|| className.charAt(prefix.length()) == '.' || className.charAt(prefix.length()) == '$')) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -779,6 +932,13 @@ public class IndexCollectorServer implements AutoCloseable {
 	 * @return true if a fallback file was found and processed
 	 */
 	public static boolean processFallbackFile(Path indexFile) throws IOException {
+		return processFallbackFile(indexFile, null);
+	}
+
+	public static boolean processFallbackFile(Path indexFile, String includePackages) throws IOException {
+		final String[] prefixes = (includePackages == null || includePackages.isBlank())
+				? null
+				: includePackages.split("[,;]+");
 		Path fallbackFile = indexFile.resolveSibling(indexFile.getFileName() + FALLBACK_SUFFIX);
 		if (!java.nio.file.Files.exists(fallbackFile)) {
 			return false;
@@ -797,7 +957,13 @@ public class IndexCollectorServer implements AutoCloseable {
 			// Non-atomic fallback: accept the small risk and continue with original path
 			claimedFile = fallbackFile;
 		}
-		List<String> lines = java.nio.file.Files.readAllLines(claimedFile, StandardCharsets.UTF_8);
+		List<String> lines;
+		try {
+			lines = java.nio.file.Files.readAllLines(claimedFile, StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			java.nio.file.Files.deleteIfExists(claimedFile);
+			throw e;
+		}
 		Map<String, Set<String>> classDeps = new HashMap<>();
 		Map<String, Set<String>> methodDeps = new HashMap<>();
 		Map<String, Set<String>> memberDeps = new HashMap<>();
@@ -844,7 +1010,9 @@ public class IndexCollectorServer implements AutoCloseable {
 			if (parts.length >= 1 && !parts[0].isEmpty()) {
 				Set<String> values = current.computeIfAbsent(parts[0], k -> new HashSet<>());
 				for (int i = 1; i < parts.length; i++) {
-					values.add(parts[i]);
+					if (!isSyntheticClass(parts[i]) && hasSource(parts[i], prefixes)) {
+						values.add(parts[i]);
+					}
 				}
 			}
 		}

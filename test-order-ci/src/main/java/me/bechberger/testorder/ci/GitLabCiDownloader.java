@@ -4,6 +4,7 @@ import java.io.*;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -89,23 +90,32 @@ public class GitLabCiDownloader implements DepDownloader {
 		long pipelineId = ((Number) pidObj).longValue();
 		logger.info("Found pipeline: {}", pipelineId);
 
-		// Step 2: find the job by name inside that pipeline
-		String jobsUrl = String.format("%s/api/v4/projects/%s/pipelines/%d/jobs?scope[]=success&per_page=100",
+		// Step 2: find the job by name inside that pipeline — paginate since a
+		// pipeline can have more than 100 jobs and GitLab caps per_page at 100.
+		String jobsBaseUrl = String.format("%s/api/v4/projects/%s/pipelines/%d/jobs?scope[]=success&per_page=100",
 				config.getBaseUrl(), projectId, pipelineId);
 
-		List<Object> jobs = fetchJsonArray(jobsUrl);
 		long jobId = -1;
-		for (Object elem : jobs) {
-			@SuppressWarnings("unchecked")
-			Map<String, Object> job = (Map<String, Object>) elem;
-			if (config.getJobName().equals(job.get("name"))) {
-				Object jidObj = job.get("id");
-				if (!(jidObj instanceof Number)) {
-					throw new DepDownloadException("Unexpected GitLab API response: job missing numeric 'id'");
-				}
-				jobId = ((Number) jidObj).longValue();
+		outer : for (int page = 1;; page++) {
+			String jobsUrl = jobsBaseUrl + "&page=" + page;
+			List<Object> jobs = fetchJsonArray(jobsUrl);
+			if (jobs.isEmpty())
 				break;
+			for (Object elem : jobs) {
+				@SuppressWarnings("unchecked")
+				Map<String, Object> job = (Map<String, Object>) elem;
+				if (config.getJobName().equals(job.get("name"))) {
+					Object jidObj = job.get("id");
+					if (!(jidObj instanceof Number)) {
+						throw new DepDownloadException("Unexpected GitLab API response: job missing numeric 'id'");
+					}
+					jobId = ((Number) jidObj).longValue();
+					break outer;
+				}
 			}
+			// If fewer than 100 results were returned, we have reached the last page
+			if (jobs.size() < 100)
+				break;
 		}
 
 		if (jobId == -1) {
@@ -138,6 +148,8 @@ public class GitLabCiDownloader implements DepDownloader {
 		}
 	}
 
+	private static final long MAX_DOWNLOAD_BYTES = 500L * 1024 * 1024;
+
 	private boolean downloadFile(String url, Path outputPath) throws IOException, DepDownloadException {
 		try (Response response = httpClient.newCall(buildRequest(url)).execute()) {
 			if (!response.isSuccessful()) {
@@ -151,7 +163,13 @@ public class GitLabCiDownloader implements DepDownloader {
 					FileOutputStream out = new FileOutputStream(outputPath.toFile())) {
 				byte[] buf = new byte[8192];
 				int n;
+				long totalRead = 0;
 				while ((n = in.read(buf)) != -1) {
+					totalRead += n;
+					if (totalRead > MAX_DOWNLOAD_BYTES) {
+						throw new DepDownloadException(
+								"Download too large: exceeds " + MAX_DOWNLOAD_BYTES + " bytes limit");
+					}
 					out.write(buf, 0, n);
 				}
 			}

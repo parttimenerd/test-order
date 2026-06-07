@@ -202,8 +202,11 @@ public class StateConfiguration {
 	/**
 	 * Returns the variance threshold used in adaptive EMA alpha calculation.
 	 * <p>
-	 * When duration variance is low, alpha is dampened to smooth out noise. When
-	 * variance is high, alpha is increased to track real changes quickly.
+	 * When the relative standard deviation of a test's duration exceeds this
+	 * threshold, the effective EMA alpha is <em>reduced</em> (more aggressive
+	 * smoothing) to damp out measurement noise. Tests with stable durations
+	 * (relative std-dev below the threshold) use the configured base alpha
+	 * unchanged.
 	 * </p>
 	 *
 	 * @return threshold, must be >= 0
@@ -218,11 +221,11 @@ public class StateConfiguration {
 	 * @param threshold
 	 *            variance threshold, must be >= 0
 	 * @throws IllegalArgumentException
-	 *             if threshold is negative
+	 *             if threshold is negative, NaN, or infinite
 	 */
 	public void setEmaVarianceThreshold(double threshold) {
-		if (threshold < 0) {
-			throw new IllegalArgumentException("emaVarianceThreshold must be >= 0: " + threshold);
+		if (Double.isNaN(threshold) || Double.isInfinite(threshold) || threshold < 0) {
+			throw new IllegalArgumentException("emaVarianceThreshold must be >= 0 and finite: " + threshold);
 		}
 		this.emaVarianceThreshold = threshold;
 	}
@@ -293,7 +296,14 @@ public class StateConfiguration {
 	 * </p>
 	 */
 	public void incrementRunsSinceLearn() {
-		this.runsSinceLearn++;
+		// Wrap at MAX_VALUE back to 1 to stay positive; the <= 0 guard in
+		// AutoWorkflow.optimizeIfDue would silence the optimizer permanently if this
+		// ever went negative (BUG-90).
+		if (this.runsSinceLearn == Integer.MAX_VALUE) {
+			this.runsSinceLearn = 1;
+		} else {
+			this.runsSinceLearn++;
+		}
 	}
 
 	/**

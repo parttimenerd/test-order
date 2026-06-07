@@ -57,7 +57,7 @@ public final class ClassOrderingEngine {
 		DependencyMap depMap;
 		try {
 			depMap = DependencyMap.load(idx);
-		} catch (IOException e) {
+		} catch (IOException | RuntimeException e) {
 			TestOrderLogger.error("Failed to load dependency index: {}", e.getMessage());
 			return null;
 		}
@@ -68,8 +68,9 @@ public final class ClassOrderingEngine {
 			state = (statePath != null && !statePath.isEmpty() && Files.exists(Path.of(statePath)))
 					? TestOrderState.load(Path.of(statePath))
 					: new TestOrderState();
-		} catch (IOException e) {
-			if (LOGGED_STATE_ERRORS.add(e.getMessage())) {
+		} catch (IOException | RuntimeException e) {
+			String msg = e.getClass().getName() + ": " + e.getMessage();
+			if (LOGGED_STATE_ERRORS.add(msg)) {
 				TestOrderLogger.error("Failed to load state: {} — falling back to defaults.", e.getMessage());
 			}
 			state = new TestOrderState();
@@ -181,7 +182,8 @@ public final class ClassOrderingEngine {
 		// Pre-cache dependency sets to avoid repeated map lookups and wrapper creation
 		Map<String, Set<String>> depsCache = new HashMap<>(classNames.size());
 		for (String className : classNames) {
-			depsCache.put(className, depMap.get(className));
+			Set<String> d = depMap.get(className);
+			depsCache.put(className, d != null ? d : Set.of());
 		}
 
 		List<String> result = new ArrayList<>(classNames.size());
@@ -264,7 +266,8 @@ public final class ClassOrderingEngine {
 
 		Map<T, Set<String>> depsCache = new HashMap<>(items.size());
 		for (T item : items) {
-			depsCache.put(item, depMap.get(nameFunc.apply(item)));
+			Set<String> d = depMap.get(nameFunc.apply(item));
+			depsCache.put(item, d != null ? d : Set.of());
 		}
 
 		TreeMap<Integer, List<T>> groups = new TreeMap<>(Comparator.reverseOrder());

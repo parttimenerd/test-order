@@ -126,9 +126,16 @@ public final class PartialRunAggregator {
 
 		// Build merged outcome list ordered by score desc (best approximation
 		// of priority order when we don't have a single global ordering).
+		// Deduplicate by test class — when multiple forks record the same class
+		// (e.g. shared base class or accidental overlap), keep the first occurrence.
 		List<TestOrderState.TestOutcome> allOutcomes = new ArrayList<>();
+		Set<String> seen = new LinkedHashSet<>();
 		for (ParsedPartial p : partials) {
-			allOutcomes.addAll(p.outcomes);
+			for (TestOrderState.TestOutcome o : p.outcomes) {
+				if (seen.add(o.testClass())) {
+					allOutcomes.add(o);
+				}
+			}
 		}
 		// Sort by descending score as a proxy for execution order within the build
 		allOutcomes.sort((a, b) -> Integer.compare(b.totalScore(), a.totalScore()));

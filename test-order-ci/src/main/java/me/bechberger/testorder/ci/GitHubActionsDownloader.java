@@ -86,31 +86,33 @@ public class GitHubActionsDownloader implements DepDownloader {
 			long runId = ((Number) runIdObj).longValue();
 			logger.info("Found latest workflow run: {}", runId);
 
-			// Step 2: List artifacts from the run
-			String artifactsUrl = String.format("%s/repos/%s/%s/actions/runs/%d/artifacts", GH_API_BASE,
-					config.getOwner(), config.getRepo(), runId);
+			// Step 2+3: List artifacts from the run, paginating since GitHub caps
+			// per_page at 100 and a run can have many artifacts.
+			String artifactsBaseUrl = String.format("%s/repos/%s/%s/actions/runs/%d/artifacts?per_page=100",
+					GH_API_BASE, config.getOwner(), config.getRepo(), runId);
 
-			Map<String, Object> artifactsResponse = fetchJson(artifactsUrl);
-			@SuppressWarnings("unchecked")
-			List<Object> artifacts = (List<Object>) artifactsResponse.get("artifacts");
-
-			if (artifacts == null || artifacts.isEmpty()) {
-				throw new DepDownloadException(String.format("No artifacts found in workflow run %d", runId));
-			}
-
-			// Step 3: Find the artifact we want
 			long artifactId = -1;
-			for (Object artifactElem : artifacts) {
+			for (int page = 1;; page++) {
+				Map<String, Object> artifactsResponse = fetchJson(artifactsBaseUrl + "&page=" + page);
 				@SuppressWarnings("unchecked")
-				Map<String, Object> artifact = (Map<String, Object>) artifactElem;
-				if (config.getArtifactName().equals(artifact.get("name"))) {
-					Object aidObj = artifact.get("id");
-					if (!(aidObj instanceof Number)) {
-						throw new DepDownloadException("Unexpected GitHub API response: artifact missing numeric 'id'");
-					}
-					artifactId = ((Number) aidObj).longValue();
+				List<Object> artifacts = (List<Object>) artifactsResponse.get("artifacts");
+				if (artifacts == null || artifacts.isEmpty())
 					break;
+				for (Object artifactElem : artifacts) {
+					@SuppressWarnings("unchecked")
+					Map<String, Object> artifact = (Map<String, Object>) artifactElem;
+					if (config.getArtifactName().equals(artifact.get("name"))) {
+						Object aidObj = artifact.get("id");
+						if (!(aidObj instanceof Number)) {
+							throw new DepDownloadException(
+									"Unexpected GitHub API response: artifact missing numeric 'id'");
+						}
+						artifactId = ((Number) aidObj).longValue();
+						break;
+					}
 				}
+				if (artifactId != -1 || artifacts.size() < 100)
+					break;
 			}
 
 			if (artifactId == -1) {
@@ -162,6 +164,8 @@ public class GitHubActionsDownloader implements DepDownloader {
 		}
 	}
 
+	private static final long MAX_DOWNLOAD_BYTES = 500L * 1024 * 1024;
+
 	private boolean downloadFile(String downloadUrl, Path outputPath) throws IOException, DepDownloadException {
 		Request.Builder requestBuilder = new Request.Builder().url(downloadUrl);
 
@@ -185,7 +189,13 @@ public class GitHubActionsDownloader implements DepDownloader {
 					FileOutputStream output = new FileOutputStream(outputPath.toFile())) {
 				byte[] buffer = new byte[8192];
 				int bytesRead;
+				long totalRead = 0;
 				while ((bytesRead = input.read(buffer)) != -1) {
+					totalRead += bytesRead;
+					if (totalRead > MAX_DOWNLOAD_BYTES) {
+						throw new DepDownloadException(
+								"Download too large: exceeds " + MAX_DOWNLOAD_BYTES + " bytes limit");
+					}
 					output.write(buffer, 0, bytesRead);
 				}
 			}

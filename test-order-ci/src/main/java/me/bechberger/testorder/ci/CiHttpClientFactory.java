@@ -41,7 +41,7 @@ final class CiHttpClientFactory {
 		List<InetAddress> addresses = Dns.SYSTEM.lookup(hostname);
 		for (InetAddress addr : addresses) {
 			if (addr.isLoopbackAddress() || addr.isLinkLocalAddress() || addr.isSiteLocalAddress()
-					|| addr.isAnyLocalAddress()) {
+					|| addr.isAnyLocalAddress() || addr.isMulticastAddress()) {
 				throw new UnknownHostException(
 						"DNS resolved to private/localhost address for " + hostname + ": " + addr.getHostAddress());
 			}

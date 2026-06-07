@@ -244,6 +244,13 @@ class SurefireHelperTest {
 	}
 
 	@Test
+	void isHardcodedArgLine_falseWhenOtherPropertyPlaceholderPresent() {
+		assertFalse(SurefireHelper.isHardcodedArgLine("${jacoco.agent.argLine}"));
+		assertFalse(SurefireHelper.isHardcodedArgLine("-Xmx512m ${jacoco.agent.argLine}"));
+		assertFalse(SurefireHelper.isHardcodedArgLine("@{failsafe.argLine}"));
+	}
+
+	@Test
 	void isHardcodedArgLine_falseWhenAgentAlreadyPresent() {
 		assertFalse(SurefireHelper.isHardcodedArgLine("-javaagent:/some/path/test-order-agent.jar=mode=FULL"));
 	}
@@ -542,7 +549,7 @@ class SurefireHelperTest {
 
 		SurefireHelper.warnForkCountInLearnMode(project, log);
 
-		verify(log).debug(contains("forkCount"));
+		verify(log).warn(contains("forkCount"));
 	}
 
 	@Test
@@ -552,7 +559,7 @@ class SurefireHelperTest {
 
 		SurefireHelper.warnForkCountInLearnMode(project, log);
 
-		verify(log).debug(contains("forkCount"));
+		verify(log).warn(contains("forkCount"));
 	}
 
 	@Test
