@@ -235,6 +235,7 @@ public class DependencyMap {
 	void putDirect(String testClass, Set<String> deps) {
 		dependencies.put(testClass, deps);
 		invertedIndex = null;
+		depFrequencies = null;
 	}
 
 	/**
@@ -1460,77 +1461,88 @@ public class DependencyMap {
 			return; // nothing to merge
 		}
 
-		final DependencyMap map = Files.exists(indexFile) ? loadOrCreateFresh(indexFile) : new DependencyMap();
-
-		// Merge in-place without redundant copying; preserve unmodifiable-set invariant
-		for (var entry : deps.entrySet()) {
-			map.dependencies.merge(entry.getKey(), entry.getValue(), (existing, incoming) -> {
-				Set<String> merged = new HashSet<>(existing.size() + incoming.size(), 1.0f);
-				merged.addAll(existing);
-				merged.addAll(incoming);
-				return Collections.unmodifiableSet(merged);
-			});
-		}
-		for (var entry : methodDeps.entrySet()) {
-			map.methodDependencies.merge(entry.getKey(), entry.getValue(), (existing, incoming) -> {
-				Set<String> merged = new HashSet<>(existing.size() + incoming.size(), 1.0f);
-				merged.addAll(existing);
-				merged.addAll(incoming);
-				return Collections.unmodifiableSet(merged);
-			});
-		}
-		for (var entry : memberDeps.entrySet()) {
-			RoaringBitmap existing = map.memberDepsMap.get(entry.getKey());
-			if (existing == null) {
-				RoaringBitmap bm = new RoaringBitmap();
-				for (String mk : entry.getValue())
-					bm.add(map.memberKeyId(mk));
-				map.memberDepsMap.put(entry.getKey(), bm);
-			} else {
-				for (String mk : entry.getValue())
-					existing.add(map.memberKeyId(mk));
-			}
-		}
-		for (var entry : methodMemberDeps.entrySet()) {
-			RoaringBitmap existing = map.methodMemberDepsMap.get(entry.getKey());
-			if (existing == null) {
-				RoaringBitmap bm = new RoaringBitmap();
-				for (String mk : entry.getValue())
-					bm.add(map.memberKeyId(mk));
-				map.methodMemberDepsMap.put(entry.getKey(), bm);
-			} else {
-				for (String mk : entry.getValue())
-					existing.add(map.memberKeyId(mk));
-			}
-		}
-
-		if (testToModule != null && !testToModule.isEmpty()) {
-			for (var e : testToModule.entrySet()) {
-				if (e.getKey() != null && e.getValue() != null && !e.getValue().isEmpty()) {
-					map.putModule(e.getKey(), e.getValue());
-				}
-			}
-		}
-
 		Path indexParent = indexFile.toAbsolutePath().getParent();
 		if (indexParent != null) {
 			Files.createDirectories(indexParent);
 		}
-		// Use configured compression (system property), defaulting to FAST for
-		// learn-mode
-		LZ4Support.Compression compression = LZ4Support.Compression
-				.fromString(System.getProperty("testorder.compression"));
-		map.save(indexFile, compression);
 
-		// warn if no actual dependencies were captured (common with groupId/package
-		// mismatch)
-		boolean allEmpty = map.dependencies.values().stream()
-				.allMatch(d -> d.isEmpty() || (d.size() == 1 && map.dependencies.containsKey(d.iterator().next())));
-		if (!map.dependencies.isEmpty() && allEmpty) {
-			System.err.println("[test-order] WARNING: All test classes have zero non-self dependencies. "
-					+ "If your source packages differ from the Maven groupId, "
-					+ "set -Dtestorder.includePackages=your.package.prefix");
-		}
+		// Hold the file lock for the entire load+merge+save cycle so concurrent
+		// stopAndMerge calls from parallel Gradle test tasks don't produce a torn
+		// index.
+		PersistenceSupport.withFileLock(indexFile, () -> {
+			final DependencyMap map = Files.exists(indexFile) ? loadOrCreateFresh(indexFile) : new DependencyMap();
+
+			// Invalidate derived caches before mutating dependencies.
+			map.invertedIndex = null;
+			map.depFrequencies = null;
+
+			// Merge in-place without redundant copying; preserve unmodifiable-set invariant
+			for (var entry : deps.entrySet()) {
+				map.dependencies.merge(entry.getKey(), entry.getValue(), (existing, incoming) -> {
+					Set<String> merged = new HashSet<>(existing.size() + incoming.size(), 1.0f);
+					merged.addAll(existing);
+					merged.addAll(incoming);
+					return Collections.unmodifiableSet(merged);
+				});
+			}
+			for (var entry : methodDeps.entrySet()) {
+				map.methodDependencies.merge(entry.getKey(), entry.getValue(), (existing, incoming) -> {
+					Set<String> merged = new HashSet<>(existing.size() + incoming.size(), 1.0f);
+					merged.addAll(existing);
+					merged.addAll(incoming);
+					return Collections.unmodifiableSet(merged);
+				});
+			}
+			for (var entry : memberDeps.entrySet()) {
+				RoaringBitmap existing = map.memberDepsMap.get(entry.getKey());
+				if (existing == null) {
+					RoaringBitmap bm = new RoaringBitmap();
+					for (String mk : entry.getValue())
+						bm.add(map.memberKeyId(mk));
+					map.memberDepsMap.put(entry.getKey(), bm);
+				} else {
+					for (String mk : entry.getValue())
+						existing.add(map.memberKeyId(mk));
+				}
+			}
+			for (var entry : methodMemberDeps.entrySet()) {
+				RoaringBitmap existing = map.methodMemberDepsMap.get(entry.getKey());
+				if (existing == null) {
+					RoaringBitmap bm = new RoaringBitmap();
+					for (String mk : entry.getValue())
+						bm.add(map.memberKeyId(mk));
+					map.methodMemberDepsMap.put(entry.getKey(), bm);
+				} else {
+					for (String mk : entry.getValue())
+						existing.add(map.memberKeyId(mk));
+				}
+			}
+
+			if (testToModule != null && !testToModule.isEmpty()) {
+				for (var e : testToModule.entrySet()) {
+					if (e.getKey() != null && e.getValue() != null && !e.getValue().isEmpty()) {
+						map.putModule(e.getKey(), e.getValue());
+					}
+				}
+			}
+
+			// Use configured compression (system property), defaulting to FAST for
+			// learn-mode
+			LZ4Support.Compression compression = LZ4Support.Compression
+					.fromString(System.getProperty("testorder.compression"));
+			map.save(indexFile, compression);
+
+			// warn if no actual dependencies were captured (common with groupId/package
+			// mismatch)
+			boolean allEmpty = map.dependencies.values().stream()
+					.allMatch(d -> d.isEmpty() || (d.size() == 1 && map.dependencies.containsKey(d.iterator().next())));
+			if (!map.dependencies.isEmpty() && allEmpty) {
+				System.err.println("[test-order] WARNING: All test classes have zero non-self dependencies. "
+						+ "If your source packages differ from the Maven groupId, "
+						+ "set -Dtestorder.includePackages=your.package.prefix");
+			}
+			return null;
+		});
 	}
 
 	/**
@@ -1811,6 +1823,10 @@ public class DependencyMap {
 					System.err.println("[test-order] Interrupted loading .mmembers file: " + e.getMessage());
 				}
 			}
+
+			// Invalidate lazy caches since dependencies were mutated directly.
+			map.invertedIndex = null;
+			map.depFrequencies = null;
 
 			// Save aggregated index — already inside the outer file lock.
 			map.save(indexFile);

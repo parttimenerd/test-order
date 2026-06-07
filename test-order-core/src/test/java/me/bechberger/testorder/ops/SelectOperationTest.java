@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
@@ -73,5 +75,62 @@ class SelectOperationTest {
 
 		assertEquals(1, selected.size(), "Should select exactly 1 test");
 		assertEquals(2, remaining.size(), "Should have 2 remaining tests");
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// Regression BUG-88: new alwaysRun test double-counted in log message
+	// (scoredCount = selected - alwaysRun - new - fast would go negative when a
+	// test is both @AlwaysRun and "new" — not yet in the dep index)
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void logBreakdown_newAlwaysRunTest_doesNotProduceNegativeScoredCount() throws IOException {
+		DependencyMap depMap = new DependencyMap();
+		// Two known tests in the index
+		depMap.put("com.example.ATest", Set.of("com.example.A"));
+		depMap.put("com.example.BTest", Set.of("com.example.B"));
+		// "NewAlwaysTest" is NOT in the index (new) AND is in alwaysRunClasses
+
+		Path selectedFile = tempDir.resolve("selected.txt");
+
+		List<String> logLines = new ArrayList<>();
+		PluginLog capturingLog = new PluginLog() {
+			@Override
+			public void info(String msg) {
+				logLines.add("INFO: " + msg);
+			}
+			@Override
+			public void warn(String msg) {
+				logLines.add("WARN: " + msg);
+			}
+			@Override
+			public void debug(String msg) {
+			}
+			@Override
+			public void error(String msg) {
+				logLines.add("ERROR: " + msg);
+			}
+		};
+
+		TestOrderState state = new TestOrderState();
+		// topN=1 means we don't select everything, so we hit the "else" branch that
+		// computes the breakdown.
+		SelectOperation.SelectConfig config = new SelectOperation.SelectConfig(depMap, state, Set.of(), Set.of(),
+				state.weights(), 1, 0, null, Set.of("com.example.NewAlwaysTest"), selectedFile, null, capturingLog,
+				null);
+
+		SelectOperation.SelectResult result = SelectOperation.select(config);
+
+		// The selection must have succeeded without exception.
+		assertFalse(result.selection().selected().isEmpty());
+
+		// The INFO log line describing the breakdown must not contain a negative
+		// number.
+		String summary = logLines.stream().filter(l -> l.contains("Selected") && l.contains("scored")).findFirst()
+				.orElse("");
+		// If scoredCount was negative, the log line would contain "-" before "scored"
+		// e.g. "Selected 2 tests (-1 scored + 1 new + 1 always-run), deferred ..."
+		assertFalse(summary.contains("-1 scored") || summary.contains("-2 scored"),
+				"scoredCount must not be negative. Log: " + summary);
 	}
 }

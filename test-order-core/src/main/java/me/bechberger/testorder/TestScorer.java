@@ -292,15 +292,16 @@ public class TestScorer {
 
 		// Pre-scan to find which tests touch any changed class (class-level deps only;
 		// member deps use "Class#member" keys so they don't match plain class names
-		// here).
+		// here). Use the inverted index (getAffectedTests) which correctly handles the
+		// nested-class fallback: if a dep is "com.Foo$Builder" and changedClass is
+		// "com.Foo", changedClassesContains() returns true but plain contains() would
+		// miss it. Intersect with testClassNames to avoid including tests outside the
+		// current scope (e.g. tests from other modules).
+		Set<String> indexAffected = depMap.getAffectedTests(effectiveChangedForOverlap);
 		Set<String> affectedTests = new HashSet<>();
 		for (String test : testClassNames) {
-			Set<String> deps = depMap.get(test);
-			for (String changedClass : effectiveChangedForOverlap) {
-				if (deps != null && deps.contains(changedClass)) {
-					affectedTests.add(test);
-					break; // test touches at least one changed class, no need to check further
-				}
+			if (indexAffected.contains(test)) {
+				affectedTests.add(test);
 			}
 		}
 
@@ -521,6 +522,14 @@ public class TestScorer {
 				totalScore += setCoverPts;
 				// reuse cached overlap classes instead of recomputing
 				overlapClasses = cachedOverlapClasses.getOrDefault(testClassName, Set.of());
+				// Complexity bonus: same condition as score()
+				if (!changeComplexity.isEmpty() && !overlapClasses.isEmpty()) {
+					for (String dep : overlapClasses) {
+						complexityOvlp += changeComplexity.getOrDefault(dep, 0.0);
+					}
+					complexityPts = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
+					totalScore += complexityPts;
+				}
 			} else {
 				overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
 						effectiveChangedForOverlap);

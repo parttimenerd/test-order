@@ -97,7 +97,15 @@ public class StructuralDiff {
 	 * Diff all Java files changed in git (uncommitted + staged) against HEAD.
 	 */
 	public static List<FileDiff> diffUncommitted(Path projectRoot) throws IOException {
-		return diffGitChanges(projectRoot, false);
+		return diffGitChanges(projectRoot, false, null);
+	}
+
+	/**
+	 * Diff all Java files changed in git (uncommitted + staged) against the given
+	 * ref.
+	 */
+	public static List<FileDiff> diffUncommitted(Path projectRoot, String gitRef) throws IOException {
+		return diffGitChanges(projectRoot, false, gitRef);
 	}
 
 	/**
@@ -105,14 +113,16 @@ public class StructuralDiff {
 	 * uncommitted.
 	 */
 	public static List<FileDiff> diffSinceLastCommit(Path projectRoot) throws IOException {
-		return diffGitChanges(projectRoot, true);
+		return diffGitChanges(projectRoot, true, null);
 	}
 
 	/**
 	 * Diff all changed Java files. If {@code includeLastCommit} is true, includes
-	 * HEAD~1..HEAD changes as well as uncommitted ones.
+	 * HEAD~1..HEAD changes as well as uncommitted ones. If {@code explicitRef} is
+	 * non-null, it overrides the auto-detected baseline ref.
 	 */
-	private static List<FileDiff> diffGitChanges(Path projectRoot, boolean includeLastCommit) throws IOException {
+	private static List<FileDiff> diffGitChanges(Path projectRoot, boolean includeLastCommit, String explicitRef)
+			throws IOException {
 		Path absProjectRoot = projectRoot.toAbsolutePath().normalize();
 		Path gitRoot = resolveGitRoot(projectRoot);
 		Set<String> changedFiles = new TreeSet<>();
@@ -128,7 +138,7 @@ public class StructuralDiff {
 			changedFiles.addAll(runGit(gitRoot, "diff", "--name-only", "HEAD~1", "HEAD"));
 		}
 
-		String gitRef = hasHeadParent ? "HEAD~1" : "HEAD";
+		String gitRef = explicitRef != null ? explicitRef : (hasHeadParent ? "HEAD~1" : "HEAD");
 		List<String> relevantPaths = new ArrayList<>();
 		for (String relPath : changedFiles) {
 			if (!relPath.endsWith(".java") && !relPath.endsWith(".kt")) {
@@ -473,10 +483,10 @@ public class StructuralDiff {
 
 			if (!oldHashes.equals(newHashes)) {
 				// Count occurrences of each hash to correctly classify duplicate-block changes.
-				Map<String, Long> oldFreq = oldHashes.stream()
-						.collect(java.util.stream.Collectors.groupingBy(h -> h, java.util.stream.Collectors.counting()));
-				Map<String, Long> newFreq = newHashes.stream()
-						.collect(java.util.stream.Collectors.groupingBy(h -> h, java.util.stream.Collectors.counting()));
+				Map<String, Long> oldFreq = oldHashes.stream().collect(
+						java.util.stream.Collectors.groupingBy(h -> h, java.util.stream.Collectors.counting()));
+				Map<String, Long> newFreq = newHashes.stream().collect(
+						java.util.stream.Collectors.groupingBy(h -> h, java.util.stream.Collectors.counting()));
 				int added = 0, removed = 0;
 				for (String h : newHashes)
 					if (newFreq.getOrDefault(h, 0L) > oldFreq.getOrDefault(h, 0L))

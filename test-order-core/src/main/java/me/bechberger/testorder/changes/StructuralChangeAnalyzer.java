@@ -366,13 +366,15 @@ public class StructuralChangeAnalyzer {
 
 	/** Returns the set of dependency classes that overlap with changed classes. */
 	static Set<String> classLevelOverlapClasses(Set<String> testClassDeps, Set<String> changedClasses) {
-		// iterate the smaller set for O(min(|A|,|B|))
-		Set<String> smaller = testClassDeps.size() <= changedClasses.size() ? testClassDeps : changedClasses;
-		Set<String> larger = smaller == testClassDeps ? changedClasses : testClassDeps;
+		// Iterate testClassDeps so the result contains test-side class names.
+		// Use changedClassesContains() to handle the nested-class fallback:
+		// if a test depends on "com.Foo$Builder" and changedClasses has "com.Foo",
+		// the plain set intersection would miss it.
 		Set<String> overlap = new HashSet<>();
-		for (String dep : smaller) {
-			if (larger.contains(dep))
+		for (String dep : testClassDeps) {
+			if (me.bechberger.testorder.DependencyMap.changedClassesContains(changedClasses, dep)) {
 				overlap.add(dep);
+			}
 		}
 		return overlap;
 	}
