@@ -50,8 +50,10 @@ public final class PartialRunAggregator {
 		Files.createDirectories(pendingRunsDir);
 		String fileName = buildId + "-" + UUID.randomUUID() + ".part";
 		Path file = pendingRunsDir.resolve(fileName);
-
-		try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+		// Write to a temp file first then atomically rename so concurrent readers
+		// (mergeAndApply) never see a partially-written .part file.
+		Path temp = pendingRunsDir.resolve(fileName + ".tmp");
+		try (BufferedWriter w = Files.newBufferedWriter(temp, StandardCharsets.UTF_8)) {
 			w.write("buildId=" + buildId);
 			w.newLine();
 			w.write("timestamp=" + record.timestamp());
@@ -63,6 +65,7 @@ public final class PartialRunAggregator {
 				w.newLine();
 			}
 		}
+		PersistenceSupport.moveIntoPlace(temp, file);
 	}
 
 	private static String serializeOutcome(TestOrderState.TestOutcome o) {

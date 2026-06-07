@@ -96,9 +96,9 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	 * {@code ClassRealm} just before that plugin executes.
 	 * <p>
 	 * Prevents {@code NoClassDefFoundError: UsageStore} when other plugins (e.g.
-	 * {@code openapi-generator-maven-plugin}, log4j2's plugin-descriptor
-	 * generator) load instrumented bytecode in the same Maven JVM. Their realms
-	 * normally only import {@code maven.api} and can't see our agent runtime.
+	 * {@code openapi-generator-maven-plugin}, log4j2's plugin-descriptor generator)
+	 * load instrumented bytecode in the same Maven JVM. Their realms normally only
+	 * import {@code maven.api} and can't see our agent runtime.
 	 * <p>
 	 * Importing rather than copying URLs ensures every realm sees the same
 	 * {@code UsageStore} class, so the static maps are shared across the session.
@@ -160,8 +160,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 				execRoot = null;
 			}
 			boolean isRealMultiModule = session.getProjects().size() > 1;
-			boolean isInferredMulti = !isRealMultiModule && mmDir != null && execRoot != null
-					&& mmDir.equals(execRoot)
+			boolean isInferredMulti = !isRealMultiModule && mmDir != null && execRoot != null && mmDir.equals(execRoot)
 					&& !top.getBasedir().toPath().normalize().equals(mmDir)
 					&& java.nio.file.Files.isDirectory(mmDir.resolve(SHARED_DIR_NAME));
 			if (isRealMultiModule && mmDir != null) {
@@ -185,6 +184,9 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			try {
 				ClassIdMapping existing = ClassIdMapping.load(mappingFile);
 				map.bulkLoadClasses(existing.toClassMap());
+				if (existing.memberCount() > 0) {
+					map.bulkLoadMembers(existing.toMemberMap());
+				}
 			} catch (IOException e) {
 				System.err.println("[test-order] reactor class-id map: could not load existing " + mappingFile
 						+ " — starting fresh: " + e.getMessage());
@@ -232,8 +234,8 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			Files.createDirectories(sharedDir);
 			ClassIdMapping mapping = ClassIdMapping.fromClassIdMap(map, map.getNextClassId(), map.getNextMemberId());
 			mapping.save(mappingFile);
-			System.out.println("[test-order] Reactor class-id map: pre-allocated " + registered
-					+ " class IDs across " + session.getProjects().size() + " module(s) → " + mappingFile);
+			System.out.println("[test-order] Reactor class-id map: pre-allocated " + registered + " class IDs across "
+					+ session.getProjects().size() + " module(s) → " + mappingFile);
 		} catch (IOException e) {
 			System.err.println("[test-order] reactor class-id map: save failed: " + e.getMessage());
 		}
@@ -259,7 +261,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			Path targetDir = Path.of(project.getBuild().getDirectory());
 			Path backupRoot = targetDir.resolve(".test-order").resolve("classes-backup");
 			Path backupTest = targetDir.resolve(".test-order").resolve("classes-backup-test");
-			for (Path backup : new Path[] { backupRoot, backupTest }) {
+			for (Path backup : new Path[]{backupRoot, backupTest}) {
 				try {
 					if (Files.exists(backup.resolve(".instrumented"))) {
 						boolean ok = me.bechberger.testorder.ClassBackupRestorer.restore(backup);
@@ -275,8 +277,8 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			}
 		}
 		if (restored > 0) {
-			System.err.println("[test-order] Recovered from previous crashed session: restored " + restored
-					+ " backup(s)");
+			System.err.println(
+					"[test-order] Recovered from previous crashed session: restored " + restored + " backup(s)");
 		}
 	}
 
@@ -459,9 +461,17 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 
 		// Static skip on deferred modules (only when topN is set; without topN we
 		// only reorder, we don't skip — every module still runs eventually).
+		// Only skip modules that had real affectedTestCount > 0 (budget-capped), not
+		// modules with no index data or zero affected tests — those must always run.
 		if (topN != null && topN > 0) {
 			int skipped = 0;
 			for (MavenProject p : reorder.deferred()) {
+				ModuleScore ms = scoreById.get(ModuleIds.of(p));
+				if (ms == null || ms.affectedTestCount() == 0) {
+					// No data or no affected tests: skip count exceeded budget but this
+					// module's tests are unknown — don't suppress them.
+					continue;
+				}
 				p.getProperties().setProperty("skipTests", "true");
 				skipped++;
 			}
@@ -486,8 +496,11 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		String v = session.getUserProperties().getProperty(key);
 		if (v == null)
 			v = session.getSystemProperties().getProperty(key);
-		if (v == null)
-			v = session.getTopLevelProject().getProperties().getProperty(key);
+		if (v == null) {
+			MavenProject top = session.getTopLevelProject();
+			if (top != null)
+				v = top.getProperties().getProperty(key);
+		}
 		return v != null && (v.isEmpty() || "true".equalsIgnoreCase(v));
 	}
 
@@ -496,8 +509,11 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		String v = session.getUserProperties().getProperty(key);
 		if (v == null)
 			v = session.getSystemProperties().getProperty(key);
-		if (v == null)
-			v = session.getTopLevelProject().getProperties().getProperty(key);
+		if (v == null) {
+			MavenProject top = session.getTopLevelProject();
+			if (top != null)
+				v = top.getProperties().getProperty(key);
+		}
 		if (v == null || v.isBlank())
 			return null;
 		try {
@@ -570,8 +586,12 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	public void afterSessionEnd(MavenSession session) {
 		try {
 			drainCollectors(session);
-			mergePartialRunRecords();
 		} finally {
+			try {
+				mergePartialRunRecords();
+			} catch (Exception e) {
+				System.err.println("[test-order] Failed to merge partial run records: " + e.getMessage());
+			}
 			// Always restore instrumented bytecode — leaving it in place corrupts the
 			// compiled classes directory even if earlier steps threw.
 			restoreInstrumentedClasses(session);
@@ -623,11 +643,14 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 					System.err.println("[test-order] CollectorLifecycleParticipant: drain entry error: " + e);
 				}
 			}
-			return;
+			// Fall through: drain any remaining static-map entries not covered by session
+			// properties (e.g. a module that registered before the session property was
+			// written, or a cross-realm registration that didn't match any entry above).
 		}
 
 		// Legacy fallback: same-realm static map (works when not using extensions
-		// or when the mojos happen to share our classloader).
+		// or when the mojos happen to share our classloader). Also catches any
+		// leftovers after the session-property path above removes matched entries.
 		Map<Path, me.bechberger.testorder.IndexCollectorServer> collectors = AbstractTestOrderMojo.activeCollectors;
 		if (collectors.isEmpty()) {
 			return;

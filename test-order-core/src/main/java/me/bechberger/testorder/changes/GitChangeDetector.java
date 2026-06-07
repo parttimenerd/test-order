@@ -68,9 +68,10 @@ public class GitChangeDetector {
 			if (line.length() < 4)
 				continue;
 			String filePath = line.substring(3);
-			// Handle renames: "R old -> new"
+			// Handle renames: "R old -> new" — mark both old (deleted) and new as changed
 			int arrowIdx = filePath.indexOf(" -> ");
 			if (arrowIdx >= 0) {
+				paths.add(filePath.substring(0, arrowIdx));
 				filePath = filePath.substring(arrowIdx + 4);
 			}
 			paths.add(filePath);

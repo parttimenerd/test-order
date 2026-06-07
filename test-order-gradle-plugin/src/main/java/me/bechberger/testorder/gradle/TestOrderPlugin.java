@@ -505,6 +505,10 @@ public class TestOrderPlugin implements Plugin<Project> {
         project.getLogger().info("[test-order] Configuring learn mode for task :{}",
                 testTask.getName());
 
+        // Learn mode writes new .deps files every run — disable UP-TO-DATE caching so
+        // the doLast aggregation hook always executes even when no test sources changed.
+        testTask.getOutputs().upToDateWhen(t -> false);
+
         // Warn about parallel config that corrupts dependency tracking in learn mode
         warnParallelInLearnMode(project, testTask);
 
@@ -547,6 +551,13 @@ public class TestOrderPlugin implements Plugin<Project> {
             // Also writes the uncertain-classes file when selectiveLearn=true.
             testTask.doFirst("testOrderStartCollector", t -> {
                 try {
+                    // Stop any stale collector from a previous run in this daemon
+                    // (can happen when tests fail and doLast doesn't execute).
+                    me.bechberger.testorder.IndexCollectorServer stale = COLLECTOR_REGISTRY.remove(testTask.getPath());
+                    if (stale != null) {
+                        stale.stopAndMerge();
+                    }
+
                     // Set compression level for IndexCollectorServer merge
                     String compressionLevel = ext.getCompression().getOrElse("fast");
                     System.setProperty("testorder.compression", compressionLevel);
@@ -751,6 +762,12 @@ public class TestOrderPlugin implements Plugin<Project> {
 
                 // Start IndexCollectorServer for socket-based dep collection
                 try {
+                    // Stop any stale collector from a previous daemon run
+                    me.bechberger.testorder.IndexCollectorServer stale = COLLECTOR_REGISTRY.remove(testTask.getPath());
+                    if (stale != null) {
+                        stale.stopAndMerge();
+                    }
+
                     // Set compression level for IndexCollectorServer merge
                     String compressionLevel = ext.getCompression().getOrElse("fast");
                     System.setProperty("testorder.compression", compressionLevel);
