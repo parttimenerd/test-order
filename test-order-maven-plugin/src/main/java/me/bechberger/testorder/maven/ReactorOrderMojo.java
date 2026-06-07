@@ -76,6 +76,9 @@ public class ReactorOrderMojo extends AbstractTestOrderMojo {
 			getLog().info("[test-order] No reactor projects found.");
 			return;
 		}
+		Path reactorRoot = session.getTopLevelProject() != null
+				? session.getTopLevelProject().getBasedir().toPath()
+				: project.getBasedir().toPath();
 		for (MavenProject p : projects) {
 			if ("pom".equals(p.getPackaging())) {
 				continue;
@@ -92,7 +95,6 @@ public class ReactorOrderMojo extends AbstractTestOrderMojo {
 			moduleTestDirs.put(moduleId, testClassesDir);
 
 			// Compute relative path from reactor root for -pl suggestion
-			Path reactorRoot = session.getTopLevelProject().getBasedir().toPath();
 			Path moduleDir = p.getBasedir().toPath();
 			String relativePath;
 			try {
@@ -219,7 +221,8 @@ public class ReactorOrderMojo extends AbstractTestOrderMojo {
 		}
 		// Merge explicitly specified changed classes (from -Dtestorder.changed.classes)
 		if (changedClasses != null && !changedClasses.isBlank()) {
-			for (String cls : changedClasses.split(",")) {
+			String sep = changedClasses.contains(",") || !changedClasses.contains(";") ? "," : ";";
+			for (String cls : changedClasses.split(sep)) {
 				String trimmed = cls.trim();
 				if (!trimmed.isEmpty()) {
 					result.add(trimmed);
@@ -255,7 +258,8 @@ public class ReactorOrderMojo extends AbstractTestOrderMojo {
 		}
 		// Merge explicitly specified changed test classes
 		if (changedTestClasses != null && !changedTestClasses.isBlank()) {
-			for (String cls : changedTestClasses.split(",")) {
+			String sep = changedTestClasses.contains(",") || !changedTestClasses.contains(";") ? "," : ";";
+			for (String cls : changedTestClasses.split(sep)) {
 				String trimmed = cls.trim();
 				if (!trimmed.isEmpty()) {
 					result.add(trimmed);
