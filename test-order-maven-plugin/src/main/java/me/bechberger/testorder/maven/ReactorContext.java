@@ -42,6 +42,19 @@ final class ReactorContext {
 		this.session = session;
 		this.project = project;
 
+		ResolvedRoot resolved = resolveReactorRoot(session, project);
+		this.multiModule = resolved.multiModule;
+		this.reactorRoot = resolved.root;
+		this.sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
+	}
+
+	/**
+	 * Pure helper that runs the same primary/secondary/tertiary detection used by
+	 * the constructor. Exposed so other build participants (e.g.
+	 * {@link CollectorLifecycleParticipant}) can resolve the reactor root without
+	 * instantiating a {@code ReactorContext} for every project.
+	 */
+	static ResolvedRoot resolveReactorRoot(MavenSession session, MavenProject project) {
 		// Primary detection: multiple projects in the reactor
 		boolean explicitMulti = session.getProjects().size() > 1;
 
@@ -80,7 +93,6 @@ final class ReactorContext {
 			}
 		}
 
-		this.multiModule = explicitMulti || inferredMulti;
 		// Normalize the reactor root so all derived paths are canonical. Without this,
 		// `<reactorRoot>/.test-order/class-id-map.bin` resolved by different modules
 		// could differ in surface form (e.g. with/without `..` segments) — fine for
@@ -89,8 +101,18 @@ final class ReactorContext {
 		Path topLevel = session.getTopLevelProject() != null
 				? session.getTopLevelProject().getBasedir().toPath()
 				: project.getBasedir().toPath();
-		this.reactorRoot = (inferredMulti ? mmDir : topLevel).normalize();
-		this.sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
+		Path root = (inferredMulti ? mmDir : topLevel).normalize();
+		return new ResolvedRoot(explicitMulti || inferredMulti, root);
+	}
+
+	/** Result of {@link #resolveReactorRoot(MavenSession, MavenProject)}. */
+	static final class ResolvedRoot {
+		final boolean multiModule;
+		final Path root;
+		ResolvedRoot(boolean multiModule, Path root) {
+			this.multiModule = multiModule;
+			this.root = root;
+		}
 	}
 
 	/**

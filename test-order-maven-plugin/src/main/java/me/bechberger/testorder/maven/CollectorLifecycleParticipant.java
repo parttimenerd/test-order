@@ -150,26 +150,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		// This mirrors the same guard in ReactorContext (line 62).
 		Path reactorRoot;
 		try {
-			java.io.File mmDirFile = session.getRequest().getMultiModuleProjectDirectory();
-			Path mmDir = mmDirFile != null ? mmDirFile.toPath().normalize() : null;
-			Path execRoot;
-			try {
-				String er = session.getExecutionRootDirectory();
-				execRoot = er != null ? Path.of(er).normalize() : null;
-			} catch (RuntimeException e2) {
-				execRoot = null;
-			}
-			boolean isRealMultiModule = session.getProjects().size() > 1;
-			boolean isInferredMulti = !isRealMultiModule && mmDir != null && execRoot != null && mmDir.equals(execRoot)
-					&& !top.getBasedir().toPath().normalize().equals(mmDir)
-					&& java.nio.file.Files.isDirectory(mmDir.resolve(SHARED_DIR_NAME));
-			if (isRealMultiModule && mmDir != null) {
-				reactorRoot = mmDir;
-			} else if (isInferredMulti) {
-				reactorRoot = mmDir;
-			} else {
-				reactorRoot = top.getBasedir().toPath().normalize();
-			}
+			reactorRoot = ReactorContext.resolveReactorRoot(session, top).root;
 		} catch (RuntimeException e) {
 			reactorRoot = top.getBasedir().toPath().normalize();
 		}
