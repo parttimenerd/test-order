@@ -223,7 +223,7 @@ watch(() => d.selectedTest.value, (t) => {
                 :key="hi"
                 class="sidebar__hist-dot"
                 :class="failed ? 'sidebar__hist-dot--fail' : 'sidebar__hist-dot--pass'"
-                :title="(failed ? 'FAILED' : 'passed') + ' in run #' + (Math.max(0, d.runs.length - Math.min(5, d.testHistoryMap.value.get(t.name)!.last8.length)) + hi + 1)"
+                :title="(failed ? 'FAILED' : 'passed') + ' in run #' + (Math.min(5, d.testHistoryMap.value.get(t.name)!.last8.length) - hi)"
               ></span>
             </template>
           </div>
@@ -323,7 +323,7 @@ watch(() => d.selectedTest.value, (t) => {
 }
 .sidebar__method-row:hover { background: rgba(99, 102, 241, .06); }
 .sidebar__method-row--selected { background: rgba(99, 102, 241, .12); }
-.sidebar__method-name { font-size: .62rem; color: var(--text-sec); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar__method-name { font-size: .68rem; color: var(--text-sec); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar__method-deps { font-size: .58rem; color: var(--accent-light); flex-shrink: 0; }
 
 .sidebar__export-btn { margin-left: auto; color: var(--text-muted); }

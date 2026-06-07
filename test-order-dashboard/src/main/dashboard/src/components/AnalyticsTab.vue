@@ -49,14 +49,14 @@ const runStats = computed(() => {
 // Session health arc — trend narrative and pass streak for header banner
 const healthArc = computed(() => {
   if (d.runs.length < 2) return null
-  const apfds = d.runs.map(r => r.apfd * 100) // runs newest-first, so apfds[0]=newest
-  const recent3Avg = apfds.slice(0, 3).reduce((s, a) => s + a, 0) / Math.min(3, apfds.length)
-  const early3Avg = apfds.slice(-3).reduce((s, a) => s + a, 0) / Math.min(3, apfds.length)
+  const apfds = d.runs.map(r => r.apfd * 100) // runs oldest-first: apfds[0]=oldest, apfds[last]=newest
+  const recent3Avg = apfds.slice(-3).reduce((s, a) => s + a, 0) / Math.min(3, apfds.length)
+  const early3Avg = apfds.slice(0, 3).reduce((s, a) => s + a, 0) / Math.min(3, apfds.length)
   const apfdDelta = recent3Avg - early3Avg
 
-  // Count most recent consecutive clean runs (d.runs[0] = newest)
+  // Count most recent consecutive clean runs (d.runs is ascending: d.runs[last] = newest)
   let cleanTail = 0
-  for (let i = 0; i < d.runs.length; i++) {
+  for (let i = d.runs.length - 1; i >= 0; i--) {
     if (d.runs[i].totalFailures > 0) break
     cleanTail++
   }
@@ -83,13 +83,14 @@ const healthArc = computed(() => {
   const trendColor = trend === 'improving' ? 'var(--green)' : trend === 'degrading' ? 'var(--red)' : 'var(--yellow)'
 
   // Build narrative
-  let narrative = `${d.runs.length} runs · APFD ${(+apfds[0]).toFixed(0)}% latest`
+  let narrative = `${d.runs.length} runs · APFD ${(+apfds[apfds.length - 1]).toFixed(0)}% latest`
   if (Math.abs(apfdDelta) >= 2) {
     narrative += ` · ${apfdDelta > 0 ? '+' : ''}${apfdDelta.toFixed(0)}% vs early runs`
   }
   if (cleanTail >= 2) narrative += ` · ${cleanTail} clean in a row`
-  else if (cleanTail === 0 && d.runs[0].totalFailures > 0) {
-    narrative += ` · last run had ${d.runs[0].totalFailures} failure${d.runs[0].totalFailures > 1 ? 's' : ''}`
+  else if (cleanTail === 0 && d.runs[d.runs.length - 1].totalFailures > 0) {
+    const lastRun = d.runs[d.runs.length - 1]
+    narrative += ` · last run had ${lastRun.totalFailures} failure${lastRun.totalFailures > 1 ? 's' : ''}`
   }
   if (failedTestNames.size > 0) narrative += ` · ${failedTestNames.size} unique test${failedTestNames.size > 1 ? 's' : ''} ever failed`
 
@@ -135,7 +136,7 @@ const runDetailPageCount = computed(() => {
 const speedRatioHistoryMap = computed(() => {
   const m = new Map<string, number[]>()
   if (d.runs.length < 3) return m
-  for (let i = d.runs.length - 1; i >= 0; i--) {
+  for (let i = 0; i < d.runs.length; i++) {
     for (const o of (d.runs[i].outcomes || [])) {
       const arr = m.get(o.testClass) ?? []
       arr.push(o.speedRatio)
@@ -158,14 +159,14 @@ function speedTrendSvg(name: string): string | null {
     return `${x.toFixed(1)},${y.toFixed(1)}`
   })
   const trend = last[last.length - 1] - last[0]
-  // Positive speedRatio = fast = green; negative = slow = orange
-  const color = trend > 0.05 ? '#4ade80' : trend < -0.05 ? '#fb923c' : '#64748b'
+  // speedRatio < 0 = faster than median; > 0 = slower. Trending negative = getting faster = green.
+  const color = trend < -0.05 ? '#4ade80' : trend > 0.05 ? '#fb923c' : '#64748b'
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;overflow:visible"><line x1="0" y1="${mid}" x2="${W}" y2="${mid}" stroke="#334155" stroke-width="0.5"/><polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
 }
 
 const historySpan = computed(() => {
   if (d.runs.length < 2) return null
-  const ms = d.runs[0].timestamp - d.runs[d.runs.length - 1].timestamp
+  const ms = d.runs[d.runs.length - 1].timestamp - d.runs[0].timestamp
   const days = Math.floor(ms / 86400000)
   const hours = Math.floor((ms % 86400000) / 3600000)
   if (days > 0) return `${days}d ${hours}h`
@@ -176,8 +177,8 @@ const historySpan = computed(() => {
 
 const filteredRuns = computed(() => {
   if (timeRangeOpt.value === 'all') return d.runs
-  if (timeRangeOpt.value === 'last5') return d.runs.slice(0, 5)
-  if (timeRangeOpt.value === 'last10') return d.runs.slice(0, 10)
+  if (timeRangeOpt.value === 'last5') return d.runs.slice(-5)
+  if (timeRangeOpt.value === 'last10') return d.runs.slice(-10)
   if (timeRangeOpt.value === 'last30d') {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
     return d.runs.filter(r => r.timestamp >= cutoff)
@@ -215,12 +216,12 @@ function baseOpts() {
 }
 
 function initTimeline() {
-  const runsNewestFirst = filteredRuns.value
-  if (!runsNewestFirst.length) return
+  const filteredRunsOldestFirst = filteredRuns.value
+  if (!filteredRunsOldestFirst.length) return
   destroyCharts(...TL_IDS)
 
-  // Reverse to chronological (oldest-left) for all time-series charts
-  const runs = [...runsNewestFirst].reverse()
+  // Reverse so charts display newest run on the left (descending chronological x-axis)
+  const runs = [...filteredRunsOldestFirst].reverse()
 
   // Include date prefix if runs span >1 calendar day
   const firstDay = new Date(runs[0].timestamp).toDateString()
@@ -234,10 +235,14 @@ function initTimeline() {
     return `${String(dt.getMonth() + 1).padStart(2, '0')}/${String(dt.getDate()).padStart(2, '0')} ${hhmm}`
   })
 
-  // Chart click: chart index is into chronological `runs`, but selectRun takes d.runs index (newest-first).
-  // runs[i] = runsNewestFirst[runsNewestFirst.length - 1 - i], and runsNewestFirst is a prefix of d.runs,
-  // so the d.runs index = runsNewestFirst.length - 1 - i.
-  const chartIdxToRunIdx = (i: number) => runsNewestFirst.length - 1 - i
+  // Chart click: chart index is into newest-first `runs`, but selectRun takes d.runs index.
+  // d.runs is sorted ascending, filteredRuns is a suffix slice of d.runs (newest N runs).
+  // runs[i] = filteredRunsOldestFirst[filteredRunsOldestFirst.length - 1 - i]
+  //         = d.runs[d.runs.length - filteredRunsOldestFirst.length + filteredRunsOldestFirst.length - 1 - i]
+  //         = d.runs[d.runs.length - 1 - i]  (when full range)
+  // General formula: offset = d.runs.length - filteredRunsOldestFirst.length
+  const runOffset = d.runs.length - filteredRunsOldestFirst.length
+  const chartIdxToRunIdx = (i: number) => runOffset + filteredRunsOldestFirst.length - 1 - i
 
   mkChart('tl-apfd', {
     type: 'line', data: { labels, datasets: [
@@ -258,7 +263,7 @@ function initTimeline() {
   })
   mkChart('tl-ffp', {
     type: 'line', data: { labels, datasets: [{
-      label: 'First failure position', data: runs.map(r => r.firstFailurePosition >= 0 ? r.firstFailurePosition : 0),
+      label: 'First failure position', data: runs.map(r => r.firstFailurePosition >= 0 ? r.firstFailurePosition + 1 : 0),
       pointBackgroundColor: runs.map(r => r.firstFailurePosition >= 0 ? 'rgba(239,68,68,.8)' : 'transparent'),
       pointBorderColor: runs.map(r => r.firstFailurePosition >= 0 ? 'rgba(239,68,68,.8)' : 'rgba(71,85,105,.7)'),
       pointBorderWidth: 1.5, pointRadius: 5, showLine: false, borderColor: 'transparent',
@@ -688,13 +693,16 @@ const HEATMAP_ROWS = 30
 const rankHeatmap = computed(() => {
   if (d.runs.length < 2) return null
   // Build rank map per run per test — use chronological order for left-to-right display
-  const chronRuns = [...d.runs].reverse() // oldest-first
+  const chronRuns = [...d.runs].reverse() // newest-first for left→right display
+  // Pre-build per-run rank maps for O(1) lookup instead of O(outcomes) findIndex per test per run
+  const runRankMaps = chronRuns.map(r => {
+    const sorted = [...(r.outcomes || [])].sort((a, b) => b.score - a.score)
+    const rm = new Map<string, number>()
+    sorted.forEach((o, i) => rm.set(o.testClass, i + 1))
+    return rm
+  })
   const rows = d.tests.map(t => {
-    const ranks = chronRuns.map(r => {
-      const sorted = [...(r.outcomes || [])].sort((a, b) => b.score - a.score)
-      const idx = sorted.findIndex(o => o.testClass === t.name)
-      return idx >= 0 ? idx + 1 : null
-    })
+    const ranks = runRankMaps.map(rm => rm.get(t.name) ?? null)
     const presentRanks = ranks.filter(r => r !== null) as number[]
     const variance = presentRanks.length < 2 ? 0 : (() => {
       const mean = presentRanks.reduce((s, r) => s + r, 0) / presentRanks.length
@@ -735,7 +743,7 @@ const risingRiskTests = computed(() => {
   if (d.runs.length < 3) return []
   // Build per-test fail timeline (oldest→newest, 1=fail 0=pass)
   const timeline = new Map<string, number[]>()
-  for (let i = d.runs.length - 1; i >= 0; i--) {
+  for (let i = 0; i < d.runs.length; i++) {
     const r = d.runs[i]
     const failedSet = new Set((r.outcomes || []).filter(o => o.failed).map(o => o.testClass))
     const seenSet = new Set((r.outcomes || []).map(o => o.testClass))
@@ -834,7 +842,7 @@ const budgetOptimResult = computed(() => {
 
   // Estimate APFD for this subset using historical failure data from last run with failures
   let estApfd: number | null = null
-  const failingRun = d.runs.find(r => r.totalFailures > 0)
+  const failingRun = [...d.runs].reverse().find(r => r.totalFailures > 0)
   if (failingRun && failingRun.outcomes.length > 0) {
     const failedNames = new Set(failingRun.outcomes.filter(o => o.failed).map(o => o.testClass))
     const subsetNames = new Set(included.map(t => t.name))
@@ -856,16 +864,21 @@ const budgetOptimResult = computed(() => {
 // Flakiness timeline: for each test with any flakiness, compute per-run pass/fail bits + rolling rate
 const flakinessTimeline = computed(() => {
   if (d.runs.length < 3) return []
-  const WINDOW = 5
-  // runs are newest-first; we want oldest-first for timeline
-  const orderedRuns = [...d.runs].reverse()
+  // d.runs is oldest-first; keep that order so early/late slices correctly represent time direction.
+  const orderedRuns = d.runs
+  // Pre-build per-run outcome maps for O(1) lookup
+  const runMaps = orderedRuns.map(r => {
+    const m = new Map<string, boolean>()
+    for (const o of (r.outcomes || [])) m.set(o.testClass, o.failed)
+    return m
+  })
 
   // Build per-test per-run result map
   const testResults = new Map<string, (boolean | null)[]>()
   for (const t of d.tests) {
-    const bits: (boolean | null)[] = orderedRuns.map(r => {
-      const o = (r.outcomes || []).find(o => o.testClass === t.name)
-      return o ? o.failed : null
+    const bits: (boolean | null)[] = runMaps.map(m => {
+      const v = m.get(t.name)
+      return v !== undefined ? v : null
     })
     const anyFail = bits.some(b => b === true)
     const anyPass = bits.some(b => b === false)
@@ -873,7 +886,7 @@ const flakinessTimeline = computed(() => {
   }
   if (!testResults.size) return []
 
-  // Compute rolling flakiness rate (window of WINDOW runs) and delta
+  // Compute rolling flakiness rate and delta (first-half vs second-half trend)
   const result: {
     name: string
     bits: (boolean | null)[]
@@ -964,21 +977,21 @@ const selectedRunOutcomesSorted = computed(() => {
   return [...(selectedRun.value.outcomes || [])].sort((a, b) => b.score - a.score)
 })
 
-// Score map for the chronologically previous run (runs stored newest-first, so prev = idx+1)
+// Score map for the chronologically previous run (d.runs is oldest-first, so prev = idx-1)
 const prevRunScoreMap = computed<Map<string, number>>(() => {
   const m = new Map<string, number>()
-  if (selectedRunIdx.value === null || selectedRunIdx.value >= d.runs.length - 1) return m
-  const prev = d.runs[selectedRunIdx.value + 1]
+  if (selectedRunIdx.value === null || selectedRunIdx.value <= 0) return m
+  const prev = d.runs[selectedRunIdx.value - 1]
   if (!prev?.outcomes) return m
   for (const o of prev.outcomes) m.set(o.testClass, o.score)
   return m
 })
 
-// Diff: compare selected run to previous (older) run — runs are stored newest-first, so prev = idx+1
+// Diff: compare selected run to previous (older) run — d.runs is oldest-first, so prev = idx-1
 const runDiff = computed(() => {
-  if (selectedRunIdx.value === null || selectedRunIdx.value >= d.runs.length - 1) return null
+  if (selectedRunIdx.value === null || selectedRunIdx.value <= 0) return null
   const cur = selectedRun.value
-  const prev = d.runs[selectedRunIdx.value + 1]
+  const prev = d.runs[selectedRunIdx.value - 1]
   // Only diff when both runs have outcome data (plugin only stores outcomes for failing runs)
   if (!cur?.outcomes?.length || !prev?.outcomes?.length) return null
 
@@ -1105,10 +1118,10 @@ const insights = computed(() => {
   else if (avgApfd < 70) items.push({ icon: '↗', color: 'var(--yellow)', msg: `Avg APFD ${avgApfd.toFixed(0)}% — room for improvement. More run history will help the algorithm learn.` })
   else items.push({ icon: '✓', color: 'var(--green)', msg: `Avg APFD ${avgApfd.toFixed(0)}% — good test ordering. Failing tests are being detected early.` })
 
-  // APFD trend: compare recent 3 vs prior 3 (apfds is newest-first)
+  // APFD trend: compare recent 3 vs prior 3 (apfds is oldest-first, so use slice from end)
   if (apfds.length >= 6) {
-    const recent = apfds.slice(0, 3).reduce((s, a) => s + a, 0) / 3
-    const prior = apfds.slice(3, 6).reduce((s, a) => s + a, 0) / 3
+    const recent = apfds.slice(-3).reduce((s, a) => s + a, 0) / 3
+    const prior = apfds.slice(-6, -3).reduce((s, a) => s + a, 0) / 3
     const delta = recent - prior
     if (delta > 3) items.push({ icon: '▲', color: 'var(--green)', msg: `APFD improving: last 3 runs avg ${recent.toFixed(0)}% vs prior 3 avg ${prior.toFixed(0)}% (+${delta.toFixed(1)}pp). Ordering is getting better.` })
     else if (delta < -3) items.push({ icon: '▼', color: 'var(--orange)', msg: `APFD declining: last 3 runs avg ${recent.toFixed(0)}% vs prior 3 avg ${prior.toFixed(0)}% (${delta.toFixed(1)}pp). Check if test composition changed.` })
@@ -1347,6 +1360,8 @@ const redundancyClusters = computed(() => {
 const firstFailHeatmap = computed(() => {
   const failingRuns = [...d.runs].filter(r => r.outcomes?.some(o => o.failed))
   if (failingRuns.length < 2) return null
+  // Pre-build test rank map for O(1) lookup instead of O(tests) find per call
+  const testRankMap = new Map<string, number>(d.tests.map(t => [t.name, t.rank]))
   // Collect all tests that ever failed
   const failedTestNames = new Set<string>()
   for (const r of failingRuns) {
@@ -1356,20 +1371,21 @@ const firstFailHeatmap = computed(() => {
   }
   if (failedTestNames.size === 0) return null
 
-  // For each run, find first-failure test (lowest rank among failed)
-  const runFirstFail: string[] = failingRuns.map(r => {
+  // Helper: find lowest-rank failed test in a run
+  const firstFailed = (r: (typeof failingRuns)[0]) => {
     const failed = (r.outcomes || []).filter(o => o.failed).map(o => o.testClass)
-    const ranked = failed
-      .map(n => ({ n, rank: d.tests.find(t => t.name === n)?.rank ?? 9999 }))
-      .sort((a, b) => a.rank - b.rank)
+    const ranked = failed.map(n => ({ n, rank: testRankMap.get(n) ?? 9999 })).sort((a, b) => a.rank - b.rank)
     return ranked[0]?.n ?? ''
-  })
+  }
+
+  // For each run, find first-failure test (lowest rank among failed)
+  const runFirstFail: string[] = failingRuns.map(firstFailed)
 
   // Compute per-test stats: how many runs it was first-to-fail, avg rank when first
   const testStats = new Map<string, { firstCount: number; totalRank: number }>()
-  for (const [ri, name] of runFirstFail.entries()) {
+  for (const name of runFirstFail) {
     if (!name) continue
-    const rank = d.tests.find(t => t.name === name)?.rank ?? 9999
+    const rank = testRankMap.get(name) ?? 9999
     const s = testStats.get(name) ?? { firstCount: 0, totalRank: 0 }
     s.firstCount++
     s.totalRank += rank
@@ -1380,7 +1396,7 @@ const firstFailHeatmap = computed(() => {
   const sortedTests = [...failedTestNames]
     .map(n => ({
       name: n,
-      rank: d.tests.find(t => t.name === n)?.rank ?? 9999,
+      rank: testRankMap.get(n) ?? 9999,
       firstCount: testStats.get(n)?.firstCount ?? 0,
       avgFirstRank: testStats.has(n) ? testStats.get(n)!.totalRank / testStats.get(n)!.firstCount : 0,
     }))
@@ -1388,19 +1404,15 @@ const firstFailHeatmap = computed(() => {
     .slice(0, 10)
 
   // Build cell matrix: [testIdx][runIdx] = { failed, isFirst }
-  const runs = failingRuns.slice(0, 12).reverse() // newest 12 failing runs, chronological left→right
-  const runFirstFailSet = runs.map((r, ri) => {
-    const failed = (r.outcomes || []).filter(o => o.failed).map(o => o.testClass)
-    const ranked = failed
-      .map(n => ({ n, rank: d.tests.find(t => t.name === n)?.rank ?? 9999 }))
-      .sort((a, b) => a.rank - b.rank)
-    return ranked[0]?.n ?? ''
-  })
+  const runs = failingRuns.slice(-12).reverse() // newest 12 failing runs, reversed to oldest-left chronological display
+  // Pre-build per-run failed sets for O(1) cell lookup
+  const runFailedSets = runs.map(r => new Set((r.outcomes || []).filter(o => o.failed).map(o => o.testClass)))
+  const runFirstFailSet = runs.map(firstFailed)
 
   const rows = sortedTests.map(t => ({
     ...t,
     cells: runs.map((r, ri) => ({
-      failed: (r.outcomes || []).some(o => o.testClass === t.name && o.failed),
+      failed: runFailedSets[ri].has(t.name),
       isFirst: runFirstFailSet[ri] === t.name,
     })),
   }))
@@ -1422,7 +1434,7 @@ const retirementCandidates = computed(() => {
   }
   return d.tests
     .filter(t => {
-      if (failCount.get(t.name) ?? 0 > 0) return false // has failed
+      if ((failCount.get(t.name) ?? 0) > 0) return false // has failed
       if (t.failScore > 0) return false // has failure signal
       if (t.isNew || t.isChanged) return false // recently changed — keep
       if (d.flakyTests.value.has(t.name)) return false // flaky — keep
@@ -1728,13 +1740,13 @@ onMounted(initAll)
             <div class="analytics__stat-label">Suite Duration</div>
             <div class="analytics__stat-value" style="color:var(--text-sec)">{{ fmtDur(runStats.totalDurationMs) }}</div>
           </div>
-          <div v-if="d.runs.length > 1" class="kpi analytics__stat-kpi" :title="'Time span from first to last recorded run: ' + fmtTime(d.runs[d.runs.length-1].timestamp) + ' → ' + fmtTime(d.runs[0].timestamp)">
+          <div v-if="d.runs.length > 1" class="kpi analytics__stat-kpi" :title="'Time span from first to last recorded run: ' + fmtTime(d.runs[0].timestamp) + ' → ' + fmtTime(d.runs[d.runs.length-1].timestamp)">
             <div class="analytics__stat-label">History Span</div>
             <div class="analytics__stat-value" style="color:var(--text-sec)">{{ historySpan }}</div>
           </div>
           <div v-if="runStats.avgFirstFailPos !== null" class="kpi analytics__stat-kpi" :title="'Average rank position of the first failure when failures occurred. Lower = failures are found earlier in the run = better ordering.'">
             <div class="analytics__stat-label">Avg 1st Fail Pos</div>
-            <div class="analytics__stat-value" :style="{ color: runStats.avgFirstFailPos <= 3 ? 'var(--green)' : runStats.avgFirstFailPos <= 10 ? 'var(--yellow)' : 'var(--orange)' }">{{ runStats.avgFirstFailPos }}</div>
+            <div class="analytics__stat-value" :style="{ color: (runStats.avgFirstFailPos + 1) <= 3 ? 'var(--green)' : (runStats.avgFirstFailPos + 1) <= 10 ? 'var(--yellow)' : 'var(--orange)' }">{{ runStats.avgFirstFailPos + 1 }}</div>
           </div>
         </div>
 
@@ -2085,9 +2097,9 @@ onMounted(initAll)
               v-for="(r, ri) in rankHeatmap.runs"
               :key="ri"
               style="font-size:.52rem;color:var(--text-muted);text-align:center;padding:1px 0;white-space:nowrap;overflow:hidden;cursor:pointer"
-              :style="{ color: selectedRunIdx === ri ? 'var(--accent-light)' : undefined, fontWeight: selectedRunIdx === ri ? '700' : undefined }"
+              :style="{ color: selectedRunIdx === (d.runs.length - 1 - ri) ? 'var(--accent-light)' : undefined, fontWeight: selectedRunIdx === (d.runs.length - 1 - ri) ? '700' : undefined }"
               :title="fmtTime(r.timestamp) + ' — ' + r.totalTests + ' tests, ' + (r.totalFailures ? r.totalFailures + ' failures' : 'all passed') + ' · click to inspect this run'"
-              @click="selectRun(ri)"
+              @click="selectRun(d.runs.length - 1 - ri)"
             >#{{ ri + 1 }}</div>
             <!-- Data rows -->
             <template v-for="row in rankHeatmap.rows" :key="row.name">
@@ -2185,7 +2197,7 @@ onMounted(initAll)
                         v-for="(failed, hi) in d.testHistoryMap.value.get(r.name)!.last8"
                         :key="hi"
                         :style="{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: '0', background: failed ? '#ef4444' : 'rgba(74,222,128,.6)' }"
-                        :title="(failed ? 'FAILED' : 'passed') + ' in run #' + (Math.max(0, d.runs.length - Math.min(8, d.testHistoryMap.value.get(r.name)!.last8.length)) + hi + 1)"
+                        :title="(failed ? 'FAILED' : 'passed') + ' in run #' + (Math.min(8, d.testHistoryMap.value.get(r.name)!.last8.length) - hi)"
                       ></div>
                     </template>
                     <template v-else>
@@ -2196,8 +2208,8 @@ onMounted(initAll)
                   </div>
                 </td>
                 <td style="padding:3px 8px;text-align:right;font-size:.68rem">
-                  <template v-if="d.tests.find(t => t.name === r.name)">
-                    <span style="color:var(--accent-light)">#{{ d.tests.find(t => t.name === r.name)!.rank }}</span>
+                  <template v-if="d.testsByName.value.get(r.name)">
+                    <span style="color:var(--accent-light)">#{{ d.testsByName.value.get(r.name)!.rank }}</span>
                   </template>
                   <span v-else style="color:var(--text-muted)">—</span>
                 </td>
@@ -2277,17 +2289,17 @@ onMounted(initAll)
         <!-- Compact health timeline bar — oldest-left, newest-right -->
         <div class="run-health-bar" :title="'Pass/fail timeline across all ' + d.runs.length + ' runs. Bar height = APFD. Red = failures. Oldest left, newest right.'">
           <div
-            v-for="(r, i) in [...d.runs].reverse()"
+            v-for="(r, i) in d.runs"
             :key="r.timestamp"
             class="run-health-bar__seg"
             :class="{
               'run-health-bar__seg--fail': r.totalFailures > 0,
               'run-health-bar__seg--pass': r.totalFailures === 0,
-              'run-health-bar__seg--selected': selectedRunIdx === (d.runs.length - 1 - i),
+              'run-health-bar__seg--selected': selectedRunIdx === i,
             }"
             :style="{ height: Math.max(3, Math.round(r.apfd * 20)) + 'px' }"
-            :title="'Run #' + (i + 1) + ': ' + (r.totalFailures > 0 ? r.totalFailures + ' failures' : 'all passed') + ' · APFD ' + (r.apfd * 100).toFixed(0) + '%'"
-            @click="selectRun(d.runs.length - 1 - i)"
+            :title="'Run #' + (d.runs.length - i) + ': ' + (r.totalFailures > 0 ? r.totalFailures + ' failures' : 'all passed') + ' · APFD ' + (r.apfd * 100).toFixed(0) + '%'"
+            @click="selectRun(i)"
           ></div>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
@@ -2318,22 +2330,22 @@ onMounted(initAll)
         <!-- Run detail drill-down -->
         <div v-if="selectedRun" class="detail-panel">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
-            <button @click="selectRun(Math.min(d.runs.length - 1, selectedRunIdx! + 1))" :disabled="selectedRunIdx === d.runs.length - 1" class="analytics__nav-btn" title="Previous (older) run (‹)">‹</button>
+            <button @click="selectRun(Math.max(0, selectedRunIdx! - 1))" :disabled="selectedRunIdx === 0" class="analytics__nav-btn" title="Previous (older) run (‹)">‹</button>
             <span style="font-size:.82rem;font-weight:600;color:var(--text)">Run #{{ d.runs.length - selectedRunIdx! }} <span style="font-size:.62rem;color:var(--text-muted)">of {{ d.runs.length }}</span></span>
-            <button @click="selectRun(Math.max(0, selectedRunIdx! - 1))" :disabled="selectedRunIdx === 0" class="analytics__nav-btn" title="Next (newer) run (›)">›</button>
+            <button @click="selectRun(Math.min(d.runs.length - 1, selectedRunIdx! + 1))" :disabled="selectedRunIdx === d.runs.length - 1" class="analytics__nav-btn" title="Next (newer) run (›)">›</button>
             <span style="font-size:.72rem;color:var(--text-sec)">{{ fmtTime(selectedRun.timestamp) }}</span>
             <span class="badge" :style="{ background: selectedRun.totalFailures > 0 ? 'rgba(127,29,29,.4)' : 'rgba(20,83,45,.4)', color: selectedRun.totalFailures > 0 ? 'var(--red)' : 'var(--green)' }">
               {{ selectedRun.totalFailures > 0 ? selectedRun.totalFailures + ' failures' : 'all passed' }}
             </span>
             <span style="font-size:.72rem;color:var(--text-sec)">APFD: <strong :style="{ color: selectedRun.apfd >= 0.7 ? 'var(--green)' : selectedRun.apfd >= 0.5 ? 'var(--yellow)' : 'var(--red)' }">{{ (selectedRun.apfd * 100).toFixed(1) }}%</strong>
-              <template v-if="selectedRunIdx! < d.runs.length - 1">
-                <span style="font-size:.6rem;margin-left:3px" :style="{ color: (selectedRun.apfd - d.runs[selectedRunIdx! + 1].apfd) > 0.01 ? 'var(--green)' : (selectedRun.apfd - d.runs[selectedRunIdx! + 1].apfd) < -0.01 ? 'var(--red)' : 'var(--text-muted)' }">
-                  ({{ (selectedRun.apfd - d.runs[selectedRunIdx! + 1].apfd) > 0 ? '+' : '' }}{{ ((selectedRun.apfd - d.runs[selectedRunIdx! + 1].apfd) * 100).toFixed(1) }}pp vs prev)
+              <template v-if="selectedRunIdx! > 0">
+                <span style="font-size:.6rem;margin-left:3px" :style="{ color: (selectedRun.apfd - d.runs[selectedRunIdx! - 1].apfd) > 0.01 ? 'var(--green)' : (selectedRun.apfd - d.runs[selectedRunIdx! - 1].apfd) < -0.01 ? 'var(--red)' : 'var(--text-muted)' }">
+                  ({{ (selectedRun.apfd - d.runs[selectedRunIdx! - 1].apfd) > 0 ? '+' : '' }}{{ ((selectedRun.apfd - d.runs[selectedRunIdx! - 1].apfd) * 100).toFixed(1) }}pp vs prev)
                 </span>
               </template>
             </span>
             <span style="font-size:.72rem;color:var(--text-sec)">{{ selectedRun.totalTests }} tests</span>
-            <span v-if="selectedRun.firstFailurePosition >= 0" style="font-size:.72rem;color:var(--text-sec)">First failure at position <strong style="color:var(--orange)">{{ selectedRun.firstFailurePosition }}</strong></span>
+            <span v-if="selectedRun.firstFailurePosition >= 0" style="font-size:.72rem;color:var(--text-sec)">First failure at position <strong style="color:var(--orange)">{{ selectedRun.firstFailurePosition + 1 }}</strong></span>
             <button @click="selectedRunIdx = null" style="margin-left:auto;padding:2px 8px;font-size:.65rem;background:var(--border);color:var(--text-sec);border:1px solid var(--text-muted);border-radius:3px;cursor:pointer">✕ Close</button>
           </div>
           <!-- Run composition summary -->
@@ -2368,7 +2380,7 @@ onMounted(initAll)
           </div>
           <!-- Run diff vs previous -->
           <div v-if="runDiff && (runDiff.newFailures.length || runDiff.recoveries.length || runDiff.newTests.length || runDiff.rankChanges.length)" class="run-diff">
-            <div class="run-diff__title">Changes vs Run #{{ d.runs.length - (selectedRunIdx! + 1) }} (previous)</div>
+            <div class="run-diff__title">Changes vs Run #{{ d.runs.length - selectedRunIdx! + 1 }} (previous)</div>
             <!-- New failures -->
             <div v-if="runDiff.newFailures.length" class="run-diff__group">
               <div class="run-diff__group-hdr run-diff__group-hdr--fail" @click="runDiffOpen.failures = !runDiffOpen.failures">
@@ -2477,7 +2489,7 @@ onMounted(initAll)
                   <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Score at time of this run">Score</th>
                   <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec);min-width:50px" title="Score composition — fail(red) dep(blue) change(yellow) speed(green) static(purple)">Composition</th>
                   <th v-if="d.runs.length >= 3" style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec);min-width:40px" title="Speed ratio trend across runs — line above midpoint = faster than median, below = slower. Orange = getting slower, green = getting faster.">Speed</th>
-                  <th v-if="selectedRunIdx! < d.runs.length - 1" style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Score change vs previous run">Δ Score</th>
+                  <th v-if="selectedRunIdx! > 0" style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Score change vs previous (older) run">Δ Score</th>
                   <th style="padding:3px 8px;text-align:center;font-size:.68rem;color:var(--text-sec)">Result</th>
                   <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec)">Flags</th>
                   <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Compare to current rank">vs Current</th>
@@ -2502,7 +2514,7 @@ onMounted(initAll)
                   </td>
                   <td v-if="d.runs.length >= 3" style="padding:2px 8px" :title="speedRatioHistoryMap.get(o.testClass)?.length ? 'Speed trend across ' + speedRatioHistoryMap.get(o.testClass)!.length + ' runs. Center line = median. Above = faster, below = slower.' : 'Not enough data'"
                     v-html="speedTrendSvg(o.testClass) ?? ''"></td>
-                  <td v-if="selectedRunIdx! < d.runs.length - 1" style="padding:2px 8px;text-align:right;font-size:.68rem">
+                  <td v-if="selectedRunIdx! > 0" style="padding:2px 8px;text-align:right;font-size:.68rem">
                     <template v-if="prevRunScoreMap.has(o.testClass)">
                       <span :style="{ color: (o.score - prevRunScoreMap.get(o.testClass)!) > 0 ? 'var(--green)' : (o.score - prevRunScoreMap.get(o.testClass)!) < 0 ? 'var(--red)' : 'var(--text-muted)' }" :title="'Score change: ' + prevRunScoreMap.get(o.testClass) + ' → ' + o.score">
                         {{ (o.score - prevRunScoreMap.get(o.testClass)!) > 0 ? '+' : '' }}{{ o.score - prevRunScoreMap.get(o.testClass)! }}
@@ -2523,9 +2535,9 @@ onMounted(initAll)
                     <span v-if="o.depOverlap > 0" style="font-size:.58rem;color:var(--cyan)" :title="o.depOverlap + ' deps overlap with changed classes'">◈{{ o.depOverlap }}</span>
                   </td>
                   <td style="padding:2px 8px;text-align:right;font-size:.68rem">
-                    <template v-if="d.tests.find(t => t.name === o.testClass)">
-                      <span :style="{ color: d.tests.find(t => t.name === o.testClass)!.rank - (idx + 1) < -3 ? 'var(--green)' : d.tests.find(t => t.name === o.testClass)!.rank - (idx + 1) > 3 ? 'var(--red)' : 'var(--text-muted)' }">
-                        {{ d.tests.find(t => t.name === o.testClass)!.rank - (idx + 1) > 0 ? '↓' + (d.tests.find(t => t.name === o.testClass)!.rank - (idx + 1)) : d.tests.find(t => t.name === o.testClass)!.rank - (idx + 1) < 0 ? '↑' + Math.abs(d.tests.find(t => t.name === o.testClass)!.rank - (idx + 1)) : '=' }}
+                  <template v-if="d.testsByName.value.get(o.testClass)">
+                      <span :style="{ color: d.testsByName.value.get(o.testClass)!.rank - (idx + 1) < -3 ? 'var(--green)' : d.testsByName.value.get(o.testClass)!.rank - (idx + 1) > 3 ? 'var(--red)' : 'var(--text-muted)' }">
+                        {{ d.testsByName.value.get(o.testClass)!.rank - (idx + 1) > 0 ? '↓' + (d.testsByName.value.get(o.testClass)!.rank - (idx + 1)) : d.testsByName.value.get(o.testClass)!.rank - (idx + 1) < 0 ? '↑' + Math.abs(d.testsByName.value.get(o.testClass)!.rank - (idx + 1)) : '=' }}
                       </span>
                     </template>
                   </td>

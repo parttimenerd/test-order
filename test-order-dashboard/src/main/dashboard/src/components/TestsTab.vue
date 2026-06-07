@@ -172,7 +172,7 @@ const posNeighbors = computed(() => {
   return d.tests.slice(start, end + 1)
 })
 
-// Rank trend: compare avg position in older half vs newer half of runs (positions newest-first)
+// Rank trend: compare avg position in older half vs newer half of runs (d.runs oldest-first)
 const rankTrend = computed(() => {
   const t = d.selectedTest.value
   if (!t || d.runs.length < 4) return null
@@ -184,9 +184,9 @@ const rankTrend = computed(() => {
   }).filter(p => p !== null) as number[]
   if (positions.length < 4) return null
   const half = Math.floor(positions.length / 2)
-  // positions[0]=newest; slice(0,half)=recent, slice(-half)=early
-  const recent = positions.slice(0, half).reduce((s, v) => s + v, 0) / half
-  const early = positions.slice(-half).reduce((s, v) => s + v, 0) / half
+  // positions[0]=oldest (d.runs is oldest-first); slice(0,half)=early, slice(-half)=recent
+  const recent = positions.slice(-half).reduce((s, v) => s + v, 0) / half
+  const early = positions.slice(0, half).reduce((s, v) => s + v, 0) / half
   const delta = Math.round(early - recent) // positive = rank number went down = improving
   if (Math.abs(delta) < 2) return { dir: 'stable' as const, delta: 0, early: Math.round(early), late: Math.round(recent) }
   return { dir: delta > 0 ? 'improving' as const : 'worsening' as const, delta, early: Math.round(early), late: Math.round(recent) }
@@ -498,15 +498,13 @@ const confidenceMap = computed(() => {
 })
 
 // First-seen: for each test, which run index (0-based, oldest-first) it first appeared in
-// d.runs is newest-first, so run index 0 = oldest is d.runs[d.runs.length - 1]
 const firstSeenMap = computed(() => {
   const m = new Map<string, number>() // name → oldest-first run index when first seen
   if (!d.runs.length) return m
-  // Iterate from oldest to newest (d.runs reversed)
-  for (let i = d.runs.length - 1; i >= 0; i--) {
-    const oldestFirstIdx = d.runs.length - 1 - i
+  // Iterate oldest to newest so the first occurrence is the actual first-seen
+  for (let i = 0; i < d.runs.length; i++) {
     for (const o of (d.runs[i].outcomes || [])) {
-      if (!m.has(o.testClass)) m.set(o.testClass, oldestFirstIdx)
+      if (!m.has(o.testClass)) m.set(o.testClass, i)
     }
   }
   return m
@@ -520,8 +518,8 @@ const selectedFirstSeen = computed(() => {
   if (idx === undefined) return null
   const totalRuns = d.runs.length
   const isRecent = idx >= totalRuns - 2 // seen within last 2 runs
-  const runNum = idx + 1
-  const ts = d.runs[d.runs.length - 1 - idx]?.timestamp
+  const runNum = totalRuns - idx
+  const ts = d.runs[idx]?.timestamp
   return { runNum, totalRuns, isRecent, ts }
 })
 
@@ -529,7 +527,7 @@ const selectedFirstSeen = computed(() => {
 function scoreSparkSvg(name: string): string | null {
   const scores = scoreHistoryMap.value.get(name)
   if (!scores || scores.length < 2) return null
-  const last = scores.slice(0, 8).reverse() // newest 8, reversed to oldest-left for sparkline
+  const last = scores.slice(-8) // newest 8 runs, oldest-left for sparkline
   const W = 40, H = 14
   const maxS = Math.max(...last, 1)
   const minS = Math.min(...last, 0)
@@ -558,7 +556,7 @@ function initDetailCharts(t: TestEntry) {
     },
   })
   if (d.runs.length) {
-    const chronRuns = [...d.runs].reverse() // oldest-first for charts
+    const chronRuns = d.runs // oldest-first for chronological left→right charts
     const labels = chronRuns.map(r => fmtTime(r.timestamp))
     const failData = chronRuns.map(r => {
       const o = (r.outcomes || []).find(o => o.testClass === t.name)
@@ -582,7 +580,7 @@ function initDetailCharts(t: TestEntry) {
     })
   }
   if (d.runs.length > 1) {
-    const chronRuns2 = [...d.runs].reverse() // oldest-first for charts
+    const chronRuns2 = d.runs // oldest-first for chronological left→right charts
     const labels = chronRuns2.map(r => fmtTime(r.timestamp))
     const scores = chronRuns2.map(r => {
       const o = (r.outcomes || []).find(o => o.testClass === t.name)
@@ -987,7 +985,7 @@ function previewScoreBars(t: TestEntry) {
                       :key="hi"
                       class="tests-hist-dot"
                       :class="failed ? 'tests-hist-dot--fail' : 'tests-hist-dot--pass'"
-                      :title="'Run #' + (Math.max(0, d.runs.length - d.testHistoryMap.value.get(t.name)!.last8.length) + hi + 1) + ': ' + (failed ? 'FAILED' : 'passed')"
+                      :title="'Run #' + (d.testHistoryMap.value.get(t.name)!.last8.length - hi) + ': ' + (failed ? 'FAILED' : 'passed')"
                     ></div>
                   </template>
                 </div>
@@ -995,7 +993,7 @@ function previewScoreBars(t: TestEntry) {
               <td v-if="d.runs.length >= 3" class="td--history" :title="d.testRankHistoryMap.value.has(t.name) ? 'Rank trend over ' + d.testRankHistoryMap.value.get(t.name)!.length + ' runs: ' + d.testRankHistoryMap.value.get(t.name)!.join(' → ') : 'No trend data'">
                 <span v-if="rankSparkSvg(t.name)" v-html="rankSparkSvg(t.name)"></span>
               </td>
-              <td v-if="d.runs.length >= 3" class="td--history" :title="scoreHistoryMap.get(t.name) ? 'Score history (oldest→newest): ' + [...scoreHistoryMap.get(t.name)!].reverse().join(' → ') : 'No score history'">
+              <td v-if="d.runs.length >= 3" class="td--history" :title="scoreHistoryMap.get(t.name) ? 'Score history (oldest→newest): ' + scoreHistoryMap.get(t.name)!.join(' → ') : 'No score history'">
                 <span v-if="scoreSparkSvg(t.name)" v-html="scoreSparkSvg(t.name)"></span>
               </td>
               <td v-if="d.runs.length >= 3" class="td--right td--conf"
@@ -1312,7 +1310,7 @@ function previewScoreBars(t: TestEntry) {
           {{ d.testOutcomes.value.filter(o => o.present && o.failed).length }}✕ / {{ d.testOutcomes.value.filter(o => o.present).length }} runs
           ({{ Math.round(d.testOutcomes.value.filter(o => o.present && o.failed).length / d.testOutcomes.value.filter(o => o.present).length * 100) }}% fail rate)
         </span>
-        <span v-if="d.selectedTest.value.failScore > 0 && d.testOutcomes.value.length > 0" class="tests-detail__stat" style="color:var(--red)">· last failed {{ fmtTime(d.testOutcomes.value.filter(o => o.present && o.failed)[0]?.ts ?? d.testOutcomes.value.filter(o => o.present)[0]?.ts) }}</span>
+        <span v-if="d.selectedTest.value.failScore > 0 && d.testOutcomes.value.length > 0" class="tests-detail__stat" style="color:var(--red)">· last failed {{ fmtTime(d.testOutcomes.value.filter(o => o.present && o.failed).at(-1)?.ts ?? d.testOutcomes.value.filter(o => o.present).at(-1)?.ts) }}</span>
         <span v-if="rankTrend" class="tests-detail__stat tests-detail__rank-trend"
           :class="rankTrend.dir === 'improving' ? 'tests-detail__rank-trend--up' : rankTrend.dir === 'worsening' ? 'tests-detail__rank-trend--down' : ''"
           :title="rankTrendTip"

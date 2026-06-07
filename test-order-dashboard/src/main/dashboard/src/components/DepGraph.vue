@@ -384,6 +384,40 @@ function initGraph() {
     })
   }
 
+  // Package bubble separation force: push packages apart when their bounding boxes overlap
+  const pkgEntries = Object.entries(pkgMap).filter(([, m]) => m.length >= 1)
+  if (pkgEntries.length >= 2) {
+    sim.force('pkgSep', () => {
+      const strength = 0.12
+      const pad = GRAPH.BUBBLE_PAD + 8
+      // Compute bounding box for each package
+      const boxes = pkgEntries.map(([, members]) => {
+        const xs = members.map(n => n.x || 0)
+        const ys = members.map(n => n.y || 0)
+        return { x0: Math.min(...xs) - pad, y0: Math.min(...ys) - pad, x1: Math.max(...xs) + pad, y1: Math.max(...ys) + pad, members }
+      })
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i], b = boxes[j]
+          const overlapX = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)
+          const overlapY = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)
+          if (overlapX <= 0 || overlapY <= 0) continue
+          // Push along the axis of smallest overlap to separate the boxes
+          const acx = (a.x0 + a.x1) / 2, acy = (a.y0 + a.y1) / 2
+          const bcx = (b.x0 + b.x1) / 2, bcy = (b.y0 + b.y1) / 2
+          let fx = 0, fy = 0
+          if (overlapX < overlapY) {
+            fx = (acx > bcx ? 1 : -1) * overlapX * strength
+          } else {
+            fy = (acy > bcy ? 1 : -1) * overlapY * strength
+          }
+          a.members.forEach(n => { n.vx = (n.vx || 0) + fx; n.vy = (n.vy || 0) + fy })
+          b.members.forEach(n => { n.vx = (n.vx || 0) - fx; n.vy = (n.vy || 0) - fy })
+        }
+      }
+    })
+  }
+
   const link = g.append('g').selectAll('line').data(links).join('line')
     .attr('stroke', l => l.changed ? '#f59e0b' : '#334155').attr('stroke-width', 1.5).attr('stroke-opacity', 0.6)
   liveLinkSel = link as unknown as d3.Selection<SVGLineElement, GLink, SVGGElement, unknown>

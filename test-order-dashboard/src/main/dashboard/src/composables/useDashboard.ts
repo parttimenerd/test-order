@@ -57,6 +57,7 @@ export interface DashboardState {
   selectedTestObjects: ComputedRef<TestEntry[]>
   latestRun: ComputedRef<RunRecord | null>
   avgApfd: ComputedRef<number | null>
+  testsByName: ComputedRef<Map<string, TestEntry>>
   testHistoryMap: ComputedRef<Map<string, { pass: number; fail: number; last8: boolean[] }>>
   testRankHistoryMap: ComputedRef<Map<string, number[]>>
   flakyTests: ComputedRef<Set<string>>
@@ -244,18 +245,23 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const selectedTestObjects = computed(() =>
     tests.filter(t => selectedTests.value.has(t.name)).sort((a, b) => a.rank - b.rank),
   )
+  const testsByName = computed<Map<string, (typeof tests)[0]>>(() => new Map(tests.map(t => [t.name, t])))
 
   // Flaky tests = have both passes and failures across all runs
   const flakyTests = computed<Set<string>>(() => {
     const s = new Set<string>()
     if (!runs.length) return s
-    for (const t of tests) {
-      let pass = 0, fail = 0
-      for (const r of runs) {
-        const o = (r.outcomes || []).find(o => o.testClass === t.name)
-        if (o) { o.failed ? fail++ : pass++ }
+    // Aggregate pass/fail counts per test across all runs (outer loop = runs for cache locality)
+    const passCount = new Map<string, number>()
+    const failCount = new Map<string, number>()
+    for (const r of runs) {
+      for (const o of (r.outcomes || [])) {
+        if (o.failed) failCount.set(o.testClass, (failCount.get(o.testClass) ?? 0) + 1)
+        else passCount.set(o.testClass, (passCount.get(o.testClass) ?? 0) + 1)
       }
-      if (pass > 0 && fail > 0) s.add(t.name)
+    }
+    for (const t of tests) {
+      if ((passCount.get(t.name) ?? 0) > 0 && (failCount.get(t.name) ?? 0) > 0) s.add(t.name)
     }
     return s
   })
@@ -352,7 +358,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     return arr
   })
 
-  const latestRun = computed(() => (runs.length ? runs[0] : null))
+  const latestRun = computed(() => (runs.length ? runs[runs.length - 1] : null))
   const avgApfd = computed(() => (runs.length ? runs.reduce((s, r) => s + r.apfd, 0) / runs.length : null))
   const fastestTest = computed(() => {
     const w = tests.filter(t => t.duration >= 0)
@@ -521,8 +527,8 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   // ── Run diff (compare last 2 runs) ──────────────────────────
   const runDiff = computed<RunDiffEntry[]>(() => {
     if (runs.length < 2) return []
-    const prev = runs[1]
-    const curr = runs[0]
+    const prev = runs[runs.length - 2]
+    const curr = runs[runs.length - 1]
     const prevScored = (prev.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB), failed: o.failed }))
     const currScored = (curr.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB), failed: o.failed }))
     prevScored.sort((a, b) => b.score - a.score)
@@ -559,7 +565,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
 
   // ── Simulated APFD (replay last run with current slider weights) ──
   const simApfd = computed<number | null>(() => {
-    const lastRun = runs.length ? runs[0] : null
+    const lastRun = runs.length ? runs[runs.length - 1] : null
     if (!lastRun?.outcomes?.length) return null
     const bonuses = simSetCoverBonuses.value
     const scored = lastRun.outcomes.map(o => ({ ...o, simScore: computeScore(o, lw as unknown as ScoringWeights, bonuses) }))
@@ -571,16 +577,21 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const testHistoryMap = computed<Map<string, { pass: number; fail: number; last8: boolean[] }>>(() => {
     const m = new Map<string, { pass: number; fail: number; last8: boolean[] }>()
     if (!runs.length) return m
-    // runs is newest-first; take newest 8, reverse to oldest-first for left→right display
-    const last8 = runs.slice(0, 8).reverse()
+    // Pre-build per-run outcome maps for O(1) lookup instead of O(outcomes) find per test
+    const runMaps = runs.map(r => {
+      const rm = new Map<string, (typeof r.outcomes)[0]>()
+      for (const o of (r.outcomes || [])) rm.set(o.testClass, o)
+      return rm
+    })
+    const last8Maps = runMaps.slice(-8)
     for (const t of tests) {
       let pass = 0, fail = 0
-      for (const r of runs) {
-        const o = (r.outcomes || []).find(o => o.testClass === t.name)
+      for (const rm of runMaps) {
+        const o = rm.get(t.name)
         if (o) { o.failed ? fail++ : pass++ }
       }
-      const last8arr = last8.map(r => {
-        const o = (r.outcomes || []).find(o => o.testClass === t.name)
+      const last8arr = last8Maps.map(rm => {
+        const o = rm.get(t.name)
         return o ? o.failed : null
       }).filter(x => x !== null) as boolean[]
       m.set(t.name, { pass, fail, last8: last8arr })
@@ -591,8 +602,8 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const testRankHistoryMap = computed<Map<string, number[]>>(() => {
     const m = new Map<string, number[]>()
     if (runs.length < 2) return m
-    // runs is newest-first; take newest 8, reverse to oldest-first for chronological order
-    const last8 = runs.slice(0, 8).reverse()
+    // runs is oldest-first; take newest 8 (from end) for chronological order (oldest left → newest right)
+    const last8 = runs.slice(-8)
     const rankMaps = last8.map(r => {
       const sorted = [...(r.outcomes || [])].sort((a, b) => b.score - a.score)
       const rm = new Map<string, number>()
@@ -909,7 +920,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     TABS, SIDEBAR_SORT_COLS, GMODES,
     tests, runs, changedSet, hasMethodData,
     filteredTests, selectedTestObjects, latestRun, avgApfd,
-    testHistoryMap, testRankHistoryMap,
+    testsByName, testHistoryMap, testRankHistoryMap,
     flakyTests,
     fastestTest, slowestTest, totalNodes, scoreComps, testOutcomes,
     simResults, covPackages, covAvgTests, covPercent,

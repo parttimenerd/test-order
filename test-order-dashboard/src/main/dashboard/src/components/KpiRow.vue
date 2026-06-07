@@ -55,8 +55,8 @@ function openHealth() {
 // Latest APFD trend: arrow showing improvement/regression vs previous run
 const apfdTrend = computed(() => {
   if (d.runs.length < 2) return null
-  const prev = d.runs[1].apfd
-  const curr = d.runs[0].apfd
+  const prev = d.runs[d.runs.length - 2].apfd
+  const curr = d.runs[d.runs.length - 1].apfd
   const delta = curr - prev
   if (Math.abs(delta) < 0.005) return { dir: '→', color: 'var(--text-muted)', tip: 'stable' }
   return delta > 0
@@ -65,13 +65,13 @@ const apfdTrend = computed(() => {
 })
 
 // History browser: selected run index (-1 = latest / live)
-// index 0 = oldest run, index d.runs.length-1 = newest run (maps to d.runs reversed)
+// sparkBars index: i=0 → newest run (d.runs[length-1]); i=length-1 → oldest run (d.runs[0])
 const historyIdx = ref(-1)
-const isLive = computed(() => historyIdx.value === -1 || historyIdx.value === d.runs.length - 1)
-const currentHistIdx = computed(() => historyIdx.value === -1 ? d.runs.length - 1 : historyIdx.value)
+const isLive = computed(() => historyIdx.value === -1 || historyIdx.value === 0)
+const currentHistIdx = computed(() => historyIdx.value === -1 ? 0 : historyIdx.value)
 const historyRun = computed(() => {
   if (!d.runs.length) return null
-  // slider index 0=oldest → d.runs[length-1], slider index length-1=newest → d.runs[0]
+  // sparkBars index i=0=newest → d.runs[length-1]; i=length-1=oldest → d.runs[0]
   return d.runs[d.runs.length - 1 - currentHistIdx.value] ?? null
 })
 
@@ -84,14 +84,14 @@ function openInAnalytics(sliderIdx: number) {
   d.navigateToRun(d.runs.length - 1 - sliderIdx)
 }
 
-// Current pass/fail streak (runs are newest-first in d.runs, so iterate forward)
+// Current pass/fail streak (d.runs is oldest-first; start from newest run d.runs[length-1])
 const streak = computed(() => {
   if (!d.runs.length) return null
   const isPass = (r: typeof d.runs[0]) => r.totalFailures === 0
-  const first = d.runs[0]
+  const first = d.runs[d.runs.length - 1]
   const passing = isPass(first)
   let count = 1
-  for (let i = 1; i < d.runs.length; i++) {
+  for (let i = d.runs.length - 2; i >= 0; i--) {
     if (isPass(d.runs[i]) === passing) count++
     else break
   }
@@ -108,13 +108,13 @@ const streak = computed(() => {
 // Last failure: how many runs ago was the most recent failure, and which test caused it
 const lastFailureInfo = computed(() => {
   if (d.runs.length < 2) return null
-  // d.runs is newest-first
-  for (let i = 0; i < d.runs.length; i++) {
+  // d.runs is oldest-first; iterate newest-first to find most recent failure
+  for (let i = d.runs.length - 1; i >= 0; i--) {
     if (d.runs[i].totalFailures > 0) {
-      const cleanCount = i // number of consecutive clean runs before this
+      const cleanCount = d.runs.length - 1 - i // number of consecutive clean runs after this failure
       const failRun = d.runs[i]
       const failedTests = (failRun.outcomes || []).filter(o => o.failed).map(o => o.testClass)
-      return { runsAgo: i, cleanCount, ts: failRun.timestamp, failures: failRun.totalFailures, failedTests }
+      return { runsAgo: d.runs.length - 1 - i, cleanCount, ts: failRun.timestamp, failures: failRun.totalFailures, failedTests }
     }
   }
   // All runs passed
@@ -158,7 +158,7 @@ const timeSavings = computed(() => {
 const sparkBars = computed(() => {
   if (!d.runs.length) return []
   const maxFail = Math.max(...d.runs.map(r => r.totalFailures), 1)
-  // Build bars in oldest-first order; slider index i=0 is oldest run = d.runs[length-1]
+  // Build bars newest-first (i=0=newest=d.runs[length-1], i=length-1=oldest=d.runs[0])
   return [...d.runs].reverse().map((r, i) => {
     const apfdPct = Math.round(r.apfd * 100)
     const hasFail = r.totalFailures > 0
@@ -212,7 +212,7 @@ const sparkBars = computed(() => {
         ? 'All ' + lastFailureInfo.cleanCount + ' recorded runs passed — no failures on record. Click to open Analytics.'
         : lastFailureInfo.runsAgo === 0
           ? 'Latest run had ' + lastFailureInfo.failures + ' failure(s): ' + lastFailureInfo.failedTests.slice(0,3).map(n => n.split('.').pop()).join(', ') + (lastFailureInfo.failedTests.length > 3 ? '…' : '') + '\nClick to open Analytics.'
-          : lastFailureInfo.cleanCount + ' clean run' + (lastFailureInfo.cleanCount !== 1 ? 's' : '') + ' since last failure (' + lastFailureInfo.failures + ' fail' + (lastFailureInfo.failures !== 1 ? 's' : '') + ' in run #' + (d.runs.length - lastFailureInfo.runsAgo) + ')\nFailed: ' + lastFailureInfo.failedTests.slice(0,3).map(n => n.split('.').pop()).join(', ') + (lastFailureInfo.failedTests.length > 3 ? '…' : '') + '\nClick to open Analytics.'"
+          : lastFailureInfo.cleanCount + ' clean run' + (lastFailureInfo.cleanCount !== 1 ? 's' : '') + ' since last failure (' + lastFailureInfo.failures + ' fail' + (lastFailureInfo.failures !== 1 ? 's' : '') + ' in run #' + (lastFailureInfo.runsAgo + 1) + ')\nFailed: ' + lastFailureInfo.failedTests.slice(0,3).map(n => n.split('.').pop()).join(', ') + (lastFailureInfo.failedTests.length > 3 ? '…' : '') + '\nClick to open Analytics.'"
     >
       <div class="kpi-row__label">Last Failure</div>
       <div v-if="lastFailureInfo.runsAgo === 0" class="kpi-row__value" style="color:var(--red)">now</div>
@@ -296,12 +296,12 @@ const sparkBars = computed(() => {
         :title="`Run ${currentHistIdx + 1} of ${d.runs.length}`"
       />
       <div style="display:flex;align-items:center;gap:4px;margin-top:2px">
-        <button class="kpi-row__hist-btn" @click="goToRun(0)" :disabled="currentHistIdx === 0" title="Oldest run («)">«</button>
-        <button class="kpi-row__hist-btn" @click="goToRun(Math.max(0, currentHistIdx - 1))" :disabled="currentHistIdx === 0" title="Previous run (‹)">‹</button>
+        <button class="kpi-row__hist-btn" @click="goToRun(d.runs.length - 1)" :disabled="currentHistIdx === d.runs.length - 1" title="Oldest run («)">«</button>
+        <button class="kpi-row__hist-btn" @click="goToRun(Math.min(d.runs.length - 1, currentHistIdx + 1))" :disabled="currentHistIdx === d.runs.length - 1" title="Previous (older) run (‹)">‹</button>
         <span class="kpi-row__hist-pos" :style="{ color: isLive ? 'var(--green)' : 'var(--yellow)' }">
           {{ isLive ? 'latest' : '#' + (currentHistIdx + 1) }}
         </span>
-        <button class="kpi-row__hist-btn" @click="goToRun(Math.min(d.runs.length - 1, currentHistIdx + 1))" :disabled="isLive" title="Next run (›)">›</button>
+        <button class="kpi-row__hist-btn" @click="goToRun(Math.max(0, currentHistIdx - 1))" :disabled="isLive" title="Next (newer) run (›)">›</button>
         <button class="kpi-row__hist-btn" @click="historyIdx = -1" :disabled="isLive" title="Latest run (»)">»</button>
         <button class="kpi-row__hist-btn kpi-row__hist-btn--analytics" @click="openInAnalytics(currentHistIdx)" title="Open this run in Analytics tab">↗</button>
       </div>
@@ -323,18 +323,21 @@ const sparkBars = computed(() => {
     <!-- Fastest / Slowest -->
     <div class="kpi kpi-row__kpi kpi-row__kpi--speed" :title="'Fastest and slowest test by EMA duration. These anchor the speed scoring bonus/penalty. Click to navigate to the test.'">
       <div class="kpi-row__label">Fastest / Slowest</div>
-      <div class="kpi-row__speed-item kpi-row__speed-item--clickable" v-if="d.fastestTest.value" @click="d.selectTest(d.fastestTest.value!, null); d.setTab('tests')" :title="'Fastest: ' + d.fastestTest.value.name">
-        <span class="kpi-row__speed-icon" style="color:var(--cyan)">▲</span>
-        <span class="kpi-row__test-name kpi-row__test-name--fast" :title="d.fastestTest.value.name"
-          @mouseenter="classHover.show(d.fastestTest.value!.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()">{{ d.fastestTest.value.name.split('.').pop() }}</span>
-        <span class="kpi-row__dur">{{ d.fastestTest.value.duration >= 0 ? fmtDur(d.fastestTest.value.duration) : '' }}</span>
-      </div>
-      <div class="kpi-row__speed-item kpi-row__speed-item--clickable" v-if="d.slowestTest.value" @click="d.selectTest(d.slowestTest.value!, null); d.setTab('tests')" :title="'Slowest: ' + d.slowestTest.value.name">
-        <span class="kpi-row__speed-icon" style="color:var(--orange)">▼</span>
-        <span class="kpi-row__test-name kpi-row__test-name--slow" :title="d.slowestTest.value.name"
-          @mouseenter="classHover.show(d.slowestTest.value!.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()">{{ d.slowestTest.value.name.split('.').pop() }}</span>
-        <span class="kpi-row__dur">{{ d.slowestTest.value.duration >= 0 ? fmtDur(d.slowestTest.value.duration) : '' }}</span>
-      </div>
+      <template v-if="d.fastestTest.value || d.slowestTest.value">
+        <div class="kpi-row__speed-item kpi-row__speed-item--clickable" v-if="d.fastestTest.value" @click="d.selectTest(d.fastestTest.value!, null); d.setTab('tests')" :title="'Fastest: ' + d.fastestTest.value.name">
+          <span class="kpi-row__speed-icon" style="color:var(--cyan)">▲</span>
+          <span class="kpi-row__test-name kpi-row__test-name--fast" :title="d.fastestTest.value.name"
+            @mouseenter="classHover.show(d.fastestTest.value!.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()">{{ d.fastestTest.value.name.split('.').pop() }}</span>
+          <span class="kpi-row__dur">{{ d.fastestTest.value.duration >= 0 ? fmtDur(d.fastestTest.value.duration) : '' }}</span>
+        </div>
+        <div class="kpi-row__speed-item kpi-row__speed-item--clickable" v-if="d.slowestTest.value" @click="d.selectTest(d.slowestTest.value!, null); d.setTab('tests')" :title="'Slowest: ' + d.slowestTest.value.name">
+          <span class="kpi-row__speed-icon" style="color:var(--orange)">▼</span>
+          <span class="kpi-row__test-name kpi-row__test-name--slow" :title="d.slowestTest.value.name"
+            @mouseenter="classHover.show(d.slowestTest.value!.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()">{{ d.slowestTest.value.name.split('.').pop() }}</span>
+          <span class="kpi-row__dur">{{ d.slowestTest.value.duration >= 0 ? fmtDur(d.slowestTest.value.duration) : '' }}</span>
+        </div>
+      </template>
+      <span v-else class="kpi-row__no-data">run tests to populate</span>
     </div>
 
     <!-- Changed tests count -->
@@ -385,6 +388,7 @@ const sparkBars = computed(() => {
 .kpi-row__speed-item--clickable { cursor: pointer; border-radius: 3px; transition: background var(--tr-fast); padding: 1px 2px; margin: 0 -2px; }
 .kpi-row__speed-item--clickable:hover { background: rgba(99,102,241,.1); }
 .kpi-row__speed-icon { font-size: .55rem; flex-shrink: 0; }
+.kpi-row__no-data { font-size: .62rem; color: var(--text-muted); font-style: italic; }
 
 /* History browser controls */
 .kpi-row__hist-btn {
