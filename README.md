@@ -37,7 +37,7 @@ git --version   # Any recent version
 > **Option A — Use the fully-qualified form (no setup).** Always works:
 >
 > ```bash
-> mvn me.bechberger:test-order-maven-plugin:select
+> mvn me.bechberger:test-order-maven-plugin:affected
 > mvn me.bechberger:test-order-maven-plugin:show
 > ```
 >
@@ -230,7 +230,7 @@ The Maven/Gradle plugins automatically detect which framework is on the test cla
 <details>
 <summary><strong>JUnit 4 with Vintage engine</strong></summary>
 
-If your project uses JUnit 4 tests, you can run them through test-order by adding the `junit-vintage-engine` dependency. This allows JUnit 4 tests to execute on the JUnit Platform, enabling full support for learn, select, and order modes — no test migration required:
+If your project uses JUnit 4 tests, you can run them through test-order by adding the `junit-vintage-engine` dependency. This allows JUnit 4 tests to execute on the JUnit Platform, enabling full support for learn, order, and affected-test selection — no test migration required:
 
 ```xml
 <dependency>
@@ -282,16 +282,17 @@ Parallel module execution (`mvn ... -T 1C`) is also supported with file-level lo
 
 ## CI Integration
 
-Cache `.test-order/` between CI runs so PRs benefit from the existing index:
+Cache `.test-order/` between CI runs so PRs inherit the index from their base branch:
 
 ```yaml
-# GitHub Actions
+# GitHub Actions — branch-coupled key so PRs inherit from base without busting
+# the cache on every commit. See docs/CI.md for full caching guidance.
 - uses: actions/cache@v4
   with:
     path: |
       .test-order/
       **/target/test-order-deps/
-    key: test-order-${{ runner.os }}-${{ hashFiles('**/src/**/*.java') }}
+    key: test-order-${{ runner.os }}-${{ github.base_ref || github.ref_name }}
     restore-keys: test-order-${{ runner.os }}-
 ```
 
@@ -503,14 +504,18 @@ Run `mvn test-order:diagnose` first — it checks everything automatically.
 
 | Symptom | Fix |
 |---|---|
-| `No plugin found for prefix 'test-order'` | Add the plugin to your `pom.xml` first (see [Quick Start](#quick-start)) — or use the fully-qualified goal: `mvn me.bechberger:test-order-maven-plugin:0.0.1-SNAPSHOT:auto test` |
-| Tests in default order | Run with `-Dtestorder.debug=true` to see what's happening |
-| `No dependency index found` on second run | Ensure the first run completed successfully and `.test-order/test-dependencies.lz4` exists |
-| JaCoCo reports 0% coverage | Usually works automatically; if you have a hardcoded `<argLine>`, add `@{argLine}` (see Compatibility above) |
-| Stale ordering after refactor | Re-learn: `mvn test -Dtestorder.mode=learn` |
-| No index despite sources | Set `-Dtestorder.includePackages=com.yourcompany` |
-| `Could not resolve artifact` | Plugin not published to Maven Central yet — build from source (see [Development](#development)) |
-| Agent attachment warning on Java 21+ | Add `--add-opens` flags to the Surefire `<argLine>` (see the [JVM flags section](https://maven.apache.org/surefire/maven-surefire-plugin/)) |
+| `No plugin found for prefix 'test-order'` | Add `me.bechberger` to `<pluginGroups>` in `~/.m2/settings.xml` (see [Quick Start](#quick-start)), or use the fully-qualified goal: `mvn me.bechberger:test-order-maven-plugin:0.0.1-SNAPSHOT:auto test` |
+| "Wrote fallback payloads" every run | Add `<extensions>true</extensions>` to the plugin declaration in `pom.xml` (see FAQ below) |
+| Tests always run in default order | The first learn run may not have completed. Check `.test-order/test-dependencies.lz4` exists. If not, re-run `mvn test`. |
+| All test scores are 0, no reordering | Run with `-Dtestorder.debug=true` — likely no changed classes were detected. Check `testorder.changeMode`. |
+| `No dependency index found` on second run | Ensure the first run completed successfully and `.test-order/test-dependencies.lz4` was written |
+| JaCoCo reports 0% coverage | Usually works automatically; if you have a hardcoded `<argLine>` in Surefire, change it to `@{argLine}` (see Compatibility above) |
+| Stale ordering after major refactor | Re-learn: `mvn test -Dtestorder.mode=learn` |
+| No index despite running learn | Source packages not detected — set `-Dtestorder.includePackages=com.yourcompany` |
+| `Could not resolve artifact` | Plugin not yet published to Maven Central — build from source (see [Development](#development)) |
+| Agent attachment warning on Java 21+ | Add `--add-opens` flags to the Surefire `<argLine>` |
+| "Failed to load JUnit Platform" (Gradle) | Stale JARs in `~/.m2` — don't add `mavenLocal()` to project repositories; use an init script instead |
+| Tests skip unexpectedly on first run | No index yet — `affected` and tiered goals fall back to running all tests on cold start |
 
 Nuclear option: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 
@@ -644,9 +649,9 @@ This project uses test-order for affected-test selection.
 - **After large changes** (new dependencies, refactors): `mvn test-order:learn test`
   Rebuilds the dependency index. Required after major structural changes.
 - **Normal run**: `mvn test`
-  Auto-detects whether to learn or select.
+  Auto-detects whether to learn or order.
 - **Run deferred tests**: `mvn test-order:run-remaining test`
-  Runs tests that were skipped by `select`.
+  Runs tests that were skipped by `affected`.
 
 Change detection: `-Dtestorder.changeMode=since-last-commit` for CI,
 `uncommitted` (default) for local development.
@@ -658,6 +663,7 @@ Change detection: `-Dtestorder.changeMode=since-last-commit` for CI,
 
 | Guide | Description |
 |---|---|
+| **[Cheat Sheet](docs/CHEAT_SHEET.md)** | One-page quick reference: commands, properties, troubleshooting |
 | **[Getting Started](docs/GETTING_STARTED.md)** | 5-minute tutorial: first run → reordering → dashboard |
 | **[CLI Reference](docs/CLI_REFERENCE.md)** | All goals, properties, and configuration options |
 | **[Maven Plugin](docs/MAVEN_PLUGIN.md)** | Full Maven goal reference and CI YAML examples |

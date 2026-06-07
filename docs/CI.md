@@ -6,6 +6,8 @@ test-order works out of the box in CI. This page covers caching, cache-key strat
 
 The fastest way to get value in CI is to add caching around your existing test job. No pipeline restructuring needed.
 
+> **Prerequisite:** Your `pom.xml` must declare the plugin with `<extensions>true</extensions>` — otherwise the index is written one build late (you'll see "Wrote fallback payloads" in the log). See the [Quick Start](../README.md#quick-start) for the full plugin snippet.
+
 ### Maven
 
 ```yaml

@@ -433,7 +433,7 @@ When the same setting is provided in multiple places, priority is:
 If `testorder.mode` is `auto` (the default), the plugin checks for a `testorder.learn` system property.
 In order mode it falls back through: explicit classes → hash-based → git-based change detection.
 
-## Select Mode (Two-phase CI Workflow)
+## Affected Mode (Two-phase CI Workflow)
 
 Split your test suite into two Maven invocations for fast feedback:
 
@@ -445,7 +445,7 @@ mvn test-order:affected test
 mvn test-order:run-remaining test
 ```
 
-**Phase 1 (`select`)** picks tests in four priority tiers:
+**Phase 1 (`affected`)** picks tests in four priority tiers:
 
 1. **`@AlwaysRun` tests** — unconditionally included, pinned first.
 2. **New tests** — classes not yet in the dependency index.
@@ -491,32 +491,48 @@ mvn test-order:auto test && mvn test-order:run-remaining test
 
 ## Recommended CI Setup
 
+**Recommended approach — branch-coupled cache** (simpler, no git commits from CI):
+
 ```yaml
-# .github/workflows/ci.yml (example)
-jobs:
-  # Run learn mode daily on main branch to keep the dependency index fresh
-  learn:
-    if: github.event_name == 'schedule'
-    steps:
-      - run: mvn test -Dtestorder.mode=learn
-      - run: git add .test-order/ && git commit -m "update test-order data" && git push
+# .github/workflows/ci.yml
+- name: Restore test-order index
+  uses: actions/cache@v4
+  with:
+    path: |
+      .test-order/
+      **/target/test-order-deps/
+    key: test-order-${{ runner.os }}-${{ github.base_ref || github.ref_name }}
+    restore-keys: test-order-${{ runner.os }}-
 
-  # Every PR: two-phase workflow
-  test-fast:
-    steps:
-      - run: mvn test-order:affected test
-  test-remaining:
-    needs: test-fast
-    steps:
-      - run: mvn test-order:run-remaining test
+- name: Run tests (auto learn/order)
+  run: mvn test
 
-  # Weekly: optimise scoring weights
-  optimize:
-    if: github.event_name == 'schedule'  # weekly cron
-    steps:
-      - run: mvn test-order:optimize
-      - run: git add .test-order/state.lz4 && git commit -m "optimise test-order weights" && git push
+- name: Save test-order index
+  if: always()
+  uses: actions/cache/save@v4
+  with:
+    path: |
+      .test-order/
+      **/target/test-order-deps/
+    key: test-order-${{ runner.os }}-${{ github.base_ref || github.ref_name }}
 ```
+
+**Alternative — two-phase (fast feedback + full coverage):**
+
+```yaml
+- run: mvn test-order:affected test          # affected tests first
+- run: mvn test-order:run-remaining test     # rest (only if first step passes)
+```
+
+**Alternative — commit the index to the repo** (works without cache infrastructure):
+
+```yaml
+# Scheduled nightly job on main branch:
+- run: mvn test -Dtestorder.mode=learn
+- run: git add .test-order/ && git commit -m "update test-order index" && git push
+```
+
+For full three-tier pipeline examples: [ci-examples/](ci-examples/)
 
 ## Plugin Parameters
 

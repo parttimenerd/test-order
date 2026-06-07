@@ -264,10 +264,25 @@ mvn test-order:dashboard
 
 ---
 
+## Common Pitfalls
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| "Wrote fallback payloads" every run | `<extensions>true</extensions>` missing | Add it to the plugin block (see Step 1 above) |
+| Tests always run in the same order | Learn run never completed, or index not found | Check that `.test-order/test-dependencies.lz4` exists; re-run `mvn test` |
+| `No plugin found for prefix 'test-order'` | Maven doesn't know the plugin prefix | Add `me.bechberger` to `~/.m2/settings.xml` `<pluginGroups>`, or use the fully-qualified form `mvn me.bechberger:test-order-maven-plugin:<version>:show` |
+| All tests score 0, nothing reordered | Plugin running but no changed classes detected | Try `-Dtestorder.debug=true` to see what change detection reports; check `testorder.changeMode` setting |
+| No index despite running `mvn test` | Source packages not detected (groupId mismatch) | Set `-Dtestorder.includePackages=com.yourpackage` |
+| JaCoCo reports 0% coverage | Hardcoded `<argLine>` in Surefire | Replace with `@{argLine}` so JaCoCo and test-order chain correctly |
+| "Failed to load JUnit Platform" (Gradle) | Stale JUnit JARs in `~/.m2` shadow project versions | Don't add `mavenLocal()` to project repositories; use the init-script approach instead |
+
+---
+
 ## Next steps
 
 | Goal | Guide |
 |------|-------|
+| **Quick reference (bookmark this)** | [CHEAT_SHEET.md](CHEAT_SHEET.md) |
 | Set up CI with tiered testing | [docs/ci-examples/](ci-examples/) |
 | Configure multi-module projects | [docs/MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md) |
 | Tune scoring weights | [docs/SCORING.md](SCORING.md) |
