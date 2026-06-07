@@ -179,7 +179,7 @@ class PluginInteractionIT {
 
 		// Run select with a surefire include filter (only ProductTest).
 		// Bound prepare should now skip automatically when select is present.
-		MavenResult result = shopProject.maven().run("clean", "test-order:select", "test",
+		MavenResult result = shopProject.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=com.example.shop.Product",
 				"-Dtest=com.example.shop.ProductTest", "-Dtestorder.select.topN=10", "-Dtestorder.select.randomM=0");
 		// Build should succeed — selection respects surefire's -Dtest filter

@@ -389,7 +389,7 @@ class BugVerificationIT {
 			project.maven().learn();
 		}
 
-		MavenResult result = project.maven().run("clean", "test-order:select", "test",
+		MavenResult result = project.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
 				"-Dtestorder.select.topN=0", "-Dtestorder.select.randomM=0");
 
@@ -495,7 +495,7 @@ class BugVerificationIT {
 		assertThat(learn).succeeded();
 
 		// select with explicit change → only CartTest should be selected
-		MavenResult result = project.maven().run("clean", "test-order:select", "test",
+		MavenResult result = project.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + CART, "-Dtestorder.select.topN=1",
 				"-Dtestorder.select.randomM=0");
 		assertThat(result).succeeded();
@@ -801,7 +801,7 @@ class BugVerificationIT {
 		}
 
 		// Product is depended on by all 3 test classes
-		MavenResult result = project.maven().run("clean", "test-order:select", "test",
+		MavenResult result = project.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT);
 		assertThat(result).succeeded();
 
@@ -832,7 +832,7 @@ class BugVerificationIT {
 		// Relies on the select from test 200
 		if (!project.exists("target/test-order-remaining.txt")) {
 			// Re-run select
-			project.maven().run("clean", "test-order:select", "test", "-Dtestorder.changeMode=explicit",
+			project.maven().run("clean", "test-order:affected", "test", "-Dtestorder.changeMode=explicit",
 					"-Dtestorder.changed.classes=" + PRODUCT);
 		}
 
@@ -857,7 +857,7 @@ class BugVerificationIT {
 			project.maven().learn();
 		}
 
-		MavenResult result = project.maven().run("clean", "test-order:select", "test",
+		MavenResult result = project.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + PRODUCT,
 				"-Dtestorder.select.topN=1", "-Dtestorder.select.randomM=0");
 		assertThat(result).succeeded();

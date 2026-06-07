@@ -95,7 +95,7 @@ class PrepareMojoTest {
 
 	@Test
 	void prepareSkipsWhenCliWorkflowGoalIsPresent() throws Exception {
-		when(mojo.session.getGoals()).thenReturn(List.of("test-order:select", "test"));
+		when(mojo.session.getGoals()).thenReturn(List.of("test-order:affected", "test"));
 
 		assertDoesNotThrow(() -> mojo.execute());
 		assertTrue(project.getProperties().isEmpty(), "prepare should not mutate properties when it skips");

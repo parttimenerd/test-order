@@ -433,7 +433,7 @@ class AbstractTestOrderMojoTest {
 		mojo.project = project;
 		mojo.session = session;
 
-		assertThat(mojo.skipIfNotExplicitlySelectedReactorProject("select")).isTrue();
+		assertThat(mojo.skipIfNotExplicitlySelectedReactorProject("affected")).isTrue();
 	}
 
 	@Test

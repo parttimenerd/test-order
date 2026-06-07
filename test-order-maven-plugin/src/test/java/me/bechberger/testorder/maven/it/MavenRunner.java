@@ -104,10 +104,10 @@ public class MavenRunner {
 				"-Dtestorder.instrumentation=offline");
 	}
 
-	/** Run {@code mvn test-order:select test} with explicit changed classes */
+	/** Run {@code mvn test-order:affected test} with explicit changed classes */
 	public MavenResult select(String... changedClasses) {
 		List<String> args = new ArrayList<>(
-				List.of("clean", "test-order:select", "test", "-Dtestorder.changeMode=explicit"));
+				List.of("clean", "test-order:affected", "test", "-Dtestorder.changeMode=explicit"));
 		if (changedClasses.length > 0) {
 			args.add("-Dtestorder.changed.classes=" + String.join(",", changedClasses));
 		}

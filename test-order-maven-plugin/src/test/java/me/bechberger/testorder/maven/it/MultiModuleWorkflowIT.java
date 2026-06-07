@@ -233,7 +233,7 @@ class MultiModuleWorkflowIT {
 	@Order(40)
 	@DisplayName("Reactor select mode with cross-module deps selects correctly")
 	void reactorSelectWithCrossModuleDeps() {
-		MavenResult result = multiProject.maven().run("clean", "test-order:select", "test",
+		MavenResult result = multiProject.maven().run("clean", "test-order:affected", "test",
 				"-Dtestorder.changeMode=explicit", "-Dtestorder.changed.classes=" + USER_SERVICE,
 				"-Dtestorder.select.topN=10", "-Dtestorder.select.randomM=0", "-Dtestorder.mode=skip");
 		assertThat(result).succeeded();
