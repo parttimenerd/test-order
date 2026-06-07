@@ -525,7 +525,10 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 
 	private static Set<String> detectChangedClassesAcrossReactor(MavenSession session, PluginLog log) {
 		Set<String> result = new LinkedHashSet<>();
-		Path gitRoot = session.getTopLevelProject().getBasedir().toPath();
+		MavenProject top = session.getTopLevelProject();
+		if (top == null)
+			return result;
+		Path gitRoot = top.getBasedir().toPath();
 		for (MavenProject p : session.getProjects()) {
 			List<String> roots = p.getCompileSourceRoots();
 			Path src = (roots != null && !roots.isEmpty())
@@ -545,7 +548,10 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 
 	private static Set<String> detectChangedTestClassesAcrossReactor(MavenSession session, PluginLog log) {
 		Set<String> result = new LinkedHashSet<>();
-		Path gitRoot = session.getTopLevelProject().getBasedir().toPath();
+		MavenProject top = session.getTopLevelProject();
+		if (top == null)
+			return result;
+		Path gitRoot = top.getBasedir().toPath();
 		for (MavenProject p : session.getProjects()) {
 			if ("pom".equals(p.getPackaging()))
 				continue;

@@ -65,7 +65,15 @@ final class ReactorContext {
 		}
 
 		this.multiModule = explicitMulti || inferredMulti;
-		this.reactorRoot = inferredMulti ? mmDir : session.getTopLevelProject().getBasedir().toPath();
+		// Normalize the reactor root so all derived paths are canonical. Without this,
+		// `<reactorRoot>/.test-order/class-id-map.bin` resolved by different modules
+		// could differ in surface form (e.g. with/without `..` segments) — fine for
+		// `Files.exists` but potentially trips up `Path.equals` comparisons or
+		// FileLock identity in `mvn -T`.
+		Path topLevel = session.getTopLevelProject() != null
+				? session.getTopLevelProject().getBasedir().toPath()
+				: project.getBasedir().toPath();
+		this.reactorRoot = (inferredMulti ? mmDir : topLevel).normalize();
 		this.sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
 	}
 
@@ -187,6 +195,17 @@ final class ReactorContext {
 				? sharedDir.resolve("hashes").resolve(moduleId() + "-bytecode-hashes.lz4")
 				: resolveConfiguredPath(configured,
 						project.getBasedir().toPath().resolve(".test-order/bytecode-hashes.lz4"));
+	}
+
+	/**
+	 * Returns the path of the reactor-wide class-id map. Lives at
+	 * {@code <reactorRoot>/.test-order/class-id-map.bin} so every module's prepare
+	 * and every test fork share a single ID space — required for cross-module edge
+	 * capture, where a classId baked into module-A's instrumented bytecode must
+	 * mean the same FQN when module-B's fork records it.
+	 */
+	Path resolveClassIdMapFile() {
+		return sharedDir.resolve("class-id-map.bin");
 	}
 
 	private Path resolveConfiguredPath(String configured, Path fallback) {
