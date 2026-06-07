@@ -150,4 +150,44 @@ class GenerateDashboardOperationTest {
 		assertFalse(tests.get(0).containsKey("killRate"),
 				"killRate should be absent when no kill rate data is available");
 	}
+
+	// ── DashboardGenerator.computeMedian ────────────────────────────────────────
+
+	@Test
+	void computeMedian_emptyArray_returnsZero() {
+		assertEquals(0L, DashboardGenerator.computeMedian(new long[0]));
+	}
+
+	@Test
+	void computeMedian_singleElement_returnsElement() {
+		assertEquals(42L, DashboardGenerator.computeMedian(new long[]{42L}));
+	}
+
+	@Test
+	void computeMedian_oddCount_returnsMiddle() {
+		// sorted: [1, 3, 5] → middle = 3
+		assertEquals(3L, DashboardGenerator.computeMedian(new long[]{5L, 1L, 3L}));
+	}
+
+	@Test
+	void computeMedian_evenCount_returnsAverageOfMiddleTwo() {
+		// sorted: [2, 4, 6, 8] → (4 + 6) / 2 = 5
+		assertEquals(5L, DashboardGenerator.computeMedian(new long[]{8L, 2L, 4L, 6L}));
+	}
+
+	@Test
+	void computeMedian_evenCount_oddSum_roundsDown() {
+		// sorted: [1, 2] → (1 + 2) / 2 = 1 (integer division)
+		assertEquals(1L, DashboardGenerator.computeMedian(new long[]{1L, 2L}));
+	}
+
+	@Test
+	void computeMedian_veryLargeValues_noOverflow() {
+		// BUG-89: (Long.MAX_VALUE + Long.MAX_VALUE) overflows to a negative number.
+		// Overflow-safe formula must be used.
+		long hi = Long.MAX_VALUE;
+		long lo = Long.MAX_VALUE - 2;
+		// sorted: [lo, hi] → lo + (hi - lo) / 2 = lo + 1
+		assertEquals(lo + 1, DashboardGenerator.computeMedian(new long[]{hi, lo}));
+	}
 }

@@ -1,8 +1,8 @@
 package me.bechberger.testorder;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
@@ -87,5 +87,88 @@ class TieredTestSelectorTest {
 		assertEquals(0, selection.tier1().size());
 		assertEquals(2, selection.tier2().size());
 		assertEquals(2, selection.tier3().size());
+	}
+
+	// ── applyShard ───────────────────────────────────────────────────────────
+
+	private static List<String> shardTests(int n) {
+		List<String> result = new java.util.ArrayList<>();
+		for (int i = 0; i < n; i++)
+			result.add("t" + i);
+		return result;
+	}
+
+	@Test
+	void applyShardNullSpecReturnsAll() {
+		List<String> all = shardTests(5);
+		assertEquals(all, TieredTestSelector.applyShard(all, null));
+	}
+
+	@Test
+	void applyShardBlankSpecReturnsAll() {
+		List<String> all = shardTests(5);
+		assertEquals(all, TieredTestSelector.applyShard(all, "  "));
+	}
+
+	@Test
+	void applyShardSingleShardReturnsAll() {
+		List<String> all = shardTests(5);
+		assertEquals(all, TieredTestSelector.applyShard(all, "1/1"));
+	}
+
+	@Test
+	void applyShardEvenSplit() {
+		List<String> all = shardTests(6);
+		assertEquals(List.of("t0", "t1"), TieredTestSelector.applyShard(all, "1/3"));
+		assertEquals(List.of("t2", "t3"), TieredTestSelector.applyShard(all, "2/3"));
+		assertEquals(List.of("t4", "t5"), TieredTestSelector.applyShard(all, "3/3"));
+	}
+
+	@Test
+	void applyShardUnevenSplit_remainderDistributedToFirstShards() {
+		// 5 tests, 3 shards: shards 1 and 2 get 2, shard 3 gets 1
+		List<String> all = shardTests(5);
+		List<String> s1 = TieredTestSelector.applyShard(all, "1/3");
+		List<String> s2 = TieredTestSelector.applyShard(all, "2/3");
+		List<String> s3 = TieredTestSelector.applyShard(all, "3/3");
+		assertEquals(2, s1.size());
+		assertEquals(2, s2.size());
+		assertEquals(1, s3.size());
+		List<String> combined = new java.util.ArrayList<>(s1);
+		combined.addAll(s2);
+		combined.addAll(s3);
+		assertEquals(all, combined);
+	}
+
+	@Test
+	void applyShardCoverageIsComplete() {
+		List<String> all = shardTests(10);
+		List<String> combined = new java.util.ArrayList<>();
+		for (int k = 1; k <= 4; k++) {
+			combined.addAll(TieredTestSelector.applyShard(all, k + "/4"));
+		}
+		assertEquals(all, combined);
+	}
+
+	@Test
+	void applyShardEmptyListReturnsEmpty() {
+		assertEquals(List.of(), TieredTestSelector.applyShard(List.of(), "2/3"));
+	}
+
+	@Test
+	void applyShardMalformedSpecThrows() {
+		assertThrows(IllegalArgumentException.class, () -> TieredTestSelector.applyShard(shardTests(3), "abc"));
+		assertThrows(IllegalArgumentException.class, () -> TieredTestSelector.applyShard(shardTests(3), "1/0"));
+		assertThrows(IllegalArgumentException.class, () -> TieredTestSelector.applyShard(shardTests(3), "0/3"));
+		assertThrows(IllegalArgumentException.class, () -> TieredTestSelector.applyShard(shardTests(3), "4/3"));
+	}
+
+	@Test
+	void applyShardSingleTest() {
+		List<String> single = List.of("only");
+		assertEquals(List.of("only"), TieredTestSelector.applyShard(single, "1/3"));
+		// shards 2 and 3 get nothing when n < N
+		assertEquals(List.of(), TieredTestSelector.applyShard(single, "2/3"));
+		assertEquals(List.of(), TieredTestSelector.applyShard(single, "3/3"));
 	}
 }

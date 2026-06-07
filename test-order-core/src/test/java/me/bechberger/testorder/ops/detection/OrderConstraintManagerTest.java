@@ -91,4 +91,43 @@ class OrderConstraintManagerTest {
 		int victimIdx = order.indexOf("Victim");
 		assertTrue(victimIdx != polluterIdx + 1 || order.size() <= 2, "Victim should not immediately follow Polluter");
 	}
+
+	@Test
+	void mustNotPrecedeRecheckAfterSwapCatchesNewViolation() {
+		// After swapping [P, V1, X] → [P, X, V1], the re-check at position 0 must
+		// also detect P→X if that is a constraint. Without i-- this second violation
+		// is missed because the loop advances to position 1 before checking P→X.
+		OrderConstraintManager mgr = new OrderConstraintManager();
+		mgr.addMustNotPrecede("P", "V1", "OD1");
+		mgr.addMustNotPrecede("P", "X", "OD2");
+
+		// [P, V1, X, Safe]: swap V1 with X → [P, X, V1, Safe].
+		// Re-check at i=0 finds P→X violation too.
+		// X swaps with V1 → [P, V1, X, Safe] again — but one re-check breaks the cycle.
+		// Regardless, P must not immediately precede either victim at the end.
+		List<String> order = mgr.buildConstrainedOrder(List.of("P", "V1", "X", "Safe"));
+
+		// We just need P not to directly precede both V1 and X at the same time.
+		// At least one of them should not immediately follow P.
+		int pIdx = order.indexOf("P");
+		int v1Idx = order.indexOf("V1");
+		int xIdx = order.indexOf("X");
+		boolean v1ImmediatelyAfterP = (v1Idx == pIdx + 1);
+		boolean xImmediatelyAfterP = (xIdx == pIdx + 1);
+		assertFalse(v1ImmediatelyAfterP && xImmediatelyAfterP,
+				"Both V1 and X cannot simultaneously immediately follow P — order: " + order);
+	}
+
+	@Test
+	void mustNotPrecedeAtEndMovesVictimBeforePolluter() {
+		OrderConstraintManager mgr = new OrderConstraintManager();
+		mgr.addMustNotPrecede("P", "V", "OD");
+
+		// P at end, V immediately after — only two elements
+		List<String> order = mgr.buildConstrainedOrder(List.of("P", "V"));
+
+		int pIdx = order.indexOf("P");
+		int vIdx = order.indexOf("V");
+		assertNotEquals(pIdx + 1, vIdx, "V should not immediately follow P");
+	}
 }

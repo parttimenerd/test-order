@@ -551,4 +551,105 @@ class StructuralDiffTest {
 		assertEquals(StructuralDiff.Change.Kind.MODIFIED, fieldChanges.get(0).kind(),
 				"initializer-only change should remain MODIFIED");
 	}
+
+	// ── duplicate static initializer block regression (BUG-86) ───────────────
+
+	@Test
+	void staticInitializerAdded_fromOneToTwo() {
+		// old: one static block → new: two identical static blocks
+		// Should report ADDED, not NO_CHANGE (was broken before BUG-86 fix).
+		String oldSource = """
+				package com.example;
+				public class Foo {
+				    static { System.out.println("init"); }
+				}
+				""";
+		String newSource = """
+				package com.example;
+				public class Foo {
+				    static { System.out.println("init"); }
+				    static { System.out.println("init"); }
+				}
+				""";
+		StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), oldSource, newSource);
+		assertTrue(diff.hasChanges(), "Adding a duplicate static block must be detected as a change");
+		boolean hasAdded = diff.changes().stream().anyMatch(c -> c.kind() == StructuralDiff.Change.Kind.ADDED
+				&& c.category() == StructuralDiff.Change.Category.INITIALIZER);
+		assertTrue(hasAdded, "Change kind should be ADDED for a new duplicate static block");
+	}
+
+	@Test
+	void staticInitializerRemoved_fromTwoToOne() {
+		// old: two identical static blocks → new: one
+		// Should report REMOVED, not NO_CHANGE.
+		String oldSource = """
+				package com.example;
+				public class Foo {
+				    static { System.out.println("init"); }
+				    static { System.out.println("init"); }
+				}
+				""";
+		String newSource = """
+				package com.example;
+				public class Foo {
+				    static { System.out.println("init"); }
+				}
+				""";
+		StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), oldSource, newSource);
+		assertTrue(diff.hasChanges(), "Removing a duplicate static block must be detected as a change");
+		boolean hasRemoved = diff.changes().stream().anyMatch(c -> c.kind() == StructuralDiff.Change.Kind.REMOVED
+				&& c.category() == StructuralDiff.Change.Category.INITIALIZER);
+		assertTrue(hasRemoved, "Change kind should be REMOVED when a duplicate static block is removed");
+	}
+
+	@Test
+	void staticInitializerUnchanged_singleBlock() {
+		// Same single static block → no changes.
+		String source = """
+				package com.example;
+				public class Foo {
+				    static { System.out.println("init"); }
+				}
+				""";
+		StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), source, source);
+		assertFalse(diff.hasChanges(), "Identical single static block must produce no change");
+	}
+
+	@Test
+	void staticInitializerAdded_fromZeroToOne() {
+		String oldSource = """
+				package com.example;
+				public class Foo {
+				    int x = 0;
+				}
+				""";
+		String newSource = """
+				package com.example;
+				public class Foo {
+				    int x = 0;
+				    static { System.out.println("init"); }
+				}
+				""";
+		StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), oldSource, newSource);
+		assertTrue(diff.hasChanges(), "Adding a static block to a class that had none must be detected");
+	}
+
+	@Test
+	void staticInitializerRemoved_fromOneToZero() {
+		String oldSource = """
+				package com.example;
+				public class Foo {
+				    int x = 0;
+				    static { System.out.println("init"); }
+				}
+				""";
+		String newSource = """
+				package com.example;
+				public class Foo {
+				    int x = 0;
+				}
+				""";
+		StructuralDiff.FileDiff diff = StructuralDiff.diffSources(Path.of("Foo.java"), oldSource, newSource);
+		assertTrue(diff.hasChanges(), "Removing the only static block must be detected");
+	}
 }

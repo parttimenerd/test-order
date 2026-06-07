@@ -24,6 +24,13 @@ class ChangeDetectorTest {
 	}
 
 	@Test
+	void explicitModeAcceptsSemicolonFallback() throws IOException {
+		Set<String> result = ChangeDetector.detect(ChangeDetector.Mode.EXPLICIT, tempDir, Path.of("src/main/java"),
+				tempDir.resolve("hashes.gz"), "com.example.Foo;com.example.Bar");
+		assertEquals(Set.of("com.example.Foo", "com.example.Bar"), result);
+	}
+
+	@Test
 	void explicitModeEmpty() throws IOException {
 		Set<String> result = ChangeDetector.detect(ChangeDetector.Mode.EXPLICIT, tempDir, Path.of("src/main/java"),
 				tempDir.resolve("hashes.gz"), "");

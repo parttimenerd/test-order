@@ -153,6 +153,24 @@ class StateConfigurationTest {
 	}
 
 	@Test
+	void incrementRunsSinceLearnWrapsPositivelyAtMaxValue() {
+		// BUG-90: plain int++ wraps to Integer.MIN_VALUE after 2^31-1 increments.
+		// AutoWorkflow.optimizeIfDue checks runsSinceLearn() <= 0, which would be
+		// permanently true after wrap, silencing the weight optimizer forever.
+		// The fix wraps back to 1 instead so the counter stays positive.
+		StateConfiguration config = new StateConfiguration();
+		config.setRunsSinceLearn(Integer.MAX_VALUE - 1);
+
+		config.incrementRunsSinceLearn();
+		assertEquals(Integer.MAX_VALUE, config.runsSinceLearn(), "should reach MAX_VALUE");
+
+		// Next increment must wrap to 1, not overflow to Integer.MIN_VALUE.
+		config.incrementRunsSinceLearn();
+		assertEquals(1, config.runsSinceLearn(), "should wrap to 1, not overflow negative");
+		assertTrue(config.runsSinceLearn() > 0, "must stay positive so optimizer is never silenced");
+	}
+
+	@Test
 	void testReset() {
 		StateConfiguration config = new StateConfiguration();
 

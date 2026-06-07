@@ -108,8 +108,8 @@ class MutationAnalysisOperationTest {
 
 	@Test
 	void normalisesInnerClassSeparator() throws IOException {
-		// PIT may emit "com.example.Outer$Inner" — should be normalised to
-		// "com.example.Outer.Inner"
+		// PIT emits "com.example.Outer$Inner" — the dep map also stores inner classes
+		// with '$', so no conversion is needed and the name should match directly.
 		String xml = """
 				<?xml version="1.0" encoding="UTF-8"?>
 				<mutations>
@@ -118,10 +118,10 @@ class MutationAnalysisOperationTest {
 				  </mutation>
 				</mutations>
 				""";
-		Set<String> known = new LinkedHashSet<>(List.of("com.example.Outer.InnerTest"));
+		Set<String> known = new LinkedHashSet<>(List.of("com.example.Outer$InnerTest"));
 		var stats = MutationAnalysisOperation.parseMutationsXml(writeXml(xml), known);
 
-		assertEquals(1, stats.get("com.example.Outer.InnerTest").killed);
+		assertEquals(1, stats.get("com.example.Outer$InnerTest").killed);
 	}
 
 	@Test

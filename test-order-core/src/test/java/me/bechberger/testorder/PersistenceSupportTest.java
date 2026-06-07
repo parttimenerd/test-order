@@ -8,6 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -126,5 +129,77 @@ class PersistenceSupportTest {
 		} finally {
 			executor.shutdownNow();
 		}
+	}
+
+	@Test
+	void withFileLockIsReentrantFromSameThread() throws IOException {
+		Path target = tempDir.resolve("reentrant.bin");
+		// Calling withFileLock from within an already-held withFileLock on the same
+		// path (same thread) should not deadlock.
+		String result = PersistenceSupport.withFileLock(target,
+				() -> PersistenceSupport.withFileLock(target, () -> "inner"));
+		assertEquals("inner", result);
+	}
+
+	@Test
+	void withFileLockCreatesParentDirectories() throws IOException {
+		// Target file in a directory that doesn't exist yet.
+		Path target = tempDir.resolve("nested/dir/state.bin");
+		assertFalse(Files.exists(target.getParent()));
+		String result = PersistenceSupport.withFileLock(target, () -> "created");
+		assertEquals("created", result);
+		// The parent directory must have been created.
+		assertTrue(Files.isDirectory(target.getParent()));
+	}
+
+	@Test
+	void moveIntoPlaceRejectsSymlinkTarget() throws IOException {
+		Path realFile = tempDir.resolve("real.bin");
+		Path symlink = tempDir.resolve("link.bin");
+		Files.writeString(realFile, "real");
+		Files.createSymbolicLink(symlink, realFile);
+
+		Path temp = PersistenceSupport.temporarySibling(symlink);
+		Files.writeString(temp, "new");
+
+		// moveIntoPlace should throw IOException and must NOT overwrite through the
+		// symlink (security guard against CWE-59).
+		assertThrows(IOException.class, () -> PersistenceSupport.moveIntoPlace(temp, symlink));
+		// The real file should still contain "real" (not overwritten).
+		assertEquals("real", Files.readString(realFile));
+	}
+
+	@Test
+	void cleanupStaleTempsDeletesOldFilesLeavesRecent() throws IOException {
+		// Create a fresh .tmp file (should be kept).
+		Path freshTmp = tempDir.resolve("fresh.bin.tmp");
+		Files.writeString(freshTmp, "fresh");
+
+		// Create a stale .tmp file: set last-modified to 20 minutes ago.
+		Path staleTmp = tempDir.resolve("stale.bin.tmp");
+		Files.writeString(staleTmp, "stale");
+		Instant staleTime = Instant.now().minus(20, ChronoUnit.MINUTES);
+		Files.setLastModifiedTime(staleTmp, FileTime.from(staleTime));
+
+		// Also create a non-.tmp file (should always be kept).
+		Path nonTmp = tempDir.resolve("normal.bin");
+		Files.writeString(nonTmp, "normal");
+
+		PersistenceSupport.cleanupStaleTemps(tempDir);
+
+		assertFalse(Files.exists(staleTmp), "Stale .tmp file (20 min old) should be deleted");
+		assertTrue(Files.exists(freshTmp), "Fresh .tmp file should be kept");
+		assertTrue(Files.exists(nonTmp), "Non-.tmp file should never be deleted");
+	}
+
+	@Test
+	void cleanupStaleTemps_nullDirectory_doesNotThrow() {
+		// Null directory should be silently ignored.
+		PersistenceSupport.cleanupStaleTemps(null);
+	}
+
+	@Test
+	void cleanupStaleTemps_nonexistentDirectory_doesNotThrow() {
+		PersistenceSupport.cleanupStaleTemps(tempDir.resolve("nonexistent"));
 	}
 }

@@ -889,6 +889,24 @@ class TestOrderStateTest {
 		assertEquals(-1, byName.get("speed").max());
 	}
 
+	@Test
+	void parseWeightDefsRejectsRangeWithWrongElementCount() {
+		// range=[42] (1 element) and range=[] (0 elements) must throw a clear
+		// IllegalArgumentException instead of an IndexOutOfBoundsException
+		String oneElement = "[newTest]\nvalue = 15\nrange = [0]\n";
+		CommentedConfig config1 = new TomlParser().parse(oneElement);
+		IllegalArgumentException ex1 = assertThrows(IllegalArgumentException.class,
+				() -> TestOrderState.parseWeightDefs(config1));
+		assertTrue(ex1.getMessage().contains("newTest"), "Error message should name the offending weight");
+		assertTrue(ex1.getMessage().contains("2"), "Error message should mention the expected size");
+
+		String noElements = "[speed]\nvalue = 3\nrange = []\n";
+		CommentedConfig config2 = new TomlParser().parse(noElements);
+		IllegalArgumentException ex2 = assertThrows(IllegalArgumentException.class,
+				() -> TestOrderState.parseWeightDefs(config2));
+		assertTrue(ex2.getMessage().contains("speed"));
+	}
+
 	// ─── Schema version loading tests ────────────────────────────────
 
 	@Test
