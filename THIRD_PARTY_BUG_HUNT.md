@@ -842,3 +842,35 @@ Also updated `chartIdxToRunIdx` with a proper `runOffset` to correctly map filte
 **Root cause:** The classification used `!oldHashes.contains(h)` to count `added` — but `List.contains()` returns `true` even when the old list has fewer occurrences than the new. For `old=[A,B]` → `new=[A,A,B]`: the second `A` in new is not detected as added because `oldHashes.contains("A")` is `true`. Both `added=0` and `removed=0`, falling into the `else` (REMOVED) branch despite neither hash being removed. The comment in the code notes "use sorted lists to detect duplicate counts" but the counting logic didn't follow through.  
 **Fix:** Replaced `contains()` with frequency-map comparison using `groupingBy(counting())` to correctly count per-hash occurrence changes.  
 **Files:** `test-order-core/.../StructuralDiff.java` lines 474-481
+
+## BUG-87: findExistingCommentId returns null when comment has nested JSON objects
+**Status:** Fixed  
+**Source:** Core — `CiSummaryWriter.java`  
+**Symptom:** When GitHub returns comment JSON where other fields before `"body"` contain nested JSON objects (e.g., `"user": {"login": "..."}`, `"reactions": {...}`), `findExistingCommentId` returns `null` instead of the comment's id. This causes the plugin to always post a new PR comment on every run instead of updating the existing one, spamming the PR.  
+**Root cause:** The method used `json.lastIndexOf('{', markerIdx)` to find the containing object's opening brace. When the comment object has nested JSON in fields before `"body"`, `lastIndexOf` finds the innermost `{` (e.g., `{"x": 1}` inside `"reactions"`). The segment from that inner `{` to the marker contains no `"id":` field, so the id lookup fails and returns `null`.  
+**Fix:** Replaced the single `lastIndexOf('{', ...)` call with a backward walk through all `{` candidates. For each candidate, check if the segment `[objectStart..markerIdx]` contains `"id":`. The first candidate that satisfies this is the correct containing comment object. This is correct because the innermost objects will not have an `"id"` field, while the top-level comment object will.  
+**Files:** `test-order-core/.../CiSummaryWriter.java` `findExistingCommentId` method  
+**Test:** `CiSummaryWriterTest.findExistingCommentId_markerInNestedBody_doesNotPickWrongId`
+
+### BUG-88: `SelectOperation` log breakdown double-counts tests that are both @AlwaysRun and new
+**Status:** Fixed
+**Source:** Core — `SelectOperation.java`
+**Symptom:** When a test class appears in `alwaysRunClasses` but is not yet in the dependency index (a "new" always-run test), the selection breakdown log message reports a negative `scoredCount`. Example: `"Selected 3 tests (-1 scored + 2 new + 2 always-run), deferred 1"`. The negative count is nonsensical and confusing.
+**Root cause:** The breakdown computation counted `alwaysRunCount` (tests in `alwaysRunClasses`) and `newCount` (tests NOT in `depMap.testClasses()`) independently. A test that is in `alwaysRunClasses` AND not in the dep index satisfies both conditions and is counted twice. `scoredCount = selected.size() - alwaysRunCount - newCount - fastCount` then goes negative.
+**Fix:** Changed `newCount` to exclude tests that are already counted as `alwaysRun`:
+```java
+int newCount = (int) selection.selected().stream()
+    .filter(t -> !config.depMap().testClasses().contains(t) && !config.alwaysRunClasses().contains(t))
+    .count();
+```
+**Files:** `test-order-core/.../ops/SelectOperation.java` line 128
+**Test:** `SelectOperationTest.logBreakdown_newAlwaysRunTest_doesNotProduceNegativeScoredCount`
+
+### BUG-89: `DashboardGenerator.computeMedian` overflows for large `long` durations
+**Status:** Fixed
+**Source:** Core — `DashboardGenerator.java`
+**Symptom:** For two even-count test durations both near `Long.MAX_VALUE`, the median computation `(durations[mid-1] + durations[mid]) / 2` overflows to a large negative number, producing a wildly wrong median duration in the dashboard.
+**Root cause:** Addition of two `long` values near `Long.MAX_VALUE` overflows signed 64-bit arithmetic. E.g., `(Long.MAX_VALUE - 2) + Long.MAX_VALUE` wraps to a negative value.
+**Fix:** Changed to the overflow-safe formula `durations[mid-1] + (durations[mid] - durations[mid-1]) / 2`. Since the array is sorted, `durations[mid] >= durations[mid-1]`, so the subtraction is always non-negative and no overflow occurs.
+**Files:** `test-order-core/.../DashboardGenerator.java` line 624
+**Test:** `GenerateDashboardOperationTest.computeMedian_veryLargeValues_noOverflow`
