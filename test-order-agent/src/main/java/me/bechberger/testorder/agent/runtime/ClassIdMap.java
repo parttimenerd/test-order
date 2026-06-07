@@ -62,6 +62,10 @@ public class ClassIdMap {
 		public int get() {
 			return value;
 		}
+
+		public void set(int newValue) {
+			VALUE_HANDLE.setVolatile(this, newValue);
+		}
 	}
 
 	private static final ClassIdMap INSTANCE = new ClassIdMap();
@@ -351,6 +355,23 @@ public class ClassIdMap {
 	}
 
 	/**
+	 * Returns the next class ID to be assigned. The highest currently assigned
+	 * class ID is {@code getNextClassId() - 1}. Useful for sizing snapshots that
+	 * must capture every registered class (e.g. saving the reactor-wide map).
+	 */
+	public int getNextClassId() {
+		return nextClassId.get();
+	}
+
+	/**
+	 * Returns the next member ID to be assigned. The highest currently assigned
+	 * member ID is {@code getNextMemberId() - 1}.
+	 */
+	public int getNextMemberId() {
+		return nextMemberId.get();
+	}
+
+	/**
 	 * Reset the map (for testing). Clears all registrations and resets counters.
 	 */
 	public void reset() {
@@ -361,6 +382,8 @@ public class ClassIdMap {
 		reverseClassNames = new AtomicReferenceArray<>(INITIAL_CLASS_MAP_CAPACITY);
 		reverseMemberNames = null;
 		memberIdToClassId = null;
+		nextClassId.set(0);
+		nextMemberId.set(MEMBER_ID_OFFSET);
 	}
 
 }

@@ -210,7 +210,7 @@ public class UsageStore {
 	 */
 	public static void recordUsageIdFast(int classId) {
 		RecordingState s = activeState; // single volatile read
-		if (s == null)
+		if (s == null || s.target == null)
 			return;
 		s.target.recordClass(classId);
 	}
@@ -225,7 +225,7 @@ public class UsageStore {
 	 */
 	public static void recordMemberUsageIdFast(int memberId) {
 		RecordingState s = activeState;
-		if (s == null) {
+		if (s == null || s.target == null) {
 			return;
 		}
 		s.target.recordMember(memberId);
