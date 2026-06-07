@@ -371,10 +371,12 @@ final class SurefireHelper {
 	}
 
 	/**
-	 * Warns when {@code forkCount > 1} in learn mode. Multiple parallel forks write
-	 * to the same {@code .deps/} directory concurrently, which can corrupt
-	 * dependency data. In order mode, each fork gets its own ClassOrderer instance,
-	 * so global ordering is weakened but not broken.
+	 * Logs when {@code forkCount > 1} in learn mode. In online
+	 * (IndexCollectorServer) mode all forks stream data to a single server so there
+	 * is no file-level concurrency concern. In offline mode each fork writes to its
+	 * own {@code .deps} file; the aggregator merges them safely. No corruption risk
+	 * in either case; a debug message is enough so users know multiple forks are
+	 * active.
 	 */
 	static void warnForkCountInLearnMode(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -391,9 +393,9 @@ final class SurefireHelper {
 		try {
 			double value = Double.parseDouble(numPart);
 			if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
-				log.warn("[test-order] Surefire <forkCount>" + forkCount
-						+ "</forkCount> — multiple forks may write .deps files concurrently in learn mode. "
-						+ "This can corrupt the dependency index. Consider using forkCount=1 for learn runs.");
+				log.debug("[test-order] Surefire <forkCount>" + forkCount
+						+ "</forkCount> — multiple forks active in learn mode. "
+						+ "Each fork streams data to the IndexCollectorServer; dependency tracking is unaffected.");
 			}
 		} catch (NumberFormatException ignored) {
 			// Non-standard forkCount, skip
