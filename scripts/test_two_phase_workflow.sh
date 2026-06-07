@@ -25,7 +25,7 @@ fi
 
 echo ""
 echo "=== Phase 1: select (affected + new + @AlwaysRun) ==="
-mvn -q clean test-order:select test \
+mvn -q clean test-order:affected test \
     -Dtestorder.changeMode=explicit \
     -Dtestorder.changed.classes=com.myapp.MathService
 

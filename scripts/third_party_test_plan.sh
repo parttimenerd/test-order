@@ -1239,8 +1239,8 @@ phase_select_maven() {
     [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
 
     # Phase 1: Select top-N tests
-    log "Running: mvn clean me.bechberger:test-order-maven-plugin:select test -Dtestorder.select.topN=5"
-    mvn clean me.bechberger:test-order-maven-plugin:select test \
+    log "Running: mvn clean me.bechberger:test-order-maven-plugin:affected test -Dtestorder.select.topN=5"
+    mvn clean me.bechberger:test-order-maven-plugin:affected test \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
         -Dtestorder.select.topN=5 \
@@ -1389,7 +1389,7 @@ phase_bugs_maven() {
         log "Running select with bug in $classname"
         local bug_log="$results/bug-select.log"
         # shellcheck disable=SC2086
-        mvn clean me.bechberger:test-order-maven-plugin:select test \
+        mvn clean me.bechberger:test-order-maven-plugin:affected test \
             -Dtestorder.changeMode=explicit \
             -Dtestorder.changed.classes="$classname" \
             -Dtestorder.select.topN=3 \
@@ -1512,7 +1512,7 @@ phase_full_maven() {
 
     # 5. Select
     log "Step 5: Select top-5"
-    mvn clean me.bechberger:test-order-maven-plugin:select test \
+    mvn clean me.bechberger:test-order-maven-plugin:affected test \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
         -Dtestorder.select.topN=5 \
@@ -1559,7 +1559,7 @@ phase_full_maven() {
             fi
         fi
         local bug_out
-        bug_out=$(mvn clean me.bechberger:test-order-maven-plugin:select test \
+        bug_out=$(mvn clean me.bechberger:test-order-maven-plugin:affected test \
             -Dtestorder.changeMode=explicit \
             -Dtestorder.changed.classes="$classname" \
             -Dtestorder.select.topN=3 \
