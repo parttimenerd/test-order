@@ -15,9 +15,8 @@ export JAVA_HOME=/Users/i560383_1/Library/Java/JavaVirtualMachines/sapmachine-21
 
 In separate terminal tabs:
 ```sh
-./start-slides.sh     # starts Slidev at localhost:3030 and opens browser
-cd cloud-sdk-java && mvn test-order:serve -pl cloudplatform/connectivity-destination-service
-                      # dashboard at localhost:8080
+./start-slides.sh     # starts Slidev (localhost:3030) AND the cloud-sdk-java
+                      # dashboard (localhost:8080), opens both in browser tabs
 ```
 
 Terminal font: **20pt+**. Test on the projector before the session.
@@ -29,14 +28,12 @@ Terminal font: **20pt+**. Test on the projector before the session.
 | Time  | What                                          | Where     |
 |-------|-----------------------------------------------|-----------|
 | 0:00  | Hero image — opening line                     | Slides    |
-| 0:10  | "normally we run all tests" — BeforePlugin    | Slides    |
-| 0:30  | DepGraph — learn pass explanation             | Slides    |
-| 1:00  | `./add-test-order.sh` — plugin + learn data   | Terminal  |
-| 1:20  | `mvn test-order:affected test` — magic beat     | VS Code   |
-| 2:00  | Copilot "fix the bug" — agentic demo          | VS Code   |
-| 3:00  | LocalWorkflow slide                           | Slides    |
-| 3:20  | CIWorkflow slide                              | Slides    |
-| 3:40  | Close — kicker + QR code                     | Slides    |
+| 0:10  | `mvn clean test` pain demo                    | Terminal  |
+| 0:40  | `./add-test-order.sh` — plugin + learn data   | Terminal  |
+| 1:00  | `mvn test-order:affected test` — magic beat   | VS Code   |
+| 2:30  | Copilot "fix the bug" — agentic demo          | VS Code   |
+| 4:30  | `mvn test-order:diagnose` — share-with-colleague beat | Terminal |
+| 5:20  | Close — kicker + QR code                      | Slides    |
 
 ---
 
@@ -45,8 +42,9 @@ Terminal font: **20pt+**. Test on the projector before the session.
 | Command | What happens | Wall time |
 |---------|-------------|-----------|
 | `mvn clean test` | Full clean build + all tests | **5:00+** |
-| `mvn test-order:affected test` | 7 affected test classes — **with bug** | **~25s (red)** |
-| same after fix | same 7 classes | **~25s (green)** |
+| `mvn test-order:affected test` | first run after reset (cold) | **~88s (red)** |
+| `mvn test-order:affected test` | re-run, daemon warm | **~55s (red)** |
+| same after fix | 7 selected, 0 errors | **~55s (green)** |
 
 ---
 
@@ -66,7 +64,7 @@ mvn clean test
 
 **Kill at ~90s** (Ctrl+C).
 
-### Magic beat — on stage after SlideDepGraph
+### Magic beat — on stage after the pain demo
 
 ```sh
 cd /path/to/demo/dcom-presentation
@@ -76,19 +74,20 @@ cd cloud-sdk-java
 mvn test-order:affected test
 ```
 
-Narrate while select runs (~25s):
+Narrate while select runs (~55s warm, ~88s cold first time):
 > "Same project. Same change. Plugin on."
-> "Seven test classes. Not sixty-five modules."
+> "About half the test classes. Not sixty-five modules."
 
-Expected output:
+Expected output (red):
 ```
-[test-order] Selected 7 tests, deferred 8
-Tests run: 86, Failures: 0, Errors: 8
+[test-order] Selection Summary:
+[test-order] Selected 8 tests (7 scored + 1 fast-diverse), deferred 7
+Tests run: 311, Failures: 0, Errors: 8
 BUILD FAILURE
-Total time: 25s
+Total time: ~55s (warm) / ~88s (cold)
 ```
 
-> "Twenty-five seconds. Build failure. That's the feedback."
+> "About a minute. Build failure. That's the feedback."
 
 ### Agentic Demo
 
@@ -103,14 +102,14 @@ fix the bug
 ```
 (paste the error message)
 
-> "The agent gets a result in 25 seconds. Not 5 minutes."
+> "The agent gets a result in about a minute. Not 5 minutes."
 
 **Run 1 — red** *(ensure failure visible before Copilot starts fixing)*:
 > "There's the bug."
 
 **Copilot fixes + run 2 — green**:
 > "It read the stack trace. Fixed the negation."
-> "25 seconds to catch. 25 to verify."
+> "A minute to catch. A minute to verify."
 
 ---
 
@@ -139,4 +138,4 @@ fix the bug
 ## Slides
 
 Served by Slidev at `localhost:3030`. Advance with arrow keys or clicker.
-6 slides — the terminal and VS Code carry the demo.
+Two slides — Hero (open) + Close (QR). The terminal and VS Code carry everything in between.

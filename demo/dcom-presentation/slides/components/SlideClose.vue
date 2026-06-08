@@ -30,6 +30,7 @@
 
         <!-- Right: QR code -->
         <div class="flex flex-col items-center gap-3 w-60">
+          <div class="w-32 h-px bg-white/80 mb-2"></div>
           <div class="bg-white rounded-2xl p-4 shadow-2xl shadow-blue-500/20">
             <img src="/qr-github.svg" class="w-40 h-40" alt="QR code to GitHub repo" />
           </div>
