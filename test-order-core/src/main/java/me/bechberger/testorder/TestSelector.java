@@ -132,13 +132,40 @@ public class TestSelector {
 	}
 
 	/**
-	 * Phase 2: include the top-N highest-scored tests. topN=-1 means select all.
-	 * Tests already selected by earlier phases (e.g., new tests) count towards the
-	 * topN budget — only {@code @AlwaysRun} tests are truly additive.
+	 * Phase 2: include change-affected tests, capped at topN when topN >= 0.
+	 * <p>
+	 * Semantics:
+	 * <ul>
+	 * <li>If a change signal exists (changed source classes or changed test
+	 * classes), only tests whose deps overlap the changed classes — or whose own
+	 * test class changed — are eligible. topN caps the count (topN=-1 = no cap).
+	 * <li>If no change is detected, topN=-1 selects all tests so the run is
+	 * non-empty; topN>=0 picks the top N by score.
+	 * </ul>
+	 * Tests already selected by earlier phases count towards the topN budget — only
+	 * {@code @AlwaysRun} tests are truly additive.
 	 */
 	private void selectTopN(List<ScoredTest> scored, Set<String> selected) {
+		boolean hasChangeSignal = !changedClasses.isEmpty() || !changedTestClasses.isEmpty();
+		if (hasChangeSignal) {
+			Set<String> affectedByDeps = depMap.getAffectedTests(changedClasses);
+			int cap = config.topN() < 0 ? Integer.MAX_VALUE : config.topN();
+			int counted = 0;
+			for (ScoredTest s : scored) {
+				if (counted >= cap)
+					break;
+				boolean isAffected = affectedByDeps.contains(s.name()) || changedTestClasses.contains(s.name());
+				if (!isAffected)
+					continue;
+				if (alwaysRunClasses.contains(s.name()))
+					continue; // additive, doesn't count
+				selected.add(s.name());
+				counted++;
+			}
+			return;
+		}
+		// No change detected.
 		if (config.topN() < 0) {
-			// topN=-1 means "select all affected tests"
 			for (ScoredTest s : scored) {
 				selected.add(s.name());
 			}
@@ -148,7 +175,6 @@ public class TestSelector {
 		for (ScoredTest s : scored) {
 			if (counted >= config.topN())
 				break;
-			// @AlwaysRun tests are additive and don't count towards topN
 			if (alwaysRunClasses.contains(s.name()))
 				continue;
 			selected.add(s.name());

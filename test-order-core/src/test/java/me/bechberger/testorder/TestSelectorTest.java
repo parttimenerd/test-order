@@ -55,16 +55,16 @@ class TestSelectorTest {
 		DependencyMap depMap = buildDepMap(Map.of("com.A", Set.of("app.X"), "com.B", Set.of("app.Y"), "com.C",
 				Set.of("app.Z"), "com.D", Set.of("app.W")));
 		TestOrderState state = stateWithDurations(Map.of("com.A", 100L, "com.B", 200L, "com.C", 300L, "com.D", 400L));
-		// A has dep overlap with changed class → gets higher score
+		// A has dep overlap with changed class → only A is change-affected
 		Set<String> changed = Set.of("app.X");
 
 		TestSelector.Selection sel = new TestSelector(depMap, state, changed, Set.of(),
 				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(2, 0, 42L)).select();
 
-		// A should be in selected (dep overlap), topN=2 so exactly 2 selected
+		// Only A is change-affected; topN=2 caps at 2 but only 1 candidate qualifies.
 		assertTrue(sel.selected().contains("com.A"), "com.A should be selected (has dep overlap)");
-		assertEquals(2, sel.selected().size());
-		assertEquals(2, sel.remaining().size());
+		assertEquals(1, sel.selected().size(), "only the change-affected test runs");
+		assertEquals(3, sel.remaining().size());
 	}
 
 	@Test
