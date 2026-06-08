@@ -3,6 +3,7 @@ package me.bechberger.testorder.ops;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -164,6 +165,7 @@ public final class ChangeDetectionOps {
 	private static void snapshotMethodHashesSingleRoot(Path testSourceRoot, Path methodHashFile, PluginLog log) {
 		try {
 			if (testSourceRoot != null && Files.isDirectory(testSourceRoot)) {
+				stashBaseline(methodHashFile, log);
 				MethodHashStore store = MethodHashStore.scan(testSourceRoot);
 				store.save(methodHashFile);
 				log.info("[test-order] Saved method hash snapshot (" + store.getHashes().size() + " methods): "
@@ -171,6 +173,25 @@ public final class ChangeDetectionOps {
 			}
 		} catch (IOException e) {
 			log.warn("[test-order] Failed to save method hash snapshot: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Copies the existing method-hashes file to a sibling {@code .baseline} file so
+	 * the next snapshot's "before" state survives the impending overwrite. Used by
+	 * {@link me.bechberger.testorder.junit.TddEnforcementExtension} (in
+	 * test-order-junit) to detect renamed test methods at test-execution time, so a
+	 * rename doesn't get reported as a TDD violation.
+	 */
+	private static void stashBaseline(Path methodHashFile, PluginLog log) {
+		if (methodHashFile == null || !Files.isRegularFile(methodHashFile)) {
+			return;
+		}
+		Path baseline = methodHashFile.resolveSibling(methodHashFile.getFileName() + ".baseline");
+		try {
+			Files.copy(methodHashFile, baseline, StandardCopyOption.REPLACE_EXISTING);
+		} catch (IOException e) {
+			log.warn("[test-order] Failed to stash method hash baseline: " + e.getMessage());
 		}
 	}
 

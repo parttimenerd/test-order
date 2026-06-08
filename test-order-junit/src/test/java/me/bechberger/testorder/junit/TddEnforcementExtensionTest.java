@@ -7,7 +7,10 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -15,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import me.bechberger.testorder.TestOrderConfig;
 import me.bechberger.testorder.TestOrderState;
+import me.bechberger.testorder.changes.MethodHashStore;
 
 /**
  * Unit tests for {@link TddEnforcementExtension}.
@@ -246,6 +250,122 @@ class TddEnforcementExtensionTest {
 		assertTrue(error.getMessage().contains("New test METHOD"), error.getMessage());
 	}
 
+	// ── Rename detection (Usability #11) ──────────────────────────────────────
+
+	/**
+	 * Writes {@code method-hashes.lz4} and {@code method-hashes.lz4.baseline} into
+	 * the directory holding {@code state.lz4}, so the extension can detect that a
+	 * method is a rename rather than a brand-new test.
+	 */
+	private void setupHashFiles(Map<String, String> currentHashes, Map<String, String> baselineHashes)
+			throws IOException {
+		Path stateFile = Path.of(System.getProperty(TestOrderConfig.STATE_PATH));
+		Path dir = stateFile.getParent();
+		new MethodHashStore(currentHashes).save(dir.resolve("method-hashes.lz4"));
+		new MethodHashStore(baselineHashes).save(dir.resolve("method-hashes.lz4.baseline"));
+	}
+
+	@Test
+	void rename_inSameClass_isSuppressed() throws Exception {
+		System.setProperty(TestOrderConfig.TDD, "true");
+		TestOrderState state = new TestOrderState();
+		state.recordDuration(KnownTestA.class.getName(), 100);
+		// State knows the OLD method (testOne) — but not the new one (testOneRenamed)
+		state.recordMethodDuration(KnownTestA.class.getName(), "testOne", 50);
+		setupState(state);
+
+		// Method hashes: testOne disappeared in current; testOneRenamed appeared with
+		// the SAME body hash → that's a rename.
+		String body = "abc123hash";
+		String cls = KnownTestA.class.getName();
+		setupHashFiles(Map.of(cls + "#testOneRenamed", body), Map.of(cls + "#testOne", body));
+
+		TddEnforcementExtension ext = new TddEnforcementExtension();
+		// Without rename detection this would throw — verify it does NOT.
+		ext.afterTestExecution(fakeContext(KnownTestA.class, "testOneRenamed", Optional.empty()));
+	}
+
+	@Test
+	void genuinelyNewMethod_stillThrows_evenWithBaselinePresent() throws Exception {
+		System.setProperty(TestOrderConfig.TDD, "true");
+		TestOrderState state = new TestOrderState();
+		state.recordDuration(KnownTestA.class.getName(), 100);
+		state.recordMethodDuration(KnownTestA.class.getName(), "testOne", 50);
+		setupState(state);
+
+		// Baseline & current both have testOne (unchanged) — anyMethod is genuinely
+		// new, no matching hash in baseline.
+		String cls = KnownTestA.class.getName();
+		setupHashFiles(Map.of(cls + "#testOne", "h1", cls + "#anyMethod", "h2-new"), Map.of(cls + "#testOne", "h1"));
+
+		TddEnforcementExtension ext = new TddEnforcementExtension();
+		AssertionError error = assertThrows(AssertionError.class,
+				() -> ext.afterTestExecution(fakeContext(KnownTestA.class, "anyMethod", Optional.empty())));
+		assertTrue(error.getMessage().contains("New test METHOD"), error.getMessage());
+	}
+
+	@Test
+	void crossClassSameHash_doesNotSuppress() throws Exception {
+		System.setProperty(TestOrderConfig.TDD, "true");
+		TestOrderState state = new TestOrderState();
+		state.recordDuration(KnownTestA.class.getName(), 100);
+		state.recordMethodDuration(KnownTestA.class.getName(), "testOne", 50);
+		setupState(state);
+
+		// Two unrelated classes that happen to share an identical method body hash.
+		// "anyMethod" in KnownTestA is brand-new; the matching deleted entry lives in
+		// a DIFFERENT class — that is not a rename, so the violation must still fire.
+		String body = "shared-hash";
+		String cls = KnownTestA.class.getName();
+		setupHashFiles(Map.of(cls + "#testOne", "h1", cls + "#anyMethod", body),
+				Map.of(cls + "#testOne", "h1", "other.pkg.OtherTest#somethingDeleted", body));
+
+		TddEnforcementExtension ext = new TddEnforcementExtension();
+		AssertionError error = assertThrows(AssertionError.class,
+				() -> ext.afterTestExecution(fakeContext(KnownTestA.class, "anyMethod", Optional.empty())));
+		assertTrue(error.getMessage().contains("New test METHOD"), error.getMessage());
+	}
+
+	@Test
+	void missingBaseline_fallsBackToOriginalBehaviour() throws Exception {
+		System.setProperty(TestOrderConfig.TDD, "true");
+		TestOrderState state = new TestOrderState();
+		state.recordDuration(KnownTestA.class.getName(), 100);
+		state.recordMethodDuration(KnownTestA.class.getName(), "testOne", 50);
+		setupState(state);
+		// No method-hashes.lz4 / baseline files present → rename detection returns
+		// empty set, original violation behaviour kicks in.
+
+		TddEnforcementExtension ext = new TddEnforcementExtension();
+		AssertionError error = assertThrows(AssertionError.class,
+				() -> ext.afterTestExecution(fakeContext(KnownTestA.class, "testOneRenamed", Optional.empty())));
+		assertTrue(error.getMessage().contains("New test METHOD"), error.getMessage());
+	}
+
+	@Test
+	void detectRenames_pureLogic_emptyWhenNoOverlap() {
+		MethodHashStore current = new MethodHashStore(new HashMap<>(Map.of("A#m1", "h1")));
+		MethodHashStore baseline = new MethodHashStore(new HashMap<>(Map.of("A#m1", "h1")));
+		Set<String> renames = TddEnforcementExtension.detectRenames(current, baseline);
+		assertTrue(renames.isEmpty(), "no renames when nothing changed");
+	}
+
+	@Test
+	void detectRenames_pureLogic_findsSameClassRename() {
+		MethodHashStore current = new MethodHashStore(new HashMap<>(Map.of("A#newName", "h1")));
+		MethodHashStore baseline = new MethodHashStore(new HashMap<>(Map.of("A#oldName", "h1")));
+		Set<String> renames = TddEnforcementExtension.detectRenames(current, baseline);
+		assertEquals(Set.of("A#newName"), renames);
+	}
+
+	@Test
+	void detectRenames_pureLogic_ignoresCrossClass() {
+		MethodHashStore current = new MethodHashStore(new HashMap<>(Map.of("A#newName", "h1")));
+		MethodHashStore baseline = new MethodHashStore(new HashMap<>(Map.of("B#oldName", "h1")));
+		Set<String> renames = TddEnforcementExtension.detectRenames(current, baseline);
+		assertTrue(renames.isEmpty(), "cross-class same-hash must not be reported as rename");
+	}
+
 	private ExtensionContext fakeContext(Class<?> testClass, String methodName, Optional<Throwable> executionException)
 			throws NoSuchMethodException {
 		return proxyContext(testClass, testClass.getDeclaredMethod(methodName), executionException);
@@ -358,6 +478,9 @@ class TddEnforcementExtensionTest {
 		void testTwo() {
 		}
 		void anyMethod() {
+		}
+		// Rename target: the "renamed" name in same-class rename tests below
+		void testOneRenamed() {
 		}
 	}
 

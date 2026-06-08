@@ -62,4 +62,29 @@ class HashSnapshotOperationTest {
 				"null testSourceRoot must not throw NPE");
 		assertFalse(Files.exists(methodHashFile), "no method hash file should be written for null testSourceRoot");
 	}
+
+	@Test
+	void snapshotMethodHashes_stashesPreviousFileToBaseline() throws Exception {
+		// Verifies the rename-detection support: before overwriting method-hashes.lz4
+		// the previous snapshot is copied to a sibling .baseline file so
+		// TddEnforcementExtension can compare current vs prior at test time.
+		Path testSourceRoot = tempDir.resolve("src/test/java");
+		Files.createDirectories(testSourceRoot);
+		Files.writeString(testSourceRoot.resolve("Foo.java"),
+				"package p; class FooTest { @org.junit.jupiter.api.Test void testA() {} }");
+		Path methodHashFile = tempDir.resolve(".test-order/method-hashes.lz4");
+		Path baselineFile = tempDir.resolve(".test-order/method-hashes.lz4.baseline");
+
+		// First scan: there's no prior file, so no baseline should be written.
+		ChangeDetectionOps.snapshotMethodHashes(testSourceRoot, methodHashFile, PluginLog.NOOP);
+		assertTrue(Files.exists(methodHashFile), "first scan writes the snapshot");
+		assertFalse(Files.exists(baselineFile), "no baseline yet — nothing to stash on first run");
+
+		// Second scan: the prior file exists, so it should be stashed before the
+		// new scan overwrites it.
+		Files.writeString(testSourceRoot.resolve("Foo.java"),
+				"package p; class FooTest { @org.junit.jupiter.api.Test void testB() {} }");
+		ChangeDetectionOps.snapshotMethodHashes(testSourceRoot, methodHashFile, PluginLog.NOOP);
+		assertTrue(Files.exists(baselineFile), "second scan stashes prior snapshot to .baseline");
+	}
 }
