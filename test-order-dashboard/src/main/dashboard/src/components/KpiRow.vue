@@ -154,6 +154,16 @@ const timeSavings = computed(() => {
   return { savedMs, suiteDurMs, apfd: d.avgApfd.value, failingRuns: failingRuns.length }
 })
 
+// Tests affected by the current change set — matches `mvn test-order:affected`
+// tier-1 selection: depOverlap > 0 OR isChanged OR isNew (or test class itself
+// modified). Tile click navigates to the Tests tab with the matching filter.
+const changeAffectedCount = computed(() => {
+  const changedTestSet = new Set(d.dd.changedTestClasses)
+  return d.tests.filter(t =>
+    t.depOverlap > 0 || t.isChanged || t.isNew || changedTestSet.has(t.name)
+  ).length
+})
+
 // Mini sparkline bars: each run = a bar whose height encodes APFD (0–100%) and color encodes pass/fail
 const sparkBars = computed(() => {
   if (!d.runs.length) return []
@@ -340,10 +350,15 @@ const sparkBars = computed(() => {
       <span v-else class="kpi-row__no-data">run tests to populate</span>
     </div>
 
-    <!-- Changed tests count -->
-    <div class="kpi kpi-row__kpi" :title="'Test classes detected as changed since last run. Changed tests get a score bonus (' + d.dd.weights.changedTest + 'pts).'">
-      <div class="kpi-row__label">Changed Tests</div>
-      <div class="kpi-row__value" :style="{ color: d.dd.changedTestClasses.length > 0 ? 'var(--yellow)' : 'var(--text-sec)' }">{{ d.dd.changedTestClasses.length }}</div>
+    <!-- Change-affected tests count -->
+    <div
+      class="kpi kpi-row__kpi kpi-row__kpi--clickable"
+      @click="d.setBadgeFilter('affected'); d.setTab('tests')"
+      :title="'Tests `mvn test-order:affected test` would run — tier 1 of the tiered selection (tests with dep overlap on changed source, tests whose own source changed, or new tests).\n' + d.dd.changedClasses.length + ' source class' + (d.dd.changedClasses.length === 1 ? '' : 'es') + (d.dd.changedTestClasses.length ? ' + ' + d.dd.changedTestClasses.length + ' test class' + (d.dd.changedTestClasses.length === 1 ? '' : 'es') : '') + ' changed.\nClick to filter affected tests.'">
+      <div class="kpi-row__label">Change Affected</div>
+      <div class="kpi-row__value" :style="{ color: changeAffectedCount > 0 ? 'var(--yellow)' : 'var(--text-sec)' }">
+        {{ changeAffectedCount }}<span v-if="d.dd.changedClasses.length || d.dd.changedTestClasses.length" style="font-size:.6rem;color:var(--text-muted);font-weight:500;margin-left:3px">/ {{ d.dd.changedClasses.length + d.dd.changedTestClasses.length }} src</span>
+      </div>
     </div>
 
     <!-- Suite Health Score -->

@@ -334,6 +334,10 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       if (preds.length) arr = arr.filter(t => preds.every(p => p(t, flakyTests.value)))
     }
     if (badgeFilter.value === 'changed') arr = arr.filter(t => t.isChanged)
+    else if (badgeFilter.value === 'affected') {
+      const ct = new Set(dd.changedTestClasses)
+      arr = arr.filter(t => t.depOverlap > 0 || t.isChanged || t.isNew || ct.has(t.name))
+    }
     else if (badgeFilter.value === 'new') arr = arr.filter(t => t.isNew)
     else if (badgeFilter.value === 'failing') arr = arr.filter(t => t.failScore > 0)
     else if (badgeFilter.value === 'flaky') arr = arr.filter(t => flakyTests.value.has(t.name))

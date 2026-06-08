@@ -220,19 +220,19 @@ const generatedAge = computed(() => {
 <style scoped>
 .app-header {
   background: var(--bg-card); border-bottom: 1px solid var(--border);
-  padding: 5px 14px; display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; display: flex; align-items: center; gap: 4px;
   flex-shrink: 0; flex-wrap: wrap;
 }
 .app-header__project {
-  font-weight: 700; font-size: .95rem; color: var(--accent-light);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;
+  font-weight: 700; font-size: .85rem; color: var(--accent-light);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px;
 }
-.app-header__sep { color: var(--border); font-size: .8rem; }
+.app-header__sep { color: var(--border); font-size: .75rem; }
 .app-header__chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: .72rem; color: var(--text-sec);
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: .68rem; color: var(--text-sec);
   background: rgba(51,65,85,.4); border: 1px solid var(--border);
-  border-radius: 12px; padding: 2px 8px; white-space: nowrap;
+  border-radius: 10px; padding: 1px 6px; white-space: nowrap;
   transition: all var(--tr-fast);
 }
 .app-header__chip-icon { font-size: .7rem; opacity: .7; }
