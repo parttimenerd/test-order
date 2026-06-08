@@ -1,6 +1,7 @@
 package me.bechberger.testorder.maven;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -203,6 +204,111 @@ class RuntimeRealmInjectorTest {
 		};
 		RuntimeRealmInjector injector = new RuntimeRealmInjector(null, plain);
 		assertDoesNotThrow(injector::importIntoEntireWorld);
+	}
+
+	// ── Sealed-realm fallback (README:516 PluginContainerException fix) ────
+
+	@Test
+	void sealedRealm_fallsBackToAddURL_whenImportFromIsRejected(@TempDir Path tmp) throws Exception {
+		ClassWorld world = new ClassWorld();
+		ClassRealm extensionRealm = world.newRealm("test-order-extension", null);
+		Path runtimeJar = makeJarWithUsageStore(tmp);
+		extensionRealm.addURL(runtimeJar.toUri().toURL());
+		// A "sealed" realm that throws on importFrom — simulating the OData/OpenAPI
+		// generator realms that silently rejected imports in cloud-sdk-java.
+		ClassRealm sealedRealm = new ClassRealm(world, "sealed-plugin", null) {
+			@Override
+			public void importFrom(ClassLoader classLoader, String packageName) {
+				throw new RuntimeException("realm is sealed; importFrom rejected");
+			}
+		};
+		// Cannot resolve UsageStore before the fallback runs.
+		assertThrows(ClassNotFoundException.class, () -> sealedRealm.loadClass(RUNTIME_CLASS));
+
+		RuntimeRealmInjector injector = new RuntimeRealmInjector(null, extensionRealm);
+		PluginDescriptor descriptor = new PluginDescriptor();
+		descriptor.setGroupId("com.example");
+		descriptor.setArtifactId("sealed-plugin");
+		descriptor.setClassRealm(sealedRealm);
+		MojoDescriptor mojo = new MojoDescriptor();
+		mojo.setPluginDescriptor(descriptor);
+		MojoExecution exec = new MojoExecution(mojo);
+		ExecutionEvent event = mock(ExecutionEvent.class);
+		when(event.getMojoExecution()).thenReturn(exec);
+
+		injector.mojoStarted(event);
+
+		// Stage 2 fallback added the jar URL to the realm — UsageStore resolves.
+		Class<?> loaded = sealedRealm.loadClass(RUNTIME_CLASS);
+		// Loaded from the sealedRealm's own URL (not extension), so a different
+		// Class instance — but the build no longer crashes.
+		assertNotNull(loaded);
+		assertSame(sealedRealm, loaded.getClassLoader(),
+				"sealed realm should load UsageStore from its own URL after fallback");
+	}
+
+	@Test
+	void sealedRealm_doesNotCrash_whenStage2AlsoFails() throws Exception {
+		ClassWorld world = new ClassWorld();
+		// Extension realm has no jar containing UsageStore — getResource returns
+		// null, so resolveRuntimeJarUrl yields null and Stage 2 cannot proceed.
+		ClassRealm extensionRealm = world.newRealm("test-order-extension-empty", null);
+		ClassRealm sealedRealm = new ClassRealm(world, "sealed-plugin-no-jar", null) {
+			@Override
+			public void importFrom(ClassLoader classLoader, String packageName) {
+				throw new RuntimeException("realm is sealed");
+			}
+		};
+		RuntimeRealmInjector injector = new RuntimeRealmInjector(null, extensionRealm);
+		PluginDescriptor descriptor = new PluginDescriptor();
+		descriptor.setGroupId("com.example");
+		descriptor.setArtifactId("sealed-plugin-no-jar");
+		descriptor.setClassRealm(sealedRealm);
+		MojoDescriptor mojo = new MojoDescriptor();
+		mojo.setPluginDescriptor(descriptor);
+		MojoExecution exec = new MojoExecution(mojo);
+		ExecutionEvent event = mock(ExecutionEvent.class);
+		when(event.getMojoExecution()).thenReturn(exec);
+
+		// Must not throw — Stage 3 logs a diagnostic and gives up.
+		assertDoesNotThrow(() -> injector.mojoStarted(event));
+		// Realm still cannot resolve UsageStore (expected — there's no jar).
+		assertThrows(ClassNotFoundException.class, () -> sealedRealm.loadClass(RUNTIME_CLASS));
+	}
+
+	@Test
+	void failedRealm_isRetriedOnSubsequentCalls(@TempDir Path tmp) throws Exception {
+		// A realm that fails Stage 1 the first time, then succeeds the second
+		// time — verifies we don't permanently latch on FAILED.
+		ClassWorld world = new ClassWorld();
+		ClassRealm extensionRealm = world.newRealm("test-order-extension-retry", null);
+		Path runtimeJar = makeJarWithUsageStore(tmp);
+		extensionRealm.addURL(runtimeJar.toUri().toURL());
+
+		java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+		ClassRealm flakyRealm = new ClassRealm(world, "flaky-plugin", null) {
+			@Override
+			public void importFrom(ClassLoader classLoader, String packageName) {
+				if (calls.getAndIncrement() == 0) {
+					throw new RuntimeException("first call fails");
+				}
+				super.importFrom(classLoader, packageName);
+			}
+		};
+		RuntimeRealmInjector injector = new RuntimeRealmInjector(null, extensionRealm);
+		PluginDescriptor descriptor = new PluginDescriptor();
+		descriptor.setGroupId("com.example");
+		descriptor.setArtifactId("flaky-plugin");
+		descriptor.setClassRealm(flakyRealm);
+		MojoDescriptor mojo = new MojoDescriptor();
+		mojo.setPluginDescriptor(descriptor);
+		MojoExecution exec = new MojoExecution(mojo);
+		ExecutionEvent event = mock(ExecutionEvent.class);
+		when(event.getMojoExecution()).thenReturn(exec);
+
+		// First call: Stage 1 throws, Stage 2 fallback kicks in via addURL.
+		injector.mojoStarted(event);
+		assertDoesNotThrow(() -> flakyRealm.loadClass(RUNTIME_CLASS));
 	}
 
 	/**

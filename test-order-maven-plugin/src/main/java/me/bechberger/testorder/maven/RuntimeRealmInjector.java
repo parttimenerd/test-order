@@ -1,10 +1,13 @@
 package me.bechberger.testorder.maven;
 
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.maven.execution.AbstractExecutionListener;
 import org.apache.maven.execution.ExecutionEvent;
@@ -52,8 +55,24 @@ public final class RuntimeRealmInjector extends AbstractExecutionListener {
 
 	private final ExecutionListener delegate;
 	private final ClassLoader extensionRealm;
-	/** Tracks realms we've already imported into to avoid redundant work. */
-	private final ConcurrentMap<ClassRealm, Boolean> imported = new ConcurrentHashMap<>();
+	/**
+	 * Tracks the outcome per-realm so we don't repeat successful imports, but DO
+	 * retry realms whose previous attempts failed (transient sealing, late-loaded
+	 * jars, etc.).
+	 */
+	private final ConcurrentMap<ClassRealm, ImportState> imported = new ConcurrentHashMap<>();
+	/** Cached URL of the jar containing {@code UsageStore} (Stage 2 fallback). */
+	private final AtomicReference<URL> runtimeJarUrl = new AtomicReference<>();
+
+	/** Outcome of a {@link #tryImport} attempt for a given realm. */
+	enum ImportState {
+		/** {@code importFrom} succeeded — realm shares the extension's UsageStore. */
+		IMPORTED,
+		/** Stage 1 failed; we added the runtime jar URL to the realm directly. */
+		URL_FALLBACK,
+		/** Both stages failed; realm cannot resolve UsageStore. Logged once. */
+		FAILED;
+	}
 
 	public RuntimeRealmInjector(ExecutionListener delegate, ClassLoader extensionRealm) {
 		this.delegate = delegate;
@@ -192,25 +211,114 @@ public final class RuntimeRealmInjector extends AbstractExecutionListener {
 		if (realm == null) {
 			return;
 		}
-		if (imported.putIfAbsent(realm, Boolean.TRUE) != null) {
-			return;
-		}
 		// Skip realms that already see UsageStore through their own classpath or
 		// imports. Importing into them creates either redundant work or, worse,
 		// a circular import chain (parent realm imports from us, child imports
 		// from parent, etc.) that causes StackOverflowError on class lookup.
 		if (alreadyHasRuntime(realm)) {
+			imported.putIfAbsent(realm, ImportState.IMPORTED);
 			return;
 		}
+		ImportState prior = imported.get(realm);
+		if (prior == ImportState.IMPORTED || prior == ImportState.URL_FALLBACK) {
+			return; // already handled successfully — never retry
+		}
+		// FAILED or null → attempt(s) below. We re-attempt on FAILED so that a
+		// realm whose state changed mid-build (e.g. late URL added by another
+		// participant) can still be recovered.
+
+		Throwable stage1Failure = null;
+		// ── Stage 1: importFrom — preferred, keeps a single UsageStore class
+		// across all realms so static state stays coherent.
 		for (String pkg : IMPORTED_PACKAGES) {
 			try {
 				realm.importFrom(extensionRealm, pkg);
 			} catch (Throwable t) {
-				// Realm might be sealed or have a conflicting import — ignore.
-				// We've already marked it imported above; one failed package
-				// shouldn't trigger retry storms on every mojo invocation.
+				stage1Failure = t;
+				break;
 			}
 		}
+		if (stage1Failure == null && alreadyHasRuntime(realm)) {
+			imported.put(realm, ImportState.IMPORTED);
+			return;
+		}
+
+		// ── Stage 2: addURL fallback — gives the sealed/conflicting realm its
+		// own copy of UsageStore. Static state diverges from the extension
+		// realm's copy, but plugins that hit this path generally only LOAD
+		// instrumented classes (they don't run tests), so divergent recordings
+		// are discarded. Better than crashing the build.
+		URL jarUrl = resolveRuntimeJarUrl();
+		if (jarUrl != null) {
+			try {
+				realm.addURL(jarUrl);
+				if (alreadyHasRuntime(realm)) {
+					imported.put(realm, ImportState.URL_FALLBACK);
+					System.err.println("[test-order] sealed-realm fallback: realm '" + safeRealmId(realm)
+							+ "' rejected importFrom (" + describe(stage1Failure) + "), added " + RUNTIME_PACKAGE
+							+ " via addURL — this plugin's UsageStore"
+							+ " recordings will not aggregate with test forks.");
+					return;
+				}
+			} catch (Throwable t) {
+				// fall through to Stage 3
+				stage1Failure = stage1Failure != null ? stage1Failure : t;
+			}
+		}
+
+		// ── Stage 3: give up, mark FAILED so we don't keep logging on every
+		// mojoStarted, and emit a diagnostic so users can act.
+		if (imported.put(realm, ImportState.FAILED) != ImportState.FAILED) {
+			System.err.println("[test-order] realm '" + safeRealmId(realm) + "' cannot resolve " + RUNTIME_PACKAGE
+					+ " — instrumented classes loaded by this plugin will throw" + " NoClassDefFoundError. Cause: "
+					+ describe(stage1Failure));
+		}
+	}
+
+	/**
+	 * Locates the jar containing {@code UsageStore} so we can hand its URL to a
+	 * sealed realm via {@link ClassRealm#addURL}. Caches the result.
+	 */
+	private URL resolveRuntimeJarUrl() {
+		URL cached = runtimeJarUrl.get();
+		if (cached != null) {
+			return cached;
+		}
+		URL probe = extensionRealm.getResource(RUNTIME_PROBE_CLASS.replace('.', '/') + ".class");
+		if (probe == null) {
+			return null;
+		}
+		// jar:file:/.../test-order-agent.jar!/me/...UsageStore.class → file URL
+		// of the jar itself. Use URLConnection to extract the underlying jar.
+		try {
+			if ("jar".equals(probe.getProtocol())) {
+				URLConnection conn = probe.openConnection();
+				if (conn instanceof java.net.JarURLConnection jarConn) {
+					URL jarFile = jarConn.getJarFileURL();
+					runtimeJarUrl.compareAndSet(null, jarFile);
+					return jarFile;
+				}
+			}
+		} catch (Throwable t) {
+			// fall through — caller treats null as "no fallback available"
+		}
+		return null;
+	}
+
+	private static String safeRealmId(ClassRealm realm) {
+		try {
+			return realm.getId();
+		} catch (Throwable t) {
+			return "<unidentified-realm>";
+		}
+	}
+
+	private static String describe(Throwable t) {
+		if (t == null) {
+			return "(no exception)";
+		}
+		String msg = t.getMessage();
+		return t.getClass().getSimpleName() + (msg != null ? ": " + msg : "");
 	}
 
 	private static boolean alreadyHasRuntime(ClassRealm realm) {

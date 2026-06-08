@@ -498,6 +498,27 @@ If you don't have a custom `<argLine>`, don't add one — the plugin auto-detect
 
 </details>
 
+## Known Issues
+
+### `PluginContainerException: ... UsageStore` on multi-module builds
+
+**Symptom:** During a learn pass on a large multi-module reactor, Maven aborts with:
+
+```
+[ERROR] -----------------------------------------------------: me.bechberger.testorder.agent.runtime.UsageStore
+[ERROR] -> [Help 1] PluginContainerException
+```
+
+**Trigger:** A non-Surefire plugin (e.g. OData/OpenAPI code generators running at `generate-sources`) loads instrumented classes from `target/classes/`, but its `ClassRealm` rejected the runtime-package import.
+
+**Status:** `RuntimeRealmInjector` now retries via a `ClassRealm.addURL` fallback when `importFrom` is rejected. Sealed realms get their own `UsageStore` copy; the build no longer crashes. A diagnostic line is logged to stderr when the fallback fires:
+
+```
+[test-order] sealed-realm fallback: realm '<plugin-id>' rejected importFrom (...) — added me.bechberger.testorder.agent.runtime via addURL
+```
+
+If the fallback also fails, a separate `[test-order] realm '...' cannot resolve me.bechberger.testorder.agent.runtime — ...` line names the offending plugin so you can `-pl '!offending-module'` it. This covers plugin realms visible at the time the lifecycle participant runs — extension realms created later in the build are still subject to the original limitation.
+
 ## Troubleshooting
 
 Run `mvn test-order:diagnose` first — it checks everything automatically.
