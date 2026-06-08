@@ -11,6 +11,7 @@ import java.util.function.Supplier;
 
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.TestSelector;
+import me.bechberger.testorder.ops.AffectedOperation;
 import me.bechberger.testorder.ops.AlwaysRunScanner;
 import me.bechberger.testorder.ops.ChangeDetectionOps;
 import me.bechberger.testorder.ops.HashSnapshotOperation;
@@ -18,7 +19,6 @@ import me.bechberger.testorder.ops.ModeResolverOperation;
 import me.bechberger.testorder.ops.OrdererConfigOperation;
 import me.bechberger.testorder.ops.PluginContext;
 import me.bechberger.testorder.ops.PluginLog;
-import me.bechberger.testorder.ops.SelectOperation;
 
 /**
  * Complete auto-mode workflow shared by Maven and Gradle.
@@ -92,7 +92,7 @@ public final class AutoWorkflow {
 		 * dependency data is recorded into the deps directory and merged incrementally
 		 * on the next run. Triggered by {@link PluginContext#alwaysLearn()}.
 		 */
-		record OrderSelect(SelectOperation.SelectResult selectResult, Map<String, String> ordererConfigMap,
+		record OrderSelect(AffectedOperation.SelectResult selectResult, Map<String, String> ordererConfigMap,
 				Set<String> changedClasses, Set<String> changedTests, Set<String> changedMethods,
 				TestOrderState.ScoringWeights weights, boolean attachLearnAgent) implements Result {
 
@@ -150,17 +150,17 @@ public final class AutoWorkflow {
 
 		var alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
 
-		SelectOperation.SelectResult selectResult;
+		AffectedOperation.SelectResult selectResult;
 		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0 && ctx.randomM() == 0) {
 			var allTests = new ArrayList<>(a.depMap().testClasses());
-			selectResult = SelectOperation.SelectResult.of(new TestSelector.Selection(allTests, java.util.List.of(), 0),
-					true);
+			selectResult = AffectedOperation.SelectResult
+					.of(new TestSelector.Selection(allTests, java.util.List.of(), 0), true);
 			ctx.log().info("[test-order] No changed classes detected — running tests in default order.");
 		} else {
 			if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {
 				ctx.log().info("[test-order] No changed classes detected — applying topN/randomM selection only.");
 			}
-			selectResult = SelectOperation.select(new SelectOperation.SelectConfig(a.depMap(), a.state(),
+			selectResult = AffectedOperation.select(new AffectedOperation.SelectConfig(a.depMap(), a.state(),
 					a.changedClasses(), a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(), alwaysRun,
 					ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
 			// G3: Warn if selection yields no tests in auto mode, but only when the depMap

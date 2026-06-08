@@ -15,9 +15,9 @@ import me.bechberger.testorder.TestSelector;
  * Framework-agnostic test selection orchestration. Runs TestSelector and writes
  * the selected/remaining test lists to disk.
  */
-public final class SelectOperation {
+public final class AffectedOperation {
 
-	private SelectOperation() {
+	private AffectedOperation() {
 	}
 
 	/** Input configuration for test selection. */

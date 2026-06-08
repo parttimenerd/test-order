@@ -8,9 +8,9 @@ import org.apache.maven.plugins.annotations.*;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestSelector;
+import me.bechberger.testorder.ops.AffectedOperation;
 import me.bechberger.testorder.ops.PluginContext;
-import me.bechberger.testorder.ops.SelectOperation;
-import me.bechberger.testorder.ops.workflows.SelectWorkflow;
+import me.bechberger.testorder.ops.workflows.AffectedWorkflow;
 
 /**
  * Selects a fast subset of tests for CI: all new tests, the top-n by score, and
@@ -22,7 +22,7 @@ import me.bechberger.testorder.ops.workflows.SelectWorkflow;
  * Usage: {@code mvn test-order:affected test}
  */
 @Mojo(name = "affected", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES)
-public class SelectMojo extends AbstractTestOrderMojo {
+public class AffectedMojo extends AbstractTestOrderMojo {
 
 	/**
 	 * Number of top-scored test classes to always include. Use -1 (default) to
@@ -131,10 +131,10 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		PluginContext pctx = buildPluginContextBuilder().topN(topN).randomM(randomM).seed(seed)
 				.selectedFile(Path.of(selectedFile)).remainingFile(Path.of(remainingFile)).build();
 
-		SelectOperation.SelectResult result;
+		AffectedOperation.SelectResult result;
 		me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result analysis;
 		try {
-			SelectWorkflow.SelectWithAnalysis combined = SelectWorkflow.selectWithAnalysis(pctx);
+			AffectedWorkflow.SelectWithAnalysis combined = AffectedWorkflow.selectWithAnalysis(pctx);
 			result = combined.result();
 			analysis = combined.analysis();
 		} catch (IOException e) {
@@ -162,7 +162,7 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		}
 
 		// Write PriorityClassOrderer config for ordering within the subset
-		// R7-13: Reuse analysis from SelectWorkflow instead of re-running change
+		// R7-13: Reuse analysis from AffectedWorkflow instead of re-running change
 		// detection
 		java.util.Map<String, String> configMap = me.bechberger.testorder.ops.OrdererConfigOperation
 				.buildConfig(new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(

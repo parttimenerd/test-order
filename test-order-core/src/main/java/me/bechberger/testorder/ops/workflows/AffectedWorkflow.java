@@ -2,24 +2,24 @@ package me.bechberger.testorder.ops.workflows;
 
 import java.io.IOException;
 
+import me.bechberger.testorder.ops.AffectedOperation;
 import me.bechberger.testorder.ops.AlwaysRunScanner;
 import me.bechberger.testorder.ops.PluginContext;
-import me.bechberger.testorder.ops.SelectOperation;
 
 /**
  * Test selection workflow: load index → detect changes → resolve weights →
  * discover @AlwaysRun → select top-N + random-M tests.
  */
-public final class SelectWorkflow {
+public final class AffectedWorkflow {
 
-	private SelectWorkflow() {
+	private AffectedWorkflow() {
 	}
 
 	/**
 	 * Result including both selection and the change analysis (avoids re-running
 	 * analysis).
 	 */
-	public record SelectWithAnalysis(SelectOperation.SelectResult result, ChangeAnalysis.Result analysis) {
+	public record SelectWithAnalysis(AffectedOperation.SelectResult result, ChangeAnalysis.Result analysis) {
 	}
 
 	/**
@@ -31,7 +31,7 @@ public final class SelectWorkflow {
 	 * @throws IOException
 	 *             if loading index/state or writing test lists fails
 	 */
-	public static SelectOperation.SelectResult select(PluginContext ctx) throws IOException {
+	public static AffectedOperation.SelectResult select(PluginContext ctx) throws IOException {
 		return selectWithAnalysis(ctx).result();
 	}
 
@@ -44,7 +44,7 @@ public final class SelectWorkflow {
 
 		var alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
 
-		SelectOperation.SelectResult result = SelectOperation.select(new SelectOperation.SelectConfig(a.depMap(),
+		AffectedOperation.SelectResult result = AffectedOperation.select(new AffectedOperation.SelectConfig(a.depMap(),
 				a.state(), a.changedClasses(), a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(),
 				alwaysRun, ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
 		return new SelectWithAnalysis(result, a);

@@ -15,14 +15,14 @@ import org.junit.jupiter.api.io.TempDir;
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
 
-class SelectOperationTest {
+class AffectedOperationTest {
 
 	@TempDir
 	Path tempDir;
 
 	// ═══════════════════════════════════════════════════════════════════
 	// Regression: stale remaining file deleted when all tests are selected
-	// (Bug: SelectOperation only wrote remaining file when non-empty, so a
+	// (Bug: AffectedOperation only wrote remaining file when non-empty, so a
 	// stale file from a previous select run would persist and cause run-remaining
 	// to re-execute already-selected tests)
 	// ═══════════════════════════════════════════════════════════════════
@@ -40,10 +40,10 @@ class SelectOperationTest {
 		assertTrue(Files.exists(remainingFile), "Precondition: stale remaining file should exist");
 
 		TestOrderState state = new TestOrderState();
-		SelectOperation.SelectConfig config = new SelectOperation.SelectConfig(depMap, state, Set.of(), Set.of(),
+		AffectedOperation.SelectConfig config = new AffectedOperation.SelectConfig(depMap, state, Set.of(), Set.of(),
 				state.weights(), -1, 0, null, Set.of(), selectedFile, remainingFile, PluginLog.NOOP, null);
 
-		SelectOperation.select(config);
+		AffectedOperation.select(config);
 
 		assertFalse(Files.exists(remainingFile),
 				"Stale remaining file should be deleted when all tests are selected (remaining is empty)");
@@ -62,10 +62,10 @@ class SelectOperationTest {
 
 		TestOrderState state = new TestOrderState();
 		// Select only 1 test — should leave 2 remaining
-		SelectOperation.SelectConfig config = new SelectOperation.SelectConfig(depMap, state, Set.of(), Set.of(),
+		AffectedOperation.SelectConfig config = new AffectedOperation.SelectConfig(depMap, state, Set.of(), Set.of(),
 				state.weights(), 1, 0, null, Set.of(), selectedFile, remainingFile, PluginLog.NOOP, null);
 
-		SelectOperation.select(config);
+		AffectedOperation.select(config);
 
 		assertTrue(Files.exists(selectedFile), "Selected file should be created");
 		assertTrue(Files.exists(remainingFile), "Remaining file should be created when tests are deferred");
@@ -115,11 +115,11 @@ class SelectOperationTest {
 		TestOrderState state = new TestOrderState();
 		// topN=1 means we don't select everything, so we hit the "else" branch that
 		// computes the breakdown.
-		SelectOperation.SelectConfig config = new SelectOperation.SelectConfig(depMap, state, Set.of(), Set.of(),
+		AffectedOperation.SelectConfig config = new AffectedOperation.SelectConfig(depMap, state, Set.of(), Set.of(),
 				state.weights(), 1, 0, null, Set.of("com.example.NewAlwaysTest"), selectedFile, null, capturingLog,
 				null);
 
-		SelectOperation.SelectResult result = SelectOperation.select(config);
+		AffectedOperation.SelectResult result = AffectedOperation.select(config);
 
 		// The selection must have succeeded without exception.
 		assertFalse(result.selection().selected().isEmpty());

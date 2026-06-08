@@ -26,17 +26,17 @@ import org.junit.jupiter.api.io.TempDir;
 
 import me.bechberger.testorder.TestOrderState;
 
-class SelectMojoTest {
+class AffectedMojoTest {
 
 	@TempDir
 	Path tempDir;
 
-	private TestableSelectMojo mojo;
+	private TestableAffectedMojo mojo;
 	private MavenProject project;
 
 	@BeforeEach
 	void setUp() throws Exception {
-		mojo = new TestableSelectMojo();
+		mojo = new TestableAffectedMojo();
 		project = projectWithSurefire(tempDir);
 
 		MavenSession session = mock(MavenSession.class);
@@ -111,7 +111,7 @@ class SelectMojoTest {
 		when(session.getTopLevelProject()).thenReturn(topLevelProject);
 		when(session.getRequest()).thenReturn(request);
 
-		TestableSelectMojo dependencyMojo = new TestableSelectMojo();
+		TestableAffectedMojo dependencyMojo = new TestableAffectedMojo();
 		inject(dependencyMojo, "session", session);
 		inject(dependencyMojo, "project", dependencyProject);
 		inject(dependencyMojo, "indexFile", tempDir.resolve("test-dependencies.lz4").toString());
@@ -192,7 +192,7 @@ class SelectMojoTest {
 		throw new NoSuchFieldException("Field not found in class hierarchy: " + fieldName);
 	}
 
-	private static final class TestableSelectMojo extends SelectMojo {
+	private static final class TestableAffectedMojo extends AffectedMojo {
 		boolean writeOrdererConfigCalled;
 
 		@Override
@@ -225,11 +225,11 @@ class SelectMojoTest {
 	/**
 	 * Testable subclass that returns explicit changed classes to test M-CRIT-1.
 	 */
-	private static final class ExplicitChangedSelectMojo extends SelectMojo {
+	private static final class ExplicitChangedAffectedMojo extends AffectedMojo {
 		private final Set<String> explicitChanged;
 		boolean writeOrdererConfigCalled;
 
-		ExplicitChangedSelectMojo(Set<String> explicitChanged) {
+		ExplicitChangedAffectedMojo(Set<String> explicitChanged) {
 			this.explicitChanged = explicitChanged;
 		}
 
@@ -266,7 +266,7 @@ class SelectMojoTest {
 		depMap.put("com.example.RealTest", Set.of("com.example.Service"));
 		depMap.save(index);
 
-		ExplicitChangedSelectMojo explicitMojo = new ExplicitChangedSelectMojo(Set.of("com.example.NonExistent"));
+		ExplicitChangedAffectedMojo explicitMojo = new ExplicitChangedAffectedMojo(Set.of("com.example.NonExistent"));
 
 		MavenSession session = mock(MavenSession.class);
 		when(session.getProjects()).thenReturn(List.of(project));

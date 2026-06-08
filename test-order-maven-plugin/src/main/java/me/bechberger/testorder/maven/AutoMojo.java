@@ -175,7 +175,7 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			TestSelector.Selection selection = os.selection();
 
 			if (os.selectResult().allSelected()) {
-				// SelectOperation already logged "Running full test suite"
+				// AffectedOperation already logged "Running full test suite"
 			} else if (runRemaining && !selection.remaining().isEmpty()) {
 				// R18-13: autoRunRemaining=true means run ALL tests (selected + remaining)
 				// in priority order, rather than deferring remaining to a separate step.
