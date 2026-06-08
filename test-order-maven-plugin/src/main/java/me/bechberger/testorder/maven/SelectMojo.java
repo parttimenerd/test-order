@@ -34,10 +34,11 @@ public class SelectMojo extends AbstractTestOrderMojo {
 	private int topN;
 
 	/**
-	 * Number of random fast tests to include for coverage diversity. Use 0 to
-	 * disable random selection.
+	 * Number of random fast tests to include for coverage diversity. Default 0
+	 * keeps {@code test-order:affected} change-focused: only tests with a real
+	 * change signal run. Set higher to add fast-diverse padding.
 	 */
-	@Parameter(property = MavenPluginConfigKeys.SELECT_RANDOM_M, defaultValue = "10")
+	@Parameter(property = MavenPluginConfigKeys.SELECT_RANDOM_M, defaultValue = "0")
 	private int randomM;
 
 	/** Random seed for reproducible selection (optional). */
@@ -151,6 +152,10 @@ public class SelectMojo extends AbstractTestOrderMojo {
 		SurefireHelper.warnSelectModeFilters(project, getLog());
 		if (!selection.selected().isEmpty()) {
 			SurefireHelper.configureIncludes(project, selection.selected(), true);
+			// PriorityClassOrderer can only reorder classes within a single TestPlan,
+			// so multi-fork or fresh-JVM-per-class configs defeat ordering. Pin
+			// forkCount=1 reuseForks=true (preserving any explicit user override).
+			SurefireHelper.forceSingleForkForOrdering(project, getLog());
 		} else {
 			getLog().info("[test-order] No tests selected — skipping test execution.");
 			project.getProperties().setProperty("skipTests", "true");

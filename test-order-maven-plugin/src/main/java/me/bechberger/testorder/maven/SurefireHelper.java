@@ -565,6 +565,55 @@ final class SurefireHelper {
 	 * @param clearExisting
 	 *            if true, replaces any previous test filter; if false, appends
 	 */
+	/**
+	 * Forces Surefire into single-fork, reuse-forks mode so the JUnit Platform
+	 * {@code ClassOrderer} can actually reorder selected classes. Without this, a
+	 * project with {@code forkCount>1} or {@code reuseForks=false} runs each class
+	 * in a fresh JVM, defeating any priority order the plugin computed.
+	 * <p>
+	 * Always overrides existing values — when the user invokes
+	 * {@code test-order:affected} they are opting into the plugin rewriting
+	 * Surefire's test-execution config. A WARN names the previous value so the
+	 * change is visible. Set {@code testorder.affected.preserveForkConfig=true} to
+	 * skip the override.
+	 */
+	static void forceSingleForkForOrdering(MavenProject project, Log log) throws MojoExecutionException {
+		if (Boolean.parseBoolean(project.getProperties().getProperty("testorder.affected.preserveForkConfig", "false"))
+				|| Boolean.getBoolean("testorder.affected.preserveForkConfig")) {
+			log.info("[test-order] testorder.affected.preserveForkConfig=true — leaving Surefire forkCount/reuseForks"
+					+ " untouched. Selected tests may not execute in priority order if forkCount>1 or reuseForks=false.");
+			return;
+		}
+		Plugin surefire = requireSurefirePlugin(project);
+		Xpp3Dom config = getOrCreateConfiguration(surefire);
+
+		String forkCount = childValue(config, "forkCount");
+		String reuseForks = childValue(config, "reuseForks");
+
+		boolean changedFork = !"1".equals(forkCount);
+		boolean changedReuse = !"true".equalsIgnoreCase(reuseForks);
+
+		setChild(config, "forkCount", "1");
+		setChild(config, "reuseForks", "true");
+
+		if (changedFork || changedReuse) {
+			StringBuilder msg = new StringBuilder("[test-order] Overriding Surefire");
+			if (changedFork) {
+				msg.append(" forkCount=").append(forkCount == null || forkCount.isBlank() ? "<unset>" : forkCount)
+						.append("→1");
+			}
+			if (changedReuse) {
+				if (changedFork)
+					msg.append(",");
+				msg.append(" reuseForks=").append(reuseForks == null || reuseForks.isBlank() ? "<unset>" : reuseForks)
+						.append("→true");
+			}
+			msg.append(" so PriorityClassOrderer can reorder selected classes within one JVM.");
+			msg.append(" Set -Dtestorder.affected.preserveForkConfig=true to keep your config.");
+			log.info(msg.toString());
+		}
+	}
+
 	static void configureIncludes(MavenProject project, List<String> tests, boolean clearExisting)
 			throws MojoExecutionException {
 		if (tests.isEmpty())

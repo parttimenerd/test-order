@@ -725,4 +725,87 @@ class SurefireHelperTest {
 
 		verify(log, never()).warn(anyString());
 	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// forceSingleForkForOrdering — ensures PriorityClassOrderer can reorder
+	// the selected classes within one JVM. forkCount>1 or reuseForks=false
+	// would split classes across JVMs and defeat the ordering.
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void forceSingleForkForOrdering_overridesForkCountAndReuseForks() throws Exception {
+		MavenProject project = projectWithSurefire(config(child("forkCount", "4"), child("reuseForks", "false")));
+		Log log = mockLog();
+
+		SurefireHelper.forceSingleForkForOrdering(project, log);
+
+		Xpp3Dom config = (Xpp3Dom) SurefireHelper.findSurefirePlugin(project).getConfiguration();
+		assertEquals("1", config.getChild("forkCount").getValue());
+		assertEquals("true", config.getChild("reuseForks").getValue());
+		verify(log).info(contains("forkCount=4→1"));
+		verify(log).info(contains("reuseForks=false→true"));
+	}
+
+	@Test
+	void forceSingleForkForOrdering_setsValuesWhenUnset() throws Exception {
+		MavenProject project = projectWithSurefire(config());
+		Log log = mockLog();
+
+		SurefireHelper.forceSingleForkForOrdering(project, log);
+
+		Xpp3Dom config = (Xpp3Dom) SurefireHelper.findSurefirePlugin(project).getConfiguration();
+		assertEquals("1", config.getChild("forkCount").getValue());
+		assertEquals("true", config.getChild("reuseForks").getValue());
+	}
+
+	@Test
+	void forceSingleForkForOrdering_silentWhenAlreadyCompliant() throws Exception {
+		MavenProject project = projectWithSurefire(config(child("forkCount", "1"), child("reuseForks", "true")));
+		Log log = mockLog();
+
+		SurefireHelper.forceSingleForkForOrdering(project, log);
+
+		// No info log when nothing changed.
+		verify(log, never()).info(anyString());
+	}
+
+	@Test
+	void forceSingleForkForOrdering_respectsPreserveFlagViaProjectProperty() throws Exception {
+		MavenProject project = projectWithSurefire(config(child("forkCount", "4"), child("reuseForks", "false")));
+		project.getProperties().setProperty("testorder.affected.preserveForkConfig", "true");
+		Log log = mockLog();
+
+		SurefireHelper.forceSingleForkForOrdering(project, log);
+
+		// Config left untouched.
+		Xpp3Dom config = (Xpp3Dom) SurefireHelper.findSurefirePlugin(project).getConfiguration();
+		assertEquals("4", config.getChild("forkCount").getValue());
+		assertEquals("false", config.getChild("reuseForks").getValue());
+		verify(log).info(contains("preserveForkConfig=true"));
+	}
+
+	@Test
+	void forceSingleForkForOrdering_respectsPreserveFlagViaSystemProperty() throws Exception {
+		MavenProject project = projectWithSurefire(config(child("forkCount", "4")));
+		Log log = mockLog();
+
+		System.setProperty("testorder.affected.preserveForkConfig", "true");
+		try {
+			SurefireHelper.forceSingleForkForOrdering(project, log);
+		} finally {
+			System.clearProperty("testorder.affected.preserveForkConfig");
+		}
+
+		Xpp3Dom config = (Xpp3Dom) SurefireHelper.findSurefirePlugin(project).getConfiguration();
+		assertEquals("4", config.getChild("forkCount").getValue());
+	}
+
+	@Test
+	void forceSingleForkForOrdering_throwsWhenSurefireMissing() {
+		MavenProject project = new MavenProject();
+		project.setBuild(new Build());
+		Log log = mockLog();
+
+		assertThrows(MojoExecutionException.class, () -> SurefireHelper.forceSingleForkForOrdering(project, log));
+	}
 }
