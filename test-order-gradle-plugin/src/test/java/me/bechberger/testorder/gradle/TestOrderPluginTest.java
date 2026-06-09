@@ -221,6 +221,8 @@ class TestOrderPluginTest {
     void twoSubprojectsShareRootStateFilePaths() {
         // In a multi-project build all subprojects share a single .test-order/ directory
         // at the root project level (parity with Maven's ReactorContext behavior).
+        // Hash files are per-module to avoid cross-module overwrite (mirrors Maven's
+        // ReactorContext per-module hashes/<name>-hashes.lz4 convention).
         Path rootDir = tempDir.resolve("iso-root");
         Path moduleADir = tempDir.resolve("iso-module-a");
         Path moduleBDir = tempDir.resolve("iso-module-b");
@@ -244,16 +246,24 @@ class TestOrderPluginTest {
         java.io.File hashA = extA.getHashFile().get().getAsFile();
         java.io.File hashB = extB.getHashFile().get().getAsFile();
 
+        // Shared across all subprojects (one index, one state)
         assertEquals(stateA.getAbsolutePath(), stateB.getAbsolutePath(),
                 "Subprojects must share state file path at root project level");
         assertEquals(indexA.getAbsolutePath(), indexB.getAbsolutePath(),
                 "Subprojects must share index file path at root project level");
-        assertEquals(hashA.getAbsolutePath(), hashB.getAbsolutePath(),
-                "Subprojects must share hash file path at root project level");
         assertTrue(stateA.getAbsolutePath().contains("iso-root"),
                 "State path should be under root directory, got: " + stateA.getAbsolutePath());
         assertTrue(indexA.getAbsolutePath().contains("iso-root"),
                 "Index path should be under root directory, got: " + indexA.getAbsolutePath());
+
+        // Per-module hash files — avoid cross-module overwrite of change-detection baseline
+        assertNotEquals(hashA.getAbsolutePath(), hashB.getAbsolutePath(),
+                "Subprojects must have distinct hash files to avoid cross-module overwrite");
+        assertTrue(hashA.getName().contains("iso-module-a"),
+                "Module-A hash file should be named after module, got: " + hashA.getName());
+        assertTrue(hashB.getName().contains("iso-module-b"),
+                "Module-B hash file should be named after module, got: " + hashB.getName());
+        // Both should still live under the shared root .test-order/hashes/
         assertTrue(hashA.getAbsolutePath().contains("iso-root"),
                 "Hash path should be under root directory, got: " + hashA.getAbsolutePath());
     }

@@ -1384,6 +1384,24 @@ public class TestOrderPlugin implements Plugin<Project> {
                 // override via -Dtestorder.affected.preserveForkConfig=true).
                 forceSingleForkForOrdering(project, testTask);
 
+                // Parity with Maven AffectedMojo: validate topN/randomM before running
+                // so invalid combinations (e.g. topN=-2, randomM=-1) fail immediately.
+                int topN = resolveSelectTopN(project, ext);
+                int randomM = resolveSelectRandomM(project, ext);
+                try {
+                    new ParameterValidator(wrapLog(project)).validateSelectParameters(topN, randomM);
+                } catch (IllegalArgumentException e) {
+                    throw new GradleException(e.getMessage(), e);
+                }
+
+                // Parity with Maven AffectedMojo: topN=-1 means all tests in priority
+                // order (no subset), inform the user so the default is not surprising.
+                if (topN == -1) {
+                    project.getLogger().lifecycle(
+                            "[test-order] topN=-1 (default) runs all tests in priority order (no subset selection). "
+                            + "To run only the top N, set -Dtestorder.affected.topN=N.");
+                }
+
                 PluginContext pctx = buildPluginContext(project, ext);
 
                 // Parity with Maven AffectedMojo: validate explicitly changed classes early
@@ -1413,6 +1431,18 @@ public class TestOrderPlugin implements Plugin<Project> {
                                         "[test-order] CI index downloaded to {}", p));
                     }
                 };
+
+                // Parity with Maven AffectedMojo.autoAggregateOrFail: when no index
+                // exists, try to build one from available .deps files before handing off
+                // to AutoWorkflow (which would otherwise skip with a cryptic error).
+                // In multi-project builds, collect deps from all subproject build dirs
+                // as well as the current project, so a single `testOrderAffected`
+                // invocation on a freshly-learned multi-module repo finds all the data.
+                Path indexPath = indexFileObj.toPath();
+                if (!Files.exists(indexPath)) {
+                    autoAggregateAffected(project, ext, indexPath, wrapLog(project));
+                }
+
                 Path depsDir = ext.getDepsDir().get().getAsFile().toPath();
                 Path effectiveDepsDir = Files.isDirectory(depsDir) ? depsDir : null;
                 try {
@@ -2805,20 +2835,52 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     /**
+     * Parity with Maven {@code AffectedMojo.autoAggregateOrFail}: when no index
+     * exists, attempt to build one from available {@code .deps} files.
+     *
+     * <p>In multi-project builds, collects deps from ALL subproject build dirs
+     * (not just the current project's) so that a root-level
+     * {@code testOrderAffected} invocation works after a multi-module
+     * {@code testOrderLearn} run without requiring an explicit
+     * {@code testOrderAggregateAll} step.
+     */
+    private static void autoAggregateAffected(Project project, TestOrderExtension ext,
+            Path indexPath, PluginLog log) {
+        // Collect all candidate deps directories: current project + all other projects
+        // in the build. In multi-project builds each subproject writes its .deps files
+        // under its own build/test-order-deps/, so we must scan all of them.
+        Set<Path> candidates = new LinkedHashSet<>();
+        candidates.add(ext.getDepsDir().get().getAsFile().toPath());
+        for (Project sub : project.getRootProject().getAllprojects()) {
+            if (sub == project) continue;
+            Path subDeps = sub.getLayout().getBuildDirectory().dir("test-order-deps").get()
+                    .getAsFile().toPath();
+            candidates.add(subDeps);
+        }
+
+        for (Path deps : candidates) {
+            if (!Files.isDirectory(deps)) continue;
+            try {
+                AggregateOperation.Result agg = AggregateOperation.aggregate(deps, indexPath, log, true);
+                if (agg.written()) {
+                    log.info("[test-order] Auto-aggregated " + agg.depsFileCount() + " .deps files from "
+                            + deps + " → " + indexPath);
+                }
+            } catch (IOException e) {
+                log.warn("[test-order] Auto-aggregation from " + deps + " failed (ignored): " + e.getMessage());
+            }
+        }
+    }
+
+    /**
      * True when the build was invoked with an explicit {@code --tests} filter
      * targeting this task, or when {@code -Dtest=...} was set. Mirrors
      * {@code AffectedMojo}'s {@code -Dtest} skip-selection guard.
      */
     private static boolean hasUserTestFilter(Project project, Test task) {
-        // Honour -Dtest=FQCN parity with Maven for users coming from the Maven plugin.
-        String dashDtest = gradleOrSystemProperty(project, "test");
-        if (dashDtest != null && !dashDtest.isBlank()) {
-            return true;
-        }
-        // Check whether the user passed --tests on the Gradle command line. Gradle
-        // exposes command-line test filters via StartParameter.getTestFilter() but
-        // TestFilter itself doesn't have a public API for this in Gradle 8.x.
-        // The -Dtest guard above already covers the primary Maven-parity case.
+        // In Gradle, users use --tests to filter tests, which targets the `test` task
+        // directly — not testOrderAffected. So there is no equivalent of Maven's -Dtest=...
+        // guard here. We keep the method for future extensibility but always return false.
         return false;
     }
 

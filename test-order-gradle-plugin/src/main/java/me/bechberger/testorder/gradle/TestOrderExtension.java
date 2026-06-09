@@ -281,10 +281,26 @@ public abstract class TestOrderExtension {
         getIndexFile().convention(localDir.file("test-dependencies.lz4"));
         getStateFile().convention(localDir.file("state.lz4"));
         getDepsDir().convention(project.getLayout().getBuildDirectory().dir("test-order-deps"));
-        getHashFile().convention(localDir.file("hashes.lz4"));
-        getTestHashFile().convention(localDir.file("test-hashes.lz4"));
-        getMethodHashFile().convention(localDir.file("method-hashes.lz4"));
-        getBytecodeHashFile().convention(localDir.file("bytecode-hashes.lz4"));
+
+        // In multi-project builds each subproject must have its OWN hash snapshot so
+        // that change detection in module A does not overwrite the baseline used by
+        // module B (mirroring Maven's ReactorContext which uses per-module files under
+        // <root>/.test-order/hashes/<projectName>-hashes.lz4).
+        // Single-project builds keep the traditional flat names for backward compat.
+        boolean isSubproject = project.getRootProject() != project;
+        if (isSubproject) {
+            String name = project.getName();
+            var hashesDir = localDir.dir("hashes");
+            getHashFile().convention(hashesDir.file(name + "-hashes.lz4"));
+            getTestHashFile().convention(hashesDir.file(name + "-test-hashes.lz4"));
+            getMethodHashFile().convention(hashesDir.file(name + "-method-hashes.lz4"));
+            getBytecodeHashFile().convention(hashesDir.file(name + "-bytecode-hashes.lz4"));
+        } else {
+            getHashFile().convention(localDir.file("hashes.lz4"));
+            getTestHashFile().convention(localDir.file("test-hashes.lz4"));
+            getMethodHashFile().convention(localDir.file("method-hashes.lz4"));
+            getBytecodeHashFile().convention(localDir.file("bytecode-hashes.lz4"));
+        }
         getBytecodeChangeDetectionEnabled().convention(true);
         getBytecodeAugmentDependencyMapEnabled().convention(true);
         getChangeMode().convention("uncommitted");
