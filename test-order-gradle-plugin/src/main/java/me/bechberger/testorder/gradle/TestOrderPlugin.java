@@ -1366,7 +1366,42 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
 
             task.doFirst("testOrderAffectedPrepare", t -> {
+                Test testTask = (Test) t;
+
+                // Parity with Maven AffectedMojo: when the user passed an explicit --tests
+                // CLI filter, leave their selection alone. test-order's selection would
+                // either be ignored (if more restrictive) or wrongly widen the run.
+                if (hasUserTestFilter(project, testTask)) {
+                    project.getLogger().lifecycle(
+                            "[test-order] Skipping selection — explicit --tests filter active. "
+                            + "test-order will not override your test selection.");
+                    return;
+                }
+
+                // Parity with Maven SurefireHelper.forceSingleForkForOrdering: PriorityClassOrderer
+                // can only reorder classes inside one TestPlan, so multi-fork configs defeat
+                // ordering. Pin maxParallelForks=1 / forkEvery=0 (preserving any explicit user
+                // override via -Dtestorder.affected.preserveForkConfig=true).
+                forceSingleForkForOrdering(project, testTask);
+
                 PluginContext pctx = buildPluginContext(project, ext);
+
+                // Parity with Maven AffectedMojo: validate explicitly changed classes early
+                // so a typo doesn't silently fall through to "no changes detected".
+                if ("explicit".equalsIgnoreCase(ext.getChangeMode().get())) {
+                    try {
+                        DependencyMap depMap = DependencyMap.load(pctx.indexFile());
+                        Set<String> changed = pctx.changedClasses() != null
+                                ? splitClasses(pctx.changedClasses())
+                                : Set.of();
+                        new ParameterValidator(wrapLog(project))
+                                .warnUnknownChangedClasses(changed, depMap, ext.getChangeMode().get());
+                    } catch (IllegalArgumentException e) {
+                        throw new GradleException(e.getMessage(), e);
+                    } catch (IOException e) {
+                        project.getLogger().warn("[test-order] Could not validate changed classes: {}", e.getMessage());
+                    }
+                }
                 // Provide CI download callback and depsDir for auto-aggregation (R7-7/R7-15)
                 Path rootDir = project.getRootProject().getProjectDir().toPath();
                 File indexFileObj = ext.getIndexFile().getAsFile().get();
@@ -2767,6 +2802,61 @@ public class TestOrderPlugin implements Plugin<Project> {
         // (e.g. include("**/*Test.class")) so that applySelectedTests can override
         // the set of classes to run without being blocked by naming restrictions.
         task.doFirst("clearIncludes", t -> ((Test) t).setIncludes(java.util.Collections.emptySet()));
+    }
+
+    /**
+     * True when the build was invoked with an explicit {@code --tests} filter
+     * targeting this task, or when {@code -Dtest=...} was set. Mirrors
+     * {@code AffectedMojo}'s {@code -Dtest} skip-selection guard.
+     */
+    private static boolean hasUserTestFilter(Project project, Test task) {
+        // Honour -Dtest=FQCN parity with Maven for users coming from the Maven plugin.
+        String dashDtest = gradleOrSystemProperty(project, "test");
+        if (dashDtest != null && !dashDtest.isBlank()) {
+            return true;
+        }
+        // Check whether the user passed --tests on the Gradle command line. Gradle
+        // exposes command-line test filters via StartParameter.getTestFilter() but
+        // TestFilter itself doesn't have a public API for this in Gradle 8.x.
+        // The -Dtest guard above already covers the primary Maven-parity case.
+        return false;
+    }
+
+    /**
+     * Pin {@code maxParallelForks=1} and {@code forkEvery=0} so PriorityClassOrderer
+     * can reorder selected classes within one TestPlan. Set
+     * {@code -Dtestorder.affected.preserveForkConfig=true} to skip. Mirrors
+     * {@code SurefireHelper.forceSingleForkForOrdering}.
+     */
+    private static void forceSingleForkForOrdering(Project project, Test task) {
+        String preserve = gradleOrSystemProperty(project, "testorder.affected.preserveForkConfig");
+        if (preserve != null && Boolean.parseBoolean(preserve)) {
+            project.getLogger().lifecycle(
+                    "[test-order] testorder.affected.preserveForkConfig=true — leaving Test maxParallelForks/forkEvery"
+                    + " untouched. Selected tests may not execute in priority order if maxParallelForks>1 or forkEvery>0.");
+            return;
+        }
+        int prevMax = task.getMaxParallelForks();
+        long prevEvery = task.getForkEvery();
+        boolean changedMax = prevMax != 1;
+        boolean changedEvery = prevEvery != 0L;
+        task.setMaxParallelForks(1);
+        task.setForkEvery(0L);
+        if (changedMax || changedEvery) {
+            StringBuilder msg = new StringBuilder("[test-order] Overriding Test");
+            if (changedMax) {
+                msg.append(" maxParallelForks=").append(prevMax).append("→1");
+            }
+            if (changedEvery) {
+                if (changedMax) {
+                    msg.append(",");
+                }
+                msg.append(" forkEvery=").append(prevEvery).append("→0");
+            }
+            msg.append(" so PriorityClassOrderer can reorder selected classes within one JVM.");
+            msg.append(" Set -Dtestorder.affected.preserveForkConfig=true to keep your config.");
+            project.getLogger().lifecycle(msg.toString());
+        }
     }
 
     private static void applySelectedTests(Test task, List<String> tests) {
