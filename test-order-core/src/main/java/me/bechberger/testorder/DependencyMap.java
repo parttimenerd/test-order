@@ -1117,6 +1117,8 @@ public class DependencyMap {
 
 	/** Maximum allowed size for a single serialized block (64 MB). */
 	private static final int MAX_BLOCK_SIZE = 64 * 1024 * 1024;
+	/** Max size for legacy member-dep sections (old format can be very large). */
+	private static final int MAX_LEGACY_MEMBER_BLOCK_SIZE = 256 * 1024 * 1024;
 
 	private static void checkSize(int size, String label, Path file) throws IOException {
 		if (size < 0 || size > MAX_BLOCK_SIZE) {
@@ -1169,11 +1171,23 @@ public class DependencyMap {
 			String[] testNames = null;
 			Set<String>[] depSets = null;
 			DependencyMap map = new DependencyMap();
+			// true when MEMBER_KEY_TABLE has not been seen yet and we've encountered
+			// MEMBER_DEPS in old string-based format (pre-RoaringBitmap)
+			boolean legacyMemberFormat = false;
 
 			for (int si = 0; si < sectionCount; si++) {
 				short sectionType = in.readShort();
 				int sectionLength = in.readInt();
-				checkSize(sectionLength, "Section[" + sectionType + "]", indexFile);
+				// Use a larger limit for legacy member sections (pre-RoaringBitmap format
+				// stored all member keys as UTF strings, producing very large sections).
+				if (sectionType == SECTION_MEMBER_DEPS || sectionType == SECTION_METHOD_MEMBER_DEPS) {
+					if (sectionLength < 0 || sectionLength > MAX_LEGACY_MEMBER_BLOCK_SIZE) {
+						throw new IOException(
+								"Section[" + sectionType + "] size " + sectionLength + " out of range in " + indexFile);
+					}
+				} else {
+					checkSize(sectionLength, "Section[" + sectionType + "]", indexFile);
+				}
 
 				switch (sectionType) {
 					case SECTION_TRIE -> {
@@ -1287,18 +1301,45 @@ public class DependencyMap {
 					case SECTION_MEMBER_DEPS -> {
 						byte[] payload = new byte[sectionLength];
 						in.readFully(payload);
-						if (map.memberKeyDictionary.isEmpty())
-							throw new IOException("MEMBER_KEY_TABLE must precede MEMBER_DEPS in " + indexFile);
 						DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
-						readMemberSection(s, map.memberDepsMap, map.memberKeyDictionary.size(), indexFile);
+						if (map.memberKeyDictionary.isEmpty()) {
+							// Legacy format (pre-RoaringBitmap): testClass → Set<memberKey> as UTF strings.
+							legacyMemberFormat = true;
+							int memberEntryCount = s.readInt();
+							validateCount(memberEntryCount, "memberEntryCount");
+							for (int i = 0; i < memberEntryCount; i++) {
+								String testClass = s.readUTF();
+								int memberCount = s.readInt();
+								validateCount(memberCount, "memberCount");
+								Set<String> members = new HashSet<>(memberCount * 2);
+								for (int j = 0; j < memberCount; j++)
+									members.add(s.readUTF());
+								map.putMemberDeps(testClass, members);
+							}
+						} else {
+							readMemberSection(s, map.memberDepsMap, map.memberKeyDictionary.size(), indexFile);
+						}
 					}
 					case SECTION_METHOD_MEMBER_DEPS -> {
 						byte[] payload = new byte[sectionLength];
 						in.readFully(payload);
-						if (map.memberKeyDictionary.isEmpty())
-							throw new IOException("MEMBER_KEY_TABLE must precede METHOD_MEMBER_DEPS in " + indexFile);
 						DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
-						readMemberSection(s, map.methodMemberDepsMap, map.memberKeyDictionary.size(), indexFile);
+						if (legacyMemberFormat) {
+							// Legacy format: methodKey → Set<memberKey> as UTF strings.
+							int methodMemberCount = s.readInt();
+							validateCount(methodMemberCount, "methodMemberCount");
+							for (int i = 0; i < methodMemberCount; i++) {
+								String methodKey = s.readUTF();
+								int memberCount = s.readInt();
+								validateCount(memberCount, "memberCount");
+								Set<String> members = new HashSet<>(memberCount * 2);
+								for (int j = 0; j < memberCount; j++)
+									members.add(s.readUTF());
+								map.putMethodMemberDeps(methodKey, members);
+							}
+						} else {
+							readMemberSection(s, map.methodMemberDepsMap, map.memberKeyDictionary.size(), indexFile);
+						}
 					}
 					case SECTION_TEST_MODULE_MAP -> {
 						byte[] payload = new byte[sectionLength];
