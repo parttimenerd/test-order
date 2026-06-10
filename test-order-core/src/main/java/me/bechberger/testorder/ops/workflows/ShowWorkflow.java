@@ -135,6 +135,13 @@ public final class ShowWorkflow {
 		// tests.
 		boolean hasModuleScope = (ctx.testClassesDir() != null && java.nio.file.Files.isDirectory(ctx.testClassesDir()))
 				|| (ctx.testSourceRoot() != null && java.nio.file.Files.isDirectory(ctx.testSourceRoot()));
+		// Warn when invoked from a module context but no test sources are found.
+		// This typically means the module has only production code; showing the full
+		// project index would be misleading.
+		if (!hasModuleScope && ctx.currentModuleId() != null && !ctx.currentModuleId().isEmpty()) {
+			ctx.log().info("[test-order] No test sources found in this module — showing full project test index."
+					+ " Run 'mvn test-order:show' at the project root for a complete cross-module view.");
+		}
 		ChangeAnalysis.Options analysisOpts = hasModuleScope
 				? ChangeAnalysis.Options.FULL_FILTERED
 				: ChangeAnalysis.Options.FULL;
