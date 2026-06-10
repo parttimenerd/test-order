@@ -66,6 +66,14 @@ detect_package_override() {
         cds-feature-attachments) echo "com.sap.cds" ;;
         neonbee) echo "io.neonbee" ;;
         resilience4j) echo "io.github.resilience4j" ;;
+        # javaparser: heuristic picks com.github.javaparser.symbolsolver (285 files) which
+        # misses the 230+ tests in javaparser-core-testing (com.github.javaparser.*).
+        # Use the two-level common prefix to capture all test modules.
+        javaparser) echo "com.github.javaparser" ;;
+        # maven: heuristic picks org.apache.maven.it (integration tests, 745 files) which are
+        # Failsafe IT tests requiring a running Maven process, not Surefire unit tests.
+        # Use the 3-level prefix to capture model/core/impl tests while skipping IT infra.
+        maven) echo "org.apache.maven" ;;
         *) echo "" ;;
     esac
 }

@@ -269,8 +269,17 @@ public final class ShowWorkflow {
 				out.println();
 				out.println("═══ Selection Preview ════════════════════════════════");
 				Set<String> alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
+				// Include tests discovered from testClassesDir that aren't in the dep map yet
+				// (they are "new" from the selector's perspective and should always be
+				// selected).
+				Set<String> changedAndNew = new java.util.LinkedHashSet<>(result.analysis().changedTests());
+				Set<String> depMapTests = result.analysis().depMap().testClasses();
+				for (String t : result.analysis().allTests()) {
+					if (!depMapTests.contains(t))
+						changedAndNew.add(t);
+				}
 				TestSelector.Selection selection = new TestSelector(result.analysis().depMap(),
-						result.analysis().state(), result.analysis().changedClasses(), result.analysis().changedTests(),
+						result.analysis().state(), result.analysis().changedClasses(), changedAndNew,
 						result.analysis().weights(), new TestSelector.Config(opts.topN(), opts.randomM(), opts.seed()),
 						alwaysRun, result.analysis().changeComplexity()).select();
 				ShowOrderWorkflow.printSelectionPreview(out, selection, opts.fullNames(), opts.topN(), opts.randomM());

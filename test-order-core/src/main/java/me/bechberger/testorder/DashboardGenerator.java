@@ -224,8 +224,8 @@ public class DashboardGenerator {
 				t.put("dominantDepModule", dominant);
 				// Suspect: >70% of deps are from a single foreign module AND ≥5 deps
 				// (small dep sets are too noisy for cross-module analysis).
-				boolean suspect = dominant != null && deps.size() >= 5
-						&& foreignCount * 10 >= deps.size() * 7; // foreignCount/total > 70%
+				boolean suspect = dominant != null && deps.size() >= 5 && foreignCount * 10 >= deps.size() * 7; // foreignCount/total
+																												// > 70%
 				t.put("suspectHomeModule", suspect);
 			} else {
 				t.put("crossModuleDepCount", 0);
