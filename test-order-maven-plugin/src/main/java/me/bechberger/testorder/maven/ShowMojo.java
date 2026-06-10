@@ -139,7 +139,12 @@ public class ShowMojo extends AbstractTestOrderMojo {
 		// auto-enable explain when debug mode is active
 		boolean effectiveExplain = explain
 				|| "true".equalsIgnoreCase(project.getProperties().getProperty("testorder.debug"))
-				|| "true".equalsIgnoreCase(System.getProperty("testorder.debug"));
+				|| "true".equalsIgnoreCase(System.getProperty("testorder.debug"))
+				// backward compat: old property name testorder.showOrder.explain still
+				// activates explain
+				|| "true".equalsIgnoreCase(System.getProperty(MavenPluginConfigKeys.SHOW_ORDER_EXPLAIN))
+				|| "true".equalsIgnoreCase(
+						session.getUserProperties().getProperty(MavenPluginConfigKeys.SHOW_ORDER_EXPLAIN));
 
 		// Resolve boolean/auto flags
 		Boolean effectiveMethods = resolveAutoFlag(methods);

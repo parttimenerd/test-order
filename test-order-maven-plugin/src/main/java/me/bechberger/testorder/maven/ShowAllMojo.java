@@ -110,7 +110,12 @@ public class ShowAllMojo extends AbstractTestOrderMojo {
 
 		boolean effectiveExplain = explain
 				|| "true".equalsIgnoreCase(project.getProperties().getProperty("testorder.debug"))
-				|| "true".equalsIgnoreCase(System.getProperty("testorder.debug"));
+				|| "true".equalsIgnoreCase(System.getProperty("testorder.debug"))
+				// backward compat: old property name testorder.showOrder.explain still
+				// activates explain
+				|| "true".equalsIgnoreCase(System.getProperty(MavenPluginConfigKeys.SHOW_ORDER_EXPLAIN))
+				|| "true".equalsIgnoreCase(
+						session.getUserProperties().getProperty(MavenPluginConfigKeys.SHOW_ORDER_EXPLAIN));
 
 		// show-all: force all sections on (auto-detect for method/ml so we don't
 		// emit "unavailable" noise when data genuinely doesn't exist)
