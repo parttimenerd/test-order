@@ -647,6 +647,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		}
 
 		TestOrderState state = loadState();
+		// Issue #15: prune state entries for deleted test classes so they don't
+		// pollute scoring and show-method-order output.
+		pruneDeletedTestClassesFromState(state);
 		OrderWorkflow.OrderSetupResult result;
 		try {
 			result = OrderWorkflow.setup(buildPluginContextBuilder().changedClasses(mergedChangedCsv)
@@ -851,6 +854,29 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	 */
 	private static boolean isGoal(String cliGoal, String goalName) {
 		return cliGoal.equals("test-order:" + goalName) || cliGoal.endsWith("test-order-maven-plugin:" + goalName);
+	}
+
+	/**
+	 * Issue #15: Prunes state entries for test classes whose compiled class file is
+	 * definitively absent from {@code target/test-classes}. Saves the state back
+	 * only when entries were actually removed, to avoid unnecessary writes.
+	 */
+	private void pruneDeletedTestClassesFromState(me.bechberger.testorder.TestOrderState state) {
+		String testOutDir = project.getBuild().getTestOutputDirectory();
+		if (testOutDir == null || testOutDir.isBlank()) {
+			return;
+		}
+		Path testClassesDir = Path.of(testOutDir);
+		java.util.Set<String> pruned = state.pruneDeletedTestClasses(testClassesDir);
+		if (!pruned.isEmpty()) {
+			getLog().info("[test-order] Pruned " + pruned.size() + " deleted test class(es) from state: "
+					+ String.join(", ", pruned));
+			try {
+				state.save(ctx.resolveStateFile(stateFile));
+			} catch (java.io.IOException e) {
+				getLog().warn("[test-order] Could not save state after pruning stale entries: " + e.getMessage());
+			}
+		}
 	}
 
 	/**

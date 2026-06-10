@@ -642,6 +642,62 @@ public class TestOrderState {
 		failureHistory.pruneToActiveClasses(activeClasses);
 	}
 
+	/**
+	 * Issue #15: Removes state entries for test classes whose compiled class file
+	 * is definitively absent from the given {@code testClassesDir}. Only prunes
+	 * when the directory exists; never prunes when it is missing (e.g. clean
+	 * build). Inner classes (containing {@code $}) are skipped — they are never
+	 * top-level test classes and their presence/absence does not indicate deletion.
+	 *
+	 * @param testClassesDir
+	 *            path to {@code target/test-classes} (or equivalent)
+	 * @return set of FQCNs that were pruned (for logging), empty if nothing removed
+	 */
+	public Set<String> pruneDeletedTestClasses(Path testClassesDir) {
+		if (testClassesDir == null || !java.nio.file.Files.isDirectory(testClassesDir)) {
+			return Set.of();
+		}
+		// Collect all FQCNs tracked by the state (durations + failures, top-level only)
+		Set<String> tracked = new java.util.LinkedHashSet<>();
+		tracked.addAll(durationTracker.classDurations().keySet());
+		tracked.addAll(failureHistory.knownClasses());
+
+		Set<String> pruned = new java.util.LinkedHashSet<>();
+		for (String fqcn : tracked) {
+			if (fqcn.contains("$")) {
+				continue; // inner class suffix — skip
+			}
+			Path classFile = testClassesDir.resolve(fqcn.replace('.', '/') + ".class");
+			if (!java.nio.file.Files.exists(classFile)) {
+				pruned.add(fqcn);
+			}
+		}
+		if (!pruned.isEmpty()) {
+			// Build a retained set = tracked - pruned, then prune to it
+			Set<String> retained = new java.util.HashSet<>(durationTracker.classDurations().keySet());
+			retained.addAll(failureHistory.knownClasses());
+			retained.removeAll(pruned);
+			// Also keep inner classes whose outer class is retained
+			for (String fqcn : new java.util.HashSet<>(durationTracker.classDurations().keySet())) {
+				if (fqcn.contains("$")) {
+					String outer = fqcn.substring(0, fqcn.indexOf('$'));
+					if (!retained.contains(outer)) {
+						pruned.add(fqcn); // prune orphaned inner-class entries too
+					} else {
+						retained.add(fqcn); // keep inner entries whose outer is live
+					}
+				}
+			}
+			// Build final retained set after inner-class fixup
+			Set<String> finalRetained = new java.util.HashSet<>(durationTracker.classDurations().keySet());
+			finalRetained.addAll(failureHistory.knownClasses());
+			finalRetained.removeAll(pruned);
+			durationTracker.pruneToActiveClasses(finalRetained);
+			failureHistory.pruneToActiveClasses(finalRetained);
+		}
+		return java.util.Collections.unmodifiableSet(pruned);
+	}
+
 	// ── Durations ─────────────────────────────────────────────────────
 
 	public long getDuration(String testClass, long defaultValue) {
