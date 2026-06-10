@@ -308,15 +308,47 @@ public class DependencyMap {
 	// ── Member-level dependencies (MEMBER mode) ────────────────────
 
 	/**
+	 * Sentinel returned by {@link #memberKeyId} when the key is too long to be
+	 * serialised via {@link DataOutputStream#writeUTF} (which is limited to 65535
+	 * UTF-8 bytes). Callers must not add this value to a {@link RoaringBitmap}.
+	 */
+	private static final int INVALID_MEMBER_KEY_ID = -1;
+
+	/** Logged at most once to avoid flooding stderr with the same message. */
+	private boolean warnedOversizedMemberKey = false;
+
+	/**
 	 * Returns the memberKeyId for the given key, inserting it into the dictionary
-	 * if it is new.
+	 * if it is new. Returns {@link #INVALID_MEMBER_KEY_ID} and logs a one-time
+	 * warning when the key's UTF-8 encoding would exceed the 65535-byte limit
+	 * imposed by {@link DataOutputStream#writeUTF}.
 	 */
 	private int memberKeyId(String memberKey) {
+		if (memberKey.length() > 21844 && memberKey.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 65535) {
+			if (!warnedOversizedMemberKey) {
+				warnedOversizedMemberKey = true;
+				System.err.println("[test-order] WARNING: Ignoring member key whose UTF-8 encoding exceeds "
+						+ "65535 bytes (key starts with: " + memberKey.substring(0, Math.min(120, memberKey.length()))
+						+ "…). " + "This indicates corrupted or synthetic data reaching the index.");
+			}
+			return INVALID_MEMBER_KEY_ID;
+		}
 		return memberKeyIndex.computeIfAbsent(memberKey, k -> {
 			int id = memberKeyDictionary.size();
 			memberKeyDictionary.add(k);
 			return id;
 		});
+	}
+
+	/**
+	 * Adds the memberKeyId for {@code mk} to {@code bm}, skipping the entry when
+	 * the key is too long (i.e. {@link #memberKeyId} returns
+	 * {@link #INVALID_MEMBER_KEY_ID}).
+	 */
+	private void addMemberKey(RoaringBitmap bm, String mk) {
+		int id = memberKeyId(mk);
+		if (id != INVALID_MEMBER_KEY_ID)
+			bm.add(id);
 	}
 
 	/** Materializes a bitmap of memberKeyIds into an unmodifiable Set<String>. */
@@ -341,7 +373,7 @@ public class DependencyMap {
 		}
 		RoaringBitmap bm = new RoaringBitmap();
 		for (String mk : memberDeps)
-			bm.add(memberKeyId(mk));
+			addMemberKey(bm, mk);
 		memberDepsMap.put(testClass, bm);
 	}
 
@@ -393,7 +425,7 @@ public class DependencyMap {
 		}
 		RoaringBitmap bm = new RoaringBitmap();
 		for (String mk : memberDeps)
-			bm.add(memberKeyId(mk));
+			addMemberKey(bm, mk);
 		methodMemberDepsMap.put(methodKey, bm);
 	}
 
@@ -487,7 +519,9 @@ public class DependencyMap {
 			int[] k = {0};
 			srcBm.forEach((int srcId) -> {
 				if (srcId >= 0 && srcId < srcDict.size()) {
-					remapped[k[0]++] = memberKeyId(srcDict.get(srcId));
+					int id = memberKeyId(srcDict.get(srcId));
+					if (id != INVALID_MEMBER_KEY_ID)
+						remapped[k[0]++] = id;
 				}
 			});
 			if (k[0] == 0)
@@ -894,7 +928,9 @@ public class DependencyMap {
 			int keyCount = memberKeyDictionary.size();
 			ByteArrayOutputStream buf = new ByteArrayOutputStream(keyCount * 6 + 4);
 			DataOutputStream s = new DataOutputStream(buf);
-			// Inlined suffix table
+			// Inlined suffix table. All suffixes are guaranteed to fit within the
+			// 65535-byte writeUTF limit because memberKeyId() rejects oversized keys
+			// before they enter memberKeyDictionary.
 			s.writeInt(memberSuffixTable.length);
 			for (String suffix : memberSuffixTable)
 				s.writeUTF(suffix);
@@ -1539,11 +1575,11 @@ public class DependencyMap {
 				if (existing == null) {
 					RoaringBitmap bm = new RoaringBitmap();
 					for (String mk : entry.getValue())
-						bm.add(map.memberKeyId(mk));
+						map.addMemberKey(bm, mk);
 					map.memberDepsMap.put(entry.getKey(), bm);
 				} else {
 					for (String mk : entry.getValue())
-						existing.add(map.memberKeyId(mk));
+						map.addMemberKey(existing, mk);
 				}
 			}
 			for (var entry : methodMemberDeps.entrySet()) {
@@ -1551,11 +1587,11 @@ public class DependencyMap {
 				if (existing == null) {
 					RoaringBitmap bm = new RoaringBitmap();
 					for (String mk : entry.getValue())
-						bm.add(map.memberKeyId(mk));
+						map.addMemberKey(bm, mk);
 					map.methodMemberDepsMap.put(entry.getKey(), bm);
 				} else {
 					for (String mk : entry.getValue())
-						existing.add(map.memberKeyId(mk));
+						map.addMemberKey(existing, mk);
 				}
 			}
 
@@ -1803,7 +1839,7 @@ public class DependencyMap {
 							map.putMemberDeps(entry.getKey(), entry.getValue());
 						} else {
 							for (String mk : entry.getValue())
-								existing.add(map.memberKeyId(mk));
+								map.addMemberKey(existing, mk);
 						}
 						memberDepCount++;
 					}
@@ -1853,7 +1889,7 @@ public class DependencyMap {
 							map.putMethodMemberDeps(entry.getKey(), entry.getValue());
 						} else {
 							for (String mk : entry.getValue())
-								existing.add(map.memberKeyId(mk));
+								map.addMemberKey(existing, mk);
 						}
 						methodMemberDepCount++;
 					}
