@@ -14,48 +14,26 @@ import me.bechberger.testorder.ops.workflows.ShowJsonFormatter;
 import me.bechberger.testorder.ops.workflows.ShowWorkflow;
 
 /**
- * Unified inspection command that displays the computed test execution order.
+ * Shows the full test-order report: class order, method order (if data exists),
+ * and ML health analysis (if history exists). Use {@code mvn test-order:show}
+ * for a concise class-only view.
  *
  * <p>
- * Shows only the class-level test order by default for quick, readable output.
- * Use {@code mvn test-order:show-all} to also see method order and ML health.
+ * Method order is shown when per-method telemetry has been collected (requires
+ * {@code MEMBER} or {@code METHOD} instrumentation mode). ML health is shown
+ * when enough run history has been accumulated.
  *
  * <p>
  * Usage examples:
  *
  * <pre>
- * mvn test-order:show                               # class order only (default)
- * mvn test-order:show -Dtestorder.show.methods=true # also show method order
- * mvn test-order:show -Dtestorder.show.ml=true      # also show ML health
- * mvn test-order:show -Dtestorder.show.format=json  # machine-readable output
- * mvn test-order:show -Dtestorder.show.filter=*Service*  # filter by name
- * mvn test-order:show-all                           # all sections
+ * mvn test-order:show-all                              # all available sections
+ * mvn test-order:show-all -Dtestorder.show.explain=true  # verbose score breakdown
+ * mvn test-order:show-all -Dtestorder.show.format=json   # machine-readable
  * </pre>
  */
-@Mojo(name = "show", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES, aggregator = true)
-public class ShowMojo extends AbstractTestOrderMojo {
-
-	/** Include class-level test order section. */
-	@Parameter(property = "testorder.show.classes", defaultValue = "true")
-	private boolean classes;
-
-	/**
-	 * Include method-level order section. Default is false (disabled). Set to
-	 * "true" to enable, or use {@code mvn test-order:show-all}.
-	 */
-	@Parameter(property = "testorder.show.methods", defaultValue = "false")
-	private String methods;
-
-	/**
-	 * Include ML health analysis section. Default is false (disabled). Set to
-	 * "true" to enable, or use {@code mvn test-order:show-all}.
-	 */
-	@Parameter(property = "testorder.show.ml", defaultValue = "false")
-	private String ml;
-
-	/** Show all sections (equivalent to classes+methods+ml all forced on). */
-	@Parameter(property = "testorder.show.all", defaultValue = "false")
-	private boolean all;
+@Mojo(name = "show-all", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES, aggregator = true)
+public class ShowAllMojo extends AbstractTestOrderMojo {
 
 	/** Print a full per-test score breakdown instead of the compact table. */
 	@Parameter(property = MavenPluginConfigKeys.SHOW_ORDER_EXPLAIN, defaultValue = "false")
@@ -122,33 +100,23 @@ public class ShowMojo extends AbstractTestOrderMojo {
 			throw new MojoExecutionException("Failed to read dependency index at " + idxPath, e);
 		}
 
-		// auto-enable explain when debug mode is active
 		boolean effectiveExplain = explain
 				|| "true".equalsIgnoreCase(project.getProperties().getProperty("testorder.debug"))
 				|| "true".equalsIgnoreCase(System.getProperty("testorder.debug"));
 
-		// Resolve boolean/auto flags
-		Boolean effectiveMethods = resolveAutoFlag(methods);
-		Boolean effectiveMl = resolveAutoFlag(ml);
-		if (all) {
-			effectiveMethods = Boolean.TRUE;
-			effectiveMl = Boolean.TRUE;
-		}
+		// show-all: force all sections on (auto-detect for method/ml so we don't
+		// emit "unavailable" noise when data genuinely doesn't exist)
+		ShowWorkflow.Options opts = new ShowWorkflow.Options(true, null, null, effectiveExplain, fullNames, format,
+				filter, topN, randomM, seed);
 
-		ShowWorkflow.Options opts = new ShowWorkflow.Options(classes, effectiveMethods, effectiveMl, effectiveExplain,
-				fullNames, format, filter, topN, randomM, seed);
-
-		// Resolve ML history dir (ML predictions generated in maven-plugin layer)
 		Path mlHistoryDir = resolveMLHistoryDir();
 
 		PluginContext pctx = buildPluginContextBuilder().topN(topN).randomM(randomM).seed(seed)
-				.methodOrderingEnabled(effectiveMethods != null ? effectiveMethods : true).build();
+				.methodOrderingEnabled(true).build();
 
 		try {
 			ShowWorkflow.ShowResult result = ShowWorkflow.compute(pctx, opts, mlHistoryDir);
 
-			// Generate ML predictions if ML history available and we have predictions
-			// support
 			if (result.healthReport() != null) {
 				result = enrichWithMLPredictions(result, mlHistoryDir, pctx);
 			}
@@ -159,38 +127,30 @@ public class ShowMojo extends AbstractTestOrderMojo {
 				ShowWorkflow.printReport(System.out, result, opts, pctx);
 			}
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to compute show report", e);
+			throw new MojoExecutionException("Failed to compute show-all report", e);
 		}
 	}
 
-	/**
-	 * Enriches the show result with ML failure predictions generated via Tribuo.
-	 * Called only when ML history is available.
-	 */
 	private ShowWorkflow.ShowResult enrichWithMLPredictions(ShowWorkflow.ShowResult result, Path mlHistoryDir,
 			PluginContext pctx) {
 		try {
 			Path historyFile = mlHistoryDir.resolve("history.lz4");
-			if (!Files.exists(historyFile)) {
+			if (!Files.exists(historyFile))
 				return result;
-			}
 			Path idxPath = resolveIndexPath();
-			if (!Files.exists(idxPath)) {
+			if (!Files.exists(idxPath))
 				return result;
-			}
 			me.bechberger.testorder.DependencyMap depMap = result.analysis().depMap();
 			Set<String> testClasses = result.analysis().allTests();
-			if (testClasses.isEmpty()) {
+			if (testClasses.isEmpty())
 				return result;
-			}
 
 			Map<String, Double> predictions = me.bechberger.testorder.maven.ml.TestFailurePredictor.trainAndPredict(
 					historyFile, depMap, result.analysis().changedClasses(), result.analysis().changedTests(),
 					testClasses);
 
-			if (predictions.isEmpty()) {
+			if (predictions.isEmpty())
 				return result;
-			}
 
 			return new ShowWorkflow.ShowResult(result.classOrder(), result.methodOrder(), result.healthReport(),
 					predictions, result.analysis());
@@ -203,15 +163,4 @@ public class ShowMojo extends AbstractTestOrderMojo {
 			return result;
 		}
 	}
-
-	/**
-	 * Resolves "true"/"false"/null from string parameter (null = auto-detect).
-	 */
-	private static Boolean resolveAutoFlag(String value) {
-		if (value == null || value.isBlank() || "auto".equalsIgnoreCase(value)) {
-			return null; // auto-detect
-		}
-		return Boolean.parseBoolean(value);
-	}
-
 }

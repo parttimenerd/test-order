@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, computed, ref } from 'vue'
+import { inject, computed, ref, watch, onBeforeUnmount } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
 import { sn, fmtDur } from '../utils'
 
@@ -19,6 +19,58 @@ function cycleNameMode() {
 }
 
 const helpOpen = ref(false)
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && helpOpen.value) {
+    helpOpen.value = false
+    e.stopPropagation()
+  }
+}
+watch(helpOpen, (open) => {
+  if (open) window.addEventListener('keydown', onKeydown, { capture: true })
+  else window.removeEventListener('keydown', onKeydown, { capture: true })
+})
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, { capture: true }))
+
+const runChipTooltip = computed(() => {
+  const runs = d.runs
+  if (!runs.length) return 'No runs recorded yet'
+  const latest = d.latestRun.value
+  const latestLine = latest
+    ? `Latest: ${latest.totalFailures > 0 ? latest.totalFailures + ' failure(s)' : 'all passed'}${latest.apfd > 0 && isFinite(latest.apfd) ? ', APFD ' + (latest.apfd * 100).toFixed(1) + '%' : ''}`
+    : ''
+  const passing = runs.filter(r => r.totalFailures === 0).length
+  const failing = runs.length - passing
+  const summaryLine = `${runs.length} run${runs.length === 1 ? '' : 's'} total · ${passing} passed · ${failing} failed`
+  // Show last 5 runs newest-first
+  const recent = [...runs].reverse().slice(0, 5)
+  const runLines = recent.map((r, i) => {
+    const label = i === 0 ? '#' + runs.length + ' (latest)' : '#' + (runs.length - i)
+    const status = r.totalFailures > 0 ? r.totalFailures + ' fail' : 'pass'
+    const apfd = r.apfd > 0 && isFinite(r.apfd) ? ' · APFD ' + (r.apfd * 100).toFixed(0) + '%' : ''
+    return `  ${label}: ${status}${apfd}`
+  })
+  const more = runs.length > 5 ? `  … and ${runs.length - 5} older run(s)` : ''
+  return [summaryLine, latestLine, '', 'Recent runs (newest first):', ...runLines, more, '', 'Click to open Analytics'].filter(l => l !== null && l !== undefined && !(l === '' && !runLines.length)).join('\n')
+})
+
+const methodChipLabel = computed(() => {
+  const tests = d.tests
+  const withMethods = tests.filter(t => t.methods && t.methods.length > 0)
+  const hasMemberDeps = withMethods.some(t => t.memberDeps && t.memberDeps.length > 0)
+  const mode = hasMemberDeps ? 'MEMBER' : 'METHOD'
+  return `${withMethods.length} w/ ${mode.toLowerCase()} deps`
+})
+
+const methodChipTooltip = computed(() => {
+  const tests = d.tests
+  const withMethods = tests.filter(t => t.methods && t.methods.length > 0)
+  const hasMemberDeps = withMethods.some(t => t.memberDeps && t.memberDeps.length > 0)
+    || withMethods.some(t => t.methods?.some(m => m.memberDeps && m.memberDeps.length > 0))
+  const mode = hasMemberDeps ? 'MEMBER' : 'METHOD'
+  const totalMethods = withMethods.reduce((s, t) => s + (t.methods?.length ?? 0), 0)
+  return `Method-level dependency data available (instrumentation mode: ${mode})\n${withMethods.length} of ${tests.length} test classes have per-method dep tracking\n${totalMethods} test methods tracked in total\nClick to go to Tests tab`
+})
 
 const generatedAge = computed(() => {
   if (!d.dd.project.generated) return ''
@@ -63,7 +115,7 @@ const generatedAge = computed(() => {
       v-if="d.runs.length"
       class="app-header__chip app-header__chip--clickable"
       @click="d.setTab('analytics')"
-      :title="'Number of historical runs recorded — click to go to Analytics tab. Latest run: ' + (d.latestRun.value?.totalFailures ? d.latestRun.value.totalFailures + ' failures' : 'all passed')"
+      :title="runChipTooltip"
     >
       <span class="app-header__chip-icon">↺</span>
       {{ d.runs.length }} run{{ d.runs.length === 1 ? '' : 's' }}
@@ -115,6 +167,25 @@ const generatedAge = computed(() => {
     >
       <span class="app-header__chip-icon">◉</span>
       {{ d.dd.coverage?.totalSourceClasses }} src classes
+    </span>
+
+    <!-- Method / member data indicator -->
+    <span
+      v-if="d.hasMethodData.value"
+      class="app-header__chip app-header__chip--clickable app-header__chip--method"
+      @click="d.setTab('tests')"
+      :title="methodChipTooltip"
+    >
+      <span class="app-header__chip-icon">⚙</span>
+      {{ methodChipLabel }}
+    </span>
+    <span
+      v-else
+      class="app-header__chip app-header__chip--no-method"
+      title="No method-level dep data yet — enable METHOD or MEMBER instrumentation mode for per-method ordering and dep tracking"
+    >
+      <span class="app-header__chip-icon">⚙</span>
+      no method data
     </span>
 
     <!-- Spacer -->
@@ -180,6 +251,7 @@ const generatedAge = computed(() => {
           <section class="help-section">
             <h3 class="help-section__title">🔍 Filters</h3>
             <p>Use the chip buttons below the stats (or sidebar chips) to filter by: <strong>failing</strong> (fail history), <strong>flaky</strong> (intermittent), <strong>changed</strong> (modified source), <strong>new</strong> (first run), <strong>slow/fast</strong> (duration). Duration histogram bars are also clickable.</p>
+            <p style="margin-top:5px">Type in the search box for advanced filters: <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">is:failing</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">is:affected</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">is:dep</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">is:stat</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">is:variance</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">is:risk</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">score&gt;N</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">rank&lt;N</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">duration&lt;500ms</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">failures&gt;=2</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">overlap&gt;1</code> <code style="font-size:.7rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">pfail&gt;0.3</code>. Click <strong>?</strong> next to the search box for full reference and saved filter presets. Active filters are preserved in the URL — copy the address bar to share a filtered view.</p>
           </section>
           <section class="help-section">
             <h3 class="help-section__title">⚖ Weights</h3>
@@ -198,7 +270,7 @@ const generatedAge = computed(() => {
               <span><kbd>c</kbd></span><span>Toggle changed filter</span>
               <span><kbd>z</kbd></span><span>Focus mode — hide sidebar for full-width detail (when test is selected)</span>
               <span><kbd>b</kbd></span><span>Blame mode — highlight tests linked to changed source classes (when changes exist)</span>
-              <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd></span><span>Switch tabs</span>
+              <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>+</span><span>Switch tabs: 1=Tests, 2=Analytics, 3=Weights. Additional tabs (Static Analysis, Mutations, ML Health) appear as 4, 5, 6 when data is available.</span>
               <span><kbd>Esc</kbd></span><span>Clear selection / filter / close</span>
             </div>
           </section>
@@ -209,6 +281,11 @@ const generatedAge = computed(() => {
               <li><strong style="color:var(--text)">Focus mode</strong> — press <kbd style="font-size:.65rem;border:1px solid var(--border);border-radius:2px;padding:0 3px;background:var(--bg-base)">z</kbd> or click ⊡ in the detail header to collapse the sidebar for distraction-free test inspection.</li>
               <li><strong style="color:var(--text)">Minimap</strong> — the thin color strip to the right of the Tests overview table is a scroll navigator. Click to jump, colors encode test status (red=fail, green=new, yellow=changed).</li>
               <li><strong style="color:var(--text)">Sensitivity curves</strong> — in the Weights tab, selecting a test reveals SVG graphs showing how each weight affects that test's rank across its full range.</li>
+              <li><strong style="color:var(--text)">Suite Health Score</strong> — composite A–F grade in Analytics tab. APFD (30%) + Reliability (30%) + Stability (20%) + Coverage (20%). Hover each bar for the formula.</li>
+              <li><strong style="color:var(--text)">Coverage treemap</strong> — in Analytics → Coverage, each tile is a source class. Color = method coverage %, brightness = test count. Click to inspect which tests cover it.</li>
+              <li><strong style="color:var(--text)">Mutation Testing (tab 5)</strong> — PIT kill-share per test. Kill share = fraction of all mutants this test kills. Requires running <code style="font-size:.65rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">mvn test-order:analyze-mutations</code>.</li>
+              <li><strong style="color:var(--text)">ML Predictions (tab 6)</strong> — machine-learning failure probability per test. Status badges: HEALTHY / DEGRADING / FLAKY / FAILING. Requires a trained model from enough historical run data.</li>
+              <li><strong style="color:var(--text)">Static Analysis (tab 4)</strong> — call-graph impact analysis. Shows which tests are reachable from changed methods at configurable depth. Run <code style="font-size:.65rem;background:rgba(99,102,241,.15);padding:1px 4px;border-radius:3px">mvn test-order:analyze-static</code> to collect data.</li>
             </ul>
           </section>
         </div>
@@ -314,7 +391,7 @@ const generatedAge = computed(() => {
   cursor: pointer; font-size: 1rem; line-height: 1; transition: all var(--tr-fast);
 }
 .help-modal__close:hover { color: var(--text); border-color: var(--accent); }
-.help-modal__body { overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.help-modal__body { overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
 .help-section h3.help-section__title { font-size: .78rem; font-weight: 700; color: var(--accent-light); margin: 0 0 5px; }
 .help-section p { font-size: .72rem; color: var(--text-sec); line-height: 1.55; margin: 0; }
 .help-section strong { color: var(--text); }
@@ -329,4 +406,7 @@ const generatedAge = computed(() => {
   border-radius: 3px; background: var(--bg-card); font-family: inherit;
   font-size: .65rem; color: var(--text-sec); line-height: 1.5;
 }
+.app-header__chip--method { color: var(--accent-light); border-color: rgba(99,102,241,.3); }
+.app-header__chip--method:hover { background: rgba(99,102,241,.15); border-color: var(--accent); }
+.app-header__chip--no-method { color: var(--text-muted); border-color: transparent; background: transparent; cursor: help; }
 </style>

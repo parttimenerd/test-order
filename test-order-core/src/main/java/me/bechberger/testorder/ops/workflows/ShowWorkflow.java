@@ -5,10 +5,12 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.TreeMap;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -223,9 +225,14 @@ public final class ShowWorkflow {
 					out.println("[test-order] No test classes available for display.");
 				}
 			} else {
-				ShowOrderOperation.printReport(out, ranked, result.classOrder().scorer(),
-						result.classOrder().changedClasses(), result.classOrder().changedTests(),
-						result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
+				DependencyMap depMap = result.classOrder().depMap();
+				if (depMap != null && depMap.hasModuleMap()) {
+					printClassOrderByModule(out, ranked, result, opts);
+				} else {
+					ShowOrderOperation.printReport(out, ranked, result.classOrder().scorer(),
+							result.classOrder().changedClasses(), result.classOrder().changedTests(),
+							result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
+				}
 
 				// Hint when all scores are zero — users see a wall of zeros with no guidance
 				if (result.classOrder().changedClasses().isEmpty() && result.classOrder().changedTests().isEmpty()
@@ -267,7 +274,8 @@ public final class ShowWorkflow {
 				ShowMethodOrderWorkflow.printMethodOrderReport(out, new ShowMethodOrderWorkflow.ShowMethodOrderResult(
 						classOrders, mo.changedClasses(), mo.changedMethods(), mo.weights()), opts.explain());
 			}
-		} else if (!Boolean.FALSE.equals(opts.methods())) {
+		} else if (Boolean.TRUE.equals(opts.methods())) {
+			// Only show "unavailable" noise when the user explicitly requested methods=true
 			out.println();
 			out.println("[test-order] Method order unavailable: no method telemetry found yet.");
 			out.println("[test-order] Run tests again after enabling method ordering to collect per-method data.");
@@ -278,10 +286,56 @@ public final class ShowWorkflow {
 			out.println();
 			out.println("═══ ML Health ════════════════════════════════════════");
 			out.println(result.healthReport().formatSummary());
-		} else if (!Boolean.FALSE.equals(opts.ml())) {
+		} else if (Boolean.TRUE.equals(opts.ml())) {
+			// Only show "unavailable" noise when the user explicitly requested ml=true
 			out.println();
 			out.println("[test-order] ML health unavailable: no ML history found.");
 			out.println("[test-order] To enable: run tests with -Dtestorder.ml.enabled=true and collect a few runs.");
+		}
+	}
+
+	// ── Module-grouped class order ────────────────────────────────────
+
+	/**
+	 * Prints the class order grouped by Maven module. Tests are bucketed by their
+	 * owning module (from {@code DependencyMap.getModule()}), then each bucket is
+	 * printed in priority order. Modules are sorted alphabetically by their
+	 * artifactId — a reasonable topological proxy for multi-module builds. Tests
+	 * with no recorded module are collected in a trailing "(unknown module)" group.
+	 */
+	private static void printClassOrderByModule(PrintStream out, List<OrderReportPrinter.RankedTest> ranked,
+			ShowResult result, Options opts) {
+		DependencyMap depMap = result.classOrder().depMap();
+
+		// Bucket tests by module, preserving priority order within each bucket
+		Map<String, List<OrderReportPrinter.RankedTest>> byModule = new LinkedHashMap<>();
+		List<OrderReportPrinter.RankedTest> unknown = new ArrayList<>();
+		for (OrderReportPrinter.RankedTest rt : ranked) {
+			String mod = depMap.getModule(rt.name());
+			if (mod == null || mod.isBlank()) {
+				unknown.add(rt);
+			} else {
+				byModule.computeIfAbsent(mod, k -> new ArrayList<>()).add(rt);
+			}
+		}
+
+		// Sort modules alphabetically (stable proxy for build order)
+		Map<String, List<OrderReportPrinter.RankedTest>> sorted = new TreeMap<>(byModule);
+
+		for (Map.Entry<String, List<OrderReportPrinter.RankedTest>> entry : sorted.entrySet()) {
+			out.println();
+			out.println("── Module: " + entry.getKey() + " (" + entry.getValue().size() + " tests) ──");
+			ShowOrderOperation.printReport(out, entry.getValue(), result.classOrder().scorer(),
+					result.classOrder().changedClasses(), result.classOrder().changedTests(),
+					result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
+		}
+
+		if (!unknown.isEmpty()) {
+			out.println();
+			out.println("── Module: (unknown) (" + unknown.size() + " tests) ──");
+			ShowOrderOperation.printReport(out, unknown, result.classOrder().scorer(),
+					result.classOrder().changedClasses(), result.classOrder().changedTests(),
+					result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
 		}
 	}
 

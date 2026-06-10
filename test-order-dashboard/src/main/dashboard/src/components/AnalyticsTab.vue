@@ -3,7 +3,7 @@ import { inject, watch, nextTick, onMounted, computed, ref, type Ref } from 'vue
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
 import type { TestHoverState } from '../composables/useTestHover'
-import { sn, esc, DIST, fmtDur, fmtTime, computeScore, computeApfd, computeSetCoverBonuses } from '../utils'
+import { sn, esc, DIST, fmtDur, fmtTime, computeScore, computeApfd } from '../utils'
 import { useClassHover } from '../composables/useClassInfo'
 import ClassInfoCard from './ClassInfoCard.vue'
 import SuiteHealthCard from './SuiteHealthCard.vue'
@@ -25,7 +25,8 @@ const DIST_IDS = ['d-score', 'd-dur', 'd-deps', 'd-fail'] as const
 // Stats summaries
 const runStats = computed(() => {
   if (!d.runs.length) return null
-  const apfds = d.runs.map(r => r.apfd * 100)
+  // Only include runs with failures for APFD stats — all-pass runs have apfd=0 which is not meaningful
+  const failRunApfds = d.runs.filter(r => r.totalFailures > 0 && r.apfd > 0 && isFinite(r.apfd)).map(r => r.apfd * 100)
   const failures = d.runs.map(r => r.totalFailures)
   const totalDurationMs = d.tests.filter(t => t.duration >= 0).reduce((s, t) => s + t.duration, 0)
   const failingRuns = d.runs.filter(r => r.firstFailurePosition >= 0)
@@ -35,9 +36,9 @@ const runStats = computed(() => {
   return {
     runsWithFailures: d.runs.filter(r => r.totalFailures > 0).length,
     totalFailureEvents: failures.reduce((s, f) => s + f, 0),
-    bestApfd: Math.max(...apfds).toFixed(1),
-    worstApfd: Math.min(...apfds).toFixed(1),
-    avgApfd: (apfds.reduce((s, a) => s + a, 0) / apfds.length).toFixed(1),
+    bestApfd: failRunApfds.length ? Math.max(...failRunApfds).toFixed(1) : null,
+    worstApfd: failRunApfds.length ? Math.min(...failRunApfds).toFixed(1) : null,
+    avgApfd: failRunApfds.length ? (failRunApfds.reduce((s, a) => s + a, 0) / failRunApfds.length).toFixed(1) : null,
     firstRun: new Date(d.runs[0].timestamp),
     lastRun: new Date(d.runs[d.runs.length - 1].timestamp),
     avgTests: Math.round(d.runs.reduce((s, r) => s + r.totalTests, 0) / d.runs.length),
@@ -49,9 +50,11 @@ const runStats = computed(() => {
 // Session health arc — trend narrative and pass streak for header banner
 const healthArc = computed(() => {
   if (d.runs.length < 2) return null
-  const apfds = d.runs.map(r => r.apfd * 100) // runs oldest-first: apfds[0]=oldest, apfds[last]=newest
-  const recent3Avg = apfds.slice(-3).reduce((s, a) => s + a, 0) / Math.min(3, apfds.length)
-  const early3Avg = apfds.slice(0, 3).reduce((s, a) => s + a, 0) / Math.min(3, apfds.length)
+  // Exclude all-pass runs from APFD trend — their 0 value distorts the slope
+  const failRunApfds = d.runs.filter(r => r.totalFailures > 0 && r.apfd > 0 && isFinite(r.apfd)).map(r => r.apfd * 100)
+  const apfds = failRunApfds // oldest-first (same order as d.runs since we preserve order)
+  const recent3Avg = apfds.length >= 1 ? apfds.slice(-3).reduce((s, a) => s + a, 0) / Math.min(3, apfds.length) : 0
+  const early3Avg = apfds.length >= 1 ? apfds.slice(0, 3).reduce((s, a) => s + a, 0) / Math.min(3, apfds.length) : 0
   const apfdDelta = recent3Avg - early3Avg
 
   // Count most recent consecutive clean runs (d.runs is ascending: d.runs[last] = newest)
@@ -69,22 +72,28 @@ const healthArc = computed(() => {
     }
   }
 
-  // APFD trend: linear regression on chronological order (oldest→newest)
-  const apfdsChron = [...apfds].reverse()
-  const n = apfdsChron.length
+  // APFD trend: linear regression on chronological order (oldest→newest), using only failing runs
+  // apfds is already oldest-first; positive slope = improving over time
+  const n = apfds.length
   const meanX = (n - 1) / 2
-  const meanY = apfdsChron.reduce((s, a) => s + a, 0) / n
+  const meanY = n ? apfds.reduce((s, a) => s + a, 0) / n : 0
   let num = 0, den = 0
-  apfdsChron.forEach((a, i) => { num += (i - meanX) * (a - meanY); den += (i - meanX) ** 2 })
+  apfds.forEach((a, i) => { num += (i - meanX) * (a - meanY); den += (i - meanX) ** 2 })
   const slope = den ? num / den : 0
 
-  const trend = slope > 0.5 ? 'improving' : slope < -0.5 ? 'degrading' : 'stable'
+  const trend = apfds.length < 2 ? 'stable' : slope > 0.5 ? 'improving' : slope < -0.5 ? 'degrading' : 'stable'
   const trendIcon = trend === 'improving' ? '↗' : trend === 'degrading' ? '↘' : '→'
   const trendColor = trend === 'improving' ? 'var(--green)' : trend === 'degrading' ? 'var(--red)' : 'var(--yellow)'
 
   // Build narrative
-  let narrative = `${d.runs.length} runs · APFD ${(+apfds[apfds.length - 1]).toFixed(0)}% latest`
-  if (Math.abs(apfdDelta) >= 2) {
+  const latestRun = d.runs[d.runs.length - 1]
+  let narrative = `${d.runs.length} runs`
+  if (latestRun.totalFailures === 0) {
+    narrative += ` · latest run: all pass`
+  } else {
+    narrative += ` · APFD ${(apfds[apfds.length - 1]).toFixed(0)}% latest`
+  }
+  if (apfds.length >= 2 && Math.abs(apfdDelta) >= 2) {
     narrative += ` · ${apfdDelta > 0 ? '+' : ''}${apfdDelta.toFixed(0)}% vs early runs`
   }
   if (cleanTail >= 2) narrative += ` · ${cleanTail} clean in a row`
@@ -138,6 +147,7 @@ const speedRatioHistoryMap = computed(() => {
   if (d.runs.length < 3) return m
   for (let i = 0; i < d.runs.length; i++) {
     for (const o of (d.runs[i].outcomes || [])) {
+      if (o.speedRatio == null || !isFinite(o.speedRatio)) continue
       const arr = m.get(o.testClass) ?? []
       arr.push(o.speedRatio)
       m.set(o.testClass, arr)
@@ -246,11 +256,17 @@ function initTimeline() {
 
   mkChart('tl-apfd', {
     type: 'line', data: { labels, datasets: [
-      { label: 'APFD %', data: runs.map(r => +(r.apfd * 100).toFixed(1)), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.1)', fill: true, tension: .3, pointRadius: 3, pointHoverRadius: 5 },
+      { label: 'APFD %', data: runs.map(r => r.totalFailures > 0 && r.apfd > 0 ? +(r.apfd * 100).toFixed(1) : null), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.1)', fill: false, tension: .3, pointRadius: 4, pointHoverRadius: 6,
+        pointBackgroundColor: runs.map(r => r.totalFailures === 0 ? 'transparent' : '#22c55e'),
+        pointBorderColor: runs.map(r => r.totalFailures === 0 ? 'rgba(34,197,94,.5)' : '#22c55e'),
+        spanGaps: false },
       { label: 'Random (50%)', data: labels.map(() => 50), borderColor: '#475569', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, tension: 0 },
     ] }, options: {
       ...baseOpts(),
-      plugins: { ...baseOpts().plugins, legend: { display: true, labels: { color: '#8899aa', font: { size: 9 }, boxWidth: 10, padding: 6 } } },
+      plugins: { ...baseOpts().plugins, legend: { display: true, labels: { color: '#8899aa', font: { size: 9 }, boxWidth: 10, padding: 6 } },
+        tooltip: { ...((baseOpts().plugins as Record<string,unknown>)?.tooltip ?? {}), mode: 'index' as const, intersect: false,
+          callbacks: { label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) => ctx.dataset.label === 'APFD %' && ctx.parsed.y === null ? 'APFD: all passed (N/A)' : undefined } },
+      },
       scales: { ...baseOpts().scales, y: { ...baseOpts().scales.y, min: 0, max: 100 } },
       onClick: (_e: unknown, elements: { index: number }[]) => {
         if (elements.length > 0) selectRun(chartIdxToRunIdx(elements[0].index))
@@ -350,7 +366,10 @@ function buildCoverageTreemap() {
     if (!byPkg[pkg]) byPkg[pkg] = []
     byPkg[pkg].push(c)
   })
-  const root = { name: 'root', children: Object.entries(byPkg).map(([pkg, cls]) => ({ name: pkg, children: cls.map(c => ({ name: c.name, value: Math.max(c.testCount, 1), data: c })) })) }
+  const tileValue = (c: any) => covTreemapSort.value === 'coverage' && c.totalMembers > 0
+    ? Math.max(Math.round(c.coveredMembers / c.totalMembers * 100), 1)
+    : Math.max(c.testCount, 1)
+  const root = { name: 'root', children: Object.entries(byPkg).map(([pkg, cls]) => ({ name: pkg, children: cls.map(c => ({ name: c.name, value: tileValue(c), data: c })) })) }
 
   const hierarchy = d3.hierarchy(root).sum((nd: any) => nd.value || 0).sort((a, b) => (b.value || 0) - (a.value || 0))
   d3.treemap().size([W, H]).padding(2).paddingTop(16).round(true)(hierarchy as any)
@@ -411,6 +430,7 @@ function buildCoverageTreemap() {
     })
     .attr('stroke-width', '2.5px')
     .attr('stroke-linejoin', 'round')
+    .attr('pointer-events', 'none')
     .text((nd: any) => {
       const w = nd.x1 - nd.x0, h = nd.y1 - nd.y0
       if (w < 36 || h < 14) return ''
@@ -419,8 +439,13 @@ function buildCoverageTreemap() {
       return nm.length > maxChars ? nm.substring(0, Math.max(3, maxChars - 1)) + '…' : nm
     })
 
-  // SVG-native title tooltips on small tiles
-  leaves.append('title').text((nd: any) => nd.data?.data?.name ?? '')
+  // SVG-native title tooltips on tiles (shown on touch / when custom tip not visible)
+  leaves.append('title').text((nd: any) => {
+    const c = nd.data?.data
+    if (!c) return ''
+    const mth = c.totalMembers > 0 ? ` · ${c.coveredMembers}/${c.totalMembers} methods (${Math.round(c.coveredMembers/c.totalMembers*100)}%)` : ''
+    return `${c.name}\n${c.testCount} test${c.testCount === 1 ? '' : 's'} cover this class${mth}\nClick to inspect`
+  })
 
   // Method coverage progress bars (thin strip at bottom of each tile when member data available)
   if (d.hasMethodCoverage.value) {
@@ -579,7 +604,15 @@ function buildRankCoverageScatter() {
     .style('cursor', 'pointer')
     .on('click', (_e: MouseEvent, p: typeof sorted[number]) => d.navigateToTestFromCov(p.name))
     .append('title')
-    .text(p => `${dn(p.name)}\nrank ${p.rank} · ${p.total} class${p.total === 1 ? '' : 'es'} covered${p.exclusive > 0 ? ` · ${p.exclusive} exclusive` : ''}`)
+    .text(p => `${dn(p.name)}\nrank ${p.rank} · ${p.total} class${p.total === 1 ? '' : 'es'} covered${p.exclusive > 0 ? ` · ${p.exclusive} exclusively (no other test covers them)` : ''}`)
+  // Legend (bottom-right of chart area)
+  const legX = innerW - 145
+  const legY = innerH - 32
+  const leg = g.append('g').attr('transform', `translate(${legX}, ${legY})`)
+  leg.append('circle').attr('cx', 5).attr('cy', 5).attr('r', 4).attr('fill', '#ef4444').attr('fill-opacity', 0.75)
+  leg.append('text').attr('x', 13).attr('y', 9).attr('font-size', '9px').attr('fill', '#64748b').text('exclusive coverage')
+  leg.append('circle').attr('cx', 5).attr('cy', 19).attr('r', 4).attr('fill', '#3b82f6').attr('fill-opacity', 0.75)
+  leg.append('text').attr('x', 13).attr('y', 23).attr('font-size', '9px').attr('fill', '#64748b').text('shared coverage only')
 }
 
 /** Cross-package coupling matrix: pkg(test) → pkg(dep) heatmap. */
@@ -619,14 +652,14 @@ function buildPkgCouplingMatrix() {
     .attr('x', d => d.j * cell).attr('y', d => d.i * cell)
     .attr('width', cell - 1).attr('height', cell - 1)
     .attr('fill', d => d.v === 0 ? 'rgba(51,65,85,0.25)' : color(Math.log(d.v + 1)))
-    .style('cursor', d => d.v > 0 ? 'pointer' : 'default')
-    .on('click', (_e: MouseEvent, d: any) => {
-      if (d.v <= 0) return
-      const tail = d.b.split('.').slice(-2).join('.')
+    .style('cursor', row => row.v > 0 ? 'pointer' : 'default')
+    .on('click', (_e: MouseEvent, row: any) => {
+      if (row.v <= 0) return
+      const tail = row.b.split('.').slice(-2).join('.')
       d.covSearchQ.value = tail
     })
     .append('title')
-    .text(d => `${d.a} → ${d.b}\n${d.v} dep edge${d.v === 1 ? '' : 's'}`)
+    .text(row => `${row.a} → ${row.b}\n${row.v} dep edge${row.v === 1 ? '' : 's'}`)
   // Diagonal stroke for self-pkg
   g.selectAll('rect.diag').data(rows.filter(r => r.a === r.b && r.v > 0)).join('rect').attr('class', 'diag')
     .attr('x', d => d.j * cell).attr('y', d => d.i * cell)
@@ -674,7 +707,13 @@ const covUncoveredCount = computed(() => {
   return d.dd.coverage.classes.filter(c => c.testCount === 0).length
 })
 
+const uncoveredExpanded = ref(false)
+const uncoveredClasses = computed(() =>
+  d.dd.coverage?.classes?.filter(c => c.testCount === 0) ?? []
+)
+
 const covPkgSort = ref<'coverage' | 'alpha' | 'tests'>('coverage')
+const covTreemapSort = ref<'tests' | 'coverage'>('tests')
 const redundancyExpanded = ref<Set<number>>(new Set())
 const toggleRedundancy = (i: number) => {
   const s = new Set(redundancyExpanded.value)
@@ -1090,7 +1129,8 @@ const twoRunComparison = computed(() => {
     runA, runB, rows,
     newFails: rows.filter(r => r.status === 'new-fail').length,
     recovered: rows.filter(r => r.status === 'recovered').length,
-    apfdDelta: ((runA.apfd - runB.apfd) * 100),
+    // apfdDelta is only meaningful when both runs had failures; all-pass runs have apfd=0
+    apfdDelta: (runA.totalFailures > 0 && runB.totalFailures > 0) ? (runA.apfd - runB.apfd) * 100 : null,
   }
 })
 
@@ -1112,29 +1152,33 @@ const insights = computed(() => {
   const items: { icon: string; color: string; msg: string; action?: string; actionLabel?: string }[] = []
   if (!d.runs.length) return items
 
-  const apfds = d.runs.map(r => r.apfd * 100)
-  const avgApfd = apfds.reduce((s, a) => s + a, 0) / apfds.length
-  if (avgApfd < 50) items.push({ icon: '⚠', color: 'var(--red)', msg: `Avg APFD ${avgApfd.toFixed(0)}% — below random baseline (50%). Test ordering may not be effective yet.` })
-  else if (avgApfd < 70) items.push({ icon: '↗', color: 'var(--yellow)', msg: `Avg APFD ${avgApfd.toFixed(0)}% — room for improvement. More run history will help the algorithm learn.` })
-  else items.push({ icon: '✓', color: 'var(--green)', msg: `Avg APFD ${avgApfd.toFixed(0)}% — good test ordering. Failing tests are being detected early.` })
+  // Only use failing runs for APFD — all-pass runs have apfd=0 which distorts averages
+  const failingRuns = d.runs.filter(r => r.totalFailures > 0 && r.apfd > 0 && isFinite(r.apfd))
+  const apfds = failingRuns.map(r => r.apfd * 100)
+  if (apfds.length > 0) {
+    const avgApfd = apfds.reduce((s, a) => s + a, 0) / apfds.length
+    if (avgApfd < 50) items.push({ icon: '⚠', color: 'var(--red)', msg: `Avg APFD ${avgApfd.toFixed(0)}% — below random baseline (50%). Test ordering may not be effective yet.` })
+    else if (avgApfd < 70) items.push({ icon: '↗', color: 'var(--yellow)', msg: `Avg APFD ${avgApfd.toFixed(0)}% — room for improvement. More run history will help the algorithm learn.` })
+    else items.push({ icon: '✓', color: 'var(--green)', msg: `Avg APFD ${avgApfd.toFixed(0)}% — good test ordering. Failing tests are being detected early.` })
 
-  // APFD trend: compare recent 3 vs prior 3 (apfds is oldest-first, so use slice from end)
-  if (apfds.length >= 6) {
-    const recent = apfds.slice(-3).reduce((s, a) => s + a, 0) / 3
-    const prior = apfds.slice(-6, -3).reduce((s, a) => s + a, 0) / 3
-    const delta = recent - prior
-    if (delta > 3) items.push({ icon: '▲', color: 'var(--green)', msg: `APFD improving: last 3 runs avg ${recent.toFixed(0)}% vs prior 3 avg ${prior.toFixed(0)}% (+${delta.toFixed(1)}pp). Ordering is getting better.` })
-    else if (delta < -3) items.push({ icon: '▼', color: 'var(--orange)', msg: `APFD declining: last 3 runs avg ${recent.toFixed(0)}% vs prior 3 avg ${prior.toFixed(0)}% (${delta.toFixed(1)}pp). Check if test composition changed.` })
+    // APFD trend: compare recent 3 vs prior 3 (apfds is oldest-first)
+    if (apfds.length >= 6) {
+      const recent = apfds.slice(-3).reduce((s, a) => s + a, 0) / 3
+      const prior = apfds.slice(-6, -3).reduce((s, a) => s + a, 0) / 3
+      const delta = recent - prior
+      if (delta > 3) items.push({ icon: '▲', color: 'var(--green)', msg: `APFD improving: last 3 runs avg ${recent.toFixed(0)}% vs prior 3 avg ${prior.toFixed(0)}% (+${delta.toFixed(1)}pp). Ordering is getting better.` })
+      else if (delta < -3) items.push({ icon: '▼', color: 'var(--orange)', msg: `APFD declining: last 3 runs avg ${recent.toFixed(0)}% vs prior 3 avg ${prior.toFixed(0)}% (${delta.toFixed(1)}pp). Check if test composition changed.` })
+    }
+
+    const worstApfd = Math.min(...apfds)
+    if (worstApfd < 30 && failingRuns.length >= 3) items.push({ icon: '↓', color: 'var(--orange)', msg: `Worst run had APFD ${worstApfd.toFixed(0)}% — failures were detected very late. Check if test set changed significantly in that run.` })
   }
 
   const failingTests = d.tests.filter(t => t.failScore > 0)
   if (failingTests.length > 0) items.push({ icon: '✕', color: 'var(--red)', msg: `${failingTests.length} test${failingTests.length > 1 ? 's have' : ' has'} recent failure history — they are already prioritized higher.`, action: 'failing', actionLabel: 'Filter' })
 
   const slowTests = d.tests.filter(t => t.isSlow)
-  if (slowTests.length > d.tests.length * 0.3) items.push({ icon: '🐢', color: 'var(--orange)', msg: `${slowTests.length} slow tests (>${d.tests.length * 0.3 | 0} of ${d.tests.length}). Consider parallelizing or optimizing the slowest ones.` })
-
-  const worstApfd = Math.min(...apfds)
-  if (worstApfd < 30 && d.runs.length >= 3) items.push({ icon: '↓', color: 'var(--orange)', msg: `Worst run had APFD ${worstApfd.toFixed(0)}% — failures were detected very late. Check if test set changed significantly in that run.` })
+  if (slowTests.length > d.tests.length * 0.3) items.push({ icon: '🐢', color: 'var(--orange)', msg: `${slowTests.length} slow tests (>${d.tests.length * 0.3 | 0} of ${d.tests.length}). Consider parallelizing or optimizing the slowest ones.`, action: 'slow', actionLabel: 'Filter' })
 
   if (!d.hasCoverage) items.push({ icon: 'ℹ', color: 'var(--text-muted)', msg: 'No source coverage data. Enable METHOD or MEMBER instrumentation mode to unlock dependency tracking and coverage features.' })
 
@@ -1236,10 +1280,10 @@ const selectionExclusiveLoss = computed(() => {
   return lost
 })
 
-// Dep fan-out distribution: histogram of t.deps.length and outliers (god tests).
+// Dep fan-out distribution: histogram of t.depTotal and outliers (god tests).
 const fanOutDistribution = computed(() => {
   if (!d.tests.length) return null
-  const counts = d.tests.map(t => t.deps?.length ?? 0)
+  const counts = d.tests.map(t => t.depTotal ?? 0)
   const maxC = Math.max(...counts, 1)
   const buckets = 20
   const bw = Math.max(1, Math.ceil(maxC / buckets))
@@ -1249,7 +1293,7 @@ const fanOutDistribution = computed(() => {
   const sd = Math.sqrt(counts.reduce((s, n) => s + (n - mean) ** 2, 0) / counts.length)
   const threshold = mean + 2 * sd
   const outliers = d.tests
-    .map(t => ({ test: t, count: t.deps?.length ?? 0 }))
+    .map(t => ({ test: t, count: t.depTotal ?? 0 }))
     .filter(x => x.count > threshold && x.count > 5)
     .sort((a, b) => b.count - a.count)
     .slice(0, 8)
@@ -1470,11 +1514,7 @@ const apfdAttribution = computed(() => {
   if (runsWithFail.length === 0) return null
 
   const w = d.dd.weights
-  const scb = computeSetCoverBonuses(
-    runsWithFail[0].outcomes.map(o => ({ name: o.testClass, deps: [] } as any)),
-    new Set(d.dd.changedClasses || []),
-    w.coverageBonus || 0
-  )
+  const scb = d.origSCB
 
   function avgApfd(weightOverride: Partial<typeof w>): number {
     const merged = { ...w, ...weightOverride }
@@ -1523,11 +1563,13 @@ const apfdRecommendations = computed((): ApfdRec[] => {
   const recs: ApfdRec[] = []
   if (d.runs.length < 2) return recs
 
-  const apfds = d.runs.map(r => r.apfd * 100)
-  const avgApfd = apfds.reduce((s, a) => s + a, 0) / apfds.length
+  // Exclude all-pass runs from APFD analysis — their 0 value distorts averages/variance
+  const failingApfdRuns = d.runs.filter(r => r.totalFailures > 0 && r.apfd > 0 && isFinite(r.apfd))
+  const apfds = failingApfdRuns.map(r => r.apfd * 100)
+  const avgApfd = apfds.length ? apfds.reduce((s, a) => s + a, 0) / apfds.length : null
 
-  // Nothing to do if APFD is already excellent
-  if (avgApfd >= 95 && apfds.every(a => a >= 90)) return recs
+  // Nothing to do if APFD is already excellent across all failing runs
+  if (avgApfd !== null && avgApfd >= 95 && apfds.every(a => a >= 90)) return recs
 
   // 1. High-rank but low fail-score tests occupying top slots when failures exist
   const runsWithFail = d.runs.filter(r => r.outcomes?.some(o => o.failed))
@@ -1550,9 +1592,9 @@ const apfdRecommendations = computed((): ApfdRec[] => {
     }
   }
 
-  // 2. APFD variance: high standard deviation signals unstable ordering
+  // 2. APFD variance across failing runs: high standard deviation signals unstable ordering
   if (apfds.length >= 4) {
-    const mean = avgApfd
+    const mean = avgApfd!
     const stdDev = Math.sqrt(apfds.reduce((s, a) => s + (a - mean) ** 2, 0) / apfds.length)
     if (stdDev > 15) {
       const minA = Math.min(...apfds).toFixed(0), maxA = Math.max(...apfds).toFixed(0)
@@ -1560,13 +1602,13 @@ const apfdRecommendations = computed((): ApfdRec[] => {
         priority: 'high',
         icon: '⚡',
         title: `APFD varies widely (±${stdDev.toFixed(0)}pp)`,
-        detail: `Range ${minA}%–${maxA}% across runs. Unstable ordering often means test composition changes or flaky tests. More run history will stabilize the scoring model.`,
+        detail: `Range ${minA}%–${maxA}% across failing runs. Unstable ordering often means test composition changes or flaky tests. More run history will stabilize the scoring model.`,
       })
     }
   }
 
   // 3. No coverage data → dep overlap factor is blind
-  if (!d.hasCoverage && avgApfd < 85) {
+  if (!d.hasCoverage && (avgApfd === null || avgApfd < 85)) {
     recs.push({
       priority: 'medium',
       icon: '◉',
@@ -1615,7 +1657,7 @@ const apfdRecommendations = computed((): ApfdRec[] => {
   }
 
   // 7. Near-perfect APFD — give positive confirmation
-  if (avgApfd >= 85 && recs.filter(r => r.priority === 'high').length === 0) {
+  if (avgApfd !== null && avgApfd >= 85 && recs.filter(r => r.priority === 'high').length === 0) {
     recs.push({
       priority: 'low',
       icon: '✓',
@@ -1660,7 +1702,9 @@ watch(() => d.activeTab.value, (tab) => { if (tab === 'analytics') initAll() })
 watch(() => d.selectedTests.value, () => { if (d.activeTab.value === 'analytics' && d.hasCoverage) nextTick(updateTreemapColors) })
 watch(() => d.selectedMethods.value, () => { if (d.activeTab.value === 'analytics' && d.hasCoverage) nextTick(updateTreemapColors) })
 watch(() => d.covSelectedClass.value, () => { if (d.activeTab.value === 'analytics' && d.hasCoverage) nextTick(updateTreemapColors) })
+watch(covTreemapSort, () => { if (d.activeTab.value === 'analytics' && d.hasCoverage) nextTick(buildCoverageTreemap) })
 watch(timeRangeOpt, () => { if (d.activeTab.value === 'analytics') nextTick(initTimeline) })
+watch(runDetailSearch, () => { runDetailPage.value = 0 })
 onMounted(initAll)
 </script>
 
@@ -1684,10 +1728,10 @@ onMounted(initAll)
       <!-- Timeline -->
       <div v-if="d.runs.length" id="analytics-history" style="margin-bottom:12px">
         <!-- Session health arc banner -->
-        <div v-if="healthArc" class="analytics__health-arc">
+        <div v-if="healthArc" class="analytics__health-arc" :title="healthArc.narrative">
           <span class="analytics__health-arc-icon" :style="{ color: healthArc.trendColor }">{{ healthArc.trendIcon }}</span>
           <span class="analytics__health-arc-text">{{ healthArc.narrative }}</span>
-          <span class="analytics__health-arc-badge" :style="{ background: healthArc.trendColor === 'var(--green)' ? 'rgba(74,222,128,.15)' : healthArc.trendColor === 'var(--red)' ? 'rgba(248,113,113,.15)' : 'rgba(251,191,36,.12)', borderColor: healthArc.trendColor, color: healthArc.trendColor }">{{ healthArc.trend }}</span>
+          <span class="analytics__health-arc-badge" :title="'Trend: ' + healthArc.trend + ' — based on comparing recent vs earlier failure rates'" :style="{ background: healthArc.trendColor === 'var(--green)' ? 'rgba(74,222,128,.15)' : healthArc.trendColor === 'var(--red)' ? 'rgba(248,113,113,.15)' : 'rgba(251,191,36,.12)', borderColor: healthArc.trendColor, color: healthArc.trendColor }">{{ healthArc.trend }}</span>
         </div>
         <!-- Insights panel -->
         <div v-if="insights.length" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
@@ -1712,17 +1756,17 @@ onMounted(initAll)
             <div class="analytics__stat-label">Total Runs</div>
             <div class="analytics__stat-value" style="color:var(--accent-light)">{{ d.runs.length }}</div>
           </div>
-          <div class="kpi analytics__stat-kpi" :title="'Average APFD (Area under the APFD curve). 100% = all failures detected first; 50% = random ordering.'">
+          <div class="kpi analytics__stat-kpi" :title="'Average APFD (Area under the APFD curve) across failing runs only. 100% = all failures detected first; 50% = random ordering. All-pass runs excluded.'">
             <div class="analytics__stat-label">Avg APFD</div>
-            <div class="analytics__stat-value" :style="{ color: +runStats.avgApfd >= 70 ? 'var(--green)' : +runStats.avgApfd >= 50 ? 'var(--yellow)' : 'var(--red)' }">{{ runStats.avgApfd }}%</div>
+            <div class="analytics__stat-value" :style="{ color: runStats.avgApfd === null ? 'var(--text-muted)' : +runStats.avgApfd >= 70 ? 'var(--green)' : +runStats.avgApfd >= 50 ? 'var(--yellow)' : 'var(--red)' }">{{ runStats.avgApfd !== null ? runStats.avgApfd + '%' : 'N/A' }}</div>
           </div>
-          <div class="kpi analytics__stat-kpi" :title="'Best APFD achieved in a single run.'">
+          <div class="kpi analytics__stat-kpi" :title="'Best APFD achieved in a single failing run.'">
             <div class="analytics__stat-label">Best APFD</div>
-            <div class="analytics__stat-value" style="color:var(--green)">{{ runStats.bestApfd }}%</div>
+            <div class="analytics__stat-value" style="color:var(--green)">{{ runStats.bestApfd !== null ? runStats.bestApfd + '%' : 'N/A' }}</div>
           </div>
-          <div class="kpi analytics__stat-kpi" :title="'Worst APFD in a single run — lower means more test-ordering work remaining.'">
+          <div class="kpi analytics__stat-kpi" :title="'Worst APFD in a failing run — lower means ordering could improve. All-pass runs excluded.'">
             <div class="analytics__stat-label">Worst APFD</div>
-            <div class="analytics__stat-value" :style="{ color: +runStats.worstApfd < 50 ? 'var(--red)' : 'var(--yellow)' }">{{ runStats.worstApfd }}%</div>
+            <div class="analytics__stat-value" :style="{ color: runStats.worstApfd === null ? 'var(--text-muted)' : +runStats.worstApfd < 50 ? 'var(--red)' : 'var(--yellow)' }">{{ runStats.worstApfd !== null ? runStats.worstApfd + '%' : 'N/A' }}</div>
           </div>
           <div class="kpi analytics__stat-kpi" :title="'Runs that contained at least one test failure.'">
             <div class="analytics__stat-label">Runs w/ Failures</div>
@@ -1753,22 +1797,23 @@ onMounted(initAll)
         <!-- Time range selector -->
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
           <span style="font-size:.65rem;color:var(--text-muted)">Show:</span>
-          <button v-for="opt in [{v:'all',l:'All'},{v:'last10',l:'Last 10'},{v:'last5',l:'Last 5'},{v:'last30d',l:'Last 30d'}]" :key="opt.v"
+          <button v-for="opt in [{v:'all',l:'All',t:'Show all recorded runs'},{v:'last10',l:'Last 10',t:'Show only the 10 most recent runs'},{v:'last5',l:'Last 5',t:'Show only the 5 most recent runs'},{v:'last30d',l:'Last 30d',t:'Show runs from the last 30 days only'}]" :key="opt.v"
             class="analytics__range-btn"
             :class="{ 'analytics__range-btn--active': timeRangeOpt === opt.v }"
+            :title="opt.t"
             @click="timeRangeOpt = opt.v as any"
           >{{ opt.l }}</button>
           <span style="font-size:.62rem;color:var(--text-muted);margin-left:4px">{{ filteredRuns.length }} run{{ filteredRuns.length === 1 ? '' : 's' }}</span>
         </div>
 
         <div class="card" style="margin-bottom:8px">
-          <div class="card-label">APFD over time <span style="color:var(--border)">(dashed = 0.5 random baseline)</span> <span style="color:var(--text-muted);font-size:.58rem">— higher = ordering found failures earlier · <strong style="color:var(--accent-light)">click point to inspect run</strong></span></div>
+          <div class="card-label" title="APFD (Average Percentage of Faults Detected) over time. Each point is one run; only failing runs have APFD values. The dashed line at 0.5 is the random-ordering baseline — any value above it means the prioritization is helping. Click a point to inspect that run's details.">APFD over time <span style="color:var(--border)">(dashed = 0.5 random baseline)</span> <span style="color:var(--text-muted);font-size:.58rem">— higher = ordering found failures earlier · <strong style="color:var(--accent-light)">click point to inspect run</strong></span></div>
           <div class="analytics__canvas" style="height:100px;cursor:pointer"><canvas id="tl-apfd"></canvas></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-          <div class="card"><div class="card-label">Failures per run <span style="color:var(--text-muted);font-size:.55rem">— green = 0 failures</span></div><div class="analytics__canvas analytics__canvas--sm"><canvas id="tl-fail"></canvas></div></div>
-          <div class="card"><div class="card-label">First failure position <span style="color:var(--text-muted);font-size:.55rem">— lower = failure found sooner</span></div><div class="analytics__canvas analytics__canvas--sm"><canvas id="tl-ffp"></canvas></div></div>
-          <div class="card"><div class="card-label">Test count per run</div><div class="analytics__canvas analytics__canvas--sm"><canvas id="tl-cnt"></canvas></div></div>
+          <div class="card"><div class="card-label" title="Number of test failures in each run. Low/zero values are good. Spikes indicate regressions.">Failures per run <span style="color:var(--text-muted);font-size:.55rem">— green = 0 failures</span></div><div class="analytics__canvas analytics__canvas--sm"><canvas id="tl-fail"></canvas></div></div>
+          <div class="card"><div class="card-label" title="Position in the run order where the first failure was detected. Lower = failure caught sooner. If the ordering is working well, this should be close to 1.">First failure position <span style="color:var(--text-muted);font-size:.55rem">— lower = failure found sooner</span></div><div class="analytics__canvas analytics__canvas--sm"><canvas id="tl-ffp"></canvas></div></div>
+          <div class="card"><div class="card-label" title="Number of tests executed in each run. Sudden changes may indicate tests being added or removed.">Test count per run</div><div class="analytics__canvas analytics__canvas--sm"><canvas id="tl-cnt"></canvas></div></div>
         </div>
       </div>
 
@@ -1777,7 +1822,7 @@ onMounted(initAll)
         <div class="card"><div class="card-label" title="Distribution of current priority scores across all tests">Score distribution <span style="color:var(--text-muted);font-size:.55rem">— current run</span></div><div class="analytics__canvas analytics__canvas--dist"><canvas id="d-score"></canvas></div></div>
         <div class="card"><div class="card-label" title="Histogram of test durations in log-scale buckets">Duration distribution <span style="color:var(--text-muted);font-size:.55rem">(log buckets)</span></div><div class="analytics__canvas analytics__canvas--dist"><canvas id="d-dur"></canvas></div></div>
         <div class="card"><div class="card-label" title="How many source-class dependencies each test has — higher = more tightly coupled">Dependency count <span style="color:var(--text-muted);font-size:.55rem">— distribution</span></div><div class="analytics__canvas analytics__canvas--dist"><canvas id="d-deps"></canvas></div></div>
-        <div class="card"><div class="card-label" title="Tests ranked by EMA-decayed failure score — the historical failure signal used in scoring">Top {{ d.tests.filter(t => t.failScore > 0).length || 0 }} by fail score <span style="color:var(--text-muted);font-size:.55rem">— EMA-decayed failure history</span></div><div class="analytics__canvas analytics__canvas--dist"><canvas id="d-fail"></canvas></div></div>
+        <div class="card"><div class="card-label" title="Tests ranked by EMA-decayed failure score — the historical failure signal used in scoring">{{ d.tests.filter(t => t.failScore > 0).length > 0 ? 'Top ' + d.tests.filter(t => t.failScore > 0).length + ' by fail score' : 'Fail score' }} <span style="color:var(--text-muted);font-size:.55rem">— EMA-decayed failure history</span></div><div class="analytics__canvas analytics__canvas--dist" style="position:relative"><canvas id="d-fail"></canvas><div v-if="d.tests.filter(t => t.failScore > 0).length === 0" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:.7rem">no failure history</div></div></div>
       </div>
 
       <!-- APFD Factor Attribution -->
@@ -1790,8 +1835,11 @@ onMounted(initAll)
             <span style="font-size:.6rem;color:var(--text-muted);margin-left:auto">% of gain lost if factor removed</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:5px">
+            <div v-if="apfdAttribution.results.every(f => f.pct === 0)" style="font-size:.62rem;color:var(--text-muted);padding:4px 0;font-style:italic" title="Each factor is tested by setting its weight to zero and re-computing APFD. When all factors show 0%, the gain comes from the combined interaction of all factors — no single factor dominates, so removing any one alone has little measurable impact.">
+              All factors jointly contribute — no single dominant factor (removing any one alone has &lt;1pp impact).
+            </div>
             <div v-for="f in apfdAttribution.results" :key="f.key" style="display:flex;align-items:center;gap:8px">
-              <span style="font-size:.65rem;color:var(--text-sec);width:90px;flex-shrink:0">{{ f.key }}</span>
+              <span style="font-size:.65rem;color:var(--text-sec);width:90px;flex-shrink:0" :title="{ 'Fail History': 'How much EMA-weighted failure history boosts APFD. Higher = tests with past failures are being run earlier.', 'Dep Overlap': 'How much source-class dependency overlap with changed classes boosts APFD. Requires METHOD or MEMBER coverage mode.', 'Changed/New': 'Bonus from detecting changed or newly-added test files. Helps when test source is also modified.', 'Speed': 'Penalty/bonus for test duration — fast tests run earlier; slow tests pushed back. Helps when fast tests also fail.', 'Static Fields': 'Bonus for tests that cover static field changes. Helps detect side-effect mutations.' }[f.key]">{{ f.key }}</span>
               <div style="flex:1;height:10px;background:rgba(51,65,85,.5);border-radius:3px;overflow:hidden;position:relative">
                 <div :style="{ width: f.pct + '%', background: f.color, height: '100%', borderRadius: '3px', transition: 'width .4s', opacity: '.85' }"></div>
               </div>
@@ -1831,6 +1879,7 @@ onMounted(initAll)
             <button
               v-if="rec.action"
               class="apfd-rec__action"
+              :title="rec.action.label"
               @click="rec.action!.filter ? (d.setBadgeFilter(rec.action!.filter as any), d.setTab(rec.action!.tab)) : d.setTab(rec.action!.tab)"
             >{{ rec.action.label }} →</button>
           </div>
@@ -1844,7 +1893,7 @@ onMounted(initAll)
         </h3>
         <div class="card budget-card">
           <div class="budget-card__controls">
-            <label class="budget-card__label">Budget (seconds):</label>
+            <label class="budget-card__label" title="Enter a time budget in seconds. The optimizer will greedily select the highest-priority tests that fit within this time limit.">Budget (seconds):</label>
             <input
               type="number"
               class="budget-card__input"
@@ -1852,6 +1901,7 @@ onMounted(initAll)
               :min="1"
               :max="9999"
               @click.stop
+              title="Time budget in seconds. Tests are selected greedily by priority score until the total duration exceeds this limit."
             />
             <span class="budget-card__hint" v-if="budgetOptimResult">
               → {{ budgetOptimResult.included.length }} of {{ d.tests.length }} tests
@@ -1883,7 +1933,7 @@ onMounted(initAll)
               </span>
             </div>
             <div v-if="budgetOptimResult.missedFails.length" class="budget-card__missed">
-              <span class="budget-card__missed-label">⚠ Missed failures ({{ budgetOptimResult.missedFails.length }}):</span>
+              <span class="budget-card__missed-label" title="Tests with failure history that didn't fit within the budget — increasing the budget would include these high-risk tests">⚠ Missed failures ({{ budgetOptimResult.missedFails.length }}):</span>
               <span v-for="n in budgetOptimResult.missedFails.slice(0, 5)" :key="n" class="budget-card__missed-chip" :title="n">{{ sn(n) }}</span>
               <span v-if="budgetOptimResult.missedFails.length > 5" style="font-size:.6rem;color:var(--text-muted)">+{{ budgetOptimResult.missedFails.length - 5 }} more</span>
             </div>
@@ -1955,14 +2005,15 @@ onMounted(initAll)
               v-for="row in flakinessTimeline"
               :key="row.name"
               class="flaky-table__row"
-              @click="d.selectTest(d.tests.find(t => t.name === row.name)!)"
+              @click="d.navigateToTestFromCov(row.name)"
+              @mouseenter="testHover.show(row.name, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
             >
               <span class="flaky-table__name" :title="row.name">{{ sn(row.name) }}</span>
               <span
                 class="flaky-table__trend"
                 :class="row.trend === 'rising' ? 'flaky-table__trend--rising' : row.trend === 'falling' ? 'flaky-table__trend--falling' : 'flaky-table__trend--stable'"
                 :title="row.trend === 'rising' ? 'Getting flakier — fail rate increased in recent runs' : row.trend === 'falling' ? 'Stabilizing — fail rate decreased in recent runs' : 'Stable flakiness pattern'"
-              >{{ row.trend === 'rising' ? '↑ rising' : row.trend === 'falling' ? '↓ stable' : '~ steady' }}</span>
+              >{{ row.trend === 'rising' ? '↑ rising' : row.trend === 'falling' ? '↓ falling' : '~ steady' }}</span>
               <span class="flaky-table__dots">
                 <span
                   v-for="(bit, i) in row.bits"
@@ -1980,7 +2031,8 @@ onMounted(initAll)
 
       <!-- Test retirement candidates -->
       <div v-if="retirementCandidates.length > 0" style="margin-bottom:12px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px"
+            title="Tests that have always passed and contribute little unique signal. Candidates for deprioritization or removal from the main run — they slow the suite without improving failure detection.">
           Retirement Candidates
           <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — {{ retirementCandidates.length }} always-passing, low-signal tests · consider deprioritizing</span>
         </h3>
@@ -1996,7 +2048,8 @@ onMounted(initAll)
             :key="t.name"
             class="retire-row"
             @click="d.navigateToTestFromCov(t.name)"
-            :title="t.name + '\ndepTotal: ' + t.depTotal + '\nClick to inspect'"
+            :title="t.name + ' — rank #' + t.rank + ', ' + t.depTotal + ' deps, never failed in ' + d.runs.length + ' runs · click to inspect'"
+            @mouseenter="testHover.show(t.name, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
           >
             <span class="retire__name" :title="t.name">{{ sn(t.name) }}</span>
             <span class="retire__rank" style="color:var(--text-muted)">#{{ t.rank }}</span>
@@ -2011,15 +2064,16 @@ onMounted(initAll)
 
       <!-- First-Failure Detection Heatmap -->
       <div v-if="firstFailHeatmap" style="margin-bottom:12px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px"
+            title="Grid showing which tests failed in each failing run, and which was the first detected (★). Good ordering means the star appears on a low-ranked test (detected early).">
           First-Failure Detection
           <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — {{ firstFailHeatmap.totalFailingRuns }} failing runs · <span style="color:var(--red)">■</span> failed · <span style="color:#fbbf24">★</span> first failure detected · click test to inspect</span>
         </h3>
         <div class="card ffh-wrap">
           <div class="ffh-header">
             <span class="ffh-row-name"></span>
-            <span class="ffh-rank-col">Rank</span>
-            <span class="ffh-first-col">1st✕</span>
+            <span class="ffh-rank-col" title="Current rank in the priority order — lower = runs earlier">Rank</span>
+            <span class="ffh-first-col" title="Number of failing runs where this test was the FIRST failure detected (★). Good ordering means the first-detected test runs early.">1st✕</span>
             <span class="ffh-cells">
               <span
                 v-for="(ts, ci) in firstFailHeatmap.runs"
@@ -2033,8 +2087,9 @@ onMounted(initAll)
             v-for="row in firstFailHeatmap.rows"
             :key="row.name"
             class="ffh-row"
-            @click="d.selectTest(d.tests.find(t => t.name === row.name)!)"
+            @click="d.navigateToTestFromCov(row.name)"
             :title="row.name + '\nRank #' + row.rank + ' · first to fail in ' + row.firstCount + ' run' + (row.firstCount === 1 ? '' : 's')"
+            @mouseenter="testHover.show(row.name, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
           >
             <span class="ffh-row-name" :title="row.name">{{ sn(row.name) }}</span>
             <span class="ffh-rank-col" :style="{ color: row.rank <= 3 ? 'var(--green)' : row.rank <= 10 ? 'var(--accent-light)' : 'var(--text-muted)' }">#{{ row.rank }}</span>
@@ -2060,7 +2115,8 @@ onMounted(initAll)
 
       <!-- Execution Timeline (Gantt-style) -->
       <div v-if="ganttTests.length > 0 && d.tests.some(t => t.duration >= 0)" style="margin-bottom:12px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px"
+            title="Gantt-style chart of tests in priority order. Bar width = EMA-smoothed duration. Color = primary reason the test ranks where it does. Long bars late in the list are slow tests that don't earn early ordering — candidates for optimization.">
           Execution Timeline
           <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — top {{ MAX_GANTT }} tests in priority order · bar width = duration · <span style="color:#ef4444">■</span> fail hist <span style="color:#4ade80">■</span> new <span style="color:#eab308">■</span> changed <span style="color:#3b82f6">■</span> dep overlap <span style="color:#fb923c">■</span> slow <span style="color:#6366f1">■</span> other · click to inspect</span>
         </h3>
@@ -2071,6 +2127,7 @@ onMounted(initAll)
             class="gantt-row"
             :title="'#' + gt.rank + ' ' + gt.name + (gt.dur > 0 ? ' · ' + fmtDur(gt.dur) : ' · no duration') + (gt.failScore > 0 ? ' · fail history' : '') + (gt.isNew ? ' · new' : gt.isChanged ? ' · changed' : '')"
             @click="d.navigateToTestFromCov(gt.name)"
+            @mouseenter="testHover.show(gt.name, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
           >
             <span class="gantt-rank">{{ gt.rank }}</span>
             <span class="gantt-name" :title="gt.name">{{ dn(gt.name) }}</span>
@@ -2085,7 +2142,8 @@ onMounted(initAll)
 
       <!-- Test Rank Heatmap -->
       <div v-if="rankHeatmap && d.runs.length >= 2" style="margin-bottom:12px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:4px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:4px"
+            title="Each row is a test; each column is a run. Darker cell = test ran earlier (higher rank) in that run. Wide light bands indicate unstable ordering — the algorithm is uncertain where these tests belong.">
           Rank Position Heatmap
           <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — top {{ Math.min(HEATMAP_ROWS, d.tests.length) }} tests by rank variance · darker = higher rank (run earlier) · <strong style="color:var(--accent-light)">click to inspect</strong></span>
         </h3>
@@ -2107,6 +2165,7 @@ onMounted(initAll)
                 class="heatmap__label"
                 :title="row.name + (row.failScore > 0 ? ' — fail history' : '')"
                 @click="d.navigateToTestFromCov(row.name)"
+                @mouseenter="testHover.show(row.name, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
               >
                 <span v-if="row.failScore > 0" style="color:var(--red);margin-right:2px;font-size:.55rem">✕</span>{{ dn(row.name) }}
               </div>
@@ -2136,7 +2195,8 @@ onMounted(initAll)
 
       <!-- Rising risk tests panel -->
       <div v-if="risingRiskTests.length > 0" style="margin-bottom:12px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px"
+            title="Tests whose failure rate is trending upward across recent runs. These are becoming less reliable — investigate for flakiness, environmental dependencies, or underlying code quality issues. Click a test to inspect its full history.">
           ⚠ Rising Risk Tests
           <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — failure rate trending upward · click to inspect</span>
         </h3>
@@ -2144,7 +2204,7 @@ onMounted(initAll)
           <div
             v-for="r in risingRiskTests" :key="r.name"
             class="risk-card"
-            @click="d.selectTest(d.tests.find(t => t.name === r.name)!, null); d.setTab('tests')"
+            @click="d.navigateToTestFromCov(r.name)"
             :title="r.name + '\nSlope: +' + (r.slope * 100).toFixed(1) + '% per run\nFails: ' + r.total + ' total, ' + r.recentFails + ' in last 3 runs'"
           >
             <div class="risk-card__name" :title="r.name">{{ sn(r.name) }}</div>
@@ -2161,7 +2221,8 @@ onMounted(initAll)
 
       <!-- Test reliability table (if we have multi-run data with failures) -->
       <div v-if="testFailRates.length > 0" style="margin-bottom:12px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px"
+            title="Tests sorted by fail rate across all recorded runs. High fail rate = historically unreliable. Flaky tests (both pass and fail) are also listed. Use this to identify tests that need investigation or stabilization.">
           Most Unreliable Tests
           <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — fail rate across all recorded runs · <strong style="color:var(--accent-light)">click to inspect</strong></span>
         </h3>
@@ -2169,10 +2230,10 @@ onMounted(initAll)
           <table>
             <thead style="position:sticky;top:0;background:var(--bg-base);z-index:1">
               <tr>
-                <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec)">Test</th>
-                <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)">Fail Rate</th>
-                <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)">Failures</th>
-                <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)">Seen in</th>
+                <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec)" title="Test class name — click to navigate to test detail">Test</th>
+                <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Fraction of recorded runs where this test failed. 100% = always fails.">Fail Rate</th>
+                <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Total number of failure events for this test across all runs.">Failures</th>
+                <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Number of runs where this test was present and executed.">Seen in</th>
                 <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec)" title="Pass/fail history across last 8 runs (oldest → newest). Red = fail, green = pass.">History</th>
                 <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Current rank in the prioritized test order">Rank</th>
               </tr>
@@ -2186,7 +2247,7 @@ onMounted(initAll)
                 :title="r.name + ' — ' + r.failCount + ' failures in ' + r.seenCount + ' runs · click to inspect'"
               >
                 <td style="padding:3px 8px;font-size:.7rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="r.name"
-                  @mouseenter="classHover.show(r.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()">{{ dn(r.name) }}</td>
+                  @mouseenter="testHover.show(r.name, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()">{{ dn(r.name) }}</td>
                 <td style="padding:3px 8px;text-align:right;font-size:.72rem;font-weight:700" :style="{ color: r.failRate >= 0.5 ? 'var(--red)' : r.failRate >= 0.2 ? 'var(--orange)' : 'var(--yellow)' }">{{ (r.failRate * 100).toFixed(0) }}%</td>
                 <td style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)">{{ r.failCount }}</td>
                 <td style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)">{{ r.seenCount }} runs</td>
@@ -2221,7 +2282,8 @@ onMounted(initAll)
 
       <!-- Co-failure pairs -->
       <div v-if="coFailPairs.length > 0" style="margin-bottom:12px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px"
+            title="Test pairs that frequently fail in the same run. High co-occurrence suggests shared dependencies, shared test state, or a common underlying bug. If both tests always fail together, fixing one source is likely to fix both.">
           Failure Co-occurrence
           <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — test pairs that tend to fail together · shared dependencies or env issues</span>
         </h3>
@@ -2236,14 +2298,14 @@ onMounted(initAll)
               class="cofail-name"
               :title="p.a + ' — click to inspect'"
               @click="d.navigateToTestFromCov(p.a)"
-              @mouseenter="classHover.show(p.a, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()"
+                  @mouseenter="testHover.show(p.a, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
             >{{ dn(p.a) }}</span>
             <span class="cofail-sep">+</span>
             <span
               class="cofail-name"
               :title="p.b + ' — click to inspect'"
               @click="d.navigateToTestFromCov(p.b)"
-              @mouseenter="classHover.show(p.b, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()"
+              @mouseenter="testHover.show(p.b, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
             >{{ dn(p.b) }}</span>
           </div>
         </div>
@@ -2251,7 +2313,8 @@ onMounted(initAll)
 
       <!-- Failure burst detection -->
       <div v-if="failureBursts.length > 0" style="margin-bottom:12px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px"
+            title="Runs where the number of failures was unusually high (1.5σ above the mean). These spikes may indicate a regression that was introduced then reverted, an environment issue, or a flaky test cluster. Click a run to inspect it.">
           Failure Bursts
           <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — runs with unusually many failures (1.5σ above mean) · likely regressions or env issues</span>
         </h3>
@@ -2282,7 +2345,8 @@ onMounted(initAll)
 
       <!-- Run history browser -->
       <div v-if="d.runs.length" style="margin-bottom:12px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:6px"
+            title="Browse all recorded runs. Click a run to inspect which tests failed and their priority positions. Shift+click two runs to compare them side by side.">
           Run History Browser
           <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — click a run to inspect · <kbd style="font-size:.55rem;padding:1px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg-card)">⇧</kbd>+click to compare two runs</span>
         </h3>
@@ -2297,8 +2361,8 @@ onMounted(initAll)
               'run-health-bar__seg--pass': r.totalFailures === 0,
               'run-health-bar__seg--selected': selectedRunIdx === i,
             }"
-            :style="{ height: Math.max(3, Math.round(r.apfd * 20)) + 'px' }"
-            :title="'Run #' + (d.runs.length - i) + ': ' + (r.totalFailures > 0 ? r.totalFailures + ' failures' : 'all passed') + ' · APFD ' + (r.apfd * 100).toFixed(0) + '%'"
+            :style="{ height: r.totalFailures === 0 ? '20px' : Math.max(3, Math.round(r.apfd * 20)) + 'px' }"
+            :title="'Run #' + (d.runs.length - i) + ': ' + (r.totalFailures > 0 ? r.totalFailures + ' failures · APFD ' + (r.apfd * 100).toFixed(0) + '%' : 'all passed')"
             @click="selectRun(i)"
           ></div>
         </div>
@@ -2314,16 +2378,16 @@ onMounted(initAll)
               'analytics__run-chip--compare': compareRunIdx === (d.runs.length - 1 - i),
             }"
             @click="handleRunChipClick(d.runs.length - 1 - i, $event)"
-            :title="fmtTime(r.timestamp) + ' — ' + r.totalTests + ' tests, ' + r.totalFailures + ' failures, APFD ' + (r.apfd * 100).toFixed(1) + '%\n⇧+click to compare with selected run'"
+            :title="fmtTime(r.timestamp) + ' — ' + r.totalTests + ' tests, ' + (r.totalFailures > 0 ? r.totalFailures + ' failures, APFD ' + (r.apfd * 100).toFixed(1) + '%' : 'all passed') + '\n⇧+click to compare with selected run'"
           >
             <div class="analytics__run-chip-row">
               <span style="font-size:.56rem;opacity:.6">#{{ i + 1 }}</span>
               <span v-if="r.totalFailures > 0" style="color:#f87171;font-weight:700;font-size:.6rem">{{ r.totalFailures }}✕</span>
               <span v-else style="color:#4ade80;font-size:.6rem">✓</span>
             </div>
-            <div style="font-size:.56rem;color:var(--text-muted);line-height:1;margin-bottom:1px">{{ (r.apfd * 100).toFixed(0) }}%</div>
+            <div style="font-size:.56rem;color:var(--text-muted);line-height:1;margin-bottom:1px">{{ r.totalFailures > 0 ? (r.apfd * 100).toFixed(0) + '%' : '✓' }}</div>
             <div style="font-size:.52rem;color:var(--text-sec);line-height:1;margin-bottom:1px;white-space:nowrap">{{ fmtRunChipTime(r.timestamp) }}</div>
-            <div class="analytics__run-chip-apfd" :style="{ background: r.apfd >= 0.7 ? 'var(--green)' : r.apfd >= 0.5 ? 'var(--yellow)' : 'var(--red)', width: Math.round(r.apfd * 100) + '%' }"></div>
+            <div class="analytics__run-chip-apfd" :style="{ background: r.totalFailures === 0 ? 'var(--green)' : r.apfd >= 0.7 ? 'var(--green)' : r.apfd >= 0.5 ? 'var(--yellow)' : 'var(--red)', width: r.totalFailures === 0 ? '100%' : Math.round(r.apfd * 100) + '%' }"></div>
           </button>
         </div>
 
@@ -2334,19 +2398,21 @@ onMounted(initAll)
             <span style="font-size:.82rem;font-weight:600;color:var(--text)">Run #{{ d.runs.length - selectedRunIdx! }} <span style="font-size:.62rem;color:var(--text-muted)">of {{ d.runs.length }}</span></span>
             <button @click="selectRun(Math.min(d.runs.length - 1, selectedRunIdx! + 1))" :disabled="selectedRunIdx === d.runs.length - 1" class="analytics__nav-btn" title="Next (newer) run (›)">›</button>
             <span style="font-size:.72rem;color:var(--text-sec)">{{ fmtTime(selectedRun.timestamp) }}</span>
-            <span class="badge" :style="{ background: selectedRun.totalFailures > 0 ? 'rgba(127,29,29,.4)' : 'rgba(20,83,45,.4)', color: selectedRun.totalFailures > 0 ? 'var(--red)' : 'var(--green)' }">
+            <span class="badge" :title="selectedRun.totalFailures > 0 ? selectedRun.totalFailures + ' test(s) failed in this run' : 'All tests passed in this run'" :style="{ background: selectedRun.totalFailures > 0 ? 'rgba(127,29,29,.4)' : 'rgba(20,83,45,.4)', color: selectedRun.totalFailures > 0 ? 'var(--red)' : 'var(--green)' }">
               {{ selectedRun.totalFailures > 0 ? selectedRun.totalFailures + ' failures' : 'all passed' }}
             </span>
-            <span style="font-size:.72rem;color:var(--text-sec)">APFD: <strong :style="{ color: selectedRun.apfd >= 0.7 ? 'var(--green)' : selectedRun.apfd >= 0.5 ? 'var(--yellow)' : 'var(--red)' }">{{ (selectedRun.apfd * 100).toFixed(1) }}%</strong>
-              <template v-if="selectedRunIdx! > 0">
+            <span style="font-size:.72rem;color:var(--text-sec)" title="APFD (Average Percentage of Faults Detected) — how early failures appeared in the ordering. Higher = better. N/A for all-pass runs.">APFD:
+              <strong v-if="selectedRun.totalFailures > 0" :style="{ color: selectedRun.apfd >= 0.7 ? 'var(--green)' : selectedRun.apfd >= 0.5 ? 'var(--yellow)' : 'var(--red)' }">{{ (selectedRun.apfd * 100).toFixed(1) }}%</strong>
+              <strong v-else style="color:var(--text-muted)" title="No failures in this run — APFD is not meaningful for all-pass runs">N/A</strong>
+              <template v-if="selectedRunIdx! > 0 && selectedRun.totalFailures > 0 && d.runs[selectedRunIdx! - 1].totalFailures > 0">
                 <span style="font-size:.6rem;margin-left:3px" :style="{ color: (selectedRun.apfd - d.runs[selectedRunIdx! - 1].apfd) > 0.01 ? 'var(--green)' : (selectedRun.apfd - d.runs[selectedRunIdx! - 1].apfd) < -0.01 ? 'var(--red)' : 'var(--text-muted)' }">
                   ({{ (selectedRun.apfd - d.runs[selectedRunIdx! - 1].apfd) > 0 ? '+' : '' }}{{ ((selectedRun.apfd - d.runs[selectedRunIdx! - 1].apfd) * 100).toFixed(1) }}pp vs prev)
                 </span>
               </template>
             </span>
-            <span style="font-size:.72rem;color:var(--text-sec)">{{ selectedRun.totalTests }} tests</span>
-            <span v-if="selectedRun.firstFailurePosition >= 0" style="font-size:.72rem;color:var(--text-sec)">First failure at position <strong style="color:var(--orange)">{{ selectedRun.firstFailurePosition + 1 }}</strong></span>
-            <button @click="selectedRunIdx = null" style="margin-left:auto;padding:2px 8px;font-size:.65rem;background:var(--border);color:var(--text-sec);border:1px solid var(--text-muted);border-radius:3px;cursor:pointer">✕ Close</button>
+            <span style="font-size:.72rem;color:var(--text-sec)" title="Number of tests executed in this run">{{ selectedRun.totalTests }} tests</span>
+            <span v-if="selectedRun.firstFailurePosition >= 0" style="font-size:.72rem;color:var(--text-sec)" title="The rank position of the first failure detected — lower means the failure was caught sooner. Position 1 = first test run.">First failure at position <strong style="color:var(--orange)">{{ selectedRun.firstFailurePosition + 1 }}</strong></span>
+            <button @click="selectedRunIdx = null" style="margin-left:auto;padding:2px 8px;font-size:.65rem;background:var(--border);color:var(--text-sec);border:1px solid var(--text-muted);border-radius:3px;cursor:pointer" title="Close run detail panel">✕ Close</button>
           </div>
           <!-- Run composition summary -->
           <div v-if="runComposition" class="run-comp-bar">
@@ -2383,7 +2449,7 @@ onMounted(initAll)
             <div class="run-diff__title">Changes vs Run #{{ d.runs.length - selectedRunIdx! + 1 }} (previous)</div>
             <!-- New failures -->
             <div v-if="runDiff.newFailures.length" class="run-diff__group">
-              <div class="run-diff__group-hdr run-diff__group-hdr--fail" @click="runDiffOpen.failures = !runDiffOpen.failures">
+              <div class="run-diff__group-hdr run-diff__group-hdr--fail" @click="runDiffOpen.failures = !runDiffOpen.failures" :title="runDiff.newFailures.length + ' test(s) that passed last run but failed this run — click to expand'">
                 <span>✕ {{ runDiff.newFailures.length }} new failure{{ runDiff.newFailures.length > 1 ? 's' : '' }}</span>
                 <span class="run-diff__toggle">{{ runDiffOpen.failures ? '▲' : '▼' }}</span>
               </div>
@@ -2398,7 +2464,7 @@ onMounted(initAll)
             </div>
             <!-- Recoveries -->
             <div v-if="runDiff.recoveries.length" class="run-diff__group">
-              <div class="run-diff__group-hdr run-diff__group-hdr--pass" @click="runDiffOpen.recoveries = !runDiffOpen.recoveries">
+              <div class="run-diff__group-hdr run-diff__group-hdr--pass" @click="runDiffOpen.recoveries = !runDiffOpen.recoveries" :title="runDiff.recoveries.length + ' test(s) that failed last run but passed this run — click to expand'">
                 <span>✓ {{ runDiff.recoveries.length }} recover{{ runDiff.recoveries.length > 1 ? 'ies' : 'y' }}</span>
                 <span class="run-diff__toggle">{{ runDiffOpen.recoveries ? '▲' : '▼' }}</span>
               </div>
@@ -2413,7 +2479,7 @@ onMounted(initAll)
             </div>
             <!-- New tests -->
             <div v-if="runDiff.newTests.length" class="run-diff__group">
-              <div class="run-diff__group-hdr run-diff__group-hdr--new" @click="runDiffOpen.new = !runDiffOpen.new">
+              <div class="run-diff__group-hdr run-diff__group-hdr--new" @click="runDiffOpen.new = !runDiffOpen.new" :title="runDiff.newTests.length + ' test(s) that appear for the first time in this run — click to expand'">
                 <span>+ {{ runDiff.newTests.length }} new test{{ runDiff.newTests.length > 1 ? 's' : '' }}</span>
                 <span class="run-diff__toggle">{{ runDiffOpen.new ? '▲' : '▼' }}</span>
               </div>
@@ -2428,7 +2494,7 @@ onMounted(initAll)
             </div>
             <!-- Rank changes -->
             <div v-if="runDiff.rankChanges.length" class="run-diff__group">
-              <div class="run-diff__group-hdr run-diff__group-hdr--rank" @click="runDiffOpen.ranks = !runDiffOpen.ranks">
+              <div class="run-diff__group-hdr run-diff__group-hdr--rank" @click="runDiffOpen.ranks = !runDiffOpen.ranks" :title="runDiff.rankChanges.length + ' test(s) whose priority rank shifted by 5 or more vs the previous run — click to expand'">
                 <span>↕ {{ runDiff.rankChanges.length }} rank shift{{ runDiff.rankChanges.length > 1 ? 's' : '' }} ≥5</span>
                 <span class="run-diff__toggle">{{ runDiffOpen.ranks ? '▲' : '▼' }}</span>
               </div>
@@ -2451,7 +2517,7 @@ onMounted(initAll)
             <button
               class="analytics__toggle-btn"
               :class="{ 'analytics__toggle-btn--active': showFailuresOnly }"
-              @click="showFailuresOnly = !showFailuresOnly"
+              @click="showFailuresOnly = !showFailuresOnly; runDetailPage = 0"
               :title="showFailuresOnly ? 'Showing only failed tests — click to show all' : 'Click to show only failed tests'"
             >{{ showFailuresOnly ? '✕ failures only (' + selectedRun.totalFailures + ')' : 'Show failures only' }}</button>
             <input
@@ -2468,30 +2534,31 @@ onMounted(initAll)
               <button v-for="sz in RUN_DETAIL_PAGE_SIZES" :key="sz"
                 class="analytics__page-sz-btn"
                 :class="{ 'analytics__page-sz-btn--active': runDetailPageSize === sz }"
+                :title="sz === 0 ? 'Show all tests on one page' : 'Show ' + sz + ' tests per page'"
                 @click="runDetailPageSize = sz; runDetailPage = 0"
               >{{ sz === 0 ? 'All' : sz }}</button>
             </div>
           </div>
           <!-- Pagination controls -->
           <div v-if="runDetailPageCount > 1" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-            <button class="analytics__page-btn" @click="runDetailPage = 0" :disabled="runDetailPage === 0">«</button>
-            <button class="analytics__page-btn" @click="runDetailPage--" :disabled="runDetailPage === 0">‹</button>
+            <button class="analytics__page-btn" @click="runDetailPage = 0" :disabled="runDetailPage === 0" title="First page">«</button>
+            <button class="analytics__page-btn" @click="runDetailPage--" :disabled="runDetailPage === 0" title="Previous page">‹</button>
             <span style="font-size:.62rem;color:var(--text-sec)">{{ runDetailPage + 1 }} / {{ runDetailPageCount }}</span>
-            <button class="analytics__page-btn" @click="runDetailPage++" :disabled="runDetailPage >= runDetailPageCount - 1">›</button>
-            <button class="analytics__page-btn" @click="runDetailPage = runDetailPageCount - 1" :disabled="runDetailPage >= runDetailPageCount - 1">»</button>
+            <button class="analytics__page-btn" @click="runDetailPage++" :disabled="runDetailPage >= runDetailPageCount - 1" title="Next page">›</button>
+            <button class="analytics__page-btn" @click="runDetailPage = runDetailPageCount - 1" :disabled="runDetailPage >= runDetailPageCount - 1" title="Last page">»</button>
           </div>
           <div style="overflow-x:auto;max-height:300px;overflow-y:auto">
             <table>
               <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1">
                 <tr>
-                  <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)">Rank</th>
-                  <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec)">Test</th>
+                  <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Priority rank in this run — lower = executed earlier">Rank</th>
+                  <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec)" title="Test class name — click to navigate to test detail in Tests tab">Test</th>
                   <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Score at time of this run">Score</th>
                   <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec);min-width:50px" title="Score composition — fail(red) dep(blue) change(yellow) speed(green) static(purple)">Composition</th>
                   <th v-if="d.runs.length >= 3" style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec);min-width:40px" title="Speed ratio trend across runs — line above midpoint = faster than median, below = slower. Orange = getting slower, green = getting faster.">Speed</th>
                   <th v-if="selectedRunIdx! > 0" style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Score change vs previous (older) run">Δ Score</th>
-                  <th style="padding:3px 8px;text-align:center;font-size:.68rem;color:var(--text-sec)">Result</th>
-                  <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec)">Flags</th>
+                  <th style="padding:3px 8px;text-align:center;font-size:.68rem;color:var(--text-sec)" title="Pass or fail result in this specific run. ✓ = passed, ✕ = failed.">Result</th>
+                  <th style="padding:3px 8px;text-align:left;font-size:.68rem;color:var(--text-sec)" title="Status badges active in this run: failing, flaky, changed, new, slow, dep-overlap, etc.">Flags</th>
                   <th style="padding:3px 8px;text-align:right;font-size:.68rem;color:var(--text-sec)" title="Compare to current rank">vs Current</th>
                 </tr>
               </thead>
@@ -2516,8 +2583,8 @@ onMounted(initAll)
                     v-html="speedTrendSvg(o.testClass) ?? ''"></td>
                   <td v-if="selectedRunIdx! > 0" style="padding:2px 8px;text-align:right;font-size:.68rem">
                     <template v-if="prevRunScoreMap.has(o.testClass)">
-                      <span :style="{ color: (o.score - prevRunScoreMap.get(o.testClass)!) > 0 ? 'var(--green)' : (o.score - prevRunScoreMap.get(o.testClass)!) < 0 ? 'var(--red)' : 'var(--text-muted)' }" :title="'Score change: ' + prevRunScoreMap.get(o.testClass) + ' → ' + o.score">
-                        {{ (o.score - prevRunScoreMap.get(o.testClass)!) > 0 ? '+' : '' }}{{ o.score - prevRunScoreMap.get(o.testClass)! }}
+                      <span :style="{ color: (o.score - prevRunScoreMap.get(o.testClass)!) > 0 ? 'var(--green)' : (o.score - prevRunScoreMap.get(o.testClass)!) < 0 ? 'var(--red)' : 'var(--text-muted)' }" :title="'Score change: ' + prevRunScoreMap.get(o.testClass)!.toFixed(2) + ' → ' + o.score.toFixed(2)">
+                        {{ (o.score - prevRunScoreMap.get(o.testClass)!) > 0 ? '+' : '' }}{{ (o.score - prevRunScoreMap.get(o.testClass)!).toFixed(2) }}
                       </span>
                     </template>
                     <span v-else style="color:var(--text-muted);font-size:.6rem" title="Not in previous run">new</span>
@@ -2536,8 +2603,8 @@ onMounted(initAll)
                   </td>
                   <td style="padding:2px 8px;text-align:right;font-size:.68rem">
                   <template v-if="d.testsByName.value.get(o.testClass)">
-                      <span :style="{ color: d.testsByName.value.get(o.testClass)!.rank - (idx + 1) < -3 ? 'var(--green)' : d.testsByName.value.get(o.testClass)!.rank - (idx + 1) > 3 ? 'var(--red)' : 'var(--text-muted)' }">
-                        {{ d.testsByName.value.get(o.testClass)!.rank - (idx + 1) > 0 ? '↓' + (d.testsByName.value.get(o.testClass)!.rank - (idx + 1)) : d.testsByName.value.get(o.testClass)!.rank - (idx + 1) < 0 ? '↑' + Math.abs(d.testsByName.value.get(o.testClass)!.rank - (idx + 1)) : '=' }}
+                      <span :style="{ color: d.testsByName.value.get(o.testClass)!.rank - (runDetailPage * (runDetailPageSize || filteredRunOutcomes.length) + idx + 1) < -3 ? 'var(--green)' : d.testsByName.value.get(o.testClass)!.rank - (runDetailPage * (runDetailPageSize || filteredRunOutcomes.length) + idx + 1) > 3 ? 'var(--red)' : 'var(--text-muted)' }" :title="'Historic rank in this run: #' + (runDetailPage * (runDetailPageSize || filteredRunOutcomes.length) + idx + 1) + ' · Current rank: #' + d.testsByName.value.get(o.testClass)!.rank">
+                        {{ (() => { const delta = d.testsByName.value.get(o.testClass)!.rank - (runDetailPage * (runDetailPageSize || filteredRunOutcomes.length) + idx + 1); return delta > 0 ? '↓' + delta : delta < 0 ? '↑' + Math.abs(delta) : '=' })() }}
                       </span>
                     </template>
                   </td>
@@ -2550,29 +2617,36 @@ onMounted(initAll)
         <!-- Two-run comparison panel -->
         <div v-if="twoRunComparison" class="two-run-cmp card" style="margin-top:8px">
           <div class="two-run-cmp__header">
-            <span class="two-run-cmp__title">Comparing {{ twoRunComparison.labelA }} vs {{ twoRunComparison.labelB }}</span>
+            <span class="two-run-cmp__title" title="Side-by-side comparison of two runs. Shift+click a different run chip to change the comparison target.">Comparing {{ twoRunComparison.labelA }} vs {{ twoRunComparison.labelB }}</span>
             <div class="two-run-cmp__kpis">
-              <div class="kpi two-run-cmp__kpi">
+              <div class="kpi two-run-cmp__kpi" :title="twoRunComparison.apfdDelta === null ? 'APFD Δ not available — one or both runs had no failures' : 'APFD change: ' + twoRunComparison.labelA + ' vs ' + twoRunComparison.labelB + '. Positive = earlier run detected failures sooner (better ordering).'">
                 <div class="two-run-cmp__kpi-label">APFD Δ</div>
-                <div class="two-run-cmp__kpi-val" :style="{ color: twoRunComparison.apfdDelta > 0.5 ? 'var(--green)' : twoRunComparison.apfdDelta < -0.5 ? 'var(--red)' : 'var(--text-muted)' }">
-                  {{ twoRunComparison.apfdDelta > 0 ? '+' : '' }}{{ twoRunComparison.apfdDelta.toFixed(1) }}pp
+                <div class="two-run-cmp__kpi-val"
+                  :style="{ color: twoRunComparison.apfdDelta === null ? 'var(--text-muted)' : twoRunComparison.apfdDelta > 0.5 ? 'var(--green)' : twoRunComparison.apfdDelta < -0.5 ? 'var(--red)' : 'var(--text-muted)' }"
+                >
+                  <template v-if="twoRunComparison.apfdDelta !== null">{{ twoRunComparison.apfdDelta > 0 ? '+' : '' }}{{ twoRunComparison.apfdDelta.toFixed(1) }}pp</template>
+                  <template v-else>N/A</template>
                 </div>
               </div>
-              <div class="kpi two-run-cmp__kpi" v-if="twoRunComparison.newFails > 0">
+              <div class="kpi two-run-cmp__kpi" v-if="twoRunComparison.newFails > 0" :title="twoRunComparison.newFails + ' test(s) that passed in ' + twoRunComparison.labelB + ' but failed in ' + twoRunComparison.labelA">
                 <div class="two-run-cmp__kpi-label">New Failures</div>
                 <div class="two-run-cmp__kpi-val" style="color:var(--red)">{{ twoRunComparison.newFails }}</div>
               </div>
-              <div class="kpi two-run-cmp__kpi" v-if="twoRunComparison.recovered > 0">
+              <div class="kpi two-run-cmp__kpi" v-if="twoRunComparison.recovered > 0" :title="twoRunComparison.recovered + ' test(s) that failed in ' + twoRunComparison.labelB + ' but passed in ' + twoRunComparison.labelA">
                 <div class="two-run-cmp__kpi-label">Recovered</div>
                 <div class="two-run-cmp__kpi-val" style="color:var(--green)">{{ twoRunComparison.recovered }}</div>
               </div>
-              <div class="kpi two-run-cmp__kpi">
+              <div class="kpi two-run-cmp__kpi" :title="'APFD for ' + twoRunComparison.labelA + (twoRunComparison.runA.totalFailures === 0 ? ' — no failures, APFD not meaningful' : ' — how early failures were detected (higher = better)')">
                 <div class="two-run-cmp__kpi-label">{{ twoRunComparison.labelA }} APFD</div>
-                <div class="two-run-cmp__kpi-val">{{ (twoRunComparison.runA.apfd * 100).toFixed(1) }}%</div>
+                <div class="two-run-cmp__kpi-val"
+                  :style="{ color: twoRunComparison.runA.totalFailures === 0 ? 'var(--text-muted)' : undefined }"
+                >{{ twoRunComparison.runA.totalFailures > 0 ? (twoRunComparison.runA.apfd * 100).toFixed(1) + '%' : 'N/A' }}</div>
               </div>
-              <div class="kpi two-run-cmp__kpi">
+              <div class="kpi two-run-cmp__kpi" :title="'APFD for ' + twoRunComparison.labelB + (twoRunComparison.runB.totalFailures === 0 ? ' — no failures, APFD not meaningful' : ' — how early failures were detected (higher = better)')">
                 <div class="two-run-cmp__kpi-label">{{ twoRunComparison.labelB }} APFD</div>
-                <div class="two-run-cmp__kpi-val">{{ (twoRunComparison.runB.apfd * 100).toFixed(1) }}%</div>
+                <div class="two-run-cmp__kpi-val"
+                  :style="{ color: twoRunComparison.runB.totalFailures === 0 ? 'var(--text-muted)' : undefined }"
+                >{{ twoRunComparison.runB.totalFailures > 0 ? (twoRunComparison.runB.apfd * 100).toFixed(1) + '%' : 'N/A' }}</div>
               </div>
             </div>
             <button class="two-run-cmp__close" @click="compareRunIdx = null" title="Close comparison">✕</button>
@@ -2581,12 +2655,12 @@ onMounted(initAll)
             <table style="width:100%;border-collapse:collapse">
               <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1">
                 <tr>
-                  <th class="two-run-cmp__th">Status</th>
-                  <th class="two-run-cmp__th two-run-cmp__th--name">Test</th>
-                  <th class="two-run-cmp__th two-run-cmp__th--r" :title="twoRunComparison.labelA + ' rank'">Rank {{ twoRunComparison.labelA }}</th>
-                  <th class="two-run-cmp__th two-run-cmp__th--r" :title="twoRunComparison.labelB + ' rank'">Rank {{ twoRunComparison.labelB }}</th>
-                  <th class="two-run-cmp__th two-run-cmp__th--r" title="Rank change (positive = moved earlier in run order)">Δ Rank</th>
-                  <th class="two-run-cmp__th two-run-cmp__th--r" title="Score delta">Δ Score</th>
+                  <th class="two-run-cmp__th" title="Failure status change between the two runs: 'new fail' = passed before, failed now; 'recovered' = failed before, passed now; 'fail' = failed in both; blank = passed in both.">Status</th>
+                  <th class="two-run-cmp__th two-run-cmp__th--name" title="Test class name — click row to inspect in Tests tab">Test</th>
+                  <th class="two-run-cmp__th two-run-cmp__th--r" :title="'Priority rank in ' + twoRunComparison.labelA + ' — lower number = runs earlier'">Rank {{ twoRunComparison.labelA }}</th>
+                  <th class="two-run-cmp__th two-run-cmp__th--r" :title="'Priority rank in ' + twoRunComparison.labelB + ' — lower number = runs earlier'">Rank {{ twoRunComparison.labelB }}</th>
+                  <th class="two-run-cmp__th two-run-cmp__th--r" title="Rank change from Run B to Run A. ↑ green = moved earlier (improved), ↓ red = moved later (degraded). Based on rank number difference.">Δ Rank</th>
+                  <th class="two-run-cmp__th two-run-cmp__th--r" title="Score change from Run B to Run A. Positive = higher priority score in the selected run.">Δ Score</th>
                 </tr>
               </thead>
               <tbody>
@@ -2595,8 +2669,9 @@ onMounted(initAll)
                   :key="row.name"
                   class="two-run-cmp__row"
                   :class="'two-run-cmp__row--' + row.status"
-                  @click="d.navigateToTestFromCov(row.name)"
-                  :title="row.name + '\n\nClick to inspect test'"
+                  @click="d.hasTest(row.name) && d.navigateToTestFromCov(row.name)"
+                  :style="{ cursor: d.hasTest(row.name) ? 'pointer' : 'default' }"
+                  :title="row.name + (row.rankA !== null && row.rankB !== null ? '\n' + twoRunComparison.labelA + ': rank #' + row.rankA + (row.scoreA !== null ? ', score ' + row.scoreA.toFixed(2) : '') + '\n' + twoRunComparison.labelB + ': rank #' + row.rankB + (row.scoreB !== null ? ', score ' + row.scoreB.toFixed(2) : '') : '') + (d.hasTest(row.name) ? '\n\nClick to inspect in Tests tab' : '')"
                 >
                   <td class="two-run-cmp__td">
                     <span class="two-run-cmp__status-badge" :class="'two-run-cmp__status-badge--' + row.status">
@@ -2622,8 +2697,9 @@ onMounted(initAll)
 
       <!-- Run comparison -->
       <div v-if="d.runDiff.value.length" style="margin-bottom:14px">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap" title="Compares the latest run to the previous run: which tests changed rank, which new failures appeared, and which were fixed. Large rank shifts indicate the scoring inputs changed between runs.">
           Last Run Comparison <span style="font-size:.65rem;color:var(--text-muted);font-weight:400">— vs previous run</span>
+          <span style="font-size:.62rem;color:var(--text-muted);font-weight:400;margin-left:4px" title="Shows which tests changed rank between the last two runs. Large rank changes suggest the scoring inputs changed — new deps, duration shift, or a recent failure.">— rank & score deltas between run N-1 and run N</span>
           <button
             v-if="d.runDiff.value.filter(e => e.status === 'absent').length > 0"
             class="analytics__toggle-btn"
@@ -2633,23 +2709,23 @@ onMounted(initAll)
           >{{ showAbsent ? '✕ hide absent' : '+ show absent (' + d.runDiff.value.filter(e => e.status === 'absent').length + ')' }}</button>
         </h3>
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-          <div class="kpi" style="padding:5px 10px">
+          <div class="kpi" style="padding:5px 10px" title="Tests that passed in the previous run but failed in the latest run">
             <div style="font-size:.58rem;color:var(--text-sec)">Newly Failed</div>
             <div style="font-size:.9rem;font-weight:700;color:var(--red)">{{ d.runDiff.value.filter(e => e.status === 'newly-failed').length }}</div>
           </div>
-          <div class="kpi" style="padding:5px 10px">
+          <div class="kpi" style="padding:5px 10px" title="Tests that failed in the previous run but passed in the latest run — a recovery">
             <div style="font-size:.58rem;color:var(--text-sec)">Recovered</div>
             <div style="font-size:.9rem;font-weight:700;color:var(--green)">{{ d.runDiff.value.filter(e => e.status === 'recovered').length }}</div>
           </div>
-          <div class="kpi" style="padding:5px 10px">
+          <div class="kpi" style="padding:5px 10px" title="Tests that appear for the first time in the latest run (not present in previous)">
             <div style="font-size:.58rem;color:var(--text-sec)">New Tests</div>
             <div style="font-size:.9rem;font-weight:700;color:var(--cyan)">{{ d.runDiff.value.filter(e => e.status === 'new').length }}</div>
           </div>
-          <div class="kpi" style="padding:5px 10px">
+          <div class="kpi" style="padding:5px 10px" title="Tests whose priority rank improved (moved earlier) in the latest run">
             <div style="font-size:.58rem;color:var(--text-sec)">Improved</div>
             <div style="font-size:.9rem;font-weight:700;color:var(--green)">{{ d.runDiff.value.filter(e => e.status === 'improved').length }}</div>
           </div>
-          <div class="kpi" style="padding:5px 10px">
+          <div class="kpi" style="padding:5px 10px" title="Tests whose priority rank regressed (moved later) in the latest run">
             <div style="font-size:.58rem;color:var(--text-sec)">Regressed</div>
             <div style="font-size:.9rem;font-weight:700;color:var(--orange)">{{ d.runDiff.value.filter(e => e.status === 'regressed').length }}</div>
           </div>
@@ -2658,11 +2734,11 @@ onMounted(initAll)
           <table>
             <thead style="position:sticky;top:0;background:var(--bg-base);z-index:1">
               <tr>
-                <th style="padding:4px 8px;text-align:left">Test</th>
-                <th style="padding:4px 8px;text-align:left">Status</th>
-                <th style="padding:4px 8px;text-align:right">Prev Rank</th>
-                <th style="padding:4px 8px;text-align:right">Curr Rank</th>
-                <th style="padding:4px 8px;text-align:right">Shift</th>
+                <th style="padding:4px 8px;text-align:left" title="Test class name">Test</th>
+                <th style="padding:4px 8px;text-align:left" title="How the rank changed: improved (moved earlier), regressed (moved later), new (first appearance), absent (missing in latest run), or stable.">Status</th>
+                <th style="padding:4px 8px;text-align:right" title="Rank position in the previous (N-1) run">Prev Rank</th>
+                <th style="padding:4px 8px;text-align:right" title="Rank position in the latest (N) run">Curr Rank</th>
+                <th style="padding:4px 8px;text-align:right" title="Rank delta: negative = moved earlier (improved), positive = moved later (regressed)">Shift</th>
               </tr>
             </thead>
             <tbody>
@@ -2672,7 +2748,7 @@ onMounted(initAll)
                 :title="e.name + ' — click to go to Tests tab'"
               >
                 <td style="padding:3px 8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="e.name"
-                  @mouseenter="classHover.show(e.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()">{{ dn(e.name) }}</td>
+                  @mouseenter="testHover.show(e.name, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()">{{ dn(e.name) }}</td>
                 <td style="padding:3px 8px">
                   <span class="badge" :class="{
                     'analytics__diff--fail': e.status === 'newly-failed',
@@ -2696,22 +2772,30 @@ onMounted(initAll)
 
       <!-- Coverage -->
       <div v-if="d.hasCoverage" id="analytics-coverage">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px">Coverage</h3>
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:8px"
+          title="Coverage data shows which source classes each test exercises. Collected by test-order instrumentation (METHOD or MEMBER mode). Used to improve dep-overlap scoring and to identify untested code.">
+          Coverage
+          <span style="font-size:.6rem;font-weight:400;color:var(--text-muted);margin-left:6px">— click any tile to inspect · search to filter · ⚠ = uncovered</span>
+        </h3>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
-          <div class="kpi analytics__cov-kpi">
+          <div class="kpi analytics__cov-kpi"
+            :title="'Total source classes in the project (from bytecode analysis).\n' + (d.dd.coverage?.totalSourceClasses ?? 0) + ' classes total in the project.\n' + (d.dd.coverage?.classes?.length ?? 0) + ' were loaded by at least one test (see Class Coverage).\nClasses never loaded by any test appear as uncovered in the treemap.'">
             <div class="analytics__cov-kpi-label">Source Classes</div>
             <div class="analytics__cov-kpi-value analytics__cov-kpi-value--accent">{{ d.dd.coverage?.totalSourceClasses }}</div>
           </div>
-          <div class="kpi analytics__cov-kpi">
+          <div class="kpi analytics__cov-kpi"
+            :title="'Number of distinct packages containing tracked source classes.\n' + d.covPackages.value.length + ' package' + (d.covPackages.value.length !== 1 ? 's' : '') + ': ' + d.covPackages.value.slice(0, 5).join(', ') + (d.covPackages.value.length > 5 ? '…' : '')">
             <div class="analytics__cov-kpi-label">Packages</div>
             <div class="analytics__cov-kpi-value analytics__cov-kpi-value--accent">{{ d.covPackages.value.length }}</div>
           </div>
-          <div class="kpi analytics__cov-kpi">
+          <div class="kpi analytics__cov-kpi"
+            :title="'Average number of tests that exercise each source class.\nHigher = more redundant coverage. Lower = each test is more uniquely responsible.\nA value near 1 means most classes are covered by exactly one test (fragile).\n\n<2 = low redundancy (fragile) · 2-5 = healthy · >5 = potentially over-tested'">
             <div class="analytics__cov-kpi-label">Avg Tests/Class</div>
-            <div class="analytics__cov-kpi-value" style="color:var(--green)">{{ d.covAvgTests.value }}</div>
+            <div class="analytics__cov-kpi-value" :style="{ color: d.covAvgTests.value < 2 ? 'var(--orange)' : d.covAvgTests.value <= 5 ? 'var(--green)' : 'var(--yellow)' }">{{ d.covAvgTests.value }}</div>
           </div>
-          <div class="kpi analytics__cov-kpi" style="min-width:160px">
-            <div class="analytics__cov-kpi-label">Overall Coverage</div>
+          <div class="kpi analytics__cov-kpi" style="min-width:160px"
+            :title="'Fraction of tracked source classes exercised by at least one test.\n' + d.covPercent.value + '% = ' + d.dd.coverage?.classes?.filter(c => c.testCount > 0).length + '/' + d.dd.coverage?.totalSourceClasses + ' classes covered.\n≥80% = good · 50–80% = needs attention · <50% = high risk'">
+            <div class="analytics__cov-kpi-label">Class Coverage</div>
             <div style="display:flex;align-items:center;gap:6px">
               <div class="analytics__progress-bar">
                 <div class="analytics__progress-fill" :class="d.covPercent.value >= 80 ? 'analytics__progress-fill--green' : d.covPercent.value >= 50 ? 'analytics__progress-fill--yellow' : 'analytics__progress-fill--red'" :style="{ width: d.covPercent.value + '%' }"></div>
@@ -2719,7 +2803,8 @@ onMounted(initAll)
               <span class="analytics__pct" :class="d.covPercent.value >= 80 ? 'analytics__pct--green' : d.covPercent.value >= 50 ? 'analytics__pct--yellow' : 'analytics__pct--red'">{{ d.covPercent.value }}%</span>
             </div>
           </div>
-          <div v-if="d.hasMethodCoverage.value" class="kpi analytics__cov-kpi" style="min-width:160px" title="Fraction of tracked methods exercised by at least one test">
+          <div v-if="d.hasMethodCoverage.value" class="kpi analytics__cov-kpi" style="min-width:160px"
+            :title="'Fraction of tracked methods exercised by at least one test.\nRequires METHOD or MEMBER instrumentation mode.\n≥80% = good · 50–80% = needs attention · <50% = high risk'">
             <div class="analytics__cov-kpi-label">Method Coverage</div>
             <div style="display:flex;align-items:center;gap:6px">
               <div class="analytics__progress-bar">
@@ -2733,13 +2818,20 @@ onMounted(initAll)
         <!-- Selection coverage -->
         <div v-if="d.selectionCoverage.value" class="card" style="margin-bottom:10px;padding:8px 12px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <span style="font-size:.72rem;color:var(--text-sec);font-weight:600">Selection Coverage</span>
+          <span style="font-size:.72rem;color:var(--text-sec);font-weight:600"
+            title="Fraction of instrumentation-covered source classes exercised by the selected test(s)/method(s). Denominator = classes that were actually loaded during any run (shown in the treemap). Use Ctrl+click in the sidebar to multi-select tests and see their combined coverage here."
+          >Selection Coverage</span>
             <span style="font-size:.68rem;color:var(--text-muted)">{{ d.selectedTests.value.size }} test{{ d.selectedTests.value.size === 1 ? '' : 's' }}<span v-if="d.selectedMethods.value.size"> · {{ d.selectedMethods.value.size }} method{{ d.selectedMethods.value.size === 1 ? '' : 's' }}</span></span>
             <div class="analytics__progress-bar" style="flex:1;min-width:100px">
               <div class="analytics__progress-fill" :style="{ width: d.selectionCoverage.value.percent + '%', background: 'var(--accent)' }"></div>
             </div>
             <span style="font-size:.72rem;font-weight:700;color:var(--accent-light)">{{ d.selectionCoverage.value.percent }}%</span>
-            <span style="font-size:.68rem;color:var(--text-sec)">({{ d.selectionCoverage.value.covered }}/{{ d.selectionCoverage.value.total }} classes)</span>
+            <span style="font-size:.68rem;color:var(--text-sec)" :title="'of ' + d.selectionCoverage.value.total + ' instrumentation-covered classes'">({{ d.selectionCoverage.value.covered }}/{{ d.selectionCoverage.value.total }} covered classes)</span>
+            <span v-if="d.selectionCoverage.value.covered === 0 && d.selectionCoverage.value.total > 0"
+                  style="font-size:.62rem;color:var(--text-muted);font-style:italic"
+                  title="This test's dep graph entries don't overlap with any instrumentation-covered class. The test may cover classes outside the instrumentation scope, or use class-level isolation.">
+              — no instrumented classes in dep graph
+            </span>
             <span v-if="selectionExclusiveLoss && selectionExclusiveLoss > 0"
                   style="font-size:.68rem;color:var(--red);font-weight:600"
                   :title="'These classes have no other tests covering them. Removing the selection would leave them with zero coverage.'">
@@ -2748,14 +2840,15 @@ onMounted(initAll)
           </div>
         </div>
 
-        <!-- Treemap -->
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+        <!-- Treemap toolbar -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
           <div class="analytics__search-wrap">
             <input
               :value="d.covSearchQ.value"
               @input="d.covSearchQ.value = ($event.target as HTMLInputElement).value"
               placeholder="Search classes…"
               class="analytics__search"
+              title="Filter treemap by class name substring. Matching classes are highlighted; others fade out. Package clicks also set this filter."
             />
             <button v-if="d.covSearchQ.value" class="analytics__search-clear" @click="d.covSearchQ.value = ''" title="Clear search">×</button>
           </div>
@@ -2764,25 +2857,152 @@ onMounted(initAll)
             class="analytics__cov-filter-btn"
             :class="{ 'analytics__cov-filter-btn--active': d.covSearchQ.value === '__uncovered__' }"
             @click="d.covSearchQ.value = d.covSearchQ.value === '__uncovered__' ? '' : '__uncovered__'"
-            :title="covUncoveredCount + ' classes with zero test coverage'"
+            :title="covUncoveredCount + ' source classes have zero test coverage — no test ever loaded them.\nClick to highlight in treemap.'"
           >⚠ {{ covUncoveredCount }} uncovered</button>
+          <button
+            v-if="covUncoveredCount > 0"
+            class="analytics__cov-filter-btn"
+            :class="{ 'analytics__cov-filter-btn--active': uncoveredExpanded }"
+            @click="uncoveredExpanded = !uncoveredExpanded"
+            :title="uncoveredExpanded ? 'Hide list of uncovered classes' : 'Show list of ' + covUncoveredCount + ' uncovered classes by name'"
+          >{{ uncoveredExpanded ? '▾ hide' : '▸ list' }}</button>
           <span v-if="d.covSearchQ.value && d.covSearchQ.value !== '__uncovered__'" style="font-size:.65rem;color:var(--text-muted)">{{ d.filteredCovClasses.value.length }} matches</span>
-          <!-- Color legend -->
-          <div style="display:flex;align-items:center;gap:5px;margin-left:auto;flex-wrap:wrap">
-            <template v-if="d.hasMethodCoverage.value">
-              <span style="font-size:.58rem;color:var(--text-muted)">0% methods</span>
-              <div class="analytics__treemap-legend"></div>
-              <span style="font-size:.58rem;color:var(--text-muted)">100% covered</span>
-              <span style="font-size:.55rem;color:var(--text-muted);margin-left:4px">· brightness = test count</span>
-            </template>
-            <template v-else>
-              <span style="font-size:.58rem;color:var(--text-muted)">0 tests</span>
-              <div class="analytics__treemap-legend analytics__treemap-legend--count"></div>
-              <span style="font-size:.58rem;color:var(--text-muted)">many tests</span>
-            </template>
+          <!-- Color legend (inline, right-aligned) -->
+          <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+            <!-- Sort toggle -->
+            <div v-if="d.hasMethodCoverage.value" style="display:flex;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+              <button
+                @click="covTreemapSort = 'tests'"
+                :class="['analytics__cov-sort-btn', covTreemapSort === 'tests' ? 'analytics__cov-sort-btn--active' : '']"
+                title="Size tiles by number of tests covering each class"
+              ># tests</button>
+              <button
+                @click="covTreemapSort = 'coverage'"
+                :class="['analytics__cov-sort-btn', covTreemapSort === 'coverage' ? 'analytics__cov-sort-btn--active' : '']"
+                title="Size tiles by method coverage percentage"
+              >% cov</button>
+            </div>
+            <!-- Legend -->
+            <div style="display:flex;align-items:center;gap:4px"
+              :title="d.hasMethodCoverage.value ? 'Tile color: red = 0% methods covered, green = 100% methods covered. Brightness = number of tests covering this class.' : 'Tile color intensity = number of tests covering this class. Darker = fewer tests. Click a tile to inspect.'"
+            >
+              <template v-if="d.hasMethodCoverage.value">
+                <span style="font-size:.58rem;color:var(--text-muted)">0% mth</span>
+                <div class="analytics__treemap-legend"></div>
+                <span style="font-size:.58rem;color:var(--text-muted)">100%</span>
+                <span style="font-size:.55rem;color:var(--text-muted)">· brightness=tests</span>
+              </template>
+              <template v-else>
+                <span style="font-size:.58rem;color:var(--text-muted)">0 tests</span>
+                <div class="analytics__treemap-legend analytics__treemap-legend--count"></div>
+                <span style="font-size:.58rem;color:var(--text-muted)">many</span>
+              </template>
+            </div>
           </div>
         </div>
-        <div id="cov-treemap" style="background:var(--bg-card);border-radius:var(--radius);overflow:hidden;height:420px;position:relative"></div>
+        <div id="cov-treemap" style="background:var(--bg-card);border-radius:var(--radius);overflow:hidden;height:320px;position:relative"></div>
+        <div v-if="!d.covSelectedClass.value" style="font-size:.62rem;color:var(--text-muted);margin-top:4px;text-align:center">
+          ↑ Click any tile to inspect which tests cover that class · hover for quick summary
+        </div>
+
+        <!-- Class detail panel — appears immediately below treemap when a tile is selected -->
+        <Transition name="fade">
+        <div v-if="d.covSelectedClass.value" class="detail-panel cov-detail-panel" style="margin-top:8px">
+          <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span style="font-size:.82rem;font-weight:700;color:var(--text)"
+                  @mouseenter="classHover.show(d.covSelectedClass.value!.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()"
+                >{{ d.covSelectedClass.value.name.split('.').pop() }}</span>
+                <span style="font-size:.68rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px" :title="d.covSelectedClass.value.name">{{ d.covSelectedClass.value.name }}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:3px;flex-wrap:wrap">
+                <span style="font-size:.68rem;color:var(--text-sec)">
+                  <span style="color:var(--accent-light);font-weight:600">{{ d.covSelectedClass.value.testCount }}</span> test{{ d.covSelectedClass.value.testCount === 1 ? '' : 's' }} cover this class
+                </span>
+                <span v-if="d.covSelectedClass.value.totalMembers > 0" style="font-size:.68rem;color:var(--text-sec)">
+                  · <span :style="{ color: (d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers) >= 0.8 ? 'var(--green)' : (d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers) >= 0.5 ? 'var(--yellow)' : 'var(--red)', fontWeight: 600 }">{{ Math.round(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers*100) }}%</span>
+                  method coverage ({{ d.covSelectedClass.value.coveredMembers }}/{{ d.covSelectedClass.value.totalMembers }})
+                </span>
+              </div>
+            </div>
+            <button @click="d.covSelectedClass.value = null" class="cov-detail-panel__close" title="Close panel (Esc)">✕</button>
+          </div>
+          <!-- Method coverage bar -->
+          <div v-if="d.covSelectedClass.value.totalMembers > 0" style="margin-bottom:8px">
+            <div class="analytics__progress-bar">
+              <div class="analytics__progress-fill"
+                :class="(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers)>=0.8?'analytics__progress-fill--green':(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers)>=0.5?'analytics__progress-fill--yellow':'analytics__progress-fill--red'"
+                :style="{ width: Math.round(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers*100)+'%' }">
+              </div>
+            </div>
+          </div>
+          <!-- Covering tests -->
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+            <span
+              v-for="tn in d.covSelectedClass.value.tests" :key="tn"
+              :class="['analytics__class-test-tag', d.hasTest(tn) ? 'analytics__class-test-tag--clickable' : 'analytics__class-test-tag--nolink']"
+              @click="d.hasTest(tn) && d.navigateToTestFromCov(tn)"
+              @mouseenter="testHover.show(tn, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
+              :title="d.hasTest(tn) ? 'Go to ' + tn + ' in Tests tab' : tn + ' (not in prioritized test list)'"
+            >{{ dn(tn) }}{{ d.hasTest(tn) ? ' →' : '' }}</span>
+            <span
+              v-if="d.covSelectedClass.value.testCount > d.covSelectedClass.value.tests.length"
+              class="analytics__class-test-tag"
+              style="opacity:.6;cursor:default"
+              :title="`${d.covSelectedClass.value.testCount - d.covSelectedClass.value.tests.length} more tests cover this class (not stored in index — only the ${d.covSelectedClass.value.tests.length} most significant are kept)`"
+            >+ {{ d.covSelectedClass.value.testCount - d.covSelectedClass.value.tests.length }} more…</span>
+          </div>
+          <!-- Member grid -->
+          <div v-if="d.covSelectedClass.value.members?.length">
+            <div class="card-label" style="margin-bottom:4px" title="Individual methods/members of this class. Green = exercised by at least one test. Red = never called by any test. Covered count is based on method-level instrumentation.">
+              Members ({{ d.covSelectedClass.value.members.length }})
+              <span style="color:var(--text-muted);font-weight:400">·
+                <span style="color:var(--green)">{{ d.covSelectedClass.value.members.filter(mb => mb.testCount > 0).length }}</span> covered ·
+                <span style="color:var(--red)">{{ d.covSelectedClass.value.members.filter(mb => mb.testCount === 0).length }}</span> untouched
+              </span>
+            </div>
+            <div :title="d.covSelectedClass.value.members.filter(mb => mb.testCount === 0).length + ' untouched method(s)'" style="display:flex;gap:1px;height:8px;margin:4px 0 6px">
+              <div
+                v-for="mb in d.covSelectedClass.value.members" :key="mb.name"
+                :title="mb.name + ' · ' + mb.testCount + ' test(s)'"
+                :style="{ flex: 1, minWidth: '2px', background: mb.testCount > 0 ? 'var(--green)' : 'rgba(239,68,68,.45)', borderRadius: '1px' }"
+              ></div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:3px">
+              <div v-for="mb in d.covSelectedClass.value.members" :key="mb.name" class="analytics__member-card"
+                :class="mb.testCount === 0 ? 'analytics__member-card--uncovered' : ''"
+                :title="mb.testCount === 0 ? mb.name + '\n⚠ Not covered by any test — possible dead code or missing test' : mb.name + '\nCovered by ' + mb.testCount + ' test' + (mb.testCount === 1 ? '' : 's')"
+              >
+                <span class="analytics__member-name" :title="mb.name">{{ mb.name }}</span>
+                <span class="analytics__member-tests" :style="{ color: mb.testCount === 0 ? 'var(--red)' : 'var(--text-muted)' }">{{ mb.testCount === 0 ? '✗' : mb.testCount }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        </Transition>
+
+        <!-- Uncovered class list (expandable) -->
+        <div v-if="uncoveredExpanded && uncoveredClasses.length" class="cov-eff__col cov-eff__col--over" style="margin-top:8px;padding:8px 10px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:.68rem;font-weight:700;color:var(--red)">⚠ {{ uncoveredClasses.length }} uncovered source class{{ uncoveredClasses.length !== 1 ? 'es' : '' }}</span>
+            <span style="font-size:.6rem;color:var(--text-muted)">— no test has ever loaded these</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            <span
+              v-for="cls in uncoveredClasses"
+              :key="cls.name"
+              class="analytics__class-test-tag analytics__class-test-tag--clickable"
+              style="border-color:var(--red);color:var(--red)"
+              @click="d.navigateToCovClass(cls.name)"
+              @mouseenter="classHover.show(cls.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()"
+              :title="cls.name + '\n0 tests cover this class\nClick to view in treemap'"
+            >{{ dn(cls.name) }}</span>
+          </div>
+          <div style="font-size:.58rem;color:var(--text-muted);margin-top:6px">
+            These classes are never loaded by your test suite. Add tests for them or verify they are intentionally excluded (e.g. generated code, deprecated APIs).
+          </div>
+        </div>
 
         <!-- Top Impact Classes -->
         <div v-if="topImpactClasses.length" id="analytics-analysis" style="margin-top:10px;margin-bottom:10px">
@@ -2895,7 +3115,7 @@ onMounted(initAll)
           </div>
           <div id="fanout-hist" style="width:100%;min-height:120px"></div>
           <div v-if="fanOutDistribution.outliers.length" style="margin-top:6px">
-            <div class="card-label" style="font-size:.6rem;margin-bottom:3px">God-test outliers <span style="color:var(--text-muted);font-weight:400">(&gt; mean + 2σ)</span></div>
+            <div class="card-label" style="font-size:.6rem;margin-bottom:3px" title="Tests with significantly more source-class dependencies than average (> mean + 2σ). These 'god tests' are tightly coupled integration-style tests — they're brittle, hard to maintain, and expensive to run.">God-test outliers <span style="color:var(--text-muted);font-weight:400">(&gt; mean + 2σ)</span></div>
             <div style="display:flex;flex-wrap:wrap;gap:4px">
               <span
                 v-for="o in fanOutDistribution.outliers"
@@ -2921,15 +3141,16 @@ onMounted(initAll)
         <!-- Package breakdown -->
         <div v-if="covPackageStats.length > 1" style="margin-top:10px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-            <div class="card-label">Package Breakdown
+            <div class="card-label" title="Source class coverage breakdown by package. Each row shows how many classes in that package are instrumented and how many tests cover them on average. Click a package to filter the treemap to that package.">Package Breakdown
               <span style="color:var(--text-muted);font-size:.55rem"> — click to filter treemap</span>
             </div>
             <div style="margin-left:auto;display:flex;gap:4px">
               <button
-                v-for="s in ([['coverage','% covered'],['tests','avg tests'],['alpha','A–Z']] as const)"
+                v-for="s in ([['coverage','% covered','Sort packages by coverage percentage — most covered first'],['tests','avg tests','Sort packages by average number of tests covering them'],['alpha','A–Z','Sort packages alphabetically']] as const)"
                 :key="s[0]"
                 class="analytics__sort-btn"
                 :class="{ 'analytics__sort-btn--active': covPkgSort === s[0] }"
+                :title="s[2]"
                 @click="covPkgSort = s[0]"
               >{{ s[1] }}</button>
             </div>
@@ -2938,12 +3159,12 @@ onMounted(initAll)
             <table>
               <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1">
                 <tr>
-                  <th style="padding:3px 8px;text-align:left;font-size:.65rem;color:var(--text-sec)">Package</th>
+                  <th style="padding:3px 8px;text-align:left;font-size:.65rem;color:var(--text-sec)" title="Package name — click to filter coverage treemap to this package">Package</th>
                   <th style="padding:3px 8px;text-align:right;font-size:.65rem;color:var(--text-sec)" title="Source classes tracked in this package">Classes</th>
                   <th style="padding:3px 8px;text-align:right;font-size:.65rem;color:var(--text-sec)" title="Classes with at least one test">Covered</th>
                   <th style="padding:3px 8px;text-align:right;font-size:.65rem;color:var(--text-sec)" title="Highest test count for a single class in this package">Max tests</th>
                   <th style="padding:3px 8px;text-align:right;font-size:.65rem;color:var(--text-sec)" title="Average tests per class">Avg tests</th>
-                  <th style="padding:3px 8px;text-align:left;font-size:.65rem;color:var(--text-sec)">Coverage</th>
+                  <th style="padding:3px 8px;text-align:left;font-size:.65rem;color:var(--text-sec)" title="Visual coverage bar showing the covered/total class ratio for this package">Coverage</th>
                 </tr>
               </thead>
               <tbody>
@@ -2970,7 +3191,7 @@ onMounted(initAll)
 
         <!-- Redundancy clusters (suite-wide) -->
         <div v-if="redundancyClusters.length" style="margin-top:10px;margin-bottom:10px">
-          <div style="font-size:.72rem;font-weight:700;color:var(--text-sec);margin-bottom:6px" title="Tests grouped by ≥80% Jaccard overlap of their covered source classes. Members of a group are candidates for merging or deletion.">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-sec);margin-bottom:6px" title="Tests grouped by ≥80% Jaccard overlap of their covered source classes. Members of a group are candidates for merging or deletion. Note: Jaccard is computed from the coverage index (top-N tests per class), so very widely-covered classes may slightly undercount overlap.">
             ♻ Redundancy Clusters
             <span style="font-size:.6rem;font-weight:400;color:var(--text-muted);margin-left:4px">— {{ redundancyClusters.length }} group{{ redundancyClusters.length === 1 ? '' : 's' }} of near-duplicate tests (Jaccard ≥ 0.8)</span>
           </div>
@@ -3001,68 +3222,45 @@ onMounted(initAll)
 
         <!-- Cross-package coupling matrix -->
         <div v-if="pkgCouplingMatrix" style="margin-top:10px;margin-bottom:10px">
-          <div style="font-size:.72rem;font-weight:700;color:var(--text-sec);margin-bottom:6px" title="Heatmap of dep edges from tests in package A (rows) to production classes in package B (columns). Concentrated cells reveal cross-package coupling and architectural seams.">
+          <div class="pkg-coupling-header" title="Heatmap of dep edges from tests in package A (rows) to production classes in package B (columns). Concentrated cells reveal cross-package coupling and architectural seams. Yellow-outlined diagonal cells = same-package deps. Click any cell to filter the coverage search by that package.">
             🔗 Cross-Package Coupling
             <span style="font-size:.6rem;font-weight:400;color:var(--text-muted);margin-left:4px">— {{ pkgCouplingMatrix.order.length }} packages · log-scaled edge counts</span>
+            <span style="font-size:.55rem;color:var(--accent-light);margin-left:6px;opacity:.7">ⓘ</span>
           </div>
           <div id="pkg-coupling-matrix" style="width:100%;overflow:auto"></div>
         </div>
 
-        <!-- Class detail panel -->
-        <div v-if="d.covSelectedClass.value" class="detail-panel" style="margin-top:10px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <span style="font-size:.82rem;font-weight:600;color:var(--text)"
-              :title="d.covSelectedClass.value!.name"
-              @mouseenter="classHover.show(d.covSelectedClass.value!.name, $event)" @mousemove="classHover.move($event)" @mouseleave="classHover.hide()"
-            >{{ d.covSelectedClass.value.name.split('.').pop() }}</span>
-            <span style="font-size:.72rem;color:var(--text-sec)">tested by {{ d.covSelectedClass.value.testCount }} test{{ d.covSelectedClass.value.testCount === 1 ? '' : 's' }}</span>
-            <button @click="d.covSelectedClass.value = null" style="margin-left:auto;padding:2px 8px;font-size:.65rem;background:var(--border);color:var(--text-sec);border:1px solid var(--text-muted);border-radius:3px;cursor:pointer">✕</button>
+      </div>
+      <!-- No coverage data: actionable empty state -->
+      <div v-else id="analytics-coverage" style="margin-top:10px">
+        <div class="card" style="padding:16px 18px;display:flex;flex-direction:column;gap:10px;border-left:3px solid var(--accent)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:1.1rem">🗂</span>
+            <span style="font-size:.82rem;font-weight:700;color:var(--text)">Coverage Tracking Not Enabled</span>
           </div>
-          <!-- Method coverage bar in detail panel -->
-          <div v-if="d.covSelectedClass.value.totalMembers > 0" style="margin-bottom:8px">
-            <span style="font-size:.65rem;color:var(--text-sec)">
-              {{ d.covSelectedClass.value.coveredMembers }} / {{ d.covSelectedClass.value.totalMembers }} methods covered
-              ({{ Math.round(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers*100) }}%)
-            </span>
-            <div class="analytics__progress-bar" style="margin-top:3px">
-              <div class="analytics__progress-fill"
-                :class="(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers)>=0.8?'analytics__progress-fill--green':(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers)>=0.5?'analytics__progress-fill--yellow':'analytics__progress-fill--red'"
-                :style="{ width: Math.round(d.covSelectedClass.value.coveredMembers/d.covSelectedClass.value.totalMembers*100)+'%' }">
+          <p style="font-size:.72rem;color:var(--text-sec);margin:0;line-height:1.6">
+            test-order can track which source classes each test exercises to improve prioritization accuracy by up to 20pp APFD.
+            Without this data, the dep-overlap scoring factor is estimated from bytecode analysis only.
+          </p>
+          <div style="font-size:.68rem;color:var(--text-muted)">
+            <div style="font-weight:600;color:var(--text-sec);margin-bottom:4px">To enable coverage tracking, use METHOD or MEMBER instrumentation mode:</div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div>
+                <span style="background:var(--bg-base);border:1px solid var(--border);padding:1px 7px;border-radius:3px;font-family:monospace;font-size:.65rem;color:var(--accent-light)">
+                  &lt;instrumentationMode&gt;METHOD&lt;/instrumentationMode&gt;
+                </span>
+                <span style="margin-left:6px;color:var(--text-muted)">— class-level tracking, low overhead</span>
+              </div>
+              <div>
+                <span style="background:var(--bg-base);border:1px solid var(--border);padding:1px 7px;border-radius:3px;font-family:monospace;font-size:.65rem;color:var(--accent-light)">
+                  &lt;instrumentationMode&gt;MEMBER&lt;/instrumentationMode&gt;
+                </span>
+                <span style="margin-left:6px;color:var(--text-muted)">— method-level tracking, enables method coverage %</span>
               </div>
             </div>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
-            <span
-              v-for="tn in d.covSelectedClass.value.tests" :key="tn"
-              class="analytics__class-test-tag analytics__class-test-tag--clickable"
-              @click="d.navigateToTestFromCov(tn)"
-              @mouseenter="testHover.show(tn, $event)" @mousemove="testHover.move($event)" @mouseleave="testHover.hide()"
-              :title="'Go to ' + tn + ' in Tests tab'"
-            >{{ dn(tn) }} →</span>
-          </div>
-          <div v-if="d.covSelectedClass.value.members?.length">
-            <div class="card-label" style="margin-bottom:4px">
-              Members ({{ d.covSelectedClass.value.members.length }})
-              <span style="color:var(--text-muted);font-weight:400">·
-                <span style="color:var(--green)">{{ d.covSelectedClass.value.members.filter(mb => mb.testCount > 0).length }}</span>
-                covered ·
-                <span style="color:var(--red)">{{ d.covSelectedClass.value.members.filter(mb => mb.testCount === 0).length }}</span>
-                untouched
-              </span>
-            </div>
-            <div :title="d.covSelectedClass.value.members.filter(mb => mb.testCount === 0).length + ' untouched method(s) — likely dead code or candidates for tests'" style="display:flex;gap:1px;height:10px;margin:6px 0">
-              <div
-                v-for="mb in d.covSelectedClass.value.members" :key="mb.name"
-                :title="mb.name + ' · ' + mb.testCount + ' test(s)'"
-                :style="{ flex: 1, minWidth: '2px', background: mb.testCount > 0 ? 'var(--green)' : 'rgba(239,68,68,.45)', borderRadius: '1px' }"
-              ></div>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:4px">
-              <div v-for="mb in d.covSelectedClass.value.members" :key="mb.name" class="analytics__member-card">
-                <span class="analytics__member-name" :title="mb.name">{{ mb.name }}</span>
-                <span class="analytics__member-tests">{{ mb.testCount }} test{{ mb.testCount === 1 ? '' : 's' }}</span>
-              </div>
-            </div>
+          <div style="font-size:.62rem;color:var(--text-muted)">
+            Once enabled, re-run your tests and re-open the dashboard to see the Coverage treemap, uncovered classes, redundancy clusters, and more.
           </div>
         </div>
       </div>
@@ -3091,6 +3289,7 @@ onMounted(initAll)
 .analytics__class-test-tag { font-size: .68rem; padding: 2px 6px; background: rgba(99, 102, 241, .15); color: var(--accent-light); border-radius: 3px; }
 .analytics__class-test-tag--clickable { cursor: pointer; transition: background var(--tr-fast); }
 .analytics__class-test-tag--clickable:hover { background: rgba(99, 102, 241, .35); }
+.analytics__class-test-tag--nolink { cursor: default; opacity: .5; }
 .analytics__diff--fail { background: rgba(127, 29, 29, .45); color: var(--red); }
 .analytics__diff--recover { background: rgba(20, 83, 45, .45); color: var(--green); }
 .analytics__diff--new { background: rgba(8, 51, 68, .45); color: var(--cyan); }
@@ -3104,9 +3303,13 @@ onMounted(initAll)
 .analytics__toggle-btn--active { color: var(--accent-light); border-color: var(--accent); background: var(--accent-bg); }
 .analytics__diff--improved { background: rgba(20, 83, 45, .25); color: var(--green); }
 .analytics__diff--regressed { background: rgba(124, 45, 18, .25); color: var(--orange); }
-.analytics__member-card { background: var(--bg-base); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: .68rem; display: flex; justify-content: space-between; align-items: center; }
+.analytics__member-card { background: var(--bg-base); border: 1px solid var(--border); border-radius: 4px; padding: 3px 7px; font-size: .67rem; display: flex; justify-content: space-between; align-items: center; }
+.analytics__member-card--uncovered { border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.06); }
 .analytics__member-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.analytics__member-tests { color: var(--green); font-weight: 600; flex-shrink: 0; margin-left: 8px; }
+.analytics__member-tests { color: var(--green); font-weight: 600; flex-shrink: 0; margin-left: 8px; font-size: .65rem; }
+.cov-detail-panel { border-left: 2px solid var(--accent); }
+.cov-detail-panel__close { padding: 2px 7px; font-size: .65rem; background: var(--border); color: var(--text-sec); border: 1px solid var(--text-muted); border-radius: 3px; cursor: pointer; flex-shrink: 0; transition: all var(--tr-fast); }
+.cov-detail-panel__close:hover { color: var(--text); border-color: var(--red); background: rgba(239,68,68,.1); }
 
 .analytics__search-wrap { position: relative; display: flex; align-items: center; }
 .analytics__search {
@@ -3369,6 +3572,13 @@ onMounted(initAll)
 .analytics__cov-filter-btn:hover { background: rgba(249,115,22,.1); }
 .analytics__cov-filter-btn--active { background: rgba(249,115,22,.15); }
 
+.analytics__cov-sort-btn {
+  padding: 2px 8px; font-size: .6rem; border: none; background: transparent;
+  color: var(--text-muted); cursor: pointer; transition: all var(--tr-fast);
+}
+.analytics__cov-sort-btn:hover { color: var(--text); background: var(--accent-bg); }
+.analytics__cov-sort-btn--active { color: var(--accent-light); background: var(--accent-bg); font-weight: 600; }
+
 .analytics__sort-btn {
   padding: 2px 7px; font-size: .6rem; border-radius: 3px;
   border: 1px solid var(--border); color: var(--text-sec);
@@ -3575,4 +3785,11 @@ onMounted(initAll)
   flex-shrink: 0;
 }
 .analytics__subnav-link:hover { color: var(--accent-light); background: rgba(99,102,241,.06); }
+.pkg-coupling-header {
+  font-size: .72rem; font-weight: 700; color: var(--text-sec); margin-bottom: 6px;
+  cursor: help; display: inline-flex; align-items: center; gap: 0;
+  border-radius: 3px; padding: 1px 3px; margin-left: -3px;
+  transition: background var(--tr-fast), color var(--tr-fast);
+}
+.pkg-coupling-header:hover { background: rgba(99,102,241,.08); color: var(--text); }
 </style>

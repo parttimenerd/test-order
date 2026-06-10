@@ -40,7 +40,7 @@ const suiteHealth = computed(() => {
     `Suite Health Score: ${h.grade} (${h.composite}/100)`,
     `  APFD:        ${h.apfdScore}% × 30%`,
     `  Reliability: ${h.relScore}% × 30%`,
-    `  Flakiness:   ${h.flakyScore}% × 20%`,
+    `  Stability:   ${h.flakyScore}% × 20%`,
     `  Coverage:    ${h.covScore}% × 20%`,
     d.hasCoverage ? '' : '  (Coverage component estimated — no instrumentation data)',
   ].filter(Boolean).join('\n')
@@ -52,16 +52,18 @@ function openHealth() {
   nextTick(() => document.getElementById('suite-health')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 
-// Latest APFD trend: arrow showing improvement/regression vs previous run
+// Latest APFD trend: compare the two most-recent runs that had failures
 const apfdTrend = computed(() => {
   if (d.runs.length < 2) return null
-  const prev = d.runs[d.runs.length - 2].apfd
-  const curr = d.runs[d.runs.length - 1].apfd
+  const withFail = [...d.runs].filter(r => r.totalFailures > 0 && r.apfd > 0 && isFinite(r.apfd))
+  if (withFail.length < 2) return null
+  const prev = withFail[withFail.length - 2].apfd
+  const curr = withFail[withFail.length - 1].apfd
   const delta = curr - prev
   if (Math.abs(delta) < 0.005) return { dir: '→', color: 'var(--text-muted)', tip: 'stable' }
   return delta > 0
-    ? { dir: '↑', color: 'var(--green)', tip: `+${(delta * 100).toFixed(1)}% from previous run` }
-    : { dir: '↓', color: 'var(--red)', tip: `${(delta * 100).toFixed(1)}% from previous run` }
+    ? { dir: '↑', color: 'var(--green)', tip: `+${(delta * 100).toFixed(1)}% vs previous failing run` }
+    : { dir: '↓', color: 'var(--red)', tip: `${(delta * 100).toFixed(1)}% vs previous failing run` }
 })
 
 // History browser: selected run index (-1 = latest / live)
@@ -164,6 +166,16 @@ const changeAffectedCount = computed(() => {
   ).length
 })
 
+// Method data summary: tests with per-method dep tracking
+const methodDataStats = computed(() => {
+  if (!d.hasMethodData.value) return null
+  const withMethods = d.tests.filter(t => t.methods && t.methods.length > 0)
+  const totalMethods = withMethods.reduce((s, t) => s + (t.methods?.length ?? 0), 0)
+  const hasMemberDeps = withMethods.some(t => t.memberDeps && t.memberDeps.length > 0)
+    || withMethods.some(t => t.methods?.some(m => m.memberDeps && m.memberDeps.length > 0))
+  return { count: withMethods.length, totalMethods, mode: hasMemberDeps ? 'MEMBER' : 'METHOD' }
+})
+
 // Mini sparkline bars: each run = a bar whose height encodes APFD (0–100%) and color encodes pass/fail
 const sparkBars = computed(() => {
   if (!d.runs.length) return []
@@ -172,7 +184,8 @@ const sparkBars = computed(() => {
   return [...d.runs].reverse().map((r, i) => {
     const apfdPct = Math.round(r.apfd * 100)
     const hasFail = r.totalFailures > 0
-    const h = 10 + Math.round(apfdPct * 0.9)
+    // All-pass runs: full-height bar (100). Failing runs: height encodes APFD (min 10%)
+    const h = hasFail ? 10 + Math.round(apfdPct * 0.9) : 100
     const failAlpha = hasFail ? Math.min(0.9, 0.3 + (r.totalFailures / maxFail) * 0.6) : 0
     return { i, apfdPct, hasFail, failures: r.totalFailures, h, failAlpha, ts: r.timestamp }
   })
@@ -221,8 +234,8 @@ const sparkBars = computed(() => {
       :title="lastFailureInfo.runsAgo === -1
         ? 'All ' + lastFailureInfo.cleanCount + ' recorded runs passed — no failures on record. Click to open Analytics.'
         : lastFailureInfo.runsAgo === 0
-          ? 'Latest run had ' + lastFailureInfo.failures + ' failure(s): ' + lastFailureInfo.failedTests.slice(0,3).map(n => n.split('.').pop()).join(', ') + (lastFailureInfo.failedTests.length > 3 ? '…' : '') + '\nClick to open Analytics.'
-          : lastFailureInfo.cleanCount + ' clean run' + (lastFailureInfo.cleanCount !== 1 ? 's' : '') + ' since last failure (' + lastFailureInfo.failures + ' fail' + (lastFailureInfo.failures !== 1 ? 's' : '') + ' in run #' + (lastFailureInfo.runsAgo + 1) + ')\nFailed: ' + lastFailureInfo.failedTests.slice(0,3).map(n => n.split('.').pop()).join(', ') + (lastFailureInfo.failedTests.length > 3 ? '…' : '') + '\nClick to open Analytics.'"
+          ? 'Latest run had ' + lastFailureInfo.failures + ' failure(s): ' + lastFailureInfo.failedTests.slice(0,3).join(', ') + (lastFailureInfo.failedTests.length > 3 ? '…' : '') + '\nClick to open Analytics.'
+          : lastFailureInfo.cleanCount + ' clean run' + (lastFailureInfo.cleanCount !== 1 ? 's' : '') + ' since last failure (' + lastFailureInfo.failures + ' fail' + (lastFailureInfo.failures !== 1 ? 's' : '') + ' in run #' + (lastFailureInfo.runsAgo + 1) + ')\nFailed: ' + lastFailureInfo.failedTests.slice(0,3).join(', ') + (lastFailureInfo.failedTests.length > 3 ? '…' : '') + '\nClick to open Analytics.'"
     >
       <div class="kpi-row__label">Last Failure</div>
       <div v-if="lastFailureInfo.runsAgo === 0" class="kpi-row__value" style="color:var(--red)">now</div>
@@ -251,7 +264,7 @@ const sparkBars = computed(() => {
       v-if="atRiskTests.length > 0"
       class="kpi kpi-row__kpi kpi-row__kpi--clickable kpi-row__kpi--at-risk"
       @click="d.setBadgeFilter('failing'); d.setTab('tests')"
-      :title="'Tests most at risk of failing next run (by EMA fail score + flakiness):\n' + atRiskTests.map((t, i) => `${i+1}. ${t.name.split('.').pop()} (score ${t.failScore.toFixed(2)}${d.flakyTests.value.has(t.name) ? ' · flaky' : ''})`).join('\n') + '\nClick to filter in Tests tab.'"
+      :title="'Tests most at risk of failing next run (by EMA fail score + flakiness):\n' + atRiskTests.map((t, i) => `${i+1}. ${t.name} (score ${t.failScore.toFixed(2)}${d.flakyTests.value.has(t.name) ? ' · flaky' : ''})`).join('\n') + '\nClick to filter in Tests tab.'"
     >
       <div class="kpi-row__label">⚠ At Risk</div>
       <div class="kpi-row__at-risk-list">
@@ -276,48 +289,36 @@ const sparkBars = computed(() => {
     <!-- Run count with history navigation + sparkline -->
     <div v-if="d.runs.length" class="kpi kpi-row__kpi kpi-row__kpi--history" :title="'Run history — use arrows to browse past runs, or click a bar in the sparkline'">
       <div class="kpi-row__label">Runs ({{ d.runs.length }})</div>
-      <!-- Sparkline: bar per run, height=APFD, color=fail/pass -->
-      <div class="kpi-row__sparkline" v-if="d.runs.length > 1">
-        <div
-          v-for="bar in sparkBars"
-          :key="bar.i"
-          class="kpi-row__spark-bar"
-          :class="{ 'kpi-row__spark-bar--selected': bar.i === currentHistIdx }"
-          :style="{
-            height: bar.h + '%',
-            background: bar.hasFail
-              ? `rgba(248, 113, 113, ${bar.failAlpha})`
-              : 'rgba(74, 222, 128, .45)',
-            borderColor: bar.i === currentHistIdx ? (bar.hasFail ? 'var(--red)' : 'var(--green)') : 'transparent',
-          }"
-          :title="`Run #${bar.i + 1} · ${fmtTime(bar.ts)} · APFD ${bar.apfdPct}% · ${bar.hasFail ? bar.failures + ' failures' : 'all passed'}`"
-          @click="goToRun(bar.i)"
-        ></div>
-      </div>
-      <!-- Range slider -->
-      <input
-        v-if="d.runs.length > 1"
-        type="range"
-        class="kpi-row__slider"
-        :min="0"
-        :max="d.runs.length - 1"
-        :value="currentHistIdx"
-        @input="goToRun(+($event.target as HTMLInputElement).value)"
-        :title="`Run ${currentHistIdx + 1} of ${d.runs.length}`"
-      />
-      <div style="display:flex;align-items:center;gap:4px;margin-top:2px">
-        <button class="kpi-row__hist-btn" @click="goToRun(d.runs.length - 1)" :disabled="currentHistIdx === d.runs.length - 1" title="Oldest run («)">«</button>
+      <div class="kpi-row__hist-inline">
+        <!-- Sparkline: bar per run -->
+        <div class="kpi-row__sparkline" v-if="d.runs.length > 1">
+          <div
+            v-for="bar in sparkBars"
+            :key="bar.i"
+            class="kpi-row__spark-bar"
+            :class="{ 'kpi-row__spark-bar--selected': bar.i === currentHistIdx }"
+            :style="{
+              height: bar.h + '%',
+              background: bar.hasFail
+                ? `rgba(248, 113, 113, ${bar.failAlpha})`
+                : 'rgba(74, 222, 128, .45)',
+              borderColor: bar.i === currentHistIdx ? (bar.hasFail ? 'var(--red)' : 'var(--green)') : 'transparent',
+            }"
+            :title="`Run #${bar.i + 1} · ${fmtTime(bar.ts)} · ${bar.hasFail ? bar.failures + ' failures, APFD ' + bar.apfdPct + '%' : 'all passed'}`"
+            @click="goToRun(bar.i)"
+          ></div>
+        </div>
+        <!-- Nav buttons -->
         <button class="kpi-row__hist-btn" @click="goToRun(Math.min(d.runs.length - 1, currentHistIdx + 1))" :disabled="currentHistIdx === d.runs.length - 1" title="Previous (older) run (‹)">‹</button>
         <span class="kpi-row__hist-pos" :style="{ color: isLive ? 'var(--green)' : 'var(--yellow)' }">
           {{ isLive ? 'latest' : '#' + (currentHistIdx + 1) }}
         </span>
         <button class="kpi-row__hist-btn" @click="goToRun(Math.max(0, currentHistIdx - 1))" :disabled="isLive" title="Next (newer) run (›)">›</button>
-        <button class="kpi-row__hist-btn" @click="historyIdx = -1" :disabled="isLive" title="Latest run (»)">»</button>
         <button class="kpi-row__hist-btn kpi-row__hist-btn--analytics" @click="openInAnalytics(currentHistIdx)" title="Open this run in Analytics tab">↗</button>
       </div>
       <div v-if="historyRun" class="kpi-row__hist-time" :title="fmtTime(historyRun.timestamp)">
         {{ historyRun.totalFailures > 0 ? historyRun.totalFailures + ' fail' : '✓ pass' }}
-        · APFD {{ (historyRun.apfd * 100).toFixed(1) }}%
+        <template v-if="historyRun.totalFailures > 0"> · APFD {{ (historyRun.apfd * 100).toFixed(1) }}%</template>
         · {{ historyRun.totalTests }} tests
       </div>
     </div>
@@ -357,8 +358,23 @@ const sparkBars = computed(() => {
       :title="'Tests `mvn test-order:affected test` would run — tier 1 of the tiered selection (tests with dep overlap on changed source, tests whose own source changed, or new tests).\n' + d.dd.changedClasses.length + ' source class' + (d.dd.changedClasses.length === 1 ? '' : 'es') + (d.dd.changedTestClasses.length ? ' + ' + d.dd.changedTestClasses.length + ' test class' + (d.dd.changedTestClasses.length === 1 ? '' : 'es') : '') + ' changed.\nClick to filter affected tests.'">
       <div class="kpi-row__label">Change Affected</div>
       <div class="kpi-row__value" :style="{ color: changeAffectedCount > 0 ? 'var(--yellow)' : 'var(--text-sec)' }">
-        {{ changeAffectedCount }}<span v-if="d.dd.changedClasses.length || d.dd.changedTestClasses.length" style="font-size:.6rem;color:var(--text-muted);font-weight:500;margin-left:3px">/ {{ d.dd.changedClasses.length + d.dd.changedTestClasses.length }} src</span>
+        {{ changeAffectedCount }}<span v-if="d.dd.changedClasses.length || d.dd.changedTestClasses.length" style="font-size:.6rem;color:var(--text-muted);font-weight:500;margin-left:3px">/ {{ d.dd.changedClasses.length + d.dd.changedTestClasses.length }} chg</span>
       </div>
+    </div>
+
+    <!-- Method data KPI: shown when per-method dep tracking is available -->
+    <div
+      v-if="methodDataStats"
+      class="kpi kpi-row__kpi kpi-row__kpi--clickable kpi-row__kpi--method"
+      @click="d.setTab('tests')"
+      :title="'Per-method dependency tracking active (instrumentation mode: ' + methodDataStats.mode + ')\n' + methodDataStats.count + ' of ' + d.tests.length + ' test classes have method-level dep data\n' + methodDataStats.totalMethods + ' individual test methods tracked\nEnables precise per-method ordering and dep graph highlighting\nClick to go to Tests tab'"
+    >
+      <div class="kpi-row__label">⚙ Method Deps</div>
+      <div class="kpi-row__method-stats">
+        <span class="kpi-row__method-count">{{ methodDataStats.count }}</span>
+        <span class="kpi-row__method-sub">/ {{ d.tests.length }} tests</span>
+      </div>
+      <div class="kpi-row__method-mode">{{ methodDataStats.mode }}</div>
     </div>
 
     <!-- Suite Health Score -->
@@ -385,16 +401,21 @@ const sparkBars = computed(() => {
 <style scoped>
 .kpi-row {
   background: var(--bg-card); border-bottom: 1px solid var(--border);
-  padding: 5px 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 6px; flex-shrink: 0; align-items: stretch;
+  padding: 0 10px; display: flex; flex-direction: row; align-items: stretch;
+  gap: 0; flex-shrink: 0; overflow-x: auto; scrollbar-width: none;
 }
-.kpi-row__kpi { padding: 5px 10px; min-width: 90px; }
-.kpi-row__kpi--history { min-width: 180px; }
-.kpi-row__kpi--speed { min-width: 140px; }
+.kpi-row::-webkit-scrollbar { display: none; }
+.kpi-row__kpi {
+  padding: 5px 12px; flex-shrink: 0;
+  border-right: 1px solid var(--border);
+}
+.kpi-row__kpi:last-child { border-right: none; }
+.kpi-row__kpi--history { min-width: 140px; }
+.kpi-row__kpi--speed { min-width: 130px; }
 .kpi-row__kpi--clickable { cursor: pointer; }
 .kpi-row__kpi--clickable:hover { border-color: rgba(99,102,241,.4); background: rgba(99,102,241,.07); }
-.kpi-row__label { color: var(--text-sec); font-size: .6rem; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
-.kpi-row__value { font-size: 1.1rem; font-weight: 700; }
+.kpi-row__label { color: var(--text-sec); font-size: .58rem; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.kpi-row__value { font-size: .95rem; font-weight: 700; }
 .kpi-row__dur { font-size: .6rem; color: var(--text-muted); flex-shrink: 0; }
 .kpi-row__test-name { font-size: .72rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .kpi-row__test-name--fast { color: var(--cyan); }
@@ -406,42 +427,29 @@ const sparkBars = computed(() => {
 .kpi-row__no-data { font-size: .62rem; color: var(--text-muted); font-style: italic; }
 
 /* History browser controls */
+.kpi-row__hist-inline { display: flex; align-items: flex-end; gap: 4px; margin-top: 1px; }
 .kpi-row__hist-btn {
   background: none; border: 1px solid var(--border); border-radius: 3px;
-  color: var(--text-sec); cursor: pointer; padding: 1px 5px; font-size: .72rem;
-  line-height: 1.2; transition: all var(--tr-fast);
+  color: var(--text-sec); cursor: pointer; padding: 0 4px; font-size: .7rem;
+  line-height: 1.4; transition: all var(--tr-fast); flex-shrink: 0;
 }
 .kpi-row__hist-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
 .kpi-row__hist-btn:disabled { opacity: .3; cursor: default; }
-.kpi-row__hist-btn--analytics { color: var(--accent-light); border-color: var(--accent); margin-left: auto; }
+.kpi-row__hist-btn--analytics { color: var(--accent-light); border-color: var(--accent); }
 .kpi-row__hist-btn--analytics:hover { background: rgba(99,102,241,.12); }
-.kpi-row__hist-pos { font-size: .78rem; font-weight: 700; min-width: 38px; text-align: center; }
+.kpi-row__hist-pos { font-size: .72rem; font-weight: 700; min-width: 34px; text-align: center; }
 .kpi-row__hist-time { font-size: .58rem; color: var(--text-sec); margin-top: 2px; white-space: nowrap; }
 
 /* Sparkline mini bar chart */
 .kpi-row__sparkline {
   display: flex; align-items: flex-end; gap: 1px;
-  height: 28px; width: 100%; overflow: hidden; margin-bottom: 2px;
+  height: 22px; width: 60px; overflow: hidden; flex-shrink: 0;
 }
 .kpi-row__spark-bar {
-  flex: 1; min-width: 3px; border-radius: 1px 1px 0 0; cursor: pointer;
+  flex: 1; min-width: 2px; border-radius: 1px 1px 0 0; cursor: pointer;
   transition: opacity .1s, border-color .1s; border: 1px solid transparent; border-bottom: none;
 }
 .kpi-row__spark-bar:hover { opacity: .8; }
-
-/* Range slider for run navigation */
-.kpi-row__slider {
-  width: 100%; height: 4px; margin: 2px 0 0;
-  -webkit-appearance: none; appearance: none;
-  background: var(--border); border-radius: 2px; outline: none; cursor: pointer;
-}
-.kpi-row__slider::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--accent-light); border: 1px solid var(--accent);
-  cursor: pointer; transition: background var(--tr-fast);
-}
-.kpi-row__slider::-webkit-slider-thumb:hover { background: var(--accent); }
 
 /* Coverage progress bar */
 .kpi-row__progress { height: 6px; width: 50px; background: var(--bg-base); border-radius: 3px; overflow: hidden; }
@@ -449,7 +457,7 @@ const sparkBars = computed(() => {
 
 /* Streak indicator */
 .kpi-row__streak { display: flex; align-items: baseline; gap: 3px; }
-.kpi-row__streak-count { font-size: 1.1rem; font-weight: 700; }
+.kpi-row__streak-count { font-size: .95rem; font-weight: 700; }
 .kpi-row__streak-icon { font-size: .7rem; font-weight: 700; }
 .kpi-row__streak--pass .kpi-row__streak-count { color: var(--green); }
 .kpi-row__streak--pass .kpi-row__streak-icon { color: var(--green); }
@@ -459,12 +467,12 @@ const sparkBars = computed(() => {
 
 /* Last failure KPI */
 .kpi-row__last-fail { display: flex; align-items: baseline; gap: 3px; }
-.kpi-row__last-fail-count { font-size: 1.1rem; font-weight: 700; color: var(--green); }
+.kpi-row__last-fail-count { font-size: .95rem; font-weight: 700; color: var(--green); }
 .kpi-row__last-fail-label { font-size: .6rem; color: var(--text-muted); }
 
 /* Suite health score */
-.kpi-row__kpi--health { min-width: 70px; }
-.kpi-row__health-grade { font-size: 1.3rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+.kpi-row__kpi--health { min-width: 60px; }
+.kpi-row__health-grade { font-size: 1.1rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
 .kpi-row__health-score { font-size: .52rem; color: var(--text-muted); margin-top: 1px; }
 
 /* At-risk tests chip */
@@ -478,4 +486,12 @@ const sparkBars = computed(() => {
 .kpi-row__kpi--savings:hover { border-color: rgba(74,222,128,.4); background: rgba(74,222,128,.06); }
 .kpi-row__savings-value { font-size: 1rem; font-weight: 700; color: var(--green); line-height: 1.1; }
 .kpi-row__savings-sub { font-size: .52rem; color: var(--text-muted); margin-top: 1px; white-space: nowrap; }
+
+/* Method deps KPI */
+.kpi-row__kpi--method { border-color: rgba(99,102,241,.2); }
+.kpi-row__kpi--method:hover { border-color: rgba(99,102,241,.4); background: rgba(99,102,241,.07); }
+.kpi-row__method-stats { display: flex; align-items: baseline; gap: 3px; }
+.kpi-row__method-count { font-size: .95rem; font-weight: 700; color: var(--accent-light); }
+.kpi-row__method-sub { font-size: .6rem; color: var(--text-muted); }
+.kpi-row__method-mode { font-size: .52rem; color: var(--accent-light); opacity: .7; margin-top: 1px; white-space: nowrap; }
 </style>

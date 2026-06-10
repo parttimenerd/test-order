@@ -246,7 +246,15 @@ function initGraph() {
   liveZoom = null
   liveSvg = null
   if (!nodes.length) {
-    container.innerHTML = '<div class="dep-graph__empty">No dependency data for current selection — pick a class in Coverage or shift-click a dep node to use Impact mode</div>'
+    const mode = d.graphMode.value
+    const msg = mode === 'impact'
+      ? 'No class selected for Impact mode — click a tile in the Coverage tab, or Shift+click a dep node in Focus mode'
+      : mode === 'changed'
+        ? 'No changed source classes detected — dep graph is empty in Changed subgraph mode'
+        : mode === 'focus'
+          ? 'No test selected — pick a test in the sidebar to see its dependency graph'
+          : 'No dependency data available'
+    container.innerHTML = `<div class="dep-graph__empty">${msg}</div>`
     return
   }
   const W = container.clientWidth || 700, H = container.clientHeight || 400
@@ -457,7 +465,7 @@ function initGraph() {
         })()
       : ''
     const innerStr = n.outerClass
-      ? `<br><span style="color:#818cf8;font-size:9px">inner class of ${esc(n.outerClass.split('.').pop()!)}</span>`
+      ? `<br><span style="color:#818cf8;font-size:9px">inner class of ${esc(n.outerClass)}</span>`
       : ''
     const hint = isTest ? '<br><span style="color:#818cf8;font-size:9px">click → go to test</span>'
       : isDep ? `<br><span style="color:#64748b;font-size:9px">click → inspect coverage</span>`
@@ -604,7 +612,7 @@ defineExpose({ initGraph })
         class="dep-graph__btn"
         :class="{ 'dep-graph__btn--active': d.graphMode.value === m.id }"
         :disabled="m.id === 'impact' && !d.covSelectedClass.value"
-        :title="m.id === 'impact' ? (d.covSelectedClass.value ? 'Show all tests covering ' + d.covSelectedClass.value.name : 'Pick a class in Coverage or shift-click a dep node first') : ''"
+        :title="m.id === 'impact' ? (d.covSelectedClass.value ? 'Show all tests covering ' + d.covSelectedClass.value.name : 'Pick a class in Coverage or shift-click a dep node first') : m.id === 'focus' ? 'Show the selected test\'s direct source-class dependencies' : m.id === 'changed' ? 'Show only tests and deps that overlap with changed source classes' : m.id === 'full' ? 'Show the complete bipartite dep graph (tests + all deps). Falls back to package view when too many nodes.' : ''"
       >
         {{ m.label }}<span v-if="m.id === 'full' && d.totalNodes.value > GRAPH.FULL_MODE_NODE_LIMIT" style="color:var(--orange)"> ({{ d.totalNodes.value }} → pkg)</span>
       </button>

@@ -105,9 +105,9 @@ const stabilityScores = computed(() => {
     // 1. Reliability: inverse fail rate (0=always fail, 1=never fail)
     const reliability = 1 - failRate
 
-    // 2. Consistency: inverse duration variance (clamped 0–1)
-    const variance = t.durationVariance ?? 0
-    const consistency = Math.max(0, 1 - Math.min(1, variance * 2))
+    // 2. Consistency: inverse CV (coefficient of variation), clamped 0–1
+    const cv = t.durationVariance > 0 && t.duration > 0 ? Math.sqrt(t.durationVariance) / t.duration : 0
+    const consistency = Math.max(0, 1 - Math.min(1, cv * 2))
 
     // 3. Flakiness penalty: if both passes and failures exist, it's flaky
     const flaky = d.flakyTests.value.has(t.name) ? 0 : 1
@@ -216,7 +216,7 @@ const whyRanked = computed(() => {
     if (c.label === 'Speed-') return `slow (${t.duration >= 0 ? (t.duration).toFixed(0) + 'ms' : 'unknown'})`
     if (c.label === 'Static') return `static field overlap`
     if (c.label === 'Set-cover') return `coverage set-cover bonus`
-    if (c.label === 'Complexity') return `${t.complexityOverlap} complex-change overlap${t.complexityOverlap !== 1 ? 's' : ''}`
+    if (c.label === 'Complexity') return `${t.complexityOverlap.toFixed(2)} complex-change overlap${t.complexityOverlap !== 1 ? 's' : ''}`
     return c.explanation || c.label
   })
   const mainReason = parts[0]
@@ -247,7 +247,7 @@ const similarTests = computed(() => {
     .filter(other => other.name !== t.name && other.deps && other.deps.length > 0)
     .map(other => {
       const overlap = other.deps!.filter(d => myDeps.has(d)).length
-      return { test: other, overlap, pct: Math.round(overlap / myDeps.size * 100) }
+      return { test: other, overlap, pct: Math.round(overlap / (t.depTotal || myDeps.size) * 100) }
     })
     .filter(r => r.overlap > 0)
     .sort((a, b) => b.overlap - a.overlap)
@@ -291,7 +291,7 @@ const coverageSiblings = computed(() => {
     .map(s => ({
       ...s,
       test: d.tests.find(t2 => t2.name === s.name),
-      pct: Math.round((s.shared.length / t.deps.length) * 100)
+      pct: Math.round((s.shared.length / (t.depTotal || t.deps.length)) * 100)
     }))
     .filter(s => s.test)
 })
@@ -518,7 +518,7 @@ const selectedFirstSeen = computed(() => {
   if (idx === undefined) return null
   const totalRuns = d.runs.length
   const isRecent = idx >= totalRuns - 2 // seen within last 2 runs
-  const runNum = totalRuns - idx
+  const runNum = idx + 1  // 1-based chronological: run #1 = oldest, run #N = newest
   const ts = d.runs[idx]?.timestamp
   return { runNum, totalRuns, isRecent, ts }
 })
@@ -586,10 +586,13 @@ function initDetailCharts(t: TestEntry) {
       const o = (r.outcomes || []).find(o => o.testClass === t.name)
       return o ? computeScore(o, d.dd.weights, d.origSCB) : null
     })
+    const validScores = scores.filter(s => s !== null) as number[]
+    const scoreMax = validScores.length ? Math.max(...validScores) : 0
+    const co2 = chartOpts() as any
     mkChart('hs-main', {
       type: 'line', data: { labels, datasets: [
         { label: 'Score', data: scores, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,.1)', fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 5, spanGaps: true },
-      ] }, options: chartOpts(),
+      ] }, options: { ...co2, scales: { ...co2.scales, y: { ...co2.scales.y, min: 0, suggestedMax: Math.max(scoreMax * 1.2, 1) } } },
     })
     const positions = chronRuns2.map(r => {
       if (!r.outcomes?.length) return null
@@ -804,14 +807,14 @@ function previewScoreBars(t: TestEntry) {
           <div class="tests-overview__kpi-label">Fast</div>
           <div class="tests-overview__kpi-value" style="color:var(--green)">{{ d.tests.filter(t => t.isFast).length }}</div>
         </div>
-        <div v-if="d.tests.filter(t => t.durationVariance >= (d.dd.config.emaVarianceThreshold ?? 0.5)).length > 0"
+        <div v-if="d.tests.filter(t => t.durationVariance > 0 && t.duration > 0 && Math.sqrt(t.durationVariance) / t.duration >= (d.dd.config.emaVarianceThreshold ?? 0.5)).length > 0"
           class="kpi tests-overview__kpi tests-overview__kpi--filter"
           :class="{ 'tests-overview__kpi--active': d.badgeFilter.value === 'variance' }"
           @click="d.setBadgeFilter('variance')"
-          :title="'Tests with high EMA duration variance (≥' + (d.dd.config.emaVarianceThreshold ?? 0.5) + ') — inconsistent timing, may indicate flakiness or JVM warmup effects. Click to filter.'"
+          :title="'Tests with high EMA duration variance (CV≥' + Math.round((d.dd.config.emaVarianceThreshold ?? 0.5) * 100) + '%) — inconsistent timing, may indicate flakiness or JVM warmup effects. Click to filter.'"
         >
           <div class="tests-overview__kpi-label">High Variance</div>
-          <div class="tests-overview__kpi-value" style="color:var(--yellow)">{{ d.tests.filter(t => t.durationVariance >= (d.dd.config.emaVarianceThreshold ?? 0.5)).length }}</div>
+          <div class="tests-overview__kpi-value" style="color:var(--yellow)">{{ d.tests.filter(t => t.durationVariance > 0 && t.duration > 0 && Math.sqrt(t.durationVariance) / t.duration >= (d.dd.config.emaVarianceThreshold ?? 0.5)).length }}</div>
         </div>
         <div v-if="medianDuration >= 0" class="kpi tests-overview__kpi" :title="'Median test duration (EMA). ' + d.tests.filter(t => t.duration >= 0).length + ' of ' + d.tests.length + ' tests have duration data.'">
           <div class="tests-overview__kpi-label">Median Dur</div>
@@ -861,7 +864,7 @@ function previewScoreBars(t: TestEntry) {
           <span v-else-if="t.isChanged" class="run-preview__flag" style="color:var(--yellow)">✎</span>
           <span v-else-if="t.isNew" class="run-preview__flag" style="color:var(--green)">★</span>
         </div>
-        <span v-if="d.tests.length > 5" class="run-preview__more">+{{ d.tests.length - 5 }} more</span>
+        <span v-if="d.tests.length > 5" class="run-preview__more" style="cursor:pointer" title="Click to scroll to full test table" @click="tableScrollEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })">+{{ d.tests.length - 5 }} more ↓</span>
       </div>
 
       <!-- Blame mode banner -->
@@ -873,7 +876,7 @@ function previewScoreBars(t: TestEntry) {
       </div>
 
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-        <h3 style="font-size:.82rem;color:var(--text-sec);margin:0">All tests by priority <span style="font-weight:400;font-size:.7rem;color:var(--text-muted)">(click to inspect · Ctrl+click multi-select · Shift+click range)</span></h3>
+        <h3 style="font-size:.82rem;color:var(--text-sec);margin:0" title="All tests sorted by current priority score. Click a row to inspect the test detail. Ctrl+click to multi-select for comparison. Shift+click to select a range.">All tests by priority <span style="font-weight:400;font-size:.7rem;color:var(--text-muted)">(click to inspect · Ctrl+click multi-select · Shift+click range)</span></h3>
         <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
           <button class="tests__topn-btn" :class="{ 'tests__topn-btn--active': groupByDep }" @click="groupByDep = !groupByDep; if (groupByDep) groupByPkg = false" title="Group tests by their dominant dependency package cluster">⊞ Cluster</button>
           <button class="tests__topn-btn" :class="{ 'tests__topn-btn--active': groupByPkg }" @click="groupByPkg = !groupByPkg; if (groupByPkg) groupByDep = false" title="Group tests by their Java package (first 4 segments)">⊟ Package</button>
@@ -891,7 +894,7 @@ function previewScoreBars(t: TestEntry) {
               <th class="th--right th-sort" @click="d.sortBy('score')" :class="{ 'th-sort--active': d.sortKey.value === 'score' }" title="Sort by score — click score cell to see breakdown">
                 Score
                 <span class="tests-score-legend-wrap" @click.stop>
-                  <span class="tests-score-legend-icon">ⓘ</span>
+                  <span class="tests-score-legend-icon" title="Score bar color legend: red=fail history, blue=dep overlap, yellow=changed/new, green=speed bonus, purple=static fields">ⓘ</span>
                   <span class="tests-score-legend-pop">
                     <span class="tests-score-legend-row"><span class="tests-score-legend-dot" style="background:#ef4444"></span>Fail history</span>
                     <span class="tests-score-legend-row"><span class="tests-score-legend-dot" style="background:#3b82f6"></span>Dep overlap</span>
@@ -902,9 +905,9 @@ function previewScoreBars(t: TestEntry) {
                 </span>
                 <span v-if="d.sortKey.value === 'score'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
               </th>
-              <th class="th--left">Flags</th>
+              <th class="th--left" title="Status badges: ✕ failing, ~ flaky, ✎ changed source, + new, 🐢 slow, ⚡ fast, STAT static-field overlap. Hover a badge for details. Duration variance is shown in the Var column.">Flags</th>
               <th class="th--right th-sort" @click="d.sortBy('duration')" :class="{ 'th-sort--active': d.sortKey.value === 'duration' }" title="Sort by EMA-smoothed duration">Duration<span v-if="d.sortKey.value === 'duration'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span></th>
-              <th v-if="d.tests.some(t => t.durationVariance > 0.1)" class="th--right th-sort" @click="d.sortBy('durationVariance')" :class="{ 'th-sort--active': d.sortKey.value === 'durationVariance' }" title="Sort by EMA duration variance — how inconsistent the test's runtime is. High variance may indicate flakiness or environment sensitivity. Threshold ≥0.5 = High Variance badge.">Var<span v-if="d.sortKey.value === 'durationVariance'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span></th>
+              <th v-if="d.tests.some(t => t.durationVariance > 0 && t.duration > 0 && Math.sqrt(t.durationVariance) / t.duration > 0.05)" class="th--right th-sort" @click="d.sortBy('durationVariance')" :class="{ 'th-sort--active': d.sortKey.value === 'durationVariance' }" title="Sort by EMA duration variance (CV = stdDev/mean). High variance may indicate flakiness or environment sensitivity. Threshold ≥50% CV = High Variance badge.">Var<span v-if="d.sortKey.value === 'durationVariance'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span></th>
               <th class="th--right th-sort" @click="d.sortBy('depTotal')" :class="{ 'th-sort--active': d.sortKey.value === 'depTotal' }" title="Sort by total dependencies / overlap with changed classes">Deps / Overlap<span v-if="d.sortKey.value === 'depTotal'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span></th>
               <th v-if="d.runs.length" class="th--left" title="Pass/fail history across last 5 runs (newest right). Green = pass, red = fail, gray = absent.">History</th>
               <th v-if="d.runs.length >= 3" class="th--left" title="Rank trend across last 8 runs. Green = moving earlier (improving), red = moving later (worsening).">Trend</th>
@@ -964,17 +967,19 @@ function previewScoreBars(t: TestEntry) {
                 <span v-if="t.duration >= 0" class="tests-overview__dur-bar" :style="{ width: Math.max(2, Math.round(t.duration / maxDuration * 28)) + 'px', background: t.isSlow ? 'var(--orange)' : t.isFast ? 'var(--green)' : 'var(--accent)' }"></span>
                 {{ t.duration >= 0 ? fmtDur(t.duration) : '' }}
               </td>
-              <td v-if="d.tests.some(tt => tt.durationVariance > 0.1)" class="td--right td--dim td--var"
-                :title="t.durationVariance > 0 && t.duration > 0 ? 'Duration variance: ±' + Math.round(Math.sqrt(t.durationVariance)) + 'ms (CV ' + Math.round(Math.sqrt(t.durationVariance) / t.duration * 100) + '%)' + (t.durationVariance >= (d.dd.config.emaVarianceThreshold ?? 0.5) ? ' — HIGH' : '') : 'No variance data'"
+              <td v-if="d.tests.some(tt => tt.durationVariance > 0 && tt.duration > 0 && Math.sqrt(tt.durationVariance) / tt.duration > 0.05)" class="td--right td--dim td--var"
+                :title="t.durationVariance > 0 && t.duration > 0 ? 'Duration variance: ±' + Math.round(Math.sqrt(t.durationVariance)) + 'ms (CV ' + Math.round(Math.sqrt(t.durationVariance) / t.duration * 100) + '%)' + (Math.sqrt(t.durationVariance) / t.duration >= (d.dd.config.emaVarianceThreshold ?? 0.5) ? ' — HIGH (CV≥' + Math.round((d.dd.config.emaVarianceThreshold ?? 0.5) * 100) + '%)' : '') : 'No variance data'"
               >
                 <span v-if="t.durationVariance > 0 && t.duration > 0">
                   <span class="td--var-bar" :style="{
                     width: Math.max(2, Math.min(24, Math.round(Math.sqrt(t.durationVariance) / t.duration * 80))) + 'px',
-                    background: t.durationVariance >= (d.dd.config.emaVarianceThreshold ?? 0.5) ? 'var(--yellow)' : 'rgba(100,116,139,.5)'
+                    background: Math.sqrt(t.durationVariance) / t.duration >= (d.dd.config.emaVarianceThreshold ?? 0.5) ? 'var(--yellow)' : 'rgba(100,116,139,.5)'
                   }"></span>
                 </span>
               </td>
-              <td class="td--right td--dim">
+              <td class="td--right td--dim"
+                :title="'Total source-class deps: ' + (t.depTotal || 0) + (t.depOverlap > 0 ? ' · Dep overlap with changed classes: ' + t.depOverlap : ' · No overlap with changed classes')"
+              >
                 {{ t.depTotal || 0 }}<span v-if="t.depOverlap > 0" style="color:var(--cyan)"> / {{ t.depOverlap }}</span>
               </td>
               <td v-if="d.runs.length" class="td--history">
@@ -1001,10 +1006,10 @@ function previewScoreBars(t: TestEntry) {
                 :style="{ color: (confidenceMap.get(t.name) ?? 0) >= 80 ? 'var(--green)' : (confidenceMap.get(t.name) ?? 0) >= 50 ? 'var(--yellow)' : 'var(--red)' }"
               >{{ confidenceMap.get(t.name) ?? 0 }}%</td>
               <td v-if="d.runs.length >= 3" class="td--right td--stab"
-                :title="'Stability score: ' + (stabilityScores.get(t.name) ?? 0) + '/100 — composite of fail rate, flakiness, and duration variance. ' + (stabilityScores.get(t.name) ?? 0) >= 80 ? 'Highly stable.' : (stabilityScores.get(t.name) ?? 0) >= 50 ? 'Moderately stable.' : 'Unstable — needs attention.'"
+                :title="`Stability score: ${stabilityScores.get(t.name) ?? 0}/100 — composite of fail rate, flakiness, and duration variance. ${(stabilityScores.get(t.name) ?? 0) >= 80 ? 'Highly stable.' : (stabilityScores.get(t.name) ?? 0) >= 50 ? 'Moderately stable.' : 'Unstable — needs attention.'}`"
                 :style="{ color: (stabilityScores.get(t.name) ?? 0) >= 80 ? 'var(--green)' : (stabilityScores.get(t.name) ?? 0) >= 50 ? 'var(--yellow)' : 'var(--red)' }"
               >{{ stabilityScores.get(t.name) ?? 0 }}</td>
-              <td v-if="hasPFail" class="td--right" :style="{ color: t.mlPFail != null && t.mlPFail > 0.5 ? 'var(--red)' : t.mlPFail != null && t.mlPFail > 0.2 ? 'var(--yellow)' : 'var(--text-muted)' }">{{ t.mlPFail != null ? (t.mlPFail * 100).toFixed(1) + '%' : '' }}</td>
+              <td v-if="hasPFail" class="td--right" :style="{ color: t.mlPFail != null && t.mlPFail > 0.5 ? 'var(--red)' : t.mlPFail != null && t.mlPFail > 0.2 ? 'var(--yellow)' : 'var(--text-muted)' }" :title="t.mlPFail != null ? 'ML failure probability: ' + (t.mlPFail * 100).toFixed(1) + '% · >50% = high risk (red) · 20–50% = caution (yellow)' : 'No ML prediction for this test'">{{ t.mlPFail != null ? (t.mlPFail * 100).toFixed(1) + '%' : '' }}</td>
             </tr>
             </template>
           </tbody>
@@ -1063,7 +1068,7 @@ function previewScoreBars(t: TestEntry) {
       </div>
       <!-- Suite health micro-dashboard -->
       <div v-if="d.runs.length >= 3 && d.tests.length" class="health-micro">
-        <span class="health-micro__label">Stability:</span>
+        <span class="health-micro__label" title="Stability score (0–100): composite of reliability, flakiness, and duration variance. 100 = never fails, never flaky, consistent timing.">Stability:</span>
         <div class="health-micro__bars">
           <div
             v-for="bucket in stabilityBuckets"
@@ -1077,13 +1082,13 @@ function previewScoreBars(t: TestEntry) {
           <span v-for="b in stabilityBuckets" :key="b.label" :style="{ color: b.color }" :title="b.label + ': ' + b.count + ' tests'">{{ b.count }}</span>
         </span>
         <span class="health-micro__sep">·</span>
-        <span class="health-micro__label">Flaky:</span>
+        <span class="health-micro__label" title="Tests that have both passes and failures in recorded runs (intermittently failing)">Flaky:</span>
         <span class="health-micro__val" :style="{ color: d.flakyTests.value.size > 0 ? 'var(--orange)' : 'var(--green)' }">{{ d.flakyTests.value.size }}</span>
         <span class="health-micro__sep">·</span>
-        <span class="health-micro__label">Unstable (Stab.&lt;50):</span>
+        <span class="health-micro__label" title="Tests with stability score below 50 — these are your most unstable tests and deserve attention">Unstable (Stab.&lt;50):</span>
         <span class="health-micro__val" :style="{ color: unstableCount > 0 ? 'var(--red)' : 'var(--green)' }">{{ unstableCount }}</span>
         <span class="health-micro__sep">·</span>
-        <span class="health-micro__label">Avg stab.:</span>
+        <span class="health-micro__label" title="Mean stability score across all tests. ≥80 = healthy · 50–80 = needs attention · <50 = unstable suite">Avg stab.:</span>
         <span class="health-micro__val" :style="{ color: avgStability >= 80 ? 'var(--green)' : avgStability >= 50 ? 'var(--yellow)' : 'var(--red)' }">{{ avgStability }}</span>
       </div>
       <p style="color:var(--text-muted);font-size:.68rem;margin-top:8px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
@@ -1147,11 +1152,11 @@ function previewScoreBars(t: TestEntry) {
 
       <!-- Aggregate stats -->
       <div v-if="multiStats" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-        <div class="kpi tests-overview__kpi" title="Total unique source-class dependencies across all selected tests">
+        <div class="kpi tests-overview__kpi" title="Total unique source-class dependencies across all selected tests (from stored index — full counts may be higher)">
           <div class="tests-overview__kpi-label">Union Deps</div>
           <div class="tests-overview__kpi-value" style="color:var(--accent-light)">{{ multiStats.unionDeps }}</div>
         </div>
-        <div class="kpi tests-overview__kpi" :title="'Source classes covered by ALL ' + d.selectedTests.value.size + ' selected tests (intersection)'">
+        <div class="kpi tests-overview__kpi" :title="'Source classes in the dep index covered by ALL ' + d.selectedTests.value.size + ' selected tests (intersection)'">
           <div class="tests-overview__kpi-label">Shared Deps</div>
           <div class="tests-overview__kpi-value" :style="{ color: multiStats.sharedDeps > 0 ? 'var(--cyan)' : 'var(--text-muted)' }">{{ multiStats.sharedDeps }}</div>
         </div>
@@ -1172,7 +1177,7 @@ function previewScoreBars(t: TestEntry) {
       <!-- Score comparison bars -->
       <div v-if="multiStats" style="margin-bottom:10px">
         <div class="card" style="padding:8px">
-          <div class="card-label" style="margin-bottom:6px">Score Comparison</div>
+          <div class="card-label" style="margin-bottom:6px" title="Priority scores for selected tests. Bar width = score relative to the max in the selection. Higher score = ranked earlier. Click a test name to focus it.">Score Comparison</div>
           <div style="display:flex;flex-direction:column;gap:3px">
             <div v-for="t in d.selectedTestObjects.value" :key="t.name" style="display:flex;align-items:center;gap:6px">
               <span style="font-size:.58rem;color:var(--text-sec);width:18px;text-align:right;flex-shrink:0">#{{ t.rank }}</span>
@@ -1190,11 +1195,11 @@ function previewScoreBars(t: TestEntry) {
         <table>
           <thead class="tests-overview__thead">
             <tr>
-              <th class="th--right">Rank</th>
-              <th class="th--left">Test</th>
-              <th class="th--right">Score</th>
-              <th class="th--left">Flags</th>
-              <th class="th--right">Duration</th>
+              <th class="th--right" title="Priority rank — lower rank = runs earlier">Rank</th>
+              <th class="th--left" title="Test class name">Test</th>
+              <th class="th--right" title="Priority score — higher = runs earlier">Score</th>
+              <th class="th--left" title="Status badges: failing, flaky, changed, new, slow/fast, dep-overlap, etc.">Flags</th>
+              <th class="th--right" title="EMA-smoothed test execution duration">Duration</th>
               <th class="th--right" title="Deps overlapping with changed source classes — higher means more relevant">Dep overlap</th>
               <th class="th--right" title="Total source-class dependencies tracked for this test">Total deps</th>
               <th v-if="d.runs.length" class="th--left" title="Pass/fail history across last 5 runs">History</th>
@@ -1301,8 +1306,8 @@ function previewScoreBars(t: TestEntry) {
         <TestBadges :test="d.selectedTest.value" size="md" :flaky="d.flakyTests.value.has(d.selectedTest.value.name)" />
         <span v-if="d.selectedTest.value.methods && d.selectedTest.value.methods.length" class="badge" style="background:rgba(99,102,241,.2);color:var(--accent-light)" title="Test methods with individual dep tracking">{{ d.selectedTest.value.methods.length }} methods</span>
         <span class="tests-detail__stat" title="EMA-smoothed expected duration">⏱ {{ d.selectedTest.value.duration >= 0 ? fmtDur(d.selectedTest.value.duration) : '?' }}</span>
-        <span class="tests-detail__stat" :style="{ color: d.selectedTest.value.failScore > 0 ? 'var(--red)' : 'var(--text-muted)' }" title="EMA-decayed historical failure score (raw)">✕ fail score {{ d.selectedTest.value.failScore.toFixed(2) }}</span>
-        <span class="tests-detail__stat" :style="{ color: d.selectedTest.value.depOverlap > 0 ? 'var(--cyan)' : 'var(--text-muted)' }" title="Source class dependencies (overlapping / total)">◈ {{ d.selectedTest.value.depOverlap }}/{{ d.selectedTest.value.depTotal }} deps</span>
+        <span class="tests-detail__stat" :style="{ color: d.selectedTest.value.failScore > 0 ? 'var(--red)' : 'var(--text-muted)' }" title="Exponentially weighted failure score — recent failures weigh more than old ones. Score > 0 means the test has failed at least once in recorded history.">✕ fail score {{ d.selectedTest.value.failScore.toFixed(2) }}</span>
+        <span class="tests-detail__stat" :style="{ color: d.selectedTest.value.depOverlap > 0 ? 'var(--cyan)' : 'var(--text-muted)' }" :title="`Source class dependencies: ${d.selectedTest.value.depOverlap} overlap with changed classes / ${d.selectedTest.value.depTotal} total. Overlap means this test directly calls into classes that were modified — higher overlap → more likely to be affected.`">◈ {{ d.selectedTest.value.depOverlap }}/{{ d.selectedTest.value.depTotal }} deps</span>
         <span v-if="d.testOutcomes.value.filter(o => o.present).length > 0" class="tests-detail__stat"
           :style="{ color: d.testOutcomes.value.filter(o => o.present && o.failed).length > 0 ? 'var(--orange)' : 'var(--green)' }"
           :title="'Fail rate across ' + d.testOutcomes.value.filter(o => o.present).length + ' runs'"
@@ -1310,7 +1315,7 @@ function previewScoreBars(t: TestEntry) {
           {{ d.testOutcomes.value.filter(o => o.present && o.failed).length }}✕ / {{ d.testOutcomes.value.filter(o => o.present).length }} runs
           ({{ Math.round(d.testOutcomes.value.filter(o => o.present && o.failed).length / d.testOutcomes.value.filter(o => o.present).length * 100) }}% fail rate)
         </span>
-        <span v-if="d.selectedTest.value.failScore > 0 && d.testOutcomes.value.length > 0" class="tests-detail__stat" style="color:var(--red)">· last failed {{ fmtTime(d.testOutcomes.value.filter(o => o.present && o.failed).at(-1)?.ts ?? d.testOutcomes.value.filter(o => o.present).at(-1)?.ts) }}</span>
+        <span v-if="d.selectedTest.value.failScore > 0 && d.testOutcomes.value.some(o => o.present && o.failed)" class="tests-detail__stat" style="color:var(--red)">· last failed {{ fmtTime(d.testOutcomes.value.filter(o => o.present && o.failed).at(-1)!.ts) }}</span>
         <span v-if="rankTrend" class="tests-detail__stat tests-detail__rank-trend"
           :class="rankTrend.dir === 'improving' ? 'tests-detail__rank-trend--up' : rankTrend.dir === 'worsening' ? 'tests-detail__rank-trend--down' : ''"
           :title="rankTrendTip"
@@ -1335,7 +1340,7 @@ function previewScoreBars(t: TestEntry) {
       <!-- Score breakdown + Run history -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="card">
-          <div class="card-label">Score Breakdown <span style="font-size:.58rem;color:var(--text-muted)">(hover segments for details)</span></div>
+          <div class="card-label" title="Weighted score components for this test's current priority. Each bar segment represents a score factor (dep overlap, fail history, speed bonus, etc.). Hover a segment for the exact value. Click the score number to see the full breakdown.">Score Breakdown <span style="font-size:.58rem;color:var(--text-muted)">(hover segments for details)</span></div>
           <div class="test-detail__canvas-wrap" style="height:64px"><canvas id="bd-main"></canvas></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
             <template v-for="c in d.scoreComps.value" :key="c.label">
@@ -1349,7 +1354,7 @@ function previewScoreBars(t: TestEntry) {
           </div>
         </div>
         <div class="card">
-          <div class="card-label">Run History
+          <div class="card-label" title="Pass/fail outcome for each recorded run. Green = passed, red = failed, grey = test was not present. Newest run is first. Click a square to jump to that run in the Analytics tab.">Run History
             <span style="font-size:.58rem;color:var(--text-muted)">
               ({{ d.testOutcomes.value.filter(o => o.present).length }}/{{ d.testOutcomes.value.length }} runs ·
               {{ d.testOutcomes.value.filter(o => o.present && o.failed).length }} fails)
@@ -1371,7 +1376,7 @@ function previewScoreBars(t: TestEntry) {
               <span v-if="r.present && r.failed" style="font-size:.48rem;line-height:1;font-weight:700">!</span>
             </div>
           </div>
-          <div class="card-label">Pass/Fail per Run <span style="font-size:.58rem;color:var(--text-muted)">(EMA dur: {{ d.selectedTest.value.duration >= 0 ? fmtDur(d.selectedTest.value.duration) : 'unknown' }}{{ d.selectedTest.value.isSlow ? ' · slow' : d.selectedTest.value.isFast ? ' · fast' : '' }})</span></div>
+          <div class="card-label" title="Duration per run with pass/fail overlay. The line shows the EMA-smoothed execution time trend; bars mark runs where the test failed. High variance in duration may indicate flakiness.">Pass/Fail per Run <span style="font-size:.58rem;color:var(--text-muted)">(EMA dur: {{ d.selectedTest.value.duration >= 0 ? fmtDur(d.selectedTest.value.duration) : 'unknown' }}{{ d.selectedTest.value.isSlow ? ' · slow' : d.selectedTest.value.isFast ? ' · fast' : '' }})</span></div>
           <div class="test-detail__canvas-wrap" style="height:50px"><canvas id="hd-main"></canvas></div>
         </div>
       </div>
@@ -1379,12 +1384,12 @@ function previewScoreBars(t: TestEntry) {
       <!-- Score over time + Run position -->
       <div v-if="d.runs.length > 1" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
         <div class="card">
-          <div class="card-label">Score over runs</div>
+          <div class="card-label" title="Priority score for this test in each run. Score = sum of weighted components (dep overlap, fail history, speed, complexity). Higher = runs earlier.">Score over runs</div>
           <div v-if="d.testOutcomes.value.every(o => !o.present)" style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:.68rem">No outcome data in run history</div>
           <div v-else class="test-detail__canvas-wrap test-detail__canvas-wrap--trend"><canvas id="hs-main"></canvas></div>
         </div>
         <div class="card">
-          <div class="card-label">Run position (lower = earlier)</div>
+          <div class="card-label" title="Rank position (1 = first to run) in each recorded run. Lower rank = runs earlier. Stable low rank = consistently prioritized. Spikes upward = the test was deprioritized in those runs.">Run position (lower = earlier)</div>
           <div v-if="d.testOutcomes.value.every(o => !o.present)" style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:.68rem">No outcome data in run history</div>
           <div v-else class="test-detail__canvas-wrap test-detail__canvas-wrap--trend"><canvas id="hp-main"></canvas></div>
         </div>
@@ -1393,7 +1398,7 @@ function previewScoreBars(t: TestEntry) {
       <!-- Run position history table -->
       <div v-if="testRunPositions.length > 0" style="margin-top:10px">
         <div class="card" style="padding:8px">
-          <div class="card-label" style="margin-bottom:4px">Run Position History <span style="font-size:.58rem;color:var(--text-muted)">— click a run to inspect in Analytics</span></div>
+          <div class="card-label" style="margin-bottom:4px" title="Rank position of this test in each historical run. Lower number = ran earlier (higher priority). Red = run where test failed. Click a cell to jump to that run in Analytics.">Run Position History <span style="font-size:.58rem;color:var(--text-muted)">— click a run to inspect in Analytics</span></div>
           <div style="display:flex;flex-wrap:wrap;gap:3px">
             <div
               v-for="r in [...testRunPositions].reverse()"
@@ -1414,9 +1419,10 @@ function previewScoreBars(t: TestEntry) {
       <!-- Similar tests: tests sharing most deps with selected -->
       <div v-if="similarTests.length > 0" style="margin-top:10px">
         <div class="card" style="padding:8px">
-          <div class="card-label" style="margin-bottom:6px">
+          <div class="card-label" style="margin-bottom:6px" title="Tests that share the most source classes with the selected test, based on dep overlap. High similarity may indicate redundant coverage — these tests exercise similar code paths. Ctrl+click to add to multi-selection.">
             Similar Tests
             <span style="font-size:.58rem;color:var(--text-muted)">— by shared source-class coverage · click to navigate · Ctrl+click to compare</span>
+            <span v-if="d.selectedTest.value!.depTotal > d.selectedTest.value!.deps.length" style="font-size:.55rem;color:var(--text-muted);margin-left:4px" :title="`Similarity is computed on the ${d.selectedTest.value!.deps.length} stored deps; full dep list has ${d.selectedTest.value!.depTotal} classes. Shared-class counts and % may be understated.`">⚠ truncated deps</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:3px">
             <div
@@ -1429,7 +1435,7 @@ function previewScoreBars(t: TestEntry) {
             >
               <span class="test-detail__similar-rank">#{{ r.test.rank }}</span>
               <span class="test-detail__similar-name">{{ dn(r.test.name) }}</span>
-              <div class="test-detail__similar-bar-wrap" :title="r.overlap + ' shared / ' + d.selectedTest.value!.deps.length + ' total deps'">
+              <div class="test-detail__similar-bar-wrap" :title="r.overlap + ' shared / ' + (d.selectedTest.value!.depTotal || d.selectedTest.value!.deps.length) + ' total deps'">
                 <div class="test-detail__similar-bar" :style="{ width: r.pct + '%' }"></div>
               </div>
               <span class="test-detail__similar-pct">{{ r.overlap }}<span style="opacity:.5">/{{ r.pct }}%</span></span>
@@ -1441,9 +1447,9 @@ function previewScoreBars(t: TestEntry) {
 
       <!-- Method detail table -->
       <div v-if="d.selectedTest.value.methods && d.selectedTest.value.methods.length" style="margin-top:10px">
-        <div class="card-label" style="margin-bottom:4px">
+        <div class="card-label" style="margin-bottom:4px" title="Individual @Test methods for this test class with their dependency counts. Click a method to focus the dep graph on its call chain. Ctrl+click to compare multiple methods.">
           Test Methods ({{ d.selectedTest.value.methods.length }})
-          <span style="color:var(--text-muted);font-size:.62rem">— click in sidebar or below to focus dep graph</span>
+          <span style="color:var(--text-muted);font-size:.62rem" title="Each card is one @Test method. 'deps' = source classes exercised exclusively by that method. Click a method card or sidebar method to focus the dep graph on its call chain.">— click in sidebar or below to focus dep graph</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px">
           <div
@@ -1452,9 +1458,10 @@ function previewScoreBars(t: TestEntry) {
             @click="d.selectMethod(m, $event)"
             class="test-detail__method-card"
             :class="{ 'test-detail__method-card--selected': d.selectedMethods.value.has(m.name) }"
+            :title="m.name + ' — ' + m.depCount + ' source class dep' + (m.depCount === 1 ? '' : 's') + (m.memberDeps?.length ? ' · ' + m.memberDeps.length + ' prod method dep' + (m.memberDeps.length === 1 ? '' : 's') : '') + '\nClick to highlight in dep graph · Ctrl+click to multi-select'"
           >
             <span class="test-detail__method-name" :title="m.name">{{ m.name }}</span>
-            <span class="test-detail__method-deps">{{ m.depCount }} deps</span>
+            <span class="test-detail__method-deps" title="Source classes exercised by this method">{{ m.depCount }} deps</span>
             <div v-if="m.memberDeps && m.memberDeps.length" style="margin-top:4px;font-size:.58rem;color:var(--text-muted);line-height:1.4">
               <span style="color:var(--accent-light)">prod methods:</span>
               {{ m.memberDeps.slice(0, 3).map(k => k.includes('#') ? k.substring(k.lastIndexOf('.') + 1) : k).join(', ') }}<span v-if="m.memberDeps.length > 3"> +{{ m.memberDeps.length - 3 }} more</span>
@@ -1466,14 +1473,16 @@ function previewScoreBars(t: TestEntry) {
       <!-- Coverage section: which source classes does this test cover -->
       <div v-if="d.hasCoverage && d.selectedTest.value.deps && d.selectedTest.value.deps.length" style="margin-top:10px">
         <div class="card">
-          <div class="card-label" style="margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="card-label" style="margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"
+               title="Source classes loaded by this test during runs, from bytecode instrumentation. ✎ = changed since last run. 🔥 = hot (covered by many tests — a change there affects many). Click any tile to view in Coverage tab.">
             Source Class Coverage
-            <span style="color:var(--text-muted);font-size:.6rem">— {{ d.selectedTest.value.deps.length }} class{{ d.selectedTest.value.deps.length === 1 ? '' : 'es' }}</span>
+            <span style="color:var(--text-muted);font-size:.6rem">— {{ d.selectedTest.value.depTotal || d.selectedTest.value.deps.length }} class{{ (d.selectedTest.value.depTotal || d.selectedTest.value.deps.length) === 1 ? '' : 'es' }}<span v-if="d.selectedTest.value.depTotal > d.selectedTest.value.deps.length" :title="`Full dep list has ${d.selectedTest.value.depTotal} classes; only the ${d.selectedTest.value.deps.length} most significant are stored in the index`"> (showing {{ d.selectedTest.value.deps.length }})</span></span>
             <span v-if="d.selectedTest.value.deps.filter(dep => d.changedSet.has(dep)).length > 0" style="font-size:.6rem;color:var(--yellow)">· {{ d.selectedTest.value.deps.filter(dep => d.changedSet.has(dep)).length }} changed</span>
             <span v-if="d.selectedTest.value.deps.filter(dep => (hotDepMap.get(dep) ?? 0) >= hotDepThreshold).length > 0" style="font-size:.6rem;color:var(--orange)">· {{ d.selectedTest.value.deps.filter(dep => (hotDepMap.get(dep) ?? 0) >= hotDepThreshold).length }} hot</span>
             <button
               v-if="d.selectedTest.value.deps.length > 40"
               class="test-detail__show-all-btn"
+              :title="showAllDeps ? 'Collapse to top 40 dependencies' : 'Show all ' + d.selectedTest.value.deps.length + ' dependencies'"
               @click="showAllDeps = !showAllDeps"
             >{{ showAllDeps ? 'Show less' : 'Show all ' + d.selectedTest.value.deps.length }}</button>
           </div>
@@ -1501,7 +1510,7 @@ function previewScoreBars(t: TestEntry) {
                 @mouseleave="classHover.hide()"
               >{{ dn(dep) }}<span v-if="d.changedSet.has(dep)" class="test-detail__cov-changed">✎</span><span v-else-if="(hotDepMap.get(dep) ?? 0) >= hotDepThreshold" class="test-detail__cov-hot" :title="hotDepMap.get(dep) + ' tests cover this class'">🔥</span></span>
             </template>
-            <button v-if="!showAllDeps && d.selectedTest.value.deps.length > 40" class="test-detail__show-all-btn" @click="showAllDeps = true">+{{ d.selectedTest.value.deps.length - 40 }} more…</button>
+            <button v-if="!showAllDeps && d.selectedTest.value.deps.length > 40" class="test-detail__show-all-btn" title="Show all dependencies (currently showing top 40)" @click="showAllDeps = true">+{{ d.selectedTest.value.deps.length - 40 }} more…</button>
           </div>
           <div v-if="d.selectedTest.value.memberDeps && d.selectedTest.value.memberDeps.length" style="margin-top:6px;font-size:.6rem;color:var(--text-muted)">
             {{ d.selectedTest.value.memberDeps.length }} member-level deps tracked — <span style="cursor:pointer;color:var(--accent-light)" @click="d.openScoreModal(d.selectedTest.value!.name, 'orig', 'Coverage')">see score modal for details</span>
@@ -1514,9 +1523,10 @@ function previewScoreBars(t: TestEntry) {
       <!-- Coverage siblings: other tests sharing same source classes -->
       <div v-if="coverageSiblings.length > 0" style="margin-top:10px">
         <div class="card" style="padding:8px">
-          <div class="card-label" style="margin-bottom:6px">
+          <div class="card-label" style="margin-bottom:6px" title="Other tests that load many of the same source classes as this test. Useful for finding redundant tests or understanding shared coverage. Ctrl+click to add to multi-selection for coverage comparison.">
             Coverage Siblings
             <span style="font-size:.58rem;color:var(--text-muted)">— tests covering same source classes · click to navigate</span>
+            <span style="font-size:.55rem;color:var(--text-muted);margin-left:4px" title="Sibling discovery uses the coverage index (cls.tests arrays). These are stored as top-N per class, so very widely-covered classes may miss some tests.">ⓘ top-N index</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:3px">
             <div
@@ -1524,7 +1534,7 @@ function previewScoreBars(t: TestEntry) {
               :key="s.name"
               class="test-detail__similar-row"
               @click="$event.ctrlKey || $event.metaKey ? d.selectTest(s.test!, $event) : d.selectTest(s.test!, null)"
-              :title="s.name + '\n' + s.shared.length + ' shared classes (' + s.pct + '% of selected test\'s coverage)\nShared: ' + s.shared.slice(0,5).map(c => c.split('.').pop()).join(', ') + (s.shared.length > 5 ? '…' : '') + '\nClick to navigate · Ctrl+click to compare'"
+              :title="s.name + '\n' + s.shared.length + ' shared classes (' + s.pct + '% of selected test\'s coverage)\nShared: ' + s.shared.slice(0,5).join(', ') + (s.shared.length > 5 ? '…' : '') + '\nClick to navigate · Ctrl+click to compare'"
             >
               <span class="test-detail__similar-rank">#{{ s.test!.rank }}</span>
               <span class="test-detail__similar-name">{{ dn(s.name) }}</span>
@@ -1571,7 +1581,7 @@ function previewScoreBars(t: TestEntry) {
       <!-- Duration + variance -->
       <div v-if="hoverTest.duration >= 0" class="row-preview__dur">
         {{ fmtDur(hoverTest.duration) }}
-        <span v-if="hoverTest.durationVariance > 0" style="color:var(--text-muted)"> ±{{ Math.round(Math.sqrt(hoverTest.durationVariance)) }}ms</span>
+        <span v-if="hoverTest.durationVariance > 0 && hoverTest.duration > 0" style="color:var(--text-muted)"> ±{{ Math.round(Math.sqrt(hoverTest.durationVariance)) }}ms</span>
       </div>
       <!-- Run history dots -->
       <div v-if="d.testHistoryMap.value.get(hoverTest.name)" class="row-preview__hist">
