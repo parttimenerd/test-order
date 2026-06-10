@@ -1905,10 +1905,11 @@ function previewScoreBars(t: TestEntry) {
 
 /* Suite time budget */
 .tests-overview__table-scroll {
-  overflow-x: auto; max-height: 500px; overflow-y: auto; flex: 1; min-width: 0;
-  scrollbar-width: none; /* Firefox */
+  overflow-x: auto; overflow-y: auto; flex: 1; min-width: 0;
+  scrollbar-width: thin; /* Firefox */
 }
-.tests-overview__table-scroll::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+.tests-overview__table-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.tests-overview__table-scroll::-webkit-scrollbar-thumb { background: rgba(100,116,139,.4); border-radius: 3px; }
 
 .tests-minimap {
   border-radius: 3px;

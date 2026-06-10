@@ -25,15 +25,8 @@ const totalRuns = computed(() => {
   return hist.value.pass + hist.value.fail
 })
 
-const statusLabel = computed(() => {
-  if (!lastOutcome.value) return 'NO DATA'
-  return lastOutcome.value.failed ? 'FAIL' : 'PASS'
-})
-
-const statusColor = computed(() => {
-  if (!lastOutcome.value) return 'var(--border)'
-  return lastOutcome.value.failed ? 'var(--red)' : 'var(--green)'
-})
+const statusLabel = computed(() => lastOutcome.value?.failed ? 'FAIL' : 'PASS')
+const statusColor = computed(() => lastOutcome.value?.failed ? 'var(--red)' : 'var(--green)')
 
 function dotColor(failed: boolean | null): string {
   if (failed === null) return 'var(--border)'

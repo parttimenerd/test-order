@@ -17,11 +17,21 @@ export function useTestHover(): TestHoverState {
   const y = ref(0)
   let hideTimer: ReturnType<typeof setTimeout> | null = null
 
+  const CARD_W = 360
+  const CARD_H = 180
+
+  function clamp(event: MouseEvent) {
+    const cx = Math.min(event.clientX + 14, window.innerWidth - CARD_W - 4)
+    const cy = Math.min(event.clientY - 10, window.innerHeight - CARD_H - 4)
+    return { cx, cy }
+  }
+
   function show(name: string, event: MouseEvent) {
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
     testName.value = name
-    x.value = event.clientX + 14
-    y.value = event.clientY - 10
+    const { cx, cy } = clamp(event)
+    x.value = cx
+    y.value = cy
     visible.value = true
   }
 
@@ -30,8 +40,9 @@ export function useTestHover(): TestHoverState {
   }
 
   function move(event: MouseEvent) {
-    x.value = event.clientX + 14
-    y.value = event.clientY - 10
+    const { cx, cy } = clamp(event)
+    x.value = cx
+    y.value = cy
   }
 
   return { visible, testName, x, y, show, hide, move }

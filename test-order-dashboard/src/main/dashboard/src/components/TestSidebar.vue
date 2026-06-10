@@ -375,25 +375,6 @@ function removePreset(idx: number) {
               <button class="sidebar__save-btn" @click="showSaveInput = false; savePresetName = ''">Cancel</button>
             </div>
           </div>
-          <!-- Keyboard shortcuts section -->
-          <div class="sidebar__help-presets">
-            <div class="sidebar__help-presets-title">Keyboard Shortcuts</div>
-            <div class="sidebar__help-keys">
-              <span><kbd>↑</kbd><kbd>↓</kbd></span><span>Navigate tests</span>
-              <span><kbd>⏎</kbd></span><span>Select focused test</span>
-              <span><kbd>←</kbd><kbd>→</kbd></span><span>Prev / next test in detail view</span>
-              <span><kbd>/</kbd></span><span>Focus search</span>
-              <span><kbd>⌘K</kbd></span><span>Command palette</span>
-              <span><kbd>f</kbd><kbd>y</kbd><kbd>c</kbd></span><span>Toggle fail / flaky / changed filter</span>
-              <span><kbd>z</kbd></span><span>Focus mode (hide sidebar)</span>
-              <span><kbd>b</kbd></span><span>Blame mode (highlight changed tests)</span>
-              <span><kbd>g</kbd></span><span>Switch to dep graph</span>
-              <span><kbd>m</kbd></span><span>Toggle method mode in dep graph</span>
-              <span><kbd>Esc</kbd></span><span>Clear selection / filter / close</span>
-              <span><kbd>Ctrl+click</kbd></span><span>Multi-select (toggle)</span>
-              <span><kbd>Shift+click</kbd></span><span>Range select</span>
-            </div>
-          </div>
         </div>
       </div>
 
