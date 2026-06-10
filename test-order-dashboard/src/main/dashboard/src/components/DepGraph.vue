@@ -19,7 +19,7 @@ interface GNode extends d3.SimulationNodeDatum {
   id: string; type: string; changed: boolean; shortLabel: string; depCount: number
   mass?: number; pkg?: string; outerClass?: string
 }
-interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean }
+interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean; crossModule: boolean }
 
 const searchText = vueRef('')
 const colorByCoverage = vueRef(false)
@@ -121,6 +121,15 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
   const mode = d.graphMode.value
   const nodeMap: Record<string, GNode> = {}
   const links: GLink[] = []
+  const ctm = d.classToModuleMap
+  // test class → module cache for cross-module edge detection
+  const testModuleCache = new Map<string, string | null>(d.tests.map(t => [t.name, t.module]))
+  function isCrossModule(srcId: string, tgtId: string): boolean {
+    if (!ctm.size) return false
+    const srcMod = testModuleCache.get(srcId) ?? ctm.get(srcId)
+    const tgtMod = testModuleCache.get(tgtId) ?? ctm.get(tgtId)
+    return !!(srcMod && tgtMod && srcMod !== tgtMod)
+  }
   function addNode(id: string, type: string, changed: boolean) {
     if (!nodeMap[id]) {
       const hash = id.indexOf('#')
@@ -143,11 +152,11 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
         const cls = memberKey.includes('#') ? memberKey.substring(0, memberKey.indexOf('#')) : memberKey
         const isChanged = d.changedSet.has(cls)
         addNode(memberKey, 'member', isChanged)
-        links.push({ source: nodeId, target: memberKey, changed: isChanged })
+        links.push({ source: nodeId, target: memberKey, changed: isChanged, crossModule: isCrossModule(nodeId, memberKey) })
       })
     } else {
       nodeMap[nodeId].depCount = (m.deps || []).length
-      ;(m.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: nodeId, target: dep, changed: d.changedSet.has(dep) }) })
+      ;(m.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: nodeId, target: dep, changed: d.changedSet.has(dep), crossModule: isCrossModule(nodeId, dep) }) })
     }
     return { nodes: Object.values(nodeMap), links }
   }
@@ -161,7 +170,7 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
       addNode(tName, 'test', false)
       const t = d.tests.find(x => x.name === tName)
       nodeMap[tName].depCount = t ? (t.deps || []).length : 1
-      links.push({ source: tName, target: cls.name, changed: d.changedSet.has(cls.name) })
+      links.push({ source: tName, target: cls.name, changed: d.changedSet.has(cls.name), crossModule: isCrossModule(tName, cls.name) })
     }
     return { nodes: Object.values(nodeMap), links }
   }
@@ -175,7 +184,7 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
     for (const t of focusTests) {
       addNode(t.name, 'test', false)
       nodeMap[t.name].depCount = (t.deps || []).length
-      ;(t.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep) }) })
+      ;(t.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep), crossModule: isCrossModule(t.name, dep) }) })
     }
     if (expandSiblings.value) {
       const MAX_2HOP = 30
@@ -191,7 +200,7 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
         nodeMap[t.name].depCount = (t.deps || []).length
         for (const dep of (t.deps || [])) {
           if (reachedDeps.has(dep)) {
-            links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep) })
+            links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep), crossModule: isCrossModule(t.name, dep) })
           }
         }
       }
@@ -201,7 +210,7 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
       const touched = (t.deps || []).some(dep => d.changedSet.has(dep))
       if (!touched && !d.changedSet.has(t.name)) return
       addNode(t.name, 'test', false); nodeMap[t.name].depCount = (t.deps || []).length
-      ;(t.deps || []).filter(dep => d.changedSet.has(dep)).forEach(dep => { addNode(dep, 'dep', true); links.push({ source: t.name, target: dep, changed: true }) })
+      ;(t.deps || []).filter(dep => d.changedSet.has(dep)).forEach(dep => { addNode(dep, 'dep', true); links.push({ source: t.name, target: dep, changed: true, crossModule: isCrossModule(t.name, dep) }) })
     })
   } else {
     if (d.totalNodes.value > GRAPH.FULL_MODE_NODE_LIMIT) {
@@ -221,13 +230,13 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
         deps.forEach(depPkg => {
           addNode(depPkg, 'dep', false)
           nodeMap[depPkg].shortLabel = depPkg.split('.').pop() || depPkg
-          links.push({ source: pkg, target: depPkg, changed: false })
+          links.push({ source: pkg, target: depPkg, changed: false, crossModule: false })
         })
       }
     } else {
       d.tests.forEach(t => {
         addNode(t.name, 'test', false); nodeMap[t.name].depCount = (t.deps || []).length
-        ;(t.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep) }) })
+        ;(t.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep), crossModule: isCrossModule(t.name, dep) }) })
       })
     }
   }
@@ -427,7 +436,10 @@ function initGraph() {
   }
 
   const link = g.append('g').selectAll('line').data(links).join('line')
-    .attr('stroke', l => l.changed ? '#f59e0b' : '#334155').attr('stroke-width', 1.5).attr('stroke-opacity', 0.6)
+    .attr('stroke', l => l.changed ? '#f59e0b' : l.crossModule ? '#7c3aed' : '#334155')
+    .attr('stroke-width', l => l.crossModule ? 1.2 : 1.5)
+    .attr('stroke-opacity', l => l.crossModule ? 0.5 : 0.6)
+    .attr('stroke-dasharray', l => l.crossModule ? '4,3' : null)
   liveLinkSel = link as unknown as d3.Selection<SVGLineElement, GLink, SVGGElement, unknown>
 
   const node = g.append('g').selectAll<SVGGElement, GNode>('g').data(nodes).join('g')
@@ -663,6 +675,9 @@ defineExpose({ initGraph })
           <span><span class="dep-graph__dot" style="background:#3b82f6"></span>test</span>
           <span><span class="dep-graph__dot" style="background:#ef4444"></span>changed</span>
           <span><span class="dep-graph__dot" style="background:var(--text-sec)"></span>dep</span>
+          <span v-if="d.classToModuleMap.size > 0" style="display:flex;align-items:center;gap:3px">
+            <svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="4,3"/></svg>cross-module
+          </span>
         </template>
       </span>
     </div>

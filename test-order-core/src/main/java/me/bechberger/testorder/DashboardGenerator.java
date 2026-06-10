@@ -273,6 +273,11 @@ public class DashboardGenerator {
 			tests.add(t);
 		}
 		root.put("tests", tests);
+		// class→module lookup for DepGraph cross-module edge coloring (omitted for
+		// single-module projects to avoid bloat)
+		if (!classToModule.isEmpty()) {
+			root.put("classToModule", classToModule);
+		}
 
 		// run history (most-recent first)
 		List<Object> runs = new ArrayList<>();

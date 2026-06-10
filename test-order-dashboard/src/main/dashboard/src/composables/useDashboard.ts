@@ -37,6 +37,8 @@ export interface DashboardState {
   badgeFilter: Ref<string | null>
   selectedModule: Ref<string | null>
   modules: ComputedRef<string[]>
+  /** class→module lookup for DepGraph; empty map for single-module projects */
+  classToModuleMap: Map<string, string>
   focusedTestIndex: Ref<number>
   covSearchQ: Ref<string>
   scoreModalOpen: Ref<boolean>
@@ -156,6 +158,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const simSortDir = ref('desc')
   const badgeFilter = ref<string | null>(null)
   const selectedModule = ref<string | null>(null)
+  const classToModuleMap = new Map<string, string>(Object.entries(dd.classToModule ?? {}))
   const focusedTestIndex = ref(-1)
   const covSearchQ = ref('')
   const scoreModalOpen = ref(false)
@@ -1036,7 +1039,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
     nameMode, commonPrefix,
     showChangedPanel, simSortKey, simSortDir, badgeFilter,
-    selectedModule, modules,
+    selectedModule, modules, classToModuleMap,
     focusedTestIndex, covSearchQ,
     scoreModalOpen, scoreModalTitle, scoreModalBody, scoreModalData,
     analyticsSelectedRunIdx,

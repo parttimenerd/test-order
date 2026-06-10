@@ -231,6 +231,8 @@ export interface DashboardData {
   ml: MLData | null
   mutation: MutationData | null
   staticAnalysis: StaticAnalysisData | null
+  /** class→module map for cross-module dep coloring; absent for single-module projects */
+  classToModule?: Record<string, string>
 }
 
 /** Sort column definition for sidebar */
