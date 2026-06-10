@@ -35,7 +35,12 @@ public final class ShowMethodOrderWorkflow {
 	 * Computes the predicted method order for all test classes with telemetry.
 	 */
 	public static ShowMethodOrderResult compute(PluginContext ctx) throws IOException {
-		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.FULL);
+		boolean hasModuleScope = (ctx.testClassesDir() != null && java.nio.file.Files.isDirectory(ctx.testClassesDir()))
+				|| (ctx.testSourceRoot() != null && java.nio.file.Files.isDirectory(ctx.testSourceRoot()));
+		ChangeAnalysis.Options analysisOpts = hasModuleScope
+				? ChangeAnalysis.Options.FULL_FILTERED
+				: ChangeAnalysis.Options.FULL;
+		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, analysisOpts);
 
 		TestOrderState.MethodScoringWeights weights = a.state().methodScoringWeights();
 
@@ -70,13 +75,32 @@ public final class ShowMethodOrderWorkflow {
 	}
 
 	/**
-	 * Prints the method order report in a table format grouped by class.
+	 * Prints the method order report in a table format grouped by class. When
+	 * invoked from {@code show} (auto-detected), caps the output at
+	 * {@link #MAX_METHOD_CLASSES} classes to avoid flooding the terminal.
 	 */
+	private static final int MAX_METHOD_CLASSES = 20;
+
 	public static void printMethodOrderReport(PrintStream out, ShowMethodOrderResult result, boolean explain) {
+		printMethodOrderReport(out, result, explain, MAX_METHOD_CLASSES);
+	}
+
+	/**
+	 * Prints the method order report in a table format grouped by class.
+	 *
+	 * @param classLimit
+	 *            max number of classes to show (-1 = all)
+	 */
+	public static void printMethodOrderReport(PrintStream out, ShowMethodOrderResult result, boolean explain,
+			int classLimit) {
 		out.println("=== Test Method Execution Order ===");
 		out.println();
 
-		for (ClassMethodOrder classOrder : result.classOrders()) {
+		int totalClasses = result.classOrders().size();
+		int show = (classLimit > 0 && totalClasses > classLimit) ? classLimit : totalClasses;
+
+		for (int ci = 0; ci < show; ci++) {
+			ClassMethodOrder classOrder = result.classOrders().get(ci);
 			String shortClass = shortenClassName(classOrder.className());
 			out.println("  " + shortClass + " (" + classOrder.methods().size() + " methods):");
 
@@ -91,7 +115,11 @@ public final class ShowMethodOrderWorkflow {
 			out.println();
 		}
 
-		out.println("Total: " + result.classOrders().size() + " classes with method ordering");
+		if (totalClasses > show) {
+			out.println("Showing top " + show + " of " + totalClasses + " classes | use -Dtestorder.show.methods=true"
+					+ " -Dtestorder.show.limit=-1 to show all");
+		}
+		out.println("Total: " + totalClasses + " classes with method ordering");
 	}
 
 	private static void printExplainLine(PrintStream out, int rank, OrderedMethod m, ShowMethodOrderResult result) {

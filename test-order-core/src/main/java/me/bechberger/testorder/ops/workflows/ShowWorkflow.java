@@ -291,8 +291,10 @@ public final class ShowWorkflow {
 				classOrders = classOrders.stream().filter(co -> filter.test(co.className())).toList();
 			}
 			if (!classOrders.isEmpty()) {
-				ShowMethodOrderWorkflow.printMethodOrderReport(out, new ShowMethodOrderWorkflow.ShowMethodOrderResult(
-						classOrders, mo.changedClasses(), mo.changedMethods(), mo.weights()), opts.explain());
+				ShowMethodOrderWorkflow.printMethodOrderReport(out,
+						new ShowMethodOrderWorkflow.ShowMethodOrderResult(classOrders, mo.changedClasses(),
+								mo.changedMethods(), mo.weights()),
+						opts.explain(), opts.displayLimit());
 			}
 		} else if (Boolean.TRUE.equals(opts.methods())) {
 			// Only show "unavailable" noise when the user explicitly requested methods=true
