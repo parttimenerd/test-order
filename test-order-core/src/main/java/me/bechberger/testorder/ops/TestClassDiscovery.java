@@ -139,6 +139,91 @@ public final class TestClassDiscovery {
 	}
 
 	/**
+	 * Derives test class names from source files under {@code testSourceRoot}.
+	 * Converts {@code .java}, {@code .kt}, and {@code .groovy} file paths to
+	 * fully-qualified class names by relativizing against the source root and
+	 * replacing path separators with dots.
+	 *
+	 * <p>
+	 * This is a best-effort approximation: it does not handle multiple top-level
+	 * classes per file, but covers the common case where one file = one class.
+	 */
+	public static Set<String> deriveTestClassNamesFromSources(Path testSourceRoot) {
+		if (testSourceRoot == null || !Files.isDirectory(testSourceRoot)) {
+			return Set.of();
+		}
+		Set<String> names = new LinkedHashSet<>();
+		try (Stream<Path> walk = Files.walk(testSourceRoot)) {
+			walk.filter(Files::isRegularFile).forEach(path -> {
+				String s = path.toString();
+				String ext = null;
+				if (s.endsWith(".java")) {
+					ext = ".java";
+				} else if (s.endsWith(".kt")) {
+					ext = ".kt";
+				} else if (s.endsWith(".groovy")) {
+					ext = ".groovy";
+				}
+				if (ext != null) {
+					String relative = testSourceRoot.relativize(path).toString();
+					String className = relative.replace('/', '.').replace('\\', '.');
+					if (className.endsWith(ext)) {
+						className = className.substring(0, className.length() - ext.length());
+					}
+					names.add(className);
+				}
+			});
+		} catch (IOException e) {
+			// Swallow — best effort
+		}
+		return names;
+	}
+
+	/**
+	 * Filters a dependency map to only include test classes that have a
+	 * corresponding source file under {@code testSourceRoot}. This is a fallback
+	 * for when test classes haven't been compiled yet (e.g., {@code show} invoked
+	 * before {@code compile}).
+	 *
+	 * <p>
+	 * Returns {@code depMap} unchanged if {@code testSourceRoot} is {@code null},
+	 * not a directory, or yields no source-derived names.
+	 */
+	public static DependencyMap filterToModuleBySourceRoot(DependencyMap depMap, Path testSourceRoot) {
+		Set<String> sourceNames = deriveTestClassNamesFromSources(testSourceRoot);
+		if (sourceNames.isEmpty()) {
+			return depMap;
+		}
+		Map<String, List<String>> methodKeysByClass = depMap.hasMethodDeps()
+				? groupMethodKeysByClass(depMap.methodKeys())
+				: Map.of();
+		DependencyMap filtered = new DependencyMap();
+		for (String testClass : depMap.testClasses()) {
+			// Match both outer classes and inner classes (e.g. OuterTest$Inner)
+			String outerClass = testClass.contains("$") ? testClass.substring(0, testClass.indexOf('$')) : testClass;
+			if (!sourceNames.contains(outerClass)) {
+				continue;
+			}
+			filtered.put(testClass, depMap.get(testClass));
+			List<String> methodKeys = methodKeysByClass.getOrDefault(testClass, List.of());
+			for (String methodKey : methodKeys) {
+				filtered.putMethodDeps(methodKey, depMap.getMethodDeps(methodKey));
+				if (depMap.hasMemberDeps()) {
+					filtered.putMethodMemberDeps(methodKey, depMap.getMethodMemberDeps(methodKey));
+				}
+			}
+			if (depMap.hasMemberDeps()) {
+				filtered.putMemberDeps(testClass, depMap.getMemberDeps(testClass));
+			}
+			String mod = depMap.getModule(testClass);
+			if (mod != null) {
+				filtered.putModule(testClass, mod);
+			}
+		}
+		return filtered;
+	}
+
+	/**
 	 * Filters a dependency map to only include test classes whose recorded owning
 	 * module matches {@code moduleId}. Tests with no recorded module are treated as
 	 * owned by every module (included in every per-module filter result) — this

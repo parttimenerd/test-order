@@ -867,6 +867,24 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			return;
 		}
 		Path testClassesDir = Path.of(testOutDir);
+		if (!java.nio.file.Files.isDirectory(testClassesDir)) {
+			return;
+		}
+		// Skip pruning when the directory exists but contains no compiled .class files.
+		// This happens when `mvn test-order:prepare` is invoked from a submodule that
+		// hasn't been compiled yet (e.g. `cd submodule && mvn test-order:prepare`).
+		// In that case the directory is either empty or contains only resource files,
+		// and pruning all state entries would corrupt the shared state file.
+		boolean hasCompiledClasses;
+		try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(testClassesDir)) {
+			hasCompiledClasses = walk.anyMatch(p -> p.toString().endsWith(".class"));
+		} catch (java.io.IOException e) {
+			return; // if we can't walk, skip pruning
+		}
+		if (!hasCompiledClasses) {
+			getLog().debug("[test-order] Skipping state prune — no compiled test classes in " + testClassesDir);
+			return;
+		}
 		java.util.Set<String> pruned = state.pruneDeletedTestClasses(testClassesDir);
 		if (!pruned.isEmpty()) {
 			getLog().info("[test-order] Pruned " + pruned.size() + " deleted test class(es) from state: "

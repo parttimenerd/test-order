@@ -79,8 +79,18 @@ public final class ChangeAnalysis {
 	public record Options(boolean includeMethodChanges, boolean includeStructuralAnalysis, boolean includeAllTests,
 			boolean filterToModule) {
 
-		/** All analysis steps enabled. Used by show-order and dashboard. */
+		/**
+		 * All analysis steps enabled. Used by show-order and dashboard from reactor
+		 * root.
+		 */
 		public static final Options FULL = new Options(true, true, true, false);
+
+		/**
+		 * All analysis steps enabled, filtered to the current module. Used by
+		 * show-order and dashboard when invoked from a submodule so that only that
+		 * module's tests are shown instead of the entire reactor's test set.
+		 */
+		public static final Options FULL_FILTERED = new Options(true, true, true, true);
 
 		/** Change detection + weights only. Used by order mode. */
 		public static final Options CHANGES_ONLY = new Options(true, false, false, false);
@@ -126,7 +136,24 @@ public final class ChangeAnalysis {
 					+ " -> " + depMap.testClasses().size() + " test classes");
 		}
 		if (opts.filterToModule() && ctx.testClassesDir() != null && Files.isDirectory(ctx.testClassesDir())) {
-			depMap = TestClassDiscovery.filterToModule(depMap, ctx.testClassesDir());
+			int beforeCount = depMap.testClasses().size();
+			DependencyMap filtered = TestClassDiscovery.filterToModule(depMap, ctx.testClassesDir());
+			if (filtered.testClasses().size() < beforeCount) {
+				// filterToModule found compiled classes and restricted the map
+				depMap = filtered;
+				ctx.log().debug("[test-order] filtered index by testClassesDir: " + beforeCount + " -> "
+						+ depMap.testClasses().size() + " test classes");
+			} else if (ctx.testSourceRoot() != null) {
+				// No compiled .class files yet — fall back to source-root-based filtering
+				// so that `show` from a submodule shows only that module's tests.
+				DependencyMap sourcFiltered = TestClassDiscovery.filterToModuleBySourceRoot(depMap,
+						ctx.testSourceRoot());
+				if (sourcFiltered.testClasses().size() < beforeCount) {
+					depMap = sourcFiltered;
+					ctx.log().debug("[test-order] filtered index by testSourceRoot (no compiled classes): "
+							+ beforeCount + " -> " + depMap.testClasses().size() + " test classes");
+				}
+			}
 		}
 
 		TestOrderState state;

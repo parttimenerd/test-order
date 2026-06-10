@@ -57,7 +57,14 @@ public final class DashboardWorkflow {
 	 * @return the output file path
 	 */
 	public Path generate(Path outputFile) throws IOException {
-		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.FULL);
+		// When testClassesDir or testSourceRoot points to a specific module, filter the
+		// shared reactor index to that module's tests only.
+		boolean hasModuleScope = (ctx.testClassesDir() != null && java.nio.file.Files.isDirectory(ctx.testClassesDir()))
+				|| (ctx.testSourceRoot() != null && java.nio.file.Files.isDirectory(ctx.testSourceRoot()));
+		ChangeAnalysis.Options analysisOpts = hasModuleScope
+				? ChangeAnalysis.Options.FULL_FILTERED
+				: ChangeAnalysis.Options.FULL;
+		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, analysisOpts);
 
 		TestScorer scorer = a.buildScorer();
 
