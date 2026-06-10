@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -68,8 +69,15 @@ public class TddEnforcementExtension implements AfterTestExecutionCallback {
 		Map<String, Long> classDurations = state.getClassDurations();
 
 		if (!classDurations.containsKey(className) && !classDurations.containsKey(topLevel)) {
-			throw new AssertionError(
-					formatViolation("New test CLASS passed without failing first", className, methodName));
+			// Issue #18: before treating this as a brand-new class, check if it is a
+			// renamed version of a known class (same set of method names in state).
+			// If a rename is detected, we still enforce TDD — the test was not run
+			// through a red-green-refactor cycle under its new name.
+			if (!isLikelyRenamedClass(className, state)) {
+				throw new AssertionError(
+						formatViolation("New test CLASS passed without failing first", className, methodName));
+			}
+			// Fall through: rename detected — apply full class + method enforcement below
 		}
 
 		// If the class is nested and not directly known to state (only topLevel is),
@@ -98,6 +106,49 @@ public class TddEnforcementExtension implements AfterTestExecutionCallback {
 			throw new AssertionError(
 					formatViolation("New test METHOD passed without failing first", className, methodName));
 		}
+	}
+
+	/**
+	 * Issue #18: Detects whether {@code newClassName} is likely a rename of a known
+	 * class in state by comparing the current class's declared method names against
+	 * the method names recorded for every known class. A match on method name set
+	 * (≥1 method, exact intersection equals both sets) is treated as a rename, and
+	 * TDD enforcement is applied to the renamed class.
+	 *
+	 * @return {@code true} if a matching "old" class is found in state (rename
+	 *         detected) — TDD still fires in the caller
+	 */
+	private static boolean isLikelyRenamedClass(String newClassName, TestOrderState state) {
+		// Collect declared method names of the new class via reflection
+		Class<?> newClass;
+		try {
+			newClass = Class.forName(newClassName);
+		} catch (ClassNotFoundException | Error e) {
+			return false;
+		}
+		Set<String> newMethodNames = new java.util.HashSet<>();
+		for (java.lang.reflect.Method m : newClass.getDeclaredMethods()) {
+			newMethodNames.add(m.getName());
+		}
+		if (newMethodNames.isEmpty()) {
+			return false;
+		}
+
+		// Check if any known class in state has an identical method name set
+		Map<String, Map<String, Double>> allMethodDurations = state.getMethodDurations();
+		for (Map.Entry<String, Map<String, Double>> entry : allMethodDurations.entrySet()) {
+			String knownClass = entry.getKey();
+			if (knownClass.equals(newClassName)) {
+				continue;
+			}
+			Set<String> knownMethodNames = entry.getValue().keySet();
+			if (!knownMethodNames.isEmpty() && knownMethodNames.equals(newMethodNames)) {
+				LOG.info("[test-order] TDD mode: class '" + newClassName + "' appears to be a rename of '" + knownClass
+						+ "' (same method set) — applying TDD enforcement");
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean isTddEnabled() {

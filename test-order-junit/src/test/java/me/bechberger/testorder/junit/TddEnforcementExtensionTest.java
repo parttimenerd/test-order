@@ -352,6 +352,53 @@ class TddEnforcementExtensionTest {
 		assertTrue(error.getMessage().contains("testNewInner"), error.getMessage());
 	}
 
+	// ── Issue #18: class rename bypasses TDD enforcement ─────────────────────
+
+	/**
+	 * When a class is renamed (delete old + create new), the new class is brand-new
+	 * in state. If its method names match an old class in state's method duration
+	 * map, it is treated as a rename and TDD enforcement still fires.
+	 */
+	@Test
+	void renamedClass_withSameMethodSet_stillFiresTddViolation() throws Exception {
+		System.setProperty(TestOrderConfig.TDD, "true");
+		TestOrderState state = new TestOrderState();
+		// Register OldName in state with method durations matching RenamedFromOld
+		state.recordDuration(OldName.class.getName(), 100);
+		state.recordMethodDuration(OldName.class.getName(), "testSomething", 50);
+		setupState(state);
+
+		TddEnforcementExtension ext = new TddEnforcementExtension();
+		// RenamedFromOld has the same method "testSomething" as OldName.
+		// It's brand-new in state (classDurations does not contain it), but the
+		// rename heuristic must detect it and still apply TDD.
+		AssertionError error = assertThrows(AssertionError.class,
+				() -> ext.afterTestExecution(fakeContext(RenamedFromOld.class, "testSomething", Optional.empty())));
+		assertTrue(error.getMessage().contains("TDD VIOLATION"), error.getMessage());
+	}
+
+	/**
+	 * A genuinely new class (no matching method set in state) should still fire a
+	 * CLASS violation without being confused for a rename.
+	 */
+	@Test
+	void genuinelyNewClass_withNoMatchingMethodSet_firesTddViolation() throws Exception {
+		System.setProperty(TestOrderConfig.TDD, "true");
+		TestOrderState state = new TestOrderState();
+		// State has a class with completely different methods
+		state.recordDuration(KnownTestA.class.getName(), 100);
+		state.recordMethodDuration(KnownTestA.class.getName(), "testOne", 50);
+		state.recordMethodDuration(KnownTestA.class.getName(), "testTwo", 75);
+		setupState(state);
+
+		TddEnforcementExtension ext = new TddEnforcementExtension();
+		// NewTestClass has only "testSomething" — does not match KnownTestA's methods
+		AssertionError error = assertThrows(AssertionError.class,
+				() -> ext.afterTestExecution(fakeContext(NewTestClass.class, "testSomething", Optional.empty())));
+		assertTrue(error.getMessage().contains("TDD VIOLATION"), error.getMessage());
+		assertTrue(error.getMessage().contains("New test CLASS"), error.getMessage());
+	}
+
 	static class KnownTestA {
 		void testOne() {
 		}
@@ -362,6 +409,18 @@ class TddEnforcementExtensionTest {
 	}
 
 	static class NewTestClass {
+		void testSomething() {
+		}
+	}
+
+	/** Simulates the OLD name of a renamed class. */
+	static class OldName {
+		void testSomething() {
+		}
+	}
+
+	/** Simulates the NEW name of a class renamed from {@link OldName}. */
+	static class RenamedFromOld {
 		void testSomething() {
 		}
 	}
