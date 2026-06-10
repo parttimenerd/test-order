@@ -1,10 +1,13 @@
 package me.bechberger.testorder.ops.workflows;
 
 import java.io.IOException;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import me.bechberger.testorder.ops.AffectedOperation;
 import me.bechberger.testorder.ops.AlwaysRunScanner;
 import me.bechberger.testorder.ops.PluginContext;
+import me.bechberger.testorder.ops.ShowOrderOperation;
 
 /**
  * Test selection workflow: load index → detect changes → resolve weights →
@@ -44,8 +47,20 @@ public final class AffectedWorkflow {
 
 		var alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
 
+		// Include tests discovered from testClassesDir that are not yet in the dep map
+		// as "changedTests" so the selector treats them as new and selects them.
+		// This handles modules whose tests haven't been learned yet (e.g., a submodule
+		// that was never included in a learn phase but still has compiled test
+		// classes).
+		Set<String> changedAndNew = new LinkedHashSet<>(a.changedTests());
+		Set<String> depMapTests = a.depMap().testClasses();
+		for (String t : ShowOrderOperation.collectAllTests(a.depMap(), a.changedTests(), ctx.testClassesDir())) {
+			if (!depMapTests.contains(t))
+				changedAndNew.add(t);
+		}
+
 		AffectedOperation.SelectResult result = AffectedOperation.select(new AffectedOperation.SelectConfig(a.depMap(),
-				a.state(), a.changedClasses(), a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(),
+				a.state(), a.changedClasses(), changedAndNew, a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(),
 				alwaysRun, ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
 		return new SelectWithAnalysis(result, a);
 	}
