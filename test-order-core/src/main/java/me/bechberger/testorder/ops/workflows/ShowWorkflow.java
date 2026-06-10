@@ -176,6 +176,12 @@ public final class ShowWorkflow {
 				TestOrderState.MethodScoringWeights weights = analysis.state().methodScoringWeights();
 				List<ClassMethodOrder> classOrders = MethodOrderingEngine.orderAllMethods(analysis.state(),
 						analysis.depMap(), analysis.changedClasses(), analysis.changedMethods(), weights);
+				// When showing from a submodule, filter method order to only classes in scope.
+				// The analysis.allTests() set is the authoritative list for this module.
+				if (hasModuleScope && !analysis.allTests().isEmpty()) {
+					classOrders = classOrders.stream().filter(co -> analysis.allTests().contains(co.className()))
+							.collect(java.util.stream.Collectors.toList());
+				}
 				return classOrders.isEmpty()
 						? null
 						: new ShowMethodOrderWorkflow.ShowMethodOrderResult(classOrders, analysis.changedClasses(),

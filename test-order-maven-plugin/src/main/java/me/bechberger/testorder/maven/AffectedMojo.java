@@ -98,10 +98,10 @@ public class AffectedMojo extends AbstractTestOrderMojo {
 			throw new MojoExecutionException(e.getMessage(), e);
 		}
 
-		// Inform when topN=-1 (default) will run all tests in priority order
+		// Inform when topN=-1 (default) will run all affected tests in priority order
 		if (topN == -1) {
-			getLog().info("[test-order] topN=-1 (default) runs all tests in priority order (no subset selection). "
-					+ "To run only the top N, set -Dtestorder.affected.topN=N (e.g., topN=10).");
+			getLog().info("[test-order] topN=-1 (default): runs ALL affected tests in priority order, defers unaffected ones."
+					+ " To run only the top N affected tests, set -Dtestorder.affected.topN=N (e.g., topN=10).");
 		}
 
 		// Warn if 'test' phase is likely not going to run

@@ -138,20 +138,23 @@ public final class ChangeAnalysis {
 		if (opts.filterToModule() && ctx.testClassesDir() != null && Files.isDirectory(ctx.testClassesDir())) {
 			int beforeCount = depMap.testClasses().size();
 			DependencyMap filtered = TestClassDiscovery.filterToModule(depMap, ctx.testClassesDir());
-			if (filtered.testClasses().size() < beforeCount) {
-				// filterToModule found compiled classes and restricted the map
+			// Only apply the filter if it found at least one test class — an empty result
+			// means the testClassesDir exists but has no compiled .class files yet (e.g., a
+			// stale build). Falling back to source-root avoids wiping out all tests.
+			if (filtered.testClasses().size() > 0 && filtered.testClasses().size() < beforeCount) {
 				depMap = filtered;
 				ctx.log().debug("[test-order] filtered index by testClassesDir: " + beforeCount + " -> "
 						+ depMap.testClasses().size() + " test classes");
 			} else if (ctx.testSourceRoot() != null) {
-				// No compiled .class files yet — fall back to source-root-based filtering
-				// so that `show` from a submodule shows only that module's tests.
+				// Compiled classes dir is empty or result was not smaller — fall back to
+				// source-root-based filtering so that `show` from a submodule shows only that
+				// module's tests.
 				DependencyMap sourcFiltered = TestClassDiscovery.filterToModuleBySourceRoot(depMap,
 						ctx.testSourceRoot());
 				if (sourcFiltered.testClasses().size() < beforeCount) {
 					depMap = sourcFiltered;
-					ctx.log().debug("[test-order] filtered index by testSourceRoot (no compiled classes): "
-							+ beforeCount + " -> " + depMap.testClasses().size() + " test classes");
+					ctx.log().debug("[test-order] filtered index by testSourceRoot: " + beforeCount + " -> "
+							+ depMap.testClasses().size() + " test classes");
 				}
 			}
 		}
