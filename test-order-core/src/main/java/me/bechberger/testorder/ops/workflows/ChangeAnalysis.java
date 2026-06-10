@@ -131,9 +131,17 @@ public final class ChangeAnalysis {
 		if (opts.filterToModule() && ctx.currentModuleId() != null && !ctx.currentModuleId().isEmpty()
 				&& depMap.hasModuleMap()) {
 			int beforeCount = depMap.testClasses().size();
-			depMap = TestClassDiscovery.filterToModuleId(depMap, ctx.currentModuleId());
-			ctx.log().debug("[test-order] filtered index by moduleId=" + ctx.currentModuleId() + ": " + beforeCount
-					+ " -> " + depMap.testClasses().size() + " test classes");
+			DependencyMap byModuleId = TestClassDiscovery.filterToModuleId(depMap, ctx.currentModuleId());
+			if (byModuleId.testClasses().size() > 0) {
+				depMap = byModuleId;
+				ctx.log().debug("[test-order] filtered index by moduleId=" + ctx.currentModuleId() + ": " + beforeCount
+						+ " -> " + depMap.testClasses().size() + " test classes");
+			} else {
+				// moduleId not found in module map (e.g. submodule not yet learned) —
+				// fall through to testClassesDir / testSourceRoot filter below.
+				ctx.log().debug("[test-order] moduleId=" + ctx.currentModuleId()
+						+ " matched 0 tests in module map — falling through to dir-based filter");
+			}
 		}
 		if (opts.filterToModule() && ctx.testClassesDir() != null && Files.isDirectory(ctx.testClassesDir())) {
 			int beforeCount = depMap.testClasses().size();
