@@ -1524,10 +1524,6 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
                 try {
                     List<String> tests = TestSelector.readTestList(remainingFile);
-                    // Rename to .consumed instead of deleting — allows manual recovery if
-                    // infrastructure failure prevents test execution (the file is gone otherwise)
-                    Path consumed = remainingFile.resolveSibling(remainingFile.getFileName() + ".consumed");
-                    Files.move(remainingFile, consumed, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
                     // Validate test classes exist on disk (filter out renamed/deleted classes)
                     Path testOutputDir = project.getLayout().getBuildDirectory()
@@ -2480,6 +2476,19 @@ public class TestOrderPlugin implements Plugin<Project> {
      */
     private static void autoAggregateIfNeeded(Project project, TestOrderExtension ext) {
         Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
+
+        // Always process any pending fallback payload from a previous learn run that ended
+        // before stopAndMerge() completed (e.g. JVM killed mid-run).
+        try {
+            if (me.bechberger.testorder.IndexCollectorServer.processFallbackFile(indexFile)) {
+                project.getLogger().lifecycle(
+                        "[test-order] Processed collector fallback payloads from previous learn run → {}",
+                        indexFile);
+            }
+        } catch (IOException e) {
+            project.getLogger().warn("[test-order] Failed to process fallback payloads: {}", e.getMessage());
+        }
+
         if (!Files.exists(indexFile)) {
             aggregateDependencyFiles(project, ext, false);
             return;
