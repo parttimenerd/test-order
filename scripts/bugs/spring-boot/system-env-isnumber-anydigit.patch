@@ -1,0 +1,13 @@
+diff --git a/core/spring-boot/src/main/java/org/springframework/boot/context/properties/source/SystemEnvironmentPropertyMapper.java b/core/spring-boot/src/main/java/org/springframework/boot/context/properties/source/SystemEnvironmentPropertyMapper.java
+index 404e6c43..cea7fe14 100644
+--- a/core/spring-boot/src/main/java/org/springframework/boot/context/properties/source/SystemEnvironmentPropertyMapper.java
++++ b/core/spring-boot/src/main/java/org/springframework/boot/context/properties/source/SystemEnvironmentPropertyMapper.java
+@@ -84,7 +84,7 @@ final class SystemEnvironmentPropertyMapper implements PropertyMapper {
+ 	}
+
+ 	private static boolean isNumber(String string) {
+-		return string.chars().allMatch(Character::isDigit);
++		return string.chars().anyMatch(Character::isDigit);
+ 	}
+
+ 	@Override
