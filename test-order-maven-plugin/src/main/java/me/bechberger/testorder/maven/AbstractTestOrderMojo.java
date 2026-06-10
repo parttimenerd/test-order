@@ -1253,6 +1253,32 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			}
 		}
 
+		// Walk up the directory tree looking for a parent-level index. This handles
+		// the case where `mvn test-order:show` is run from a submodule whose index
+		// lives at the reactor root (e.g. third-party/maven/impl/ →
+		// ../test-dependencies.lz4).
+		Path parentIdx = findParentIndex(idxPath);
+		if (parentIdx != null) {
+			getLog().info("[test-order] Using parent index at " + parentIdx + " (no local index found)");
+			try {
+				Files.createDirectories(idxPath.getParent());
+				// Create a relative symlink so the local path resolves to the parent index.
+				// Relative links survive directory moves; delete any stale link first.
+				Files.deleteIfExists(idxPath);
+				Path rel = idxPath.getParent().relativize(parentIdx);
+				Files.createSymbolicLink(idxPath, rel);
+			} catch (IOException e) {
+				getLog().warn("[test-order] Could not create symlink to parent index: " + e.getMessage()
+						+ " — falling back to copy");
+				try {
+					Files.copy(parentIdx, idxPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+				} catch (IOException e2) {
+					getLog().warn("[test-order] Failed to copy parent index: " + e2.getMessage());
+				}
+			}
+			return;
+		}
+
 		Path depsDirPath = ctx.resolveDepsDir(depsDir);
 		if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
 			autoAggregate(depsDirPath, idxPath);
@@ -1267,6 +1293,30 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					+ depsDirPath + ". Run learn mode first: mvn test -Dtestorder.mode=learn"
 					+ "\n  For more details: mvn test-order:diagnose");
 		}
+	}
+
+	/**
+	 * Walks up the directory tree from {@code idxPath.getParent().getParent()}
+	 * (i.e. the module base dir) searching for a
+	 * {@code .test-order/test-dependencies.lz4} in an ancestor directory. Stops at
+	 * the filesystem root.
+	 */
+	private Path findParentIndex(Path idxPath) {
+		// idxPath = <module>/.test-order/test-dependencies.lz4
+		// start searching from <module>/.. upward
+		Path candidate = idxPath.getParent().getParent(); // <module>
+		if (candidate == null) {
+			return null;
+		}
+		candidate = candidate.getParent(); // parent of module
+		while (candidate != null) {
+			Path parentIdx = candidate.resolve(".test-order/test-dependencies.lz4");
+			if (Files.isReadable(parentIdx)) {
+				return parentIdx;
+			}
+			candidate = candidate.getParent();
+		}
+		return null;
 	}
 
 	// ── Hashes ────────────────────────────────────────────────────────
