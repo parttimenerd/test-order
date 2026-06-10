@@ -269,3 +269,18 @@ detect_gradle_bugs_extra_args() {
         *) echo "" ;;
     esac
 }
+
+# Return extra Gradle args applied ONLY to the learn phase (not order/select/bugs).
+# Used for repos where offline in-place class instrumentation races with downstream
+# compileTestJava tasks under high parallelism.
+detect_gradle_learn_extra_args() {
+    local repo="$1"
+    case "$repo" in
+        # spring-boot: offline instrumentation modifies main class files in doFirst of
+        # each test task. Under Gradle's default parallel execution, downstream modules'
+        # compileTestJava tasks fingerprint those class files at the same time, producing
+        # NoSuchFileException. Serialise execution with --max-workers=1 for the learn run.
+        spring-boot) echo "--max-workers=1" ;;
+        *) echo "" ;;
+    esac
+}

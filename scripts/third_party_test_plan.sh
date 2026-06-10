@@ -766,13 +766,16 @@ phase_learn_gradle() {
 
     local extra_args
     extra_args=$(detect_gradle_extra_args "$repo" 2>/dev/null || echo "")
+    local learn_extra_args
+    learn_extra_args=$(type detect_gradle_learn_extra_args &>/dev/null \
+        && detect_gradle_learn_extra_args "$repo" 2>/dev/null || echo "")
     local override_java_home
     override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
 
-    log "Running: ./gradlew cleanTest test --no-build-cache --no-configuration-cache -Dtestorder.mode=learn${extra_args:+ $extra_args}"
+    log "Running: ./gradlew cleanTest test --no-build-cache --no-configuration-cache -Dtestorder.mode=learn${extra_args:+ $extra_args}${learn_extra_args:+ $learn_extra_args}"
     # shellcheck disable=SC2086
     if JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test -Dtestorder.mode=learn --no-daemon --no-build-cache --no-configuration-cache \
-        $extra_args \
+        $extra_args ${learn_extra_args} \
         2>&1 | tee "$results/learn.log" | tail -5; then
         ok "Learn succeeded for $repo"
     else
@@ -1054,13 +1057,16 @@ phase_full_gradle() {
     ok "Cleaned test-order data"
 
     # 2. Learn (3 runs)
+    local learn_extra_args
+    learn_extra_args=$(type detect_gradle_learn_extra_args &>/dev/null \
+        && detect_gradle_learn_extra_args "$repo" 2>/dev/null || echo "")
     for i in 1 2 3; do
         log "Step 2.$i: Learn run $i/3"
         # shellcheck disable=SC2086
         JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test \
             --no-build-cache --no-configuration-cache \
             -Dtestorder.mode=learn \
-            $extra_args \
+            $extra_args ${learn_extra_args} \
             2>&1 | tee "$results/full-learn-$i.log" | tail -3 || warn "Learn run $i had failures"
     done
 
