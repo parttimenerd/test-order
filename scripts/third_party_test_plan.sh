@@ -880,9 +880,9 @@ phase_order_gradle() {
         warn "Order mode had failures for $repo"
     fi
 
-    log "Running: ./gradlew testOrderShowOrder"
+    log "Running: ./gradlew testOrderShow"
     # shellcheck disable=SC2086
-    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderShowOrder \
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderShow \
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
@@ -1089,10 +1089,10 @@ phase_full_gradle() {
         $extra_args \
         2>&1 | tee "$results/full-dump.log" | tail -20 || warn "Dump failed"
 
-    # 4. Show order
+    # 4. Show order (use testOrderShow; testOrderShowOrder is deprecated and doesn't filter excluded/abstract tests)
     log "Step 4: Show order"
     # shellcheck disable=SC2086
-    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderShowOrder \
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderShow \
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
@@ -1206,11 +1206,12 @@ phase_order_maven() {
         warn "Order mode had failures for $repo"
     fi
 
-    # Show order
-    log "Running: mvn me.bechberger:test-order-maven-plugin:show-order"
-    mvn me.bechberger:test-order-maven-plugin:show-order \
+    # Show order (use modern test-order:show goal; deprecated show-order doesn't filter excluded/abstract tests)
+    log "Running: mvn me.bechberger:test-order-maven-plugin:show"
+    mvn me.bechberger:test-order-maven-plugin:show \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
+        -Dtestorder.show.limit=-1 \
         "${mvn_args[@]}" \
         2>&1 | tee "$results/show-order.log" | tail -20
 
@@ -1502,11 +1503,12 @@ phase_full_maven() {
     mvn me.bechberger:test-order-maven-plugin:dump "${cmd_args[@]}" \
         -Dtestorder.dump.format=tsv -Dtestorder.dump.output="$dump_tsv" -q 2>/dev/null || true
 
-    # 4. Show order with a specific change
+    # 4. Show order with a specific change (use modern show goal; deprecated show-order doesn't filter excluded/abstract tests)
     log "Step 4: Show order"
-    mvn me.bechberger:test-order-maven-plugin:show-order \
+    mvn me.bechberger:test-order-maven-plugin:show \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
+        -Dtestorder.show.limit=-1 \
         "${cmd_args[@]}" \
         2>&1 | tee "$results/full-show-order.log" | tail -20 || warn "Show-order failed"
 
@@ -1592,8 +1594,8 @@ phase_full_maven() {
                     "$results/full-bug-select.log" 2>/dev/null | sort -u | head -10 || true)
                 [[ -n "$selected_tests" ]] && log "  Selected tests:" && echo "$selected_tests" | sed 's/^/    /'
             fi
-            log "  Top-5 scorers (show-order):"
-            mvn me.bechberger:test-order-maven-plugin:show-order \
+            log "  Top-5 scorers (show):"
+            mvn me.bechberger:test-order-maven-plugin:show \
                 -Dtestorder.changeMode=explicit \
                 -Dtestorder.changed.classes="$classname" \
                 "${cmd_args[@]}" -q 2>&1 \

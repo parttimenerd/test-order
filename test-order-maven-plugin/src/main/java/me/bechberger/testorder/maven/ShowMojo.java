@@ -58,7 +58,7 @@ public class ShowMojo extends AbstractTestOrderMojo {
 	private boolean all;
 
 	/** Print a full per-test score breakdown instead of the compact table. */
-	@Parameter(property = MavenPluginConfigKeys.SHOW_ORDER_EXPLAIN, defaultValue = "false")
+	@Parameter(property = MavenPluginConfigKeys.SHOW_EXPLAIN, defaultValue = "false")
 	private boolean explain;
 
 	/** Show full class names instead of abbreviated package prefixes. */

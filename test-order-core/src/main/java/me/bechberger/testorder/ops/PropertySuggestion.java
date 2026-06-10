@@ -53,7 +53,7 @@ public final class PropertySuggestion {
 			"testorder.detect.seed", "testorder.detect.failOnDetection",
 			// show goal keys
 			"testorder.show.classes", "testorder.show.methods", "testorder.show.ml", "testorder.show.all",
-			"testorder.show.format", "testorder.show.filter",
+			"testorder.show.format", "testorder.show.filter", "testorder.show.limit", "testorder.show.explain",
 			// reactor ordering keys
 			"testorder.reactor.suggest", "testorder.reactor.topN",
 			// reactor reorder keys (lifecycle participant)

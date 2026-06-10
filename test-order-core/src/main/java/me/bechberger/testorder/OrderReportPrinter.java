@@ -135,7 +135,7 @@ public final class OrderReportPrinter {
 			out.println(summary);
 		}
 		out.println();
-		out.println("Tip: use -Dtestorder.showOrder.explain=true to see why each test got its score.");
+		out.println("Tip: use -Dtestorder.show.explain=true to see why each test got its score.");
 		out.println();
 	}
 

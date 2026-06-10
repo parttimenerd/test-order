@@ -103,7 +103,11 @@ final class MavenPluginConfigKeys {
 	static final String SHOW_FORMAT = "testorder.show.format";
 	static final String SHOW_FILTER = "testorder.show.filter";
 	static final String SHOW_LIMIT = "testorder.show.limit";
-
+	/**
+	 * Property for enabling verbose explain mode in {@code test-order:show} and
+	 * {@code test-order:show-all}.
+	 */
+	static final String SHOW_EXPLAIN = "testorder.show.explain";
 	// Detect-dependencies goal keys
 	static final String DETECT_ALGORITHM = "testorder.detect.algorithm";
 	static final String DETECT_TIME_BUDGET = "testorder.detect.timeBudget";
@@ -145,7 +149,9 @@ final class MavenPluginConfigKeys {
 			// testorder.showOrder.topN → testorder.affected.topN
 			"testorder.showOrder.topN", SELECT_TOP_N,
 			// testorder.tier → testorder.tiered.currentTier (shorthand for run-tier)
-			"testorder.tier", TIERED_CURRENT_TIER);
+			"testorder.tier", TIERED_CURRENT_TIER,
+			// testorder.showOrder.explain → testorder.show.explain (backward compat)
+			SHOW_ORDER_EXPLAIN, SHOW_EXPLAIN);
 
 	/** All known testorder.* property keys (canonical + legacy + aliases). */
 	static final Set<String> ALL_KNOWN_KEYS = Set.of(INDEX_PATH, STATE_PATH, LEARN, INSTRUMENTATION_MODE, CHANGE_MODE,
@@ -169,7 +175,7 @@ final class MavenPluginConfigKeys {
 			"testorder.remaining.file", "testorder.metrics.output", SERVE_PORT_ALIAS, MUTATIONS_OUTPUT_FILE,
 			MUTATIONS_TIME_BUDGET, MUTATIONS_TARGET_CLASSES,
 			// Show goal keys (inline in ShowMojo)
-			SHOW_CLASSES, SHOW_METHODS, SHOW_ML, SHOW_ALL, SHOW_FORMAT, SHOW_FILTER, SHOW_LIMIT,
+			SHOW_CLASSES, SHOW_METHODS, SHOW_ML, SHOW_ALL, SHOW_FORMAT, SHOW_FILTER, SHOW_LIMIT, SHOW_EXPLAIN,
 			// CamelCase aliases (silently accepted, see ALIASES map)
 			"testorder.changedClasses", "testorder.showOrder.format", "testorder.showOrder.topN",
 			// Shorthand alias for run-tier (see ALIASES map)
