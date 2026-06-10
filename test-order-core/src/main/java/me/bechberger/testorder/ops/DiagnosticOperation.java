@@ -43,7 +43,7 @@ public final class DiagnosticOperation {
 			Map<String, String> summary) {
 
 		public boolean isHealthy() {
-			return healthScore >= 80 && !hasErrors();
+			return healthScore >= 80 && !hasErrors() && !isFreshProject();
 		}
 
 		public boolean hasErrors() {
@@ -52,6 +52,10 @@ public final class DiagnosticOperation {
 
 		public boolean hasWarnings() {
 			return results.stream().anyMatch(r -> r.isInformational() && !r.isSuccess());
+		}
+
+		public boolean isFreshProject() {
+			return results.stream().anyMatch(r -> r.code() == ErrorCode.NOT_INITIALIZED_INDEX);
 		}
 	}
 
