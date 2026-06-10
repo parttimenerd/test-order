@@ -222,7 +222,10 @@ public class DashboardGenerator {
 				String dominant = foreignModuleCounts.entrySet().stream().max(Map.Entry.comparingByValue())
 						.map(Map.Entry::getKey).orElse(null);
 				t.put("dominantDepModule", dominant);
-				boolean suspect = dominant != null && foreignCount * 10 >= deps.size() * 7; // >70%
+				// Suspect: >70% of deps are from a single foreign module AND ≥5 deps
+				// (small dep sets are too noisy for cross-module analysis).
+				boolean suspect = dominant != null && deps.size() >= 5
+						&& foreignCount * 10 >= deps.size() * 7; // foreignCount/total > 70%
 				t.put("suspectHomeModule", suspect);
 			} else {
 				t.put("crossModuleDepCount", 0);
