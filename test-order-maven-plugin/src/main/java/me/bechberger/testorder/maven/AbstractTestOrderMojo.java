@@ -1223,6 +1223,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					for (MavenProject p : childrenWithIndex) {
 						Path childIdx = p.getBasedir().toPath().toAbsolutePath()
 								.resolve(".test-order/test-dependencies.lz4");
+						// Process any pending fallback in the child's index before merging
+						try {
+							me.bechberger.testorder.IndexCollectorServer.processFallbackFile(childIdx,
+									resolveEffectiveIncludePackages());
+						} catch (IOException e) {
+							getLog().debug("[test-order] Could not process child fallback for " + p.getArtifactId()
+									+ ": " + e.getMessage());
+						}
 						DependencyMap child = DependencyMap.load(childIdx);
 						if (merged == null) {
 							merged = child;
