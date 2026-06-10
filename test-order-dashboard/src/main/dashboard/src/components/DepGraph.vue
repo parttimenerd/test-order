@@ -18,6 +18,8 @@ const classHover = useClassHover()
 interface GNode extends d3.SimulationNodeDatum {
   id: string; type: string; changed: boolean; shortLabel: string; depCount: number
   mass?: number; pkg?: string; outerClass?: string
+  /** true when this node belongs to the focused module (or is a test node in focused module) */
+  inFocusModule?: boolean
 }
 interface GLink extends d3.SimulationLinkDatum<GNode> { changed: boolean; crossModule: boolean }
 
@@ -119,6 +121,7 @@ watch(searchText, q => applySearch(q))
 
 function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
   const mode = d.graphMode.value
+  const focusedModule = d.selectedModule.value
   const nodeMap: Record<string, GNode> = {}
   const links: GLink[] = []
   const ctm = d.classToModuleMap
@@ -130,6 +133,9 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
     const tgtMod = testModuleCache.get(tgtId) ?? ctm.get(tgtId)
     return !!(srcMod && tgtMod && srcMod !== tgtMod)
   }
+  function nodeModule(id: string): string | null {
+    return testModuleCache.get(id) ?? ctm.get(id) ?? null
+  }
   function addNode(id: string, type: string, changed: boolean) {
     if (!nodeMap[id]) {
       const hash = id.indexOf('#')
@@ -137,7 +143,10 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
       const afterPkg = dot >= 0 ? id.substring(dot + 1) : id
       // For inner classes (OuterClass$Inner), show as "Outer$Inner" after pkg
       const simpleLabel = afterPkg
-      nodeMap[id] = { id, type, changed: !!changed, shortLabel: simpleLabel, depCount: 0 }
+      const inFocus = focusedModule
+        ? (nodeModule(id) === focusedModule || !nodeModule(id))
+        : true
+      nodeMap[id] = { id, type, changed: !!changed, shortLabel: simpleLabel, depCount: 0, inFocusModule: inFocus }
     }
   }
 
@@ -190,8 +199,12 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
       const MAX_2HOP = 30
       const reachedDeps = new Set(focusTests.flatMap(t => t.deps || []))
       const seen = new Set(focusTests.map(t => t.name))
-      const candidates = d.tests
-        .filter(t => !seen.has(t.name) && (t.deps || []).some(dep => reachedDeps.has(dep)))
+      // When a module is focused, only expand siblings within the same module
+      const siblingPool = focusedModule
+        ? d.tests.filter(t => !seen.has(t.name) && t.module === focusedModule)
+        : d.tests.filter(t => !seen.has(t.name))
+      const candidates = siblingPool
+        .filter(t => (t.deps || []).some(dep => reachedDeps.has(dep)))
         .sort((a, b) => a.rank - b.rank)
         .slice(0, MAX_2HOP)
       for (const t of candidates) {
@@ -206,7 +219,9 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
       }
     }
   } else if (mode === 'changed') {
-    d.tests.forEach(t => {
+    // Filter to focused module when active
+    const testPool = focusedModule ? d.tests.filter(t => t.module === focusedModule) : d.tests
+    testPool.forEach(t => {
       const touched = (t.deps || []).some(dep => d.changedSet.has(dep))
       if (!touched && !d.changedSet.has(t.name)) return
       addNode(t.name, 'test', false); nodeMap[t.name].depCount = (t.deps || []).length
@@ -215,7 +230,8 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
   } else {
     if (d.totalNodes.value > GRAPH.FULL_MODE_NODE_LIMIT) {
       const pkgDeps: Record<string, Set<string>> = {}
-      d.tests.forEach(t => {
+      const testPool = focusedModule ? d.tests.filter(t => t.module === focusedModule) : d.tests
+      testPool.forEach(t => {
         const tPkg = t.name.substring(0, t.name.lastIndexOf('.')) || '(default)'
         if (!pkgDeps[tPkg]) pkgDeps[tPkg] = new Set()
         ;(t.deps || []).forEach(dep => {
@@ -234,7 +250,8 @@ function buildGraphData(): { nodes: GNode[]; links: GLink[] } {
         })
       }
     } else {
-      d.tests.forEach(t => {
+      const testPool = focusedModule ? d.tests.filter(t => t.module === focusedModule) : d.tests
+      testPool.forEach(t => {
         addNode(t.name, 'test', false); nodeMap[t.name].depCount = (t.deps || []).length
         ;(t.deps || []).forEach(dep => { addNode(dep, 'dep', d.changedSet.has(dep)); links.push({ source: t.name, target: dep, changed: d.changedSet.has(dep), crossModule: isCrossModule(t.name, dep) }) })
       })
@@ -438,7 +455,12 @@ function initGraph() {
   const link = g.append('g').selectAll('line').data(links).join('line')
     .attr('stroke', l => l.changed ? '#f59e0b' : l.crossModule ? '#7c3aed' : '#334155')
     .attr('stroke-width', l => l.crossModule ? 1.2 : 1.5)
-    .attr('stroke-opacity', l => l.crossModule ? 0.5 : 0.6)
+    .attr('stroke-opacity', l => {
+      const srcNode = nodeMap[(l.source as GNode).id ?? l.source as string]
+      const tgtNode = nodeMap[(l.target as GNode).id ?? l.target as string]
+      const outOfFocus = srcNode?.inFocusModule === false || tgtNode?.inFocusModule === false
+      return outOfFocus ? 0.15 : l.crossModule ? 0.5 : 0.6
+    })
     .attr('stroke-dasharray', l => l.crossModule ? '4,3' : null)
   liveLinkSel = link as unknown as d3.Selection<SVGLineElement, GLink, SVGGElement, unknown>
 
@@ -455,10 +477,12 @@ function initGraph() {
     .attr('fill', n => n.type === 'test' || n.type === 'method' ? '#3b82f6' : depNodeColor(n.id, n.changed))
     .attr('stroke', n => n.type === 'test' || n.type === 'method' ? '#1d4ed8' : n.changed ? '#b91c1c' : '#334155')
     .attr('stroke-width', 1.5)
+    .attr('opacity', n => (n.inFocusModule === false) ? 0.25 : 1)
 
   const nodeLabel = node.append('text').attr('text-anchor', 'middle').attr('dy', n => n.type === 'test' ? 24 : 18)
     .attr('font-size', '9.5px').attr('fill', '#e2e8f0').attr('font-weight', '600')
     .attr('paint-order', 'stroke').attr('stroke', 'rgba(0,0,0,0.85)').attr('stroke-width', '3px').attr('stroke-linejoin', 'round')
+    .attr('opacity', n => (n.inFocusModule === false) ? 0.2 : 1)
     .text(n => n.shortLabel)
 
   nodeLabel.append('title').text(n => n.id)
@@ -601,7 +625,7 @@ function initGraph() {
   } catch (e) { console.error('[dashboard] Dep graph failed:', e) }
 }
 
-watch([() => d.selectedTest.value, () => d.selectedMethod.value, () => d.graphMode.value, () => d.selectedTests.value, () => d.covSelectedClass.value, expandSiblings], () => {
+watch([() => d.selectedTest.value, () => d.selectedMethod.value, () => d.graphMode.value, () => d.selectedTests.value, () => d.covSelectedClass.value, expandSiblings, () => d.selectedModule.value], () => {
   if (d.activeTab.value === 'tests') nextTick(initGraph)
 })
 
@@ -616,6 +640,11 @@ defineExpose({ initGraph })
     <div style="position:sticky;top:0;z-index:5;background:var(--bg-base);padding:4px 0 6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span style="font-size:.73rem;color:var(--text-sec);flex-shrink:0">
         {{ label || 'Dependency Graph' }}<span v-if="d.selectedMethod.value" style="color:var(--accent-light)"> ({{ d.selectedMethod.value.name }})</span>:
+      </span>
+      <!-- Module focus badge -->
+      <span v-if="d.selectedModule.value" class="dep-graph__module-focus-badge" :title="'Graph filtered to module: ' + d.selectedModule.value">
+        ⊙ {{ d.selectedModule.value.split('-').slice(-2).join('-') }}
+        <button class="dep-graph__module-focus-clear" @click="d.setModule(null)" title="Clear module focus">×</button>
       </span>
       <button
         v-for="m in d.GMODES"
@@ -715,6 +744,16 @@ defineExpose({ initGraph })
   cursor: pointer; outline: none;
 }
 .dep-graph__select:focus { border-color: var(--accent); }
+.dep-graph__module-focus-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .65rem; font-weight: 700; padding: 2px 7px 2px 8px; border-radius: 10px;
+  background: rgba(99,102,241,.18); border: 1px solid rgba(99,102,241,.45); color: var(--accent-light);
+}
+.dep-graph__module-focus-clear {
+  background: none; border: none; cursor: pointer; color: var(--accent-light);
+  font-size: .8rem; line-height: 1; padding: 0 1px; opacity: .7;
+}
+.dep-graph__module-focus-clear:hover { opacity: 1; }
 </style>
 
 <style>

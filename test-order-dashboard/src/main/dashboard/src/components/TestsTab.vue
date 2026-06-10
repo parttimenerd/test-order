@@ -836,6 +836,48 @@ function previewScoreBars(t: TestEntry) {
           ✕ {{ d.badgeFilter.value }}
         </div>
       </div>
+
+      <!-- Module focus KPI banner (shown when a module is active) -->
+      <div v-if="d.moduleFocusKpis.value" class="module-focus-banner">
+        <span class="module-focus-banner__title">
+          <span class="module-focus-banner__icon">⊙</span>
+          Module: <strong>{{ d.selectedModule.value!.split('-').slice(-2).join('-') }}</strong>
+        </span>
+        <div class="module-focus-banner__kpis">
+          <div class="module-focus-banner__kpi" title="Tests that belong to this module">
+            <span class="module-focus-banner__kpi-label">Tests</span>
+            <span class="module-focus-banner__kpi-value" style="color:var(--accent-light)">{{ d.moduleFocusKpis.value.testCount }}</span>
+          </div>
+          <div class="module-focus-banner__kpi" :title="d.moduleFocusKpis.value.crossModuleDepCount + ' dep classes live in other modules: ' + d.moduleFocusKpis.value.otherModules.join(', ')">
+            <span class="module-focus-banner__kpi-label">Cross-module Deps</span>
+            <span class="module-focus-banner__kpi-value" :style="{ color: d.moduleFocusKpis.value.crossModuleDepCount > 0 ? '#7c3aed' : 'var(--text-muted)' }">
+              {{ d.moduleFocusKpis.value.crossModuleDepCount }}
+            </span>
+          </div>
+          <div v-if="d.moduleFocusKpis.value.otherModules.length > 0" class="module-focus-banner__kpi" :title="'This module\'s tests call into: ' + d.moduleFocusKpis.value.otherModules.join(', ')">
+            <span class="module-focus-banner__kpi-label">Other Modules</span>
+            <span class="module-focus-banner__kpi-value" style="color:var(--text-sec)">{{ d.moduleFocusKpis.value.otherModules.length }}</span>
+          </div>
+          <div v-if="d.moduleFocusKpis.value.coverageQuality !== null" class="module-focus-banner__kpi" :title="'% of this module\'s source classes with at least one test dependency'">
+            <span class="module-focus-banner__kpi-label">Cov Quality</span>
+            <span class="module-focus-banner__kpi-value" :style="{ color: (d.moduleFocusKpis.value.coverageQuality ?? 0) >= 70 ? 'var(--green)' : (d.moduleFocusKpis.value.coverageQuality ?? 0) >= 40 ? 'var(--yellow)' : 'var(--red)' }">
+              {{ d.moduleFocusKpis.value.coverageQuality }}%
+            </span>
+          </div>
+        </div>
+        <!-- Other modules this one depends on -->
+        <div v-if="d.moduleFocusKpis.value.otherModules.length > 0" class="module-focus-banner__deps">
+          <span class="module-focus-banner__deps-label">Depends on:</span>
+          <button
+            v-for="mod in d.moduleFocusKpis.value.otherModules"
+            :key="mod"
+            class="module-focus-banner__dep-chip"
+            :title="'Click to focus on module: ' + mod"
+            @click="d.setModule(mod)"
+          >{{ mod.split('-').slice(-2).join('-') }}</button>
+        </div>
+        <button class="module-focus-banner__clear" @click="d.setModule(null)" title="Exit module focus">× exit focus</button>
+      </div>
       <!-- Last run changes alert -->
       <div v-if="lastRunAlert" class="tests__run-alert" @click="d.setTab('analytics')" role="button" tabindex="0" title="Click to open Analytics tab for full run comparison">
         <span class="tests__run-alert-icon">⚡</span>
@@ -1011,7 +1053,7 @@ function previewScoreBars(t: TestEntry) {
               <td v-if="d.runs.length >= 3" class="td--history" :title="d.testRankHistoryMap.value.has(t.name) ? 'Rank trend over ' + d.testRankHistoryMap.value.get(t.name)!.length + ' runs: ' + d.testRankHistoryMap.value.get(t.name)!.join(' → ') : 'No trend data'">
                 <span v-if="rankSparkSvg(t.name)" v-html="rankSparkSvg(t.name)"></span>
               </td>
-              <td v-if="d.runs.length >= 3" class="td--history" :title="scoreHistoryMap.get(t.name) ? 'Score history (oldest→newest): ' + scoreHistoryMap.get(t.name)!.join(' → ') : 'No score history'">
+              <td v-if="d.runs.length >= 3" class="td--history" :title="scoreHistoryMap.value.get(t.name) ? 'Score history (oldest→newest): ' + scoreHistoryMap.value.get(t.name)!.join(' → ') : 'No score history'">
                 <span v-if="scoreSparkSvg(t.name)" v-html="scoreSparkSvg(t.name)"></span>
               </td>
               <td v-if="d.runs.length >= 3" class="td--right td--conf"
@@ -1527,6 +1569,43 @@ function previewScoreBars(t: TestEntry) {
           </div>
           <div v-if="d.selectedTest.value.memberDeps && d.selectedTest.value.memberDeps.length" style="margin-top:6px;font-size:.6rem;color:var(--text-muted)">
             {{ d.selectedTest.value.memberDeps.length }} member-level deps tracked — <span style="cursor:pointer;color:var(--accent-light)" @click="d.openScoreModal(d.selectedTest.value!.name, 'orig', 'Coverage')">see score modal for details</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cross-module deps panel: shown when the selected test calls into other modules -->
+      <div v-if="d.crossModuleDepsForTest.value.length > 0" style="margin-top:10px">
+        <div class="card" style="padding:8px">
+          <div class="card-label" style="margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"
+               title="Source classes this test depends on that live in OTHER modules. High cross-module dep count may mean the test belongs to a different module (see the 'foreign deps' badge).">
+            Cross-module Deps
+            <span style="font-size:.58rem;color:var(--text-muted)">— this test calls into {{ d.crossModuleDepsForTest.value.length }} other module{{ d.crossModuleDepsForTest.value.length !== 1 ? 's' : '' }}</span>
+            <span v-if="d.selectedTest.value!.suspectHomeModule" class="badge" style="background:#451a03;color:#fbbf24;font-size:.55rem" :title="'Most deps are in ' + d.selectedTest.value!.dominantDepModule + ' — this test may belong there'">⚠ foreign deps</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div v-for="entry in d.crossModuleDepsForTest.value" :key="entry.module" class="xmod-entry">
+              <div class="xmod-entry__header">
+                <span class="xmod-entry__module-tag"
+                  @click="d.setModule(entry.module)"
+                  :title="'Focus on module: ' + entry.module + ' (click to apply module filter)'"
+                >{{ entry.module.split('-').slice(-2).join('-') }}</span>
+                <span class="xmod-entry__count">{{ entry.classes.length }} class{{ entry.classes.length !== 1 ? 'es' : '' }}</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">
+                <span
+                  v-for="cls in entry.classes.slice(0, 12)"
+                  :key="cls"
+                  class="test-detail__cov-tag"
+                  :class="{ 'test-detail__cov-tag--changed': d.changedSet.has(cls) }"
+                  :title="cls + (d.changedSet.has(cls) ? ' (CHANGED)' : '') + ' — in module ' + entry.module + '\nClick to view in Coverage'"
+                  @click="d.navigateToCovClass(cls)"
+                  @mouseenter="classHover.show(cls, $event)"
+                  @mousemove="classHover.move($event)"
+                  @mouseleave="classHover.hide()"
+                >{{ dn(cls) }}<span v-if="d.changedSet.has(cls)" class="test-detail__cov-changed">✎</span></span>
+                <span v-if="entry.classes.length > 12" class="test-detail__cov-tag" style="opacity:.6">+{{ entry.classes.length - 12 }} more</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2131,6 +2210,51 @@ function previewScoreBars(t: TestEntry) {
 .pos-strip__score { font-size: .58rem; color: var(--text-muted); }
 .pos-strip__ellipsis { font-size: .65rem; color: var(--text-muted); padding: 0 2px; }
 .pos-strip__total { font-size: .58rem; color: var(--text-muted); white-space: nowrap; margin-left: 2px; }
+
+/* Module focus banner */
+.module-focus-banner {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 10px; margin-bottom: 8px; border-radius: 6px;
+  background: rgba(99,102,241,.1); border: 1px solid rgba(99,102,241,.35);
+  font-size: .68rem;
+}
+.module-focus-banner__title {
+  display: flex; align-items: center; gap: 5px; flex-shrink: 0;
+  font-weight: 600; color: var(--accent-light);
+}
+.module-focus-banner__icon { font-size: .9rem; }
+.module-focus-banner__kpis { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.module-focus-banner__kpi { display: flex; flex-direction: column; align-items: center; min-width: 50px; }
+.module-focus-banner__kpi-label { font-size: .52rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.module-focus-banner__kpi-value { font-size: .9rem; font-weight: 700; line-height: 1.2; }
+.module-focus-banner__deps { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.module-focus-banner__deps-label { font-size: .6rem; color: var(--text-muted); }
+.module-focus-banner__dep-chip {
+  font-size: .6rem; padding: 1px 7px; border-radius: 10px; border: 1px solid rgba(124,58,237,.4);
+  background: rgba(124,58,237,.12); color: #a78bfa; cursor: pointer; white-space: nowrap;
+  transition: all var(--tr-fast);
+}
+.module-focus-banner__dep-chip:hover { border-color: #7c3aed; background: rgba(124,58,237,.22); color: #c4b5fd; }
+.module-focus-banner__clear {
+  margin-left: auto; font-size: .6rem; padding: 2px 8px; border-radius: 4px;
+  border: 1px solid rgba(99,102,241,.35); background: none; color: var(--text-muted);
+  cursor: pointer; transition: all var(--tr-fast); flex-shrink: 0;
+}
+.module-focus-banner__clear:hover { color: var(--text); border-color: var(--accent); }
+
+/* Cross-module dep entry in test detail */
+.xmod-entry {
+  background: rgba(124,58,237,.06); border: 1px solid rgba(124,58,237,.2);
+  border-radius: 5px; padding: 5px 8px;
+}
+.xmod-entry__header { display: flex; align-items: center; gap: 6px; }
+.xmod-entry__module-tag {
+  font-size: .65rem; font-weight: 700; padding: 1px 7px; border-radius: 10px;
+  background: rgba(124,58,237,.2); border: 1px solid rgba(124,58,237,.4); color: #a78bfa;
+  cursor: pointer; transition: all var(--tr-fast);
+}
+.xmod-entry__module-tag:hover { background: rgba(124,58,237,.35); border-color: #7c3aed; }
+.xmod-entry__count { font-size: .6rem; color: var(--text-muted); }
 </style>
 <style>
 /* Row preview popover — must be global since it's teleported to body */

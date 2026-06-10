@@ -89,6 +89,16 @@ export interface DashboardState {
   runDiff: ComputedRef<RunDiffEntry[]>
   simApfd: ComputedRef<number | null>
   filteredCovClasses: ComputedRef<CoverageClass[]>
+  /** KPIs for the currently focused module (null when no module selected) */
+  moduleFocusKpis: ComputedRef<{
+    testCount: number
+    crossModuleDepCount: number
+    crossModuleClassCount: number
+    otherModules: string[]
+    coverageQuality: number | null
+  } | null>
+  /** Per-test cross-module dep summary (which modules + specific classes) */
+  crossModuleDepsForTest: ComputedRef<{ module: string; classes: string[] }[]>
 
   // Actions
   selectTest: (t: TestEntry, event: MouseEvent | null) => void
@@ -732,6 +742,63 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     return m
   })
 
+  // ── Module focus KPIs ────────────────────────────────────────
+  const moduleFocusKpis = computed(() => {
+    const mod = selectedModule.value
+    if (!mod) return null
+    const moduleTests = tests.filter(t => t.module === mod)
+    const testCount = moduleTests.length
+
+    // Collect all dep classes that belong to a different module
+    const crossClassSet = new Set<string>()
+    const otherModuleSet = new Set<string>()
+    for (const t of moduleTests) {
+      for (const dep of (t.deps || [])) {
+        const depMod = classToModuleMap.get(dep)
+        if (depMod && depMod !== mod) {
+          crossClassSet.add(dep)
+          otherModuleSet.add(depMod)
+        }
+      }
+    }
+
+    // Coverage quality: % of source classes in this module that have any test dep
+    let coverageQuality: number | null = null
+    if (dd.coverage?.classes?.length) {
+      const moduleSourceClasses = dd.coverage.classes.filter(c => classToModuleMap.get(c.name) === mod)
+      if (moduleSourceClasses.length > 0) {
+        const covered = moduleSourceClasses.filter(c => c.testCount > 0).length
+        coverageQuality = Math.round((covered / moduleSourceClasses.length) * 100)
+      }
+    }
+
+    return {
+      testCount,
+      crossModuleDepCount: crossClassSet.size,
+      crossModuleClassCount: crossClassSet.size,
+      otherModules: [...otherModuleSet].sort(),
+      coverageQuality,
+    }
+  })
+
+  // ── Cross-module deps for selected test ──────────────────────
+  const crossModuleDepsForTest = computed<{ module: string; classes: string[] }[]>(() => {
+    const t = selectedTest.value
+    if (!t || !t.module || !classToModuleMap.size) return []
+    const byModule = new Map<string, string[]>()
+    for (const dep of (t.deps || [])) {
+      const depMod = classToModuleMap.get(dep)
+      if (depMod && depMod !== t.module) {
+        const arr = byModule.get(depMod) ?? []
+        arr.push(dep)
+        byModule.set(depMod, arr)
+      }
+    }
+    return [...byModule.entries()]
+      .sort((a, b) => b[1].length - a[1].length)
+      .map(([module, classes]) => ({ module, classes }))
+  })
+
   // ── Coverage search ─────────────────────────────────────────
   const filteredCovClasses = computed<CoverageClass[]>(() => {
     if (!dd.coverage?.classes) return []
@@ -1053,6 +1120,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     hasMethodCoverage, covMethodPercent, coverageByName, suiteHealthBreakdown,
     selectionCoverage,
     origSCB, simSetCoverBonuses, runDiff, simApfd, filteredCovClasses,
+    moduleFocusKpis, crossModuleDepsForTest,
     selectTest, selectAllVisible, drillDown, selectMethod,
     sortBy, simSortBy: simSortByFn, resetWeights, setGraphMode, setTab, setBadgeFilter, setModule,
     navigateTest, navigateTestDetail, activateFocusedTest, clearSelection,
