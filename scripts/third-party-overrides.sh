@@ -111,6 +111,35 @@ detect_gradle_extra_args() {
         micronaut-core) echo "--continue -x checkstyleMain -x checkstyleTest -x :micronaut-inject-java:test -x :test-suite:test" ;;
         # hibernate-orm: no checkstyle/spotbugs tasks; uses Gradle 9.5.
         hibernate-orm) echo "--continue" ;;
+        # kafka: upgrade-system-tests-* are live-cluster system tests (no @Test methods) that
+        # compile against old Kafka versions. They cannot run without a live Kafka cluster and
+        # produce GradleWorkerMain errors and compileTestJava failures on JDK 25.
+        # Exclude both :test and :compileTestJava for all upgrade-system-tests-* subprojects.
+        kafka) echo "--continue \
+-x :streams:upgrade-system-tests-0110:test -x :streams:upgrade-system-tests-0110:compileTestJava \
+-x :streams:upgrade-system-tests-10:test -x :streams:upgrade-system-tests-10:compileTestJava \
+-x :streams:upgrade-system-tests-11:test -x :streams:upgrade-system-tests-11:compileTestJava \
+-x :streams:upgrade-system-tests-20:test -x :streams:upgrade-system-tests-20:compileTestJava \
+-x :streams:upgrade-system-tests-21:test -x :streams:upgrade-system-tests-21:compileTestJava \
+-x :streams:upgrade-system-tests-22:test -x :streams:upgrade-system-tests-22:compileTestJava \
+-x :streams:upgrade-system-tests-23:test -x :streams:upgrade-system-tests-23:compileTestJava \
+-x :streams:upgrade-system-tests-24:test -x :streams:upgrade-system-tests-24:compileTestJava \
+-x :streams:upgrade-system-tests-25:test -x :streams:upgrade-system-tests-25:compileTestJava \
+-x :streams:upgrade-system-tests-26:test -x :streams:upgrade-system-tests-26:compileTestJava \
+-x :streams:upgrade-system-tests-27:test -x :streams:upgrade-system-tests-27:compileTestJava \
+-x :streams:upgrade-system-tests-28:test -x :streams:upgrade-system-tests-28:compileTestJava \
+-x :streams:upgrade-system-tests-30:test -x :streams:upgrade-system-tests-30:compileTestJava \
+-x :streams:upgrade-system-tests-31:test -x :streams:upgrade-system-tests-31:compileTestJava \
+-x :streams:upgrade-system-tests-32:test -x :streams:upgrade-system-tests-32:compileTestJava \
+-x :streams:upgrade-system-tests-33:test -x :streams:upgrade-system-tests-33:compileTestJava \
+-x :streams:upgrade-system-tests-34:test -x :streams:upgrade-system-tests-34:compileTestJava \
+-x :streams:upgrade-system-tests-35:test -x :streams:upgrade-system-tests-35:compileTestJava \
+-x :streams:upgrade-system-tests-36:test -x :streams:upgrade-system-tests-36:compileTestJava \
+-x :streams:upgrade-system-tests-37:test -x :streams:upgrade-system-tests-37:compileTestJava \
+-x :streams:upgrade-system-tests-38:test -x :streams:upgrade-system-tests-38:compileTestJava \
+-x :streams:upgrade-system-tests-39:test -x :streams:upgrade-system-tests-39:compileTestJava \
+-x :streams:upgrade-system-tests-40:test -x :streams:upgrade-system-tests-40:compileTestJava \
+-x :streams:upgrade-system-tests-41:test -x :streams:upgrade-system-tests-41:compileTestJava" ;;
         # Default: exclude common static-analysis tasks that may slow or break the build.
         # Most Gradle repos have these tasks; resilience4j is the known exception.
         *) echo "--continue -x checkstyleMain -x checkstyleTest -x spotbugsMain" ;;
