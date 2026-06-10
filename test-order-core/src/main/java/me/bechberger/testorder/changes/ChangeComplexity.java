@@ -90,7 +90,7 @@ public class ChangeComplexity {
 		// Refine with structural member count when available
 		if (changedMembers != null && !changedMembers.membersByClass().isEmpty()) {
 			int maxMembers = 0;
-			for (String fqcn : changedClasses) {
+			for (String fqcn : result.keySet()) {
 				Set<String> members = changedMembers.membersByClass().get(fqcn);
 				if (members != null && members.size() > maxMembers) {
 					maxMembers = members.size();

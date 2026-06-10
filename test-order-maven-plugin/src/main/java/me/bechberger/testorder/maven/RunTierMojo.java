@@ -86,6 +86,18 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 		// Prevent a POM-bound auto goal from overriding the test selection
 		project.getProperties().setProperty("testorder.auto.active", "true");
 
+		// When -Dtest= is active, Surefire already filters to the requested tests.
+		// Running run-tier on top would silently intersect the tier with the -Dtest=
+		// set, potentially running zero tests without any warning.
+		String userTestFilter = session != null && session.getUserProperties() != null
+				? session.getUserProperties().getProperty("test")
+				: null;
+		if (userTestFilter != null && !userTestFilter.isBlank()) {
+			getLog().info("[test-order] Skipping run-tier configuration — -Dtest=" + userTestFilter
+					+ " filter active. Surefire will run only the tests you specified.");
+			return;
+		}
+
 		if (currentTier != 2 && currentTier != 3) {
 			throw new MojoExecutionException(
 					"[test-order] testorder.tiered.currentTier must be 2 or 3, got: " + currentTier);

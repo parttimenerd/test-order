@@ -36,16 +36,22 @@ public final class ReactorOrderOperation {
 	public record ModuleScore(String moduleId, int maxTestScore, long sumTestScores, int affectedTestCount,
 			int totalTestCount, List<String> topTests) implements Comparable<ModuleScore> {
 
-		/** Primary sort: by max test score (descending), then sum (descending). */
+		/**
+		 * Primary sort: by affected test count (descending), then total score sum
+		 * (descending), then max test score (descending). Modules with more affected
+		 * tests are prioritized first because they represent broader change impact; the
+		 * score sum tiebreaks at equal affected counts and reflects cumulative urgency
+		 * across all affected tests in the module.
+		 */
 		@Override
 		public int compareTo(ModuleScore other) {
-			int cmp = Integer.compare(other.maxTestScore, this.maxTestScore);
+			int cmp = Integer.compare(other.affectedTestCount, this.affectedTestCount);
 			if (cmp != 0)
 				return cmp;
 			cmp = Long.compare(other.sumTestScores, this.sumTestScores);
 			if (cmp != 0)
 				return cmp;
-			return Integer.compare(other.affectedTestCount, this.affectedTestCount);
+			return Integer.compare(other.maxTestScore, this.maxTestScore);
 		}
 	}
 
@@ -151,12 +157,16 @@ public final class ReactorOrderOperation {
 				TestScorer.ScoreResult result = scorer.score(testClass);
 				int score = result.score();
 				testScores.add(Map.entry(testClass, score));
-				sumScores += score;
+				if (score > 0) {
+					// Only positive scores contribute to module urgency. Negative scores (e.g.
+					// the SLOW penalty) would otherwise drag the module sum below zero on
+					// modules dominated by slow but unaffected tests, producing misleading
+					// "sum=-1" output and inverted priority.
+					sumScores += score;
+					affectedCount++;
+				}
 				if (score > maxScore) {
 					maxScore = score;
-				}
-				if (score > 0) {
-					affectedCount++;
 				}
 			}
 

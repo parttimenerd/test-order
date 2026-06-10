@@ -218,7 +218,8 @@ public class IndexCollectorServer implements AutoCloseable {
 		if (includePackages == null || includePackages.isBlank()) {
 			this.sourcePackagePrefixes = null;
 		} else {
-			this.sourcePackagePrefixes = includePackages.split("[,;]+");
+			this.sourcePackagePrefixes = java.util.Arrays.stream(includePackages.split("[,;]+"))
+					.map(p -> p.endsWith(".") ? p.substring(0, p.length() - 1) : p).toArray(String[]::new);
 		}
 	}
 
@@ -940,7 +941,8 @@ public class IndexCollectorServer implements AutoCloseable {
 	public static boolean processFallbackFile(Path indexFile, String includePackages) throws IOException {
 		final String[] prefixes = (includePackages == null || includePackages.isBlank())
 				? null
-				: includePackages.split("[,;]+");
+				: java.util.Arrays.stream(includePackages.split("[,;]+"))
+						.map(p -> p.endsWith(".") ? p.substring(0, p.length() - 1) : p).toArray(String[]::new);
 		Path fallbackFile = indexFile.resolveSibling(indexFile.getFileName() + FALLBACK_SUFFIX);
 		if (!java.nio.file.Files.exists(fallbackFile)) {
 			return false;

@@ -167,10 +167,12 @@ export function computeScore(
   if (w.coverageBonus > 0 && bonusMap) {
     s += bonusMap[name] || 0
   } else {
-    if (t.depOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0)
-      s += Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap)
+    const effectiveDepOverlap = ('weightedDepOverlap' in t && (t as any).weightedDepOverlap != null)
+      ? (t as any).weightedDepOverlap as number : t.depOverlap
+    if (effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0)
+      s += Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap))
     if (t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0)
-      s += Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity)
+      s += Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier)
   }
 
   if (killRate >= 0 && w.killRateBonus > 0) s += Math.round(killRate * w.killRateBonus)
@@ -207,6 +209,7 @@ export interface ScoreBreakdown {
   total: number
   components: ScoreComponent[]
   changedDeps: { className: string; members: string[] }[]
+  hiddenChangedDepsCount: number  // changed deps not in truncated deps array
   methodTouches: { method: string; changedDeps: string[] }[]
   nonOverlappingCount: number
   flags: { newTest: boolean; changedTest: boolean; staticFieldOverlap: boolean; isFast: boolean; isSlow: boolean }
@@ -234,13 +237,16 @@ export function computeScoreBreakdown(
     depContrib = bonusMap[name] || 0
     depDetail = 'set-cover bonus'
   } else {
-    depContrib = t.depOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap) : 0
+    const effectiveDepOverlap = (te?.weightedDepOverlap != null) ? te.weightedDepOverlap : t.depOverlap
+    depContrib = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
+      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap)) : 0
     depDetail = `${t.depOverlap}/${t.depTotal} deps changed`
     if (killRate >= 0) depDetail += ` · kill rate ${(killRate * 100).toFixed(0)}%`
+    if (te?.weightedDepOverlap != null && te.weightedDepOverlap !== t.depOverlap)
+      depDetail += ` · IDF-weighted ${te.weightedDepOverlap.toFixed(2)}`
   }
   const cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
-    ? Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) : 0
+    ? Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
 
   const killBonus = killRate >= 0 && w.killRateBonus > 0 ? Math.round(killRate * w.killRateBonus) : 0
 
@@ -295,6 +301,7 @@ export function computeScoreBreakdown(
     total: components.reduce((s, c) => s + c.contribution, 0),
     components,
     changedDeps,
+    hiddenChangedDepsCount: Math.max(0, t.depOverlap - overlapping.length),
     methodTouches,
     nonOverlappingCount: deps.filter(d => !changedSet.has(d)).length,
     flags: {
@@ -327,11 +334,14 @@ export function scoreTooltip(
     const scBonus = bonusMap[name] || 0
     lines.push(`Set-cover bonus:       ${signed(scBonus)}`)
   } else {
-    const depOv = t.depOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap) : 0
-    lines.push(`Dependency overlap:    ${signed(depOv)}  (${t.depOverlap}/${t.depTotal} deps overlap${killRate >= 0 ? `, kill-rate ×${killMultiplier.toFixed(2)}` : ''})`)
+    const effectiveDepOverlap = (te?.weightedDepOverlap != null) ? te.weightedDepOverlap : t.depOverlap
+    const depOv = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
+      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap)) : 0
+    const idfNote = te?.weightedDepOverlap != null && te.weightedDepOverlap !== t.depOverlap
+      ? `, IDF-weighted ${te.weightedDepOverlap.toFixed(2)}` : ''
+    lines.push(`Dependency overlap:    ${signed(depOv)}  (${t.depOverlap}/${t.depTotal} deps overlap${idfNote}${killRate >= 0 ? `, kill-rate ×${killMultiplier.toFixed(2)}` : ''})`)
     const cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
-      ? Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) : 0
+      ? Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
     lines.push(`Change complexity:     ${signed(cmplx)}  (complexity: ${t.complexityOverlap.toFixed(2)})`)
   }
   if (killRate >= 0 && w.killRateBonus > 0) {
@@ -355,7 +365,8 @@ export function scoreTooltip(
       arr.push(member)
     }
 
-    lines.push(`Changed dependencies (${overlapping.length}):`)
+    const hiddenCount = t.depOverlap - overlapping.length
+    lines.push(`Changed dependencies (${t.depOverlap}):`)
     for (const dep of overlapping) {
       const members = membersByClass.get(dep)
       if (members && members.length > 0) {
@@ -365,6 +376,7 @@ export function scoreTooltip(
         lines.push(`  - ${shortClass(dep)}`)
       }
     }
+    if (hiddenCount > 0) lines.push(`  + ${hiddenCount} more (not in index)`)
   }
 
   // per-test-method breakdown (when method-level deps are available)

@@ -62,13 +62,13 @@ public final class ReactorReorderer {
 		sortedByScore.sort((a, b) -> {
 			ModuleScore sa = scoreById.get(ModuleIds.of(a));
 			ModuleScore sb = scoreById.get(ModuleIds.of(b));
-			int cmp = Integer.compare(score(sb).maxTestScore(), score(sa).maxTestScore());
+			int cmp = Integer.compare(score(sb).affectedTestCount(), score(sa).affectedTestCount());
 			if (cmp != 0)
 				return cmp;
 			cmp = Long.compare(score(sb).sumTestScores(), score(sa).sumTestScores());
 			if (cmp != 0)
 				return cmp;
-			cmp = Integer.compare(score(sb).affectedTestCount(), score(sa).affectedTestCount());
+			cmp = Integer.compare(score(sb).maxTestScore(), score(sa).maxTestScore());
 			if (cmp != 0)
 				return cmp;
 			return Integer.compare(originalIndex.get(a), originalIndex.get(b));

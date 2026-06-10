@@ -1296,12 +1296,17 @@ class DepsAndScoringTest {
 		List<String> sel = TestSelector.readTestList(selected);
 		List<String> rem = TestSelector.readTestList(remaining);
 
-		// Both UserServiceTest (dep overlap) and OrderServiceTest (failure) should be
-		// top-2
+		// With a change signal, only dep-affected tests are eligible (TestSelector
+		// Phase 2 semantics). UserServiceTest depends on com.app.UserService → in;
+		// OrderServiceTest's failure score is irrelevant here because it has no dep
+		// overlap with the change, so it ends up in remaining.
 		assertTrue(sel.contains("com.test.UserServiceTest"), "test with dep overlap should be selected");
-		assertTrue(sel.contains("com.test.OrderServiceTest"), "test with failure should be selected");
-		assertEquals(1, rem.size());
-		assertEquals("com.test.UtilTest", rem.get(0));
+		assertFalse(sel.contains("com.test.OrderServiceTest"),
+				"failure score does not bypass dep-affected filter when a change signal is present");
+		assertEquals(1, sel.size());
+		assertEquals(2, rem.size());
+		assertTrue(rem.contains("com.test.OrderServiceTest"));
+		assertTrue(rem.contains("com.test.UtilTest"));
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

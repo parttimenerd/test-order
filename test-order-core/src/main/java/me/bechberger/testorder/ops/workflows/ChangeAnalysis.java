@@ -385,7 +385,8 @@ public final class ChangeAnalysis {
 				// aren't re-added
 				String incPkgs = ctx.includePackages();
 				if (incPkgs != null && !incPkgs.isBlank()) {
-					String[] prefixes = incPkgs.split("[,;]+");
+					String[] prefixes = java.util.Arrays.stream(incPkgs.split("[,;]+"))
+							.map(p -> p.endsWith(".") ? p.substring(0, p.length() - 1) : p).toArray(String[]::new);
 					aug = aug.entrySet().stream().collect(java.util.stream.Collectors.toMap(java.util.Map.Entry::getKey,
 							e -> e.getValue().stream().filter(dep -> java.util.Arrays.stream(prefixes)
 									.anyMatch(pfx -> dep.startsWith(pfx) && (dep.length() == pfx.length()

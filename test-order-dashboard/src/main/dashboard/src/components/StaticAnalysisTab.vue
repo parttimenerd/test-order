@@ -202,7 +202,8 @@ function memberKindCounts(members: StaticAnalysisMember[] | undefined) {
 
 <template>
   <div v-show="d.activeTab.value === 'staticanalysis'" style="animation:fadeIn .15s ease-out">
-    <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:10px">Static Analysis — Selective Learn Scope</h3>
+    <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:10px"
+        title="Shows which classes the selective-learn mode re-instrumented. Selective learn only re-runs JVM instrumentation on classes that changed or are transitively reachable from changed classes, rather than all classes — reducing overhead for large projects.">Static Analysis — Selective Learn Scope</h3>
 
     <div v-if="!sa || !sa.enabled" style="color:var(--text-muted);font-size:.8rem;margin-top:12px">
       No selective-learn data available. Run with

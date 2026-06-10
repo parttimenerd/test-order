@@ -9,26 +9,31 @@ const h = computed(() => d.suiteHealthBreakdown.value)
 const components = computed(() => {
   if (!h.value) return []
   return [
-    { label: 'APFD',        value: h.value.apfdScore,   weight: 30, color: 'var(--accent)',  naText: h.value.hasApfd ? null : 'N/A' },
-    { label: 'Reliability', value: h.value.relScore,    weight: 30, color: 'var(--green)',   naText: null },
-    { label: 'Flakiness',   value: h.value.flakyScore,  weight: 20, color: 'var(--yellow)',  naText: null },
-    { label: 'Coverage',    value: h.value.covScore,    weight: 20, color: 'var(--cyan)',    naText: null },
+    { label: 'APFD',        value: h.value.apfdScore,   weight: 30, color: 'var(--accent)',  naText: h.value.hasApfd ? null : 'N/A',
+      tip: 'APFD (Average Percentage of Faults Detected): measures how early failing tests appear in the ordered list. 100% = all failures detected first; 50% = random. Contributes 30% to Suite Health.' },
+    { label: 'Reliability', value: h.value.relScore,    weight: 30, color: 'var(--green)',   naText: null,
+      tip: 'Reliability: % of tests that have never failed across all recorded runs. Lower = more tests have failure history. Contributes 30% to Suite Health.' },
+    { label: 'Stability',   value: h.value.flakyScore,  weight: 20, color: 'var(--yellow)',  naText: null,
+      tip: 'Stability (flakiness inverse): 100% = no flaky tests, 0% = most tests flaky. Formula: max(0, 100 − flakyPct × 3). ' + h.value.flakyList.length + ' flaky test' + (h.value.flakyList.length !== 1 ? 's' : '') + ' → score ' + h.value.flakyScore + '%. Contributes 20% to Suite Health.' },
+    { label: 'Coverage',    value: h.value.covScore,    weight: 20, color: 'var(--cyan)',    naText: null,
+      tip: 'Coverage: % of tracked source classes exercised by at least one test. If no instrumentation data, estimated at 50%. Contributes 20% to Suite Health.' },
   ]
 })
 
-const recommendations = computed(() => {
+interface Rec { msg: string; action?: () => void; actionLabel?: string }
+const recommendations = computed((): Rec[] => {
   if (!h.value) return []
-  const recs: string[] = []
+  const recs: Rec[] = []
   if (h.value.flakyList.length > 0)
-    recs.push(`Consider quarantining ${h.value.flakyList.length} flaky test${h.value.flakyList.length > 1 ? 's' : ''}`)
+    recs.push({ msg: `Consider quarantining ${h.value.flakyList.length} flaky test${h.value.flakyList.length > 1 ? 's' : ''}`, action: () => { d.setBadgeFilter('flaky'); d.setTab('tests') }, actionLabel: 'Filter →' })
   if (h.value.hasApfd && h.value.apfdScore < 70)
-    recs.push(`APFD ${h.value.apfdScore}% is low — review weight tuning in Weights tab`)
+    recs.push({ msg: `APFD ${h.value.apfdScore}% is low — review weight tuning in Weights tab`, action: () => d.setTab('weights'), actionLabel: 'Weights →' })
   if (h.value.covScore < 60)
-    recs.push(`Coverage ${h.value.covScore}% — consider adding instrumentation to uncovered packages`)
+    recs.push({ msg: `Coverage ${h.value.covScore}% — consider adding instrumentation to uncovered packages`, action: () => { d.setTab('analytics'); setTimeout(() => document.getElementById('analytics-coverage')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80) }, actionLabel: 'Coverage →' })
   if (h.value.methodCovPct !== null && h.value.methodCovPct < 50)
-    recs.push(`Only ${h.value.methodCovPct}% of tracked methods exercised — check for dead code or missing tests`)
+    recs.push({ msg: `Only ${h.value.methodCovPct}% of tracked methods exercised — check for dead code or missing tests` })
   if (h.value.relScore < 80)
-    recs.push(`${h.value.failedOnce.length} test${h.value.failedOnce.length !== 1 ? 's' : ''} have failed at least once — check their stability`)
+    recs.push({ msg: `${h.value.failedOnce.length} test${h.value.failedOnce.length !== 1 ? 's' : ''} have failed at least once — check their stability`, action: () => { d.setBadgeFilter('failing'); d.setTab('tests') }, actionLabel: 'Filter →' })
   return recs
 })
 </script>
@@ -36,7 +41,7 @@ const recommendations = computed(() => {
 <template>
   <div v-if="h" class="shc">
     <!-- Header: grade + composite score -->
-    <div class="shc__header">
+    <div class="shc__header" :title="'Suite Health Score: ' + h.composite + '/100 (Grade ' + h.grade + ')\nA→F composite of APFD (30%), Reliability (30%), Stability (20%), and Coverage (20%).\nHover each bar for details on how that component is calculated.'">
       <div class="shc__grade" :style="{ color: h.color }">{{ h.grade }}</div>
       <div class="shc__score-wrap">
         <div class="shc__score">{{ h.composite }}<span class="shc__score-denom">/100</span></div>
@@ -46,10 +51,11 @@ const recommendations = computed(() => {
 
     <!-- Component bars -->
     <div class="shc__bars">
-      <div v-for="c in components" :key="c.label" class="shc__bar-row">
+      <div v-for="c in components" :key="c.label" class="shc__bar-row" :title="c.tip">
         <span class="shc__bar-label">{{ c.label }}</span>
         <div class="shc__bar-track">
-          <div v-if="!c.naText" class="shc__bar-fill" :style="{ width: c.value + '%', background: c.color }"></div>
+          <div v-if="!c.naText" class="shc__bar-fill" :style="{ width: Math.max(c.value, c.value === 0 ? 0 : 2) + '%', background: c.color, opacity: c.value === 0 ? 0.35 : 1 }"></div>
+          <div v-if="!c.naText && c.value === 0" class="shc__bar-zero" :style="{ background: 'var(--red)' }"></div>
         </div>
         <span v-if="c.naText" class="shc__bar-pct" style="color:var(--text-muted)">{{ c.naText }}</span>
         <span v-else class="shc__bar-pct" :style="{ color: c.value >= 80 ? 'var(--green)' : c.value >= 60 ? 'var(--yellow)' : 'var(--red)' }">{{ c.value }}%</span>
@@ -84,7 +90,9 @@ const recommendations = computed(() => {
     <div v-if="recommendations.length" class="shc__recs">
       <div class="shc__recs-title">Recommendations</div>
       <div v-for="(rec, i) in recommendations" :key="i" class="shc__rec">
-        <span class="shc__rec-bullet">•</span> {{ rec }}
+        <span class="shc__rec-bullet">•</span>
+        <span>{{ rec.msg }}</span>
+        <button v-if="rec.action" class="shc__rec-action" @click="rec.action!()">{{ rec.actionLabel }}</button>
       </div>
     </div>
   </div>
@@ -118,9 +126,10 @@ const recommendations = computed(() => {
 .shc__bar-row { display: flex; align-items: center; gap: 6px; }
 .shc__bar-label { width: 72px; color: var(--text-sec); font-size: .67rem; flex-shrink: 0; }
 .shc__bar-track {
-  flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
+  flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; position: relative;
 }
 .shc__bar-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+.shc__bar-zero { position: absolute; left: 0; top: 0; width: 3px; height: 100%; border-radius: 3px; opacity: .7; }
 .shc__bar-pct { width: 34px; text-align: right; font-size: .67rem; font-weight: 700; flex-shrink: 0; }
 .shc__bar-weight { width: 30px; color: var(--text-muted); font-size: .6rem; flex-shrink: 0; }
 
@@ -137,6 +146,13 @@ const recommendations = computed(() => {
 
 .shc__recs { border-top: 1px solid var(--border); padding-top: 8px; }
 .shc__recs-title { font-size: .62rem; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); margin-bottom: 4px; }
-.shc__rec { font-size: .68rem; color: var(--text-sec); padding: 2px 0; display: flex; gap: 5px; }
+.shc__rec { font-size: .68rem; color: var(--text-sec); padding: 2px 0; display: flex; align-items: center; gap: 5px; }
 .shc__rec-bullet { color: var(--accent-light); flex-shrink: 0; }
+.shc__rec-action {
+  margin-left: auto; flex-shrink: 0;
+  font-size: .58rem; padding: 1px 6px; border-radius: 8px;
+  border: 1px solid rgba(99,102,241,.35); background: none; color: var(--accent-light);
+  cursor: pointer; transition: all .12s;
+}
+.shc__rec-action:hover { background: var(--accent-bg); border-color: var(--accent); }
 </style>

@@ -180,6 +180,10 @@ function onKeydown(e: KeyboardEvent) {
         focusMode.value = !focusMode.value
       }
       break
+    case '?':
+      // Open the filter sidebar help panel
+      document.querySelector<HTMLButtonElement>('.sidebar__help-btn')?.click()
+      break
     case 'b':
       if (dashboard.dd.changedClasses.length || dashboard.dd.changedTestClasses.length) {
         blameMode.value = !blameMode.value
@@ -316,10 +320,16 @@ function startResize(e: MouseEvent) {
   --radius: 6px; --tr-fast: .15s; --tr-norm: .2s;
 }
 * { box-sizing: border-box; margin: 0; }
+html { font-size: 110%; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased; background: var(--bg-base); color: var(--text);
   height: 100vh; overflow: hidden;
+}
+/* Responsive: on narrow viewports switch to scrollable column layout */
+@media (max-width: 700px) {
+  html { font-size: 100%; }
+  body { height: auto; overflow: auto; }
 }
 
 /* Shared utility classes used across components */

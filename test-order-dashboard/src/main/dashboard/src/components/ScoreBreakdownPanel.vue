@@ -36,10 +36,13 @@
         <span v-if="hasDeps(c)" class="sbp__expand-icon">{{ expanded === c.label ? '▲' : '▼' }}</span>
 
         <!-- Expanded dep tree (for dep overlap row) -->
-        <div v-if="expanded === c.label && props.data.changedDeps.length" class="sbp__dep-tree">
+        <div v-if="expanded === c.label && (props.data.changedDeps.length || props.data.hiddenChangedDepsCount > 0)" class="sbp__dep-tree">
           <div v-for="dep in props.data.changedDeps" :key="dep.className" class="sbp__dep-row">
             <span class="sbp__dep-name">{{ shortCls(dep.className) }}</span>
             <span v-if="dep.members.length" class="sbp__dep-members"> [{{ dep.members.slice(0,5).join(', ') }}{{ dep.members.length > 5 ? ` +${dep.members.length-5}` : '' }}]</span>
+          </div>
+          <div v-if="props.data.hiddenChangedDepsCount > 0" class="sbp__dep-row sbp__dep-row--hidden">
+            <span class="sbp__dep-hidden" :title="`${props.data.hiddenChangedDepsCount} more changed dep(s) not stored in the index (only the top-N most significant deps are kept)`">+ {{ props.data.hiddenChangedDepsCount }} more (not in index)</span>
           </div>
         </div>
       </div>
@@ -96,7 +99,7 @@ function barWidth(c: { contribution: number }): number {
 }
 
 function hasDeps(c: { label: string }): boolean {
-  return c.label === 'Dep overlap' && props.data.changedDeps.length > 0
+  return c.label === 'Dep overlap' && (props.data.changedDeps.length > 0 || props.data.hiddenChangedDepsCount > 0)
 }
 
 function toggleExpand(label: string) {
@@ -155,6 +158,8 @@ function shortMem(ref: string): string {
 .sbp__dep-row { display: flex; align-items: baseline; gap: 4px; }
 .sbp__dep-name { color: var(--text-sec); font-family: monospace; font-size: .67rem; }
 .sbp__dep-members { color: var(--text-muted); font-size: .62rem; }
+.sbp__dep-row--hidden { margin-top: 2px; }
+.sbp__dep-hidden { color: var(--text-muted); font-size: .62rem; cursor: help; border-bottom: 1px dotted var(--text-muted); }
 
 .sbp__flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 

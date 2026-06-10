@@ -22,27 +22,28 @@ function statusColor(status: string): string {
 
 <template>
   <div v-show="d.activeTab.value === 'ml'" style="animation:fadeIn .15s ease-out">
-    <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:10px">ML Health Analysis</h3>
+    <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:10px"
+        title="Status of the ML failure prediction model for each test. The model classifies each test into HEALTHY / DEGRADING / FLAKY / FAILING based on its recent run history. Use these signals to tune weights or investigate tests before they fail in CI.">ML Health Analysis</h3>
 
     <!-- Summary cards -->
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-      <div class="ml-card ml-card--healthy">
+      <div class="ml-card ml-card--healthy" title="Tests with consistently passing history — low fail rate and stable timing.">
         <div class="ml-card__value">{{ summary.healthy }}</div>
         <div class="ml-card__label">Healthy</div>
       </div>
-      <div class="ml-card ml-card--degrading">
+      <div class="ml-card ml-card--degrading" title="Tests whose pass rate has declined over recent runs — may become failures soon. Increase 'Fail History' weight to ensure they run early.">
         <div class="ml-card__value">{{ summary.degrading }}</div>
         <div class="ml-card__label">Degrading</div>
       </div>
-      <div class="ml-card ml-card--flaky">
+      <div class="ml-card ml-card--flaky" title="Tests that alternate between passing and failing across runs — intermittent failures. Consider quarantining or fixing them.">
         <div class="ml-card__value">{{ summary.flaky }}</div>
         <div class="ml-card__label">Flaky</div>
       </div>
-      <div class="ml-card ml-card--failing">
+      <div class="ml-card ml-card--failing" title="Tests with a high fail rate across recorded runs — consistently broken. Treat as high priority and fix or disable.">
         <div class="ml-card__value">{{ summary.failing }}</div>
         <div class="ml-card__label">Failing</div>
       </div>
-      <div class="ml-card">
+      <div class="ml-card" title="Total number of historical test runs included in this ML health analysis.">
         <div class="ml-card__value">{{ ml?.runsAnalyzed ?? 0 }}</div>
         <div class="ml-card__label">Runs analyzed</div>
       </div>
@@ -53,20 +54,20 @@ function statusColor(status: string): string {
       <table>
         <thead class="tests-overview__thead">
           <tr>
-            <th class="th--left">Test</th>
-            <th class="th--left">Status</th>
-            <th class="th--right" title="Failure rate across analyzed runs">Fail rate</th>
-            <th class="th--left" title="Recent trend direction">Trend</th>
-            <th class="th--right">Runs</th>
+            <th class="th--left" title="Test class name — click to navigate to test detail">Test</th>
+            <th class="th--left" title="ML health classification: HEALTHY = stable pass rate; DEGRADING = pass rate declining; FLAKY = intermittent failures; FAILING = high fail rate">Status</th>
+            <th class="th--right" title="Fraction of analyzed runs where this test failed. >50% = likely broken; 10-50% = flaky; <10% = occasional.">Fail rate</th>
+            <th class="th--left" title="Recent trend direction based on comparing first-half vs second-half of recorded runs. IMPROVING = getting more stable; DEGRADING = getting less stable.">Trend</th>
+            <th class="th--right" title="Number of runs in which this test appeared and was analyzed.">Runs</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="t in tests" :key="t.testClass" class="tests-overview__row">
+          <tr v-for="t in tests" :key="t.testClass" class="tests-overview__row" @click="d.navigateToTestFromCov(t.testClass)" style="cursor:pointer" :title="t.testClass + ' — click to inspect in Tests tab'">
             <td class="td--name" :title="t.testClass">{{ sn(t.testClass) }}</td>
             <td :style="{ color: statusColor(t.status), fontWeight: 600, fontSize: '.75rem' }">{{ t.status }}</td>
-            <td class="td--right" :style="{ color: t.failRate > 0.5 ? 'var(--red)' : t.failRate > 0.2 ? 'var(--yellow, orange)' : 'var(--text-muted)' }">{{ (t.failRate * 100).toFixed(1) }}%</td>
-            <td style="font-size:.75rem">{{ t.recentTrend }}</td>
-            <td class="td--right td--dim">{{ t.runsAnalyzed }}</td>
+            <td class="td--right" :style="{ color: t.failRate > 0.5 ? 'var(--red)' : t.failRate > 0.2 ? 'var(--yellow, orange)' : 'var(--text-muted)' }" :title="(t.failRate * 100).toFixed(1) + '% of ' + t.runsAnalyzed + ' runs failed'">{{ (t.failRate * 100).toFixed(1) }}%</td>
+            <td style="font-size:.75rem" :title="'Recent trend: ' + t.recentTrend">{{ t.recentTrend }}</td>
+            <td class="td--right td--dim" :title="t.runsAnalyzed + ' runs analyzed for this test'">{{ t.runsAnalyzed }}</td>
           </tr>
         </tbody>
       </table>

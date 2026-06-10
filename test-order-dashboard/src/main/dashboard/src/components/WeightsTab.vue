@@ -51,7 +51,12 @@ function encodeWeights(): string {
 
 function shareWeights() {
   const encoded = encodeWeights()
-  const url = window.location.href.split('#')[0] + '#tab=weights&weights=' + encoded
+  // Preserve current test selection and filter from the existing hash
+  const existingHash = window.location.hash.slice(1)
+  const existingParams = existingHash ? new URLSearchParams(existingHash) : new URLSearchParams()
+  existingParams.set('tab', 'weights')
+  existingParams.set('weights', encoded)
+  const url = window.location.href.split('#')[0] + '#' + existingParams.toString()
   navigator.clipboard?.writeText(url)
   shareCopied.value = true
   showToast('Share URL copied to clipboard!')
@@ -216,7 +221,7 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
   const rankSpan = curve.maxRank - curve.minRank || 1
   return curve.ranks.map((r, i) => {
     const x = (i / (n - 1)) * W
-    const y = H - ((r - curve.minRank) / rankSpan) * H  // lower rank = higher y position = better
+    const y = ((r - curve.minRank) / rankSpan) * H  // lower rank (better) = top (y≈0), higher rank (worse) = bottom
     return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
 }
@@ -225,7 +230,7 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
 <template>
   <div v-if="d.activeTab.value === 'weights'">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">
-      <h3 style="font-size:.82rem;color:var(--text-sec)">Weight Sliders</h3>
+      <h3 style="font-size:.82rem;color:var(--text-sec)" title="Drag or type to adjust the relative importance of each scoring factor. Changes are applied in real-time — the rank comparison table below updates instantly to show how your weights change test ordering. Click 'Simulate' to preview, or 'Copy URL' to share your configuration.">Weight Sliders</h3>
       <!-- APFD comparison: orig vs sim -->
       <div v-if="d.avgApfd.value !== null || d.simApfd.value !== null" class="kpi weights__apfd-kpi" title="Comparison of original historical APFD vs simulated APFD with current weights. Higher is better; 50% = random ordering.">
         <div style="font-size:.52rem;color:var(--text-sec);margin-bottom:2px;text-transform:uppercase;letter-spacing:.3px">APFD</div>
@@ -290,7 +295,7 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
         — train APFDc: {{ (d.optimizeResult.value.trainScore * 100).toFixed(1) }}%
         <span v-if="d.optimizeResult.value.folds > 0" style="color:var(--text-muted)">  · validation: {{ (d.optimizeResult.value.validationScore * 100).toFixed(1) }}%</span>
         <span v-if="d.optimizeResult.value.overfit" style="color:var(--orange)"> (overfit → defaults used)</span>
-        <button @click="revertOptimize()" class="weights__revert-btn">↩ Revert</button>
+        <button @click="revertOptimize()" class="weights__revert-btn" title="Revert weights back to values before optimization">↩ Revert</button>
       </div>
       <div v-if="preOptWeights" class="weights__opt-diffs">
         <template v-for="wd in d.dd.weightDefs" :key="wd.name">
@@ -343,7 +348,7 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
 
     <!-- Top movers summary -->
     <div v-if="topMovers" class="weights__movers">
-      <div class="weights__movers-title">
+      <div class="weights__movers-title" title="Tests most affected by your current weight changes. ↑ = moved earlier in run order (higher priority), ↓ = moved later (lower priority). Click any test to inspect it.">
         Top rank changes
         <span style="font-size:.58rem;color:var(--text-muted);font-weight:400;margin-left:4px">{{ topMovers.total }} test{{ topMovers.total > 1 ? 's' : '' }} affected</span>
       </div>
@@ -386,7 +391,7 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
     </div>
 
     <div v-if="d.runs.length" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-      <h3 style="font-size:.82rem;color:var(--text-sec);margin:0">Rank comparison <span style="font-size:.65rem;color:var(--text-muted);font-weight:400">— click headers to sort</span></h3>
+      <h3 style="font-size:.82rem;color:var(--text-sec);margin:0" title="Side-by-side comparison of each test's original rank vs. its simulated rank under the current weights. Δ column shows how many positions it moves (negative = earlier = better). Click column headers to sort.">Rank comparison <span style="font-size:.65rem;color:var(--text-muted);font-weight:400">— click headers to sort</span></h3>
       <button
         class="weights__toggle-btn"
         :class="{ 'weights__toggle-btn--active': showChangedOnly }"
@@ -399,22 +404,22 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
       <table v-else>
         <thead style="position:sticky;top:0;background:var(--bg-base);z-index:1">
           <tr>
-            <th @click="d.simSortBy('name')" class="weights__th weights__th--left" :class="{ 'weights__th--active': d.simSortKey.value === 'name' }">
+            <th @click="d.simSortBy('name')" class="weights__th weights__th--left" :class="{ 'weights__th--active': d.simSortKey.value === 'name' }" title="Test class name — click to sort alphabetically">
               Test<span v-if="d.simSortKey.value === 'name'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
             </th>
-            <th @click="d.simSortBy('origRank')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'origRank' }">
+            <th @click="d.simSortBy('origRank')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'origRank' }" title="Original rank based on historical run data — click to sort">
               Orig rank<span v-if="d.simSortKey.value === 'origRank'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
             </th>
-            <th @click="d.simSortBy('simRank')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'simRank' }">
+            <th @click="d.simSortBy('simRank')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'simRank' }" title="Simulated rank with the current weight configuration — click to sort">
               Sim rank<span v-if="d.simSortKey.value === 'simRank'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
             </th>
             <th @click="d.simSortBy('delta')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'delta' }" title="Rank shift: negative = test moves earlier (better), positive = moves later (worse)">
               Rank shift<span v-if="d.simSortKey.value === 'delta'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
             </th>
-            <th @click="d.simSortBy('origScore')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'origScore' }">
+            <th @click="d.simSortBy('origScore')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'origScore' }" title="Priority score under the original (historical) weights — click to sort">
               Orig score<span v-if="d.simSortKey.value === 'origScore'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
             </th>
-            <th @click="d.simSortBy('simScore')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'simScore' }">
+            <th @click="d.simSortBy('simScore')" class="weights__th weights__th--right" :class="{ 'weights__th--active': d.simSortKey.value === 'simScore' }" title="Priority score recalculated with the current (simulated) weights — click to sort">
               Sim score<span v-if="d.simSortKey.value === 'simScore'">{{ d.simSortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
             </th>
           </tr>
@@ -459,7 +464,7 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
     </div>
     <!-- Sensitivity curves for selected test -->
     <div v-if="d.selectedTest.value && sensitivityCurves.length" style="margin-top:12px">
-      <h3 style="font-size:.78rem;color:var(--text-sec);margin-bottom:6px">
+      <h3 style="font-size:.78rem;color:var(--text-sec);margin-bottom:6px" title="Shows how this test's rank would change as each weight is individually swept from its minimum to maximum value, with all other weights held fixed. Steep curves mean the test's priority is highly sensitive to that weight.">
         Score sensitivity for <span style="color:var(--accent-light)">{{ sn(d.selectedTest.value.name) }}</span>
         <span style="font-size:.62rem;color:var(--text-muted);font-weight:400"> — how rank changes as each weight is swept (others held fixed)</span>
       </h3>
@@ -467,8 +472,14 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
         <div v-for="c in sensitivityCurves" :key="c.weightName" class="weights__sens-card" :title="c.label + ': sweep from ' + c.min + ' to ' + c.max + '. Current=' + c.current + '. Rank range: #' + c.minRank + '–#' + c.maxRank">
           <div class="weights__sens-label">{{ c.label }}</div>
           <svg class="weights__sens-svg" viewBox="0 0 100 40" preserveAspectRatio="none">
-            <!-- Y-axis guide: lower rank = top = green zone -->
-            <rect x="0" y="0" width="100" height="40" fill="rgba(0,0,0,0)" />
+            <defs>
+              <linearGradient id="sensGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="rgba(34,197,94,.08)"/>
+                <stop offset="100%" stop-color="rgba(239,68,68,.06)"/>
+              </linearGradient>
+            </defs>
+            <!-- green top = better rank, red bottom = worse rank -->
+            <rect x="0" y="0" width="100" height="40" fill="url(#sensGrad)" />
             <!-- Rank curve: lower rank value = better = top of SVG -->
             <path :d="sensSvgPath(c, 100, 40)" fill="none" stroke="#6366f1" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
             <!-- Current weight position marker -->
@@ -481,6 +492,8 @@ function sensSvgPath(curve: SensCurve, W: number, H: number): string {
               stroke-width="1"
               vector-effect="non-scaling-stroke"
             />
+            <!-- Y-axis direction label -->
+            <text x="2" y="7" font-size="5" fill="rgba(34,197,94,.7)" style="font-family:sans-serif">↑ better</text>
           </svg>
           <div class="weights__sens-meta">
             <span>rank #{{ c.minRank }}</span>

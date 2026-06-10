@@ -31,28 +31,34 @@ function tierLabel(rate: number): string {
 
 <template>
   <div v-show="d.activeTab.value === 'mutation'" style="animation:fadeIn .15s ease-out">
-    <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:10px">Mutation Testing (PIT)</h3>
+    <h3 style="font-size:.82rem;color:var(--text-sec);margin-bottom:10px"
+        title="PIT mutation testing results — PIT inserts small code mutations (flip comparisons, remove calls, etc.) and checks if your tests detect them. Mutation score = killed / total mutants. 80%+ = strong test suite. Low-killing tests lack assertions or coverage.">Mutation Testing (PIT)</h3>
 
     <!-- Summary cards -->
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-      <div class="mut-card mut-card--overall">
+      <div class="mut-card mut-card--overall"
+        :title="`Mutation score: ${totalMutants > 0 ? totalKilled + '/' + totalMutants + ' mutants killed. ' : ''}PIT inserts code mutations (e.g. flipping comparisons, removing calls) and measures how many your tests detect. Higher is better — 80 %+ is considered strong, <50 % suggests tests lack assertions or coverage.`">
         <div class="mut-card__value">{{ (overallKillRate * 100).toFixed(1) }}%</div>
         <div class="mut-card__label">Mutation score</div>
         <div v-if="totalMutants > 0" style="font-size:.62rem;color:var(--text-muted);margin-top:2px">{{ totalKilled }}/{{ totalMutants }} killed</div>
       </div>
-      <div class="mut-card mut-card--high">
+      <div class="mut-card mut-card--high"
+        title="High kill share (≥15%): these tests each kill at least 15% of all mutants — they cover critical, well-tested production code paths.">
         <div class="mut-card__value">{{ summary.high }}</div>
         <div class="mut-card__label">High (&ge;15%)</div>
       </div>
-      <div class="mut-card mut-card--medium">
+      <div class="mut-card mut-card--medium"
+        title="Medium kill share (5–15%): these tests kill a moderate share of mutants — good coverage but room to strengthen assertions.">
         <div class="mut-card__value">{{ summary.medium }}</div>
         <div class="mut-card__label">Medium (5–15%)</div>
       </div>
-      <div class="mut-card mut-card--low">
+      <div class="mut-card mut-card--low"
+        title="Low kill share (&lt;5%): these tests kill very few mutants — they may exercise code but lack specific assertions that would catch bugs.">
         <div class="mut-card__value">{{ summary.low }}</div>
         <div class="mut-card__label">Low (&lt;5%)</div>
       </div>
-      <div class="mut-card">
+      <div class="mut-card"
+        title="Zero kills: these tests kill no mutants at all — they run but never assert anything that a mutation would break. Consider adding meaningful assertions or removing them if redundant.">
         <div class="mut-card__value">{{ summary.none }}</div>
         <div class="mut-card__label">Zero kills</div>
       </div>
@@ -60,11 +66,13 @@ function tierLabel(rate: number): string {
 
     <!-- Kill-rate bar chart -->
     <div style="margin-bottom:16px">
+      <div style="font-size:.62rem;color:var(--text-muted);margin-bottom:6px" title="Kill share = fraction of all mutants killed by this test class. Bar is scaled so 25% kill share fills the full bar width (×4 scale), making per-test differences easier to see.">Kill share per test (bar scale: 25% = full width)</div>
       <div
         v-for="t in tests"
         :key="t.testClass"
-        style="display:flex;align-items:center;gap:8px;margin-bottom:4px;min-width:0"
-        :title="t.testClass + ' — ' + (t.killRate * 100).toFixed(2) + '% kill share'"
+        style="display:flex;align-items:center;gap:8px;margin-bottom:4px;min-width:0;cursor:pointer"
+        :title="t.testClass + ' — ' + (t.killRate * 100).toFixed(2) + '% kill share. Click to inspect in Tests tab'"
+        @click="d.navigateToTestFromCov(t.testClass)"
       >
         <span class="bar-label" :title="t.testClass">{{ sn(t.testClass) }}</span>
         <div class="bar-track">
@@ -87,13 +95,13 @@ function tierLabel(rate: number): string {
       <table>
         <thead class="tests-overview__thead">
           <tr>
-            <th class="th--left">Test</th>
+            <th class="th--left" title="Test class name — click to navigate to test detail">Test</th>
             <th class="th--right" title="Fraction of killed mutants that this test kills">Kill share</th>
             <th class="th--left" title="Tier based on kill share">Tier</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="t in tests" :key="t.testClass" class="tests-overview__row">
+          <tr v-for="t in tests" :key="t.testClass" class="tests-overview__row" style="cursor:pointer" :title="t.testClass + ' — click to inspect in Tests tab'" @click="d.navigateToTestFromCov(t.testClass)">
             <td class="td--name" :title="t.testClass">{{ sn(t.testClass) }}</td>
             <td class="td--right" :style="{ color: tierColor(t.killRate), fontVariantNumeric: 'tabular-nums' }">
               {{ (t.killRate * 100).toFixed(2) }}%

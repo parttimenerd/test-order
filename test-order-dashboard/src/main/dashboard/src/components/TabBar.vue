@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, computed, ref } from 'vue'
+import { inject, computed, ref, onMounted, onUnmounted } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
 
 const d = inject<DashboardState>('dashboard')!
@@ -18,6 +18,20 @@ const analyticsBadge = computed(() => d.runs.length || null)
 const runFailures = computed(() => d.latestRun.value?.totalFailures ?? 0)
 
 const showLegend = ref(false)
+const legendBtnEl = ref<HTMLButtonElement | null>(null)
+
+function onDocClick(e: MouseEvent) {
+  if (!showLegend.value) return
+  const target = e.target as Node
+  const btn = legendBtnEl.value
+  if (btn && (btn === target || btn.contains(target))) return
+  const panel = document.querySelector('.tab-bar__legend-panel')
+  if (panel && panel.contains(target)) return
+  showLegend.value = false
+}
+
+onMounted(() => document.addEventListener('click', onDocClick, true))
+onUnmounted(() => document.removeEventListener('click', onDocClick, true))
 </script>
 
 <template>
@@ -48,7 +62,7 @@ const showLegend = ref(false)
     <span v-else class="tab-bar__hint tab-bar__hint--ok" @click="d.setTab('analytics')" style="cursor:pointer" title="Coverage data available — click to view in Analytics tab">coverage ✓</span>
 
     <!-- Legend button -->
-    <button class="tab-bar__legend-btn" @click="showLegend = !showLegend" :title="showLegend ? 'Hide color legend' : 'Show color legend (what do the colors mean?)'">
+    <button ref="legendBtnEl" class="tab-bar__legend-btn" @click="showLegend = !showLegend" :title="showLegend ? 'Hide color legend' : 'Show color legend (what do the colors mean?)'">
       {{ showLegend ? '✕' : '?' }}
     </button>
 
@@ -71,7 +85,7 @@ const showLegend = ref(false)
         </div>
         <div class="tab-bar__legend-section">
           <div class="tab-bar__legend-head">Keyboard Shortcuts</div>
-          <div class="tab-bar__legend-row"><kbd class="tab-bar__kbd">1</kbd><kbd class="tab-bar__kbd">2</kbd><kbd class="tab-bar__kbd">3</kbd> Switch tabs</div>
+          <div class="tab-bar__legend-row"><kbd class="tab-bar__kbd">1</kbd>–<kbd class="tab-bar__kbd">3</kbd>+ Switch tabs (extras appear when data available)</div>
           <div class="tab-bar__legend-row"><kbd class="tab-bar__kbd">j</kbd><kbd class="tab-bar__kbd">k</kbd> Navigate tests</div>
           <div class="tab-bar__legend-row"><kbd class="tab-bar__kbd">⏎</kbd> Select / Open</div>
           <div class="tab-bar__legend-row"><kbd class="tab-bar__kbd">/</kbd> Search tests</div>

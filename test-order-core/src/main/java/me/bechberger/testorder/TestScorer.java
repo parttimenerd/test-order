@@ -41,16 +41,27 @@ public class TestScorer {
 	/** Full result of scoring a single test class. */
 	public record ScoreResult(int score, int depOverlap, int depTotal, double failScore, boolean isNew,
 			boolean isChanged, boolean isFast, boolean isSlow, double complexityOverlap, double speedRatio,
-			boolean hasStaticFieldOverlap, double killRate) {
+			boolean hasStaticFieldOverlap, double killRate, double weightedDepOverlap) {
 
 		/**
-		 * Backward-compat constructor without killRate (defaults to -1.0 = no data).
+		 * Backward-compat constructor without killRate or weightedDepOverlap.
 		 */
 		public ScoreResult(int score, int depOverlap, int depTotal, double failScore, boolean isNew, boolean isChanged,
 				boolean isFast, boolean isSlow, double complexityOverlap, double speedRatio,
 				boolean hasStaticFieldOverlap) {
 			this(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOverlap,
-					speedRatio, hasStaticFieldOverlap, -1.0);
+					speedRatio, hasStaticFieldOverlap, -1.0, depOverlap);
+		}
+
+		/**
+		 * Backward-compat constructor without weightedDepOverlap (defaults to raw
+		 * count).
+		 */
+		public ScoreResult(int score, int depOverlap, int depTotal, double failScore, boolean isNew, boolean isChanged,
+				boolean isFast, boolean isSlow, double complexityOverlap, double speedRatio,
+				boolean hasStaticFieldOverlap, double killRate) {
+			this(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOverlap,
+					speedRatio, hasStaticFieldOverlap, killRate, depOverlap);
 		}
 	}
 
@@ -367,6 +378,7 @@ public class TestScorer {
 			deps = Set.of();
 		int depTotal = deps.size();
 		int depOverlap = 0;
+		double weightedDepOverlap = 0.0;
 		double complexityOvlp = 0.0;
 		int staticFieldOverlap = 0;
 		if (!effectiveChangedForOverlap.isEmpty()) {
@@ -392,10 +404,9 @@ public class TestScorer {
 				depOverlap = overlapClasses.size();
 				// Weight each overlapping dep by its IDF so near-universal deps (high df)
 				// contribute near-zero while discriminating rare deps contribute more.
-				double weightedOverlap = 0.0;
 				for (String dep : overlapClasses)
-					weightedOverlap += depMap.idf(dep);
-				int rawDepOverlap = depOverlapScore(weightedOverlap, depTotal, weights.depOverlap());
+					weightedDepOverlap += depMap.idf(dep);
+				int rawDepOverlap = depOverlapScore(weightedDepOverlap, depTotal, weights.depOverlap());
 				score += (int) Math.round(rawDepOverlap * killMultiplier);
 
 				// Complexity-weighted overlap: sum normalised complexity of overlapping deps
@@ -465,7 +476,7 @@ public class TestScorer {
 		score += packageProximityBonus(testClassName);
 
 		return new ScoreResult(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOvlp,
-				sRatio, staticFieldOverlap > 0, killRate);
+				sRatio, staticFieldOverlap > 0, killRate, weightedDepOverlap);
 	}
 
 	public long medianDuration() {

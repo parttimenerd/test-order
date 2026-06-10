@@ -29,7 +29,10 @@ class ShowWorkflowTest {
 	@Test
 	void printReport_noData_showsActionableGuidance() {
 		ShowWorkflow.ShowResult result = new ShowWorkflow.ShowResult(null, null, null, null, null);
-		ShowWorkflow.Options opts = ShowWorkflow.Options.defaults();
+		// methods=true and ml=true force the "unavailable" guidance to print even when
+		// no data is present — auto-detect (null) intentionally stays quiet.
+		ShowWorkflow.Options opts = new ShowWorkflow.Options(true, Boolean.TRUE, Boolean.TRUE, false, false, "text",
+				null, -1, 10, null);
 
 		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 		PrintStream out = new PrintStream(buffer);
