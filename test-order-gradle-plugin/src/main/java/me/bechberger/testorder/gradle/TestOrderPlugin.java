@@ -1554,6 +1554,10 @@ public class TestOrderPlugin implements Plugin<Project> {
                         project.getLogger().lifecycle("[test-order] Running {} remaining test classes", tests.size());
                     }
                     applySelectedTests((Test) t, tests);
+                    // Rename to .consumed instead of deleting — allows manual recovery if
+                    // infrastructure failure prevents test execution (the file is gone otherwise)
+                    Path consumed = remainingFile.resolveSibling(remainingFile.getFileName() + ".consumed");
+                    Files.move(remainingFile, consumed, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 } catch (IOException e) {
                     throw new GradleException("Failed to read remaining tests file", e);
                 }

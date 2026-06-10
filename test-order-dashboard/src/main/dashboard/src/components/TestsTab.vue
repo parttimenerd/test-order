@@ -906,6 +906,7 @@ function previewScoreBars(t: TestEntry) {
                 <span v-if="d.sortKey.value === 'score'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span>
               </th>
               <th class="th--left" title="Status badges: ✕ failing, ~ flaky, ✎ changed source, + new, 🐢 slow, ⚡ fast, STAT static-field overlap. Hover a badge for details. Duration variance is shown in the Var column.">Flags</th>
+              <th v-if="d.modules.value.length > 1" class="th--left th-sort" @click="d.sortBy('module')" :class="{ 'th-sort--active': d.sortKey.value === 'module' }" title="Sort by owning module. Click to group tests by module.">Module<span v-if="d.sortKey.value === 'module'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span></th>
               <th class="th--right th-sort" @click="d.sortBy('duration')" :class="{ 'th-sort--active': d.sortKey.value === 'duration' }" title="Sort by EMA-smoothed duration">Duration<span v-if="d.sortKey.value === 'duration'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span></th>
               <th v-if="d.tests.some(t => t.durationVariance > 0 && t.duration > 0 && Math.sqrt(t.durationVariance) / t.duration > 0.05)" class="th--right th-sort" @click="d.sortBy('durationVariance')" :class="{ 'th-sort--active': d.sortKey.value === 'durationVariance' }" title="Sort by EMA duration variance (CV = stdDev/mean). High variance may indicate flakiness or environment sensitivity. Threshold ≥50% CV = High Variance badge.">Var<span v-if="d.sortKey.value === 'durationVariance'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span></th>
               <th class="th--right th-sort" @click="d.sortBy('depTotal')" :class="{ 'th-sort--active': d.sortKey.value === 'depTotal' }" title="Sort by total dependencies / overlap with changed classes">Deps / Overlap<span v-if="d.sortKey.value === 'depTotal'">{{ d.sortDir.value === 'asc' ? ' ↑' : ' ↓' }}</span></th>
@@ -963,6 +964,14 @@ function previewScoreBars(t: TestEntry) {
                 </button>
               </td>
               <td><TestBadges :test="t" :flaky="d.flakyTests.value.has(t.name)" /></td>
+              <td v-if="d.modules.value.length > 1" class="td--left td--dim td--module"
+                :title="t.module || 'unknown module'"
+                @click.stop="d.setModule(t.module)"
+                style="cursor:pointer;font-size:.65rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px"
+              >
+                <span v-if="t.suspectHomeModule" style="color:var(--yellow,#fbbf24)" title="Most deps are in a different module">⚠</span>
+                {{ t.module ? t.module.split('-').slice(-2).join('-') : '?' }}
+              </td>
               <td class="td--right td--dim tests-overview__dur-cell" :class="{ 'tests-overview__dur--slow': t.isSlow, 'tests-overview__dur--fast': t.isFast }" :title="t.duration >= 0 ? t.duration.toFixed(1) + 'ms' + (t.isSlow ? ' · slow (above median)' : t.isFast ? ' · fast (below median)' : '') : 'No duration data'">
                 <span v-if="t.duration >= 0" class="tests-overview__dur-bar" :style="{ width: Math.max(2, Math.round(t.duration / maxDuration * 28)) + 'px', background: t.isSlow ? 'var(--orange)' : t.isFast ? 'var(--green)' : 'var(--accent)' }"></span>
                 {{ t.duration >= 0 ? fmtDur(t.duration) : '' }}

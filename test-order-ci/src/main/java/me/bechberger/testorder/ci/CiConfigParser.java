@@ -62,9 +62,10 @@ public class CiConfigParser {
 			CiConfig config = new CiConfig(configMap);
 
 			// Validate that at least one CI config is provided
-			if (config.getGithub() == null && config.getHttp() == null && config.getGitlab() == null
-					&& config.getMaven() == null) {
-				throw new CiConfigException("Config must have a 'github', 'gitlab', 'maven', or 'http' section");
+			if (config.getProviders().isEmpty() && config.getGithub() == null && config.getHttp() == null
+					&& config.getGitlab() == null && config.getMaven() == null) {
+				throw new CiConfigException(
+						"Config must have a 'github', 'gitlab', 'maven', 'http', or 'providers' section");
 			}
 
 			// Validate GitHub config if present

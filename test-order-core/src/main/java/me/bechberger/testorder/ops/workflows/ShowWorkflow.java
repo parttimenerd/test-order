@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
-import java.util.TreeMap;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -297,11 +296,43 @@ public final class ShowWorkflow {
 	// ── Module-grouped class order ────────────────────────────────────
 
 	/**
+	 * Per-module aggregate computed from the ranked test list, used for priority
+	 * ordering and section headers.
+	 */
+	private record ModuleAggregate(String moduleId, List<OrderReportPrinter.RankedTest> tests, int affectedCount,
+			long sumScores, int maxScore) {
+
+		/**
+		 * Sort key: affectedCount desc → sumScores desc → maxScore desc → moduleId asc.
+		 * Mirrors
+		 * {@link me.bechberger.testorder.ops.ReactorOrderOperation.ModuleScore#compareTo}
+		 * and {@code ReactorReorderer.reorder} so the show output matches actual Maven
+		 * module execution order.
+		 */
+		static int compareByPriority(ModuleAggregate a, ModuleAggregate b) {
+			int cmp = Integer.compare(b.affectedCount, a.affectedCount);
+			if (cmp != 0)
+				return cmp;
+			cmp = Long.compare(b.sumScores, a.sumScores);
+			if (cmp != 0)
+				return cmp;
+			cmp = Integer.compare(b.maxScore, a.maxScore);
+			if (cmp != 0)
+				return cmp;
+			return a.moduleId.compareTo(b.moduleId);
+		}
+	}
+
+	/**
 	 * Prints the class order grouped by Maven module. Tests are bucketed by their
 	 * owning module (from {@code DependencyMap.getModule()}), then each bucket is
-	 * printed in priority order. Modules are sorted alphabetically by their
-	 * artifactId — a reasonable topological proxy for multi-module builds. Tests
-	 * with no recorded module are collected in a trailing "(unknown module)" group.
+	 * printed in priority order. Modules themselves are ordered by the same key the
+	 * reactor reorderer uses (affected count desc → sum desc → max desc). Note this
+	 * preview is <em>not</em> a literal preview of the reactor execution order —
+	 * the real reactor must also respect the inter-module dependency DAG, so a
+	 * lower-priority module may run earlier if a higher-priority module depends on
+	 * it. Tests with no recorded module are collected in a trailing "(unknown
+	 * module)" group.
 	 */
 	private static void printClassOrderByModule(PrintStream out, List<OrderReportPrinter.RankedTest> ranked,
 			ShowResult result, Options opts) {
@@ -319,13 +350,49 @@ public final class ShowWorkflow {
 			}
 		}
 
-		// Sort modules alphabetically (stable proxy for build order)
-		Map<String, List<OrderReportPrinter.RankedTest>> sorted = new TreeMap<>(byModule);
+		// Compute per-module aggregates and sort by priority (matches reactor reorder)
+		List<ModuleAggregate> aggregates = new ArrayList<>();
+		for (Map.Entry<String, List<OrderReportPrinter.RankedTest>> entry : byModule.entrySet()) {
+			List<OrderReportPrinter.RankedTest> tests = entry.getValue();
+			int affected = 0;
+			long sum = 0;
+			int max = 0;
+			for (OrderReportPrinter.RankedTest rt : tests) {
+				int s = rt.score().score();
+				if (s > 0) {
+					// Only positive scores feed urgency. Negative SLOW penalties on otherwise
+					// unaffected tests would produce misleading "sum=-1" headers.
+					affected++;
+					sum += s;
+				}
+				if (s > max) {
+					max = s;
+				}
+			}
+			aggregates.add(new ModuleAggregate(entry.getKey(), tests, affected, sum, max));
+		}
+		aggregates.sort(ModuleAggregate::compareByPriority);
 
-		for (Map.Entry<String, List<OrderReportPrinter.RankedTest>> entry : sorted.entrySet()) {
+		// Header: how many modules have affected tests, how many run last
+		int activeCount = (int) aggregates.stream().filter(a -> a.affectedCount > 0).count();
+		int deferredCount = aggregates.size() - activeCount;
+		if (activeCount > 0) {
+			out.println("[test-order] Module priority: " + activeCount + " affected, " + deferredCount
+					+ " with no affected tests (would run last in `mvn test-order:affected`).");
+			out.println("[test-order] Module sort: affected count desc → sum of scores desc → max score desc.");
+			out.println(
+					"[test-order] Note: real `mvn` execution further interleaves these by inter-module dependencies.");
+		}
+
+		int rank = 0;
+		for (ModuleAggregate agg : aggregates) {
 			out.println();
-			out.println("── Module: " + entry.getKey() + " (" + entry.getValue().size() + " tests) ──");
-			ShowOrderOperation.printReport(out, entry.getValue(), result.classOrder().scorer(),
+			rank++;
+			String status = agg.affectedCount == 0 ? " [no affected — deferred]" : "";
+			String displayId = shortenModuleId(agg.moduleId);
+			out.println(String.format("── #%d Module: %s (%d tests, affected=%d, sum=%d, max=%d)%s ──", rank, displayId,
+					agg.tests.size(), agg.affectedCount, agg.sumScores, agg.maxScore, status));
+			ShowOrderOperation.printReport(out, agg.tests, result.classOrder().scorer(),
 					result.classOrder().changedClasses(), result.classOrder().changedTests(),
 					result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
 		}
@@ -337,6 +404,27 @@ public final class ShowWorkflow {
 					result.classOrder().changedClasses(), result.classOrder().changedTests(),
 					result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
 		}
+	}
+
+	/**
+	 * Strips the dotted groupId prefix from a {@code groupId-artifactId} moduleId
+	 * for display, e.g. {@code com.sap.cloud.sdk.cloudplatform-cloudplatform-core →
+	 * cloudplatform-core}. Conservative: returns the input unchanged if there is no
+	 * dot (single-level group) or no dash after the last dot.
+	 */
+	public static String shortenModuleId(String moduleId) {
+		if (moduleId == null) {
+			return "";
+		}
+		int lastDot = moduleId.lastIndexOf('.');
+		if (lastDot < 0) {
+			return moduleId;
+		}
+		int dash = moduleId.indexOf('-', lastDot);
+		if (dash < 0) {
+			return moduleId;
+		}
+		return moduleId.substring(dash + 1);
 	}
 
 	// ── Preamble ────────────────────────────────────────────────────

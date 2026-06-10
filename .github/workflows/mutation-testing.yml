@@ -74,3 +74,61 @@ jobs:
           else
             echo "No mutation report found"
           fi
+
+  mutation-self:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: sapmachine
+          java-version: '17'
+          cache: maven
+
+      - name: Build and install test-order plugin
+        run: mvn -B -ntp -DskipTests install
+
+      - name: Run learn pass on test-order-core
+        run: |
+          mvn -B -ntp test \
+            -pl test-order-core \
+            -Dtestorder.mode=learn \
+            -Dspotless.check.skip=true
+
+      - name: Run mutation analysis on test-order-core
+        run: |
+          mvn -B -ntp test-order:analyze-mutations \
+            -pl test-order-core \
+            -Dspotless.check.skip=true
+
+      - name: Upload mutation report (test-order-core)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-self-report-core-${{ github.run_number }}
+          path: test-order-core/target/test-mutation-results.json
+          retention-days: 30
+
+      - name: Print kill rate summary (test-order-core)
+        if: always()
+        run: |
+          REPORT="test-order-core/target/test-mutation-results.json"
+          if [ -f "$REPORT" ]; then
+            echo "=== test-order-core Mutation Kill Rate ==="
+            python3 -c "
+          import json, sys
+          with open('$REPORT') as f:
+              data = json.load(f)
+          print(f\"Overall: {data['totalKilled']}/{data['totalMutants']} ({data['overallKillRate']*100:.1f}%)\")
+          print()
+          for tc in data.get('testClasses', []):
+              print(f\"  {tc['killRate']*100:5.1f}%  {tc['testClass'].split('.')[-1]}  (killed {tc['mutationsKilledByTest']})\")
+          "
+          else
+            echo "No mutation report found for test-order-core"
+          fi

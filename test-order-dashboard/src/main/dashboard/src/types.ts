@@ -64,6 +64,12 @@ export interface TestEntry {
   methods: MethodEntry[] | null
   mlPFail: number | null
   killRate: number | null
+  weightedDepOverlap: number | null
+  // multi-module fields (null/0 for single-module projects)
+  module: string | null
+  crossModuleDepCount: number
+  dominantDepModule: string | null
+  suspectHomeModule: boolean
 }
 
 export interface TestOutcome {
@@ -231,6 +237,7 @@ export interface DashboardData {
 export interface SortColumn {
   key: string
   label: string
+  tip?: string
 }
 
 /** Graph mode option */

@@ -1,6 +1,7 @@
 package me.bechberger.testorder.ci;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -17,6 +18,7 @@ public class CiConfig {
 	private final GitLabConfig gitlab;
 	private final MavenConfig maven;
 	private final ProxyConfig proxy;
+	private final List<CiConfig> providers;
 
 	public CiConfig(Map<String, Object> configMap) {
 		@SuppressWarnings("unchecked")
@@ -27,6 +29,28 @@ public class CiConfig {
 		this.gitlab = parseGitLabConfig(ciConfig);
 		this.maven = parseMavenConfig(ciConfig);
 		this.proxy = parseProxyConfig(ciConfig);
+		this.providers = parseProviders(configMap, ciConfig);
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<CiConfig> parseProviders(Map<String, Object> topLevel, Map<String, Object> ciConfig) {
+		// Support providers: nested under ci: (standard) or at top level (legacy)
+		Object rawList = ciConfig.containsKey("providers") ? ciConfig.get("providers") : topLevel.get("providers");
+		if (!(rawList instanceof List)) {
+			return List.of();
+		}
+		List<Object> entries = (List<Object>) rawList;
+		List<CiConfig> result = new java.util.ArrayList<>();
+		for (Object entry : entries) {
+			if (entry instanceof Map) {
+				Map<String, Object> entryMap = (Map<String, Object>) entry;
+				// Each entry is a single-provider map; wrap it so CiConfig parses it
+				Map<String, Object> wrapped = new LinkedHashMap<>();
+				wrapped.put("ci", entryMap);
+				result.add(new CiConfig(wrapped));
+			}
+		}
+		return List.copyOf(result);
 	}
 
 	private GithubConfig parseGithubConfig(Map<String, Object> ciConfig) {
@@ -107,6 +131,14 @@ public class CiConfig {
 
 	public ProxyConfig getProxy() {
 		return proxy;
+	}
+
+	/**
+	 * Returns the ordered list of provider configs when a {@code providers:} block
+	 * is present. Empty when the single-provider style is used.
+	 */
+	public List<CiConfig> getProviders() {
+		return providers;
 	}
 
 	public static class GithubConfig {

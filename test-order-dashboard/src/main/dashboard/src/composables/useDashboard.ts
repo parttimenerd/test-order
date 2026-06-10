@@ -35,6 +35,8 @@ export interface DashboardState {
   simSortKey: Ref<string>
   simSortDir: Ref<string>
   badgeFilter: Ref<string | null>
+  selectedModule: Ref<string | null>
+  modules: ComputedRef<string[]>
   focusedTestIndex: Ref<number>
   covSearchQ: Ref<string>
   scoreModalOpen: Ref<boolean>
@@ -97,11 +99,13 @@ export interface DashboardState {
   setGraphMode: (id: string) => void
   setTab: (id: string) => void
   setBadgeFilter: (filter: string | null) => void
+  setModule: (module: string | null) => void
   navigateTest: (dir: 'up' | 'down') => void
   navigateTestDetail: (dir: 'prev' | 'next') => void
   activateFocusedTest: () => void
   clearSelection: () => void
   navigateToTestFromCov: (testName: string) => void
+  hasTest: (testName: string) => boolean
   navigateToCovClass: (className: string) => void
   setImpactClass: (className: string) => void
   navigateToRun: (runIdx: number) => void
@@ -151,6 +155,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const simSortKey = ref('simScore')
   const simSortDir = ref('desc')
   const badgeFilter = ref<string | null>(null)
+  const selectedModule = ref<string | null>(null)
   const focusedTestIndex = ref(-1)
   const covSearchQ = ref('')
   const scoreModalOpen = ref(false)
@@ -209,12 +214,12 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   watch(() => Object.values(lw).join(','), () => { optimizeError.value = null })
 
   const SIDEBAR_SORT_COLS: SortColumn[] = [
-    { key: 'rank', label: 'Rank' },
-    { key: 'name', label: 'Name' },
-    { key: 'score', label: 'Score' },
-    { key: 'duration', label: 'Dur' },
-    { key: 'failScore', label: 'Fails' },
-    { key: 'depOverlap', label: 'Overlap' },
+    { key: 'rank', label: 'Rank', tip: 'Sort by priority rank (1 = runs first)' },
+    { key: 'name', label: 'Name', tip: 'Sort alphabetically by test class name' },
+    { key: 'score', label: 'Score', tip: 'Sort by priority score (higher = runs earlier)' },
+    { key: 'duration', label: 'Dur', tip: 'Sort by EMA-smoothed test duration' },
+    { key: 'failScore', label: 'Fails', tip: 'Sort by EMA-decayed failure history score' },
+    { key: 'depOverlap', label: 'Overlap', tip: 'Sort by number of dep-overlapping changed classes' },
   ]
   const GMODES: GraphMode[] = [
     { id: 'focus', label: 'Focus' },
@@ -240,6 +245,11 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const origSCB = computeSetCoverBonuses(dd.tests, new Set(dd.changedClasses || []), dd.weights?.coverageBonus || 0)
 
   const hasMethodData = computed(() => tests.some(t => t.methods && t.methods.length > 0))
+  const modules = computed(() => {
+    const seen = new Set<string>()
+    for (const t of tests) { if (t.module) seen.add(t.module) }
+    return [...seen].sort()
+  })
   const commonPrefix = computed(() => nameMode.value === 'strip' ? computeCommonPrefix(tests.map(t => t.name)) : '')
   const simSetCoverBonuses = computed(() => computeSetCoverBonuses(tests, changedSet, lw.coverageBonus))
   const selectedTestObjects = computed(() =>
@@ -268,20 +278,56 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
 
   // Parse a query string into predicates. Supported tokens:
   // is:failing  is:flaky  is:new  is:changed  is:slow  is:fast
+  // is:affected  is:dep  is:stat  is:variance
   // score>N  score>=N  score<N  score<=N  score=N
   // duration>Nms  duration<Ns  (units: ms, s, m — default ms)
   // failures>N  failures>=N etc.
+  // deps>N  (dep count)
+  // overlap>N  (dep overlap count)
   // method:name  (substring match on method names in t.methods)
   // plain text → substring on t.name (case-insensitive)
   // Prefix with - to negate: -is:flaky
-  type Pred = (t: TestEntry, flaky: Set<string>) => boolean
-  function parseQuery(q: string, flakySet: Set<string>): Pred[] {
-    if (!q.trim()) return []
-    const tokens = q.trim().split(/\s+/)
+  type Pred = (t: TestEntry, flaky: Set<string>, failCounts: Map<string, number>) => boolean
+
+  // Convert a glob pattern like *Service* or com.example.* to a predicate on test names.
+  // Supports * (any sequence) and ? (any single char) wildcards.
+  function globToRegex(pattern: string): RegExp {
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')
+    return new RegExp(escaped, 'i')
+  }
+
+  // Parse one group of AND-connected tokens (no 'or' separator) into predicates.
+  // Returns: { preds, sortOverride? }
+  function parseTokenGroup(tokens: string[], flakySet: Set<string>, failCounts: Map<string, number>, sortOverride: { key?: string; dir?: string }): Pred[] {
     const preds: Pred[] = []
+    const varianceThreshold = dd.config.emaVarianceThreshold ?? 0.5
     for (let tok of tokens) {
       let negate = false
       if (tok.startsWith('-')) { negate = true; tok = tok.slice(1) }
+      tok = tok.toLowerCase()
+
+      // sort: token — side-effect only, not a filter predicate
+      if (tok.startsWith('sort:')) {
+        const sortArg = tok.slice(5).toLowerCase()
+        const sortMap: Record<string, string> = {
+          rank: 'rank', score: 'score', name: 'name', duration: 'duration',
+          dur: 'duration', dep: 'depTotal', deps: 'depTotal', fail: 'failScore',
+          failscore: 'failScore', variance: 'durationVariance',
+          var: 'durationVariance', overlap: 'depOverlap', mlpfail: 'mlPFail', pfail: 'mlPFail',
+          stability: 'stability', stab: 'stability', confidence: 'scoreConf', conf: 'scoreConf',
+        }
+        // Allow sort:duration:asc or sort:duration:desc
+        const [field, dir] = sortArg.split(':')
+        if (sortMap[field]) {
+          sortOverride.key = sortMap[field]
+          // Natural descending fields: higher=better so desc shows best first
+          const naturalDesc = new Set(['score', 'stability', 'scoreConf', 'mlPFail', 'depOverlap', 'depTotal', 'failScore', 'durationVariance'])
+          const defaultDir = naturalDesc.has(sortMap[field]) ? 'desc' : 'asc'
+          sortOverride.dir = dir === 'asc' ? 'asc' : dir === 'desc' ? 'desc' : defaultDir
+        }
+        continue
+      }
+
       let pred: Pred | null = null
       if (tok === 'is:failing') pred = (t) => t.failScore > 0
       else if (tok === 'is:flaky') pred = (t, fl) => fl.has(t.name)
@@ -289,16 +335,28 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       else if (tok === 'is:changed') pred = (t) => t.isChanged
       else if (tok === 'is:slow') pred = (t) => t.isSlow ?? false
       else if (tok === 'is:fast') pred = (t) => t.isFast ?? false
+      else if (tok === 'is:affected') {
+        const changedTestSet = new Set(dd.changedTestClasses)
+        pred = (t) => t.depOverlap > 0 || t.isChanged || t.isNew || changedTestSet.has(t.name)
+      }
+      else if (tok === 'is:dep') pred = (t) => t.depOverlap > 0
+      else if (tok === 'is:stat') pred = (t) => t.hasStaticFieldOverlap
+      else if (tok === 'is:variance') pred = (t) => t.durationVariance > 0 && t.duration > 0 && Math.sqrt(t.durationVariance) / t.duration >= varianceThreshold
+      else if (tok === 'is:method') pred = (t) => !!(t as any).methods?.length
+      else if (tok === 'is:ml') pred = (t) => t.mlPFail != null
+      else if (tok === 'is:risk') pred = (t) => (t.mlPFail ?? 0) > 0.5
       else if (tok.startsWith('method:')) {
         const mq = tok.slice(7).toLowerCase()
         pred = (t) => !!(t as any).methods?.some((m: any) => m.name?.toLowerCase().includes(mq))
+      } else if (tok.startsWith('pkg:')) {
+        const pkgQ = tok.slice(4).toLowerCase()
+        pred = (t) => t.name.toLowerCase().includes(pkgQ)
       } else {
-        // numeric: score, duration, failures, deps
-        const numMatch = tok.match(/^(score|duration|failures|deps)(>=|<=|>|<|=)(.+)$/)
+        // numeric: score, duration, failures, deps, rank, pfail
+        const numMatch = tok.match(/^(score|duration|failures|deps|overlap|rank|pfail|mlpfail)(>=|<=|>|<|=)(.+)$/)
         if (numMatch) {
           const [, field, op, valStr] = numMatch
           let val = parseFloat(valStr.replace(/ms$/i, ''))
-          // convert units to ms for duration
           if (field === 'duration') {
             if (valStr.match(/[^m]s$/i)) val *= 1000
             else if (valStr.endsWith('m')) val *= 60000
@@ -312,26 +370,65 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
           }
           if (field === 'score') pred = (t) => compare(t.score ?? 0)
           else if (field === 'duration') pred = (t) => t.duration >= 0 && compare(t.duration)
-          else if (field === 'failures') pred = (t) => compare(Math.ceil(t.failScore ?? 0))
-          else if (field === 'deps') pred = (t) => compare((t.deps || []).length)
+          else if (field === 'failures') pred = (t, _fl, fc) => compare(fc.get(t.name) ?? 0)
+          else if (field === 'deps') pred = (t) => compare(t.depTotal ?? 0)
+          else if (field === 'overlap') pred = (t) => compare(t.depOverlap ?? 0)
+          else if (field === 'rank') pred = (t) => compare(t.rank ?? 0)
+          else if (field === 'pfail' || field === 'mlpfail') pred = (t) => t.mlPFail != null && compare(t.mlPFail)
         }
       }
       if (!pred) {
-        // plain text match on name
-        const lower = tok.toLowerCase()
-        pred = (t) => t.name.toLowerCase().includes(lower)
+        // Ignore incomplete structured tokens (partial prefix with no value) — avoids
+        // filtering everything out while the user is mid-typing a filter like "is:" or "score>".
+        if (/^(is:|sort:|method:|pkg:|score|duration|failures|deps|overlap|rank|pfail|mlpfail)(>=?|<=?|=)?$/i.test(tok)) continue
+        // glob or plain text match on name
+        if (tok.includes('*') || tok.includes('?')) {
+          const re = globToRegex(tok)
+          pred = (t) => re.test(t.name)
+        } else {
+          const lower = tok.toLowerCase()
+          pred = (t) => t.name.toLowerCase().includes(lower) || sn(t.name).toLowerCase().includes(lower)
+        }
       }
-      if (negate) { const p = pred; pred = (t, fl) => !p(t, fl) }
+      if (negate) { const p = pred; pred = (t, fl, fc) => !p(t, fl, fc) }
       preds.push(pred)
     }
     return preds
   }
 
+  // Parse a full query with OR groups. Returns array of AND-pred groups; test passes if any group matches.
+  // Also extracts sort: overrides as a side channel.
+  function parseQuery(q: string, flakySet: Set<string>, failCounts: Map<string, number>, sortOverride: { key?: string; dir?: string }): Pred[][] {
+    if (!q.trim()) return []
+    // Split by 'or' (case-insensitive, with optional surrounding spaces or at start/end)
+    const rawGroups = q.trim().split(/\s+or\b|\bor\s+/i)
+    // Skip connector keywords (AND, OR) and filter empty groups from dangling or/and
+    const groups = rawGroups
+      .map(group => group.trim().split(/\s+/).filter(t => Boolean(t) && !/^(and|or)$/i.test(t)))
+      .filter(tokens => tokens.length > 0)
+      .map(tokens => parseTokenGroup(tokens, flakySet, failCounts, sortOverride))
+    return groups
+  }
+
   const filteredTests = computed(() => {
     let arr = [...tests]
     if (searchQ.value) {
-      const preds = parseQuery(searchQ.value, flakyTests.value)
-      if (preds.length) arr = arr.filter(t => preds.every(p => p(t, flakyTests.value)))
+      // Build actual failure count map from run history (used by failures>N filter)
+      const failCounts = new Map<string, number>()
+      for (const r of runs) {
+        for (const o of (r.outcomes || [])) {
+          if (o.failed) failCounts.set(o.testClass, (failCounts.get(o.testClass) ?? 0) + 1)
+        }
+      }
+      const sortOverride: { key?: string; dir?: string } = {}
+      const groups = parseQuery(searchQ.value, flakyTests.value, failCounts, sortOverride)
+      if (sortOverride.key) {
+        sortKey.value = sortOverride.key
+        if (sortOverride.dir) sortDir.value = sortOverride.dir
+      }
+      if (groups.length) {
+        arr = arr.filter(t => groups.some(preds => preds.every(p => p(t, flakyTests.value, failCounts))))
+      }
     }
     if (badgeFilter.value === 'changed') arr = arr.filter(t => t.isChanged)
     else if (badgeFilter.value === 'affected') {
@@ -350,12 +447,17 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     else if (badgeFilter.value === 'dur-2') arr = arr.filter(t => t.duration >= 100 && t.duration < 1000)
     else if (badgeFilter.value === 'dur-3') arr = arr.filter(t => t.duration >= 1000 && t.duration < 5000)
     else if (badgeFilter.value === 'dur-4') arr = arr.filter(t => t.duration >= 5000)
-    else if (badgeFilter.value === 'variance') arr = arr.filter(t => t.durationVariance >= (dd.config.emaVarianceThreshold ?? 0.5))
+    else if (badgeFilter.value === 'variance') arr = arr.filter(t => t.durationVariance > 0 && t.duration > 0 && Math.sqrt(t.durationVariance) / t.duration >= (dd.config.emaVarianceThreshold ?? 0.5))
+    if (selectedModule.value) arr = arr.filter(t => t.module === selectedModule.value)
     arr.sort((a, b) => {
-      let av: string | number = (a as unknown as Record<string, string | number>)[sortKey.value]
-      let bv: string | number = (b as unknown as Record<string, string | number>)[sortKey.value]
+      let av: string | number | null = (a as unknown as Record<string, string | number | null>)[sortKey.value]
+      let bv: string | number | null = (b as unknown as Record<string, string | number | null>)[sortKey.value]
       if (sortKey.value === 'name') { av = sn(a.name); bv = sn(b.name) }
       if (sortKey.value === 'duration') { av = (av as number) < 0 ? 1e15 : av; bv = (bv as number) < 0 ? 1e15 : bv }
+      // null/undefined values sort last regardless of direction
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
       const d = av < bv ? -1 : av > bv ? 1 : 0
       return sortDir.value === 'asc' ? d : -d
     })
@@ -363,7 +465,10 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   })
 
   const latestRun = computed(() => (runs.length ? runs[runs.length - 1] : null))
-  const avgApfd = computed(() => (runs.length ? runs.reduce((s, r) => s + r.apfd, 0) / runs.length : null))
+  const avgApfd = computed(() => {
+    const withFailures = runs.filter(r => r.totalFailures > 0 && r.apfd > 0 && isFinite(r.apfd))
+    return withFailures.length ? withFailures.reduce((s, r) => s + r.apfd, 0) / withFailures.length : null
+  })
   const fastestTest = computed(() => {
     const w = tests.filter(t => t.duration >= 0)
     return w.length ? w.reduce((a, b) => (a.duration < b.duration ? a : b)) : null
@@ -381,15 +486,17 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const scoreComps = computed<ScoreComponent[]>(() => {
     const t = selectedTest.value
     if (!t) return []
-    const w = dd.weights
+    const w = lw as unknown as ScoringWeights
+    const killMultiplier = (t.killRate != null && t.killRate >= 0) ? (0.5 + t.killRate * 0.5) : 1.0
+    const effectiveDepOverlap = t.weightedDepOverlap != null ? t.weightedDepOverlap : t.depOverlap
     let depOv = 0, cmplx = 0, scBonus = 0
     if (w.coverageBonus > 0) {
       scBonus = origSCB[t.name] || 0
     } else {
-      depOv = t.depOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-        ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
+      depOv = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
+        ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
       cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
-        ? Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) : 0
+        ? Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
     }
     const chg = t.isChanged ? w.changedTest : 0
     const isNew = t.isNew ? w.newTest : 0
@@ -398,15 +505,15 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     const stf = t.hasStaticFieldOverlap ? w.staticFieldBonus : 0
     const fail = t.failScore > 0 ? Math.min(Math.ceil(t.failScore), w.maxFailure) : 0
     return [
-      { label: 'Set-cover', value: scBonus, color: '#10b981', explanation: 'Coverage bonus from greedy set-cover' },
-      { label: 'Dep Overlap', value: depOv, color: '#3b82f6', explanation: `${t.depOverlap}/${t.depTotal} deps overlap changed` },
-      { label: 'Complexity', value: cmplx, color: '#6366f1', explanation: `${t.complexityOverlap} complex-change overlaps` },
-      { label: 'Changed', value: chg, color: '#f59e0b', explanation: `Test class modified (+${w.changedTest})` },
-      { label: 'New', value: isNew, color: '#22c55e', explanation: `New test class (+${w.newTest})` },
-      { label: 'Speed+', value: spd, color: '#06b6d4', explanation: 'Faster than median' },
-      { label: 'Speed-', value: pen, color: '#f97316', explanation: 'Slower than median' },
-      { label: 'Static', value: stf, color: '#a855f7', explanation: 'Static field overlap' },
-      { label: 'Failures', value: fail, color: '#ef4444', explanation: `failScore=${t.failScore.toFixed(2)}` },
+      { label: 'Set-cover', value: scBonus, color: '#10b981', explanation: 'Coverage bonus from greedy set-cover: this test was selected to cover the most uncovered changed classes in the fewest runs' },
+      { label: 'Dep Overlap', value: depOv, color: '#3b82f6', explanation: `${t.depOverlap} of ${t.depTotal} total deps overlap with changed classes (higher overlap with fewer total deps → bigger boost)` },
+      { label: 'Complexity', value: cmplx, color: '#6366f1', explanation: `Change complexity ${t.complexityOverlap.toFixed(2)}: measures structural depth of overlapping changes (cyclomatic, nesting, etc.)` },
+      { label: 'Changed', value: chg, color: '#f59e0b', explanation: `Test class source was modified — always run changed tests first (+${w.changedTest})` },
+      { label: 'New', value: isNew, color: '#22c55e', explanation: `New test never seen in previous run — run early to establish baseline (+${w.newTest})` },
+      { label: 'Speed+', value: spd, color: '#06b6d4', explanation: `Test is faster than median — prefer early fast tests to get quick signal` },
+      { label: 'Speed-', value: pen, color: '#f97316', explanation: `Test is slower than median — deprioritized slightly to avoid blocking faster tests` },
+      { label: 'Static', value: stf, color: '#a855f7', explanation: `Reads static fields of changed classes — can be affected even without direct call dependency` },
+      { label: 'Failures', value: fail, color: '#ef4444', explanation: `EMA failure score ${t.failScore.toFixed(2)} — recent failures weigh more. Capped at ${w.maxFailure}.` },
     ]
   })
 
@@ -523,8 +630,9 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
         (t.deps || []).forEach(d => coveredSources.add(d))
       }
     }
-    const total = dd.coverage!.totalSourceClasses
-    const covered = dd.coverage!.classes.filter(c => coveredSources.has(c.name)).length
+    const instrumentedClasses = dd.coverage!.classes
+    const covered = instrumentedClasses.filter(c => coveredSources.has(c.name)).length
+    const total = instrumentedClasses.length // denominator = instrumented classes, not all project classes
     return { covered, total, percent: total > 0 ? Math.round((covered / total) * 100) : 0, sources: coveredSources }
   })
 
@@ -673,6 +781,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
         if (t) { selectedTest.value = t; selectedTests.value = new Set([t.name]) }
       }
       if (params.has('filter')) badgeFilter.value = params.get('filter')
+      if (params.has('q')) searchQ.value = params.get('q')!
     } catch { /* ignore hash parse errors */ }
   }
   function syncHash() {
@@ -680,11 +789,12 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     if (activeTab.value !== 'tests') params.set('tab', activeTab.value)
     if (selectedTest.value && selectedTests.value.size === 1) params.set('test', selectedTest.value.name)
     if (badgeFilter.value) params.set('filter', badgeFilter.value)
+    if (searchQ.value) params.set('q', searchQ.value)
     const hash = params.toString()
     window.history.replaceState(null, '', hash ? '#' + hash : window.location.pathname)
   }
   applyHash()
-  watch([activeTab, selectedTest, badgeFilter], syncHash)
+  watch([activeTab, selectedTest, badgeFilter, searchQ], syncHash)
 
   // ── Actions ─────────────────────────────────────────────────
   function selectTest(t: TestEntry, event: MouseEvent | null) {
@@ -812,6 +922,10 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     badgeFilter.value = badgeFilter.value === filter ? null : filter
   }
 
+  function setModule(module: string | null) {
+    selectedModule.value = selectedModule.value === module ? null : module
+  }
+
   function navigateTest(dir: 'up' | 'down') {
     const list = filteredTests.value
     if (!list.length) return
@@ -861,6 +975,10 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     selectedTests.value = new Set([t.name])
     selectedMethod.value = null
     selectedMethods.value = new Set()
+  }
+
+  function hasTest(testName: string): boolean {
+    return tests.some(x => x.name === testName)
   }
 
   function navigateToCovClass(className: string) {
@@ -918,6 +1036,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
     nameMode, commonPrefix,
     showChangedPanel, simSortKey, simSortDir, badgeFilter,
+    selectedModule, modules,
     focusedTestIndex, covSearchQ,
     scoreModalOpen, scoreModalTitle, scoreModalBody, scoreModalData,
     analyticsSelectedRunIdx,
@@ -932,11 +1051,11 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     selectionCoverage,
     origSCB, simSetCoverBonuses, runDiff, simApfd, filteredCovClasses,
     selectTest, selectAllVisible, drillDown, selectMethod,
-    sortBy, simSortBy: simSortByFn, resetWeights, setGraphMode, setTab, setBadgeFilter,
+    sortBy, simSortBy: simSortByFn, resetWeights, setGraphMode, setTab, setBadgeFilter, setModule,
     navigateTest, navigateTestDetail, activateFocusedTest, clearSelection,
     getScoreBreakdown, openScoreModal, closeScoreModal,
     exportCsv: exportCsvFn,
-    navigateToTestFromCov, navigateToCovClass, setImpactClass, navigateToRun,
+    navigateToTestFromCov, hasTest, navigateToCovClass, setImpactClass, navigateToRun,
     serverConnected, optimizing, optimizeError, optimizeResult,
     optimizeWeights: optimizeWeightsFn,
   }

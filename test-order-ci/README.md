@@ -212,3 +212,43 @@ jobs:
 
 With this setup every PR gets fast, priority-ordered tests without having to
 run a learn phase first — and without any `download-config.yml`.
+
+## Three-tier CI
+
+The download-then-order pattern works best when combined with tiered test
+execution: run only change-affected tests first, then the highest-scored
+remaining tests, and finally everything else — only if earlier tiers pass.
+
+```yaml
+- name: "Tier 1: Change-affected tests"
+  run: |
+    mvn test-order:tiered-select test \
+      -Dtestorder.changeMode=since-last-commit \
+      -Dtestorder.ci.githubStepSummary=true \
+      -Dsurefire.failIfNoSpecifiedTests=false
+
+- name: "Tier 2: Top-scored remaining"
+  if: success()
+  run: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2 -Dsurefire.failIfNoSpecifiedTests=false
+
+- name: "Tier 3: Full coverage"
+  if: success()
+  run: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3 -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+For a single-invocation alternative (one Surefire JVM, all tiers in sequence):
+
+```bash
+mvn test-order:run-tiered test -Dtestorder.tiered.tier2Fraction=0.5
+```
+
+**Parallel sharding** splits tier 3 across N runners (tiers 1 and 2 always
+run in full on every runner):
+
+```bash
+# Runner 1 of 3 — tiers 1+2 in full, then 1/3 of tier 3
+mvn test-order:run-tiered test -Dtestorder.tiered.shard=1/3
+```
+
+See the full annotated example at
+[docs/ci-examples/github-actions-tiered-maven.yml](../docs/ci-examples/github-actions-tiered-maven.yml).

@@ -5,6 +5,7 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -314,6 +315,21 @@ public class CiDepDownloadManager {
 	}
 
 	private static Optional<Path> doDownload(CiConfig config, Path indexTarget) {
+		if (!config.getProviders().isEmpty()) {
+			for (CiConfig provider : config.getProviders()) {
+				Optional<Path> result = doDownload(provider, indexTarget, artifactNameFromConfig(provider));
+				if (result.isPresent()) {
+					return result;
+				}
+				logger.warn("Provider {} failed, trying next provider...", sourceNameFromConfig(provider));
+			}
+			logger.warn("All providers failed for {}", indexTarget);
+			return Optional.empty();
+		}
+		return doDownload(config, indexTarget, artifactNameFromConfig(config));
+	}
+
+	private static Optional<Path> doDownload(CiConfig config, Path indexTarget, String artifactName) {
 		try {
 			CiDepDownloadManager mgr = new CiDepDownloadManager(config);
 			Path downloaded = mgr.download();
@@ -341,6 +357,37 @@ public class CiDepDownloadManager {
 			logger.warn("CI download failed: {}", e.getMessage());
 			return Optional.empty();
 		}
+	}
+
+	private static String artifactNameFromConfig(CiConfig config) {
+		if (config.getGithub() != null) {
+			return config.getGithub().getArtifactName();
+		} else if (config.getGitlab() != null) {
+			return config.getGitlab().getArtifactName();
+		} else if (config.getMaven() != null) {
+			CiConfig.MavenConfig mv = config.getMaven();
+			return mv.getGroupId() + ":" + mv.getArtifactId() + ":" + mv.getClassifier();
+		} else if (config.getHttp() != null) {
+			String url = config.getHttp().getUrl();
+			if (url != null && !url.isEmpty()) {
+				String path = url.replaceAll("[?#].*", "");
+				int slash = path.lastIndexOf('/');
+				String last = slash >= 0 ? path.substring(slash + 1) : path;
+				return last.isEmpty() ? "http-artifact" : last;
+			}
+			return "http-artifact";
+		}
+		return "ci-artifact";
+	}
+
+	private static String sourceNameFromConfig(CiConfig config) {
+		if (config.getGithub() != null)
+			return "GitHub Actions";
+		if (config.getGitlab() != null)
+			return "GitLab CI";
+		if (config.getMaven() != null)
+			return "Maven";
+		return "HTTP";
 	}
 
 	/**

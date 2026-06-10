@@ -176,6 +176,9 @@ public class DashboardGenerator {
 
 		// test entries
 		Map<String, Double> killRates = state.getKillRates();
+		// derive class→module for cross-module dep analysis (empty for single-module
+		// projects)
+		Map<String, String> classToModule = deriveClassToModule(depMap);
 		List<Object> tests = new ArrayList<>();
 		for (int i = 0; i < scored.size(); i++) {
 			ScoredTest st = scored.get(i);
@@ -189,6 +192,10 @@ public class DashboardGenerator {
 			t.put("failScore", r.failScore());
 			t.put("speedRatio", r.speedRatio());
 			t.put("complexityOverlap", r.complexityOverlap());
+			if (r.killRate() >= 0)
+				t.put("killRate", r.killRate());
+			if (r.weightedDepOverlap() != r.depOverlap())
+				t.put("weightedDepOverlap", r.weightedDepOverlap());
 			t.put("isNew", r.isNew());
 			t.put("isChanged", r.isChanged());
 			t.put("isFast", r.isFast());
@@ -198,6 +205,30 @@ public class DashboardGenerator {
 			t.put("durationVariance", st.durationVariance());
 			Set<String> deps = depMap.get(st.name());
 			t.put("deps", deps != null ? new ArrayList<>(deps) : new ArrayList<>());
+			// module info (null for single-module projects)
+			String ownModule = depMap.getModule(st.name());
+			t.put("module", ownModule);
+			if (ownModule != null && !classToModule.isEmpty() && deps != null && !deps.isEmpty()) {
+				int foreignCount = 0;
+				Map<String, Integer> foreignModuleCounts = new HashMap<>();
+				for (String dep : deps) {
+					String depModule = classToModule.get(dep);
+					if (depModule != null && !depModule.equals(ownModule)) {
+						foreignCount++;
+						foreignModuleCounts.merge(depModule, 1, Integer::sum);
+					}
+				}
+				t.put("crossModuleDepCount", foreignCount);
+				String dominant = foreignModuleCounts.entrySet().stream().max(Map.Entry.comparingByValue())
+						.map(Map.Entry::getKey).orElse(null);
+				t.put("dominantDepModule", dominant);
+				boolean suspect = dominant != null && foreignCount * 10 >= deps.size() * 7; // >70%
+				t.put("suspectHomeModule", suspect);
+			} else {
+				t.put("crossModuleDepCount", 0);
+				t.put("dominantDepModule", null);
+				t.put("suspectHomeModule", false);
+			}
 			if (depMap.hasMemberDeps()) {
 				Set<String> memberDeps = depMap.getMemberDeps(st.name());
 				t.put("memberDeps", memberDeps.isEmpty() ? null : new ArrayList<>(memberDeps));
@@ -703,6 +734,44 @@ public class DashboardGenerator {
 		cov.put("totalSourceClasses", totalSourceClasses);
 		cov.put("classes", classes);
 		return cov;
+	}
+
+	/**
+	 * Derives a {@code sourceClass → moduleId} map from the test-to-module mapping
+	 * already in the dependency map.
+	 *
+	 * <p>
+	 * For every test in {@code testToModule}, we walk its dependency set and tally
+	 * how many tests from each module reference each source class. The module whose
+	 * tests most often reference a class wins. This is purely inferential — classes
+	 * that are evenly cross-cutting get assigned to whichever module won the tally.
+	 * The result is used only for display/analysis in the dashboard.
+	 */
+	static Map<String, String> deriveClassToModule(DependencyMap depMap) {
+		if (!depMap.hasModuleMap()) {
+			return Map.of();
+		}
+		// tally: class → (module → count)
+		Map<String, Map<String, Integer>> tally = new HashMap<>();
+		for (String testClass : depMap.testClasses()) {
+			String module = depMap.getModule(testClass);
+			if (module == null)
+				continue;
+			Set<String> deps = depMap.get(testClass);
+			if (deps == null)
+				continue;
+			for (String dep : deps) {
+				tally.computeIfAbsent(dep, k -> new HashMap<>()).merge(module, 1, Integer::sum);
+			}
+		}
+		Map<String, String> result = new HashMap<>(tally.size());
+		for (Map.Entry<String, Map<String, Integer>> e : tally.entrySet()) {
+			String winner = e.getValue().entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey)
+					.orElse(null);
+			if (winner != null)
+				result.put(e.getKey(), winner);
+		}
+		return result;
 	}
 
 	// ── Value types ──────────────────────────────────────────────────────────

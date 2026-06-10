@@ -39,6 +39,14 @@ function dotColor(failed: boolean | null): string {
   if (failed === null) return 'var(--border)'
   return failed ? 'var(--red)' : 'var(--green)'
 }
+
+function shortModule(mod: string): string {
+  const dot = mod.lastIndexOf('.')
+  if (dot < 0) return mod
+  const dash = mod.indexOf('-', dot)
+  if (dash < 0) return mod
+  return mod.substring(dash + 1)
+}
 </script>
 
 <template>
@@ -57,7 +65,7 @@ function dotColor(failed: boolean | null): string {
       <!-- Rank · score · duration -->
       <div class="tc-card__meta">
         #{{ t.rank }} &middot; score {{ t.score }} &middot; {{ t.duration >= 0 ? fmtDur(t.duration) : '?' }}
-        <span v-if="t.durationVariance > 0" class="tc-card__var">&plusmn;{{ fmtDur(t.durationVariance) }}</span>
+        <span v-if="t.durationVariance > 0 && t.duration > 0" class="tc-card__var">&plusmn;{{ fmtDur(Math.sqrt(t.durationVariance)) }}</span>
       </div>
 
       <!-- Badges -->
@@ -69,6 +77,10 @@ function dotColor(failed: boolean | null): string {
         <span v-if="t.isSlow"               class="badge badge--orange">slow</span>
         <span v-if="t.hasStaticFieldOverlap" class="badge badge--purple">static-field</span>
         <span v-if="t.mlPFail !== null && t.mlPFail > 0.5" class="badge badge--red">ml-risk</span>
+        <span v-if="t.module" class="badge badge--module" :title="t.module">{{ shortModule(t.module) }}</span>
+        <span v-if="t.suspectHomeModule" class="badge badge--suspect"
+          :title="`${Math.round((t.crossModuleDepCount / (t.deps?.length || 1)) * 100)}% of deps are in ${t.dominantDepModule} — this test may belong there`"
+        >⚠ foreign deps</span>
       </div>
 
       <!-- Sparkline (last 8 runs) -->
@@ -163,4 +175,6 @@ function dotColor(failed: boolean | null): string {
 .badge--yellow  { background: #713f12; color: var(--yellow, #fbbf24); }
 .badge--purple  { background: #581c87; color: var(--purple, #c084fc); }
 .badge--red     { background: #7f1d1d; color: var(--red, #f87171); }
+.badge--module  { background: #0c4a6e; color: #7dd3fc; font-size: .55rem; }
+.badge--suspect { background: #451a03; color: #fbbf24; cursor: help; }
 </style>

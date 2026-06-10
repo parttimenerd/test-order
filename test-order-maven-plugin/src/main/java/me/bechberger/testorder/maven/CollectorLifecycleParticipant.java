@@ -376,8 +376,14 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		Path stateFile = sharedDir.resolve(STATE_FILE);
 
 		if (!Files.exists(indexFile)) {
-			System.out.println("[test-order] reactor reorder requested but no shared index at " + indexFile
-					+ " — skipping. Run learn first.");
+			boolean explicitlyRequested = readProp(session, PROP_REORDER) != null;
+			if (explicitlyRequested) {
+				System.out.println("[test-order] reactor reorder requested but no shared index at " + indexFile
+						+ " — skipping. Run learn first.");
+			} else {
+				System.out.println("[test-order] reactor reorder skipped: no learn data at " + indexFile
+						+ " — run `mvn test-order:learn test` once to populate it.");
+			}
 			return;
 		}
 
@@ -440,6 +446,65 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 
 		session.setProjects(reorder.ordered());
 
+		// Print the chosen ranking so the reorder is auditable and reversible.
+		// Only the top 10 active modules are listed to keep CI logs readable.
+		// The listing follows the reactor's DAG-respecting execution order, so a
+		// module with more affected tests may appear later if it depends on a
+		// module with fewer affected. To make the priority signal explicit, we
+		// also print the top-N most-affected modules separately above the
+		// build-order list.
+		if (reorder.activeModules() > 0) {
+			boolean explicitlyRequested = readProp(session, PROP_REORDER) != null;
+			String optOutHint = explicitlyRequested ? "" : " (set -Dtestorder.reactorReorder=false to opt out)";
+
+			// Top-N most-affected modules (priority view, ignoring DAG)
+			List<ModuleScore> byPriority = new ArrayList<>();
+			for (MavenProject p : reorder.ordered()) {
+				ModuleScore s = scoreById.get(ModuleIds.of(p));
+				if (s != null && s.affectedTestCount() > 0) {
+					byPriority.add(s);
+				}
+			}
+			byPriority.sort((a, b) -> {
+				int c = Integer.compare(b.affectedTestCount(), a.affectedTestCount());
+				if (c != 0)
+					return c;
+				c = Long.compare(b.sumTestScores(), a.sumTestScores());
+				if (c != 0)
+					return c;
+				return Integer.compare(b.maxTestScore(), a.maxTestScore());
+			});
+			int topToShow = Math.min(3, byPriority.size());
+			if (topToShow > 0) {
+				System.out.println("[test-order] highest-priority modules (by affected test count)" + optOutHint + ":");
+				for (int i = 0; i < topToShow; i++) {
+					ModuleScore s = byPriority.get(i);
+					System.out.println(String.format("  %2d.  %-50s  affected=%d  sum=%d", i + 1,
+							me.bechberger.testorder.ops.workflows.ShowWorkflow.shortenModuleId(s.moduleId()),
+							s.affectedTestCount(), s.sumTestScores()));
+				}
+			}
+
+			System.out.println("[test-order] reactor build order (DAG-respecting; priority breaks ties):");
+			int shown = 0;
+			for (MavenProject p : reorder.ordered()) {
+				ModuleScore s = scoreById.get(ModuleIds.of(p));
+				if (s == null || s.affectedTestCount() == 0) {
+					continue;
+				}
+				if (shown++ >= 10) {
+					System.out.println("  … " + (reorder.activeModules() - 10) + " more active module(s)");
+					break;
+				}
+				System.out.println(String.format("  %2d.  %-50s  affected=%d  sum=%d", shown, p.getArtifactId(),
+						s.affectedTestCount(), s.sumTestScores()));
+			}
+			if (reorder.deferredModules() > 0) {
+				System.out.println("[test-order] " + reorder.deferredModules()
+						+ " module(s) with no affected tests run last in declaration order.");
+			}
+		}
+
 		// Static skip on deferred modules (only when topN is set; without topN we
 		// only reorder, we don't skip — every module still runs eventually).
 		// Only skip modules that had real affectedTestCount > 0 (budget-capped), not
@@ -468,21 +533,72 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		}
 	}
 
-	private boolean isReorderEnabled(MavenSession session) {
-		return boolProp(session, PROP_REORDER);
+	// Package-private for unit testing.
+	boolean isReorderEnabled(MavenSession session) {
+		// Explicit override (true or false) always wins.
+		String explicit = readProp(session, PROP_REORDER);
+		if (explicit != null) {
+			return explicit.isEmpty() || "true".equalsIgnoreCase(explicit);
+		}
+		// Default-on when an affected/auto/run-tier goal is in the requested goals.
+		// Bare `mvn test` and other lifecycle invocations keep declaration order.
+		return goalsTriggerReorder(session);
+	}
+
+	/**
+	 * Returns true when any of the session's CLI goals is one that benefits from
+	 * module reordering: {@code test-order:affected}, {@code test-order:auto},
+	 * {@code test-order:run-tier}, or {@code test-order:run-tier1/2/3}.
+	 *
+	 * <p>
+	 * Goals invoked transitively via lifecycle bindings (POM {@code <execution>})
+	 * are not seen here; users wiring those should set
+	 * {@code testorder.reactorReorder=true} explicitly.
+	 */
+	// Package-private for unit testing.
+	static boolean goalsTriggerReorder(MavenSession session) {
+		if (session == null || session.getGoals() == null) {
+			return false;
+		}
+		for (String goal : session.getGoals()) {
+			if (goal == null) {
+				continue;
+			}
+			int colon = goal.lastIndexOf(':');
+			String name = colon >= 0 ? goal.substring(colon + 1) : goal;
+			if (name.equals("affected") || name.equals("auto") || name.startsWith("run-tier")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean boolProp(MavenSession session, String key) {
-		// User properties (-D flags) take precedence over system properties and pom.xml
+		String v = readProp(session, key);
+		return v != null && (v.isEmpty() || "true".equalsIgnoreCase(v));
+	}
+
+	/**
+	 * Reads a property in the canonical precedence order: user properties (-D
+	 * flags) → system properties → top-level project properties. Returns null when
+	 * the key is unset everywhere, distinguishing "unset" from "set to
+	 * empty/false". Callers that only need a boolean should use {@link #boolProp}.
+	 */
+	private static String readProp(MavenSession session, String key) {
+		if (session == null) {
+			return null;
+		}
 		String v = session.getUserProperties().getProperty(key);
-		if (v == null)
+		if (v == null) {
 			v = session.getSystemProperties().getProperty(key);
+		}
 		if (v == null) {
 			MavenProject top = session.getTopLevelProject();
-			if (top != null)
+			if (top != null) {
 				v = top.getProperties().getProperty(key);
+			}
 		}
-		return v != null && (v.isEmpty() || "true".equalsIgnoreCase(v));
+		return v;
 	}
 
 	private static Integer parseIntProp(MavenSession session, String key) {

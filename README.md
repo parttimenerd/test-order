@@ -282,29 +282,44 @@ Parallel module execution (`mvn ... -T 1C`) is also supported with file-level lo
 
 ## CI Integration
 
-Cache `.test-order/` between CI runs so PRs inherit the index from their base branch:
+Cache `.test-order/` between CI runs so PRs inherit the existing index from their base branch:
 
 ```yaml
-# GitHub Actions — branch-coupled key so PRs inherit from base without busting
-# the cache on every commit. See docs/CI.md for full caching guidance.
+# GitHub Actions — branch-coupled cache key (does NOT bust on every push)
 - uses: actions/cache@v4
   with:
     path: |
       .test-order/
       **/target/test-order-deps/
     key: test-order-${{ runner.os }}-${{ github.base_ref || github.ref_name }}
-    restore-keys: test-order-${{ runner.os }}-
+    restore-keys: |
+      test-order-${{ runner.os }}-
 ```
+
+> **Why branch-coupled?** Keying on source files (`hashFiles(...)`) causes a cache miss on
+> every commit, defeating the point. The branch key lets PRs reuse the base-branch index.
 
 ### CI workflows
 
-| Workflow | Commands |
-|---|---|
-| **Simple** (all tests, reordered) | `mvn test` |
-| **Two-phase** (affected first, rest later) | `mvn test-order:affected test` then `mvn test-order:run-remaining test` |
-| **Three-tier** (fastest feedback → broader → full) | See [docs/ci-examples/](docs/ci-examples/) |
+| Workflow | Commands | When to use |
+|---|---|---|
+| **Simple** (all tests, reordered) | `mvn test` | No pipeline changes needed; any project |
+| **Two-phase** (affected first, rest later) | `mvn test-order:select test` then `mvn test-order:run-remaining test` | Fast feedback for PRs |
+| **Three-tier** (affected → top-scored → rest) | `mvn test-order:tiered-select test` + two `run-tier` steps | Structured CI with separate pass/fail gates |
+| **Single-invocation tiered** | `mvn test-order:run-tiered test` | All tiers in one Surefire run; good for local dev |
+| **Parallel sharding** (tier 3 across N runners) | `mvn test-order:run-tiered test -Dtestorder.tiered.shard=1/3` | Scale out tier-3 across parallel CI runners |
 
-> **Cold start?** Use `mvn test-order:download` to fetch the dependency index from a previous CI run. See [test-order-ci/README.md](test-order-ci/README.md).
+**Tiered execution benefit**: tier 1 runs only change-affected tests and fails fast within
+seconds. Tier 2 runs the highest-scored remaining tests by duration budget. Only tier 3
+runs everything — and only if tiers 1 and 2 pass. This gives you fast failure detection
+without restructuring your existing test suite.
+
+**Visibility flags** — add to any `mvn` invocation:
+- `-Dtestorder.ci.githubStepSummary=true` — posts a test-selection summary to the GitHub Actions step summary
+- `-Dtestorder.ci.prComment=true` — adds a PR comment showing which tests ran and why
+
+> **Cold start?** Use `mvn test-order:download` to fetch the dependency index from a
+> previous CI run. See [test-order-ci/README.md](test-order-ci/README.md).
 
 For full CI examples (GitHub Actions, GitLab CI, Azure Pipelines): **[docs/ci-examples/](docs/ci-examples/)**
 

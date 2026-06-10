@@ -337,8 +337,15 @@ public final class DiagnosticOperation {
 		try (Stream<Path> walk = Files.walk(testClassesDir)) {
 			return (int) walk.filter(p -> {
 				String name = p.getFileName().toString();
-				// Count only top-level test classes (no $ inner classes)
-				return name.endsWith(".class") && !name.contains("$");
+				// Count only top-level (no $ inner) classes that look like test classes.
+				// Matches common conventions: FooTest, FooTests, FooTestCase, TestFoo, ITFoo,
+				// FooIT.
+				if (!name.endsWith(".class") || name.contains("$"))
+					return false;
+				String base = name.substring(0, name.length() - 6); // strip .class
+				return base.endsWith("Test") || base.endsWith("Tests") || base.endsWith("TestCase")
+						|| base.endsWith("IT") || base.endsWith("ITCase") || base.startsWith("Test")
+						|| base.startsWith("IT");
 			}).count();
 		} catch (IOException e) {
 			return 0;

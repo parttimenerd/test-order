@@ -96,7 +96,6 @@ public class TestSelector {
 		allTests.addAll(changedTestClasses);
 		// Ensure @AlwaysRun classes are included even if not yet in the index
 		allTests.addAll(alwaysRunClasses);
-
 		TestScorer scorer = new TestScorer.Builder(weights, depMap, state, changedClasses, changedTestClasses)
 				.testClassNames(depMap.testClasses()).changeComplexity(changeComplexity).build();
 
