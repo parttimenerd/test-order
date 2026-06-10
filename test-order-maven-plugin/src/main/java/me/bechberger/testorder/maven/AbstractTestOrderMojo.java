@@ -1298,8 +1298,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	/**
 	 * Walks up the directory tree from {@code idxPath.getParent().getParent()}
 	 * (i.e. the module base dir) searching for a
-	 * {@code .test-order/test-dependencies.lz4} in an ancestor directory. Stops at
-	 * the filesystem root.
+	 * {@code .test-order/test-dependencies.lz4} in an ancestor directory. Stops as
+	 * soon as a directory without a {@code pom.xml} is encountered (leaving the
+	 * Maven reactor), or at a git repository root ({@code .git/}), or at the
+	 * filesystem root.
 	 */
 	private Path findParentIndex(Path idxPath) {
 		// idxPath = <module>/.test-order/test-dependencies.lz4
@@ -1310,9 +1312,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 		candidate = candidate.getParent(); // parent of module
 		while (candidate != null) {
+			// Stop if this directory is no longer part of a Maven reactor
+			if (!Files.exists(candidate.resolve("pom.xml"))) {
+				break;
+			}
 			Path parentIdx = candidate.resolve(".test-order/test-dependencies.lz4");
 			if (Files.isReadable(parentIdx)) {
 				return parentIdx;
+			}
+			// Stop at a git repository root — anything above is a different project
+			if (Files.exists(candidate.resolve(".git"))) {
+				break;
 			}
 			candidate = candidate.getParent();
 		}
