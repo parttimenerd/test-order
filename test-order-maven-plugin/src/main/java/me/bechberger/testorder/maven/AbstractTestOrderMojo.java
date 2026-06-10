@@ -510,6 +510,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 		java.util.Properties props = session.getUserProperties();
 
+		// Issue #19: CLI -D flags must override POM <configuration> for commonly
+		// overridden parameters. Maven's @Parameter(property=...) gives POM config
+		// higher precedence than system properties, so we apply user properties
+		// explicitly here to restore the expected CLI-wins semantics.
+		applyCliOverride(props, MavenPluginConfigKeys.CHANGE_MODE, v -> changeMode = v);
+		applyCliOverride(props, MavenPluginConfigKeys.CHANGED_CLASSES, v -> changedClasses = v);
+		applyCliOverride(props, MavenPluginConfigKeys.CHANGED_TEST_CLASSES, v -> changedTestClasses = v);
+
 		// CamelCase alias fallbacks — apply alias value when canonical key is absent.
 		// These match the ALIASES map in MavenPluginConfigKeys; Maven parameter
 		// injection uses the @Parameter(property=...) key exactly, so an alias passed
@@ -540,6 +548,19 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						"[test-order] Deprecated property '" + entry.getKey() + "' — use '" + entry.getValue()
 								+ "' instead.");
 			}
+		}
+	}
+
+	/**
+	 * Issue #19: Force a user-property (CLI {@code -D} flag) to override the field
+	 * value that Maven injected from POM {@code <configuration>}. Only applies when
+	 * the property is explicitly present in user properties (not just
+	 * absent/blank).
+	 */
+	private void applyCliOverride(java.util.Properties props, String key, java.util.function.Consumer<String> setter) {
+		String val = props.getProperty(key);
+		if (val != null && !val.isBlank()) {
+			setter.accept(val.trim());
 		}
 	}
 
@@ -914,6 +935,12 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					+ "' — explicit class list overrides git/hash-based detection entirely."
 					+ " To make this explicit, add -Dtestorder.changeMode=explicit");
 		}
+		// Issue #13: warn about explicitly specified class names not found in
+		// target/classes
+		if (changedClasses != null && !changedClasses.isBlank()) {
+			warnMissingExplicitClassesFromClasspath(
+					me.bechberger.testorder.changes.ChangeDetectionSupport.parseExplicitClasses(changedClasses));
+		}
 		Set<String> own = ChangeDetectionOps.detectChangedClassesWithKotlin(changeMode, ctx.gitRoot(),
 				resolveSourceRoot(), ctx.resolveHashFile(hashFile), changedClasses, readOnly, plog);
 		ctx.storeChangedClasses(own);
@@ -936,6 +963,37 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					changeMode);
 		} catch (IllegalArgumentException e) {
 			throw new MojoExecutionException(e.getMessage());
+		}
+	}
+
+	/**
+	 * Issue #13: Warns about explicitly specified class names that are not found in
+	 * {@code target/classes}. Catches typos early so the user gets actionable
+	 * feedback instead of silently boosting 0 tests.
+	 */
+	private void warnMissingExplicitClassesFromClasspath(Set<String> explicitClasses) {
+		if (explicitClasses.isEmpty()) {
+			return;
+		}
+		String outputDir = project.getBuild().getOutputDirectory();
+		if (outputDir == null || outputDir.isBlank()) {
+			return; // build directory not configured, skip check
+		}
+		Path classesDir = Path.of(outputDir);
+		if (!java.nio.file.Files.isDirectory(classesDir)) {
+			return; // classes not compiled yet, skip check
+		}
+		Set<String> missing = new java.util.LinkedHashSet<>();
+		for (String fqcn : explicitClasses) {
+			Path classFile = classesDir.resolve(fqcn.replace('.', '/') + ".class");
+			if (!java.nio.file.Files.exists(classFile)) {
+				missing.add(fqcn);
+			}
+		}
+		if (!missing.isEmpty()) {
+			getLog().warn("[test-order] The following explicitly changed class(es) were not found in "
+					+ classesDir.toAbsolutePath() + " — check for typos or ensure the project is compiled: "
+					+ String.join(", ", missing));
 		}
 	}
 

@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
 import org.apache.maven.artifact.repository.ArtifactRepository;
 import org.apache.maven.execution.MavenExecutionRequest;
@@ -538,15 +539,188 @@ class AbstractTestOrderMojoTest {
 		return (Path) method.invoke(mojo);
 	}
 
+	// ── Issue #13: explicit mode warns about class not in target/classes ─────
+
+	@Test
+	void warnMissingExplicitClassesFromClasspath_emitsWarningWhenClassFileMissing() throws Exception {
+		// Create a target/classes directory but do NOT put Foo.class in it
+		Path classesDir = tempDir.resolve("target/classes");
+		Files.createDirectories(classesDir);
+
+		Build build = new Build();
+		build.setDirectory(tempDir.resolve("target").toString());
+		build.setOutputDirectory(classesDir.toString());
+		build.setTestOutputDirectory(tempDir.resolve("target/test-classes").toString());
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBuild()).thenReturn(build);
+		when(project.getBasedir()).thenReturn(tempDir.toFile());
+		when(project.getProperties()).thenReturn(new Properties());
+		when(project.getBuildPlugins()).thenReturn(List.of());
+		when(project.getCompileSourceRoots()).thenReturn(List.of());
+
+		org.apache.maven.plugin.logging.Log mockLog = mock(org.apache.maven.plugin.logging.Log.class);
+		java.util.List<String> warnMessages = new java.util.ArrayList<>();
+		org.mockito.Mockito.doAnswer(inv -> {
+			warnMessages.add(inv.getArgument(0).toString());
+			return null;
+		}).when(mockLog).warn(org.mockito.ArgumentMatchers.anyString());
+
+		TestMojo mojo = new TestMojo(mockLog);
+		mojo.project = project;
+		// Manually set up minimal state to call the helper via invokeWarnMissing
+		mojo.invokeWarnMissingExplicitClasses(Set.of("com.example.NonExistent"));
+
+		assertThat(warnMessages)
+				.anyMatch(msg -> msg.contains("com.example.NonExistent") && msg.contains("not found in"));
+	}
+
+	@Test
+	void warnMissingExplicitClassesFromClasspath_noWarningWhenClassFilePresent() throws Exception {
+		Path classesDir = tempDir.resolve("target/classes");
+		Path classFile = classesDir.resolve("com/example/Existing.class");
+		Files.createDirectories(classFile.getParent());
+		Files.writeString(classFile, "fake");
+
+		Build build = new Build();
+		build.setDirectory(tempDir.resolve("target").toString());
+		build.setOutputDirectory(classesDir.toString());
+		build.setTestOutputDirectory(tempDir.resolve("target/test-classes").toString());
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBuild()).thenReturn(build);
+		when(project.getBasedir()).thenReturn(tempDir.toFile());
+		when(project.getProperties()).thenReturn(new Properties());
+		when(project.getBuildPlugins()).thenReturn(List.of());
+		when(project.getCompileSourceRoots()).thenReturn(List.of());
+
+		org.apache.maven.plugin.logging.Log mockLog = mock(org.apache.maven.plugin.logging.Log.class);
+		java.util.List<String> warnMessages = new java.util.ArrayList<>();
+		org.mockito.Mockito.doAnswer(inv -> {
+			warnMessages.add(inv.getArgument(0).toString());
+			return null;
+		}).when(mockLog).warn(org.mockito.ArgumentMatchers.anyString());
+
+		TestMojo mojo = new TestMojo(mockLog);
+		mojo.project = project;
+		mojo.invokeWarnMissingExplicitClasses(Set.of("com.example.Existing"));
+
+		assertThat(warnMessages).noneMatch(msg -> msg.contains("not found in"));
+	}
+
+	// ── Issue #19: CLI -D properties override POM <configuration> ────────────
+
+	@Test
+	void cliChangeModeOverridesTakesPrecedenceOverPomConfiguration() throws Exception {
+		// Simulate POM-injected changeMode = "since-last-run"
+		// and CLI user property -Dtestorder.changeMode=uncommitted (to avoid the
+		// explicit-requires-changedClasses validation error in initContext)
+		Properties userProps = new Properties();
+		userProps.setProperty(MavenPluginConfigKeys.CHANGE_MODE, "uncommitted");
+
+		MavenSession session = mock(MavenSession.class);
+		when(session.getUserProperties()).thenReturn(userProps);
+
+		Build build = new Build();
+		build.setDirectory(tempDir.resolve("target").toString());
+		build.setTestOutputDirectory(tempDir.resolve("target/test-classes").toString());
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBuild()).thenReturn(build);
+		when(project.getBasedir()).thenReturn(tempDir.toFile());
+		when(project.getProperties()).thenReturn(new Properties());
+		when(project.getBuildPlugins()).thenReturn(List.of());
+		when(project.getCompileSourceRoots()).thenReturn(List.of());
+		when(project.getTestCompileSourceRoots()).thenReturn(List.of());
+
+		TestMojo mojo = new TestMojo();
+		mojo.project = project;
+		mojo.session = session;
+		mojo.indexFile = tempDir.resolve("index.lz4").toString();
+		mojo.stateFile = tempDir.resolve("state.lz4").toString();
+		mojo.depsDir = tempDir.resolve("deps").toString();
+		mojo.hashFile = tempDir.resolve("hashes.lz4").toString();
+		mojo.testHashFile = tempDir.resolve("test-hashes.lz4").toString();
+		mojo.methodHashFile = tempDir.resolve("method-hashes.lz4").toString();
+
+		// Set POM-injected value (simulating that Maven injected "since-last-run")
+		mojo.changeMode = "since-last-run";
+		mojo.initContext();
+
+		// After initContext (which calls applyCanonicalUserPropertyOverrides),
+		// the CLI value should have won
+		assertThat(mojo.changeMode).isEqualTo("uncommitted");
+	}
+
+	@Test
+	void cliChangedClassesOverridesTakesPrecedenceOverPomConfiguration() throws Exception {
+		// Simulate POM-injected changedClasses = "com.pom.Foo"
+		// and CLI user property -Dtestorder.changed.classes=com.cli.Bar
+		Properties userProps = new Properties();
+		userProps.setProperty(MavenPluginConfigKeys.CHANGED_CLASSES, "com.cli.Bar");
+
+		MavenSession session = mock(MavenSession.class);
+		when(session.getUserProperties()).thenReturn(userProps);
+
+		Build build = new Build();
+		build.setDirectory(tempDir.resolve("target").toString());
+		build.setTestOutputDirectory(tempDir.resolve("target/test-classes").toString());
+
+		MavenProject project = mock(MavenProject.class);
+		when(project.getBuild()).thenReturn(build);
+		when(project.getBasedir()).thenReturn(tempDir.toFile());
+		when(project.getProperties()).thenReturn(new Properties());
+		when(project.getBuildPlugins()).thenReturn(List.of());
+		when(project.getCompileSourceRoots()).thenReturn(List.of());
+		when(project.getTestCompileSourceRoots()).thenReturn(List.of());
+
+		TestMojo mojo = new TestMojo();
+		mojo.project = project;
+		mojo.session = session;
+		mojo.indexFile = tempDir.resolve("index.lz4").toString();
+		mojo.stateFile = tempDir.resolve("state.lz4").toString();
+		mojo.depsDir = tempDir.resolve("deps").toString();
+		mojo.hashFile = tempDir.resolve("hashes.lz4").toString();
+		mojo.testHashFile = tempDir.resolve("test-hashes.lz4").toString();
+		mojo.methodHashFile = tempDir.resolve("method-hashes.lz4").toString();
+
+		// POM-injected value
+		mojo.changedClasses = "com.pom.Foo";
+		mojo.initContext();
+
+		// CLI value should have won
+		assertThat(mojo.changedClasses).isEqualTo("com.cli.Bar");
+	}
+
 	private static final class TestMojo extends AbstractTestOrderMojo {
 		private final Path fakeAgentJar;
+		private final org.apache.maven.plugin.logging.Log overrideLog;
 
 		private TestMojo() {
 			this.fakeAgentJar = null;
+			this.overrideLog = null;
 		}
 
 		private TestMojo(Path fakeAgentJar) {
 			this.fakeAgentJar = fakeAgentJar;
+			this.overrideLog = null;
+		}
+
+		private TestMojo(org.apache.maven.plugin.logging.Log log) {
+			this.fakeAgentJar = null;
+			this.overrideLog = log;
+		}
+
+		@Override
+		public org.apache.maven.plugin.logging.Log getLog() {
+			return overrideLog != null ? overrideLog : super.getLog();
+		}
+
+		void invokeWarnMissingExplicitClasses(Set<String> classes) throws Exception {
+			java.lang.reflect.Method m = AbstractTestOrderMojo.class
+					.getDeclaredMethod("warnMissingExplicitClassesFromClasspath", Set.class);
+			m.setAccessible(true);
+			m.invoke(this, classes);
 		}
 
 		void configureLearnModeForTest(String instrumentationMode, String includePackages, boolean includeIndexInArgs)
