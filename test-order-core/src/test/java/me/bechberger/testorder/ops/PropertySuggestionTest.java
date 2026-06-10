@@ -46,12 +46,18 @@ class PropertySuggestionTest {
 
 	@Test
 	void showExplainAndFullNamesSuggestShowOrderVariants() {
-		// testorder.show.explain is not a real key — the correct key is
-		// testorder.showOrder.explain
+		// testorder.show.explain is a registered alias for testorder.showOrder.explain
+		// — it must NOT produce an "unknown key" warning
 		List<String> explainWarnings = PropertySuggestion.findUnknownKeys(List.of("testorder.show.explain"));
-		assertFalse(explainWarnings.isEmpty(), "testorder.show.explain should produce a warning (not a real key)");
-		assertTrue(explainWarnings.get(0).contains("showOrder.explain") || explainWarnings.get(0).contains("show."),
-				"Should suggest a real show-related key: " + explainWarnings.get(0));
+		assertTrue(explainWarnings.isEmpty(),
+				"testorder.show.explain is a valid alias — expected no warning, got: " + explainWarnings);
+	}
+
+	@Test
+	void nonExistentShowSubkeyProducesWarning() {
+		// testorder.show.xplain is a typo — it should produce a warning
+		List<String> typoWarnings = PropertySuggestion.findUnknownKeys(List.of("testorder.show.xplain"));
+		assertFalse(typoWarnings.isEmpty(), "testorder.show.xplain should produce a warning (not a real key)");
 	}
 
 	@Test

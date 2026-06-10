@@ -3265,7 +3265,7 @@ onMounted(initAll)
         </div>
       </div>
       <!-- Multi-module: Tests that may belong elsewhere -->
-      <div v-if="d.tests.some(t => t.suspectHomeModule)" style="margin-bottom:12px">
+      <div v-if="d.filteredTests.value.some(t => t.suspectHomeModule)" style="margin-bottom:12px">
         <div class="card">
           <div class="card-label" title="Tests whose deps are dominated (&gt;70%) by classes from a foreign module — they may be better placed in that module">
             Tests that may belong elsewhere
@@ -3275,7 +3275,7 @@ onMounted(initAll)
             <div style="color:var(--text-secondary);font-weight:600">Test</div>
             <div style="color:var(--text-secondary);font-weight:600">Own module</div>
             <div style="color:var(--text-secondary);font-weight:600">Dominant dep module</div>
-            <template v-for="t in [...d.tests].filter(t => t.suspectHomeModule).sort((a,b) => (b.crossModuleDepCount/(b.deps?.length||1)) - (a.crossModuleDepCount/(a.deps?.length||1))).slice(0,15)" :key="t.name">
+            <template v-for="t in [...d.filteredTests.value].filter(t => t.suspectHomeModule).sort((a,b) => (b.crossModuleDepCount/(b.deps?.length||1)) - (a.crossModuleDepCount/(a.deps?.length||1))).slice(0,15)" :key="t.name">
               <span
                 class="suspect-row__name"
                 :title="t.name"
@@ -3289,8 +3289,8 @@ onMounted(initAll)
               </span>
             </template>
           </div>
-          <div v-if="d.tests.filter(t => t.suspectHomeModule).length > 15" style="font-size:.62rem;color:var(--text-muted);margin-top:4px">
-            … and {{ d.tests.filter(t => t.suspectHomeModule).length - 15 }} more
+          <div v-if="d.filteredTests.value.filter(t => t.suspectHomeModule).length > 15" style="font-size:.62rem;color:var(--text-muted);margin-top:4px">
+            … and {{ d.filteredTests.value.filter(t => t.suspectHomeModule).length - 15 }} more
           </div>
         </div>
       </div>
