@@ -159,10 +159,26 @@ public final class ChangeAnalysis {
 				// module's tests.
 				DependencyMap sourcFiltered = TestClassDiscovery.filterToModuleBySourceRoot(depMap,
 						ctx.testSourceRoot());
-				if (sourcFiltered.testClasses().size() < beforeCount) {
+				// Only apply the source-root filter if it found at least one matching test
+				// class. An empty result means none of the dep-map entries have source files
+				// here (e.g. the module was added after the last learn run) — wiping the
+				// dep map in that case would silently show nothing.
+				if (sourcFiltered.testClasses().size() > 0 && sourcFiltered.testClasses().size() < beforeCount) {
 					depMap = sourcFiltered;
 					ctx.log().debug("[test-order] filtered index by testSourceRoot: " + beforeCount + " -> "
 							+ depMap.testClasses().size() + " test classes");
+				} else if (filtered.testClasses().size() == 0 && sourcFiltered.testClasses().size() == 0) {
+					// Module has compiled test classes but none are indexed — the index is stale
+					// relative to this module. Show a targeted hint rather than silently showing
+					// unrelated tests from the shared index.
+					long compiledCount = TestClassDiscovery.scanTestClasses(ctx.testClassesDir()).size();
+					if (compiledCount > 0) {
+						ctx.log()
+								.warn("[test-order] This module has " + compiledCount
+										+ " compiled test class(es) not yet in the dependency index."
+										+ " Run learn mode to include them: mvn test -Dtestorder.mode=learn"
+										+ " (showing all indexed tests as fallback)");
+					}
 				}
 			}
 		}
