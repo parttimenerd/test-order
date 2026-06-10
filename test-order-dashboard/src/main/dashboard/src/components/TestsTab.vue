@@ -3,7 +3,7 @@ import { inject, watch, nextTick, onMounted, onUnmounted, computed, ref, type Re
 import type { DashboardState } from '../composables/useDashboard'
 import type { TestHoverState } from '../composables/useTestHover'
 import type { TestEntry } from '../types'
-import { sn, fmtDur, fmtTime, computeScore } from '../utils'
+import { sn, fmtDur, fmtTime, computeScore, shortModule } from '../utils'
 import { mkChart, destroyCharts, chartOpts } from '../composables/useCharts'
 import { useClassHover } from '../composables/useClassInfo'
 import ClassInfoCard from './ClassInfoCard.vue'
@@ -841,7 +841,7 @@ function previewScoreBars(t: TestEntry) {
       <div v-if="d.moduleFocusKpis.value" class="module-focus-banner">
         <span class="module-focus-banner__title">
           <span class="module-focus-banner__icon">⊙</span>
-          Module: <strong>{{ d.selectedModule.value!.split('-').slice(-2).join('-') }}</strong>
+          Module: <strong>{{ shortModule(d.selectedModule.value!) }}</strong>
         </span>
         <div class="module-focus-banner__kpis">
           <div class="module-focus-banner__kpi" title="Tests that belong to this module">
@@ -874,7 +874,7 @@ function previewScoreBars(t: TestEntry) {
             class="module-focus-banner__dep-chip"
             :title="'Click to focus on module: ' + mod"
             @click="d.setModule(mod)"
-          >{{ mod.split('-').slice(-2).join('-') }}</button>
+          >{{ shortModule(mod) }}</button>
         </div>
         <button class="module-focus-banner__clear" @click="d.setModule(null)" title="Exit module focus">× exit focus</button>
       </div>
@@ -888,10 +888,10 @@ function previewScoreBars(t: TestEntry) {
         <span class="tests__run-alert-link">→ View in Analytics</span>
       </div>
       <!-- Run order preview bar -->
-      <div v-if="d.tests.length >= 5" class="run-preview">
+      <div v-if="d.filteredTests.value.length >= 5" class="run-preview">
         <span class="run-preview__label">Run order:</span>
         <div
-          v-for="(t, i) in d.tests.slice(0, 5)"
+          v-for="(t, i) in d.filteredTests.value.slice(0, 5)"
           :key="t.name"
           class="run-preview__item"
           :class="{
@@ -902,7 +902,7 @@ function previewScoreBars(t: TestEntry) {
             'run-preview__item--selected': d.selectedTest.value?.name === t.name
           }"
           :title="t.name + '\nRank #' + (i+1) + ' · Score ' + t.score.toFixed(1) + (t.failScore > 0 ? ' · fail history' : '') + (t.isChanged ? ' · changed' : '') + (t.isNew ? ' · new' : '')"
-          @click="d.selectTest(t)"
+          @click="d.selectTest(t, null)"
         >
           <span class="run-preview__num">{{ i + 1 }}</span>
           <span class="run-preview__name">{{ sn(t.name) }}</span>
@@ -910,7 +910,7 @@ function previewScoreBars(t: TestEntry) {
           <span v-else-if="t.isChanged" class="run-preview__flag" style="color:var(--yellow)">✎</span>
           <span v-else-if="t.isNew" class="run-preview__flag" style="color:var(--green)">★</span>
         </div>
-        <span v-if="d.tests.length > 5" class="run-preview__more" style="cursor:pointer" title="Click to scroll to full test table" @click="tableScrollEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })">+{{ d.tests.length - 5 }} more ↓</span>
+        <span v-if="d.filteredTests.value.length > 5" class="run-preview__more" style="cursor:pointer" title="Click to scroll to full test table" @click="tableScrollEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })">+{{ d.filteredTests.value.length - 5 }} more ↓</span>
       </div>
 
       <!-- Blame mode banner -->
@@ -1012,11 +1012,11 @@ function previewScoreBars(t: TestEntry) {
               <td><TestBadges :test="t" :flaky="d.flakyTests.value.has(t.name)" /></td>
               <td v-if="d.modules.value.length > 1" class="td--left td--dim td--module"
                 :title="t.module || 'unknown module'"
-                @click.stop="d.setModule(t.module)"
+                @click.stop="t.module && d.setModule(t.module)"
                 style="cursor:pointer;font-size:.65rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px"
               >
                 <span v-if="t.suspectHomeModule" style="color:var(--yellow,#fbbf24)" title="Most deps are in a different module">⚠</span>
-                {{ t.module ? t.module.split('-').slice(-2).join('-') : '?' }}
+                {{ t.module ? shortModule(t.module) : '?' }}
               </td>
               <td class="td--right td--dim tests-overview__dur-cell" :class="{ 'tests-overview__dur--slow': t.isSlow, 'tests-overview__dur--fast': t.isFast }" :title="t.duration >= 0 ? t.duration.toFixed(1) + 'ms' + (t.isSlow ? ' · slow (above median)' : t.isFast ? ' · fast (below median)' : '') : 'No duration data'">
                 <span v-if="t.duration >= 0" class="tests-overview__dur-bar" :style="{ width: Math.max(2, Math.round(t.duration / maxDuration * 28)) + 'px', background: t.isSlow ? 'var(--orange)' : t.isFast ? 'var(--green)' : 'var(--accent)' }"></span>
@@ -1347,7 +1347,7 @@ function previewScoreBars(t: TestEntry) {
               'pos-strip__item--flaky': d.flakyTests.value.has(t.name)
             }"
             :title="t.name + '\nRank #' + t.rank + ' · Score ' + t.score.toFixed(1)"
-            @click="t.name !== d.selectedTest.value!.name && d.selectTest(t)"
+            @click="t.name !== d.selectedTest.value!.name && d.selectTest(t, null)"
           >
             <span class="pos-strip__rank">#{{ t.rank }}</span>
             <span class="pos-strip__name">{{ sn(t.name) }}</span>
@@ -1588,7 +1588,7 @@ function previewScoreBars(t: TestEntry) {
                 <span class="xmod-entry__module-tag"
                   @click="d.setModule(entry.module)"
                   :title="'Focus on module: ' + entry.module + ' (click to apply module filter)'"
-                >{{ entry.module.split('-').slice(-2).join('-') }}</span>
+                >{{ shortModule(entry.module) }}</span>
                 <span class="xmod-entry__count">{{ entry.classes.length }} class{{ entry.classes.length !== 1 ? 'es' : '' }}</span>
               </div>
               <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">

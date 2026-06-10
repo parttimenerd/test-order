@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
 import type { DashboardState } from '../composables/useDashboard'
-import { sn, fmtDur } from '../utils'
+import { sn, fmtDur, shortModule } from '../utils'
 
 const props = defineProps<{
   visible: boolean
@@ -33,13 +33,7 @@ function dotColor(failed: boolean | null): string {
   return failed ? 'var(--red)' : 'var(--green)'
 }
 
-function shortModule(mod: string): string {
-  const dot = mod.lastIndexOf('.')
-  if (dot < 0) return mod
-  const dash = mod.indexOf('-', dot)
-  if (dash < 0) return mod
-  return mod.substring(dash + 1)
-}
+
 </script>
 
 <template>
@@ -72,7 +66,7 @@ function shortModule(mod: string): string {
         <span v-if="t.mlPFail !== null && t.mlPFail > 0.5" class="badge badge--red">ml-risk</span>
         <span v-if="t.module" class="badge badge--module" :title="t.module">{{ shortModule(t.module) }}</span>
         <span v-if="t.suspectHomeModule" class="badge badge--suspect"
-          :title="`${Math.round((t.crossModuleDepCount / (t.deps?.length || 1)) * 100)}% of deps are in ${t.dominantDepModule} — this test may belong there`"
+          :title="`${Math.round((t.crossModuleDepCount / (t.deps?.length || 1)) * 100)}% of deps are in ${t.dominantDepModule ?? 'another module'} — this test may belong there`"
         >⚠ foreign deps</span>
       </div>
 

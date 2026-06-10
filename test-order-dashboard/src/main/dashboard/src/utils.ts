@@ -31,6 +31,19 @@ export function sn(fqcn: string): string {
   return pkg + '.' + cls
 }
 
+/** Shorten a Maven moduleId (groupId-artifactId form) for display.
+ *  com.example-service-core → "service-core"  (suffix after last dot + first dash)
+ *  com.example-core → "core"
+ *  plain-id → "plain-id" (no dot, returned as-is)
+ */
+export function shortModule(mod: string): string {
+  const dot = mod.lastIndexOf('.')
+  if (dot < 0) return mod
+  const dash = mod.indexOf('-', dot)
+  if (dash < 0) return mod.substring(dot + 1)
+  return mod.substring(dash + 1)
+}
+
 /** Show p.k.g.ClassName style with last 2 segments kept fully readable */
 export function snMed(fqcn: string): string {
   if (!fqcn) return '(unknown)'

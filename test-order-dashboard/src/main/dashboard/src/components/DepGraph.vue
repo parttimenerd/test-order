@@ -2,7 +2,7 @@
 import { inject, watch, onMounted, nextTick, ref as vueRef, computed } from 'vue'
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
-import { esc, GRAPH } from '../utils'
+import { esc, GRAPH, shortModule } from '../utils'
 import type { TestEntry, MethodEntry } from '../types'
 import { useClassHover } from '../composables/useClassInfo'
 import ClassInfoCard from './ClassInfoCard.vue'
@@ -643,7 +643,7 @@ defineExpose({ initGraph })
       </span>
       <!-- Module focus badge -->
       <span v-if="d.selectedModule.value" class="dep-graph__module-focus-badge" :title="'Graph filtered to module: ' + d.selectedModule.value">
-        ⊙ {{ d.selectedModule.value.split('-').slice(-2).join('-') }}
+        ⊙ {{ shortModule(d.selectedModule.value) }}
         <button class="dep-graph__module-focus-clear" @click="d.setModule(null)" title="Clear module focus">×</button>
       </span>
       <button

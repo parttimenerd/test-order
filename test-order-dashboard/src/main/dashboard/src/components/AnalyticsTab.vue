@@ -3,7 +3,7 @@ import { inject, watch, nextTick, onMounted, computed, ref, type Ref } from 'vue
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
 import type { TestHoverState } from '../composables/useTestHover'
-import { sn, esc, DIST, fmtDur, fmtTime, computeScore, computeApfd } from '../utils'
+import { sn, esc, DIST, fmtDur, fmtTime, computeScore, computeApfd, shortModule } from '../utils'
 import { useClassHover } from '../composables/useClassInfo'
 import ClassInfoCard from './ClassInfoCard.vue'
 import SuiteHealthCard from './SuiteHealthCard.vue'
@@ -3282,9 +3282,9 @@ onMounted(initAll)
                 @click="d.selectTest(t, null); d.setTab('tests')"
                 style="cursor:pointer;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
               >{{ t.name.split('.').pop() }}</span>
-              <span style="color:var(--text-muted);font-size:.65rem;white-space:nowrap">{{ t.module ? t.module.split('-').slice(-2).join('-') : '—' }}</span>
+              <span style="color:var(--text-muted);font-size:.65rem;white-space:nowrap">{{ t.module ? shortModule(t.module) : '—' }}</span>
               <span style="color:var(--yellow,#fbbf24);font-size:.65rem;white-space:nowrap">
-                {{ t.dominantDepModule ? t.dominantDepModule.split('-').slice(-2).join('-') : '—' }}
+                {{ t.dominantDepModule ? shortModule(t.dominantDepModule) : '—' }}
                 ({{ t.deps?.length ? Math.round(t.crossModuleDepCount / t.deps.length * 100) : 0 }}%)
               </span>
             </template>

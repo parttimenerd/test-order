@@ -14,11 +14,11 @@
         :class="{ 'module-filter__chip--active': modelValue === mod }"
         :title="mod"
         @click="$emit('update:modelValue', modelValue === mod ? null : mod)"
-      >{{ shortName(mod) }}</button>
+      >{{ shortModule(mod) }}</button>
     </div>
     <select v-else class="module-filter__select" :value="modelValue ?? ''" @change="onChange">
       <option value="">All modules ({{ modules.length }})</option>
-      <option v-for="mod in modules" :key="mod" :value="mod">{{ shortName(mod) }}</option>
+      <option v-for="mod in modules" :key="mod" :value="mod">{{ shortModule(mod) }}</option>
     </select>
     <div v-if="modelValue && count != null" class="module-filter__count">
       {{ count }} test{{ count === 1 ? '' : 's' }} in focus
@@ -27,6 +27,8 @@
 </template>
 
 <script setup lang="ts">
+import { shortModule } from '../utils'
+
 const props = defineProps<{
   modules: string[]
   modelValue: string | null
@@ -36,14 +38,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string | null]
 }>()
-
-function shortName(mod: string): string {
-  const dot = mod.lastIndexOf('.')
-  if (dot < 0) return mod
-  const dash = mod.indexOf('-', dot)
-  if (dash < 0) return mod
-  return mod.substring(dash + 1)
-}
 
 function onChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value

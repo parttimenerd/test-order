@@ -93,7 +93,6 @@ export interface DashboardState {
   moduleFocusKpis: ComputedRef<{
     testCount: number
     crossModuleDepCount: number
-    crossModuleClassCount: number
     otherModules: string[]
     coverageQuality: number | null
   } | null>
@@ -775,7 +774,6 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     return {
       testCount,
       crossModuleDepCount: crossClassSet.size,
-      crossModuleClassCount: crossClassSet.size,
       otherModules: [...otherModuleSet].sort(),
       coverageQuality,
     }
