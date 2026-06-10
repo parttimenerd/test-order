@@ -111,6 +111,9 @@ detect_gradle_extra_args() {
         micronaut-core) echo "--continue -x checkstyleMain -x checkstyleTest -x :micronaut-inject-java:test -x :test-suite:test" ;;
         # hibernate-orm: no checkstyle/spotbugs tasks; uses Gradle 9.5.
         hibernate-orm) echo "--continue" ;;
+        # spring-boot: no checkstyle/spotbugs tasks; custom Gradle build convention.
+        # antora/docs subprojects generate documentation and are slow; exclude documentation tests.
+        spring-boot) echo "--continue -x :documentation:spring-boot-docs:test -x :documentation:spring-boot-actuator-docs:test" ;;
         # kafka: upgrade-system-tests-* are live-cluster system tests (no @Test methods) that
         # compile against old Kafka versions. They cannot run without a live Kafka cluster and
         # produce GradleWorkerMain errors and compileTestJava failures on JDK 25.
