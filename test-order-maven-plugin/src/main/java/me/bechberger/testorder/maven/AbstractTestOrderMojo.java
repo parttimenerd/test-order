@@ -1203,6 +1203,48 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			return;
 		}
 
+		// Before failing, scan child modules for existing indexes and merge them.
+		// This makes 'mvn test-order:show' at a reactor root work even when only
+		// submodule-level indexes exist (e.g. cap-sflight root vs. srv submodule).
+		if (session != null) {
+			List<MavenProject> childrenWithIndex = new ArrayList<>();
+			Path rootBase = project.getBasedir().toPath().toAbsolutePath();
+			for (MavenProject p : session.getProjects()) {
+				if (p == project)
+					continue;
+				Path childIdx = p.getBasedir().toPath().toAbsolutePath().resolve(".test-order/test-dependencies.lz4");
+				if (Files.isReadable(childIdx))
+					childrenWithIndex.add(p);
+			}
+			if (!childrenWithIndex.isEmpty()) {
+				try {
+					DependencyMap merged = null;
+					List<String> mergedNames = new ArrayList<>();
+					for (MavenProject p : childrenWithIndex) {
+						Path childIdx = p.getBasedir().toPath().toAbsolutePath()
+								.resolve(".test-order/test-dependencies.lz4");
+						DependencyMap child = DependencyMap.load(childIdx);
+						if (merged == null) {
+							merged = child;
+						} else {
+							merged.mergeWith(child);
+						}
+						mergedNames.add(p.getArtifactId());
+					}
+					int depCount = merged != null ? merged.testClasses().size() : 0;
+					getLog().info("[test-order] No root index found — aggregated " + childrenWithIndex.size()
+							+ " child module index(es) (" + depCount + " test classes): "
+							+ String.join(", ", mergedNames));
+					Files.createDirectories(idxPath.getParent());
+					merged.save(idxPath);
+					return;
+				} catch (IOException e) {
+					getLog().warn("[test-order] Failed to merge child module indexes: " + e.getMessage()
+							+ " — falling through to normal error");
+				}
+			}
+		}
+
 		Path depsDirPath = ctx.resolveDepsDir(depsDir);
 		if (Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath)) {
 			autoAggregate(depsDirPath, idxPath);
