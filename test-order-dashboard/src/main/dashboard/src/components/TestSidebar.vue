@@ -575,15 +575,6 @@ function removePreset(idx: number) {
         </div>
       </div>
     </div>
-    <!-- Shortcuts hint (click ? for full list) -->
-    <div class="sidebar__shortcut-bar" title="Press ? anywhere (or click the ? button in the search bar) to open the full filter syntax reference and keyboard shortcuts">
-      <span><kbd>↑↓</kbd> nav</span>
-      <span><kbd>⏎</kbd> sel</span>
-      <span><kbd>esc</kbd> clear</span>
-      <span><kbd>f y c</kbd> filter</span>
-      <span><kbd>z b g</kbd> mode</span>
-      <span><kbd>?</kbd> help</span>
-    </div>
   </aside>
 </template>
 
@@ -800,14 +791,4 @@ function removePreset(idx: number) {
 .sidebar__watch-btn--on { opacity: 1 !important; color: #fbbf24; }
 .sidebar__watch-btn:hover { color: #fbbf24; }
 
-.sidebar__shortcut-bar {
-  flex-shrink: 0; padding: 3px 8px; border-top: 1px solid var(--border);
-  display: flex; gap: 8px; align-items: center; justify-content: center;
-  font-size: .55rem; color: var(--text-sec); user-select: none;
-}
-.sidebar__shortcut-bar kbd {
-  display: inline-block; padding: 0 3px; border: 1px solid var(--border);
-  border-radius: 2px; font-family: inherit; font-size: .52rem; color: var(--text-sec);
-  background: var(--bg-base); line-height: 1.5;
-}
 </style>

@@ -58,7 +58,7 @@ function shortModule(mod: string): string {
     >
       <!-- Header: status pill + class name -->
       <div class="tc-card__header">
-        <span class="tc-card__pill" :style="{ background: statusColor }">{{ statusLabel }}</span>
+        <span v-if="lastOutcome" class="tc-card__pill" :style="{ background: statusColor }">{{ statusLabel }}</span>
         <span class="tc-card__name">{{ t.name.split('.').pop() }}</span>
       </div>
 

@@ -753,7 +753,7 @@ public class DashboardGenerator {
 	 * The result is used only for display/analysis in the dashboard.
 	 */
 	static Map<String, String> deriveClassToModule(DependencyMap depMap) {
-		if (!depMap.hasModuleMap()) {
+		if (depMap.modules().size() <= 1) {
 			return Map.of();
 		}
 		// tally: class → (module → count)

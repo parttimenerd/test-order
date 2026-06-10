@@ -730,10 +730,14 @@ function showRowPreview(t: TestEntry, e: MouseEvent) {
     if (!target) return
     const rect = target.getBoundingClientRect()
     const winW = window.innerWidth
+    const winH = window.innerHeight
     const popW = 240
+    const popH = 200 // estimated popup height
     const right = rect.right + popW + 8 > winW
+    const rawTop = rect.top + rect.height / 2
+    const top = Math.min(Math.max(popH / 2, rawTop), winH - popH / 2)
     hoverPos.value = {
-      top: rect.top + rect.height / 2,
+      top,
       left: right ? rect.left - popW - 4 : rect.right + 4,
       right,
     }
@@ -885,7 +889,7 @@ function previewScoreBars(t: TestEntry) {
         </div>
       </div>
       <div style="display:flex;align-items:stretch;gap:3px">
-        <div ref="tableScrollEl" style="overflow-x:auto;max-height:500px;overflow-y:auto;flex:1;min-width:0" @scroll="onTableScroll">
+        <div ref="tableScrollEl" class="tests-overview__table-scroll" @scroll="onTableScroll">
         <table>
           <thead class="tests-overview__thead">
             <tr>
@@ -1900,9 +1904,13 @@ function previewScoreBars(t: TestEntry) {
 @keyframes detailSlideIn { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
 
 /* Suite time budget */
+.tests-overview__table-scroll {
+  overflow-x: auto; max-height: 500px; overflow-y: auto; flex: 1; min-width: 0;
+  scrollbar-width: none; /* Firefox */
+}
+.tests-overview__table-scroll::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
 .tests-minimap {
-  flex-shrink: 0;
-  width: 10px;
   border-radius: 3px;
   background: rgba(15,23,42,.6);
   cursor: pointer;
