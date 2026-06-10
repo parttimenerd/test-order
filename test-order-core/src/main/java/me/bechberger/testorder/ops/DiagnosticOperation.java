@@ -102,7 +102,10 @@ public final class DiagnosticOperation {
 		// so missing .deps is normal when the index is already valid.
 		// Also skip the penalty when no index exists yet (fresh project — expected
 		// state).
-		if (indexCheck.isSuccess() && depsCheck.isInformational() && !depsCheck.isSuccess()) {
+		// Use !indexCheck.isError() (covers both SUCCESS and stale-but-loadable INFO)
+		// so we don't show the .deps warning when the index was built by the agent.
+		if (!indexCheck.isError() && indexCheck.code() != ErrorCode.NOT_INITIALIZED_INDEX && depsCheck.isInformational()
+				&& !depsCheck.isSuccess()) {
 			depsCheck = DiagnosticResult.success("No .deps files needed (index was written directly by agent)");
 		}
 		results.add(depsCheck);
