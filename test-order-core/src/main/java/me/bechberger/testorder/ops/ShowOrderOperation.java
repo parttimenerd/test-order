@@ -165,15 +165,29 @@ public final class ShowOrderOperation {
 
 	/**
 	 * Prints the show-order report (compact table or explain).
+	 *
+	 * @param displayLimit
+	 *            max rows to show in the table; -1 means unlimited
 	 */
 	public static void printReport(PrintStream out, List<OrderReportPrinter.RankedTest> scored, TestScorer scorer,
 			Set<String> changed, Set<String> changedTests, TestOrderState.ScoringWeights weights, boolean explain,
-			boolean includeTags, boolean showDepTotals, boolean fullNames) {
+			boolean includeTags, boolean showDepTotals, boolean fullNames, int displayLimit) {
 		if (explain) {
 			OrderReportPrinter.printExplainReport(out, scored, scorer, changed, changedTests, weights);
 		} else {
 			OrderReportPrinter.printShowOrderTable(out, scored, changed, changedTests, includeTags, showDepTotals,
-					fullNames);
+					fullNames, displayLimit);
 		}
+	}
+
+	/**
+	 * Prints the show-order report (compact table or explain). Uses unlimited
+	 * display (all rows shown).
+	 */
+	public static void printReport(PrintStream out, List<OrderReportPrinter.RankedTest> scored, TestScorer scorer,
+			Set<String> changed, Set<String> changedTests, TestOrderState.ScoringWeights weights, boolean explain,
+			boolean includeTags, boolean showDepTotals, boolean fullNames) {
+		printReport(out, scored, scorer, changed, changedTests, weights, explain, includeTags, showDepTotals, fullNames,
+				-1);
 	}
 }

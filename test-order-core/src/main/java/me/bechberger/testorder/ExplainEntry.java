@@ -129,13 +129,21 @@ public record ExplainEntry(
 			sb.append(String.format("      %-24s %+d%n", "Package proximity:", packageProximityPoints));
 		}
 
-		// dependency list (non-overlapping)
+		// dependency list (non-overlapping) — cap at 10 to avoid flooding
 		Set<String> nonOverlapping = new TreeSet<>(dependencies);
 		nonOverlapping.removeAll(overlappingDeps);
 		if (!nonOverlapping.isEmpty()) {
-			sb.append(String.format("      Other dependencies (%d):%n", nonOverlapping.size()));
+			int show = Math.min(nonOverlapping.size(), 10);
+			sb.append(String.format("      Other dependencies (%d, showing %d):%n", nonOverlapping.size(), show));
+			int shown = 0;
 			for (String dep : nonOverlapping) {
 				sb.append(String.format("        - %s%n", dep));
+				if (++shown >= show) {
+					break;
+				}
+			}
+			if (nonOverlapping.size() > show) {
+				sb.append(String.format("        ... and %d more%n", nonOverlapping.size() - show));
 			}
 		}
 

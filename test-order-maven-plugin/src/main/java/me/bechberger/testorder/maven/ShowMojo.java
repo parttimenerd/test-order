@@ -73,6 +73,20 @@ public class ShowMojo extends AbstractTestOrderMojo {
 	@Parameter(property = "testorder.show.filter")
 	private String filter;
 
+	/**
+	 * Maximum number of rows to display per module in the class-order table.
+	 * Defaults to 20 so large projects don't flood the terminal. Use -1 to show all
+	 * tests.
+	 *
+	 * <pre>
+	 * mvn test-order:show                              # show top 20 (default)
+	 * mvn test-order:show -Dtestorder.show.limit=50   # show top 50
+	 * mvn test-order:show -Dtestorder.show.limit=-1   # show all
+	 * </pre>
+	 */
+	@Parameter(property = "testorder.show.limit", defaultValue = "20")
+	private int displayLimit;
+
 	/** Number of top-scored test classes to always include (-1 = all affected). */
 	@Parameter(property = MavenPluginConfigKeys.SELECT_TOP_N, defaultValue = "-1")
 	private int topN;
@@ -136,7 +150,7 @@ public class ShowMojo extends AbstractTestOrderMojo {
 		}
 
 		ShowWorkflow.Options opts = new ShowWorkflow.Options(classes, effectiveMethods, effectiveMl, effectiveExplain,
-				fullNames, format, filter, topN, randomM, seed);
+				fullNames, format, filter, topN, randomM, seed, displayLimit);
 
 		// Resolve ML history dir (ML predictions generated in maven-plugin layer)
 		Path mlHistoryDir = resolveMLHistoryDir();

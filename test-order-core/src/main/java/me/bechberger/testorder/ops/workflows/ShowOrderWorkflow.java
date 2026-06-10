@@ -37,7 +37,12 @@ public final class ShowOrderWorkflow {
 	 * Computes the predicted test order. Does not print anything.
 	 */
 	public static ShowOrderResult compute(PluginContext ctx) throws IOException {
-		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.FULL);
+		boolean hasModuleScope = (ctx.testClassesDir() != null && java.nio.file.Files.isDirectory(ctx.testClassesDir()))
+				|| (ctx.testSourceRoot() != null && java.nio.file.Files.isDirectory(ctx.testSourceRoot()));
+		ChangeAnalysis.Options analysisOpts = hasModuleScope
+				? ChangeAnalysis.Options.FULL_FILTERED
+				: ChangeAnalysis.Options.FULL;
+		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, analysisOpts);
 
 		TestScorer scorer = a.buildScorer();
 		List<OrderReportPrinter.RankedTest> ranked = OrderReportPrinter.rankTests(a.allTests(), scorer, a.state());
@@ -117,31 +122,44 @@ public final class ShowOrderWorkflow {
 
 	/**
 	 * Prints a selection preview showing which tests would be selected and which
-	 * would remain.
+	 * would remain. Lists at most {@code MAX_PREVIEW_ROWS} entries per section to
+	 * avoid flooding the terminal.
 	 */
+	private static final int MAX_PREVIEW_ROWS = 20;
+
 	public static void printSelectionPreview(PrintStream out, TestSelector.Selection selection, boolean fullNames,
 			int topN, int randomM) {
 		out.println("--- select preview (topN=" + topN + ", randomM=" + randomM + ") ---");
 		out.println();
 		if (!selection.selected().isEmpty()) {
-			out.println("  Selected (" + selection.selected().size() + "):");
-			for (int i = 0; i < selection.selected().size(); i++) {
+			int total = selection.selected().size();
+			int show = Math.min(total, MAX_PREVIEW_ROWS);
+			out.println("  Selected (" + total + "):");
+			for (int i = 0; i < show; i++) {
 				String name = fullNames
 						? selection.selected().get(i)
 						: OrderReportPrinter.shortenClassName(selection.selected().get(i));
 				out.println("    " + (i + 1) + ". " + name);
+			}
+			if (total > MAX_PREVIEW_ROWS) {
+				out.println("    ... and " + (total - MAX_PREVIEW_ROWS) + " more");
 			}
 		} else {
 			out.println("  Selected: (none)");
 		}
 		out.println();
 		if (!selection.remaining().isEmpty()) {
-			out.println("  Remaining (" + selection.remaining().size() + "):");
-			for (int i = 0; i < selection.remaining().size(); i++) {
+			int total = selection.remaining().size();
+			int show = Math.min(total, MAX_PREVIEW_ROWS);
+			out.println("  Remaining (" + total + "):");
+			for (int i = 0; i < show; i++) {
 				String name = fullNames
 						? selection.remaining().get(i)
 						: OrderReportPrinter.shortenClassName(selection.remaining().get(i));
 				out.println("    " + (i + 1) + ". " + name);
+			}
+			if (total > MAX_PREVIEW_ROWS) {
+				out.println("    ... and " + (total - MAX_PREVIEW_ROWS) + " more");
 			}
 		} else {
 			out.println("  Remaining: (none)");

@@ -40,9 +40,12 @@ public final class OrderReportPrinter {
 
 	/**
 	 * Prints a compact table view of the ranked tests.
+	 *
+	 * @param displayLimit
+	 *            max rows to print; -1 means unlimited
 	 */
 	public static void printShowOrderTable(PrintStream out, List<RankedTest> ranked, Set<String> changed,
-			Set<String> changedTests, boolean includeTags, boolean showDepTotals, boolean fullNames) {
+			Set<String> changedTests, boolean includeTags, boolean showDepTotals, boolean fullNames, int displayLimit) {
 		out.println();
 		if (!changed.isEmpty()) {
 			out.println(
@@ -54,8 +57,15 @@ public final class OrderReportPrinter {
 		}
 		out.println();
 
+		// Apply display limit: only show top displayLimit rows (all stats still use
+		// full list)
+		int totalCount = ranked.size();
+		List<RankedTest> display = (displayLimit > 0 && ranked.size() > displayLimit)
+				? ranked.subList(0, displayLimit)
+				: ranked;
+
 		int maxName = "Test Class".length();
-		for (RankedTest entry : ranked) {
+		for (RankedTest entry : display) {
 			String displayName = fullNames ? entry.name() : shortenClassName(entry.name());
 			if (displayName.length() > maxName) {
 				maxName = displayName.length();
@@ -75,8 +85,8 @@ public final class OrderReportPrinter {
 					"-".repeat(8));
 		}
 
-		for (int i = 0; i < ranked.size(); i++) {
-			RankedTest entry = ranked.get(i);
+		for (int i = 0; i < display.size(); i++) {
+			RankedTest entry = display.get(i);
 			TestScorer.ScoreResult score = entry.score();
 			String displayName = fullNames ? entry.name() : shortenClassName(entry.name());
 			String deps = formatDeps(score.depOverlap(), score.depTotal(), showDepTotals);
@@ -101,16 +111,21 @@ public final class OrderReportPrinter {
 			}
 		}
 
-		// R12-4: Print summary line for quick overview on large projects
-		if (ranked.size() > 5) {
+		// Summary line: "Showing top N of M" when truncated, plus stats from full list
+		if (totalCount > 5) {
 			int minScore = ranked.stream().mapToInt(r -> r.score().score()).min().orElse(0);
 			int maxScore = ranked.stream().mapToInt(r -> r.score().score()).max().orElse(0);
 			long newCount = ranked.stream().filter(r -> r.score().isNew()).count();
 			long slowCount = ranked.stream().filter(r -> r.score().isSlow()).count();
 			long changedCount = ranked.stream().filter(r -> r.score().isChanged()).count();
 			StringBuilder summary = new StringBuilder();
-			summary.append("Total: ").append(ranked.size()).append(" tests | Score range: ").append(minScore)
-					.append("–").append(maxScore);
+			if (displayLimit > 0 && totalCount > displayLimit) {
+				summary.append("Showing top ").append(displayLimit).append(" of ").append(totalCount).append(" tests");
+				summary.append(" | use -Dtestorder.show.limit=-1 to show all");
+			} else {
+				summary.append("Total: ").append(totalCount).append(" tests");
+			}
+			summary.append(" | Score range: ").append(minScore).append("–").append(maxScore);
 			if (newCount > 0)
 				summary.append(" | ").append(newCount).append(" NEW");
 			if (slowCount > 0)

@@ -65,13 +65,24 @@ public final class ShowWorkflow {
 	 *            selection preview: random M diversity tests
 	 * @param seed
 	 *            selection preview: random seed (null = non-deterministic)
+	 * @param displayLimit
+	 *            max rows to display in the class-order table per module (default
+	 *            20; use -1 to show all)
 	 */
 	public record Options(boolean classes, Boolean methods, Boolean ml, boolean explain, boolean fullNames,
-			String format, String filter, int topN, int randomM, Long seed) {
+			String format, String filter, int topN, int randomM, Long seed, int displayLimit) {
 
 		/** Default: show classes, auto-detect methods and ML, text format. */
 		public static Options defaults() {
-			return new Options(true, null, null, false, false, "text", null, -1, 10, null);
+			return new Options(true, null, null, false, false, "text", null, -1, 10, null, 20);
+		}
+
+		/**
+		 * Backward-compatible constructor without displayLimit (defaults to 20).
+		 */
+		public Options(boolean classes, Boolean methods, Boolean ml, boolean explain, boolean fullNames, String format,
+				String filter, int topN, int randomM, Long seed) {
+			this(classes, methods, ml, explain, fullNames, format, filter, topN, randomM, seed, 20);
 		}
 
 		public boolean isJson() {
@@ -117,8 +128,17 @@ public final class ShowWorkflow {
 	 * @return combined result
 	 */
 	public static ShowResult compute(PluginContext ctx, Options opts, Path mlHistoryDir) throws IOException {
-		// Single shared analysis pass
-		ChangeAnalysis.Result analysis = ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.FULL);
+		// Single shared analysis pass. When a specific module is targeted
+		// (testClassesDir
+		// or testSourceRoot is set), filter the shared reactor index to this module's
+		// tests only so that `show` from a submodule doesn't display every module's
+		// tests.
+		boolean hasModuleScope = (ctx.testClassesDir() != null && java.nio.file.Files.isDirectory(ctx.testClassesDir()))
+				|| (ctx.testSourceRoot() != null && java.nio.file.Files.isDirectory(ctx.testSourceRoot()));
+		ChangeAnalysis.Options analysisOpts = hasModuleScope
+				? ChangeAnalysis.Options.FULL_FILTERED
+				: ChangeAnalysis.Options.FULL;
+		ChangeAnalysis.Result analysis = ChangeAnalysis.analyze(ctx, analysisOpts);
 
 		// ── Class order ──────────────────────────────────────────────
 		ShowOrderWorkflow.ShowOrderResult classOrder = null;
@@ -230,7 +250,8 @@ public final class ShowWorkflow {
 				} else {
 					ShowOrderOperation.printReport(out, ranked, result.classOrder().scorer(),
 							result.classOrder().changedClasses(), result.classOrder().changedTests(),
-							result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
+							result.classOrder().weights(), opts.explain(), true, true, opts.fullNames(),
+							opts.displayLimit());
 				}
 
 				// Hint when all scores are zero — users see a wall of zeros with no guidance
@@ -394,7 +415,7 @@ public final class ShowWorkflow {
 					agg.tests.size(), agg.affectedCount, agg.sumScores, agg.maxScore, status));
 			ShowOrderOperation.printReport(out, agg.tests, result.classOrder().scorer(),
 					result.classOrder().changedClasses(), result.classOrder().changedTests(),
-					result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
+					result.classOrder().weights(), opts.explain(), true, true, opts.fullNames(), opts.displayLimit());
 		}
 
 		if (!unknown.isEmpty()) {
@@ -402,7 +423,7 @@ public final class ShowWorkflow {
 			out.println("── Module: (unknown) (" + unknown.size() + " tests) ──");
 			ShowOrderOperation.printReport(out, unknown, result.classOrder().scorer(),
 					result.classOrder().changedClasses(), result.classOrder().changedTests(),
-					result.classOrder().weights(), opts.explain(), true, true, opts.fullNames());
+					result.classOrder().weights(), opts.explain(), true, true, opts.fullNames(), opts.displayLimit());
 		}
 	}
 
