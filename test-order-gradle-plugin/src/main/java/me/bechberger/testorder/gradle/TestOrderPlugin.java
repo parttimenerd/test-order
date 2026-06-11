@@ -493,12 +493,25 @@ public class TestOrderPlugin implements Plugin<Project> {
                     testJavaVersion = JavaVersion.current().ordinal() + 1;
                 }
                 if (testJavaVersion < 17) {
-                    project.getLogger().warn(
-                            "[test-order] Skipping test task '{}' in project '{}': test JVM is Java {} "
-                                    + "but test-order requires Java 17+. "
-                                    + "Upgrade the test toolchain to Java 17 or higher to enable test ordering.",
-                            testTask.getName(), project.getPath(), testJavaVersion);
-                    return;
+                    // For test-order's own derived tasks (testOrderLearn, testOrderSelect, …),
+                    // the project toolchain (e.g. JDK 8 in reactor-core) is inherited via
+                    // withType<Test>().configureEach but should not block us — those tasks
+                    // run the test-order agent which requires JDK 17+.  Unset the inherited
+                    // launcher so the task falls back to the Gradle daemon JVM (≥ 17).
+                    if (testTask.getName().startsWith("testOrder")) {
+                        testTask.getJavaLauncher().set((org.gradle.jvm.toolchain.JavaLauncher) null);
+                        project.getLogger().info(
+                                "[test-order] Task '{}' in project '{}' inherited a JDK {} toolchain; "
+                                        + "resetting to daemon JVM for test-order compatibility.",
+                                testTask.getName(), project.getPath(), testJavaVersion);
+                    } else {
+                        project.getLogger().warn(
+                                "[test-order] Skipping test task '{}' in project '{}': test JVM is Java {} "
+                                        + "but test-order requires Java 17+. "
+                                        + "Upgrade the test toolchain to Java 17 or higher to enable test ordering.",
+                                testTask.getName(), project.getPath(), testJavaVersion);
+                        return;
+                    }
                 }
             } catch (Exception ignored) {
                 // Can't determine version — proceed optimistically
