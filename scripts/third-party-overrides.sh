@@ -51,8 +51,12 @@ detect_extra_mvn_args() {
         spring-ai) echo "-Dmaven.test.failure.ignore=true" ;;
         # cds-feature-attachments: integration-tests module requires a running server;
         # exclude it and focus on the core cds-feature-attachments module.
-        # Also exclude coverage-report (report-only, no tests) and the samples module.
-        cds-feature-attachments) echo "-Dmaven.test.failure.ignore=true -pl '!integration-tests,!coverage-report'" ;;
+        # Use positive selection (-pl <modules> -am) since Maven's !exclude syntax
+        # does not propagate exclusion to child modules of the excluded parent.
+        # NOTE: The cds-maven-plugin:cds.build goal requires @sap/cds CLI (npm install -g @sap/cds).
+        # Without it, the build fails with exit 127 (command not found). Skip this project
+        # if @sap/cds is not available.
+        cds-feature-attachments) echo "-Dmaven.test.failure.ignore=true -pl 'cds-feature-attachments,storage-targets/cds-feature-attachments-fs,storage-targets/cds-feature-attachments-oss' -am" ;;
         *)          echo "" ;;
     esac
 }
@@ -175,6 +179,9 @@ detect_gradle_java_home() {
         # micronaut-core uses Gradle 9.4; earlier SAP JDK 25 builds printed "25.0.x" which
         # IntelliJ's JavaVersion.parse couldn't parse. Current 25+36-LTS prints "25" and works.
         micronaut-core) _sdkman_java_home "25-sapmchn" ;;
+        # spring-boot uses Gradle 9.4.1 and requires Java 25 for some modules
+        # (enforced via javaToolchains; building with Java 21 fails for those modules).
+        spring-boot) _sdkman_java_home "25-sapmchn" ;;
         *) echo "" ;;
     esac
 }
