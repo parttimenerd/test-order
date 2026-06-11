@@ -504,6 +504,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     boolean overrideToolchain = "true".equalsIgnoreCase(
                             gradleOrSystemProperty(project, "testorder.overrideToolchain"));
                     if (isTestOrderTask || overrideToolchain) {
+                        boolean overrideSucceeded = false;
                         try {
                             int currentVersion = JavaVersion.current().ordinal() + 1;
                             var toolchainService = project.getExtensions()
@@ -518,6 +519,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                                         "[test-order] Task '{}' in project '{}' inherited a JDK {} toolchain; "
                                                 + "overriding with JDK {} for test-order compatibility.",
                                         testTask.getName(), project.getPath(), testJavaVersion, requestVersion);
+                                overrideSucceeded = true;
                             } else {
                                 project.getLogger().warn(
                                         "[test-order] Task '{}' in project '{}': JDK {} toolchain override requested "
@@ -526,10 +528,33 @@ public class TestOrderPlugin implements Plugin<Project> {
                                 return;
                             }
                         } catch (Exception e) {
-                            project.getLogger().warn(
-                                    "[test-order] Task '{}' in project '{}': failed to override JDK {} toolchain: {}",
-                                    testTask.getName(), project.getPath(), testJavaVersion, e.getMessage());
-                            return;
+                            // javaLauncher may be finalized (e.g. reactor-core sets finalizeValue()).
+                            // Fall back to overriding the executable directly in doFirst.
+                            project.getLogger().info(
+                                    "[test-order] Task '{}' in project '{}': javaLauncher is finalized; "
+                                            + "will override JVM executable via doFirst.",
+                                    testTask.getName(), project.getPath());
+                        }
+                        if (!overrideSucceeded) {
+                            // Executable-override fallback for finalized javaLauncher properties.
+                            // We use JAVA_HOME (current JVM) since we know it's ≥ 17 (this plugin
+                            // requires 17+ to load), and set it in doFirst to run after task config.
+                            final String javaHome = System.getProperty("java.home");
+                            if (javaHome == null) {
+                                project.getLogger().warn(
+                                        "[test-order] Task '{}' in project '{}': cannot override JDK {} toolchain "
+                                                + "— java.home system property not set. Skipping task.",
+                                        testTask.getName(), project.getPath(), testJavaVersion);
+                                return;
+                            }
+                            testTask.doFirst("testOrderOverrideJvm", t -> {
+                                String javaExe = javaHome + java.io.File.separator + "bin"
+                                        + java.io.File.separator + "java";
+                                ((Test) t).setExecutable(javaExe);
+                                project.getLogger().info(
+                                        "[test-order] Task '{}' in project '{}': overriding JVM executable to {}",
+                                        t.getName(), project.getPath(), javaExe);
+                            });
                         }
                     } else {
                         project.getLogger().warn(
