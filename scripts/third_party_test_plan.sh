@@ -222,6 +222,14 @@ detect_source_class() {
 detect_single_module() {
     local repo="$1"
     local dir="$THIRD_PARTY/$repo"
+    # Check for a per-repo override before running the heuristic.
+    # "NONE" means: run the full reactor, do not add -pl at all.
+    local override
+    override=$(detect_module_override "$repo")
+    if [[ -n "$override" ]]; then
+        echo "$override"
+        return
+    fi
     # Pick the module with the most test sources
     if [[ -f "$dir/pom.xml" ]] && grep -q "<modules>" "$dir/pom.xml"; then
         local best_mod="" best_count=0
@@ -798,7 +806,7 @@ phase_learn_maven() {
     local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
-    [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
+    [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
 
     # Run learn
     log "Running: mvn_learn ${mvn_args[*]}"
@@ -1263,7 +1271,7 @@ phase_order_maven() {
     local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
-    [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
+    [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
 
     # Run order mode (requires existing index from learn phase)
     log "Running: mvn clean test -Dtestorder.mode=order"
@@ -1308,7 +1316,7 @@ phase_select_maven() {
     local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
-    [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
+    [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
 
     # Phase 1: Select top-N tests
     log "Running: mvn clean me.bechberger:test-order-maven-plugin:affected test -Dtestorder.affected.topN=5"
@@ -1350,7 +1358,7 @@ phase_tiered_maven() {
     local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
-    [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
+    [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
 
     # Tier 1: Smoke tests (top 3)
     log "Tier 1: Smoke (top 3 tests)"
@@ -1412,7 +1420,7 @@ phase_bugs_maven() {
     [[ -n "$pkg" ]] && base_args+=("-Dtestorder.includePackages=$pkg")
 
     local mvn_args=("${base_args[@]}")
-    [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
+    [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
 
     # Ensure we have an index (learn first if needed)
     local idx
@@ -1516,7 +1524,7 @@ phase_full_maven() {
 
     # Build args for test+compile goals: need -pl $module -am so dependencies compile
     local mvn_args=("${base_args[@]}")
-    [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
+    [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
 
     # 1. Clean
     log "Step 1: Clean test-order data"
@@ -1711,7 +1719,7 @@ phase_auto_maven() {
     local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
-    [[ -n "$module" ]] && mvn_args+=(-pl "$module" -am)
+    [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
 
     # Auto mode: first run learns, subsequent runs order
     for i in 1 2 3 4; do

@@ -67,6 +67,16 @@ detect_extra_mvn_args() {
     esac
 }
 
+# Return the Maven submodule to use instead of the auto-detected one, or empty string.
+# Use when detect_single_module picks the wrong submodule (e.g. wrong test source dir).
+# Return the sentinel "NONE" to skip -pl scoping entirely (run the full reactor).
+detect_module_override() {
+    local repo="$1"
+    case "$repo" in
+        *) echo "" ;;
+    esac
+}
+
 # Return the dominant top-level test package for a repo (for includePackages).
 # When empty the heuristic in detect_test_package (third_party_test_plan.sh) is used.
 detect_package_override() {
