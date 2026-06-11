@@ -557,6 +557,23 @@ public class TestOrderPlugin implements Plugin<Project> {
                                         + "but test-order requires Java 17+. "
                                         + "Upgrade the test toolchain to Java 17 or higher to enable test ordering.",
                                 testTask.getName(), project.getPath(), testJavaVersion);
+                        // Filter test-order JARs out of this task's classpath so JUnit's
+                        // ServiceLoader doesn't try to load TelemetryListener (compiled for
+                        // Java 17) on a Java <17 JVM, which causes UnsupportedClassVersionError
+                        // and crashes every test executor. Done in doFirst so we don't
+                        // realize FileCollections at configuration time (which can finalize
+                        // task properties and clash with toolchain handling in Gradle 9.x).
+                        testTask.doFirst("testOrderRemoveJarsForOldJvm", t -> {
+                            Test tt = (Test) t;
+                            org.gradle.api.file.FileCollection cp = tt.getClasspath();
+                            tt.setClasspath(cp.filter(f -> {
+                                String n = f.getName();
+                                return !n.startsWith("test-order-junit-")
+                                        && !n.startsWith("test-order-core-")
+                                        && !n.startsWith("test-order-annotations-")
+                                        && !n.startsWith("test-order-testng-");
+                            }));
+                        });
                         return;
                     }
                 }
