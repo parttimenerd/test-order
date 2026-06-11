@@ -135,7 +135,7 @@ public final class GenerateDashboardOperation {
 		me.bechberger.testorder.PersistenceSupport.moveIntoPlace(temp, outputPath);
 
 		log.info("[test-order] Dashboard written to: " + outputPath);
-		log.info("[test-order] To open automatically: mvn test-order:dashboard -Dtestorder.dashboard.open=true");
+		log.info("[test-order] To open automatically: add -Dtestorder.dashboard.open=true");
 
 		return outputPath;
 	}
