@@ -1830,19 +1830,34 @@ mutate_add_method() {
     } {print}' "$src.bak" > "$src"
 }
 
-# mutate_body: flip the first `return true` to `return false` (or vice versa)
+# mutate_body: flip the first `return true` to `return false` (or vice versa),
+# or fall back to add_method if no injectable pattern exists.
+# Returns 0 if mutation was applied, 1 if fell back to add_method.
 mutate_body() {
     local src="$1"
     cp "$src" "$src.bak"
+    local mutated=0
     if grep -q "return true;" "$src"; then
         sed -i.tmp 's/return true;/return false; \/\* synthetic mutation \*\//' "$src"
+        mutated=1
     elif grep -q "return false;" "$src"; then
         sed -i.tmp 's/return false;/return true; \/\* synthetic mutation \*\//' "$src"
+        mutated=1
     else
-        # Fall back: flip first `== 0` to `== 1` in a return statement
-        sed -i.tmp 's/return \(.*\)== 0/return \1== 1 \/\* synthetic \*\//' "$src"
+        # Fall back: flip first `== 0` in a return statement to `== 1`
+        if grep -qE "return.*== 0" "$src"; then
+            sed -i.tmp 's/\(return.*\)== 0/\1== 1 \/\* synthetic \*\//' "$src"
+            mutated=1
+        fi
     fi
     rm -f "$src.tmp"
+
+    # If sed made no change, fall back to add_method (always works)
+    if [[ "$mutated" -eq 0 ]] || cmp -s "$src.bak" "$src"; then
+        # Restore from bak and use add_method instead
+        cp "$src.bak" "$src"
+        mutate_add_method "$src"
+    fi
 }
 
 # mutate_add_field: inject a private static field before the first non-import line
