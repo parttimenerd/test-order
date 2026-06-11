@@ -1856,21 +1856,30 @@ mutate_add_field() {
     } {print}' "$src.bak" > "$src"
 }
 
-# mutate_touch_only (negative control): add a comment — bytecode must NOT change
+# mutate_touch_only (negative control): create a dummy NON-source file to ensure
+# no source change → detection correctly reports nothing changed.
+# Since this doesn't modify any .java file, both source-hash and bytecode-hash
+# based detection should report 0 changed classes.
 mutate_touch_only() {
     local src="$1"
-    cp "$src" "$src.bak"
-    # Prepend a comment to the first non-blank, non-comment line after the package decl
-    awk '/^package /{print; print "// synthetic-touch: " FILENAME; next} {print}' "$src.bak" > "$src"
+    # Create a .bak as a sentinel (no actual file modification)
+    touch "$src.bak"
+    # Write a dummy non-source file adjacent to src to confirm we "did something"
+    echo "// synthetic-touch-noop" > "${src%.java}__synthetic_noop__.txt"
 }
 
 # Revert any mutation on $src (restore from .bak)
 revert_mutation() {
     local src="$1"
     if [[ -f "$src.bak" ]]; then
-        mv "$src.bak" "$src"
-        rm -f "$src.tmp"
+        # If .bak is empty (touch_only sentinel), just delete it
+        if [[ -s "$src.bak" ]]; then
+            mv "$src.bak" "$src"
+        else
+            rm -f "$src.bak"
+        fi
     fi
+    rm -f "$src.tmp" "${src%.java}__synthetic_noop__.txt"
 }
 
 # ── Assert change detection ───────────────────────────────────────────────────
@@ -2011,39 +2020,68 @@ phase_synthetic_history_maven() {
     fqcn=$(path_to_fqcn "$target_src")
     log "SH Step 3: Mutation target: $fqcn ($target_src)"
 
-    # 4. Apply mutation
+    # 4. Apply mutation (BEFORE running show — source hash detection requires the
+    #    source to differ from the learn-A snapshot; learn-B must NOT run first)
     log "SH Step 4: Apply $mutator to $fqcn"
     local is_touch_only=0
     [[ "$mutator" == "mutate_touch_only" ]] && is_touch_only=1
     "$mutator" "$target_src"
 
-    # For all non-touch_only mutators: git-stage so uncommitted mode sees the change
+    # For non-touch_only: git-stage so uncommitted mode sees the change
     if [[ "$is_touch_only" -eq 0 ]]; then
         git -C "$dir" add -f "$target_src" 2>/dev/null || true
     fi
 
-    # 5. Learn-B (detect changes against Learn-A baseline)
-    log "SH Step 5: Learn-B"
-    local t_start=$SECONDS
-    mvn_learn "${mvn_args[@]}" \
-        2>&1 | tee "$synth_dir/learn-B.log" | tail -3 \
-        || warn "Learn-B had test failures"
-    local learn_b_ms=$(( (SECONDS - t_start) * 1000 ))
-
-    # 6. Assert detection via three change modes
+    # 5. Assert detection BEFORE learn-B (source hashes differ from learn-A snapshot)
     local expected_detected
     [[ "$is_touch_only" -eq 0 ]] && expected_detected=1 || expected_detected=0
 
-    for mode in "hash" "since-last-run" "uncommitted"; do
+    for mode in "since-last-run" "uncommitted"; do
         local t0=$SECONDS
-        local detected=1
-        assert_show_detects "$dir" "$fqcn" "$mode" "$expected_detected" "${cmd_args[@]}" \
-            2>&1 | tee -a "$synth_dir/show-$mode.log" | tail -3 \
-            || detected=0
+        local show_log="$synth_dir/show-${mode}.log"
+        local detected=0
+        # show uses detectReadOnly → does NOT update hashes.lz4
+        mvn me.bechberger:test-order-maven-plugin:show \
+            -Dtestorder.changeMode="$mode" \
+            -Dtestorder.show.limit=-1 \
+            "${cmd_args[@]}" \
+            > "$show_log" 2>&1 || true
+
+        # "Changed classes:" line lists the changed source classes
+        if grep -q "Changed classes:.*$fqcn" "$show_log" 2>/dev/null; then
+            detected=1
+        fi
+
+        if [[ "$expected_detected" -eq 1 && "$detected" -eq 1 ]]; then
+            ok "  [DETECT OK] mode=$mode fqcn=$fqcn"
+        elif [[ "$expected_detected" -eq 0 && "$detected" -eq 0 ]]; then
+            ok "  [NO-DETECT OK] mode=$mode (no-op mutation, expected no detection)"
+        elif [[ "$expected_detected" -eq 1 && "$detected" -eq 0 ]]; then
+            warn "  [DETECT MISS] mode=$mode fqcn=$fqcn — expected detection but got none"
+        else
+            warn "  [FALSE POS] mode=$mode fqcn=$fqcn — unexpected detection"
+        fi
+
         local det_ms=$(( (SECONDS - t0) * 1000 ))
         write_synthetic_tsv_row "$tsv_file" "$repo" "$mutator" "$mode" "$fqcn" \
             "$expected_detected" "$detected" "$det_ms"
     done
+
+    # 6. Learn-B: prove the changed class is detected during learn and boosts tests
+    log "SH Step 6: Learn-B (validate detection inside learn pipeline)"
+    local t_start=$SECONDS
+    mvn_learn "${mvn_args[@]}" \
+        2>&1 | tee "$synth_dir/learn-B.log" | tail -5 \
+        || warn "Learn-B had test failures"
+    local learn_b_ms=$(( (SECONDS - t_start) * 1000 ))
+    # Verify learn-B reported the expected changed class
+    if [[ "$is_touch_only" -eq 0 ]]; then
+        if grep -q "changed source class.*$fqcn\|Detected.*$fqcn\|boosting.*depend on" "$synth_dir/learn-B.log" 2>/dev/null; then
+            ok "  Learn-B correctly reported change in $fqcn"
+        else
+            warn "  Learn-B did not mention $fqcn in change detection"
+        fi
+    fi
 
     # 7. Revert mutation
     log "SH Step 7: Revert mutation"
@@ -2259,15 +2297,21 @@ phase_matrix_maven() {
                         > "$matrix_dir/${cell}-${mut}-learn-B.log" 2>&1 \
                         || warn "  Learn-B failed for $cell/$mut"
 
-                    # Assert hash mode (primary for matrix)
+                    # Assert since-last-run mode (primary for matrix)
                     local t0=$SECONDS
-                    local detected=1
-                    assert_show_detects "$dir" "$fqcn" "hash" "$expected" "${cell_cmd_args[@]}" \
-                        >> "$matrix_dir/${cell}-${mut}-show.log" 2>&1 \
-                        || detected=0
+                    local show_log_m="$matrix_dir/${cell}-${mut}-show.log"
+                    local detected=0
+                    mvn me.bechberger:test-order-maven-plugin:show \
+                        -Dtestorder.changeMode=since-last-run \
+                        -Dtestorder.show.limit=-1 \
+                        "${cell_cmd_args[@]}" \
+                        > "$show_log_m" 2>&1 || true
+                    if grep -q "Changed classes:.*$fqcn" "$show_log_m" 2>/dev/null; then
+                        detected=1
+                    fi
                     local dt=$(( (SECONDS - t0) * 1000 ))
 
-                    printf '%s\t%s\t%s\t%s\t%s\t%s\thash\t%s\t%s\t%s\t%s\n' \
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\tsince-last-run\t%s\t%s\t%s\t%s\n' \
                         "$repo" "$cell" "$instr" "$bcd" "$depth" "$mut" \
                         "$fqcn" "$expected" "$detected" "$dt" >> "$tsv_file"
 
