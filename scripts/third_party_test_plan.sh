@@ -1830,16 +1830,29 @@ select_mutation_target() {
     # If a hashes dir was provided, build an allowlist of subdirectory names
     # that have at least one hash file. Hash file names follow the convention
     # <groupId>-<artifactId>-hashes.lz4 (Maven) or <projectName>-hashes.lz4 (Gradle).
-    # We extract the last word before "-hashes.lz4" as a candidate subdir name fragment.
+    # We store all hyphen-separated suffixes of the artifact ID portion so that
+    # directory names like "log4j-api" (from "...log4j-api-hashes.lz4"), "codec-base"
+    # (from "...netty-codec-base-hashes.lz4"), and "handler" (from "...netty-handler-hashes.lz4")
+    # are all matched correctly.
     local -A hashed_dirs
     if [[ -n "$hashes_dir" && -d "$hashes_dir" ]]; then
         while IFS= read -r hf; do
-            local basename
-            basename=$(basename "$hf" "-hashes.lz4")
-            # basename is e.g. "io.netty-netty-handler" or "netty-handler" or "reactor-netty-core"
-            # Extract the last hyphen-separated segment as the likely subdir name
-            local last="${basename##*-}"
-            hashed_dirs["$last"]=1
+            local bn
+            bn=$(basename "$hf" "-hashes.lz4")
+            # Strip the bytecode/method/test suffix variants — only process *-hashes.lz4 directly
+            # bn is e.g. "io.netty-netty-codec-base" or "org.apache.logging.log4j-log4j-api"
+            # Strip leading dotted groupId segment (everything up to and including first '-' after dots)
+            # e.g. "io.netty-netty-codec-base" → strip "io.netty-" → "netty-codec-base"
+            local artid="${bn}"
+            # Remove leading "x.y.z-" groupId prefix (greedy match of dotted segments + dash)
+            artid="${artid#*[.]*-}"    # e.g. io.netty-netty-codec-base → netty-codec-base
+            # Store all non-empty hyphen-suffix combinations of the artId
+            local suffix="$artid"
+            while [[ -n "$suffix" ]]; do
+                hashed_dirs["$suffix"]=1
+                # Strip leading segment: "netty-codec-base" → "codec-base" → "base" → ""
+                [[ "$suffix" == *-* ]] && suffix="${suffix#*-}" || suffix=""
+            done
         done < <(find "$hashes_dir" -maxdepth 1 -name "*-hashes.lz4" 2>/dev/null)
     fi
 
@@ -1966,21 +1979,34 @@ mutate_body() {
     fi
 }
 
-# mutate_add_field: inject a private static field before the first non-import line
+# mutate_add_field: inject a synthetic field after the opening class/interface/enum line.
+# For interfaces (and annotations), uses "public static final" since private fields are
+# not valid Java there. For classes/enums uses "private static final".
 mutate_add_field() {
     local src="$1"
     cp "$src" "$src.bak"
-    # Match any class declaration (public/protected/final/abstract/package-private)
-    awk '/class [A-Z][A-Za-z0-9_]*/ && /^[[:space:]]*(public|protected|final|abstract|class|@)/ {
+    # Match class or interface/enum/annotation declaration at the top level
+    awk '
+    /^[[:space:]]*(public|protected|abstract|final|sealed|non-sealed|strictfp)?[[:space:]]*(public|protected|abstract|final|sealed|non-sealed|strictfp)?[[:space:]]*(interface|@interface|enum)[[:space:]][A-Z]/ {
+        print;
+        print "  public static final int __SYNTHETIC_PROBE = 1;";
+        next
+    }
+    /class [A-Z][A-Za-z0-9_]*/ && /^[[:space:]]*(public|protected|final|abstract|class|@)/ {
         print;
         print "  private static final int __SYNTHETIC_PROBE = 1;";
         next
     } {print}' "$src.bak" > "$src"
     # Fallback: if awk made no change (unusual layout), insert before final }
+    # Detect whether source is an interface/annotation to pick the right modifier.
     if cmp -s "$src.bak" "$src"; then
         cp "$src.bak" "$src"
-        awk 'BEGIN{found=0} /^}[[:space:]]*$/ && !found{
-            print "  private static final int __SYNTHETIC_PROBE = 1;";
+        local field_decl="private static final int __SYNTHETIC_PROBE = 1;"
+        if grep -qE '^[[:space:]]*(public[[:space:]]+)?@?interface[[:space:]]|^[[:space:]]*(public[[:space:]]+)?interface[[:space:]]' "$src.bak"; then
+            field_decl="public static final int __SYNTHETIC_PROBE = 1;"
+        fi
+        awk -v decl="  $field_decl" 'BEGIN{found=0} /^}[[:space:]]*$/ && !found{
+            print decl;
             found=1
         } {print}' "$src.bak" > "$src"
     fi
