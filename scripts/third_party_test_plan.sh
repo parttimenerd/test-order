@@ -15,6 +15,15 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
+# Portable in-place sed: macOS requires -i '' while GNU sed (Linux) uses -i.
+# Use -i.bak on both platforms and delete the backup immediately.
+sedi() {
+    local args=("$@")
+    local file="${args[-1]}"
+    sed -i.bak "${args[@]}"
+    rm -f "${file}.bak"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 THIRD_PARTY="$ROOT_DIR/third-party"
@@ -549,7 +558,7 @@ content = re.sub(r'pluginManagement\s*\{[^}]*repositories\s*\{', inject, content
 open('$settings_file', 'w').write(content)
 "
                 else
-                    sed -i '' '/pluginManagement {/a\
+                    sedi '/pluginManagement {/a\
     repositories {\
         mavenLocal()\
         gradlePluginPortal()\
@@ -558,7 +567,7 @@ open('$settings_file', 'w').write(content)
 ' "$settings_file"
                 fi
             else
-                sed -i '' '1i\
+                sedi '1i\
 pluginManagement {\
     repositories {\
         mavenLocal()\
@@ -577,11 +586,11 @@ pluginManagement {\
         if ! grep -q "mavenLocal" "$settings_file"; then
             if grep -q "pluginManagement" "$settings_file"; then
                 if grep -q "repositories" "$settings_file"; then
-                    sed -i '' '/repositories {/a\
+                    sedi '/repositories {/a\
         mavenLocal()
 ' "$settings_file"
                 else
-                    sed -i '' '/pluginManagement {/a\
+                    sedi '/pluginManagement {/a\
     repositories {\
         mavenLocal()\
         gradlePluginPortal()\
@@ -590,7 +599,7 @@ pluginManagement {\
 ' "$settings_file"
                 fi
             else
-                sed -i '' '1i\
+                sedi '1i\
 pluginManagement {\
     repositories {\
         mavenLocal()\
@@ -623,12 +632,12 @@ pluginManagement {\
         # Kotlin DSL multi-module: declare with apply=false so the plugin is on the classpath
         # but NOT applied to the root project (which may lack the Java plugin / testRuntimeOnly).
         # The subprojects block below then applies only to subprojects that have the java plugin.
-        sed -i '' '/^plugins {/a\
+        sedi '/^plugins {/a\
     id("me.bechberger.test-order") version "'"$PLUGIN_VERSION"'" apply false
 ' "$build_file"
     elif [[ "$build_file" == *.kts ]]; then
         # Kotlin DSL single-module: root project has Java plugin, apply directly.
-        sed -i '' '/^plugins {/a\
+        sedi '/^plugins {/a\
     id("me.bechberger.test-order") version "'"$PLUGIN_VERSION"'"
 ' "$build_file"
     elif [[ "$is_multi_module" == "true" ]]; then
@@ -691,7 +700,7 @@ PYEOF
             log "  → injected test-order classpath into existing buildscript{} in $build_file"
         else
             # No existing buildscript{}; prepend one before plugins{}
-            sed -i '' '/^plugins {/i\
+            sedi '/^plugins {/i\
 buildscript {\
     repositories { mavenLocal() }\
     dependencies { classpath "me.bechberger:test-order-gradle-plugin:'"$PLUGIN_VERSION"'" }\
@@ -700,7 +709,7 @@ buildscript {\
 ' "$build_file"
         fi
     else
-        sed -i '' '/^plugins {/a\
+        sedi '/^plugins {/a\
     id "me.bechberger.test-order" version "'"$PLUGIN_VERSION"'"
 ' "$build_file"
     fi
@@ -754,7 +763,7 @@ buildscript {\
     type detect_gradle_settings_remove &>/dev/null && remove_pattern=$(detect_gradle_settings_remove "$repo" 2>/dev/null || echo "")
     if [[ -n "$remove_pattern" && -n "$settings_file" ]]; then
         # settings_file already backed up above; just modify in place
-        sed -i '' "/$remove_pattern/d" "$settings_file"
+        sedi "/$remove_pattern/d" "$settings_file"
         log "  → removed lines matching '$remove_pattern' from $settings_file"
     fi
 
@@ -765,7 +774,7 @@ buildscript {\
         local daemon_jvm_file="$dir/gradle/gradle-daemon-jvm.properties"
         if [[ -f "$daemon_jvm_file" ]]; then
             cp "$daemon_jvm_file" "$daemon_jvm_file.bak"
-            sed -i '' "s/^toolchainVendor=.*/toolchainVendor=$daemon_vendor/" "$daemon_jvm_file"
+            sedi "s/^toolchainVendor=.*/toolchainVendor=$daemon_vendor/" "$daemon_jvm_file"
             log "  → patched gradle-daemon-jvm.properties: toolchainVendor=$daemon_vendor"
         fi
     fi
@@ -814,7 +823,7 @@ phase_learn_maven() {
     # Inject plugin
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+    local mvn_args=(-B -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
@@ -1296,7 +1305,7 @@ phase_order_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+    local mvn_args=(-B -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
@@ -1341,7 +1350,7 @@ phase_select_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+    local mvn_args=(-B -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
@@ -1383,7 +1392,7 @@ phase_tiered_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+    local mvn_args=(-B -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
@@ -1439,7 +1448,7 @@ phase_bugs_maven() {
     compiler_args=$(detect_compiler_args "$repo")
     local extra_mvn_args=""
     type detect_extra_mvn_args &>/dev/null && extra_mvn_args=$(detect_extra_mvn_args "$repo")
-    local base_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+    local base_args=(-B -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                      -Dmaven.build.cache.enabled=false)
     [[ -n "$compiler_args" ]] && base_args+=($compiler_args)
     if [[ -n "$extra_mvn_args" ]]; then
@@ -1541,7 +1550,7 @@ phase_full_maven() {
     compiler_args=$(detect_compiler_args "$repo")
     local extra_mvn_args=""
     type detect_extra_mvn_args &>/dev/null && extra_mvn_args=$(detect_extra_mvn_args "$repo")
-    local base_args=(-B --fail-at-end -Denforcer.skip=true -Djacoco.skip=true
+    local base_args=(-B --fail-at-end -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                      -Dmaven.build.cache.enabled=false)
     [[ -n "$compiler_args" ]] && base_args+=($compiler_args)
     if [[ -n "$extra_mvn_args" ]]; then
@@ -1996,7 +2005,7 @@ phase_synthetic_history_maven() {
     compiler_args=$(detect_compiler_args "$repo")
     local extra_mvn_args=""
     type detect_extra_mvn_args &>/dev/null && extra_mvn_args=$(detect_extra_mvn_args "$repo")
-    local base_args=(-B --fail-at-end -Denforcer.skip=true -Djacoco.skip=true
+    local base_args=(-B --fail-at-end -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                      -Dmaven.build.cache.enabled=false)
     [[ -n "$compiler_args" ]] && base_args+=($compiler_args)
     if [[ -n "$extra_mvn_args" ]]; then
@@ -2230,7 +2239,7 @@ phase_matrix_maven() {
     compiler_args=$(detect_compiler_args "$repo")
     local extra_mvn_args=""
     type detect_extra_mvn_args &>/dev/null && extra_mvn_args=$(detect_extra_mvn_args "$repo")
-    local base_args=(-B --fail-at-end -Denforcer.skip=true -Djacoco.skip=true
+    local base_args=(-B --fail-at-end -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                      -Dmaven.build.cache.enabled=false)
     [[ -n "$compiler_args" ]] && base_args+=($compiler_args)
     if [[ -n "$extra_mvn_args" ]]; then
@@ -2378,7 +2387,7 @@ phase_auto_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
-    local mvn_args=(-B -Denforcer.skip=true -Djacoco.skip=true
+    local mvn_args=(-B -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)

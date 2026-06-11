@@ -203,6 +203,8 @@ detect_gradle_java_home() {
         # mockito uses Gradle 8.14.2 which fails with Kotlin DSL compilation on JDK 25
         # (IntelliJ's JavaVersion.parse doesn't understand "25.0.x").
         mockito) _sdkman_java_home "21-sapmchn" ;;
+        # reactor-core: system java-21 on thinkstation is a JRE (no javac); use SAP JDK 21.
+        reactor-core) _sdkman_java_home "21-sapmchn" ;;
         # micronaut-core uses Gradle 9.4; earlier SAP JDK 25 builds printed "25.0.x" which
         # IntelliJ's JavaVersion.parse couldn't parse. Current 25+36-LTS prints "25" and works.
         micronaut-core) _sdkman_java_home "25-sapmchn" ;;
@@ -257,7 +259,7 @@ detect_gradle_settings_remove() {
         # foojay-resolver-convention tries to download Eclipse Temurin from foojay.io,
         # which fails on aarch64 macOS (no download URL). Remove it so Gradle falls back
         # to using the JDK specified via org.gradle.java.installations.paths (in gradle.properties).
-        okhttp) echo "foojay-resolver-convention" ;;
+        okhttp|reactor-core) echo "foojay-resolver-convention" ;;
         *) echo "" ;;
     esac
 }

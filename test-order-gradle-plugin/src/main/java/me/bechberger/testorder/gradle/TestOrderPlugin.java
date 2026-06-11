@@ -36,6 +36,7 @@ import org.gradle.api.artifacts.ExternalModuleDependency;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.testing.Test;
+import org.gradle.api.JavaVersion;
 import org.gradle.process.CommandLineArgumentProvider;
 
 import me.bechberger.testorder.dashboard.DashboardResources;
@@ -476,6 +477,31 @@ public class TestOrderPlugin implements Plugin<Project> {
         project.getTasks().withType(Test.class).configureEach(testTask -> {
             if (testTask.getName().startsWith("testOrder")) {
                 return;
+            }
+
+            // Bug #42: test-order-junit is compiled for Java 17 (class file version 61).
+            // If the test task uses a toolchain < 17, the JVM can't load TelemetryListener
+            // → UnsupportedClassVersionError at test startup, crashing every executor.
+            // Detect via the task's JavaLauncher toolchain; fall back to current JVM.
+            try {
+                int testJavaVersion = 0;
+                var launcher = testTask.getJavaLauncher();
+                if (launcher.isPresent()) {
+                    testJavaVersion = launcher.get().getMetadata().getLanguageVersion().asInt();
+                }
+                if (testJavaVersion == 0) {
+                    testJavaVersion = JavaVersion.current().ordinal() + 1;
+                }
+                if (testJavaVersion < 17) {
+                    project.getLogger().warn(
+                            "[test-order] Skipping test task '{}' in project '{}': test JVM is Java {} "
+                                    + "but test-order requires Java 17+. "
+                                    + "Upgrade the test toolchain to Java 17 or higher to enable test ordering.",
+                            testTask.getName(), project.getPath(), testJavaVersion);
+                    return;
+                }
+            } catch (Exception ignored) {
+                // Can't determine version — proceed optimistically
             }
 
             // Per-task mode override: -Dtestorder.mode.<taskName>=order (e.g.
