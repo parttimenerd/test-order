@@ -2160,6 +2160,146 @@ phase_synthetic_history_all_maven() {
     done
 }
 
+# ── Phase: synthetic-history (Gradle) ─────────────────────────────────────────
+phase_synthetic_history_gradle() {
+    local repo="$1"
+    local mutator="${2:-mutate_body}"
+    section "SYNTHETIC HISTORY: $repo (Gradle) mutator=$mutator"
+
+    local dir results extra_args override_java_home
+    _gradle_phase_init "$repo"
+    local dir="$THIRD_PARTY/$repo"
+    local results
+    results=$(result_dir "$repo")
+    local synth_dir="$results/synthetic"
+    mkdir -p "$synth_dir"
+    local tsv_file="$synth_dir/results.tsv"
+    [[ -f "$tsv_file" ]] || printf 'repo\tmutator\tchange_mode\tfqcn\texpected\tdetected\truntime_ms\n' > "$tsv_file"
+
+    cd "$dir"
+    inject_gradle_plugin "$repo"
+
+    local learn_extra_args
+    learn_extra_args=$(type detect_gradle_learn_extra_args &>/dev/null \
+        && detect_gradle_learn_extra_args "$repo" 2>/dev/null || echo "")
+
+    # 1. Clean state
+    log "SH Step 1: Clean test-order data"
+    rm -rf "$dir/.test-order" 2>/dev/null
+    find "$dir" -maxdepth 5 -name ".test-order" -type d -exec rm -rf {} + 2>/dev/null || true
+    ok "Cleaned"
+
+    # 2. Learn-A
+    log "SH Step 2: Learn-A"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test \
+        -Dtestorder.mode=learn --no-daemon --no-build-cache --no-configuration-cache \
+        $extra_args ${learn_extra_args} \
+        2>&1 | tee "$synth_dir/learn-A.log" | tail -3 \
+        || warn "Learn-A had test failures (index may still be valid)"
+
+    local idx
+    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    if [[ -z "$idx" ]]; then
+        warn "No index after Learn-A. Skipping synthetic-history."
+        remove_gradle_plugin "$repo"
+        write_synthetic_tsv_row "$tsv_file" "$repo" "$mutator" "N/A" "N/A" "skip" "skip-no-index" "0"
+        return 0
+    fi
+    ok "Index: $idx"
+
+    # 3. Select mutation target
+    local target_src
+    target_src=$(select_mutation_target "$repo" "")
+    if [[ -z "$target_src" ]]; then
+        warn "No mutation target found for $repo — skipping"
+        remove_gradle_plugin "$repo"
+        write_synthetic_tsv_row "$tsv_file" "$repo" "$mutator" "N/A" "N/A" "skip" "skip-no-target" "0"
+        return 0
+    fi
+    local fqcn
+    fqcn=$(path_to_fqcn "$target_src")
+    log "SH Step 3: Mutation target: $fqcn ($target_src)"
+
+    # 4. Apply mutation
+    log "SH Step 4: Apply $mutator to $fqcn"
+    local is_touch_only=0
+    [[ "$mutator" == "mutate_touch_only" ]] && is_touch_only=1
+    "$mutator" "$target_src"
+
+    if [[ "$is_touch_only" -eq 0 ]]; then
+        git -C "$dir" add -f "$target_src" 2>/dev/null || true
+    fi
+
+    # 5. Assert detection via testOrderShow
+    local expected_detected
+    [[ "$is_touch_only" -eq 0 ]] && expected_detected=1 || expected_detected=0
+
+    for mode in "since-last-run" "uncommitted"; do
+        local t0=$SECONDS
+        local show_log="$synth_dir/show-${mutator}-${mode}.log"
+        local detected=0
+        # shellcheck disable=SC2086
+        JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderShow \
+            --no-daemon --no-build-cache --no-configuration-cache \
+            "-Dtestorder.changeMode=$mode" \
+            "-Dtestorder.show.limit=-1" \
+            $extra_args \
+            > "$show_log" 2>&1 || true
+
+        if grep -q "Changed classes:.*$fqcn\|$fqcn" "$show_log" 2>/dev/null; then
+            detected=1
+        fi
+
+        if [[ "$expected_detected" -eq 1 && "$detected" -eq 1 ]]; then
+            ok "  [DETECT OK] mode=$mode fqcn=$fqcn"
+        elif [[ "$expected_detected" -eq 0 && "$detected" -eq 0 ]]; then
+            ok "  [NO-DETECT OK] mode=$mode (no-op mutation, expected no detection)"
+        elif [[ "$expected_detected" -eq 1 && "$detected" -eq 0 ]]; then
+            warn "  [DETECT MISS] mode=$mode fqcn=$fqcn — expected detection but got none"
+        else
+            warn "  [FALSE POS] mode=$mode fqcn=$fqcn — unexpected detection"
+        fi
+
+        local det_ms=$(( (SECONDS - t0) * 1000 ))
+        write_synthetic_tsv_row "$tsv_file" "$repo" "$mutator" "$mode" "$fqcn" \
+            "$expected_detected" "$detected" "$det_ms"
+    done
+
+    # 6. Learn-B: prove the changed class is detected during learn
+    log "SH Step 6: Learn-B (validate detection inside learn pipeline)"
+    # shellcheck disable=SC2086
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderLearn \
+        --no-daemon --no-build-cache --no-configuration-cache \
+        $extra_args ${learn_extra_args} \
+        2>&1 | tee "$synth_dir/learn-B.log" | tail -5 \
+        || warn "Learn-B had test failures"
+
+    if [[ "$is_touch_only" -eq 0 ]]; then
+        if grep -q "changed source class.*$fqcn\|Detected.*$fqcn\|boosting.*depend on\|$fqcn" "$synth_dir/learn-B.log" 2>/dev/null; then
+            ok "  Learn-B correctly reported change in $fqcn"
+        else
+            warn "  Learn-B did not mention $fqcn in change detection"
+        fi
+    fi
+
+    # 7. Revert mutation
+    log "SH Step 7: Revert mutation"
+    revert_mutation "$target_src"
+    git -C "$dir" reset HEAD "$target_src" 2>/dev/null || true
+    git -C "$dir" checkout -- "$target_src" 2>/dev/null || true
+
+    ok "Synthetic-history complete for $repo (mutator=$mutator)"
+    remove_gradle_plugin "$repo"
+}
+
+phase_synthetic_history_all_gradle() {
+    local repo="$1"
+    for mut in mutate_body mutate_add_method mutate_add_field mutate_touch_only; do
+        phase_synthetic_history_gradle "$repo" "$mut" || true
+    done
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MATRIX PHASE: Run synthetic-history under a cartesian settings grid
 #
@@ -2455,6 +2595,7 @@ run_for_repo() {
             select)  phase_select_gradle "$repo" ;;
             bugs)    phase_bugs_gradle "$repo" ;;
             full)    phase_full_gradle "$repo" ;;
+            synthetic-history) phase_synthetic_history_all_gradle "$repo" ;;
             *)       warn "Gradle phase '$phase' not yet implemented for $repo" ;;
         esac
     else
