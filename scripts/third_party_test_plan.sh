@@ -30,7 +30,6 @@ source "$SCRIPT_DIR/third-party-overrides.sh" 2>/dev/null || true
 # Maven repos (use test-order-maven-plugin)
 MAVEN_REPOS=(
     "guava"
-    "netty"
     "jackson-databind"
     "gson"
     "jsoup"
@@ -85,7 +84,6 @@ MEDIUM_REPOS=(
 # Large repos for stress testing
 LARGE_REPOS=(
     "guava"
-    "netty"
     "hibernate-orm"
     "kafka"
     "spring-boot"
@@ -1742,6 +1740,11 @@ phase_auto_maven() {
 run_for_repo() {
     local repo="$1"
     local phase="${2:-full}"
+
+    if [[ ! -d "$THIRD_PARTY/$repo" ]]; then
+        warn "Skipping $repo — directory not found: $THIRD_PARTY/$repo"
+        return 0
+    fi
 
     if is_maven_repo "$repo"; then
         case "$phase" in

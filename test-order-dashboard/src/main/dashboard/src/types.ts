@@ -233,6 +233,10 @@ export interface DashboardData {
   staticAnalysis: StaticAnalysisData | null
   /** class→module map for cross-module dep coloring; absent for single-module projects */
   classToModule?: Record<string, string>
+  /** shared dictionary for memberDeps compression; indices in TestEntry/MethodEntry.memberDeps */
+  memberDict?: string[]
+  /** shared dictionary for deps compression; indices in TestEntry/MethodEntry.deps */
+  depDict?: string[]
 }
 
 /** Sort column definition for sidebar */

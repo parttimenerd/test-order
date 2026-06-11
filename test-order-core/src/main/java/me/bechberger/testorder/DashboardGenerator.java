@@ -275,6 +275,10 @@ public class DashboardGenerator {
 			}
 			tests.add(t);
 		}
+		// Compress memberDeps: replace repeated strings with integer indices into a
+		// shared dictionary. This reduces the 355MB jackson-databind dashboard to
+		// ~12MB.
+		compressMemberDeps(tests, root);
 		root.put("tests", tests);
 		// class→module lookup for DepGraph cross-module edge coloring (omitted for
 		// single-module projects to avoid bloat)
@@ -783,6 +787,90 @@ public class DashboardGenerator {
 	}
 
 	// ── Value types ──────────────────────────────────────────────────────────
+
+	/**
+	 * Compress memberDeps and deps string arrays into integer index arrays using a
+	 * shared dictionary. Mutates test entries in-place and adds "memberDict" and
+	 * "depDict" to root. Reduces dashboard size from ~355MB to ~12MB for large
+	 * projects (jackson-databind: 735 tests × 8 methods × 567 memberDeps each).
+	 */
+	@SuppressWarnings("unchecked")
+	private static void compressMemberDeps(List<Object> tests, Map<String, Object> root) {
+		// Check if any test has memberDeps
+		boolean hasMemberDeps = tests.stream().anyMatch(t -> {
+			Map<String, Object> tm = (Map<String, Object>) t;
+			return tm.get("memberDeps") != null || (tm.get("methods") != null && ((List<Object>) tm.get("methods"))
+					.stream().anyMatch(m -> ((Map<String, Object>) m).get("memberDeps") != null));
+		});
+
+		// Build separate dictionaries for member refs and class names
+		Map<String, Integer> memberDict = new LinkedHashMap<>();
+		Map<String, Integer> depDict = new LinkedHashMap<>();
+
+		for (Object test : tests) {
+			Map<String, Object> t = (Map<String, Object>) test;
+			if (hasMemberDeps)
+				collectMemberRefs(t.get("memberDeps"), memberDict);
+			collectMemberRefs(t.get("deps"), depDict);
+			List<Object> methods = (List<Object>) t.get("methods");
+			if (methods != null) {
+				for (Object method : methods) {
+					Map<String, Object> m = (Map<String, Object>) method;
+					if (hasMemberDeps)
+						collectMemberRefs(m.get("memberDeps"), memberDict);
+					collectMemberRefs(m.get("deps"), depDict);
+				}
+			}
+		}
+
+		// Replace string arrays with integer index arrays
+		for (Object test : tests) {
+			Map<String, Object> t = (Map<String, Object>) test;
+			if (hasMemberDeps)
+				t.put("memberDeps", toIndexArray(t.get("memberDeps"), memberDict));
+			t.put("deps", toIndexArray(t.get("deps"), depDict));
+			List<Object> methods = (List<Object>) t.get("methods");
+			if (methods != null) {
+				for (Object method : methods) {
+					Map<String, Object> m = (Map<String, Object>) method;
+					if (hasMemberDeps)
+						m.put("memberDeps", toIndexArray(m.get("memberDeps"), memberDict));
+					m.put("deps", toIndexArray(m.get("deps"), depDict));
+				}
+			}
+		}
+
+		if (hasMemberDeps)
+			root.put("memberDict", new ArrayList<>(memberDict.keySet()));
+		if (!depDict.isEmpty())
+			root.put("depDict", new ArrayList<>(depDict.keySet()));
+	}
+
+	@SuppressWarnings("unchecked")
+	private static void collectMemberRefs(Object memberDeps, Map<String, Integer> dict) {
+		if (!(memberDeps instanceof List))
+			return;
+		for (Object ref : (List<Object>) memberDeps) {
+			if (ref instanceof String s) {
+				dict.computeIfAbsent(s, k -> dict.size());
+			}
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<Integer> toIndexArray(Object memberDeps, Map<String, Integer> dict) {
+		if (!(memberDeps instanceof List))
+			return null;
+		List<Integer> indices = new ArrayList<>();
+		for (Object ref : (List<Object>) memberDeps) {
+			if (ref instanceof String s) {
+				Integer idx = dict.get(s);
+				if (idx != null)
+					indices.add(idx);
+			}
+		}
+		return indices.isEmpty() ? null : indices;
+	}
 
 	/**
 	 * Holds a test class name together with its score result and timing metrics.

@@ -1,4 +1,4 @@
-import type { DashboardData } from './types'
+import type { DashboardData, TestEntry, MethodEntry } from './types'
 
 const EMPTY: DashboardData = {
   project: { name: 'Unknown', generated: '', pluginVersion: '?', stateFilePath: '', indexFilePath: '' },
@@ -16,8 +16,39 @@ const EMPTY: DashboardData = {
   staticAnalysis: null,
 }
 
+/**
+ * Expand compressed arrays: replace integer index arrays with string arrays
+ * using the shared memberDict / depDict. Mutates entries in-place.
+ * Inverse of DashboardGenerator.compressMemberDeps().
+ */
+function expandCompressedArrays(tests: TestEntry[], raw: DashboardData): void {
+  const memberDict = raw.memberDict
+  const depDict = raw.depDict
+  if (!memberDict?.length && !depDict?.length) return
+  for (const t of tests) {
+    if (memberDict && Array.isArray(t.memberDeps)) {
+      ;(t as any).memberDeps = (t.memberDeps as unknown as number[]).map(i => memberDict[i])
+    }
+    if (depDict && Array.isArray(t.deps)) {
+      ;(t as any).deps = (t.deps as unknown as number[]).map(i => depDict[i])
+    }
+    if (t.methods) {
+      for (const m of t.methods) {
+        if (memberDict && Array.isArray(m.memberDeps)) {
+          ;(m as any).memberDeps = (m.memberDeps as unknown as number[]).map(i => memberDict[i])
+        }
+        if (depDict && Array.isArray(m.deps)) {
+          ;(m as any).deps = (m.deps as unknown as number[]).map(i => depDict[i])
+        }
+      }
+    }
+  }
+}
+
 export function normalizeDashboardData(raw: DashboardData | null): DashboardData {
   if (!raw) return { ...EMPTY }
+  const tests = raw.tests ?? []
+  expandCompressedArrays(tests, raw)
   return {
     project: raw.project ?? EMPTY.project,
     weights: raw.weights ?? EMPTY.weights,
@@ -26,12 +57,15 @@ export function normalizeDashboardData(raw: DashboardData | null): DashboardData
     medianDuration: raw.medianDuration ?? 0,
     changedClasses: raw.changedClasses ?? [],
     changedTestClasses: raw.changedTestClasses ?? [],
-    tests: raw.tests ?? [],
+    tests,
     runs: raw.runs ?? [],
     coverage: raw.coverage ?? null,
     ml: raw.ml ?? null,
     mutation: raw.mutation ?? null,
     staticAnalysis: raw.staticAnalysis ?? null,
+    classToModule: raw.classToModule,
+    memberDict: raw.memberDict,
+    depDict: raw.depDict,
   }
 }
 
