@@ -731,6 +731,8 @@ public class TestOrderPlugin implements Plugin<Project> {
             project.getLogger().lifecycle("[test-order] Offline learn mode: no agent, using build-time instrumentation");
             SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
             SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+            // Check whether any main classes dirs are declared at all (test-only modules have none).
+            boolean hasMainClassesDeclared = !mainSourceSet.getOutput().getClassesDirs().isEmpty();
             Path classesDir = mainSourceSet.getOutput().getClassesDirs().getFiles().stream()
                     .map(File::toPath)
                     .filter(Files::isDirectory)
@@ -741,7 +743,14 @@ public class TestOrderPlugin implements Plugin<Project> {
                     mainSourceSet.getOutput().getClassesDirs().getFiles());
 
             if (classesDir == null) {
-                project.getLogger().warn("[test-order] No compiled classes directory found — skipping offline instrumentation");
+                if (hasMainClassesDeclared) {
+                    // Main source set declared but dir not yet present — unusual, warn.
+                    project.getLogger().warn("[test-order] No compiled classes directory found — skipping offline instrumentation");
+                } else {
+                    // No main source at all (test-only module) — expected, quiet.
+                    project.getLogger().info("[test-order] No main classes for {} — skipping offline instrumentation (test-only module)",
+                            project.getName());
+                }
                 return;
             }
 

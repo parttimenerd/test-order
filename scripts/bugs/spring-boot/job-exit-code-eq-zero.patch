@@ -1,5 +1,5 @@
 diff --git a/module/spring-boot-batch/src/main/java/org/springframework/boot/batch/autoconfigure/JobExecutionExitCodeGenerator.java b/module/spring-boot-batch/src/main/java/org/springframework/boot/batch/autoconfigure/JobExecutionExitCodeGenerator.java
-index 18d82455..8abbc1ab 100644
+index 18d82455..4e4d0d7e 100644
 --- a/module/spring-boot-batch/src/main/java/org/springframework/boot/batch/autoconfigure/JobExecutionExitCodeGenerator.java
 +++ b/module/spring-boot-batch/src/main/java/org/springframework/boot/batch/autoconfigure/JobExecutionExitCodeGenerator.java
 @@ -41,7 +41,7 @@ public class JobExecutionExitCodeGenerator implements ApplicationListener<JobExe
@@ -7,7 +7,7 @@ index 18d82455..8abbc1ab 100644
  	public int getExitCode() {
  		for (JobExecution execution : this.executions) {
 -			if (execution.getStatus().ordinal() > 0) {
-+			if (execution.getStatus().ordinal() >= 0) {
++			if (execution.getStatus().ordinal() == 0) {
  				return execution.getStatus().ordinal();
  			}
  		}
