@@ -2199,7 +2199,7 @@ phase_synthetic_history_gradle() {
     log "SH Step 2: Learn-A"
     # shellcheck disable=SC2086
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest test \
-        -Dtestorder.mode=learn --no-daemon --no-build-cache --no-configuration-cache \
+        -Dtestorder.mode=learn --no-build-cache --no-configuration-cache \
         $extra_args ${learn_extra_args} \
         2>&1 | tee "$synth_dir/learn-A.log" | tail -3 \
         || warn "Learn-A had test failures (index may still be valid)"
@@ -2247,7 +2247,7 @@ phase_synthetic_history_gradle() {
         local detected=0
         # shellcheck disable=SC2086
         JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderShow \
-            --no-daemon --no-build-cache --no-configuration-cache \
+            --no-build-cache --no-configuration-cache \
             "-Dtestorder.changeMode=$mode" \
             "-Dtestorder.show.limit=-1" \
             $extra_args \
@@ -2276,7 +2276,7 @@ phase_synthetic_history_gradle() {
     log "SH Step 6: Learn-B (validate detection inside learn pipeline)"
     # shellcheck disable=SC2086
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderLearn \
-        --no-daemon --no-build-cache --no-configuration-cache \
+        --no-build-cache --no-configuration-cache \
         $extra_args ${learn_extra_args} \
         2>&1 | tee "$synth_dir/learn-B.log" | tail -5 \
         || warn "Learn-B had test failures"
