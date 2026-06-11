@@ -97,6 +97,48 @@ public class TestOrderPlugin implements Plugin<Project> {
         };
     }
 
+    /**
+     * A quieter log wrapper: maps info → debug so "New test class(es) detected" messages from
+     * non-targeted projects don't pollute output when running a single-module task in a
+     * multi-module build.
+     */
+    private static PluginLog wrapQuietLog(Project project) {
+        return new PluginLog() {
+            @Override
+            public void info(String message) {
+                project.getLogger().debug(message);
+            }
+
+            @Override
+            public void warn(String message) {
+                project.getLogger().warn(message);
+            }
+
+            @Override
+            public void debug(String message) {
+                project.getLogger().debug(message);
+            }
+        };
+    }
+
+    /**
+     * Returns true if the project is directly targeted by the current build invocation
+     * (i.e. the task names include a path that resolves to this project).
+     */
+    private static boolean isProjectTargeted(Project project) {
+        List<String> taskNames = project.getGradle().getStartParameter().getTaskNames();
+        String projectPath = project.getPath(); // e.g. ":micronaut-core"
+        for (String task : taskNames) {
+            // Task names can be ":proj:taskName", "proj:taskName", "taskName" (root), etc.
+            if (task.startsWith(projectPath + ":") || task.startsWith(projectPath.substring(1) + ":")
+                    || (!task.contains(":") && project == project.getRootProject())) {
+                return true;
+            }
+        }
+        // Also targeted if this is the only project or there are no path-qualified tasks
+        return taskNames.isEmpty() || taskNames.stream().noneMatch(t -> t.contains(":"));
+    }
+
     @Override
     public void apply(Project project) {
         // Guard: only apply once (init-script + build.gradle can both try)
@@ -290,12 +332,14 @@ public class TestOrderPlugin implements Plugin<Project> {
         if (isJUnit4OnTestClasspath(project)) {
             if (isJUnit5OnTestClasspath(project) || isJUnitVintageOnTestClasspath(project)) {
                 // JUnit 4 tests running via Jupiter or via JUnit Vintage engine on the JUnit Platform
-                project.getLogger().warn("[test-order] JUnit 4 dependency detected alongside JUnit 5. "
+                logOnceOnRootProject(project, "testorder.internal.junit4With5Warned",
+                        "[test-order] JUnit 4 dependency detected alongside JUnit 5. "
                         + "test-order only supports JUnit 5 (Jupiter) and TestNG — "
                         + "JUnit 4 tests will not be reordered or tracked. "
                         + "Consider migrating to JUnit 5 or using the JUnit Vintage engine.");
             } else {
-                project.getLogger().warn("[test-order] JUnit 4 dependency detected but no JUnit 5 (Jupiter) found. "
+                logOnceOnRootProject(project, "testorder.internal.junit4OnlyWarned",
+                        "[test-order] JUnit 4 dependency detected but no JUnit 5 (Jupiter) found. "
                         + "test-order does NOT support JUnit 4 — tests will not be reordered or tracked. "
                         + "Please migrate to JUnit 5 or add the JUnit Vintage engine with "
                         + "junit-jupiter-engine on the test classpath.");
@@ -483,7 +527,11 @@ public class TestOrderPlugin implements Plugin<Project> {
         String propMode = gradleOrSystemProperty(project, "testorder.mode");
         if (propMode != null && !propMode.isBlank()) mode = propMode;
 
-        PluginContext pctx = buildPluginContext(project, ext);
+        // Use a quieter log for projects not explicitly targeted — prevents "New test class(es)
+        // detected" spam across all 38+ projects when only one module is being shown/tested.
+        boolean targeted = isProjectTargeted(project);
+        PluginContext pctx = targeted ? buildPluginContext(project, ext)
+                : buildPluginContextWithLog(project, ext, wrapQuietLog(project));
         Path rootDir = project.getRootProject().getProjectDir().toPath();
         File indexFile = ext.getIndexFile().getAsFile().get();
 
@@ -2339,6 +2387,10 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     static PluginContext buildPluginContext(Project project, TestOrderExtension ext) {
         return buildPluginContextBuilder(project, ext).build();
+    }
+
+    static PluginContext buildPluginContextWithLog(Project project, TestOrderExtension ext, PluginLog log) {
+        return buildPluginContextBuilder(project, ext).log(log).build();
     }
 
     // -----------------------------------------------------------------------
