@@ -208,6 +208,9 @@ detect_gradle_java_home() {
         mockito) _sdkman_java_home "21-sapmchn" ;;
         # reactor-core: system java-21 on thinkstation is a JRE (no javac); use SAP JDK 21.
         reactor-core) _sdkman_java_home "21-sapmchn" ;;
+        # opentelemetry: uses toolchain languageVersion=21; system JDK may be a JRE.
+        # SAP JDK 25 can compile with --release 21 and has javac on PATH.
+        opentelemetry) _sdkman_java_home "25-sapmchn" ;;
         # micronaut-core uses Gradle 9.4; earlier SAP JDK 25 builds printed "25.0.x" which
         # IntelliJ's JavaVersion.parse couldn't parse. Current 25+36-LTS prints "25" and works.
         micronaut-core) _sdkman_java_home "25-sapmchn" ;;
