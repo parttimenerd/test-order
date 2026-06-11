@@ -3066,22 +3066,9 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static void ensureJdk17OrHigher(Project project, Test task) {
-        // Check toolchain version lazily to avoid resolving providers at config time.
-        // If we can't determine it yet, use a doFirst check.
-        boolean needsOverride = false;
-        try {
-            var launcher = task.getJavaLauncher();
-            if (launcher.isPresent()) {
-                int v = launcher.get().getMetadata().getLanguageVersion().asInt();
-                needsOverride = v < 17;
-            }
-        } catch (Exception ignored) {
-            // Property not yet resolved; assume override may be needed.
-            needsOverride = true;
-        }
-        if (!needsOverride) {
-            return;
-        }
+        // Derived tasks (testOrderLearn etc.) inherit the project toolchain convention.
+        // Always try to upgrade to ≥ 17 via JavaToolchainService; if the property is
+        // already finalized, fall back to overriding the executable in doFirst.
         boolean overrideSucceeded = false;
         try {
             var toolchainService = project.getExtensions()
