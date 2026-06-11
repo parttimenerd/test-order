@@ -1805,13 +1805,48 @@ phase_full_maven() {
 # Pick a non-test .java file from src/main/java that is actually referenced by
 # at least one test class name (heuristic: the test is named FooTest → Foo is
 # a good target).  Falls back to the first available source file.
+#
+# Optional third arg: path to hashes directory (.test-order/hashes/).
+# When provided, only files in submodule directories that have a corresponding
+# hash file are considered. This prevents selecting targets from modules that
+# did not run during Learn-A (which would make since-last-run detection fail).
 # Returns: full path to the .java file
 select_mutation_target() {
     local repo="$1"
     local module="${2:-}"
+    local hashes_dir="${3:-}"
     local dir="$THIRD_PARTY/$repo"
     local search_root="$dir"
     [[ -n "$module" && "$module" != "NONE" ]] && search_root="$dir/$module"
+
+    # If a hashes dir was provided, build an allowlist of subdirectory names
+    # that have at least one hash file. Hash file names follow the convention
+    # <groupId>-<artifactId>-hashes.lz4 (Maven) or <projectName>-hashes.lz4 (Gradle).
+    # We extract the last word before "-hashes.lz4" as a candidate subdir name fragment.
+    local -A hashed_dirs
+    if [[ -n "$hashes_dir" && -d "$hashes_dir" ]]; then
+        while IFS= read -r hf; do
+            local basename
+            basename=$(basename "$hf" "-hashes.lz4")
+            # basename is e.g. "io.netty-netty-handler" or "netty-handler" or "reactor-netty-core"
+            # Extract the last hyphen-separated segment as the likely subdir name
+            local last="${basename##*-}"
+            hashed_dirs["$last"]=1
+        done < <(find "$hashes_dir" -maxdepth 1 -name "*-hashes.lz4" 2>/dev/null)
+    fi
+
+    # Returns true if a source file path is in a module that had a hash snapshot.
+    _has_hash() {
+        local src="$1"
+        if [[ "${#hashed_dirs[@]}" -eq 0 ]]; then
+            return 0  # no filter — allow all
+        fi
+        # Extract the first path component below $dir
+        local rel="${src#$dir/}"
+        local subdir="${rel%%/*}"
+        [[ -n "${hashed_dirs[$subdir]+set}" ]] && return 0
+        return 1
+    }
 
     # Build a set of test class basenames (strip 'Test' / 'Tests' suffix)
     local -A test_set
@@ -1823,10 +1858,12 @@ select_mutation_target() {
     done < <(find "$dir" -path "*/src/test/java/*" -name "*Test*.java" ! -path "*/target/*" 2>/dev/null | head -500)
 
     # Walk src/main/java looking for a file that:
-    #   (a) has a matching test name, AND
-    #   (b) contains injectable source (methods with bodies ≥ 3 lines)
+    #   (a) is in a module with a hash file (if filter active)
+    #   (b) has a matching test name, AND
+    #   (c) contains injectable source (methods with bodies ≥ 3 lines)
     local best=""
     while IFS= read -r src; do
+        _has_hash "$src" || continue
         local name
         name=$(basename "$src" .java)
         if [[ -n "${test_set[$name]+set}" ]]; then
@@ -1843,7 +1880,19 @@ select_mutation_target() {
                 ! -name "*Builder*" ! -name "*Generated*" \
                 2>/dev/null | sort)
 
-    # Fall back to first available source file
+    # Fall back to first available source file (still filtered by hashes)
+    if [[ -z "$best" ]]; then
+        while IFS= read -r src; do
+            _has_hash "$src" || continue
+            best="$src"
+            break
+        done < <(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
+                    ! -path "*/target/*" ! -path "*/src/test/*" \
+                    ! -name "package-info.java" ! -name "module-info.java" \
+                    2>/dev/null | sort)
+    fi
+
+    # Last resort: ignore hash filter (all modules skipped?)
     if [[ -z "$best" ]]; then
         best=$(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
                 ! -path "*/target/*" ! -path "*/src/test/*" \
@@ -2082,7 +2131,7 @@ phase_synthetic_history_maven() {
 
     # 3. Select mutation target
     local target_src
-    target_src=$(select_mutation_target "$repo" "${idx_module:-$module}")
+    target_src=$(select_mutation_target "$repo" "${idx_module:-$module}" "$dir/.test-order/hashes")
     if [[ -z "$target_src" ]]; then
         warn "No mutation target found for $repo — skipping"
         remove_maven_plugin "$repo" "$module"
@@ -2227,7 +2276,7 @@ phase_synthetic_history_gradle() {
 
     # 3. Select mutation target
     local target_src
-    target_src=$(select_mutation_target "$repo" "")
+    target_src=$(select_mutation_target "$repo" "" "$dir/.test-order/hashes")
     if [[ -z "$target_src" ]]; then
         warn "No mutation target found for $repo — skipping"
         remove_gradle_plugin "$repo"
@@ -2427,7 +2476,7 @@ phase_matrix_maven() {
 
     # Select mutation target once (reused across all cells)
     local target_src
-    target_src=$(select_mutation_target "$repo" "$module")
+    target_src=$(select_mutation_target "$repo" "$module" "$dir/.test-order/hashes")
     if [[ -z "$target_src" ]]; then
         warn "No mutation target found — skipping matrix for $repo"
         remove_maven_plugin "$repo" "$module"
