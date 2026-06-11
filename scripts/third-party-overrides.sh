@@ -45,6 +45,9 @@ detect_extra_mvn_args() {
         # annotation processor intentionally testing error handling (FakePluginPublicSetter).
         # Exclude it; pre-existing test failures in log4j-api-test also require ignore.
         javaparser) echo "-Dmaven.test.failure.ignore=true" ;;
+        # commons-lang has pre-existing test failures in FastDateParser_TimeZoneStrategyTest
+        # (locale-dependent tests) and several StringUtils tests. Ignore so all steps run.
+        commons-lang) echo "-Dmaven.test.failure.ignore=true" ;;
         # logging-log4j2 log4j-core-test fails to compile on JDK 25 due to an
         # annotation processor intentionally testing error handling (FakePluginPublicSetter).
         # Exclude it; pre-existing test failures in log4j-api-test also require ignore.
@@ -55,6 +58,10 @@ detect_extra_mvn_args() {
         # spring-ai has pre-existing test failures in spring-ai-commons (DocumentTests,
         # ContentFormatterTests etc — "[DRAFT]" prefix mismatch). Ignore so steps 5/6 run.
         spring-ai) echo "-Dmaven.test.failure.ignore=true" ;;
+        # maven (Apache Maven itself): RAT license check fails on injected extensions.xml
+        # because it lacks an Apache license header. Skip RAT; also ignore test failures
+        # since some integration tests require a fully installed Maven.
+        maven) echo "-Drat.skip=true -Dmaven.test.failure.ignore=true" ;;
         # cds-feature-attachments: integration-tests module requires a running server;
         # exclude it and focus on the core cds-feature-attachments module.
         # Use positive selection (-pl <modules> -am) since Maven's !exclude syntax
@@ -73,6 +80,10 @@ detect_extra_mvn_args() {
 detect_module_override() {
     local repo="$1"
     case "$repo" in
+        # maven (Apache Maven itself): the heuristic picks the 'its' module (integration
+        # tests that require a running Maven process). Use NONE to run the full reactor
+        # (the package override to 'org.apache.maven' already filters out IT tests).
+        maven) echo "NONE" ;;
         *) echo "" ;;
     esac
 }
