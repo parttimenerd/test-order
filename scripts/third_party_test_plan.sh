@@ -695,9 +695,11 @@ in_buildscript = False
 depth = 0
 found_dep = False
 found_repos = False
+has_maven_local = False
 bs_start = -1
 bs_end = -1
 dep_insert_after = -1
+repos_insert_after = -1  # first line inside repositories{} block
 
 for i, line in enumerate(lines):
     stripped = line.lstrip()
@@ -716,6 +718,9 @@ for i, line in enumerate(lines):
         if not is_comment:
             if 'repositories {' in line and depth == 2:
                 found_repos = True
+                repos_insert_after = i  # insert mavenLocal() after this line
+            if 'mavenLocal()' in line and found_repos:
+                has_maven_local = True
             if 'dependencies {' in line and depth == 2:
                 found_dep = True
                 dep_insert_after = i
@@ -727,6 +732,9 @@ elif bs_end >= 0 and not found_dep:
     out.insert(bs_end, '\tdependencies {\n' + classpath_line + '\t}\n')
 if not found_repos and bs_start >= 0:
     out.insert(bs_start + 1, maven_local_line)
+elif found_repos and not has_maven_local and repos_insert_after >= 0:
+    # Add mavenLocal() inside the existing repositories{} block
+    out.insert(repos_insert_after + 1, '\t\tmavenLocal()\n')
 
 open(build_file, 'w').write(''.join(out))
 PYEOF
