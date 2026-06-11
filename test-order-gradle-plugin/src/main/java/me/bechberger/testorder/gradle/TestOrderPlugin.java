@@ -2369,21 +2369,60 @@ public class TestOrderPlugin implements Plugin<Project> {
         if (sourceSets != null) {
             SourceSet test = sourceSets.findByName(SourceSet.TEST_SOURCE_SET_NAME);
             if (test != null) {
-                for (File dir : test.getJava().getSrcDirs()) {
-                    if (dir.isDirectory()) return dir.toPath();
+                // Pick the test source dir with the most source files — this handles mixed
+                // Scala/Java projects where Scala is the primary test language but
+                // getJava().getSrcDirs() only returns the Java dir.
+                java.util.Set<File> resources = test.getResources().getSrcDirs();
+                File bestDir = null;
+                long bestCount = -1;
+                for (File dir : test.getAllSource().getSourceDirectories()) {
+                    if (resources.contains(dir) || !dir.isDirectory()) continue;
+                    try {
+                        long count = java.nio.file.Files.walk(dir.toPath())
+                                .filter(java.nio.file.Files::isRegularFile).count();
+                        if (count > bestCount) {
+                            bestCount = count;
+                            bestDir = dir;
+                        }
+                    } catch (java.io.IOException ignored) {
+                    }
                 }
-                // getAllSource() includes resources — exclude them explicitly
+                if (bestDir != null) return bestDir.toPath();
+            }
+        }
+        // Fallback: check src/test/kotlin then src/test/scala then src/test/java
+        Path projectDir = project.getProjectDir().toPath();
+        for (String sub : new String[]{"src/test/kotlin", "src/test/scala", "src/test/java"}) {
+            Path p = projectDir.resolve(sub);
+            if (p.toFile().isDirectory()) return p;
+        }
+        return projectDir.resolve("src/test/java");
+    }
+
+    /** Returns all test source roots (Java, Kotlin, Scala, Groovy, etc.) for a project. */
+    static List<Path> resolveAllTestSourceRoots(Project project) {
+        List<Path> roots = new java.util.ArrayList<>();
+        SourceSetContainer sourceSets =
+                project.getExtensions().findByType(SourceSetContainer.class);
+        if (sourceSets != null) {
+            SourceSet test = sourceSets.findByName(SourceSet.TEST_SOURCE_SET_NAME);
+            if (test != null) {
                 java.util.Set<File> resources = test.getResources().getSrcDirs();
                 for (File dir : test.getAllSource().getSourceDirectories()) {
-                    if (!resources.contains(dir) && dir.isDirectory()) return dir.toPath();
+                    if (!resources.contains(dir) && dir.isDirectory()) {
+                        roots.add(dir.toPath());
+                    }
                 }
             }
         }
-        // Fallback: check src/test/kotlin before src/test/java
-        Path projectDir = project.getProjectDir().toPath();
-        Path kotlinDir = projectDir.resolve("src/test/kotlin");
-        if (kotlinDir.toFile().isDirectory()) return kotlinDir;
-        return projectDir.resolve("src/test/java");
+        if (roots.isEmpty()) {
+            Path projectDir = project.getProjectDir().toPath();
+            for (String sub : new String[]{"src/test/java", "src/test/kotlin", "src/test/scala"}) {
+                Path p = projectDir.resolve(sub);
+                if (p.toFile().isDirectory()) roots.add(p);
+            }
+        }
+        return roots;
     }
 
     /** Resolves the main Kotlin source root for the project, falling back to src/main/kotlin. */
@@ -2404,15 +2443,30 @@ public class TestOrderPlugin implements Plugin<Project> {
         return project.getProjectDir().toPath().resolve("src/main/kotlin");
     }
 
-    /** Resolves the first test classes output directory for the project. */
+    /** Resolves the best test classes output directory for the project.
+     *  Prefers the Java test dir over Groovy/Kotlin dirs so that the dep-map
+     *  module filter matches indexed class names rather than Groovy Spec classes.
+     */
     static Path resolveTestClassesDir(Project project) {
         SourceSetContainer sourceSets =
                 project.getExtensions().findByType(SourceSetContainer.class);
         if (sourceSets != null) {
             SourceSet test = sourceSets.findByName(SourceSet.TEST_SOURCE_SET_NAME);
             if (test != null) {
+                List<File> existing = new java.util.ArrayList<>();
                 for (File dir : test.getOutput().getClassesDirs()) {
-                    if (dir.isDirectory()) return dir.toPath();
+                    if (dir.isDirectory()) existing.add(dir);
+                }
+                if (!existing.isEmpty()) {
+                    // Prefer the Java test dir — it's the canonical source of indexed class names.
+                    // Groovy/Kotlin dirs come first in mixed-language projects on some Gradle versions.
+                    for (File dir : existing) {
+                        String p = dir.getPath().replace('\\', '/');
+                        if (p.endsWith("/classes/java/test") || p.contains("/classes/java/test/")) {
+                            return dir.toPath();
+                        }
+                    }
+                    return existing.get(0).toPath();
                 }
             }
         }

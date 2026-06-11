@@ -140,9 +140,9 @@ public final class TestClassDiscovery {
 
 	/**
 	 * Derives test class names from source files under {@code testSourceRoot}.
-	 * Converts {@code .java}, {@code .kt}, and {@code .groovy} file paths to
-	 * fully-qualified class names by relativizing against the source root and
-	 * replacing path separators with dots.
+	 * Converts {@code .java}, {@code .kt}, {@code .groovy}, and {@code .scala} file
+	 * paths to fully-qualified class names by relativizing against the source root
+	 * and replacing path separators with dots.
 	 *
 	 * <p>
 	 * This is a best-effort approximation: it does not handle multiple top-level
@@ -163,6 +163,8 @@ public final class TestClassDiscovery {
 					ext = ".kt";
 				} else if (s.endsWith(".groovy")) {
 					ext = ".groovy";
+				} else if (s.endsWith(".scala")) {
+					ext = ".scala";
 				}
 				if (ext != null) {
 					String relative = testSourceRoot.relativize(path).toString();
