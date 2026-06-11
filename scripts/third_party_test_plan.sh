@@ -1825,7 +1825,13 @@ select_mutation_target() {
     local hashes_dir="${3:-}"
     local dir="$THIRD_PARTY/$repo"
     local search_root="$dir"
-    [[ -n "$module" && "$module" != "NONE" ]] && search_root="$dir/$module"
+    # Tentatively narrow to the requested module. We'll widen back to the
+    # whole repo below if the hash filter excludes everything inside it
+    # (common in multi-module Maven repos where detect_single_module picks
+    # a different module than the one learn-A actually generated hashes for).
+    if [[ -n "$module" && "$module" != "NONE" && -d "$dir/$module/src/main/java" ]]; then
+        search_root="$dir/$module"
+    fi
 
     # If a hashes dir was provided, build an allowlist of subdirectory names
     # that have at least one hash file. Hash file names follow the convention
@@ -1868,6 +1874,18 @@ select_mutation_target() {
         [[ -n "${hashed_dirs[$subdir]+set}" ]] && return 0
         return 1
     }
+
+    # If the hash filter is active and the requested module is NOT in the
+    # hash allowlist, widen search to the whole repo. Otherwise the filter
+    # rejects every file under search_root (e.g. detect_single_module picks
+    # vertx-web/vertx-web but hashes only cover vertx-web-client).
+    if [[ "$search_root" != "$dir" && "${#hashed_dirs[@]}" -gt 0 ]]; then
+        local mod_basename
+        mod_basename="$(basename "$search_root")"
+        if [[ -z "${hashed_dirs[$mod_basename]+set}" ]]; then
+            search_root="$dir"
+        fi
+    fi
 
     # Build a set of test class basenames (strip 'Test' / 'Tests' suffix)
     local -A test_set
