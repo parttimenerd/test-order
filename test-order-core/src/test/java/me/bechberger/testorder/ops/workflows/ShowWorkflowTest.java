@@ -27,6 +27,31 @@ class ShowWorkflowTest {
 	}
 
 	@Test
+	void shortenModuleId_dottedGroupId_stripsPrefix() {
+		// org.jsoup-jsoup → jsoup
+		assertEquals("jsoup", ShowWorkflow.shortenModuleId("org.jsoup-jsoup"));
+		// com.sap.cloud.sdk.cloudplatform-cloudplatform-core → cloudplatform-core
+		assertEquals("cloudplatform-core",
+				ShowWorkflow.shortenModuleId("com.sap.cloud.sdk.cloudplatform-cloudplatform-core"));
+	}
+
+	@Test
+	void shortenModuleId_repeatedGroupIdEqualsArtifactId_deduplicates() {
+		// BUG fix: commons-codec-commons-codec should display as commons-codec
+		assertEquals("commons-codec", ShowWorkflow.shortenModuleId("commons-codec-commons-codec"));
+		assertEquals("joda-time", ShowWorkflow.shortenModuleId("joda-time-joda-time"));
+		assertEquals("commons-validator", ShowWorkflow.shortenModuleId("commons-validator-commons-validator"));
+	}
+
+	@Test
+	void shortenModuleId_normalSingleWordGroupId_unchanged() {
+		// groupId != artifactId with no dots → unchanged
+		assertEquals("mygroup-myartifact", ShowWorkflow.shortenModuleId("mygroup-myartifact"));
+		// null → empty
+		assertEquals("", ShowWorkflow.shortenModuleId(null));
+	}
+
+	@Test
 	void printReport_noData_showsActionableGuidance() {
 		ShowWorkflow.ShowResult result = new ShowWorkflow.ShowResult(null, null, null, null, null);
 		// methods=true and ml=true force the "unavailable" guidance to print even when

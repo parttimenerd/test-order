@@ -694,6 +694,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		// In multi-module builds, include source roots from all reactor modules
 		// so that changeComplexity can find source files for cross-module classes
+		List<PluginContext.ModuleHashEntry> moduleHashEntries = new ArrayList<>();
 		if (ctx.isMultiModule() && session != null && session.getProjects() != null) {
 			for (MavenProject p : session.getProjects()) {
 				List<String> roots = p.getCompileSourceRoots();
@@ -707,12 +708,25 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						}
 					}
 				}
+				// Build per-module (sourceRoot, hashFile) entry for since-last-run detection
+				List<String> prodRoots = p.getCompileSourceRoots();
+				if (prodRoots != null && !prodRoots.isEmpty()) {
+					Path mSourceRoot = Path.of(prodRoots.get(0));
+					if (Files.isDirectory(mSourceRoot)) {
+						ReactorContext pCtx = new ReactorContext(session, p);
+						Path mHashFile = pCtx.resolveHashFile(hashFile);
+						if (mHashFile != null && java.nio.file.Files.exists(mHashFile)) {
+							moduleHashEntries.add(new PluginContext.ModuleHashEntry(mSourceRoot, mHashFile));
+						}
+					}
+				}
 			}
 		}
 
 		return PluginContext.builder().projectRoot(project.getBasedir().toPath().toAbsolutePath())
 				.repoRoot(ctx.gitRoot().toAbsolutePath()).sourceRoot(resolvedSourceRoot)
 				.testSourceRoot(resolvedTestSourceRoot).additionalSourceRoots(additionalSourceRoots)
+				.moduleHashEntries(moduleHashEntries)
 				.testClassesDir(toPathOrNull(project.getBuild().getTestOutputDirectory()))
 				.classesDir(toPathOrNull(project.getBuild().getOutputDirectory()))
 				.indexFile(ctx.resolveIndexFile(indexFile)).stateFile(ctx.resolveStateFile(stateFile))

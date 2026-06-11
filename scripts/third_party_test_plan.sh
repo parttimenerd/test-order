@@ -1852,11 +1852,18 @@ mutate_body() {
     fi
     rm -f "$src.tmp"
 
-    # If sed made no change, fall back to add_method (always works)
+    # If sed made no change, fall back to add_method (always works).
+    # IMPORTANT: do NOT call mutate_add_method directly — it would overwrite .bak
+    # with the already-mutated (or pristine) file. Instead, save .bak ourselves
+    # first, then do the awk insertion inline.
     if [[ "$mutated" -eq 0 ]] || cmp -s "$src.bak" "$src"; then
-        # Restore from bak and use add_method instead
+        # Restore the original and apply add_method inline (preserving .bak = original)
         cp "$src.bak" "$src"
-        mutate_add_method "$src"
+        awk 'BEGIN{found=0} /^}[[:space:]]*$/ && !found{
+            print "  /** inserted by test-order synthetic mutation */";
+            print "  public static int __syntheticProbe() { return 42; }";
+            found=1
+        } {print}' "$src.bak" > "$src"
     fi
 }
 
@@ -2053,7 +2060,7 @@ phase_synthetic_history_maven() {
 
     for mode in "since-last-run" "uncommitted"; do
         local t0=$SECONDS
-        local show_log="$synth_dir/show-${mode}.log"
+        local show_log="$synth_dir/show-${mutator}-${mode}.log"
         local detected=0
         # show uses detectReadOnly → does NOT update hashes.lz4
         mvn me.bechberger:test-order-maven-plugin:show \
@@ -2101,6 +2108,10 @@ phase_synthetic_history_maven() {
     # 7. Revert mutation
     log "SH Step 7: Revert mutation"
     revert_mutation "$target_src"
+    # Use 'git checkout HEAD --' not 'git checkout --': the latter restores from
+    # the index, which still has the mutation staged after 'git add -f'. HEAD
+    # restores unconditionally from the last commit regardless of index state.
+    git -C "$dir" reset HEAD "$target_src" 2>/dev/null || true
     git -C "$dir" checkout -- "$target_src" 2>/dev/null || true
 
     ok "Synthetic-history complete for $repo (mutator=$mutator)"

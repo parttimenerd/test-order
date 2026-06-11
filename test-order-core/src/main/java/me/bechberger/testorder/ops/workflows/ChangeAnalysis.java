@@ -214,9 +214,40 @@ public final class ChangeAnalysis {
 		// detected changes into `changed` so that tests depending on changed sibling
 		// classes receive the correct depOverlap score boost.
 		//
-		// since-last-run mode is skipped for additional roots because we have no
-		// per-root hash file; the primary root's hash file covers only that root.
+		// since-last-run mode is supported for per-module entries (moduleHashEntries),
+		// where each entry has its own hash file. For additional roots without a hash
+		// file, since-last-run is still skipped (no snapshot available).
 		// For git-based modes (uncommitted, since-last-commit) git covers all roots.
+
+		// First: per-module entries (since-last-run supported via per-module hash
+		// files)
+		if (!ctx.moduleHashEntries().isEmpty()) {
+			List<java.util.concurrent.CompletableFuture<Set<String>>> moduleFutures = new ArrayList<>();
+			for (var entry : ctx.moduleHashEntries()) {
+				Path mRoot = entry.sourceRoot();
+				Path mHash = entry.hashFile();
+				if (!Files.isDirectory(mRoot))
+					continue;
+				moduleFutures.add(java.util.concurrent.CompletableFuture
+						.supplyAsync(() -> ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(),
+								ctx.projectRoot(), mRoot, mHash, null, true, ctx.log())));
+			}
+			if (!moduleFutures.isEmpty()) {
+				Set<String> mergedChanged = new java.util.LinkedHashSet<>(changed);
+				for (var f : moduleFutures) {
+					mergedChanged.addAll(f.join());
+				}
+				if (mergedChanged.size() > changed.size()) {
+					ctx.log()
+							.debug("[test-order] cross-module change propagation (per-module hash) added "
+									+ (mergedChanged.size() - changed.size()) + " class(es) from "
+									+ moduleFutures.size() + " module(s).");
+					changed = mergedChanged;
+				}
+			}
+		}
+
+		// Second: additional roots without per-module hash files (git-based modes only)
 		if (!ctx.additionalSourceRoots().isEmpty() && !"since-last-run".equalsIgnoreCase(ctx.changeMode())
 				&& !"explicit".equalsIgnoreCase(ctx.changeMode())) {
 			List<java.util.concurrent.CompletableFuture<Set<String>>> siblingFutures = new ArrayList<>();

@@ -1147,7 +1147,6 @@ function previewScoreBars(t: TestEntry) {
         <span class="health-micro__val" :style="{ color: avgStability >= 80 ? 'var(--green)' : avgStability >= 50 ? 'var(--yellow)' : 'var(--red)' }">{{ avgStability }}</span>
       </div>
       <p style="color:var(--text-muted);font-size:.68rem;margin-top:8px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
-        <span><kbd class="tests-kbd">j</kbd><kbd class="tests-kbd">k</kbd> navigate &nbsp;·&nbsp; <kbd class="tests-kbd">⏎</kbd> select &nbsp;·&nbsp; <kbd class="tests-kbd">/</kbd> search &nbsp;·&nbsp; <kbd class="tests-kbd">1</kbd>–<kbd class="tests-kbd">3</kbd> tabs &nbsp;·&nbsp; <kbd class="tests-kbd">Esc</kbd> clear</span>
         <!-- Sort reset pill -->
         <button
           v-if="d.sortKey.value !== 'rank'"

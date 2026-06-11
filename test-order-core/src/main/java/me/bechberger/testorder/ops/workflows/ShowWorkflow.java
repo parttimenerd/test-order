@@ -468,22 +468,39 @@ public final class ShowWorkflow {
 	/**
 	 * Strips the dotted groupId prefix from a {@code groupId-artifactId} moduleId
 	 * for display, e.g. {@code com.sap.cloud.sdk.cloudplatform-cloudplatform-core →
-	 * cloudplatform-core}. Conservative: returns the input unchanged if there is no
-	 * dot (single-level group) or no dash after the last dot.
+	 * cloudplatform-core}. Also handles the case where groupId == artifactId (e.g.
+	 * {@code commons-codec-commons-codec → commons-codec}) by detecting the
+	 * repeated-suffix pattern. Conservative: returns the input unchanged if there
+	 * is no dot (single-level group) or no dash after the last dot, unless the
+	 * repeated-suffix pattern applies.
 	 */
 	public static String shortenModuleId(String moduleId) {
 		if (moduleId == null) {
 			return "";
 		}
+		// Handle dotted groupId prefix: org.jsoup-jsoup → jsoup
 		int lastDot = moduleId.lastIndexOf('.');
-		if (lastDot < 0) {
+		if (lastDot >= 0) {
+			int dash = moduleId.indexOf('-', lastDot);
+			if (dash >= 0) {
+				return moduleId.substring(dash + 1);
+			}
 			return moduleId;
 		}
-		int dash = moduleId.indexOf('-', lastDot);
-		if (dash < 0) {
-			return moduleId;
+		// Handle single-word groupId that equals the artifactId:
+		// commons-codec-commons-codec → commons-codec
+		// Strategy: find the shortest prefix P such that moduleId == P + "-" + P
+		int len = moduleId.length();
+		// The repeated part would be moduleId[0..mid-1] where mid = (len+1)/2 at most
+		// i.e. moduleId = X + "-" + X, so len = 2*|X|+1
+		if (len >= 3 && (len % 2) == 1) {
+			int mid = (len - 1) / 2;
+			String first = moduleId.substring(0, mid);
+			if (moduleId.charAt(mid) == '-' && moduleId.substring(mid + 1).equals(first)) {
+				return first;
+			}
 		}
-		return moduleId.substring(dash + 1);
+		return moduleId;
 	}
 
 	// ── Preamble ────────────────────────────────────────────────────

@@ -12,6 +12,13 @@ import java.util.function.Supplier;
  */
 public final class PluginContext {
 
+	/**
+	 * A (sourceRoot, hashFile) pair for per-module since-last-run detection in
+	 * multi-module builds.
+	 */
+	public record ModuleHashEntry(Path sourceRoot, Path hashFile) {
+	}
+
 	public enum BuildSystem {
 		MAVEN, GRADLE;
 
@@ -45,6 +52,12 @@ public final class PluginContext {
 	private final Path sourceRoot;
 	private final Path testSourceRoot;
 	private final List<Path> additionalSourceRoots; // e.g. Kotlin
+	/**
+	 * Per-module (sourceRoot, hashFile) pairs for since-last-run cross-module
+	 * detection. Populated by the Maven/Gradle plugin from all reactor modules.
+	 * Empty for single-module builds.
+	 */
+	private final List<ModuleHashEntry> moduleHashEntries;
 	private final Path testClassesDir;
 	private final Path classesDir;
 	private final Path indexFile;
@@ -115,6 +128,7 @@ public final class PluginContext {
 		this.sourceRoot = b.sourceRoot;
 		this.testSourceRoot = b.testSourceRoot;
 		this.additionalSourceRoots = b.additionalSourceRoots != null ? List.copyOf(b.additionalSourceRoots) : List.of();
+		this.moduleHashEntries = b.moduleHashEntries != null ? List.copyOf(b.moduleHashEntries) : List.of();
 		this.testClassesDir = b.testClassesDir;
 		this.classesDir = b.classesDir;
 		this.indexFile = b.indexFile;
@@ -326,6 +340,14 @@ public final class PluginContext {
 		return List.copyOf(roots);
 	}
 
+	/**
+	 * Per-module (sourceRoot, hashFile) pairs for cross-module since-last-run
+	 * detection.
+	 */
+	public List<ModuleHashEntry> moduleHashEntries() {
+		return moduleHashEntries;
+	}
+
 	public static Builder builder() {
 		return new Builder();
 	}
@@ -336,6 +358,7 @@ public final class PluginContext {
 		private Path sourceRoot;
 		private Path testSourceRoot;
 		private List<Path> additionalSourceRoots;
+		private List<ModuleHashEntry> moduleHashEntries;
 		private Path testClassesDir;
 		private Path classesDir;
 		private Path indexFile;
@@ -401,6 +424,10 @@ public final class PluginContext {
 		}
 		public Builder additionalSourceRoots(List<Path> v) {
 			this.additionalSourceRoots = v;
+			return this;
+		}
+		public Builder moduleHashEntries(List<ModuleHashEntry> v) {
+			this.moduleHashEntries = v;
 			return this;
 		}
 		public Builder testClassesDir(Path v) {
