@@ -189,26 +189,49 @@ final class SurefireHelper {
 			return;
 		Xpp3Dom config = getOrCreateConfiguration(surefire);
 
+		// Allow the user to override via -Dparallel=none (mirrors the Surefire
+		// property)
+		// or -Dtestorder.learn.allowParallel=true. Downgrade hard errors to warnings so
+		// third-party repos with class-level parallel can still be profiled.
+		boolean parallelOverridden = "none".equalsIgnoreCase(System.getProperty("parallel"))
+				|| "true".equalsIgnoreCase(System.getProperty("testorder.learn.allowParallel"));
+
 		String surefireParallel = childValue(config, "parallel");
 		if (isClassLevelSurefireParallel(surefireParallel)) {
-			throw new MojoExecutionException("Class-level parallel execution (<parallel>" + surefireParallel
-					+ "</parallel>) is not supported in learn mode — " + "it would corrupt dependency tracking. "
-					+ "Remove or change to <parallel>methods</parallel> during learn runs.");
+			String msg = "Class-level parallel execution (<parallel>" + surefireParallel
+					+ "</parallel>) is not supported in learn mode — it would corrupt dependency tracking. "
+					+ "Remove or change to <parallel>methods</parallel> during learn runs.";
+			if (parallelOverridden) {
+				log.warn("[test-order] " + msg + " Proceeding anyway because -Dparallel=none or "
+						+ "-Dtestorder.learn.allowParallel=true was set.");
+			} else {
+				throw new MojoExecutionException(msg);
+			}
 		}
 
 		String classesDefaultFromSysProps = childValue(child(config, "systemPropertyVariables"),
 				"junit.jupiter.execution.parallel.mode.classes.default");
 		if (isConcurrent(classesDefaultFromSysProps)) {
-			throw new MojoExecutionException("JUnit class-level parallel mode (mode.classes.default=concurrent) "
+			String msg = "JUnit class-level parallel mode (mode.classes.default=concurrent) "
 					+ "is not supported in learn mode — it would corrupt dependency tracking. "
-					+ "Use same_thread or remove it during learn runs.");
+					+ "Use same_thread or remove it during learn runs.";
+			if (parallelOverridden) {
+				log.warn("[test-order] " + msg + " Proceeding anyway because override is set.");
+			} else {
+				throw new MojoExecutionException(msg);
+			}
 		}
 
 		String configurationParameters = childValue(child(child(config, "properties"), "configurationParameters"));
 		if (JUnitPlatformValidator.isClassLevelConcurrentInConfigurationParameters(configurationParameters)) {
-			throw new MojoExecutionException("JUnit class-level parallel mode in <configurationParameters> "
+			String msg = "JUnit class-level parallel mode in <configurationParameters> "
 					+ "is not supported in learn mode — it would corrupt dependency tracking. "
-					+ "Use same_thread or remove mode.classes.default=concurrent during learn runs.");
+					+ "Use same_thread or remove mode.classes.default=concurrent during learn runs.";
+			if (parallelOverridden) {
+				log.warn("[test-order] " + msg + " Proceeding anyway because override is set.");
+			} else {
+				throw new MojoExecutionException(msg);
+			}
 		}
 
 		// Also reject Vintage parallel in learn mode (M24)
