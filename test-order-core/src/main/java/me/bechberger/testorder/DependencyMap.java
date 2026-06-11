@@ -462,6 +462,40 @@ public class DependencyMap {
 	}
 
 	/**
+	 * Returns a view of this map restricted to tests that belong to the given
+	 * module. Tests with no module stamp (from older indexes) are included so that
+	 * backward compatibility is preserved. Tests whose module is different from
+	 * {@code moduleId} are excluded.
+	 * <p>
+	 * This prevents the {@code affected} goal from selecting tests that live in a
+	 * different Maven module and would cause Surefire "No tests matching pattern"
+	 * errors.
+	 */
+	public DependencyMap filterForModule(String moduleId, me.bechberger.testorder.ops.PluginLog log) {
+		if (moduleId == null || moduleId.isEmpty() || testToModule.isEmpty()) {
+			return this;
+		}
+		DependencyMap filtered = new DependencyMap();
+		int excluded = 0;
+		for (var entry : dependencies.entrySet()) {
+			String testClass = entry.getKey();
+			String ownerModule = testToModule.get(testClass);
+			if (ownerModule == null || ownerModule.equals(moduleId)) {
+				filtered.dependencies.put(testClass, entry.getValue());
+			} else {
+				excluded++;
+			}
+		}
+		if (excluded > 0 && log != null) {
+			log.debug("[test-order] Module filter '" + moduleId + "': excluded " + excluded
+					+ " tests from other modules");
+		}
+		filtered.methodDependencies.putAll(methodDependencies);
+		filtered.testToModule.putAll(testToModule);
+		return filtered;
+	}
+
+	/**
 	 * Merge all entries from another DependencyMap into this one. For each key, the
 	 * dependency sets are unioned (not replaced). Member deps are merged using
 	 * RoaringBitmap OR after remapping the other instance's member key IDs.

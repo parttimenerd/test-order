@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.ops.AffectedOperation;
 import me.bechberger.testorder.ops.AlwaysRunScanner;
 import me.bechberger.testorder.ops.PluginContext;
@@ -59,9 +60,23 @@ public final class AffectedWorkflow {
 				changedAndNew.add(t);
 		}
 
-		AffectedOperation.SelectResult result = AffectedOperation.select(new AffectedOperation.SelectConfig(a.depMap(),
-				a.state(), a.changedClasses(), changedAndNew, a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(),
-				alwaysRun, ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
+		// In multi-module reactors, restrict test selection to the current module.
+		// When the dep map carries module information, filter out tests that belong
+		// to a different module so they are not passed to Surefire in the wrong module,
+		// which would cause "No tests matching pattern" errors.
+		DependencyMap effectiveDepMap = a.depMap();
+		String currentModule = ctx.currentModuleId();
+		if (currentModule != null && !currentModule.isEmpty() && a.depMap().hasModuleMap()) {
+			effectiveDepMap = a.depMap().filterForModule(currentModule, ctx.log());
+			changedAndNew.removeIf(t -> {
+				String m = a.depMap().getModule(t);
+				return m != null && !m.equals(currentModule);
+			});
+		}
+
+		AffectedOperation.SelectResult result = AffectedOperation.select(new AffectedOperation.SelectConfig(
+				effectiveDepMap, a.state(), a.changedClasses(), changedAndNew, a.weights(), ctx.topN(), ctx.randomM(),
+				ctx.seed(), alwaysRun, ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
 		return new SelectWithAnalysis(result, a);
 	}
 }

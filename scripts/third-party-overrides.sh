@@ -45,7 +45,13 @@ detect_extra_mvn_args() {
         # annotation processor intentionally testing error handling (FakePluginPublicSetter).
         # Exclude it; pre-existing test failures in log4j-api-test also require ignore.
         javaparser) echo "-Dmaven.test.failure.ignore=true" ;;
-        logging-log4j2) echo "-Dmaven.test.failure.ignore=true -pl '!log4j-core-test'" ;;
+        # logging-log4j2 log4j-core-test fails to compile on JDK 25 due to an
+        # annotation processor intentionally testing error handling (FakePluginPublicSetter).
+        # Exclude it; pre-existing test failures in log4j-api-test also require ignore.
+        # During bug injection the selected test class (e.g. CloseableThreadContextTest) lives
+        # in log4j-api-test but the patched class is in log4j-api. Surefire's default
+        # failIfNoSpecifiedTests=true aborts when it can't find the test in log4j-api; disable it.
+        logging-log4j2) echo "-Dmaven.test.failure.ignore=true -Dsurefire.failIfNoSpecifiedTests=false -pl '!log4j-core-test'" ;;
         # spring-ai has pre-existing test failures in spring-ai-commons (DocumentTests,
         # ContentFormatterTests etc — "[DRAFT]" prefix mismatch). Ignore so steps 5/6 run.
         spring-ai) echo "-Dmaven.test.failure.ignore=true" ;;
