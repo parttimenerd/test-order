@@ -2308,7 +2308,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		String result = me.bechberger.testorder.PackageDetectorSupport.resolveIncludePackages(sourceRoot,
 				includePackages, filterByGroupId, project.getGroupId());
 		if (result != null) {
-			log.info("[test-order] Instrumentation packages: " + result);
+			log.debug("[test-order] Instrumentation packages: " + result);
 		}
 		return result;
 	}

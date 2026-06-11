@@ -656,8 +656,6 @@ public class TestOrderPlugin implements Plugin<Project> {
      */
     private void configureOfflineLearnMode(Project project, TestOrderExtension ext,
                                            Test testTask, String instrMode) {
-        project.getLogger().lifecycle("[test-order] Offline learn mode: no agent, using build-time instrumentation");
-
         // Resolve source packages
         String includePackages = ext.getIncludePackages().get();
         if (includePackages.isEmpty()) {
@@ -671,6 +669,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         // doFirst: instrument classes before tests run
         testTask.doFirst("testOrderOfflineInstrument", t -> {
+            project.getLogger().lifecycle("[test-order] Offline learn mode: no agent, using build-time instrumentation");
             SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
             SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
             Path classesDir = mainSourceSet.getOutput().getClassesDirs().getFiles().stream()
