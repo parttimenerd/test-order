@@ -182,6 +182,8 @@ detect_gradle_extra_args() {
 -x :streams:upgrade-system-tests-39:test -x :streams:upgrade-system-tests-39:compileTestJava \
 -x :streams:upgrade-system-tests-40:test -x :streams:upgrade-system-tests-40:compileTestJava \
 -x :streams:upgrade-system-tests-41:test -x :streams:upgrade-system-tests-41:compileTestJava" ;;
+        # opentelemetry uses spotless/otel-conventions, not checkstyle/spotbugs.
+        opentelemetry) echo "--continue" ;;
         # Default: exclude common static-analysis tasks that may slow or break the build.
         # Most Gradle repos have these tasks; resilience4j is the known exception.
         *) echo "--continue -x checkstyleMain -x checkstyleTest -x spotbugsMain" ;;
@@ -259,7 +261,7 @@ detect_gradle_settings_remove() {
         # foojay-resolver-convention tries to download Eclipse Temurin from foojay.io,
         # which fails on aarch64 macOS (no download URL). Remove it so Gradle falls back
         # to using the JDK specified via org.gradle.java.installations.paths (in gradle.properties).
-        okhttp|reactor-core) echo "foojay-resolver-convention" ;;
+        okhttp|reactor-core|opentelemetry) echo "foojay-resolver-convention" ;;
         *) echo "" ;;
     esac
 }
