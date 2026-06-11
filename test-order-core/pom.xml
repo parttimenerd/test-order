@@ -159,6 +159,12 @@
                                     <excludes>
                                         <exclude>module-info.class</exclude>
                                         <exclude>META-INF/versions/*/module-info.class</exclude>
+                                        <!-- Exclude annotation-only libraries that ship named JPMS modules.
+                                             Bundling them in the fat jar causes split-package errors when
+                                             the tested project itself depends on these as named modules
+                                             (e.g. jackson-core uses org.apiguardian and org.jspecify). -->
+                                        <exclude>org/apiguardian/**</exclude>
+                                        <exclude>org/jspecify/**</exclude>
                                     </excludes>
                                 </filter>
                                 <!-- Exclude test frameworks and PIT from the fat jar — these must come
@@ -180,11 +186,27 @@
                                     <excludes><exclude>**</exclude></excludes>
                                 </filter>
                                 <filter>
+                                    <artifact>org.jspecify:*</artifact>
+                                    <excludes><exclude>**</exclude></excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>org.apache.commons:commons-lang3</artifact>
+                                    <excludes><exclude>**</exclude></excludes>
+                                </filter>
+                                <filter>
                                     <artifact>org.testng:*</artifact>
                                     <excludes><exclude>**</exclude></excludes>
                                 </filter>
                                 <filter>
                                     <artifact>org.slf4j:*</artifact>
+                                    <excludes><exclude>**</exclude></excludes>
+                                </filter>
+                                <!-- Exclude jspecify: annotation-only library, not needed at
+                                     runtime in the fat jar, and bundling it causes JPMS split-
+                                     package errors in projects that use org.jspecify as a
+                                     named module (e.g. jackson-core). -->
+                                <filter>
+                                    <artifact>org.jspecify:*</artifact>
                                     <excludes><exclude>**</exclude></excludes>
                                 </filter>
                             </filters>
