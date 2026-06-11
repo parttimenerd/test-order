@@ -1913,8 +1913,19 @@ select_mutation_target() {
                     2>/dev/null | sort)
     fi
 
-    # Last resort: ignore hash filter (all modules skipped?)
+    # Last resort: still respect hash filter if active; only bypass if no filter at all
     if [[ -z "$best" ]]; then
+        while IFS= read -r src; do
+            _has_hash "$src" || continue
+            best="$src"
+            break
+        done < <(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
+                    ! -path "*/target/*" ! -path "*/src/test/*" \
+                    ! -name "package-info.java" ! -name "module-info.java" \
+                    2>/dev/null | sort)
+    fi
+    # Absolute last resort: no hash filter active at all, pick any file
+    if [[ -z "$best" && "${#hashed_dirs[@]}" -eq 0 ]]; then
         best=$(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
                 ! -path "*/target/*" ! -path "*/src/test/*" \
                 ! -name "package-info.java" ! -name "module-info.java" \
