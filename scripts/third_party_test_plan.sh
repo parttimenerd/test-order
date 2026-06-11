@@ -118,6 +118,19 @@ PLUGIN_GROUP="me.bechberger"
 PLUGIN_ARTIFACT="test-order-maven-plugin"
 PREPARE_GOAL="$PLUGIN_GROUP:$PLUGIN_ARTIFACT:prepare"
 
+# On Linux, JDK 21+ dropped --release 8 support.  Many OSS projects still target
+# Java 8/11.  If the current JDK is 21+ and a JDK 17 is available via SDKMAN,
+# use it as the default for Maven invocations so javac --release 8/11 works.
+if [[ "$(uname)" != "Darwin" && -z "${JAVA_HOME_OVERRIDE_SET:-}" ]]; then
+    _jdk17="${HOME}/.sdkman/candidates/java/17.0.13-sapmchn"
+    if [[ -x "${_jdk17}/bin/javac" ]]; then
+        export JAVA_HOME="${_jdk17}"
+        export PATH="${_jdk17}/bin:${PATH}"
+        export JAVA_HOME_OVERRIDE_SET=1
+    fi
+    unset _jdk17
+fi
+
 # ─── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -1732,6 +1745,545 @@ phase_full_maven() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SYNTHETIC HISTORY: Source mutators + validation phase
+#
+# These helpers mutate a single .java file, run two learn cycles, then assert
+# that the change-detection machinery (bytecode hash, git-uncommitted,
+# since-last-run) correctly reports the changed class.
+#
+# Each mutator:
+#   1. Saves a .bak copy of the target file.
+#   2. Applies a sed/awk transformation directly to the source.
+#   3. Returns the FQCN of the mutated class on stdout.
+#
+# revert_mutation() restores from the .bak copy.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Select a mutation target file ────────────────────────────────────────────
+# Pick a non-test .java file from src/main/java that is actually referenced by
+# at least one test class name (heuristic: the test is named FooTest → Foo is
+# a good target).  Falls back to the first available source file.
+# Returns: full path to the .java file
+select_mutation_target() {
+    local repo="$1"
+    local module="${2:-}"
+    local dir="$THIRD_PARTY/$repo"
+    local search_root="$dir"
+    [[ -n "$module" && "$module" != "NONE" ]] && search_root="$dir/$module"
+
+    # Build a set of test class basenames (strip 'Test' / 'Tests' suffix)
+    local -A test_set
+    while IFS= read -r f; do
+        local base
+        base=$(basename "$f" .java)
+        base="${base%Test}"; base="${base%Tests}"
+        test_set["$base"]=1
+    done < <(find "$dir" -path "*/src/test/java/*" -name "*Test*.java" ! -path "*/target/*" 2>/dev/null | head -500)
+
+    # Walk src/main/java looking for a file that:
+    #   (a) has a matching test name, AND
+    #   (b) contains injectable source (methods with bodies ≥ 3 lines)
+    local best=""
+    while IFS= read -r src; do
+        local name
+        name=$(basename "$src" .java)
+        if [[ -n "${test_set[$name]+set}" ]]; then
+            # Check for a concrete method body: needs at least one { ... } block
+            if grep -q "^[[:space:]]*public\|^[[:space:]]*protected\|^[[:space:]]*private" "$src" 2>/dev/null &&
+               grep -q "[{}]" "$src" 2>/dev/null; then
+                best="$src"
+                break
+            fi
+        fi
+    done < <(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
+                ! -path "*/target/*" ! -path "*/src/test/*" \
+                ! -name "package-info.java" ! -name "module-info.java" \
+                ! -name "*Builder*" ! -name "*Generated*" \
+                2>/dev/null | sort)
+
+    # Fall back to first available source file
+    if [[ -z "$best" ]]; then
+        best=$(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
+                ! -path "*/target/*" ! -path "*/src/test/*" \
+                ! -name "package-info.java" ! -name "module-info.java" \
+                2>/dev/null | sort | head -1)
+    fi
+    echo "$best"
+}
+
+# Convert a full path under src/main/java to a FQCN
+path_to_fqcn() {
+    echo "$1" | sed 's|.*/src/main/java/||;s|/|.|g;s|\.java$||'
+}
+
+# ── Mutators ─────────────────────────────────────────────────────────────────
+
+# mutate_add_method: appends a no-op static method before the last closing brace
+mutate_add_method() {
+    local src="$1"
+    cp "$src" "$src.bak"
+    # Insert before the final closing brace of the class
+    awk 'BEGIN{found=0} /^}[[:space:]]*$/ && !found{
+        print "  /** inserted by test-order synthetic mutation */";
+        print "  public static int __syntheticProbe() { return 42; }";
+        found=1
+    } {print}' "$src.bak" > "$src"
+}
+
+# mutate_body: flip the first `return true` to `return false` (or vice versa)
+mutate_body() {
+    local src="$1"
+    cp "$src" "$src.bak"
+    if grep -q "return true;" "$src"; then
+        sed -i.tmp 's/return true;/return false; \/\* synthetic mutation \*\//' "$src"
+    elif grep -q "return false;" "$src"; then
+        sed -i.tmp 's/return false;/return true; \/\* synthetic mutation \*\//' "$src"
+    else
+        # Fall back: flip first `== 0` to `== 1` in a return statement
+        sed -i.tmp 's/return \(.*\)== 0/return \1== 1 \/\* synthetic \*\//' "$src"
+    fi
+    rm -f "$src.tmp"
+}
+
+# mutate_add_field: inject a private static field before the first non-import line
+mutate_add_field() {
+    local src="$1"
+    cp "$src" "$src.bak"
+    awk '/^(public|protected|final|abstract|@).*class /{
+        print;
+        print "  private static final int __SYNTHETIC_PROBE = 1;";
+        next
+    } {print}' "$src.bak" > "$src"
+}
+
+# mutate_touch_only (negative control): add a comment — bytecode must NOT change
+mutate_touch_only() {
+    local src="$1"
+    cp "$src" "$src.bak"
+    # Prepend a comment to the first non-blank, non-comment line after the package decl
+    awk '/^package /{print; print "// synthetic-touch: " FILENAME; next} {print}' "$src.bak" > "$src"
+}
+
+# Revert any mutation on $src (restore from .bak)
+revert_mutation() {
+    local src="$1"
+    if [[ -f "$src.bak" ]]; then
+        mv "$src.bak" "$src"
+        rm -f "$src.tmp"
+    fi
+}
+
+# ── Assert change detection ───────────────────────────────────────────────────
+# Run `mvn test-order:show` with the given changeMode and parse "Changed classes:"
+# Returns 0 if $fqcn appears in output, 1 otherwise.
+# For touch_only, pass expected=0 (inverted logic).
+assert_show_detects() {
+    local dir="$1"
+    local fqcn="$2"
+    local change_mode="$3"
+    local expected_detected="${4:-1}"   # 1 = expect detected, 0 = expect NOT detected
+    shift 4
+    local cmd_args=("$@")
+
+    local out
+    out=$(mvn me.bechberger:test-order-maven-plugin:show \
+        -Dtestorder.changeMode="$change_mode" \
+        -Dtestorder.show.limit=-1 \
+        "${cmd_args[@]}" \
+        2>&1) || true
+
+    local detected=0
+    if echo "$out" | grep -q "Changed classes:.*$fqcn\|Changed class:.*$fqcn"; then
+        detected=1
+    fi
+
+    if [[ "$expected_detected" -eq 1 && "$detected" -eq 1 ]]; then
+        ok "  [DETECT OK] mode=$change_mode fqcn=$fqcn"
+        return 0
+    elif [[ "$expected_detected" -eq 0 && "$detected" -eq 0 ]]; then
+        ok "  [NO-DETECT OK] mode=$change_mode fqcn=$fqcn (expected no detection)"
+        return 0
+    else
+        if [[ "$expected_detected" -eq 1 ]]; then
+            warn "  [DETECT MISS] mode=$change_mode fqcn=$fqcn — expected detection but got none"
+        else
+            warn "  [FALSE POS] mode=$change_mode fqcn=$fqcn — unexpected detection (touch_only)"
+        fi
+        return 1
+    fi
+}
+
+# ── Write one TSV row to the results dir ─────────────────────────────────────
+# Columns: repo, mutator, change_mode, fqcn, expected, detected, runtime_ms
+write_synthetic_tsv_row() {
+    local tsv_file="$1"
+    local repo="$2"
+    local mutator="$3"
+    local change_mode="$4"
+    local fqcn="$5"
+    local expected="$6"
+    local detected="$7"
+    local runtime_ms="${8:-0}"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$repo" "$mutator" "$change_mode" "$fqcn" "$expected" "$detected" "$runtime_ms" \
+        >> "$tsv_file"
+}
+
+# ── Phase: synthetic-history (Maven) ─────────────────────────────────────────
+phase_synthetic_history_maven() {
+    local repo="$1"
+    local mutator="${2:-mutate_body}"   # which mutator to use
+    section "SYNTHETIC HISTORY: $repo (Maven) mutator=$mutator"
+
+    local dir="$THIRD_PARTY/$repo"
+    local results
+    results=$(result_dir "$repo")
+    local synth_dir="$results/synthetic"
+    mkdir -p "$synth_dir"
+    local tsv_file="$synth_dir/results.tsv"
+    # Header (only if file doesn't exist)
+    [[ -f "$tsv_file" ]] || printf 'repo\tmutator\tchange_mode\tfqcn\texpected\tdetected\truntime_ms\n' > "$tsv_file"
+
+    local module
+    module=$(detect_single_module "$repo")
+    local pkg
+    pkg=$(detect_test_package "$repo")
+
+    cd "$dir"
+    inject_maven_plugin "$repo" "$module"
+
+    local compiler_args
+    compiler_args=$(detect_compiler_args "$repo")
+    local extra_mvn_args=""
+    type detect_extra_mvn_args &>/dev/null && extra_mvn_args=$(detect_extra_mvn_args "$repo")
+    local base_args=(-B --fail-at-end -Denforcer.skip=true -Djacoco.skip=true
+                     -Dmaven.build.cache.enabled=false)
+    [[ -n "$compiler_args" ]] && base_args+=($compiler_args)
+    if [[ -n "$extra_mvn_args" ]]; then
+        eval "base_args+=($extra_mvn_args)"
+    fi
+    [[ -n "$pkg" ]] && base_args+=("-Dtestorder.includePackages=$pkg")
+
+    local mvn_args=("${base_args[@]}")
+    [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
+
+    # 1. Clean state
+    log "SH Step 1: Clean test-order data"
+    rm -rf "$dir/.test-order" 2>/dev/null
+    find "$dir" -maxdepth 3 -name ".test-order" -type d -exec rm -rf {} + 2>/dev/null || true
+    ok "Cleaned"
+
+    # 2. Learn-A (initial run to build bytecode-hashes baseline)
+    log "SH Step 2: Learn-A"
+    mvn_learn "${mvn_args[@]}" \
+        2>&1 | tee "$synth_dir/learn-A.log" | tail -3 \
+        || warn "Learn-A had test failures (index may still be valid)"
+
+    local idx
+    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    if [[ -z "$idx" ]]; then
+        warn "No index after Learn-A — project likely uses JUnit 4. Skipping synthetic-history."
+        remove_maven_plugin "$repo" "$module"
+        write_synthetic_tsv_row "$tsv_file" "$repo" "$mutator" "N/A" "N/A" "skip" "skip" "0"
+        return 0
+    fi
+    ok "Index: $idx"
+
+    # Determine idx_module and cmd_args (same logic as phase_full_maven)
+    local idx_dir
+    idx_dir=$(dirname "$idx")
+    idx_dir=$(dirname "$idx_dir")
+    local idx_module=""
+    [[ "$idx_dir" != "$dir" ]] && idx_module=$(basename "$idx_dir")
+    local cmd_args=("${base_args[@]}")
+    [[ -n "$idx_module" ]] && cmd_args+=(-pl "$idx_module")
+
+    # 3. Select mutation target
+    local target_src
+    target_src=$(select_mutation_target "$repo" "${idx_module:-$module}")
+    if [[ -z "$target_src" ]]; then
+        warn "No mutation target found for $repo — skipping"
+        remove_maven_plugin "$repo" "$module"
+        write_synthetic_tsv_row "$tsv_file" "$repo" "$mutator" "N/A" "N/A" "skip" "skip-no-target" "0"
+        return 0
+    fi
+    local fqcn
+    fqcn=$(path_to_fqcn "$target_src")
+    log "SH Step 3: Mutation target: $fqcn ($target_src)"
+
+    # 4. Apply mutation
+    log "SH Step 4: Apply $mutator to $fqcn"
+    local is_touch_only=0
+    [[ "$mutator" == "mutate_touch_only" ]] && is_touch_only=1
+    "$mutator" "$target_src"
+
+    # For all non-touch_only mutators: git-stage so uncommitted mode sees the change
+    if [[ "$is_touch_only" -eq 0 ]]; then
+        git -C "$dir" add -f "$target_src" 2>/dev/null || true
+    fi
+
+    # 5. Learn-B (detect changes against Learn-A baseline)
+    log "SH Step 5: Learn-B"
+    local t_start=$SECONDS
+    mvn_learn "${mvn_args[@]}" \
+        2>&1 | tee "$synth_dir/learn-B.log" | tail -3 \
+        || warn "Learn-B had test failures"
+    local learn_b_ms=$(( (SECONDS - t_start) * 1000 ))
+
+    # 6. Assert detection via three change modes
+    local expected_detected
+    [[ "$is_touch_only" -eq 0 ]] && expected_detected=1 || expected_detected=0
+
+    for mode in "hash" "since-last-run" "uncommitted"; do
+        local t0=$SECONDS
+        local detected=1
+        assert_show_detects "$dir" "$fqcn" "$mode" "$expected_detected" "${cmd_args[@]}" \
+            2>&1 | tee -a "$synth_dir/show-$mode.log" | tail -3 \
+            || detected=0
+        local det_ms=$(( (SECONDS - t0) * 1000 ))
+        write_synthetic_tsv_row "$tsv_file" "$repo" "$mutator" "$mode" "$fqcn" \
+            "$expected_detected" "$detected" "$det_ms"
+    done
+
+    # 7. Revert mutation
+    log "SH Step 7: Revert mutation"
+    revert_mutation "$target_src"
+    git -C "$dir" checkout -- "$target_src" 2>/dev/null || true
+
+    ok "Synthetic-history complete for $repo (mutator=$mutator)"
+    remove_maven_plugin "$repo" "$module"
+}
+
+# Run all 4 mutators for a single repo (full synthetic-history sweep)
+phase_synthetic_history_all_maven() {
+    local repo="$1"
+    for mut in mutate_body mutate_add_method mutate_add_field mutate_touch_only; do
+        phase_synthetic_history_maven "$repo" "$mut" || true
+    done
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MATRIX PHASE: Run synthetic-history under a cartesian settings grid
+#
+# Grid (12 cells = 3 instrumentation × 2 bytecodeCD × 2 staticAnalysis.depth):
+#   instrumentation.mode:          CLASS | METHOD | MEMBER
+#   bytecodeChangeDetectionEnabled: true | false
+#   staticAnalysis.depth:           1   | 3
+#
+# Per cell, run mutate_body + mutate_touch_only (most discriminating pair).
+# Also runs two malformed-invocation cells (no-prior-learn, wrong-cwd).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Tag a repo with shape attributes and write _repo-attrs.tsv row (idempotent)
+tag_repo_attrs() {
+    local repo="$1"
+    local dir="$THIRD_PARTY/$repo"
+    local attrs_file="$RESULTS_DIR/_repo-attrs.tsv"
+    [[ -f "$attrs_file" ]] || printf 'repo\tmulti_module\tkotlin_sources\tlombok_heavy\tjunit4_only\ttestng\tspock\thuge\ttiny\tmodule_info\tgit_clean\n' > "$attrs_file"
+
+    # Skip if already tagged
+    grep -q "^$repo	" "$attrs_file" 2>/dev/null && return 0
+
+    local multi_module=0 kotlin_sources=0 lombok_heavy=0
+    local junit4_only=0 testng=0 spock=0 huge=0 tiny=0 module_info=0 git_clean=0
+
+    # multi_module: more than one pom.xml or build.gradle
+    local pom_count
+    pom_count=$(find "$dir" -maxdepth 3 -name "pom.xml" ! -path "*/target/*" 2>/dev/null | wc -l | tr -d ' ')
+    [[ "$pom_count" -gt 1 ]] && multi_module=1
+
+    # kotlin_sources
+    find "$dir" -path "*/src/*" -name "*.kt" -print -quit 2>/dev/null | grep -q . && kotlin_sources=1 || true
+
+    # lombok_heavy (≥10 .java files import lombok)
+    local lombok_count
+    lombok_count=$(grep -rl "import lombok\." "$dir/src" 2>/dev/null | wc -l | tr -d ' ')
+    [[ "$lombok_count" -ge 10 ]] && lombok_heavy=1
+
+    # junit4_only: has junit:junit but no junit-jupiter
+    if find "$dir" -name "pom.xml" -exec grep -l "junit:junit\|<artifactId>junit</artifactId>" {} \; 2>/dev/null | grep -q .; then
+        if ! find "$dir" -name "pom.xml" -exec grep -l "junit-jupiter" {} \; 2>/dev/null | grep -q .; then
+            junit4_only=1
+        fi
+    fi
+
+    # testng
+    find "$dir" -name "pom.xml" -exec grep -l "testng" {} \; 2>/dev/null | grep -q . && testng=1 || true
+    find "$dir" -name "*.gradle*" -exec grep -l "testng" {} \; 2>/dev/null | grep -q . && testng=1 || true
+
+    # spock
+    find "$dir" -name "pom.xml" -exec grep -l "spock-core" {} \; 2>/dev/null | grep -q . && spock=1 || true
+
+    # huge: >5000 .java source files
+    local java_count
+    java_count=$(find "$dir" -name "*.java" ! -path "*/target/*" 2>/dev/null | wc -l | tr -d ' ')
+    [[ "$java_count" -gt 5000 ]] && huge=1
+
+    # tiny: <20 test classes
+    local test_count
+    test_count=$(find "$dir" -path "*/src/test/*" -name "*Test*.java" 2>/dev/null | wc -l | tr -d ' ')
+    [[ "$test_count" -lt 20 ]] && tiny=1
+
+    # module_info
+    find "$dir" -name "module-info.java" ! -path "*/target/*" -print -quit 2>/dev/null | grep -q . && module_info=1 || true
+
+    # git_clean (working tree clean)
+    git -C "$dir" diff --quiet HEAD 2>/dev/null && git_clean=1 || true
+
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$repo" "$multi_module" "$kotlin_sources" "$lombok_heavy" \
+        "$junit4_only" "$testng" "$spock" "$huge" "$tiny" "$module_info" "$git_clean" \
+        >> "$attrs_file"
+    ok "Tagged attrs for $repo (multi=$multi_module kotlin=$kotlin_sources lombok=$lombok_heavy junit4=$junit4_only huge=$huge)"
+}
+
+phase_matrix_maven() {
+    local repo="$1"
+    section "MATRIX: $repo (Maven)"
+
+    local dir="$THIRD_PARTY/$repo"
+    local results
+    results=$(result_dir "$repo")
+    local matrix_dir="$results/matrix"
+    mkdir -p "$matrix_dir"
+    local tsv_file="$matrix_dir/results.tsv"
+    [[ -f "$tsv_file" ]] || printf 'repo\tcell\tinstrumentation\tbytecodeCD\tdepth\tmutator\tchange_mode\tfqcn\texpected\tdetected\truntime_ms\n' > "$tsv_file"
+
+    local module
+    module=$(detect_single_module "$repo")
+    local pkg
+    pkg=$(detect_test_package "$repo")
+    local compiler_args
+    compiler_args=$(detect_compiler_args "$repo")
+    local extra_mvn_args=""
+    type detect_extra_mvn_args &>/dev/null && extra_mvn_args=$(detect_extra_mvn_args "$repo")
+    local base_args=(-B --fail-at-end -Denforcer.skip=true -Djacoco.skip=true
+                     -Dmaven.build.cache.enabled=false)
+    [[ -n "$compiler_args" ]] && base_args+=($compiler_args)
+    if [[ -n "$extra_mvn_args" ]]; then
+        eval "base_args+=($extra_mvn_args)"
+    fi
+    [[ -n "$pkg" ]] && base_args+=("-Dtestorder.includePackages=$pkg")
+    local mvn_args=("${base_args[@]}")
+    [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
+
+    cd "$dir"
+    inject_maven_plugin "$repo" "$module"
+
+    # Select mutation target once (reused across all cells)
+    local target_src
+    target_src=$(select_mutation_target "$repo" "$module")
+    if [[ -z "$target_src" ]]; then
+        warn "No mutation target found — skipping matrix for $repo"
+        remove_maven_plugin "$repo" "$module"
+        return 0
+    fi
+    local fqcn
+    fqcn=$(path_to_fqcn "$target_src")
+    log "Matrix target: $fqcn"
+
+    # ── Malformed-invocation cell 1: no prior learn ───────────────────────
+    log "Cell[malformed-no-learn]: show without any prior learn"
+    rm -rf "$dir/.test-order" 2>/dev/null || true
+    find "$dir" -maxdepth 3 -name ".test-order" -type d -exec rm -rf {} + 2>/dev/null || true
+    local ml_out
+    ml_out=$(timeout 120 mvn me.bechberger:test-order-maven-plugin:show \
+        "${base_args[@]}" 2>&1) || true
+    local ml_rc=$?
+    if echo "$ml_out" | grep -qi "dependency index\|no index\|please run.*learn\|no data"; then
+        ok "  [GOOD ERROR] no-prior-learn cell: got friendly message"
+        printf '%s\tmalformed-no-learn\tN/A\tN/A\tN/A\tN/A\tN/A\t%s\t1\t1\t0\n' "$repo" "$fqcn" >> "$tsv_file"
+    else
+        warn "  [BAD ERROR] no-prior-learn cell: unexpected output (rc=$ml_rc)"
+        printf '%s\tmalformed-no-learn\tN/A\tN/A\tN/A\tN/A\tN/A\t%s\t1\t0\t0\n' "$repo" "$fqcn" >> "$tsv_file"
+    fi
+
+    # ── Grid cells ───────────────────────────────────────────────────────
+    local instr_modes=("CLASS" "METHOD" "MEMBER")
+    local bcd_modes=("true" "false")
+    local depth_modes=("1" "3")
+    local mutators=("mutate_body" "mutate_touch_only")
+
+    for instr in "${instr_modes[@]}"; do
+        for bcd in "${bcd_modes[@]}"; do
+            for depth in "${depth_modes[@]}"; do
+                local cell="${instr}-bcd${bcd}-d${depth}"
+                log "Cell[$cell]"
+
+                # Clean and build baseline learn for this cell
+                rm -rf "$dir/.test-order" 2>/dev/null || true
+                find "$dir" -maxdepth 3 -name ".test-order" -type d -exec rm -rf {} + 2>/dev/null || true
+                local cell_learn_args=("${mvn_args[@]}"
+                    "-Dtestorder.instrumentation.mode=$instr"
+                    "-Dtestorder.bytecodeChangeDetectionEnabled=$bcd"
+                    "-Dtestorder.staticAnalysis.depth=$depth")
+
+                timeout 300 mvn_learn "${cell_learn_args[@]}" \
+                    > "$matrix_dir/${cell}-learn-A.log" 2>&1 \
+                    || warn "  Learn-A failed for cell $cell (may still have index)"
+
+                local idx
+                idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+                if [[ -z "$idx" ]]; then
+                    warn "  No index after learn-A for cell $cell — skipping"
+                    for mut in "${mutators[@]}"; do
+                        printf '%s\t%s\t%s\t%s\t%s\t%s\thash\t%s\tskip\tskip\t0\n' \
+                            "$repo" "$cell" "$instr" "$bcd" "$depth" "$mut" "$fqcn" >> "$tsv_file"
+                    done
+                    continue
+                fi
+
+                # Build cmd_args for show (no -am)
+                local idx_dir
+                idx_dir=$(dirname "$(dirname "$idx")")
+                local idx_module=""
+                [[ "$idx_dir" != "$dir" ]] && idx_module=$(basename "$idx_dir")
+                local cell_cmd_args=("${base_args[@]}"
+                    "-Dtestorder.instrumentation.mode=$instr"
+                    "-Dtestorder.bytecodeChangeDetectionEnabled=$bcd"
+                    "-Dtestorder.staticAnalysis.depth=$depth")
+                [[ -n "$idx_module" ]] && cell_cmd_args+=(-pl "$idx_module")
+
+                for mut in "${mutators[@]}"; do
+                    local is_touch=0
+                    [[ "$mut" == "mutate_touch_only" ]] && is_touch=1
+                    local expected
+                    [[ "$is_touch" -eq 0 ]] && expected=1 || expected=0
+
+                    # Apply mutation
+                    "$mut" "$target_src"
+                    [[ "$is_touch" -eq 0 ]] && git -C "$dir" add -f "$target_src" 2>/dev/null || true
+
+                    # Learn-B
+                    timeout 300 mvn_learn "${cell_learn_args[@]}" \
+                        > "$matrix_dir/${cell}-${mut}-learn-B.log" 2>&1 \
+                        || warn "  Learn-B failed for $cell/$mut"
+
+                    # Assert hash mode (primary for matrix)
+                    local t0=$SECONDS
+                    local detected=1
+                    assert_show_detects "$dir" "$fqcn" "hash" "$expected" "${cell_cmd_args[@]}" \
+                        >> "$matrix_dir/${cell}-${mut}-show.log" 2>&1 \
+                        || detected=0
+                    local dt=$(( (SECONDS - t0) * 1000 ))
+
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\thash\t%s\t%s\t%s\t%s\n' \
+                        "$repo" "$cell" "$instr" "$bcd" "$depth" "$mut" \
+                        "$fqcn" "$expected" "$detected" "$dt" >> "$tsv_file"
+
+                    # Revert
+                    revert_mutation "$target_src"
+                    git -C "$dir" checkout -- "$target_src" 2>/dev/null || true
+                done
+            done
+        done
+    done
+
+    ok "Matrix complete for $repo"
+    remove_maven_plugin "$repo" "$module"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE 7: Auto mode — Hands-off test ordering
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1781,14 +2333,16 @@ run_for_repo() {
 
     if is_maven_repo "$repo"; then
         case "$phase" in
-            learn)   phase_learn_maven "$repo" ;;
-            order)   phase_order_maven "$repo" ;;
-            select)  phase_select_maven "$repo" ;;
-            tiered)  phase_tiered_maven "$repo" ;;
-            bugs)    phase_bugs_maven "$repo" ;;
-            auto)    phase_auto_maven "$repo" ;;
-            full)    phase_full_maven "$repo" ;;
-            *)       err "Unknown phase: $phase" ;;
+            learn)            phase_learn_maven "$repo" ;;
+            order)            phase_order_maven "$repo" ;;
+            select)           phase_select_maven "$repo" ;;
+            tiered)           phase_tiered_maven "$repo" ;;
+            bugs)             phase_bugs_maven "$repo" ;;
+            auto)             phase_auto_maven "$repo" ;;
+            full)             phase_full_maven "$repo" ;;
+            synthetic-history)phase_synthetic_history_all_maven "$repo" ;;
+            matrix)           tag_repo_attrs "$repo"; phase_matrix_maven "$repo" ;;
+            *)                err "Unknown phase: $phase" ;;
         esac
     elif is_gradle_repo "$repo"; then
         case "$phase" in
@@ -1837,7 +2391,7 @@ main() {
 
     # Otherwise run phase on all applicable repos
     case "$phase" in
-        learn|order|select|tiered|bugs|auto|full)
+        learn|order|select|tiered|bugs|auto|full|synthetic-history|matrix)
             for repo in "${MAVEN_REPOS[@]}"; do
                 if [[ -d "$THIRD_PARTY/$repo" ]]; then
                     run_for_repo "$repo" "$phase"
@@ -1902,19 +2456,21 @@ main() {
             echo "Usage: $0 [PHASE] [REPO]"
             echo ""
             echo "Phases:"
-            echo "  install    - Install test-order to local Maven repo"
-            echo "  learn      - Run learn mode on all repos"
-            echo "  order      - Run order mode (requires prior learn)"
-            echo "  select     - Run select + run-remaining"
-            echo "  tiered     - Run 3-tier CI pipeline"
-            echo "  bugs       - Inject synthetic bugs and verify detection"
-            echo "  auto       - Run auto mode (learn→order transition)"
-            echo "  full       - Complete workflow (all of the above)"
-            echo "  quick      - Full workflow on small repos only"
-            echo "  medium     - Full workflow on medium repos"
-            echo "  large      - Full workflow on large repos"
-            echo "  all        - Everything on every repo"
-            echo "  regression - Full workflow on known-working regression set"
+            echo "  install           - Install test-order to local Maven repo"
+            echo "  learn             - Run learn mode on all repos"
+            echo "  order             - Run order mode (requires prior learn)"
+            echo "  select            - Run select + run-remaining"
+            echo "  tiered            - Run 3-tier CI pipeline"
+            echo "  bugs              - Inject synthetic bugs and verify detection"
+            echo "  auto              - Run auto mode (learn→order transition)"
+            echo "  full              - Complete workflow (all of the above)"
+            echo "  synthetic-history - Validate change detection: learn → mutate → learn → assert"
+            echo "  matrix            - Cartesian settings grid (instrumentation × bcd × depth)"
+            echo "  quick             - Full workflow on small repos only"
+            echo "  medium            - Full workflow on medium repos"
+            echo "  large             - Full workflow on large repos"
+            echo "  all               - Everything on every repo"
+            echo "  regression        - Full workflow on known-working regression set"
             echo ""
             echo "Repos: ${MAVEN_REPOS[*]} ${GRADLE_REPOS[*]}"
             exit 1
