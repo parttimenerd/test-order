@@ -221,7 +221,7 @@ public final class PropertySuggestion {
 				continue;
 			// Skip internal reactor-style keys and session-coordination keys
 			if (key.startsWith("testorder.changed.classes.") || key.startsWith("testorder.changed.test.classes.")
-					|| key.equals("testorder.pendingRestores"))
+					|| key.equals("testorder.pendingRestores") || key.startsWith("testorder.internal."))
 				continue;
 			String suggestion = findClosest(key);
 			if (suggestion != null) {

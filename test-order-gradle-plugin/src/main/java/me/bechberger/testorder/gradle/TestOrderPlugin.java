@@ -237,7 +237,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                         GROUP_ID + ":test-order-testng:" + VERSION);
                 testngDep.setTransitive(false);
                 project.getDependencies().add("testRuntimeOnly", testngDep);
-                project.getLogger().lifecycle("[test-order] TestNG detected — adding test-order-testng support");
+                logOnceOnRootProject(project, "testorder.internal.testngHintShown",
+                        "[test-order] TestNG detected — adding test-order-testng support");
             }
         } else {
             project.afterEvaluate(p -> {
@@ -246,7 +247,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                             GROUP_ID + ":test-order-testng:" + VERSION);
                     testngDep.setTransitive(false);
                     p.getDependencies().add("testRuntimeOnly", testngDep);
-                    p.getLogger().lifecycle("[test-order] TestNG detected — adding test-order-testng support");
+                    logOnceOnRootProject(p, "testorder.internal.testngHintShown",
+                            "[test-order] TestNG detected — adding test-order-testng support");
                 }
             });
         }
@@ -359,6 +361,15 @@ public class TestOrderPlugin implements Plugin<Project> {
                         && "spring-boot-test".equals(d.getName()))
                         || ("org.springframework".equals(d.getGroup())
                         && "spring-test".equals(d.getName())));
+    }
+
+    /** Logs a lifecycle message exactly once per build by storing a flag on the root project. */
+    private static void logOnceOnRootProject(Project project, String flagKey, String message) {
+        Project root = project.getRootProject();
+        if (!root.getExtensions().getExtraProperties().has(flagKey)) {
+            root.getExtensions().getExtraProperties().set(flagKey, Boolean.TRUE);
+            project.getLogger().lifecycle(message);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -909,12 +920,10 @@ public class TestOrderPlugin implements Plugin<Project> {
 
         // Suggest springContextGrouping for Spring projects (parity with Maven)
         if (!ext.getSpringContextGrouping().get() && hasSpringTestDependency(project)) {
-            if (!project.getExtensions().getExtraProperties().has("testorder.springHintShown")) {
-                project.getExtensions().getExtraProperties().set("testorder.springHintShown", Boolean.TRUE);
-                project.getLogger().lifecycle("[test-order] Spring test dependency detected. "
-                        + "Consider enabling testOrder { springContextGrouping = true } "
-                        + "to reduce Spring context reloads.");
-            }
+            logOnceOnRootProject(project, "testorder.internal.springHintShown",
+                    "[test-order] Spring test dependency detected. "
+                            + "Consider enabling testOrder { springContextGrouping = true } "
+                            + "to reduce Spring context reloads.");
         }
 
         // Inject PriorityClassOrderer as the JUnit 5 global class orderer
