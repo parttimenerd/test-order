@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -36,6 +37,12 @@ import me.bechberger.testorder.ops.ShowOrderOperation;
  * Usage: {@code mvn test-order:show}
  */
 public final class ShowWorkflow {
+
+	/**
+	 * True once a preamble has been printed this JVM run — suppresses repeats in
+	 * multi-module builds.
+	 */
+	private static final AtomicBoolean PREAMBLE_PRINTED = new AtomicBoolean(false);
 
 	private ShowWorkflow() {
 	}
@@ -236,15 +243,18 @@ public final class ShowWorkflow {
 	public static void printReport(PrintStream out, ShowResult result, Options opts, PluginContext ctx) {
 		Predicate<String> filter = compileFilter(opts.filter());
 
-		// ── Preamble ─────────────────────────────────────────────────
-		out.println(buildPreamble(result, opts));
-		out.println();
+		// ── Preamble — only print once per JVM to avoid noise in multi-module builds
+		// ──
+		if (PREAMBLE_PRINTED.compareAndSet(false, true)) {
+			out.println(buildPreamble(result, opts));
+			out.println(
+					"[test-order] Score legend: higher score = higher priority; Deps=changed/total, Fail=failure signal.");
+			out.println();
+		}
 
 		// ── Class order section ──────────────────────────────────────
 		if (result.classOrder() != null) {
 			out.println("═══ Class Order ══════════════════════════════════════");
-			out.println(
-					"[test-order] Score legend: higher score = higher priority; Deps=changed/total, Fail=failure signal.");
 			List<OrderReportPrinter.RankedTest> ranked = result.classOrder().ranked();
 			if (filter != null) {
 				ranked = ranked.stream().filter(r -> filter.test(r.name())).toList();

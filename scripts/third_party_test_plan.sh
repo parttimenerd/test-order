@@ -1250,6 +1250,23 @@ phase_full_gradle() {
         warn "No patch directory for $repo — skipping bug injection (add scripts/bugs/$repo/*.patch)"
     fi
 
+    # 8. Dashboard
+    log "Step 8: Generate dashboard"
+    local dash_log="$results/full-dashboard.log"
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderDashboard \
+        --no-daemon --no-build-cache --no-configuration-cache \
+        $extra_args \
+        2>&1 | tee "$dash_log" | tail -5 || warn "Dashboard generation failed"
+    local dash_html
+    dash_html=$(find "$dir" -name "index.html" -path "*test-order-dashboard*" 2>/dev/null | head -1)
+    if [[ -n "$dash_html" ]]; then
+        local dash_size
+        dash_size=$(du -sh "$dash_html" 2>/dev/null | cut -f1)
+        ok "Dashboard: $dash_html ($dash_size)"
+    else
+        warn "Dashboard HTML not found after generation"
+    fi
+
     ok "Full workflow completed for $repo"
     remove_gradle_plugin "$repo"
 }
@@ -1693,6 +1710,22 @@ phase_full_maven() {
     # 10. Diagnose
     log "Step 10: Diagnose"
     mvn me.bechberger:test-order-maven-plugin:diagnose "${cmd_args[@]}" 2>&1 | tee "$results/full-diagnose.log" | tail -20 || warn "Diagnose failed"
+
+    # 11. Dashboard
+    log "Step 11: Generate dashboard"
+    local dash_log="$results/full-dashboard.log"
+    local cmd_args_dash=("${cmd_args[@]}")
+    mvn me.bechberger:test-order-maven-plugin:dashboard "${cmd_args_dash[@]}" \
+        2>&1 | tee "$dash_log" | tail -5 || warn "Dashboard generation failed"
+    local dash_html
+    dash_html=$(find "$dir" -name "index.html" -path "*test-order-dashboard*" 2>/dev/null | head -1)
+    if [[ -n "$dash_html" ]]; then
+        local dash_size
+        dash_size=$(du -sh "$dash_html" 2>/dev/null | cut -f1)
+        ok "Dashboard: $dash_html ($dash_size)"
+    else
+        warn "Dashboard HTML not found after generation"
+    fi
 
     ok "Full workflow completed for $repo"
     remove_maven_plugin "$repo" "$module"

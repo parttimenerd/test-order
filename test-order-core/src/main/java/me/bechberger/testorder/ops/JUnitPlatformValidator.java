@@ -4,8 +4,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Framework-agnostic validation of JUnit Platform configuration that could
@@ -14,10 +17,23 @@ import java.util.Map;
  */
 public final class JUnitPlatformValidator {
 
+	/**
+	 * Warnings already emitted this JVM run — prevents duplicate noise in
+	 * multi-module builds.
+	 */
+	private static final Set<String> WARNED = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
 	private final PluginLog log;
 
 	public JUnitPlatformValidator(PluginLog log) {
 		this.log = log;
+	}
+
+	/** Emit a warning only once per JVM run (deduplicates across subprojects). */
+	private void warnOnce(String message) {
+		if (WARNED.add(message)) {
+			log.warn(message);
+		}
 	}
 
 	// ── Listener deactivation (M4) ───────────────────────────────────
@@ -38,7 +54,7 @@ public final class JUnitPlatformValidator {
 			String pattern = deactivate.trim();
 			if ("*".equals(pattern) || pattern.contains("TelemetryListener")
 					|| pattern.contains("me.bechberger.testorder")) {
-				log.warn("[test-order] junit.platform.execution.listeners.deactivate=" + pattern
+				warnOnce("[test-order] junit.platform.execution.listeners.deactivate=" + pattern
 						+ " — this will disable test-order's TelemetryListener. "
 						+ "No telemetry (durations, failures) will be recorded.");
 			}
@@ -49,7 +65,7 @@ public final class JUnitPlatformValidator {
 				if ("junit.platform.execution.listeners.deactivate".equals(entry.key)
 						&& ("*".equals(entry.value) || entry.value.contains("TelemetryListener")
 								|| entry.value.contains("me.bechberger.testorder"))) {
-					log.warn("[test-order] junit.platform.execution.listeners.deactivate=" + entry.value
+					warnOnce("[test-order] junit.platform.execution.listeners.deactivate=" + entry.value
 							+ " in configurationParameters — this will disable test-order's TelemetryListener.");
 				}
 			}
@@ -71,12 +87,12 @@ public final class JUnitPlatformValidator {
 		// Check system properties
 		String classOrderer = systemProperties.get("junit.jupiter.testclass.order.default");
 		if (classOrderer != null && !classOrderer.isBlank() && !classOrderer.contains("PriorityClassOrderer")) {
-			log.warn("[test-order] A competing ClassOrderer is configured: " + classOrderer
+			warnOnce("[test-order] A competing ClassOrderer is configured: " + classOrderer
 					+ " — this will override test-order's PriorityClassOrderer.");
 		}
 		String methodOrderer = systemProperties.get("junit.jupiter.testmethod.order.default");
 		if (methodOrderer != null && !methodOrderer.isBlank() && !methodOrderer.contains("PriorityMethodOrderer")) {
-			log.warn("[test-order] A global MethodOrderer is configured: " + methodOrderer
+			warnOnce("[test-order] A global MethodOrderer is configured: " + methodOrderer
 					+ " — this may conflict with test-order's PriorityMethodOrderer on classes "
 					+ "without an explicit @TestMethodOrder annotation.");
 		}
@@ -84,7 +100,7 @@ public final class JUnitPlatformValidator {
 		// Check auto-detection (M12)
 		String autoDetect = systemProperties.get("junit.jupiter.extensions.autodetection.enabled");
 		if ("true".equalsIgnoreCase(autoDetect)) {
-			log.warn("[test-order] junit.jupiter.extensions.autodetection.enabled=true — "
+			warnOnce("[test-order] junit.jupiter.extensions.autodetection.enabled=true — "
 					+ "a third-party ClassOrderer/MethodOrderer on the classpath could override "
 					+ "test-order's PriorityClassOrderer/PriorityMethodOrderer.");
 		}
@@ -94,12 +110,12 @@ public final class JUnitPlatformValidator {
 			for (ConfigEntry entry : parseConfigurationParameters(configurationParameters)) {
 				if ("junit.jupiter.testclass.order.default".equals(entry.key)
 						&& !entry.value.contains("PriorityClassOrderer")) {
-					log.warn("[test-order] A competing ClassOrderer in configurationParameters: " + entry.value
+					warnOnce("[test-order] A competing ClassOrderer in configurationParameters: " + entry.value
 							+ " — this will override test-order's PriorityClassOrderer.");
 				}
 				if ("junit.jupiter.testmethod.order.default".equals(entry.key)
 						&& !entry.value.contains("PriorityMethodOrderer")) {
-					log.warn("[test-order] A global MethodOrderer in configurationParameters: " + entry.value
+					warnOnce("[test-order] A global MethodOrderer in configurationParameters: " + entry.value
 							+ " — this may conflict with test-order's PriorityMethodOrderer.");
 				}
 			}
@@ -203,12 +219,12 @@ public final class JUnitPlatformValidator {
 			String content = Files.readString(userProps);
 			if (content.contains("junit.jupiter.testclass.order.default")
 					|| content.contains("junit.jupiter.testmethod.order.default")) {
-				log.warn("[test-order] src/test/resources/junit-platform.properties "
+				warnOnce("[test-order] src/test/resources/junit-platform.properties "
 						+ "contains orderer configuration that may conflict with test-order. "
 						+ "System properties set by test-order take precedence.");
 			}
 			if (content.contains("junit.platform.execution.listeners.deactivate")) {
-				log.warn("[test-order] src/test/resources/junit-platform.properties "
+				warnOnce("[test-order] src/test/resources/junit-platform.properties "
 						+ "contains listener deactivation config — this may disable "
 						+ "test-order's TelemetryListener.");
 			}
