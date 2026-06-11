@@ -73,8 +73,8 @@ detect_extra_mvn_args() {
         # logbook and jetty use JUnit class-level parallel execution (mode.classes.default=concurrent
         # or Surefire <parallel>classesAndMethods</parallel>).  test-order cannot track dependencies
         # when multiple test classes run simultaneously, so we override these to serial execution.
-        logbook) echo "-Djunit.jupiter.execution.parallel.mode.classes.default=same_thread -Dmaven.test.failure.ignore=true" ;;
-        jetty) echo "-Djunit.jupiter.execution.parallel.mode.classes.default=same_thread -Dsurefire.parallel=none -Dmaven.test.failure.ignore=true -pl '!jetty-ee8,!jetty-demos,!jetty-p2' -am" ;;
+        logbook) echo "-Dparallel=none -Dmaven.test.failure.ignore=true" ;;
+        jetty) echo "-Dparallel=none -Djunit.jupiter.execution.parallel.mode.classes.default=same_thread -Dmaven.test.failure.ignore=true -pl '!jetty-ee8,!jetty-demos,!jetty-p2' -am" ;;
         *)          echo "" ;;
     esac
 }
