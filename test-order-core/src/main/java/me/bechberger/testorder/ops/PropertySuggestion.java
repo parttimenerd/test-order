@@ -73,7 +73,9 @@ public final class PropertySuggestion {
 			"testorder.mutations.outputFile", "testorder.mutations.timeBudget", "testorder.mutations.targetClasses",
 			// bytecode change detection / augmentation keys
 			"testorder.bytecodeChangeDetection.enabled", "testorder.bytecodeAugmentDependencyMap.enabled",
-			"testorder.bytecodeHashFile");
+			"testorder.bytecodeHashFile",
+			// toolchain override: resets JDK<17 launcher on test tasks (Gradle only)
+			"testorder.overrideToolchain");
 
 	/**
 	 * Find the closest known key to the given unknown key using case-insensitive

@@ -496,19 +496,41 @@ public class TestOrderPlugin implements Plugin<Project> {
                     // For test-order's own derived tasks (testOrderLearn, testOrderSelect, …),
                     // the project toolchain (e.g. JDK 8 in reactor-core) is inherited via
                     // withType<Test>().configureEach but should not block us — those tasks
-                    // run the test-order agent which requires JDK 17+.  Unset the inherited
-                    // launcher so the task falls back to the Gradle daemon JVM (≥ 17).
+                    // run the test-order agent which requires JDK 17+.  Override the inherited
+                    // launcher via JavaToolchainService to request the current JVM version (≥ 17).
                     // Also allow override via -Dtestorder.overrideToolchain=true for projects
                     // where even the regular test task uses a JDK < 17 toolchain.
                     boolean isTestOrderTask = testTask.getName().startsWith("testOrder");
                     boolean overrideToolchain = "true".equalsIgnoreCase(
                             gradleOrSystemProperty(project, "testorder.overrideToolchain"));
                     if (isTestOrderTask || overrideToolchain) {
-                        testTask.getJavaLauncher().set((org.gradle.jvm.toolchain.JavaLauncher) null);
-                        project.getLogger().info(
-                                "[test-order] Task '{}' in project '{}' inherited a JDK {} toolchain; "
-                                        + "resetting to daemon JVM for test-order compatibility.",
-                                testTask.getName(), project.getPath(), testJavaVersion);
+                        try {
+                            int currentVersion = JavaVersion.current().ordinal() + 1;
+                            var toolchainService = project.getExtensions()
+                                    .findByType(org.gradle.jvm.toolchain.JavaToolchainService.class);
+                            if (toolchainService != null) {
+                                int requestVersion = Math.max(currentVersion, 17);
+                                var overrideLauncher = toolchainService.launcherFor(spec ->
+                                        spec.getLanguageVersion().set(
+                                                org.gradle.jvm.toolchain.JavaLanguageVersion.of(requestVersion)));
+                                testTask.getJavaLauncher().set(overrideLauncher);
+                                project.getLogger().info(
+                                        "[test-order] Task '{}' in project '{}' inherited a JDK {} toolchain; "
+                                                + "overriding with JDK {} for test-order compatibility.",
+                                        testTask.getName(), project.getPath(), testJavaVersion, requestVersion);
+                            } else {
+                                project.getLogger().warn(
+                                        "[test-order] Task '{}' in project '{}': JDK {} toolchain override requested "
+                                                + "but JavaToolchainService not available — skipping task.",
+                                        testTask.getName(), project.getPath(), testJavaVersion);
+                                return;
+                            }
+                        } catch (Exception e) {
+                            project.getLogger().warn(
+                                    "[test-order] Task '{}' in project '{}': failed to override JDK {} toolchain: {}",
+                                    testTask.getName(), project.getPath(), testJavaVersion, e.getMessage());
+                            return;
+                        }
                     } else {
                         project.getLogger().warn(
                                 "[test-order] Skipping test task '{}' in project '{}': test JVM is Java {} "
