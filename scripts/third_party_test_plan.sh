@@ -613,14 +613,73 @@ pluginManagement {\
     id("me.bechberger.test-order") version "'"$PLUGIN_VERSION"'"
 ' "$build_file"
     elif [[ "$is_multi_module" == "true" ]]; then
-        # Groovy DSL multi-module: prepend buildscript{} before the first plugins{} line
-        sed -i '' '/^plugins {/i\
+        # Groovy DSL multi-module: inject into existing buildscript{} if present,
+        # otherwise prepend a new buildscript{} before the first plugins{} line.
+        # Gradle only allows ONE buildscript{} block; a second one causes artifact
+        # instrumentation failures (e.g. hibernate-orm which already has buildscript{}).
+        if grep -q "^buildscript {" "$build_file"; then
+            # Inject classpath dep into the existing buildscript{} block using a
+            # line-by-line parser that tracks brace depth (handles commented-out blocks).
+            # Gradle only allows ONE buildscript{} block; a second one causes artifact
+            # instrumentation failures (e.g. hibernate-orm which already has buildscript{}).
+            python3 /dev/stdin "$build_file" "$PLUGIN_VERSION" << 'PYEOF'
+import sys
+build_file = sys.argv[1]
+plugin_version = sys.argv[2]
+lines = open(build_file).read().splitlines(keepends=True)
+classpath_line = f'\tclasspath "me.bechberger:test-order-gradle-plugin:{plugin_version}"\n'
+maven_local_line = '\trepositories { mavenLocal() }\n'
+
+in_buildscript = False
+depth = 0
+found_dep = False
+found_repos = False
+bs_start = -1
+bs_end = -1
+dep_insert_after = -1
+
+for i, line in enumerate(lines):
+    stripped = line.lstrip()
+    is_comment = stripped.startswith('//')
+    if not in_buildscript:
+        if line.rstrip() == 'buildscript {':
+            in_buildscript = True
+            depth = 1
+            bs_start = i
+    else:
+        if not is_comment:
+            depth += line.count('{') - line.count('}')
+        if depth <= 0:
+            bs_end = i
+            break
+        if not is_comment:
+            if 'repositories {' in line and depth == 2:
+                found_repos = True
+            if 'dependencies {' in line and depth == 2:
+                found_dep = True
+                dep_insert_after = i
+
+out = list(lines)
+if dep_insert_after >= 0:
+    out.insert(dep_insert_after + 1, classpath_line)
+elif bs_end >= 0 and not found_dep:
+    out.insert(bs_end, '\tdependencies {\n' + classpath_line + '\t}\n')
+if not found_repos and bs_start >= 0:
+    out.insert(bs_start + 1, maven_local_line)
+
+open(build_file, 'w').write(''.join(out))
+PYEOF
+            log "  → injected test-order classpath into existing buildscript{} in $build_file"
+        else
+            # No existing buildscript{}; prepend one before plugins{}
+            sed -i '' '/^plugins {/i\
 buildscript {\
     repositories { mavenLocal() }\
     dependencies { classpath "me.bechberger:test-order-gradle-plugin:'"$PLUGIN_VERSION"'" }\
 }\
 
 ' "$build_file"
+        fi
     else
         sed -i '' '/^plugins {/a\
     id "me.bechberger.test-order" version "'"$PLUGIN_VERSION"'"

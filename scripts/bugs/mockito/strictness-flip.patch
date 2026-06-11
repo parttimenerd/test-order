@@ -1,0 +1,9 @@
+--- a/mockito-extensions/mockito-junit-jupiter/src/main/java/org/mockito/junit/jupiter/MockitoExtension.java
++++ b/mockito-extensions/mockito-junit-jupiter/src/main/java/org/mockito/junit/jupiter/MockitoExtension.java
+@@ -128,7 +128,7 @@ public class MockitoExtension implements BeforeEachCallback, AfterEachCallback,
+     // This constructor is invoked by JUnit Jupiter via reflection or ServiceLoader
+     @SuppressWarnings("unused")
+     public MockitoExtension() {
+-        this(Strictness.STRICT_STUBS);
++        this(Strictness.WARN);
+     }

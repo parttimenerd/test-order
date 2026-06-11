@@ -269,6 +269,10 @@ detect_gradle_subproject_prefix() {
         # The first path segment alone is insufficient to scope to the right leaf project.
         # Use ROOT so all leaf projects' testOrderSelect tasks are candidates.
         spring-boot) echo "ROOT" ;;
+        # mockito: MockitoExtension lives in mockito-extensions/mockito-junit-jupiter.
+        # The indexed tests (org.mockitousage.*) live in mockito-extensions/mockito-subclass.
+        # Both are under the mockito-extensions parent; use ROOT so all subprojects are candidates.
+        mockito) echo "ROOT" ;;
         *) echo "" ;;
     esac
 }
