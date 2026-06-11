@@ -184,9 +184,10 @@ detect_gradle_extra_args() {
 -x :streams:upgrade-system-tests-41:test -x :streams:upgrade-system-tests-41:compileTestJava" ;;
         # opentelemetry uses spotless/otel-conventions, not checkstyle/spotbugs.
         opentelemetry) echo "--continue" ;;
-        # Default: exclude common static-analysis tasks that may slow or break the build.
-        # Most Gradle repos have these tasks; resilience4j is the known exception.
-        *) echo "--continue -x checkstyleMain -x checkstyleTest -x spotbugsMain" ;;
+        # Default: just --continue; do not exclude checkstyle/spotbugs since most modern Gradle
+        # repos don't have these tasks and Gradle 9 errors on -x for non-existent task names.
+        # Add per-repo exclusions above for repos with known slow/broken analysis tasks.
+        *) echo "--continue" ;;
     esac
 }
 
