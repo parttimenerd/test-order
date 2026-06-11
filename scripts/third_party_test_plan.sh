@@ -1871,11 +1871,20 @@ mutate_body() {
 mutate_add_field() {
     local src="$1"
     cp "$src" "$src.bak"
-    awk '/^(public|protected|final|abstract|@).*class /{
+    # Match any class declaration (public/protected/final/abstract/package-private)
+    awk '/class [A-Z][A-Za-z0-9_]*/ && /^[[:space:]]*(public|protected|final|abstract|class|@)/ {
         print;
         print "  private static final int __SYNTHETIC_PROBE = 1;";
         next
     } {print}' "$src.bak" > "$src"
+    # Fallback: if awk made no change (unusual layout), insert before final }
+    if cmp -s "$src.bak" "$src"; then
+        cp "$src.bak" "$src"
+        awk 'BEGIN{found=0} /^}[[:space:]]*$/ && !found{
+            print "  private static final int __SYNTHETIC_PROBE = 1;";
+            found=1
+        } {print}' "$src.bak" > "$src"
+    fi
 }
 
 # mutate_touch_only (negative control): create a dummy NON-source file to ensure
