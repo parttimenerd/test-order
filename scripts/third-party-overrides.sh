@@ -70,6 +70,11 @@ detect_extra_mvn_args() {
         # Without it, the build fails with exit 127 (command not found). Skip this project
         # if @sap/cds is not available.
         cds-feature-attachments) echo "-Dmaven.test.failure.ignore=true -pl 'cds-feature-attachments,storage-targets/cds-feature-attachments-fs,storage-targets/cds-feature-attachments-oss' -am" ;;
+        # logbook and jetty use JUnit class-level parallel execution (mode.classes.default=concurrent
+        # or Surefire <parallel>classesAndMethods</parallel>).  test-order cannot track dependencies
+        # when multiple test classes run simultaneously, so we override these to serial execution.
+        logbook) echo "-Djunit.jupiter.execution.parallel.mode.classes.default=same_thread -Dmaven.test.failure.ignore=true" ;;
+        jetty) echo "-Djunit.jupiter.execution.parallel.mode.classes.default=same_thread -Dsurefire.parallel=none -Dmaven.test.failure.ignore=true -pl '!jetty-ee8,!jetty-demos,!jetty-p2' -am" ;;
         *)          echo "" ;;
     esac
 }

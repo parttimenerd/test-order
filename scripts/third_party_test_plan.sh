@@ -528,6 +528,12 @@ inject_gradle_plugin() {
         return 1
     fi
 
+    # Skip injection if already injected (bak file exists means injection is in place)
+    if [[ -f "$build_file.bak" ]]; then
+        ok "Plugin already injected in $repo (bak exists) — skipping"
+        return 0
+    fi
+
     cp "$build_file" "$build_file.bak"
 
     # Inject mavenLocal() into settings files so Gradle can resolve both:
@@ -1296,10 +1302,10 @@ phase_full_gradle() {
         $extra_args \
         2>&1 | tee "$dash_log" | tail -5 || warn "Dashboard generation failed"
     local dash_html
-    dash_html=$(find "$dir" -name "index.html" -path "*test-order-dashboard*" 2>/dev/null | head -1)
+    dash_html=$(find "$dir" -name "index.html" -path "*test-order-dashboard*" 2>/dev/null | head -1 || true)
     if [[ -n "$dash_html" ]]; then
         local dash_size
-        dash_size=$(du -sh "$dash_html" 2>/dev/null | cut -f1)
+        dash_size=$(du -sh "$dash_html" 2>/dev/null | cut -f1 || true)
         ok "Dashboard: $dash_html ($dash_size)"
     else
         warn "Dashboard HTML not found after generation"
@@ -1756,10 +1762,10 @@ phase_full_maven() {
     mvn me.bechberger:test-order-maven-plugin:dashboard "${cmd_args_dash[@]}" \
         2>&1 | tee "$dash_log" | tail -5 || warn "Dashboard generation failed"
     local dash_html
-    dash_html=$(find "$dir" -name "index.html" -path "*test-order-dashboard*" 2>/dev/null | head -1)
+    dash_html=$(find "$dir" -name "index.html" -path "*test-order-dashboard*" 2>/dev/null | head -1 || true)
     if [[ -n "$dash_html" ]]; then
         local dash_size
-        dash_size=$(du -sh "$dash_html" 2>/dev/null | cut -f1)
+        dash_size=$(du -sh "$dash_html" 2>/dev/null | cut -f1 || true)
         ok "Dashboard: $dash_html ($dash_size)"
     else
         warn "Dashboard HTML not found after generation"

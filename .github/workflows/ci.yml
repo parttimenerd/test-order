@@ -363,6 +363,7 @@ jobs:
       - name: Smoke-test SNAPSHOT — run example tests
         run: |
           mvn -B -ntp -s ~/.m2/ossrh-smoke-settings.xml \
+            -Pexamples \
             -Dspotless.check.skip=true \
             test \
             -pl test-order-example
