@@ -498,7 +498,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                     // withType<Test>().configureEach but should not block us — those tasks
                     // run the test-order agent which requires JDK 17+.  Unset the inherited
                     // launcher so the task falls back to the Gradle daemon JVM (≥ 17).
-                    if (testTask.getName().startsWith("testOrder")) {
+                    // Also allow override via -Dtestorder.overrideToolchain=true for projects
+                    // where even the regular test task uses a JDK < 17 toolchain.
+                    boolean isTestOrderTask = testTask.getName().startsWith("testOrder");
+                    boolean overrideToolchain = "true".equalsIgnoreCase(
+                            gradleOrSystemProperty(project, "testorder.overrideToolchain"));
+                    if (isTestOrderTask || overrideToolchain) {
                         testTask.getJavaLauncher().set((org.gradle.jvm.toolchain.JavaLauncher) null);
                         project.getLogger().info(
                                 "[test-order] Task '{}' in project '{}' inherited a JDK {} toolchain; "

@@ -192,7 +192,9 @@ detect_gradle_extra_args() {
         # reactor-core uses the nohttp Spring plugin which registers checkstyleMain at root level;
         # Gradle 9 fails the task-graph computation if that task is a dependency but not found.
         # Exclude check (which pulls in checkstyleMain) and the slow docs/benchmarks subprojects.
-        reactor-core) echo "--continue -x check -x :docs:test -x :benchmarks:test" ;;
+        # reactor-core compiles and tests with JDK 8 toolchain; -Dtestorder.overrideToolchain=true
+        # resets the launcher on all Test tasks to the Gradle daemon JVM (17+) so test-order runs.
+        reactor-core) echo "--continue -x check -x :docs:test -x :benchmarks:test -Dtestorder.overrideToolchain=true" ;;
         # Default: just --continue; do not exclude checkstyle/spotbugs since most modern Gradle
         # repos don't have these tasks and Gradle 9 errors on -x for non-existent task names.
         # Add per-repo exclusions above for repos with known slow/broken analysis tasks.
