@@ -2022,7 +2022,10 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setGroup("test-order");
             task.setDescription(
                     "Generate an HTML dashboard visualising test scoring, dependencies, and run history");
-            task.mustRunAfter("test");
+            // Bug #44: mustRunAfter("test") fails on Gradle 9+ when the 'test' task doesn't exist
+            // (e.g. BOM-only subprojects). Use withType(Test.class) instead — it's a lazy collection
+            // that resolves to an empty set for projects without tests.
+            task.mustRunAfter(project.getTasks().withType(Test.class));
             task.doLast(t -> {
                 autoAggregateIfNeeded(project, ext);
                 Path outPath = generateDashboard(project, ext);
@@ -2039,7 +2042,7 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setGroup("test-order");
             task.setDescription(
                     "Generate and serve the test-order HTML dashboard on a local HTTP server");
-            task.mustRunAfter("test");
+            task.mustRunAfter(project.getTasks().withType(Test.class));
             task.doLast(t -> {
                 autoAggregateIfNeeded(project, ext);
                 int port;
