@@ -226,7 +226,7 @@ public final class AutoWorkflow {
 		ModeResolverOperation.ModeConfig modeConfig = new ModeResolverOperation.ModeConfig(mode, ctx.indexFile(),
 				ctx.stateFile(), ctx.autoLearnRunThreshold(), ctx.autoLearnDiffThreshold(), changedClassesSupplier,
 				ciDownloadCallback, depsDir, ctx.testClassesDir(), ctx.testSourceRoot(), changedTestsSupplier,
-				ctx.dependencyFingerprintSupplier(), ctx.log());
+				ctx.dependencyFingerprintSupplier(), ctx.log(), ctx.buildSystem());
 
 		ModeResolverOperation.ModeDecision decision = ModeResolverOperation.resolve(modeConfig);
 		ctx.log().debug("[test-order] Mode decision: " + decision.effectiveMode() + " (" + decision.reason() + ")");

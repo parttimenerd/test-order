@@ -252,6 +252,10 @@ detect_gradle_subproject_prefix() {
         # would only run the http module's unit tests (none of which test status codes directly).
         # Use root-level testOrderSelect so all modules' tests are candidates.
         micronaut-core) echo "ROOT" ;;
+        # spring-boot: uses a two-level project structure (e.g. :core:spring-boot).
+        # The first path segment alone is insufficient to scope to the right leaf project.
+        # Use ROOT so all leaf projects' testOrderSelect tasks are candidates.
+        spring-boot) echo "ROOT" ;;
         *) echo "" ;;
     esac
 }

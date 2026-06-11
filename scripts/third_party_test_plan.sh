@@ -817,7 +817,7 @@ detect_source_class_gradle() {
         local from_index
         # shellcheck disable=SC2086
         from_index=$(JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderDump \
-            --no-build-cache --no-configuration-cache \
+            --no-daemon --no-build-cache --no-configuration-cache \
             $extra_args \
             2>/dev/null \
             | awk -F'\t' 'NF==2 && $1!=$2 {print $2}' \
@@ -1091,7 +1091,7 @@ phase_full_gradle() {
     log "Step 3: Dump state"
     # shellcheck disable=SC2086
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderDump \
-        --no-build-cache --no-configuration-cache \
+        --no-daemon --no-build-cache --no-configuration-cache \
         $extra_args \
         2>&1 | tee "$results/full-dump.log" | tail -20 || warn "Dump failed"
 
@@ -1099,7 +1099,7 @@ phase_full_gradle() {
     log "Step 4: Show order"
     # shellcheck disable=SC2086
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderShow \
-        --no-build-cache --no-configuration-cache \
+        --no-daemon --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
         $extra_args \
@@ -1109,7 +1109,7 @@ phase_full_gradle() {
     log "Step 5: Select top-5"
     # shellcheck disable=SC2086
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest testOrderSelect \
-        --no-build-cache --no-configuration-cache \
+        --no-daemon --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
         -Dtestorder.affected.topN=5 \
@@ -1120,7 +1120,7 @@ phase_full_gradle() {
     log "Step 6: Run remaining"
     # shellcheck disable=SC2086
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderRunRemaining \
-        --no-build-cache --no-configuration-cache \
+        --no-daemon --no-build-cache --no-configuration-cache \
         $extra_args \
         2>&1 | tee "$results/full-remaining.log" | tail -5 || warn "Run-remaining failed"
 
@@ -1158,7 +1158,7 @@ phase_full_gradle() {
             fi
             # shellcheck disable=SC2086
             JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "${bp_task_prefix}testOrderSelect" \
-                --no-build-cache --no-configuration-cache \
+                --no-daemon --no-build-cache --no-configuration-cache \
                 -Dtestorder.changeMode=explicit \
                 -Dtestorder.changed.classes="$classname" \
                 -Dtestorder.affected.topN=3 \

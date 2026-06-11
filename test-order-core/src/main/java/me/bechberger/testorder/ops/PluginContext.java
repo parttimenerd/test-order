@@ -12,6 +12,30 @@ import java.util.function.Supplier;
  */
 public final class PluginContext {
 
+	public enum BuildSystem {
+		MAVEN, GRADLE;
+
+		/** Command to run tests in learn mode. */
+		public String learnCommand() {
+			return this == GRADLE ? "./gradlew test -Dtestorder.mode=learn" : "mvn test -Dtestorder.mode=learn";
+		}
+
+		/** Command to show test order. */
+		public String showCommand() {
+			return this == GRADLE ? "./gradlew testOrderShow" : "mvn test-order:show";
+		}
+
+		/** Command to show the dashboard. */
+		public String dashboardCommand() {
+			return this == GRADLE ? "./gradlew testOrderDashboard" : "mvn test-order:dashboard";
+		}
+
+		/** Prefix for plugin-specific goals/tasks. */
+		public String pluginPrefix() {
+			return this == GRADLE ? "./gradlew testOrder" : "mvn test-order:";
+		}
+	}
+
 	// ── Path config ──────────────────────────────────────────────────
 	private final Path projectRoot;
 	/**
@@ -81,8 +105,9 @@ public final class PluginContext {
 	 */
 	private final String currentModuleId;
 
-	// ── Logging ──────────────────────────────────────────────────────
+	// ── Logging / build system ───────────────────────────────────────
 	private final PluginLog log;
+	private final BuildSystem buildSystem;
 
 	private PluginContext(Builder b) {
 		this.projectRoot = b.projectRoot;
@@ -130,6 +155,7 @@ public final class PluginContext {
 		this.pluginVersion = b.pluginVersion;
 		this.currentModuleId = b.currentModuleId;
 		this.log = b.log != null ? b.log : PluginLog.NOOP;
+		this.buildSystem = b.buildSystem != null ? b.buildSystem : BuildSystem.MAVEN;
 	}
 
 	// ── Accessors ────────────────────────────────────────────────────
@@ -276,6 +302,15 @@ public final class PluginContext {
 	public PluginLog log() {
 		return log;
 	}
+	public BuildSystem buildSystem() {
+		return buildSystem;
+	}
+	/**
+	 * Convenience: command to run tests in learn mode for the active build system.
+	 */
+	public String learnCommand() {
+		return buildSystem.learnCommand();
+	}
 
 	/**
 	 * Returns all source roots (primary + additional) as a list.
@@ -341,6 +376,7 @@ public final class PluginContext {
 		private String pluginVersion;
 		private String currentModuleId;
 		private PluginLog log;
+		private BuildSystem buildSystem;
 
 		private Builder() {
 		}
@@ -527,6 +563,10 @@ public final class PluginContext {
 		}
 		public Builder log(PluginLog v) {
 			this.log = v;
+			return this;
+		}
+		public Builder buildSystem(BuildSystem v) {
+			this.buildSystem = v;
 			return this;
 		}
 

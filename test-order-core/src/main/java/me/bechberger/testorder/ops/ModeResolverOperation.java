@@ -70,14 +70,29 @@ public final class ModeResolverOperation {
 			/** Lazy supplier for dependency fingerprint (may be {@code null}). */
 			Supplier<String> dependencyFingerprintSupplier,
 			/** Logger. */
-			PluginLog log) {
+			PluginLog log,
+			/** Build system — controls the command shown in user-facing hints. */
+			PluginContext.BuildSystem buildSystem) {
 
 		/** Convenience constructor without new-test detection fields. */
 		public ModeConfig(String requestedMode, Path indexPath, Path statePath, int autoLearnRunThreshold,
 				int autoLearnDiffThreshold, Supplier<Set<String>> changedClassesSupplier, Runnable ciDownloadCallback,
 				Path depsDir, PluginLog log) {
 			this(requestedMode, indexPath, statePath, autoLearnRunThreshold, autoLearnDiffThreshold,
-					changedClassesSupplier, ciDownloadCallback, depsDir, null, null, null, null, log);
+					changedClassesSupplier, ciDownloadCallback, depsDir, null, null, null, null, log,
+					PluginContext.BuildSystem.MAVEN);
+		}
+
+		/**
+		 * Convenience constructor with new-test detection but no build system override.
+		 */
+		public ModeConfig(String requestedMode, Path indexPath, Path statePath, int autoLearnRunThreshold,
+				int autoLearnDiffThreshold, Supplier<Set<String>> changedClassesSupplier, Runnable ciDownloadCallback,
+				Path depsDir, Path testClassesDir, Path testSourceRoot, Supplier<Set<String>> changedTestsSupplier,
+				Supplier<String> dependencyFingerprintSupplier, PluginLog log) {
+			this(requestedMode, indexPath, statePath, autoLearnRunThreshold, autoLearnDiffThreshold,
+					changedClassesSupplier, ciDownloadCallback, depsDir, testClassesDir, testSourceRoot,
+					changedTestsSupplier, dependencyFingerprintSupplier, log, PluginContext.BuildSystem.MAVEN);
 		}
 	}
 
@@ -172,8 +187,8 @@ public final class ModeResolverOperation {
 		try {
 			depMap = DependencyMap.load(config.indexPath());
 			if (depMap.size() == 0) {
-				log.warn("[test-order] Dependency index contains no tests — continuing in order mode."
-						+ " Run 'mvn test-order:diagnose' to inspect index contents.");
+				log.warn("[test-order] Dependency index contains no tests — continuing in order mode." + " Run '"
+						+ config.buildSystem().pluginPrefix() + "diagnose' to inspect index contents.");
 			}
 		} catch (IOException e) {
 			log.warn("[test-order] Failed to load index for validation: " + e.getMessage());

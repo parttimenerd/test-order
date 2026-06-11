@@ -161,7 +161,7 @@ public final class ChangeAnalysis {
 						ctx.log()
 								.warn("[test-order] This module has " + compiledCount
 										+ " compiled test class(es) not yet in the dependency index."
-										+ " Run learn mode to include them: mvn test -Dtestorder.mode=learn"
+										+ " Run learn mode to include them: " + ctx.learnCommand()
 										+ " (showing all indexed tests as fallback)");
 					}
 				}
@@ -402,10 +402,12 @@ public final class ChangeAnalysis {
 			if (report.degraded() && dynamicHighImpact) {
 				changedMembers = report.expanded(); // class-level fallback
 				staticAnalysisDegraded = true;
-				ctx.log().warn("[test-order] static analysis: " + report.reason() + " AND "
-						+ String.format("%.0f%%", affectedFraction * 100)
-						+ " of tests already touch the changed classes. Falling back to class-level matching. "
-						+ "Consider re-running learn mode (`mvn test -Dtestorder.mode=learn`) to refresh the dependency index.");
+				ctx.log()
+						.warn("[test-order] static analysis: " + report.reason() + " AND "
+								+ String.format("%.0f%%", affectedFraction * 100)
+								+ " of tests already touch the changed classes. Falling back to class-level matching. "
+								+ "Consider re-running learn mode (`" + ctx.learnCommand()
+								+ "`) to refresh the dependency index.");
 			} else {
 				if (report.degraded()) {
 					ctx.log()

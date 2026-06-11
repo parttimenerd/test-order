@@ -156,7 +156,8 @@ public final class ShowJsonFormatter {
 			sectionsShown.add("classOrder");
 		} else {
 			sectionsSkipped.add(skipped("classOrder", "no class-order data"));
-			guidanceHints.add("Run tests in learn mode to build dependency index: mvn test -Dtestorder.mode=learn");
+			guidanceHints
+					.add("Run tests in learn mode to build dependency index: run tests with -Dtestorder.mode=learn");
 		}
 
 		if (result.methodOrder() != null) {

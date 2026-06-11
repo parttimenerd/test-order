@@ -66,6 +66,11 @@ public final class AffectedOperation {
 
 		/** Multi-line summary block prefixed with "[test-order] ". */
 		public String format() {
+			return format(PluginContext.BuildSystem.MAVEN);
+		}
+
+		/** Multi-line summary block with build-system-appropriate commands. */
+		public String format(PluginContext.BuildSystem buildSystem) {
 			StringBuilder sb = new StringBuilder();
 			int total = totalCount();
 			sb.append("[test-order] Selected ").append(selectedCount).append(" / ").append(total).append(" tests");
@@ -75,8 +80,8 @@ public final class AffectedOperation {
 				sb.append("\n[test-order] Top: ").append(topScorerName);
 			if (deferredCount > 0)
 				sb.append("\n[test-order] ").append(deferredCount).append(" deferred — see remaining-file");
-			sb.append("\n[test-order] Run `mvn test-order:show` for the full ranking,"
-					+ " or `mvn test-order:dashboard` for HTML.");
+			sb.append("\n[test-order] Run `").append(buildSystem.showCommand()).append("` for the full ranking, or `")
+					.append(buildSystem.dashboardCommand()).append("` for HTML.");
 			return sb.toString();
 		}
 	}

@@ -1522,7 +1522,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                         // End-of-selection summary (parity with Maven AutoMojo)
                         var summary = os.selectResult().summary();
                         if (summary != null && summary.totalCount() > 0) {
-                            for (String line : summary.format().split("\n")) {
+                            for (String line : summary.format(PluginContext.BuildSystem.GRADLE).split("\n")) {
                                 project.getLogger().lifecycle(line);
                             }
                         }
@@ -2386,11 +2386,11 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     static PluginContext buildPluginContext(Project project, TestOrderExtension ext) {
-        return buildPluginContextBuilder(project, ext).build();
+        return buildPluginContextBuilder(project, ext).buildSystem(PluginContext.BuildSystem.GRADLE).build();
     }
 
     static PluginContext buildPluginContextWithLog(Project project, TestOrderExtension ext, PluginLog log) {
-        return buildPluginContextBuilder(project, ext).log(log).build();
+        return buildPluginContextBuilder(project, ext).buildSystem(PluginContext.BuildSystem.GRADLE).log(log).build();
     }
 
     // -----------------------------------------------------------------------
@@ -2848,6 +2848,7 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
 
         PluginContext.Builder ctxBuilder = buildPluginContextBuilder(project, ext)
+                .buildSystem(PluginContext.BuildSystem.GRADLE)
                 .methodOrderingEnabled(effectiveMethods != null ? effectiveMethods : true);
         if (topN >= 0) ctxBuilder.topN(topN);
         if (randomM >= 0) ctxBuilder.randomM(randomM);
@@ -2928,6 +2929,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     private static void runShowMethodOrderReport(Project project, TestOrderExtension ext, boolean explain) {
         autoAggregateIfNeeded(project, ext);
         PluginContext pctx = buildPluginContextBuilder(project, ext)
+                .buildSystem(PluginContext.BuildSystem.GRADLE)
                 .methodOrderingEnabled(true)
                 .build();
         try {

@@ -139,8 +139,10 @@ public final class ShowWorkflow {
 		// This typically means the module has only production code; showing the full
 		// project index would be misleading.
 		if (!hasModuleScope && ctx.currentModuleId() != null && !ctx.currentModuleId().isEmpty()) {
-			ctx.log().info("[test-order] No test sources found in this module — showing full project test index."
-					+ " Run 'mvn test-order:show' at the project root for a complete cross-module view.");
+			ctx.log()
+					.info("[test-order] No test sources found in this module — showing full project test index."
+							+ " Run '" + ctx.buildSystem().showCommand()
+							+ "' at the project root for a complete cross-module view.");
 		}
 		ChangeAnalysis.Options analysisOpts = hasModuleScope
 				? ChangeAnalysis.Options.FULL_FILTERED
@@ -300,7 +302,7 @@ public final class ShowWorkflow {
 		} else if (opts.classes()) {
 			out.println("[test-order] Class order unavailable: no learned dependency index data found.");
 			out.println("[test-order] Next step: run tests once in learn mode, then run show again.");
-			out.println("[test-order] Example: mvn test -Dtestorder.mode=learn");
+			out.println("[test-order] Example: " + ctx.learnCommand());
 		}
 
 		// ── Method order section ─────────────────────────────────────
