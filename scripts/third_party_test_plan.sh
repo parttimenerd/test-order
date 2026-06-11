@@ -528,10 +528,21 @@ inject_gradle_plugin() {
         return 1
     fi
 
-    # Skip injection if already injected (bak file exists means injection is in place)
+    # Skip injection if already injected:
+    #   (a) bak file exists — normal case when injection is in place
+    #   (b) file already contains the plugin id — leftover from a prior run where cleanup failed
     if [[ -f "$build_file.bak" ]]; then
         ok "Plugin already injected in $repo (bak exists) — skipping"
         return 0
+    fi
+    if grep -q 'me.bechberger.test-order' "$build_file" 2>/dev/null; then
+        warn "Plugin id already present in $build_file (leftover from prior run) — cleaning before re-injection"
+        git -C "$dir" checkout -- "$(basename "$build_file")" 2>/dev/null || true
+        # If git checkout didn't clean it (not a git repo), skip to avoid double injection
+        if grep -q 'me.bechberger.test-order' "$build_file" 2>/dev/null; then
+            warn "Cannot clean $build_file — skipping injection to avoid double plugin"
+            return 0
+        fi
     fi
 
     cp "$build_file" "$build_file.bak"

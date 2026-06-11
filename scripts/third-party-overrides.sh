@@ -189,6 +189,10 @@ detect_gradle_extra_args() {
 -x :streams:upgrade-system-tests-41:test -x :streams:upgrade-system-tests-41:compileTestJava" ;;
         # opentelemetry uses spotless/otel-conventions, not checkstyle/spotbugs.
         opentelemetry) echo "--continue" ;;
+        # reactor-core uses the nohttp Spring plugin which registers checkstyleMain at root level;
+        # Gradle 9 fails the task-graph computation if that task is a dependency but not found.
+        # Exclude check (which pulls in checkstyleMain) and the slow docs/benchmarks subprojects.
+        reactor-core) echo "--continue -x check -x :docs:test -x :benchmarks:test" ;;
         # Default: just --continue; do not exclude checkstyle/spotbugs since most modern Gradle
         # repos don't have these tasks and Gradle 9 errors on -x for non-existent task names.
         # Add per-repo exclusions above for repos with known slow/broken analysis tasks.
