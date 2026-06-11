@@ -543,43 +543,59 @@ inject_gradle_plugin() {
     if [[ -f "$dir/settings.gradle.kts" ]]; then
         settings_file="$dir/settings.gradle.kts"
         cp "$settings_file" "$settings_file.bak"
-        # 1. pluginManagement: inject mavenLocal() into existing block or prepend new block
-        if ! grep -q "mavenLocal" "$settings_file"; then
-            if grep -q "pluginManagement" "$settings_file"; then
-                if grep -q "repositories" "$settings_file"; then
-                    # Inject after the FIRST repositories { line that is inside pluginManagement
-                    python3 -c "
-import re, sys
+        # 1. pluginManagement: inject mavenLocal() into existing block or prepend new block.
+        # Use Python with brace-counting to correctly handle nested blocks (e.g. plugins{} inside
+        # pluginManagement{} which would break simple regex like [^}]*).
+        # Guard: only inject if mavenLocal is NOT already inside pluginManagement (it might exist
+        # in dependencyResolutionManagement.repositories which doesn't help plugin resolution).
+        python3 -c "
+import re
 content = open('$settings_file').read()
-# Find pluginManagement block and inject mavenLocal into its repositories
-def inject(m):
-    return m.group(0).replace('repositories {', 'repositories {\n        mavenLocal()', 1)
-content = re.sub(r'pluginManagement\s*\{[^}]*repositories\s*\{', inject, content, count=1, flags=re.DOTALL)
+
+def find_block_end(text, start):
+    'Return index of the closing } matching the { at text[start-1] (start is after the {).'
+    depth = 1
+    i = start
+    while i < len(text) and depth > 0:
+        if text[i] == '{':
+            depth += 1
+        elif text[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return len(text)
+
+pm_match = re.search(r'pluginManagement\s*\{', content)
+if pm_match:
+    pm_body_start = pm_match.end()
+    pm_end = find_block_end(content, pm_body_start)
+    pm_body = content[pm_body_start:pm_end]
+    # Already has mavenLocal inside pluginManagement — nothing to do
+    if 'mavenLocal' in pm_body:
+        open('$settings_file', 'w').write(content)
+        exit(0)
+    repo_match = re.search(r'repositories\s*\{', pm_body)
+    if repo_match:
+        # Inject mavenLocal() right after 'repositories {' inside pluginManagement
+        insert_pos = pm_body_start + repo_match.end()
+        content = content[:insert_pos] + '\n        mavenLocal()' + content[insert_pos:]
+    else:
+        # No repositories block inside pluginManagement — add one after the opening {
+        insert_pos = pm_body_start
+        content = content[:insert_pos] + '\n    repositories {\n        mavenLocal()\n        gradlePluginPortal()\n        mavenCentral()\n    }' + content[insert_pos:]
+else:
+    # No pluginManagement block — prepend a new one (only if mavenLocal not already there)
+    if 'mavenLocal' not in content:
+        content = 'pluginManagement {\n    repositories {\n        mavenLocal()\n        gradlePluginPortal()\n        mavenCentral()\n    }\n}\n' + content
+
 open('$settings_file', 'w').write(content)
 "
-                else
-                    sedi '/pluginManagement {/a\
-    repositories {\
-        mavenLocal()\
-        gradlePluginPortal()\
-        mavenCentral()\
-    }
-' "$settings_file"
-                fi
-            else
-                sedi '1i\
-pluginManagement {\
-    repositories {\
-        mavenLocal()\
-        gradlePluginPortal()\
-        mavenCentral()\
-    }\
-}\
-' "$settings_file"
-            fi
+        # 2. dependencyResolutionManagement: add mavenLocal() if not already there,
+        # so test-order JARs (agent, core) resolve at runtime/testRuntime scope.
+        if ! grep -q "mavenLocal" "$settings_file"; then
+            printf '\ndependencyResolutionManagement { repositories { mavenLocal() } }\n' >> "$settings_file"
         fi
-        # 2. dependencyResolutionManagement: append a new block so test-order JARs resolve
-        printf '\ndependencyResolutionManagement { repositories { mavenLocal() } }\n' >> "$settings_file"
     elif [[ -f "$dir/settings.gradle" ]]; then
         settings_file="$dir/settings.gradle"
         cp "$settings_file" "$settings_file.bak"
