@@ -176,6 +176,10 @@
                                     <excludes><exclude>**</exclude></excludes>
                                 </filter>
                                 <filter>
+                                    <artifact>org.apiguardian:*</artifact>
+                                    <excludes><exclude>**</exclude></excludes>
+                                </filter>
+                                <filter>
                                     <artifact>org.testng:*</artifact>
                                     <excludes><exclude>**</exclude></excludes>
                                 </filter>
