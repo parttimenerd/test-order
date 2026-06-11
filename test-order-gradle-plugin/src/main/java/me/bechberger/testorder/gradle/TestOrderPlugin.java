@@ -493,17 +493,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                     testJavaVersion = JavaVersion.current().ordinal() + 1;
                 }
                 if (testJavaVersion < 17) {
-                    // For test-order's own derived tasks (testOrderLearn, testOrderSelect, …),
-                    // the project toolchain (e.g. JDK 8 in reactor-core) is inherited via
-                    // withType<Test>().configureEach but should not block us — those tasks
-                    // run the test-order agent which requires JDK 17+.  Override the inherited
-                    // launcher via JavaToolchainService to request the current JVM version (≥ 17).
-                    // Also allow override via -Dtestorder.overrideToolchain=true for projects
-                    // where even the regular test task uses a JDK < 17 toolchain.
-                    boolean isTestOrderTask = testTask.getName().startsWith("testOrder");
+                    // If -Dtestorder.overrideToolchain=true, try to upgrade the toolchain so the
+                    // test-order agent (requires JDK 17+) can attach. Useful for projects like
+                    // reactor-core that compile tests against JDK 8.
                     boolean overrideToolchain = "true".equalsIgnoreCase(
                             gradleOrSystemProperty(project, "testorder.overrideToolchain"));
-                    if (isTestOrderTask || overrideToolchain) {
+                    if (overrideToolchain) {
                         boolean overrideSucceeded = false;
                         try {
                             int currentVersion = JavaVersion.current().ordinal() + 1;
@@ -3064,6 +3059,54 @@ public class TestOrderPlugin implements Plugin<Project> {
         // (e.g. include("**/*Test.class")) so that applySelectedTests can override
         // the set of classes to run without being blocked by naming restrictions.
         task.doFirst("clearIncludes", t -> ((Test) t).setIncludes(java.util.Collections.emptySet()));
+        // Derived tasks (testOrderLearn, testOrderSelect, …) inherit the project toolchain
+        // convention. If the project uses JDK < 17, override to ensure the test-order agent
+        // (compiled for 17+) can load. We prefer JavaToolchainService; fall back to setExecutable.
+        ensureJdk17OrHigher(project, task);
+    }
+
+    private static void ensureJdk17OrHigher(Project project, Test task) {
+        // Check toolchain version lazily to avoid resolving providers at config time.
+        // If we can't determine it yet, use a doFirst check.
+        boolean needsOverride = false;
+        try {
+            var launcher = task.getJavaLauncher();
+            if (launcher.isPresent()) {
+                int v = launcher.get().getMetadata().getLanguageVersion().asInt();
+                needsOverride = v < 17;
+            }
+        } catch (Exception ignored) {
+            // Property not yet resolved; assume override may be needed.
+            needsOverride = true;
+        }
+        if (!needsOverride) {
+            return;
+        }
+        boolean overrideSucceeded = false;
+        try {
+            var toolchainService = project.getExtensions()
+                    .findByType(org.gradle.jvm.toolchain.JavaToolchainService.class);
+            if (toolchainService != null) {
+                int requestVersion = Math.max(JavaVersion.current().ordinal() + 1, 17);
+                var overrideLauncher = toolchainService.launcherFor(spec ->
+                        spec.getLanguageVersion().set(
+                                org.gradle.jvm.toolchain.JavaLanguageVersion.of(requestVersion)));
+                task.getJavaLauncher().set(overrideLauncher);
+                overrideSucceeded = true;
+            }
+        } catch (Exception ignored) {
+            // Finalized property — fall through to executable override.
+        }
+        if (!overrideSucceeded) {
+            final String javaHome = System.getProperty("java.home");
+            if (javaHome != null) {
+                task.doFirst("testOrderOverrideJvm", t -> {
+                    String javaExe = javaHome + java.io.File.separator + "bin"
+                            + java.io.File.separator + "java";
+                    ((Test) t).setExecutable(javaExe);
+                });
+            }
+        }
     }
 
     /**
