@@ -1876,7 +1876,7 @@ select_mutation_target() {
         base=$(basename "$f" .java)
         base="${base%Test}"; base="${base%Tests}"
         test_set["$base"]=1
-    done < <(find "$dir" -path "*/src/test/java/*" -name "*Test*.java" ! -path "*/target/*" 2>/dev/null | head -500)
+    done < <(find "$dir" -path "*/src/test/java/*" -name "*Test*.java" ! -path "*/target/*" ! -path "*/buildSrc/*" 2>/dev/null | head -500)
 
     # Walk src/main/java looking for a file that:
     #   (a) is in a module with a hash file (if filter active)
@@ -1896,7 +1896,7 @@ select_mutation_target() {
             fi
         fi
     done < <(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
-                ! -path "*/target/*" ! -path "*/src/test/*" \
+                ! -path "*/target/*" ! -path "*/src/test/*" ! -path "*/buildSrc/*" \
                 ! -name "package-info.java" ! -name "module-info.java" \
                 ! -name "*Builder*" ! -name "*Generated*" \
                 2>/dev/null | sort)
@@ -1908,7 +1908,7 @@ select_mutation_target() {
             best="$src"
             break
         done < <(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
-                    ! -path "*/target/*" ! -path "*/src/test/*" \
+                    ! -path "*/target/*" ! -path "*/src/test/*" ! -path "*/buildSrc/*" \
                     ! -name "package-info.java" ! -name "module-info.java" \
                     2>/dev/null | sort)
     fi
@@ -1920,14 +1920,14 @@ select_mutation_target() {
             best="$src"
             break
         done < <(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
-                    ! -path "*/target/*" ! -path "*/src/test/*" \
+                    ! -path "*/target/*" ! -path "*/src/test/*" ! -path "*/buildSrc/*" \
                     ! -name "package-info.java" ! -name "module-info.java" \
                     2>/dev/null | sort)
     fi
     # Absolute last resort: no hash filter active at all, pick any file
     if [[ -z "$best" && "${#hashed_dirs[@]}" -eq 0 ]]; then
         best=$(find "$search_root" -path "*/src/main/java/*" -name "*.java" \
-                ! -path "*/target/*" ! -path "*/src/test/*" \
+                ! -path "*/target/*" ! -path "*/src/test/*" ! -path "*/buildSrc/*" \
                 ! -name "package-info.java" ! -name "module-info.java" \
                 2>/dev/null | sort | head -1)
     fi
