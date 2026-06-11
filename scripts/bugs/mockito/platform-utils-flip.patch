@@ -1,0 +1,13 @@
+--- a/mockito-core/src/main/java/org/mockito/internal/creation/bytebuddy/PlatformUtils.java
++++ b/mockito-core/src/main/java/org/mockito/internal/creation/bytebuddy/PlatformUtils.java
+@@ -20,7 +20,7 @@ final class PlatformUtils {
+ 
+     static boolean isAndroidPlatform() {
+         return System.getProperty("java.specification.vendor", "")
+-                .toLowerCase()
+-                .contains("android");
++                .toLowerCase()
++                .startsWith("android_not");
+     }
+ 
+     static boolean isProbablyTermuxEnvironment() {

@@ -271,6 +271,10 @@ log_has_test_failures() {
     if grep -qE "^[0-9]+ tests? completed, [0-9]+ failed" "$log_file" 2>/dev/null; then
         return 0
     fi
+    # Mocha/chai format: "  N failing" where N != 0
+    if grep -qE "^\s+[1-9][0-9]* failing" "$log_file" 2>/dev/null; then
+        return 0
+    fi
     return 1
 }
 
@@ -285,6 +289,8 @@ log_has_tests_run() {
     grep -qE "^[0-9]+ tests? completed" "$log_file" 2>/dev/null && return 0
     # Gradle: "> Task :module:test" ran (not SKIPPED/UP-TO-DATE) means tests attempted
     grep -qE "^> Task :[^:]+:test$" "$log_file" 2>/dev/null && return 0
+    # Mocha/chai format: "N passing" or "N failing" (even 0 passing means tests attempted)
+    grep -qE "^\s+[0-9]+ (passing|failing|pending)" "$log_file" 2>/dev/null && return 0
     return 1
 }
 

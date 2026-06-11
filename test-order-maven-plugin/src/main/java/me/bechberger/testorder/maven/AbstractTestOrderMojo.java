@@ -975,6 +975,12 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (explicitClasses.isEmpty()) {
 			return;
 		}
+		// In multi-module builds the changed class lives in one module; checking every
+		// module's target/classes produces spurious warnings for all sibling modules.
+		// The global warnUnknownChangedClasses check covers typo detection accurately.
+		if (session != null && session.getProjects() != null && session.getProjects().size() > 1) {
+			return;
+		}
 		String outputDir = project.getBuild().getOutputDirectory();
 		if (outputDir == null || outputDir.isBlank()) {
 			return; // build directory not configured, skip check
