@@ -1840,7 +1840,7 @@ select_mutation_target() {
     # directory names like "log4j-api" (from "...log4j-api-hashes.lz4"), "codec-base"
     # (from "...netty-codec-base-hashes.lz4"), and "handler" (from "...netty-handler-hashes.lz4")
     # are all matched correctly.
-    local -A hashed_dirs
+    local -A hashed_dirs=()
     if [[ -n "$hashes_dir" && -d "$hashes_dir" ]]; then
         while IFS= read -r hf; do
             local bn
@@ -1888,7 +1888,7 @@ select_mutation_target() {
     fi
 
     # Build a set of test class basenames (strip 'Test' / 'Tests' suffix)
-    local -A test_set
+    local -A test_set=()
     while IFS= read -r f; do
         local base
         base=$(basename "$f" .java)
