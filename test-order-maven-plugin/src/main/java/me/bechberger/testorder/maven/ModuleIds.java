@@ -11,15 +11,15 @@ public final class ModuleIds {
 		String gid = project.getGroupId();
 		String aid = project.getArtifactId();
 		if (gid == null || gid.isEmpty()) {
-			return aid;
+			return aid != null ? aid : "";
 		}
-		return gid + "-" + aid;
+		return gid + "-" + (aid != null ? aid : "");
 	}
 
 	public static String of(String groupId, String artifactId) {
 		if (groupId == null || groupId.isEmpty()) {
-			return artifactId;
+			return artifactId != null ? artifactId : "";
 		}
-		return groupId + "-" + artifactId;
+		return groupId + "-" + (artifactId != null ? artifactId : "");
 	}
 }

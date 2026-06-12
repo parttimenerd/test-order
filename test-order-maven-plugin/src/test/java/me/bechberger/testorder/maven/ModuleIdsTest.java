@@ -39,4 +39,34 @@ class ModuleIdsTest {
 		assertEquals("foo", ModuleIds.of(null, "foo"));
 		assertEquals("foo", ModuleIds.of("", "foo"));
 	}
+
+	@Test
+	void of_nullArtifactId_returnsEmpty() {
+		MavenProject p = mock(MavenProject.class);
+		when(p.getGroupId()).thenReturn("com.example");
+		when(p.getArtifactId()).thenReturn(null);
+		assertEquals("com.example-", ModuleIds.of(p));
+	}
+
+	@Test
+	void of_emptyArtifactId_returnsEmptyAfterDash() {
+		MavenProject p = mock(MavenProject.class);
+		when(p.getGroupId()).thenReturn("com.example");
+		when(p.getArtifactId()).thenReturn("");
+		assertEquals("com.example-", ModuleIds.of(p));
+	}
+
+	@Test
+	void of_bothNull_returnsEmpty() {
+		MavenProject p = mock(MavenProject.class);
+		when(p.getGroupId()).thenReturn(null);
+		when(p.getArtifactId()).thenReturn(null);
+		assertEquals("", ModuleIds.of(p));
+	}
+
+	@Test
+	void of_bothEmpty_returnsEmpty() {
+		assertEquals("", ModuleIds.of("", ""));
+		assertEquals("", ModuleIds.of(null, null));
+	}
 }

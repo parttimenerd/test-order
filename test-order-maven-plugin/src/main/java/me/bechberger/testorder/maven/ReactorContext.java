@@ -337,11 +337,16 @@ final class ReactorContext {
 		Set<String> result = new LinkedHashSet<>();
 		List<MavenProject> upstream = graph.getUpstreamProjects(project, true);
 		for (MavenProject up : upstream) {
-			String gid = up.getGroupId();
-			String upId = (gid == null || gid.isEmpty()) ? up.getArtifactId() : gid + "-" + up.getArtifactId();
+			String upId = ModuleIds.of(up);
 			String value = session.getUserProperties().getProperty(keyPrefix + upId);
 			if (value != null && !value.isBlank()) {
-				Collections.addAll(result, value.split(","));
+				// Split and trim to handle potential spaces (though join uses no spaces)
+				for (String item : value.split(",")) {
+					String trimmed = item.trim();
+					if (!trimmed.isEmpty()) {
+						result.add(trimmed);
+					}
+				}
 			}
 		}
 		return result;
