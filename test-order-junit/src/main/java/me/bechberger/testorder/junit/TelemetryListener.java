@@ -154,6 +154,10 @@ public class TelemetryListener implements TestExecutionListener {
 	 * Bootstraps the offline instrumentation runtime by loading the class-id
 	 * mapping file and configuring UsageStore. Called when
 	 * {@code testorder.offline.mapping} system property is set.
+	 *
+	 * Throws RuntimeException on failure to prevent silent data loss.
+	 * If this method fails, test execution will not be instrumented and
+	 * no .deps files will be written, making data loss visible to the user.
 	 */
 	private void bootstrapOfflineRuntime(String mappingPath) {
 		try {
@@ -167,9 +171,22 @@ public class TelemetryListener implements TestExecutionListener {
 		} catch (java.lang.reflect.InvocationTargetException e) {
 			// Unwrap the actual exception thrown by OfflineRuntimeBootstrap.init()
 			Throwable cause = e.getCause() != null ? e.getCause() : e;
-			TestOrderLogger.error("Failed to bootstrap offline runtime: {}", cause.getMessage());
+			String msg = "[test-order] FATAL: Failed to bootstrap offline runtime from " + mappingPath
+					+ " — test execution will not be instrumented and no dependency data will be collected. "
+					+ "Cause: " + cause.getMessage();
+			TestOrderLogger.error(msg);
+			throw new RuntimeException(msg, cause);
+		} catch (ClassNotFoundException e) {
+			String msg = "[test-order] FATAL: OfflineRuntimeBootstrap class not found — agent JAR may not be on the classpath. "
+					+ "Cause: " + e.getMessage();
+			TestOrderLogger.error(msg);
+			throw new RuntimeException(msg, e);
 		} catch (Exception e) {
-			TestOrderLogger.error("Failed to bootstrap offline runtime: {}", e.getMessage());
+			String msg = "[test-order] FATAL: Failed to bootstrap offline runtime from " + mappingPath
+					+ " — test execution will not be instrumented and no dependency data will be collected. "
+					+ "Cause: " + e.getMessage();
+			TestOrderLogger.error(msg);
+			throw new RuntimeException(msg, e);
 		}
 	}
 

@@ -442,6 +442,10 @@ public class IndexCollectorServer implements AutoCloseable {
 					try {
 						handleClient(client);
 					} finally {
+						// Clean up ThreadLocal to prevent memory leak in thread pools.
+						// READ_BUF can grow up to 8MB if a large array is read; without removal
+						// it stays retained forever in pooled threads.
+						READ_BUF.remove();
 						activeHandlers.decrementAndGet();
 					}
 				}, "test-order-collector-handler");

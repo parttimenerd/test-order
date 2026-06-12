@@ -228,6 +228,8 @@ detect_gradle_java_home() {
         # spring-boot uses Gradle 9.4.1 and requires Java 25 for some modules
         # (enforced via javaToolchains; building with Java 21 fails for those modules).
         spring-boot) _sdkman_java_home "25-sapmchn" ;;
+        # resilience4j: targets Java 21; system JDK may be a JRE (no javac); use SAP JDK 21.
+        resilience4j) _sdkman_java_home "21-sapmchn" ;;
         *) echo "" ;;
     esac
 }
