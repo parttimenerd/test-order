@@ -695,8 +695,49 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		// In multi-module builds, include source roots from all reactor modules
 		// so that changeComplexity can find source files for cross-module classes
 		List<PluginContext.ModuleHashEntry> moduleHashEntries = new ArrayList<>();
-		if (ctx.isMultiModule() && session != null && session.getProjects() != null) {
-			for (MavenProject p : session.getProjects()) {
+		java.util.List<MavenProject> allProjects = (session != null && session.getAllProjects() != null)
+				? session.getAllProjects()
+				: (session != null ? session.getProjects() : java.util.List.of());
+		// If multi-module detection failed due to -pl filtering, infer from reactor
+		// root .test-order/
+		boolean isEffectivelyMultiModule = ctx.isMultiModule();
+		Path reactorRootPath = null;
+		if (!isEffectivelyMultiModule && session != null) {
+			try {
+				java.io.File mmDir = session.getRequest().getMultiModuleProjectDirectory();
+				if (mmDir != null) {
+					reactorRootPath = mmDir.toPath().normalize();
+					if (Files.isDirectory(reactorRootPath.resolve(".test-order"))) {
+						isEffectivelyMultiModule = true;
+						getLog().debug("[test-order] Inferred multi-module from .test-order/ at " + reactorRootPath);
+					}
+				}
+			} catch (Exception e) {
+				// Fallback: just use ctx.isMultiModule()
+			}
+		}
+		if (isEffectivelyMultiModule) {
+			// When -pl <module> filters allProjects, fall back to enumerating sibling
+			// modules
+			// from the reactor pom's <modules> declaration. This ensures cross-module
+			// change
+			// detection works regardless of Maven invocation style.
+			if (allProjects.size() <= 1) {
+				if (reactorRootPath == null) {
+					ReactorContext rctx = new ReactorContext(session, project);
+					reactorRootPath = rctx.reactorRoot();
+				}
+				java.util.Set<String> discovered = new java.util.HashSet<>();
+				for (MavenProject p : allProjects) {
+					discovered.add(p.getBasedir().getAbsolutePath());
+				}
+				// Enumerate all sibling modules from reactor root pom <modules>
+				java.util.List<MavenProject> siblings = discoverModulesFromReactorPom(reactorRootPath, discovered);
+				allProjects = new java.util.ArrayList<>(allProjects);
+				allProjects.addAll(siblings);
+			}
+
+			for (MavenProject p : allProjects) {
 				List<String> roots = p.getCompileSourceRoots();
 				if (roots != null) {
 					for (String root : roots) {
@@ -3025,5 +3066,72 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.exists(artifactPath))
 			return artifactPath;
 		return null;
+	}
+
+	private java.util.List<MavenProject> discoverModulesFromReactorPom(Path reactorRoot,
+			java.util.Set<String> alreadyDiscovered) {
+		java.util.List<MavenProject> discovered = new java.util.ArrayList<>();
+		if (reactorRoot == null)
+			return discovered;
+		java.util.List<Path> toExplore = new java.util.ArrayList<>();
+		toExplore.add(reactorRoot);
+		java.util.Set<String> explored = new java.util.HashSet<>();
+
+		for (int i = 0; i < toExplore.size(); i++) {
+			Path dir = toExplore.get(i);
+			if (dir == null || explored.contains(dir.toString()))
+				continue;
+			explored.add(dir.toString());
+
+			Path pomFile = dir.resolve("pom.xml");
+			if (!Files.isRegularFile(pomFile))
+				continue;
+
+			try {
+				String pomXml = Files.readString(pomFile);
+				// Parse <modules> using simple regex to extract module paths
+				java.util.regex.Pattern modulePattern = java.util.regex.Pattern.compile("<module>([^<]+)</module>");
+				java.util.regex.Matcher matcher = modulePattern.matcher(pomXml);
+				while (matcher.find()) {
+					String modulePath = matcher.group(1).trim();
+					Path moduleDir = dir.resolve(modulePath).normalize();
+					if (Files.isDirectory(moduleDir)) {
+						String moduleDirAbs = moduleDir.toAbsolutePath().toString();
+						if (!alreadyDiscovered.contains(moduleDirAbs)) {
+							alreadyDiscovered.add(moduleDirAbs);
+							// Create a minimal MavenProject stand-in for sibling modules
+							discovered.add(createMinimalMavenProject(moduleDir));
+						}
+						// Recurse: if this module also has submodules, explore them
+						toExplore.add(moduleDir);
+					}
+				}
+			} catch (java.io.IOException e) {
+				getLog().debug("[test-order] Could not read pom.xml at " + pomFile + ": " + e.getMessage());
+			}
+		}
+		return discovered;
+	}
+
+	private MavenProject createMinimalMavenProject(Path moduleDir) {
+		MavenProject p = new MavenProject();
+		p.setFile(moduleDir.resolve("pom.xml").toFile());
+		// Use default Maven convention for source root; manually set since
+		// setCompileSourceRoots is protected
+		List<String> sourceRoots = new ArrayList<>();
+		Path mainJavaDir = moduleDir.resolve("src/main/java");
+		if (Files.isDirectory(mainJavaDir)) {
+			sourceRoots.add(mainJavaDir.toAbsolutePath().toString());
+		}
+		// Access compileSourceRoots via reflection since setCompileSourceRoots is
+		// protected
+		try {
+			java.lang.reflect.Field field = MavenProject.class.getDeclaredField("compileSourceRoots");
+			field.setAccessible(true);
+			field.set(p, sourceRoots);
+		} catch (Exception e) {
+			getLog().debug("[test-order] Could not set compileSourceRoots: " + e.getMessage());
+		}
+		return p;
 	}
 }
