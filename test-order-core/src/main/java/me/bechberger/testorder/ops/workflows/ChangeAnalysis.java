@@ -441,16 +441,18 @@ public final class ChangeAnalysis {
 								+ String.format("%.0f%%", affectedFraction * 100)
 								+ " of tests already touch the changed classes. " + "Consider re-running learn mode (`"
 								+ ctx.learnCommand() + "`) to refresh the dependency index.");
-			} else {
-				if (report.degraded()) {
-					ctx.log()
-							.debug("[test-order] static analysis ratio threshold tripped (" + report.reason()
-									+ ") but dynamic impact is only " + String.format("%.1f%%", affectedFraction * 100)
-									+ " of tests — keeping detailed expansion (no fallback).");
-				}
-				// Re-run expansion without the degradation cap so we get the precise expansion.
+			} else if (report.degraded()) {
+				ctx.log()
+						.debug("[test-order] static analysis ratio threshold tripped (" + report.reason()
+								+ ") but dynamic impact is only " + String.format("%.1f%%", affectedFraction * 100)
+								+ " of tests — keeping detailed expansion (no fallback).");
+				// Degradation suppressed the precise expansion — re-run without the cap.
 				changedMembers = StaticCallGraphAnalyzer
 						.expandWithReport(changedMembers, classDirs, ctx.staticAnalysisDepth(), 0).expanded();
+			} else {
+				// Not degraded — `report.expanded()` already holds the precise expansion.
+				// Avoid a redundant second scan over every .class file.
+				changedMembers = report.expanded();
 			}
 		}
 
