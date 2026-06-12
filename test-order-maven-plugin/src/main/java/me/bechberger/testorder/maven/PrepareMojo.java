@@ -459,6 +459,17 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 					iMode, includeList, List.of(), uncertainClasses);
 			Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
 
+			// Snapshot original (pre-instrumentation) bytecode hashes BEFORE the instrumentor
+			// modifies classes in place. Must happen here because the deferred path skipped
+			// bytecode snapshotting at configure time (classesDir was null). Without this,
+			// bytecode-hashes.lz4 is never written for the offline-learn deferred path,
+			// leaving no baseline for the next run's static analysis.
+			try {
+				snapshotBytecodeHashes();
+			} catch (IOException e) {
+				getLog().warn("[test-order] Could not snapshot bytecode hashes: " + e.getMessage());
+			}
+
 			// Reactor-wide ID space: serialize across modules. The intra-JVM monitor
 			// covers Maven -T (parallel modules in one JVM, where FileLock would
 			// throw OverlappingFileLockException). The FileLock inside covers

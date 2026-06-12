@@ -3123,6 +3123,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.isDirectory(mainJavaDir)) {
 			sourceRoots.add(mainJavaDir.toAbsolutePath().toString());
 		}
+		// Also include Kotlin source root if present (for Kotlin-primary modules)
+		Path mainKotlinDir = moduleDir.resolve("src/main/kotlin");
+		if (Files.isDirectory(mainKotlinDir)) {
+			sourceRoots.add(mainKotlinDir.toAbsolutePath().toString());
+		}
 		// Access compileSourceRoots via reflection since setCompileSourceRoots is
 		// protected
 		try {
