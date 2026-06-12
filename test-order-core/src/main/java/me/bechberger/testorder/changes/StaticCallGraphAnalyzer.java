@@ -328,7 +328,7 @@ public class StaticCallGraphAnalyzer {
 		StructuralChangeAnalyzer.ChangedMembers result = new StructuralChangeAnalyzer.ChangedMembers(
 				Collections.unmodifiableSet(allChangedClasses), Collections.unmodifiableSet(allChangedMemberKeys),
 				Collections.unmodifiableMap(unmodifiableByClass), original.classesWithTypeChanges(),
-				original.changedStaticFieldKeys());
+				original.changedStaticFieldKeys(), original.memberChangeKinds());
 		return new Report(result, false, seedSize, expandedSize, null, Collections.unmodifiableMap(classDepthMap),
 				Collections.unmodifiableMap(classParentMap));
 	}
