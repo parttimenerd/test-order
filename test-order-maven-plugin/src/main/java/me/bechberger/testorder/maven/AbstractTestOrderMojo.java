@@ -1410,6 +1410,25 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	// ── Hashes ────────────────────────────────────────────────────────
 
 	protected void snapshotHashes() {
+		snapshotHashes(true);
+	}
+
+	/**
+	 * Snapshots source/test/method hashes, and optionally the bytecode hashes.
+	 *
+	 * <p>
+	 * In agent learn mode, bytecode is never modified, so the bytecode snapshot can
+	 * run at the end of {@code configure*}. In offline learn mode, instrumentation
+	 * modifies classes in place — the bytecode snapshot must run BEFORE
+	 * {@code runOfflineInstrumentation}, otherwise the saved hashes reflect
+	 * instrumented bytecode and the next change-detecting run reports every
+	 * instrumented class as changed (false positive).
+	 *
+	 * @param includeBytecodeSnapshot
+	 *            true to also snapshot bytecode hashes; false when bytecode was
+	 *            already snapshotted earlier (offline learn mode).
+	 */
+	protected void snapshotHashes(boolean includeBytecodeSnapshot) {
 		PluginLog plog = pluginLog();
 		HashSnapshotOperation.snapshot(resolveSourceRoot(), ctx.resolveHashFile(hashFile), resolveTestSourceRoot(),
 				ctx.resolveTestHashFile(testHashFile),
@@ -1417,6 +1436,30 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				(label, msg) -> plog.warn("[test-order] Failed to save " + label + " hash snapshot: " + msg));
 		ChangeDetectionOps.snapshotMethodHashes(resolveTestSourceRoot(), ctx.resolveMethodHashFile(methodHashFile),
 				plog);
+
+		if (includeBytecodeSnapshot) {
+			snapshotBytecodeHashes();
+		}
+	}
+
+	/**
+	 * Snapshots {@code bytecode-hashes.lz4} from {@code target/classes}. Must be
+	 * called BEFORE offline instrumentation modifies the classes in place.
+	 */
+	protected void snapshotBytecodeHashes() {
+		PluginLog plog = pluginLog();
+		Path classesDir = resolveClassesDir();
+		Path bcHashFile = ctx.resolveBytecodeHashFile(bytecodeHashFile);
+		if (classesDir != null && bcHashFile != null && java.nio.file.Files.isDirectory(classesDir)) {
+			try {
+				me.bechberger.testorder.changes.BytecodeHashStore curr = me.bechberger.testorder.changes.BytecodeHashStore
+						.scan(classesDir);
+				curr.save(bcHashFile);
+				plog.info("[test-order] Saved bytecode hash snapshot: " + bcHashFile);
+			} catch (java.io.IOException e) {
+				plog.warn("[test-order] Failed to save bytecode hash snapshot: " + e.getMessage());
+			}
+		}
 	}
 
 	// ── @AlwaysRun discovery ──────────────────────────────────────────
@@ -1880,6 +1923,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				project.getProperties().setProperty("testorder.offline.includePackages",
 						includePackages == null ? "" : includePackages);
 			} else {
+				// Snapshot original (pre-instrumentation) bytecode hashes BEFORE
+				// runOfflineInstrumentation modifies classes in place.
+				snapshotBytecodeHashes();
 				runOfflineInstrumentation(instrumentationMode, includePackages, classesDir, targetDir, mappingFile);
 			}
 		} else {
@@ -1908,6 +1954,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					// to be mis-attributed or dropped. runOfflineInstrumentation loads the
 					// existing map (if any), instruments, and saves the union — so the
 					// stale-marker case is handled by the setIgnoreMarker path inside it.
+					// Snapshot original (pre-instrumentation) bytecode hashes BEFORE
+					// runOfflineInstrumentation modifies classes in place.
+					snapshotBytecodeHashes();
 					runOfflineInstrumentation(instrumentationMode, includePackages, classesDir, targetDir, mappingFile);
 				}
 			} else {
@@ -2019,7 +2068,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		// references (e.g. animal-sniffer's Java 8 API check).
 		skipPostInstrumentCheckers();
 
-		snapshotHashes();
+		// Bytecode hashes were already snapshotted before runOfflineInstrumentation;
+		// repeating now would capture instrumented bytecode and falsely report every
+		// instrumented class as changed on the next run.
+		snapshotHashes(false);
 	}
 
 	/**

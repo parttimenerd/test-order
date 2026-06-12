@@ -59,7 +59,7 @@ public class ShowStaticAnalysisMojo extends AbstractTestOrderMojo {
 
 		ChangeAnalysis.Result analysis;
 		try {
-			analysis = ChangeAnalysis.analyze(pctx, ChangeAnalysis.Options.FULL);
+			analysis = ChangeAnalysis.analyze(pctx, ChangeAnalysis.Options.FULL_READ_ONLY);
 		} catch (IOException e) {
 			throw new MojoExecutionException("Failed to analyze changes", e);
 		}
@@ -106,6 +106,11 @@ public class ShowStaticAnalysisMojo extends AbstractTestOrderMojo {
 
 		Set<String> addedKeys = new LinkedHashSet<>(expanded.changedMemberKeys());
 		addedKeys.removeAll(seed.changedMemberKeys());
+		// `<class>` markers are synthesized inside expandWithReport for every changed
+		// class — they're seed augmentations, not discovered callers. Hide them from
+		// the diff so the output reflects what a user thinks of as a "caller".
+		String classMarkerSuffix = "#" + StaticCallGraphAnalyzer.CLASS_MARKER;
+		addedKeys.removeIf(k -> k.endsWith(classMarkerSuffix));
 		Set<String> addedClasses = new LinkedHashSet<>(expanded.changedClasses());
 		addedClasses.removeAll(seed.changedClasses());
 
@@ -156,6 +161,33 @@ public class ShowStaticAnalysisMojo extends AbstractTestOrderMojo {
 					System.out.println("    " + k.substring(k.lastIndexOf('#') + 1));
 					shown++;
 				}
+			}
+		}
+
+		// Print classes added by SA expansion that have no member-level entry
+		// (e.g. brought in only via the type-reference / class-marker edges).
+		// Without this, users see "classes added: N" but no list of which classes,
+		// which is confusing when SA expands without producing method callers.
+		Set<String> classesWithMembers = new LinkedHashSet<>();
+		for (String k : addedKeys) {
+			int hash = k.lastIndexOf('#');
+			classesWithMembers.add(hash > 0 ? k.substring(0, hash) : k);
+		}
+		Set<String> classOnlyAdditions = new LinkedHashSet<>(addedClasses);
+		classOnlyAdditions.removeAll(classesWithMembers);
+		if (!classOnlyAdditions.isEmpty()) {
+			System.out.println();
+			System.out.println("newly added classes (no method-level edges):");
+			int shown = 0;
+			int limit = verbose ? Integer.MAX_VALUE : 40;
+			for (String cls : classOnlyAdditions) {
+				if (shown >= limit) {
+					System.out.println("  ... (" + (classOnlyAdditions.size() - shown)
+							+ " more, use -Dtestorder.showStaticAnalysis.verbose=true)");
+					break;
+				}
+				System.out.println("  " + cls);
+				shown++;
 			}
 		}
 	}

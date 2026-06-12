@@ -6,6 +6,7 @@ import java.util.*;
 
 import me.bechberger.testorder.AgentArgsBuilder;
 import me.bechberger.testorder.PackageDetectorSupport;
+import me.bechberger.testorder.changes.BytecodeHashStore;
 import me.bechberger.testorder.changes.ChangeDetectionSupport;
 import me.bechberger.testorder.changes.ChangeDetector;
 import me.bechberger.testorder.changes.SelectiveLearnSupport;
@@ -139,6 +140,21 @@ public final class LearnWorkflow {
 
 		if (ctx.methodOrderingEnabled() && ctx.methodHashFile() != null) {
 			ChangeDetectionOps.snapshotMethodHashes(ctx.testSourceRoot(), ctx.methodHashFile(), ctx.log());
+		}
+
+		// Seed the bytecode hash baseline so the next change-detecting run (or
+		// diagnostic show-static-analysis) can compute method-level differences
+		// instead of falling back to class-level. Without this, the first SA run
+		// after learn sees no baseline and seeds only `<class>` markers.
+		if (ctx.bytecodeChangeDetectionEnabled() && ctx.classesDir() != null && ctx.bytecodeHashFile() != null
+				&& java.nio.file.Files.isDirectory(ctx.classesDir())) {
+			try {
+				BytecodeHashStore curr = BytecodeHashStore.scan(ctx.classesDir());
+				curr.save(ctx.bytecodeHashFile());
+				ctx.log().info("[test-order] Saved bytecode hash snapshot: " + ctx.bytecodeHashFile());
+			} catch (IOException e) {
+				ctx.log().warn("[test-order] Failed to save bytecode hash snapshot: " + e.getMessage());
+			}
 		}
 	}
 

@@ -75,15 +75,29 @@ public final class ChangeAnalysis {
 	/**
 	 * Options that control which analysis steps to run. Workflows that don't need
 	 * structural analysis or method-level changes can skip them.
+	 *
+	 * <p>
+	 * {@code readOnly}: when true, suppresses persistent state writes (e.g.
+	 * updating {@code bytecode-hashes.lz4}). Diagnostic mojos like
+	 * {@code show-static-analysis} use this so repeated invocations don't silently
+	 * consume the change baseline.
 	 */
 	public record Options(boolean includeMethodChanges, boolean includeStructuralAnalysis, boolean includeAllTests,
-			boolean filterToModule) {
+			boolean filterToModule, boolean readOnly) {
+
+		public Options(boolean includeMethodChanges, boolean includeStructuralAnalysis, boolean includeAllTests,
+				boolean filterToModule) {
+			this(includeMethodChanges, includeStructuralAnalysis, includeAllTests, filterToModule, false);
+		}
 
 		/**
 		 * All analysis steps enabled. Used by show-order and dashboard from reactor
 		 * root.
 		 */
 		public static final Options FULL = new Options(true, true, true, false);
+
+		/** Read-only variant of FULL — used by diagnostic goals. */
+		public static final Options FULL_READ_ONLY = new Options(true, true, true, false, true);
 
 		/**
 		 * All analysis steps enabled, filtered to the current module. Used by
@@ -305,10 +319,12 @@ public final class ChangeAnalysis {
 					}
 					bytecodeChangedMethodKeys = curr.getChangedMethodKeys(prev);
 				}
-				try {
-					curr.save(ctx.bytecodeHashFile());
-				} catch (IOException e) {
-					ctx.log().debug("[test-order] failed to save bytecode hash file: " + e.getMessage());
+				if (!opts.readOnly()) {
+					try {
+						curr.save(ctx.bytecodeHashFile());
+					} catch (IOException e) {
+						ctx.log().debug("[test-order] failed to save bytecode hash file: " + e.getMessage());
+					}
 				}
 			} catch (IOException e) {
 				ctx.log().debug("[test-order] bytecode scan failed: " + e.getMessage());
