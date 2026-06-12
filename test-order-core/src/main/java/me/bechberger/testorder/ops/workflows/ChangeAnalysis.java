@@ -436,7 +436,7 @@ public final class ChangeAnalysis {
 				ctx.log()
 						.warn("[test-order] static analysis: " + report.reason() + " AND "
 								+ String.format("%.0f%%", affectedFraction * 100)
-								+ " of tests already touch the changed classes. Falling back to class-level matching. "
+								+ " of tests already touch the changed classes. "
 								+ "Consider re-running learn mode (`" + ctx.learnCommand()
 								+ "`) to refresh the dependency index.");
 			} else {
