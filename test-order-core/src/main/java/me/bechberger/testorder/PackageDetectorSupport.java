@@ -63,6 +63,20 @@ public final class PackageDetectorSupport {
 	}
 
 	/**
+	 * Checks if there are any .java or .kt files directly in the source root
+	 * (default package / top-level sources).
+	 */
+	public static boolean hasTopLevelSources(Path sourceRoot) {
+		if (sourceRoot == null || !Files.isDirectory(sourceRoot))
+			return false;
+		try (Stream<Path> files = Files.list(sourceRoot)) {
+			return files.anyMatch(f -> f.toString().endsWith(".java") || f.toString().endsWith(".kt"));
+		} catch (IOException ignored) {
+			return false;
+		}
+	}
+
+	/**
 	 * Resolves the effective include-packages string by combining auto-detected
 	 * source packages, user-specified packages, and an optional groupId fallback.
 	 *
@@ -76,7 +90,7 @@ public final class PackageDetectorSupport {
 	 *            project groupId (used when no packages are detected and
 	 *            filterByGroupId is true)
 	 * @return resolved packages string (comma-separated), or null if nothing
-	 *         detected
+	 *         detected or if top-level sources exist (instrument everything)
 	 */
 	public static String resolveIncludePackages(Path sourceRoot, String includePackages, boolean filterByGroupId,
 			String groupId) {
@@ -98,6 +112,14 @@ public final class PackageDetectorSupport {
 		// or as a fallback when nothing else was detected
 		if (filterByGroupId && groupId != null && !groupId.isBlank()) {
 			if (prefixes.isEmpty()) {
+				// If no packages detected but there are top-level source files (default
+				// package),
+				// return null to instrument everything — don't fall back to groupId which would
+				// exclude default-package classes. This handles projects with top-level classes
+				// like src/main/java/Util.java.
+				if (hasTopLevelSources(sourceRoot)) {
+					return null;
+				}
 				prefixes.add(groupId);
 			} else {
 				String gidPrefix = groupId + ".";
