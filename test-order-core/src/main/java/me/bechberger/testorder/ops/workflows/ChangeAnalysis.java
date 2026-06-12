@@ -357,6 +357,7 @@ public final class ChangeAnalysis {
 			Map<String, Set<String>> mergedByClass = new java.util.LinkedHashMap<>();
 			Set<String> typeChanges = Set.of();
 			Set<String> staticFieldKeys = Set.of();
+			Map<String, StructuralChangeAnalyzer.ChangeKind> memberChangeKinds = Map.of();
 			if (changedMembers != null) {
 				mergedClasses.addAll(changedMembers.changedClasses());
 				mergedKeys.addAll(changedMembers.changedMemberKeys());
@@ -365,6 +366,7 @@ public final class ChangeAnalysis {
 				}
 				typeChanges = changedMembers.classesWithTypeChanges();
 				staticFieldKeys = changedMembers.changedStaticFieldKeys();
+				memberChangeKinds = changedMembers.memberChangeKinds();
 			}
 			for (String memberKey : bytecodeChangedMethodKeys) {
 				int hash = memberKey.indexOf('#');
@@ -383,7 +385,8 @@ public final class ChangeAnalysis {
 			}
 			changedMembers = new ChangedMembers(java.util.Collections.unmodifiableSet(mergedClasses),
 					java.util.Collections.unmodifiableSet(mergedKeys),
-					java.util.Collections.unmodifiableMap(unmodifiableByClass), typeChanges, staticFieldKeys);
+					java.util.Collections.unmodifiableMap(unmodifiableByClass), typeChanges, staticFieldKeys,
+					memberChangeKinds);
 		}
 
 		// ── Static call-graph expansion (optional) ──────────────────────
