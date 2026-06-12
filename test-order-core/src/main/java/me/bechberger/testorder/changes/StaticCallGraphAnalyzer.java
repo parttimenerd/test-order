@@ -604,6 +604,12 @@ public class StaticCallGraphAnalyzer {
 					if (className[0] == null) {
 						return null;
 					}
+					// Intentionally NOT filtering by MemberFilter.shouldTrack here, unlike
+					// pass 1. Synthetic methods like javac lambda bodies (lambda$foo$0) and
+					// Kotlin $default methods make real calls whose edges are needed to
+					// reach their enclosing class. Their callerKey may not appear in
+					// declaredMethods, but line 317 only uses the class portion of the key,
+					// so the enclosing class is still flagged correctly.
 					String callerKey = className[0] + "#" + methodName;
 
 					// Method param + return types from descriptor.
