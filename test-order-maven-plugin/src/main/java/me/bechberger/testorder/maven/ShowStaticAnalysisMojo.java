@@ -1,6 +1,7 @@
 package me.bechberger.testorder.maven;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -40,6 +41,19 @@ public class ShowStaticAnalysisMojo extends AbstractTestOrderMojo {
 		initContext();
 		if (skip)
 			return;
+
+		// Diagnostic goal: tolerate a missing index. processPendingFallback (in
+		// initContext) already merged any .collector-fallback payload. If there's
+		// still no index, print a friendly message and exit cleanly instead of
+		// failing the build.
+		Path idxPath = resolveIndexPath();
+		if (!Files.exists(idxPath)) {
+			System.out.println("─── test-order static call-graph analysis ───");
+			System.out.println("(no dependency index found at " + idxPath + ")");
+			System.out.println("Run `mvn test` (auto-detects learn mode) or "
+					+ "`mvn -Dtestorder.mode=learn test` first, then re-run this goal.");
+			return;
+		}
 
 		PluginContext pctx = buildPluginContextBuilder().build();
 
