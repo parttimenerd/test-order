@@ -1,0 +1,2 @@
+datetimeutils-iscontiguous-flip.patch
+abstractpartial-isafter-flip.patch

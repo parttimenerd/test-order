@@ -1,0 +1,1 @@
+stringutils-isblank-whitespace-flip.patch

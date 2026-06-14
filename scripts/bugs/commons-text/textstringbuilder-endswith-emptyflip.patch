@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/text/TextStringBuilder.java b/src/main/java/org/apache/commons/text/TextStringBuilder.java
+index 2977fa3..96880a1 100644
+--- a/src/main/java/org/apache/commons/text/TextStringBuilder.java
++++ b/src/main/java/org/apache/commons/text/TextStringBuilder.java
+@@ -1812,7 +1812,7 @@ public class TextStringBuilder implements CharSequence, Appendable, Serializable
+         }
+         final int len = str.length();
+         if (len == 0) {
+-            return true;
++            return false; /* BUG_INJECTED */
+         }
+         if (len > size) {
+             return false;

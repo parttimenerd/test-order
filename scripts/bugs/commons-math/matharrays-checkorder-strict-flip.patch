@@ -1,0 +1,10 @@
+--- a/commons-math-legacy-core/src/main/java/org/apache/commons/math4/legacy/core/MathArrays.java
++++ b/commons-math-legacy-core/src/main/java/org/apache/commons/math4/legacy/core/MathArrays.java
+@@ -457,7 +457,7 @@
+             case INCREASING:
+                 if (strict) {
+-                    if (val[index] <= previous) {
++                    if (val[index] < previous) {
+                         break ITEM;
+                     }
+                 } else {

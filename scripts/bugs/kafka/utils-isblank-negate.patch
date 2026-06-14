@@ -1,0 +1,10 @@
+diff --git a/clients/src/main/java/org/apache/kafka/common/utils/Utils.java b/clients/src/main/java/org/apache/kafka/common/utils/Utils.java
+--- a/clients/src/main/java/org/apache/kafka/common/utils/Utils.java
++++ b/clients/src/main/java/org/apache/kafka/common/utils/Utils.java
+@@ -1568,7 +1568,7 @@
+      * @return true if the string is null, empty or whitespace only; otherwise, return false.
+      */
+     public static boolean isBlank(String str) {
+-        return str == null || str.trim().isEmpty();
++        return !(str == null || str.trim().isEmpty()); /* BUG_INJECTED */
+     }

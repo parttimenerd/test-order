@@ -1,0 +1,10 @@
+--- a/commons-statistics-descriptive/src/main/java/org/apache/commons/statistics/descriptive/IntMath.java
++++ b/commons-statistics-descriptive/src/main/java/org/apache/commons/statistics/descriptive/IntMath.java
+@@ -115,7 +115,7 @@ final class IntMath {
+         final long hi = (ab >>> 32) + (carry >>> 32) + aa;
+         // Adjust to the signed result:
+         // if x < 0:
+         //    hi - 2 * x
+-        return hi - (((x >> 63) & x) << 1);
++        return hi + (((x >> 63) & x) << 1);
+     }

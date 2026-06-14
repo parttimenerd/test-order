@@ -1,0 +1,11 @@
+--- a/logbook-api/src/main/java/org/zalando/logbook/ContentType.java
++++ b/logbook-api/src/main/java/org/zalando/logbook/ContentType.java
+@@ -68,7 +68,7 @@ public class ContentType {
+         final String lowerCasedContentType = contentType.toLowerCase();
+         if (lowerCasedContentType.startsWith("application/")) {
+             String mediaType = parseMimeType(lowerCasedContentType);
+-            return mediaType.endsWith("/json") || mediaType.endsWith("+json");
++            return mediaType.endsWith("/json") && mediaType.endsWith("+json");
+         }
+         return false;
+     }

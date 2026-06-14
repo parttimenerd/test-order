@@ -1,0 +1,11 @@
+--- a/src/main/java/tools/jackson/core/io/NumberInput.java
++++ b/src/main/java/tools/jackson/core/io/NumberInput.java
+@@ -258,7 +258,7 @@
+ 
+         // use String.compareTo() as it is a JVM intrinsic
+         int diff = s.compareTo(cmp);
+-        if (diff != 0) return (diff < 0);
++        if (diff != 0) return (diff > 0);
+         return true;
+     }
+ 

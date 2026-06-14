@@ -1,0 +1,9 @@
+diff --git a/src/main/java/org/apache/commons/compress/archivers/zip/ZipArchiveEntry.java b/src/main/java/org/apache/commons/compress/archivers/zip/ZipArchiveEntry.java
+--- a/src/main/java/org/apache/commons/compress/archivers/zip/ZipArchiveEntry.java
++++ b/src/main/java/org/apache/commons/compress/archivers/zip/ZipArchiveEntry.java
+@@ -847,7 +847,7 @@ public class ZipArchiveEntry implements ArchiveEntry, EntryStreamOffsets, Clonea
+
+     public boolean isUnixSymlink() {
+-        return (getUnixMode() & UnixStat.FILE_TYPE_FLAG) == UnixStat.LINK_FLAG;
++        return (getUnixMode() & UnixStat.FILE_TYPE_FLAG) != UnixStat.LINK_FLAG; /* BUG_INJECTED */
+     }

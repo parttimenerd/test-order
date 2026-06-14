@@ -1,0 +1,10 @@
+diff --git a/src/main/java/org/joda/time/base/AbstractPartial.java b/src/main/java/org/joda/time/base/AbstractPartial.java
+--- a/src/main/java/org/joda/time/base/AbstractPartial.java
++++ b/src/main/java/org/joda/time/base/AbstractPartial.java
+@@ -318,7 +318,7 @@ public abstract class AbstractPartial
+         if (partial == null) {
+             throw new IllegalArgumentException("Partial cannot be null");
+         }
+-        return compareTo(partial) > 0;
++        return compareTo(partial) < 0; /* BUG_INJECTED */
+     }

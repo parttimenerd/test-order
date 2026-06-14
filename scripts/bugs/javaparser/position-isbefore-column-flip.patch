@@ -1,0 +1,10 @@
+diff --git a/javaparser-core/src/main/java/com/github/javaparser/Position.java b/javaparser-core/src/main/java/com/github/javaparser/Position.java
+--- a/javaparser-core/src/main/java/com/github/javaparser/Position.java
++++ b/javaparser-core/src/main/java/com/github/javaparser/Position.java
+@@ -151,7 +151,7 @@ public class Position implements Comparable<Position> {
+         assertNotNull(otherPosition);
+         if (line == otherPosition.line) {
+-            return column < otherPosition.column;
++            return column > otherPosition.column; /* BUG_INJECTED */
+         }
+         return line < otherPosition.line || otherPosition.line == Position.ABSOLUTE_END_LINE;

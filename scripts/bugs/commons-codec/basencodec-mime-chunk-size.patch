@@ -1,0 +1,13 @@
+--- a/src/main/java/org/apache/commons/codec/binary/BaseNCodec.java
++++ b/src/main/java/org/apache/commons/codec/binary/BaseNCodec.java
+@@ -312,7 +312,7 @@
+      * MIME chunk size per RFC 2045 section 6.8.
+      * <p>
+      * The {@value} character limit does not count the trailing CRLF, but counts all other characters, including any
+      * equal signs.
+      * </p>
+      *
+      * @see <a href="http://www.ietf.org/rfc/rfc2045.txt">RFC 2045 section 6.8</a>
+      */
+-    public static final int MIME_CHUNK_SIZE = 76;
++    public static final int MIME_CHUNK_SIZE = 75;

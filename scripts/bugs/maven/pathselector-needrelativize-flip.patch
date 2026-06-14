@@ -1,0 +1,11 @@
+diff --git a/impl/maven-impl/src/main/java/org/apache/maven/impl/PathSelector.java b/impl/maven-impl/src/main/java/org/apache/maven/impl/PathSelector.java
+--- a/impl/maven-impl/src/main/java/org/apache/maven/impl/PathSelector.java
++++ b/impl/maven-impl/src/main/java/org/apache/maven/impl/PathSelector.java
+@@ -484,7 +484,7 @@
+             if (!pattern.startsWith(DEFAULT_SYNTAX + WILDCARD_FOR_ANY_PREFIX)) {
+                 return true;
+             }
+         }
+-        return false;
++        return true; /* BUG_INJECTED */
+     }

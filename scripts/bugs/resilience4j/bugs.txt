@@ -1,1 +1,2 @@
 bulkhead-default-concurrent-calls.patch
+circuitbreakerconfig-ignoreexceptions-flip.patch

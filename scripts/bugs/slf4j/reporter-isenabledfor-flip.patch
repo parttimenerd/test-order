@@ -1,0 +1,7 @@
+--- a/slf4j-api/src/main/java/org/slf4j/helpers/Reporter.java
++++ b/slf4j-api/src/main/java/org/slf4j/helpers/Reporter.java
+@@ -111,7 +111,7 @@
+     static boolean isEnabledFor(Level level) {
+-        return (level.levelInt >= INTERNAL_VERBOSITY.levelInt);
++        return (level.levelInt > INTERNAL_VERBOSITY.levelInt);
+     }

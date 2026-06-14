@@ -1,0 +1,11 @@
+--- a/commons-statistics-descriptive/src/main/java/org/apache/commons/statistics/descriptive/LongSumOfSquares.java	2026-06-13 11:35:06.511230700 +0200
++++ b/commons-statistics-descriptive/src/main/java/org/apache/commons/statistics/descriptive/LongSumOfSquares.java	2026-06-13 11:35:06.518491789 +0200
+@@ -132,7 +132,7 @@
+      */
+     static LongSumOfSquares createFromRange(long[] values, int from, int to) {
+         final UInt192 ss = UInt192.create();
+-        for (int i = from; i < to; i++) {
++        for (int i = from; i <= to; i++) {
+             ss.addSquare(values[i]);
+         }
+         return new LongSumOfSquares(ss);

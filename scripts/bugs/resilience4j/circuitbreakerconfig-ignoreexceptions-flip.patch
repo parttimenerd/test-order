@@ -1,0 +1,9 @@
+diff --git a/resilience4j-circuitbreaker/src/main/java/io/github/resilience4j/circuitbreaker/CircuitBreakerConfig.java b/resilience4j-circuitbreaker/src/main/java/io/github/resilience4j/circuitbreaker/CircuitBreakerConfig.java
+--- a/resilience4j-circuitbreaker/src/main/java/io/github/resilience4j/circuitbreaker/CircuitBreakerConfig.java
++++ b/resilience4j-circuitbreaker/src/main/java/io/github/resilience4j/circuitbreaker/CircuitBreakerConfig.java
+@@ -201,7 +201,7 @@ public class CircuitBreakerConfig implements Serializable {
+
+     public boolean isIgnoreExceptionsPrecedenceEnabled() {
+-        return ignoreExceptionsPrecedenceEnabled;
++        return !ignoreExceptionsPrecedenceEnabled; /* BUG_INJECTED */
+     }

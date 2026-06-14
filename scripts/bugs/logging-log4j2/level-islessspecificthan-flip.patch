@@ -1,0 +1,13 @@
+diff --git a/log4j-api/src/main/java/org/apache/logging/log4j/Level.java b/log4j-api/src/main/java/org/apache/logging/log4j/Level.java
+index 47a6fc6..ff83fcf 100644
+--- a/log4j-api/src/main/java/org/apache/logging/log4j/Level.java
++++ b/log4j-api/src/main/java/org/apache/logging/log4j/Level.java
+@@ -194,7 +194,7 @@ public final class Level implements Comparable<Level>, Serializable {
+      * @return True if this level Level is less specific or the same as the given Level.
+      */
+     public boolean isLessSpecificThan(final Level level) {
+-        return this.intLevel >= level.intLevel;
++        return this.intLevel < level.intLevel; /* BUG_INJECTED */
+     }
+ 
+     /**

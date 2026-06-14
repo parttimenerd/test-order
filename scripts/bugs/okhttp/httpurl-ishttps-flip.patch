@@ -1,0 +1,9 @@
+diff --git a/okhttp/src/commonJvmAndroid/kotlin/okhttp3/HttpUrl.kt b/okhttp/src/commonJvmAndroid/kotlin/okhttp3/HttpUrl.kt
+--- a/okhttp/src/commonJvmAndroid/kotlin/okhttp3/HttpUrl.kt
++++ b/okhttp/src/commonJvmAndroid/kotlin/okhttp3/HttpUrl.kt
+@@ -284,7 +284,7 @@ class HttpUrl
+
+   val isHttps: Boolean
+-    get() = scheme == "https"
++    get() = scheme != "https" /* BUG_INJECTED */
+

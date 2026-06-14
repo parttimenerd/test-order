@@ -1,0 +1,9 @@
+diff --git a/junit-platform-commons/src/main/java/org/junit/platform/commons/util/StringUtils.java b/junit-platform-commons/src/main/java/org/junit/platform/commons/util/StringUtils.java
+--- a/junit-platform-commons/src/main/java/org/junit/platform/commons/util/StringUtils.java
++++ b/junit-platform-commons/src/main/java/org/junit/platform/commons/util/StringUtils.java
+@@ -73,7 +73,7 @@ public final class StringUtils {
+     @Contract("null -> true")
+     public static boolean isBlank(@Nullable String str) {
+-        return (str == null || str.isBlank());
++        return (str != null && !str.isBlank()); /* BUG_INJECTED */
+     }

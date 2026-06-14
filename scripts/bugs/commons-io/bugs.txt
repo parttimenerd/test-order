@@ -1,3 +1,4 @@
 # Preferred injection order: low-df targets first
 byteorderparser-endian.patch
 iocase-checkendswith.patch
+filenameutils-isextension-emptyflip.patch

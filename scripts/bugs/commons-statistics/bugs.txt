@@ -1,0 +1,2 @@
+intmath-squarehigh-sign-flip.patch
+longsummsquares-createfromrange-offbyone.patch

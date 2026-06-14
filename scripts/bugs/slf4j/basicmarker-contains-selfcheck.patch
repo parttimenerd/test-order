@@ -1,0 +1,12 @@
+diff --git a/slf4j-api/src/main/java/org/slf4j/helpers/BasicMarker.java b/slf4j-api/src/main/java/org/slf4j/helpers/BasicMarker.java
+--- a/slf4j-api/src/main/java/org/slf4j/helpers/BasicMarker.java
++++ b/slf4j-api/src/main/java/org/slf4j/helpers/BasicMarker.java
+@@ -93,7 +93,7 @@ class BasicMarker implements Marker {
+         }
+
+         if (this.equals(other)) {
+-            return true;
++            return false; /* BUG_INJECTED */
+         }
+
+         if (hasReferences()) {

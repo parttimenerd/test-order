@@ -1,0 +1,13 @@
+diff --git a/commons-geometry-core/src/main/java/org/apache/commons/geometry/core/internal/IteratorTransform.java b/commons-geometry-core/src/main/java/org/apache/commons/geometry/core/internal/IteratorTransform.java
+index 90de82b..d012de0 100644
+--- a/commons-geometry-core/src/main/java/org/apache/commons/geometry/core/internal/IteratorTransform.java
++++ b/commons-geometry-core/src/main/java/org/apache/commons/geometry/core/internal/IteratorTransform.java
+@@ -55,7 +55,7 @@ public abstract class IteratorTransform<I, T> implements Iterator<T> {
+             throw new NoSuchElementException();
+         }
+ 
+-        return outputQueue.removeFirst();
++        return outputQueue.removeLast();
+     }
+ 
+     /** Load the next output values into the output queue. Returns true if the output queue

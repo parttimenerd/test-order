@@ -1,0 +1,2 @@
+alphabetconverter-size.patch
+textstringbuilder-endswith-emptyflip.patch

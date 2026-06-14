@@ -1,0 +1,1 @@
+reflectivetypeadapterfactory-includefield-flip.patch

@@ -1,0 +1,2 @@
+strings-isnullorempty-flip.patch
+iterables-elementsequal-sizecheck.patch

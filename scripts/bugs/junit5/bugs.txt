@@ -1,1 +1,2 @@
 calculator-add-off-by-one.patch
+stringutils-isblank-negate.patch
