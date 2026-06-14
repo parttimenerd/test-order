@@ -1,0 +1,11 @@
+--- a/src/main/java/org/apache/commons/codec/binary/CharSequenceUtils.java
++++ b/src/main/java/org/apache/commons/codec/binary/CharSequenceUtils.java
+@@ -46,7 +46,7 @@ public class CharSequenceUtils {
+      */
+     public static boolean regionMatches(final CharSequence cs, final int toffset, final CharSequence other,
+             final int ooffset, final int len) {
+-        return regionMatches(cs, false, toffset, other, ooffset, len);
++        return regionMatches(cs, true, toffset, other, ooffset, len); /* BUG_INJECTED */
+     }
+
+     /**
