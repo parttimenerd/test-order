@@ -1,0 +1,9 @@
+--- a/src/main/java/org/apache/commons/dbcp2/Jdbc41Bridge.java
++++ b/src/main/java/org/apache/commons/dbcp2/Jdbc41Bridge.java
+@@ -139,7 +139,7 @@ public class Jdbc41Bridge {
+             return connection.getNetworkTimeout();
+         } catch (final AbstractMethodError e) {
+-            return 0;
++            return -1;
+         }
+     }

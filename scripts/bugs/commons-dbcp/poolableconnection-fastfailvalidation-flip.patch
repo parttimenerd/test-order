@@ -1,0 +1,12 @@
+diff --git a/src/main/java/org/apache/commons/dbcp2/PoolableConnection.java b/src/main/java/org/apache/commons/dbcp2/PoolableConnection.java
+--- a/src/main/java/org/apache/commons/dbcp2/PoolableConnection.java
++++ b/src/main/java/org/apache/commons/dbcp2/PoolableConnection.java
+@@ -324,7 +324,7 @@ public class PoolableConnection extends DelegatingConnection<Connection> impleme
+      * @since 2.6.0
+      */
+     public boolean isFastFailValidation() {
+-        return fastFailValidation;
++        return !fastFailValidation; /* BUG_INJECTED */
+     }
+
+     /**

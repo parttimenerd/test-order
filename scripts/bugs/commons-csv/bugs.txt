@@ -1,0 +1,3 @@
+csvprinter-newrecord-flip.patch
+csvrecord-isset-negate.patch
+csvrecord-isset-offbyone.patch

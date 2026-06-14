@@ -1,0 +1,9 @@
+diff --git a/src/main/java/org/apache/commons/csv/CSVRecord.java b/src/main/java/org/apache/commons/csv/CSVRecord.java
+--- a/src/main/java/org/apache/commons/csv/CSVRecord.java
++++ b/src/main/java/org/apache/commons/csv/CSVRecord.java
+@@ -256,7 +256,7 @@
+      */
+     public boolean isSet(final int index) {
+-        return 0 <= index && index < values.length;
++        return !(0 <= index && index < values.length); /* BUG_INJECTED */
+     }

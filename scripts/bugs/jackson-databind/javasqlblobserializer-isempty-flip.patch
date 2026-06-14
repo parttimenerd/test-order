@@ -1,0 +1,12 @@
+diff --git a/src/main/java/tools/jackson/databind/ext/sql/JavaSqlBlobSerializer.java b/src/main/java/tools/jackson/databind/ext/sql/JavaSqlBlobSerializer.java
+--- a/src/main/java/tools/jackson/databind/ext/sql/JavaSqlBlobSerializer.java
++++ b/src/main/java/tools/jackson/databind/ext/sql/JavaSqlBlobSerializer.java
+@@ -36,7 +36,7 @@
+     @Override
+     public boolean isEmpty(SerializationContext provider, Blob value) {
+         // Could see if "length == 0" but that might be expensive operation
+-        return (value == null);
++        return (value != null); /* BUG_INJECTED */
+     }
+
+     @Override

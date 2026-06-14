@@ -1,0 +1,10 @@
+diff --git a/src/main/java/tools/jackson/databind/util/ClassUtil.java b/src/main/java/tools/jackson/databind/util/ClassUtil.java
+--- a/src/main/java/tools/jackson/databind/util/ClassUtil.java
++++ b/src/main/java/tools/jackson/databind/util/ClassUtil.java
+@@ -1072,7 +1072,7 @@ public final class ClassUtil {
+
+     public static boolean isNonStaticInnerClass(Class<?> cls) {
+-        return !Modifier.isStatic(cls.getModifiers())
++        return Modifier.isStatic(cls.getModifiers()) /* BUG_INJECTED */
+                 && (getEnclosingClass(cls) != null);
+     }

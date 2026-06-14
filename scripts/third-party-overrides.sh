@@ -27,6 +27,9 @@ detect_compiler_args() {
         # conflicts with Java 21+ List.getFirst()/getLast() returning N.
         # --release=11 hides the new API and allows compilation.
         javaparser) echo "-Dmaven.compiler.release=11" ;;
+        # joda-time targets Java 1.5 (source/target 1.5) which JDK 17+ rejects.
+        # Override to release=8 which is the minimum still supported.
+        joda-time) echo "-Dmaven.compiler.source=8 -Dmaven.compiler.target=8 -Dmaven.compiler.compilerVersion=8" ;;
         *)          echo "" ;;
     esac
 }
@@ -55,9 +58,17 @@ detect_extra_mvn_args() {
         # in log4j-api-test but the patched class is in log4j-api. Surefire's default
         # failIfNoSpecifiedTests=true aborts when it can't find the test in log4j-api; disable it.
         logging-log4j2) echo "-Dmaven.test.failure.ignore=true -Dsurefire.failIfNoSpecifiedTests=false -pl '!log4j-core-test'" ;;
+        # guava: guava-testlib's module-info.java (Java 9 multi-release) requires com.google.common
+        # but the JPMS compile step fails to find it in the Maven module path.
+        # Skip the java9 profile to avoid this; tests in guava-tests still run normally.
+        guava) echo "-P '!java9'" ;;
         # spring-ai has pre-existing test failures in spring-ai-commons (DocumentTests,
         # ContentFormatterTests etc — "[DRAFT]" prefix mismatch). Ignore so steps 5/6 run.
-        spring-ai) echo "-Dmaven.test.failure.ignore=true" ;;
+        # Also skip spring-javaformat:apply which runs in non-CI mode and causes compilation
+        # failures when our offline instrumentation modifies class files before the formatter runs.
+        # Skip checkstyle: spring-ai-model checkstyle fails (missing newline in AbstractToolCallSupport).
+        # spring-ai uses -Ddisable.checks=true (not -Dcheckstyle.skip) to disable checkstyle.
+        spring-ai) echo "-Dmaven.test.failure.ignore=true -Denv.CI=true -Ddisable.checks=true" ;;
         # maven (Apache Maven itself): RAT license check fails on injected extensions.xml
         # because it lacks an Apache license header. Skip RAT; also ignore test failures
         # since some integration tests require a fully installed Maven.
@@ -89,6 +100,12 @@ detect_module_override() {
         # tests that require a running Maven process). Use NONE to run the full reactor
         # (the package override to 'org.apache.maven' already filters out IT tests).
         maven) echo "NONE" ;;
+        # guava: tests live in guava-tests/test/ (not src/test/java), so the heuristic
+        # finds 0 test files and falls back to empty (no -pl). Explicitly use guava-tests.
+        guava) echo "guava-tests" ;;
+        # spring-ai: heuristic picks mcp/mcp-annotations (85 tests) but the injected bug
+        # is in DefaultToolDefinition which lives in spring-ai-model (70 tests).
+        spring-ai) echo "spring-ai-model" ;;
         *) echo "" ;;
     esac
 }
@@ -140,21 +157,21 @@ detect_gradle_extra_args() {
         # okhttp uses foojay-resolver for JDK toolchain provisioning AND a gradle-daemon-jvm.properties
         # that locks the daemon vendor to ADOPTIUM (Eclipse Temurin) which is unavailable on aarch64 macOS.
         # Declare SAPMachine JDK 21 and disable auto-download; the daemon-jvm file is patched by inject_gradle_plugin.
-        # android/graal/module-test modules are conditionally included (gradle.properties flags);
-        # android-test is included when ANDROID_HOME is set (it is on this machine) but the build
-        # fails due to conflicting SDK paths. Exclude android test tasks; okcurl requires GraalVM.
-        okhttp) echo "--continue -x :okcurl:test -x :android-test:testDebugUnitTest -x :android-test-app:testDebugUnitTest" ;;
+        # android-test/android-test-app are only included when ANDROID_HOME or sdk.dir is set; when they are
+        # not included, -x on them causes a build error. Use --continue without android exclusions.
+        # okcurl requires GraalVM; exclude it directly.
+        okhttp) echo "--continue -x :okcurl:test" ;;
         # mockito uses Gradle 8.14.2 which fails with Kotlin DSL compilation on JDK 25
         # (IntelliJ's JavaVersion.parse doesn't understand "25.0.x").
-        # Exclude android modules (need Android SDK) and GraalVM tests (need native image).
-        # Note: :mockito-integration-tests:android-tests uses testDebugUnitTest, not :test.
-        mockito) echo "--continue -x :mockito-extensions:mockito-android:test -x :mockito-integration-tests:android-tests:testDebugUnitTest -x :mockito-integration-tests:graalvm-tests:test" ;;
+        # Exclude GraalVM tests (need native image); android modules are not present in this version.
+        mockito) echo "--continue -x :mockito-integration-tests:graalvm-tests:test" ;;
         # micronaut-core: no spotbugsMain task (uses spotless instead); checkstyle present.
         # ScopedValue is stable on JDK 25 (no longer preview); no extra flags needed.
         # inject-java and test-suite have pre-existing JDK test failures; exclude them.
         micronaut-core) echo "--continue -x checkstyleMain -x checkstyleTest -x :micronaut-inject-java:test -x :test-suite:test" ;;
         # hibernate-orm: no checkstyle/spotbugs tasks; uses Gradle 9.5.
-        hibernate-orm) echo "--continue" ;;
+        # Exclude :hibernate-envers:test — pre-existing failures unrelated to test-order.
+        hibernate-orm) echo "--continue -x :hibernate-envers:test" ;;
         # spring-boot: no checkstyle/spotbugs tasks; custom Gradle build convention.
         # antora/docs subprojects generate documentation and are slow; exclude documentation tests.
         spring-boot) echo "--continue -x :documentation:spring-boot-docs:test -x :documentation:spring-boot-actuator-docs:test" ;;
@@ -202,6 +219,20 @@ detect_gradle_extra_args() {
     esac
 }
 
+# Return a JAVA_HOME override for running Maven in a repo, or empty string for current JDK.
+# Use for repos whose Maven enforcer or compiler requires a JDK version different from the
+# global default (which is pinned to JDK 17 on Linux to support --release 8/11 targets).
+detect_maven_java_home() {
+    local repo="$1"
+    case "$repo" in
+        # spring-ai enforcer requires JDK >= 21.0.8; global default is JDK 17.
+        # Kotlin compiler in spring-ai-commons also requires JDK 21+.
+        # Use 21.0.6-sapmchn (has javac) + enforcer is already skipped via -Denforcer.skip=true.
+        spring-ai) _sdkman_java_home "21.0.6-sapmchn" ;;
+        *) echo "" ;;
+    esac
+}
+
 # Return a JAVA_HOME override for running Gradle in a repo, or empty string for current JDK.
 # Use for repos whose Gradle wrapper version is incompatible with the current JDK.
 detect_gradle_java_home() {
@@ -228,6 +259,8 @@ detect_gradle_java_home() {
         # spring-boot uses Gradle 9.4.1 and requires Java 25 for some modules
         # (enforced via javaToolchains; building with Java 21 fails for those modules).
         spring-boot) _sdkman_java_home "25-sapmchn" ;;
+        # hibernate-orm: settings.gradle requires at least JDK 25 (jdks-settings plugin).
+        hibernate-orm) _sdkman_java_home "25-sapmchn" ;;
         # resilience4j: targets Java 21; system JDK may be a JRE (no javac); use SAP JDK 21.
         resilience4j) _sdkman_java_home "21-sapmchn" ;;
         *) echo "" ;;

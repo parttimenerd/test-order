@@ -1,0 +1,12 @@
+diff --git a/src/main/java/org/apache/commons/csv/CSVPrinter.java b/src/main/java/org/apache/commons/csv/CSVPrinter.java
+--- a/src/main/java/org/apache/commons/csv/CSVPrinter.java
++++ b/src/main/java/org/apache/commons/csv/CSVPrinter.java
+@@ -307,7 +307,7 @@ public final class CSVPrinter implements Flushable, Closeable {
+      */
+     private void printRaw(final Object value) throws IOException {
+         format.print(value, appendable, newRecord);
+-        newRecord = false;
++        newRecord = true; /* BUG_INJECTED */
+     }
+ 
+     /**

@@ -1,0 +1,2 @@
+cpdssconnectionfactory-validatingset-flip.patch
+poolableconnection-fastfailvalidation-flip.patch

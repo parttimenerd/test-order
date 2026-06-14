@@ -1,0 +1,12 @@
+diff --git a/src/main/java/org/apache/commons/dbcp2/datasources/CPDSConnectionFactory.java b/src/main/java/org/apache/commons/dbcp2/datasources/CPDSConnectionFactory.java
+--- a/src/main/java/org/apache/commons/dbcp2/datasources/CPDSConnectionFactory.java
++++ b/src/main/java/org/apache/commons/dbcp2/datasources/CPDSConnectionFactory.java
+@@ -103,7 +103,7 @@ class CPDSConnectionFactory implements PooledObjectFactory<PooledConnectionAndIn
+         final PooledConnection pc = (PooledConnection) event.getSource();
+         // if this event occurred because we were validating, ignore it
+         // otherwise return the connection to the pool.
+-        if (!validatingSet.contains(pc)) {
++        if (validatingSet.contains(pc)) { /* BUG_INJECTED */
+             final PooledConnectionAndInfo pci = pcMap.get(pc);
+             if (pci == null) {
+                 throw new IllegalStateException(NO_KEY_MESSAGE);

@@ -1,0 +1,3 @@
+javasqlblobserializer-isempty-flip.patch
+classutil-isnonstaticinner-flip.patch
+propertyname-equals.patch
