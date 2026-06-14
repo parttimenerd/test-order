@@ -508,6 +508,12 @@ final class SurefireHelper {
 	 * classpath entries. JPMS module path mode ignores
 	 * {@code maven.test.additionalClasspath}, so test-order JARs would not be
 	 * visible to the forked JVM.
+	 * <p>
+	 * For JPMS patch-module builds where the test module has a {@code module-info}
+	 * that the JVM still loads even in classpath mode (due to pre-existing
+	 * {@code --add-exports/--add-opens} flags in argLine), also injects
+	 * {@code --add-reads <module>=ALL-UNNAMED} so the test-order runtime (on the
+	 * unnamed classpath) is accessible.
 	 */
 	static void forceClasspathModeIfNeeded(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -524,8 +530,70 @@ final class SurefireHelper {
 				log.info("[test-order] JPMS module-info.java detected — forcing useModulePath=false "
 						+ "to ensure test-order classpath injection works.");
 				setChild(config, "useModulePath", "false");
+				// Surefire 3.x reads ${surefire.useModulePath} at fork time; set it here
+				// so the property binding resolves before the fork is launched.
+				project.getProperties().setProperty("surefire.useModulePath", "false");
+
+				// Inject --add-reads for any named module referenced in argLine's
+				// --add-exports/--add-opens flags. When useModulePath=false but the surefire
+				// argLine contains --add-exports/--add-opens with module names, the JVM still
+				// loads those modules from classpath JARs that have module-info.class. The
+				// test-order runtime is on the unnamed classpath and therefore invisible to
+				// those named modules unless we add --add-reads <module>=ALL-UNNAMED.
+				String existingArgLine = childValue(config, "argLine");
+				if (existingArgLine != null
+						&& (existingArgLine.contains("--add-exports") || existingArgLine.contains("--add-opens"))) {
+					java.util.Set<String> moduleNames = extractModuleNamesFromArgLine(existingArgLine);
+					if (!moduleNames.isEmpty()) {
+						String runtimeModuleName = "test.order.runtime";
+						java.util.StringJoiner sj = new java.util.StringJoiner(" ");
+						for (String m : moduleNames) {
+							if (!m.equals("ALL-UNNAMED")) {
+								sj.add("--add-reads " + m + "=ALL-UNNAMED");
+								sj.add("--add-reads " + m + "=" + runtimeModuleName);
+							}
+						}
+						String addReads = sj.toString();
+						if (!addReads.isEmpty()) {
+							String newArgLine = (existingArgLine.trim().isEmpty() ? "" : existingArgLine + " ")
+									+ addReads;
+							setChild(config, "argLine", newArgLine);
+							log.info("[test-order] JPMS patch-module build — injected " + addReads
+									+ " so named module(s) can read the test-order runtime.");
+						}
+					}
+				}
 			}
 		}
+	}
+
+	/**
+	 * Extracts module names from the "target" side of {@code --add-exports} and
+	 * {@code --add-opens} flags in an argLine string. Returns only the module names
+	 * that appear as the source (left-hand) side, i.e. the module whose packages
+	 * are being opened — these are the modules that may need
+	 * {@code --add-reads=ALL-UNNAMED} to access unnamed-classpath code.
+	 *
+	 * <p>
+	 * Example:
+	 * {@code --add-opens tools.jackson.core/pkg=tools.jackson.core.unittest} →
+	 * extracts {@code tools.jackson.core.unittest} (the module doing the reading).
+	 */
+	private static java.util.Set<String> extractModuleNamesFromArgLine(String argLine) {
+		java.util.Set<String> result = new java.util.LinkedHashSet<>();
+		// Match --add-exports/--add-opens/--add-reads flags: format is
+		// --add-exports module/package=target or --add-opens module/package=target
+		java.util.regex.Pattern p = java.util.regex.Pattern
+				.compile("--(?:add-exports|add-opens)\\s+[\\w.]+/[\\w.]+=(\\S+)");
+		java.util.regex.Matcher m = p.matcher(argLine);
+		while (m.find()) {
+			String target = m.group(1);
+			// Skip wildcard and ALL-UNNAMED — only add named modules
+			if (!target.equals("ALL-UNNAMED") && !target.contains(",")) {
+				result.add(target);
+			}
+		}
+		return result;
 	}
 
 	/**
@@ -635,6 +703,85 @@ final class SurefireHelper {
 			msg.append(" Set -Dtestorder.affected.preserveForkConfig=true to keep your config.");
 			log.info(msg.toString());
 		}
+	}
+
+	/**
+	 * Builds {@code --add-reads} flags for JPMS patch-module projects.
+	 *
+	 * <p>
+	 * When a project uses {@code module-info.java} and Surefire's argLine contains
+	 * {@code --add-exports/--add-opens} with named modules, those modules are still
+	 * loaded from the module path. Test-order injects its runtime on the classpath
+	 * via {@code maven.test.additionalClasspath}. Depending on whether
+	 * {@code useModulePath} takes effect, the runtime jar may end up as:
+	 * <ul>
+	 * <li>The unnamed module (classpath mode) — needs
+	 * {@code --add-reads X=ALL-UNNAMED}</li>
+	 * <li>Automatic named module {@code test.order.runtime} (module path) — needs
+	 * {@code --add-reads X=test.order.runtime}</li>
+	 * </ul>
+	 * Both flags are injected so the fix works regardless of which mode Surefire
+	 * uses. {@code --add-reads} for a non-existent module is silently ignored by
+	 * the JVM.
+	 *
+	 * <p>
+	 * Reads the resolved {@code argLine} Maven property (not the XML element) so
+	 * the check works when argLine is supplied via {@code @{argLine}} expansion
+	 * (e.g. JaCoCo sets it as a property).
+	 */
+	static String buildJpmsAddReadsForProject(MavenProject project, Log log) {
+		// Only applies when the project has a module-info.java
+		java.io.File moduleInfo = new java.io.File(project.getBasedir(), "src/main/java/module-info.java");
+		java.io.File testModuleInfo = new java.io.File(project.getBasedir(), "src/test/java/module-info.java");
+		if (!moduleInfo.exists() && !testModuleInfo.exists()) {
+			return "";
+		}
+		// Read both the Maven property AND the XML <argLine> element.
+		// JaCoCo sets the argLine Maven property to just its javaagent (no
+		// --add-opens),
+		// so we must also check the Surefire XML <argLine> which may contain literal
+		// --add-exports/--add-opens flags for JPMS patch-module builds.
+		String argLine = project.getProperties() != null ? project.getProperties().getProperty("argLine", "") : "";
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire != null) {
+			Xpp3Dom config = (Xpp3Dom) surefire.getConfiguration();
+			if (config != null) {
+				String xmlArgLine = childValue(config, "argLine");
+				if (xmlArgLine != null) {
+					argLine = argLine + " " + xmlArgLine;
+				}
+			}
+		}
+		if (!argLine.contains("--add-exports") && !argLine.contains("--add-opens")) {
+			return "";
+		}
+		java.util.Set<String> moduleNames = extractModuleNamesFromArgLine(argLine);
+		if (moduleNames.isEmpty()) {
+			return "";
+		}
+		// The automatic module name for test-order-runtime.jar is "test.order.runtime"
+		// (Java derives the module name by replacing hyphens with dots and stripping
+		// version).
+		// Inject --add-reads for both the unnamed classpath case and the automatic
+		// module case.
+		String runtimeModuleName = "test.order.runtime";
+		StringBuilder addReads = new StringBuilder();
+		for (String m : moduleNames) {
+			if (m.equals("ALL-UNNAMED")) {
+				continue;
+			}
+			if (!addReads.isEmpty()) {
+				addReads.append(" ");
+			}
+			addReads.append("--add-reads ").append(m).append("=ALL-UNNAMED");
+			addReads.append(" --add-reads ").append(m).append("=").append(runtimeModuleName);
+		}
+		String result = addReads.toString();
+		if (!result.isEmpty()) {
+			log.info("[test-order] JPMS patch-module build detected — injecting " + result
+					+ " so named module(s) can access the test-order runtime.");
+		}
+		return result;
 	}
 
 	static void configureIncludes(MavenProject project, List<String> tests, boolean clearExisting)

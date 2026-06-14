@@ -402,9 +402,10 @@ public class TestNGTelemetryListener implements ITestListener {
 	 * mapping file and configuring UsageStore. Called when
 	 * {@code testorder.offline.mapping} system property is set.
 	 *
-	 * Throws RuntimeException on failure to prevent silent data loss.
-	 * If this method fails, test execution will not be instrumented and
-	 * no .deps files will be written, making data loss visible to the user.
+	 * <p>
+	 * Throws RuntimeException on failure to prevent silent data loss. If this
+	 * method fails, test execution will not be instrumented and no .deps files will
+	 * be written, making data loss visible to the user.
 	 */
 	private void bootstrapOfflineRuntime(String mappingPath) {
 		try {

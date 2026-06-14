@@ -707,7 +707,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				java.io.File mmDir = session.getRequest().getMultiModuleProjectDirectory();
 				if (mmDir != null) {
 					reactorRootPath = mmDir.toPath().normalize();
-					if (Files.isDirectory(reactorRootPath.resolve(".test-order"))) {
+					// Only infer multi-module if the root .test-order/ contains an actual
+					// index file (test-dependencies.lz4). A root directory with only
+					// class-id-map.bin / deps/ / hashes/ (but no index) means the index
+					// lives in a submodule and should NOT be treated as a root index.
+					if (Files.isReadable(reactorRootPath.resolve(".test-order/test-dependencies.lz4"))) {
 						isEffectivelyMultiModule = true;
 						getLog().debug("[test-order] Inferred multi-module from .test-order/ at " + reactorRootPath);
 					}
@@ -1904,6 +1908,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			// ${failsafe.argLine}). Re-use the property name detected above.
 			String argLineProperty = detectedArgLineProp;
 			String mergedProjectArgLine = (projectArgLine + " " + agentString + sysProps).trim();
+			// JPMS patch-module builds: append --add-reads to the argLine Maven property so
+			// it reaches the forked JVM via @{argLine} expansion at fork time. Must happen
+			// here (before setProperty) — @{argLine} is late-binding, Surefire reads it
+			// at fork time after our mojo has already run.
+			String jpmsAddReads = SurefireHelper.buildJpmsAddReadsForProject(project, getLog());
+			if (!jpmsAddReads.isEmpty()) {
+				mergedProjectArgLine = (mergedProjectArgLine + " " + jpmsAddReads).trim();
+			}
 			project.getProperties().setProperty(argLineProperty, mergedProjectArgLine);
 			if (session != null && session.getUserProperties() != null) {
 				session.getUserProperties().setProperty(argLineProperty, mergedProjectArgLine);

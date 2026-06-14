@@ -16,12 +16,13 @@
 set -euo pipefail
 
 # Portable in-place sed: macOS requires -i '' while GNU sed (Linux) uses -i.
-# Use -i.bak on both platforms and delete the backup immediately.
+# Use a distinct .sedi-tmp suffix so the temp file never collides with the
+# intentional .bak files that inject_gradle_plugin relies on for restoration.
 sedi() {
     local args=("$@")
     local file="${args[-1]}"
-    sed -i.bak "${args[@]}"
-    rm -f "${file}.bak"
+    sed -i.sedi-tmp "${args[@]}"
+    rm -f "${file}.sedi-tmp"
 }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -538,10 +539,35 @@ inject_gradle_plugin() {
     if grep -q 'me.bechberger.test-order' "$build_file" 2>/dev/null; then
         warn "Plugin id already present in $build_file (leftover from prior run) — cleaning before re-injection"
         git -C "$dir" checkout -- "$(basename "$build_file")" 2>/dev/null || true
-        # If git checkout didn't clean it (not a git repo), skip to avoid double injection
+        # If git checkout didn't clean it (not a git repo), strip the injected lines with sed
         if grep -q 'me.bechberger.test-order' "$build_file" 2>/dev/null; then
-            warn "Cannot clean $build_file — skipping injection to avoid double plugin"
-            return 0
+            warn "git restore failed — stripping injected lines from $build_file with sed"
+            sedi "/me[._:]bechberger[._:]test-order/d" "$build_file"
+            sedi "/me[._:]bechberger:test-order-gradle-plugin/d" "$build_file"
+            sedi "/^subprojects { plugins\.withId/d" "$build_file"
+            # Remove trailing orphaned braces left by a prior dependencyResolutionManagement append
+            python3 -c "
+import sys
+path = sys.argv[1]
+with open(path) as f: lines = f.readlines()
+while lines and lines[-1].strip() in ('', '}'):
+    candidate = lines.pop()
+    if candidate.strip() == '}':
+        # Check preceding context — if last real line looks like a regular statement, it's orphaned
+        prev_real = [l for l in lines if l.strip()]
+        if not prev_real or prev_real[-1].strip() not in ('}', ''):
+            pass  # orphaned, drop it
+        else:
+            lines.append(candidate); break  # real closing brace, keep it
+while lines and lines[-1].strip() == '':
+    lines.pop()
+lines.append('\n')
+with open(path, 'w') as f: f.writelines(lines)
+" "$build_file" 2>/dev/null || true
+            if grep -q 'me.bechberger.test-order' "$build_file" 2>/dev/null; then
+                warn "Cannot clean $build_file — skipping injection to avoid double plugin"
+                return 0
+            fi
         fi
     fi
 
@@ -610,7 +636,25 @@ open('$settings_file', 'w').write(content)
 "
         # 2. dependencyResolutionManagement: add mavenLocal() if not already there,
         # so test-order JARs (agent, core) resolve at runtime/testRuntime scope.
-        if ! grep -q "mavenLocal" "$settings_file"; then
+        # NOTE: do NOT check `grep -q mavenLocal` across the whole file — that would
+        # skip this step if mavenLocal appears only in pluginManagement.repositories,
+        # which does NOT cover dependency resolution.  Check only the DRM block.
+        local _drm_has_local
+        _drm_has_local=$(python3 -c "
+import re, sys
+content = open('$settings_file').read()
+drm = re.search(r'dependencyResolutionManagement\s*\{', content)
+if drm:
+    depth, i = 1, drm.end()
+    while i < len(content) and depth > 0:
+        if content[i] == '{': depth += 1
+        elif content[i] == '}': depth -= 1
+        i += 1
+    print('yes' if 'mavenLocal' in content[drm.start():i] else 'no')
+else:
+    print('no')
+" 2>/dev/null || echo "no")
+        if [[ "$_drm_has_local" != "yes" ]]; then
             printf '\ndependencyResolutionManagement { repositories { mavenLocal() } }\n' >> "$settings_file"
         fi
     elif [[ -f "$dir/settings.gradle" ]]; then
@@ -662,12 +706,88 @@ pluginManagement {\
     # found".  buildscript{} only puts the jar on the classpath; subprojects{} then
     # applies it only to subprojects that have the java plugin.
     if [[ "$build_file" == *.kts ]] && [[ "$is_multi_module" == "true" ]]; then
-        # Kotlin DSL multi-module: declare with apply=false so the plugin is on the classpath
-        # but NOT applied to the root project (which may lack the Java plugin / testRuntimeOnly).
-        # The subprojects block below then applies only to subprojects that have the java plugin.
-        sedi '/^plugins {/a\
-    id("me.bechberger.test-order") version "'"$PLUGIN_VERSION"'" apply false
-' "$build_file"
+        # Kotlin DSL multi-module: use buildscript { classpath } so the plugin jar is on the
+        # build classpath for ALL subprojects.  apply(plugin = "...") in the subprojects block
+        # looks up the plugin via the buildscript classpath, NOT the plugins {} resolution
+        # mechanism, so plugins { id() apply false } would cause "Plugin not found" errors.
+        # If the root build file already has buildscript { ... } inject the classpath dep into
+        # it; otherwise prepend a fresh buildscript {} block before the first plugins {} line.
+        if grep -q "^buildscript {" "$build_file"; then
+            python3 /dev/stdin "$build_file" "$PLUGIN_VERSION" << 'PYEOF'
+import sys
+build_file = sys.argv[1]
+plugin_version = sys.argv[2]
+lines = open(build_file).read().splitlines(keepends=True)
+classpath_line = f'    classpath("me.bechberger:test-order-gradle-plugin:{plugin_version}")\n'
+maven_local_line = '    repositories { maven { url = uri("file://${System.getProperty(\"user.home\")}/.m2/repository") } }\n'
+
+in_buildscript = False
+depth = 0
+found_dep = False
+found_repos = False
+has_maven_local = False
+bs_start = -1
+bs_end = -1
+dep_insert_after = -1
+repos_insert_after = -1
+
+for i, line in enumerate(lines):
+    stripped = line.lstrip()
+    is_comment = stripped.startswith('//')
+    if not in_buildscript:
+        if line.rstrip() == 'buildscript {':
+            in_buildscript = True
+            depth = 1
+            bs_start = i
+    else:
+        if not is_comment:
+            depth += line.count('{') - line.count('}')
+        if depth <= 0:
+            bs_end = i
+            break
+        if not is_comment:
+            if 'repositories {' in line and depth == 2:
+                found_repos = True
+                repos_insert_after = i
+            if 'mavenLocal()' in line or 'maven {' in line:
+                has_maven_local = True
+            if 'dependencies {' in line and depth == 2:
+                found_dep = True
+                dep_insert_after = i
+
+out = list(lines)
+if dep_insert_after >= 0:
+    out.insert(dep_insert_after + 1, classpath_line)
+elif bs_end >= 0 and not found_dep:
+    out.insert(bs_end, '    dependencies {\n' + classpath_line + '    }\n')
+if not found_repos and bs_start >= 0:
+    out.insert(bs_start + 1, maven_local_line)
+elif found_repos and not has_maven_local and repos_insert_after >= 0:
+    out.insert(repos_insert_after + 1, '        mavenLocal()\n')
+
+open(build_file, 'w').write(''.join(out))
+PYEOF
+            log "  → injected test-order classpath into existing buildscript{} in $build_file"
+        else
+            # Prepend a buildscript{} block — Kotlin DSL syntax
+            local maven_local_kts='buildscript {\n    repositories { mavenLocal() }\n    dependencies { classpath("me.bechberger:test-order-gradle-plugin:'"$PLUGIN_VERSION"'") }\n}\n\n'
+            python3 /dev/stdin "$build_file" "$maven_local_kts" << 'PYEOF'
+import sys
+build_file = sys.argv[1]
+prepend = sys.argv[2].replace('\\n', '\n')
+content = open(build_file).read()
+# Insert before first top-level plugins { or import statement that precedes it
+import re
+# Find the first plugins { at the start of a line
+m = re.search(r'^plugins\s*\{', content, re.MULTILINE)
+if m:
+    content = content[:m.start()] + prepend + content[m.start():]
+else:
+    content = prepend + content
+open(build_file, 'w').write(content)
+PYEOF
+            log "  → prepended buildscript{} with test-order classpath in $build_file"
+        fi
     elif [[ "$build_file" == *.kts ]]; then
         # Kotlin DSL single-module: root project has Java plugin, apply directly.
         sedi '/^plugins {/a\
@@ -769,13 +889,16 @@ buildscript {\
 
     if [[ "$is_multi_module" == "true" ]]; then
         if [[ "$build_file" == *.kts ]]; then
-            # Use plugins.withId("java") so the plugin is only applied to subprojects
+            # Use pluginManager.withPlugin("java") so the plugin is only applied to subprojects
             # that actually have the Java plugin. Subprojects without Java (e.g. BOM-only,
             # build-logic plugins) have null testClassesDirs and would crash testOrderSelect.
+            # Note: plugins.withId("java") { apply(...) } does NOT work in Kotlin DSL — the
+            # lambda `this` is Plugin<*>, not Project, so apply() resolves to the wrong overload.
+            # pluginManager.withPlugin() correctly scopes to the project context.
             if [[ "$use_settings_repos" == "true" ]]; then
-                printf '\nsubprojects { plugins.withId("java") { apply(plugin = "me.bechberger.test-order") } }\n' >> "$build_file"
+                printf '\nsubprojects { pluginManager.withPlugin("java") { apply(plugin = "me.bechberger.test-order") } }\n' >> "$build_file"
             else
-                printf '\nsubprojects { repositories { mavenLocal() }; plugins.withId("java") { apply(plugin = "me.bechberger.test-order") } }\n' >> "$build_file"
+                printf '\nsubprojects { repositories { mavenLocal() }; pluginManager.withPlugin("java") { apply(plugin = "me.bechberger.test-order") } }\n' >> "$build_file"
             fi
         else
             if [[ "$use_settings_repos" == "true" ]]; then
@@ -863,6 +986,14 @@ phase_learn_maven() {
 
     # Inject plugin
     inject_maven_plugin "$repo" "$module"
+
+    # Per-repo JAVA_HOME override (e.g. spring-ai needs JDK 21, not the global JDK 17 default)
+    local maven_java_home=""
+    type detect_maven_java_home &>/dev/null && maven_java_home=$(detect_maven_java_home "$repo")
+    if [[ -n "$maven_java_home" ]]; then
+        export JAVA_HOME="$maven_java_home"
+        export PATH="$maven_java_home/bin:$PATH"
+    fi
 
     local mvn_args=(-B -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
@@ -1227,7 +1358,7 @@ phase_full_gradle() {
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderDump \
         --no-daemon --no-build-cache --no-configuration-cache \
         $extra_args \
-        2>&1 | tee "$results/full-dump.log" | tail -20 || warn "Dump failed"
+        2>&1 | tee >(head -c 5M > "$results/full-dump.log") | tail -20 || warn "Dump failed"
 
     # 4. Show order (use testOrderShow; testOrderShowOrder is deprecated and doesn't filter excluded/abstract tests)
     log "Step 4: Show order"
@@ -1305,6 +1436,28 @@ phase_full_gradle() {
             else
                 warn "Bug not caught in top-3 for $classname (step 7)"
             fi
+            # Step 7b: SA auto-mode (changeMode=uncommitted) — verify SA detects the
+            # change from git diff without an explicit class name.
+            if git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+                log "Step 7b: SA auto-mode (changeMode=uncommitted)"
+                local sa_log="$results/full-bug-sa-select.log"
+                # shellcheck disable=SC2086
+                JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "${bp_task_prefix}testOrderSelect" \
+                    --no-daemon --no-build-cache --no-configuration-cache \
+                    -Dtestorder.changeMode=uncommitted \
+                    -Dtestorder.affected.topN=5 \
+                    $extra_args \
+                    2>&1 | tee "$sa_log" | tail -5 || true
+                if log_has_test_failures "$sa_log"; then
+                    ok "SA auto-mode caught bug (step 7b)!"
+                elif grep -q "No changed classes detected\|no changed classes" "$sa_log" 2>/dev/null; then
+                    warn "SA auto-mode: no changed classes detected from git diff (step 7b)"
+                elif ! log_has_tests_run "$sa_log"; then
+                    warn "SA auto-mode: build failed before tests ran (step 7b)"
+                else
+                    warn "SA auto-mode: bug NOT caught in top-5 selected tests (step 7b)"
+                fi
+            fi
             restore_bug_patch "$repo" "$patch_file"
         else
             warn "No applicable patch for $repo — skipping bug injection (add scripts/bugs/$repo/*.patch)"
@@ -1345,6 +1498,14 @@ phase_order_maven() {
 
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
+
+    # Per-repo JAVA_HOME override
+    local maven_java_home=""
+    type detect_maven_java_home &>/dev/null && maven_java_home=$(detect_maven_java_home "$repo")
+    if [[ -n "$maven_java_home" ]]; then
+        export JAVA_HOME="$maven_java_home"
+        export PATH="$maven_java_home/bin:$PATH"
+    fi
 
     local mvn_args=(-B -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
@@ -1586,6 +1747,14 @@ phase_full_maven() {
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
 
+    # Per-repo JAVA_HOME override (e.g. spring-ai needs JDK 21, not the global JDK 17 default)
+    local maven_java_home=""
+    type detect_maven_java_home &>/dev/null && maven_java_home=$(detect_maven_java_home "$repo")
+    if [[ -n "$maven_java_home" ]]; then
+        export JAVA_HOME="$maven_java_home"
+        export PATH="$maven_java_home/bin:$PATH"
+    fi
+
     # Base args (no module selector) shared by all goals
     local compiler_args
     compiler_args=$(detect_compiler_args "$repo")
@@ -1653,7 +1822,7 @@ phase_full_maven() {
 
     # 3. Dump state
     log "Step 3: Dump state"
-    mvn me.bechberger:test-order-maven-plugin:dump "${cmd_args[@]}" 2>&1 | tee "$results/full-dump.log" | tail -20 || warn "Dump failed"
+    mvn me.bechberger:test-order-maven-plugin:dump "${cmd_args[@]}" 2>&1 | tee >(head -c 5M > "$results/full-dump.log") | tail -20 || warn "Dump failed"
 
     # Also dump as TSV for discriminating-power scoring in find_bug_targets (S15)
     local dump_tsv="$results/full-dump.tsv"
@@ -1757,6 +1926,33 @@ phase_full_maven() {
                 -Dtestorder.changed.classes="$classname" \
                 "${cmd_args[@]}" -q 2>&1 \
                 | grep -E '^\s+[0-9]' | head -5 | sed 's/^/    /' || true
+        fi
+        # Step 7b: SA auto-mode (changeMode=uncommitted) — verify SA detects the
+        # change from the git diff without an explicit class name. Only runs when
+        # the third-party repo is a git repository (patch leaves an uncommitted diff).
+        if git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+            log "Step 7b: SA auto-mode (changeMode=uncommitted)"
+            local sa_log="$results/full-bug-sa-select.log"
+            mvn clean me.bechberger:test-order-maven-plugin:affected test \
+                -Dtestorder.changeMode=uncommitted \
+                -Dtestorder.affected.topN=5 \
+                -Dtestorder.mode=skip \
+                "${test_cmd_args[@]}" \
+                2>&1 | tee "$sa_log" | tail -5 || true
+            if log_has_test_failures "$sa_log"; then
+                ok "SA auto-mode caught bug (step 7b)!"
+            elif grep -q "No changed classes detected" "$sa_log" 2>/dev/null || \
+                 grep -q "no changed classes" "$sa_log" 2>/dev/null; then
+                warn "SA auto-mode: no changed classes detected from git diff (step 7b)"
+            elif ! log_has_tests_run "$sa_log"; then
+                warn "SA auto-mode: build failed before tests ran (step 7b)"
+            else
+                warn "SA auto-mode: bug NOT caught in top-5 selected tests (step 7b)"
+            fi
+            # Also show what SA found
+            mvn me.bechberger:test-order-maven-plugin:show-static-analysis \
+                "${cmd_args[@]}" -q 2>&1 | grep -E 'changed|seed|expand|uncertain|class' \
+                | head -10 | sed 's/^/    /' || true
         fi
         restore_bug_patch "$repo" "$patch_file"
     else

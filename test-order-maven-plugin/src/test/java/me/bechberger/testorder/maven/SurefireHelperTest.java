@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
 
@@ -15,6 +18,7 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class SurefireHelperTest {
 
@@ -807,5 +811,210 @@ class SurefireHelperTest {
 		Log log = mockLog();
 
 		assertThrows(MojoExecutionException.class, () -> SurefireHelper.forceSingleForkForOrdering(project, log));
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// buildJpmsAddReadsForProject — JPMS --add-reads injection
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void buildJpmsAddReads_returnsEmptyWhenNoModuleInfo(@TempDir Path tempDir) {
+		MavenProject project = projectWithSurefire(config());
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+
+		String result = SurefireHelper.buildJpmsAddReadsForProject(project, mockLog());
+
+		assertEquals("", result, "No --add-reads when no module-info.java exists");
+	}
+
+	@Test
+	void buildJpmsAddReads_returnsEmptyWhenModuleInfoButNoAddOpens(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/main/java"));
+		Files.writeString(tempDir.resolve("src/main/java/module-info.java"), "module foo {}");
+		MavenProject project = projectWithSurefire(config());
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+
+		String result = SurefireHelper.buildJpmsAddReadsForProject(project, mockLog());
+
+		assertEquals("", result, "No --add-reads when argLine has no --add-opens/--add-exports");
+	}
+
+	@Test
+	void buildJpmsAddReads_injectsAddReadsForNamedModuleInXmlArgLine(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/test/java"));
+		Files.writeString(tempDir.resolve("src/test/java/module-info.java"), "open module foo.test {}");
+		String xmlArgLine = "--add-opens tools.jackson.core/com.fasterxml.jackson.core=tools.jackson.core.unittest"
+				+ " --add-opens tools.jackson.core/com.fasterxml.jackson.core.io=tools.jackson.core.unittest";
+		MavenProject project = projectWithSurefire(config(child("argLine", xmlArgLine)));
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+
+		String result = SurefireHelper.buildJpmsAddReadsForProject(project, mockLog());
+
+		assertFalse(result.isEmpty(), "Should inject --add-reads");
+		assertTrue(result.contains("--add-reads tools.jackson.core.unittest=ALL-UNNAMED"),
+				"Should add ALL-UNNAMED read for the named module");
+		assertTrue(result.contains("--add-reads tools.jackson.core.unittest=test.order.runtime"),
+				"Should add test.order.runtime read for the named module");
+	}
+
+	@Test
+	void buildJpmsAddReads_deduplicatesMultipleSameModule(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/main/java"));
+		Files.writeString(tempDir.resolve("src/main/java/module-info.java"), "module foo {}");
+		String xmlArgLine = "--add-opens tools.jackson.core/pkg1=tools.jackson.core.unittest"
+				+ " --add-opens tools.jackson.core/pkg2=tools.jackson.core.unittest";
+		MavenProject project = projectWithSurefire(config(child("argLine", xmlArgLine)));
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+
+		String result = SurefireHelper.buildJpmsAddReadsForProject(project, mockLog());
+
+		long count = countOccurrences(result, "--add-reads tools.jackson.core.unittest=ALL-UNNAMED");
+		assertEquals(1, count, "Duplicate module name should only appear once");
+	}
+
+	@Test
+	void buildJpmsAddReads_skipsAllUnnamed(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/main/java"));
+		Files.writeString(tempDir.resolve("src/main/java/module-info.java"), "module foo {}");
+		String xmlArgLine = "--add-opens java.base/java.lang=ALL-UNNAMED";
+		MavenProject project = projectWithSurefire(config(child("argLine", xmlArgLine)));
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+
+		String result = SurefireHelper.buildJpmsAddReadsForProject(project, mockLog());
+
+		assertEquals("", result, "ALL-UNNAMED target should not generate --add-reads");
+	}
+
+	@Test
+	void buildJpmsAddReads_readsArgLineFromMavenProperty(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/main/java"));
+		Files.writeString(tempDir.resolve("src/main/java/module-info.java"), "module foo {}");
+		MavenProject project = projectWithSurefire(config());
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+		project.getProperties().setProperty("argLine",
+				"--add-opens tools.jackson.core/com.fasterxml=tools.jackson.core.unittest");
+
+		String result = SurefireHelper.buildJpmsAddReadsForProject(project, mockLog());
+
+		assertTrue(result.contains("--add-reads tools.jackson.core.unittest=ALL-UNNAMED"),
+				"Should pick up module name from Maven argLine property");
+	}
+
+	@Test
+	void buildJpmsAddReads_combinesXmlAndPropertyArgLines(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/main/java"));
+		Files.writeString(tempDir.resolve("src/main/java/module-info.java"), "module foo {}");
+		String xmlArgLine = "--add-opens tools.jackson.core/pkg=module.from.xml";
+		MavenProject project = projectWithSurefire(config(child("argLine", xmlArgLine)));
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+		project.getProperties().setProperty("argLine", "--add-exports tools.jackson.core/pkg2=module.from.property");
+
+		String result = SurefireHelper.buildJpmsAddReadsForProject(project, mockLog());
+
+		assertTrue(result.contains("--add-reads module.from.xml=ALL-UNNAMED"),
+				"Should include module from XML argLine");
+		assertTrue(result.contains("--add-reads module.from.property=ALL-UNNAMED"),
+				"Should include module from Maven property");
+	}
+
+	@Test
+	void buildJpmsAddReads_addExportsAlsoExtracted(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/test/java"));
+		Files.writeString(tempDir.resolve("src/test/java/module-info.java"), "open module foo.test {}");
+		String xmlArgLine = "--add-exports java.base/sun.security.x509=mytest.module";
+		MavenProject project = projectWithSurefire(config(child("argLine", xmlArgLine)));
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+
+		String result = SurefireHelper.buildJpmsAddReadsForProject(project, mockLog());
+
+		assertTrue(result.contains("--add-reads mytest.module=ALL-UNNAMED"),
+				"--add-exports target module should also get --add-reads");
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// forceClasspathModeIfNeeded — extended --add-reads injection
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	void forceClasspathMode_injectsAddReadsWhenModuleInfoAndArgLineHasAddOpens(@TempDir Path tempDir)
+			throws IOException {
+		Files.createDirectories(tempDir.resolve("src/main/java"));
+		Files.writeString(tempDir.resolve("src/main/java/module-info.java"), "module foo {}");
+		String xmlArgLine = "--add-opens tools.jackson.core/com.fasterxml=tools.jackson.core.unittest";
+		MavenProject project = projectWithSurefire(config(child("argLine", xmlArgLine)));
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+		Log log = mockLog();
+
+		SurefireHelper.forceClasspathModeIfNeeded(project, log);
+
+		Plugin surefire = SurefireHelper.findSurefirePlugin(project);
+		Xpp3Dom cfg = (Xpp3Dom) surefire.getConfiguration();
+		assertEquals("false", cfg.getChild("useModulePath").getValue());
+		String newArgLine = cfg.getChild("argLine").getValue();
+		assertTrue(newArgLine.contains("--add-reads tools.jackson.core.unittest=ALL-UNNAMED"),
+				"Should inject ALL-UNNAMED add-reads: " + newArgLine);
+		assertTrue(newArgLine.contains("--add-reads tools.jackson.core.unittest=test.order.runtime"),
+				"Should inject test.order.runtime add-reads: " + newArgLine);
+	}
+
+	@Test
+	void forceClasspathMode_noAddReadsWhenArgLineOnlyHasAllUnnamed(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/main/java"));
+		Files.writeString(tempDir.resolve("src/main/java/module-info.java"), "module foo {}");
+		String xmlArgLine = "--add-opens java.base/java.lang=ALL-UNNAMED";
+		MavenProject project = projectWithSurefire(config(child("argLine", xmlArgLine)));
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+		Log log = mockLog();
+
+		SurefireHelper.forceClasspathModeIfNeeded(project, log);
+
+		Plugin surefire = SurefireHelper.findSurefirePlugin(project);
+		Xpp3Dom cfg = (Xpp3Dom) surefire.getConfiguration();
+		assertEquals("false", cfg.getChild("useModulePath").getValue(), "useModulePath still set to false");
+		// argLine should not have been modified with --add-reads
+		String newArgLine = cfg.getChild("argLine").getValue();
+		assertFalse(newArgLine.contains("--add-reads"),
+				"No --add-reads when only ALL-UNNAMED target present: " + newArgLine);
+	}
+
+	@Test
+	void forceClasspathMode_doesNotDoubleInjectAddReads(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/main/java"));
+		Files.writeString(tempDir.resolve("src/main/java/module-info.java"), "module foo {}");
+		String xmlArgLine = "--add-opens a.module/pkg=target.module" + " --add-opens a.module/pkg2=target.module";
+		MavenProject project = projectWithSurefire(config(child("argLine", xmlArgLine)));
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+
+		SurefireHelper.forceClasspathModeIfNeeded(project, mockLog());
+
+		Plugin surefire = SurefireHelper.findSurefirePlugin(project);
+		Xpp3Dom cfg = (Xpp3Dom) surefire.getConfiguration();
+		String newArgLine = cfg.getChild("argLine").getValue();
+		long count = countOccurrences(newArgLine, "--add-reads target.module=ALL-UNNAMED");
+		assertEquals(1, count, "Should not duplicate --add-reads for same module");
+	}
+
+	@Test
+	void forceClasspathMode_setsSurefireUseModulePathProperty(@TempDir Path tempDir) throws IOException {
+		Files.createDirectories(tempDir.resolve("src/main/java"));
+		Files.writeString(tempDir.resolve("src/main/java/module-info.java"), "module foo {}");
+		MavenProject project = projectWithSurefire(config());
+		project.setFile(tempDir.resolve("pom.xml").toFile());
+
+		SurefireHelper.forceClasspathModeIfNeeded(project, mockLog());
+
+		assertEquals("false", project.getProperties().getProperty("surefire.useModulePath"),
+				"surefire.useModulePath Maven property must be set so @{argLine} expansion "
+						+ "works in Surefire 3.x module-path mode");
+	}
+
+	private static long countOccurrences(String text, String pattern) {
+		long count = 0;
+		int idx = 0;
+		while ((idx = text.indexOf(pattern, idx)) != -1) {
+			count++;
+			idx += pattern.length();
+		}
+		return count;
 	}
 }
