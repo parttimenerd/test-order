@@ -1072,7 +1072,7 @@ class DepsAndScoringTest {
 
 	@Test
 	void scoringWeightsFromArrayAndToArray() {
-		int[] arr = {10, 8, 5, 3, 2, 6, 4, 1, 0, 0};
+		int[] arr = {10, 8, 5, 3, 2, 6, 4, 1, 0, 0, 2};
 		var sw = TestOrderState.ScoringWeights.fromArray(arr);
 		assertArrayEquals(arr, sw.toArray());
 		assertEquals(10, sw.newTest());
@@ -1084,6 +1084,7 @@ class DepsAndScoringTest {
 		assertEquals(4, sw.changeComplexity());
 		assertEquals(1, sw.staticFieldBonus());
 		assertEquals(0, sw.coverageBonus());
+		assertEquals(2, sw.packageProximityBonus());
 	}
 
 	@Test

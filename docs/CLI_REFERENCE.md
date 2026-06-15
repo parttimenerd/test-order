@@ -214,7 +214,7 @@ Jump to the relevant table below — properties are organized by purpose:
 | `testorder.tiered.tier2File` | `${project.build.directory}/test-order-tier2.txt` | Tier-2 list output |
 | `testorder.tiered.tier3File` | `${project.build.directory}/test-order-tier3.txt` | Tier-3 list output |
 | `testorder.tiered.currentTier` | unset | Required for `run-tier` (`2` or `3`) |
-| `testorder.tiered.shard` | unset | Split tier-3 across N runners: `k/N` (e.g. `2/3`). Tier 1 and 2 run in full on every runner. Works with `run-tier`, `run-tiered`, and the Gradle `testOrderRunTier` task. |
+| `testorder.tiered.shard` | unset | Split tier-3 across N runners: `k/N` (e.g. `2/3`). Tier 1 and 2 run in full on every runner. Works with `run-tier`, `run-tiered`, and the Gradle `testOrderRunTier`/`testOrderRunTiered` tasks. |
 
 ### Auto Mode
 
@@ -346,6 +346,8 @@ ML data is shown in:
 | `testorder.score.changeComplexity` | `2` | Complexity-weighted overlap using compressed diff size |
 | `testorder.score.staticFieldBonus` | `0` | Fixed bonus for tests overlapping a changed static field (requires `MEMBER` mode) |
 | `testorder.score.coverageBonus` | `0` | Greedy set-cover bonus; when >0 replaces `depOverlap`+`changeComplexity` |
+| `testorder.score.killRateBonus` | `0` | Bonus scaled by mutation kill rate; requires `analyze-mutations` data (0 = disabled) |
+| `testorder.score.packageProximityBonus` | `2` | Bonus when the test class package matches the package of a changed class |
 | `testorder.weights.file` | unset | Path to TOML weights file; overrides all `testorder.score.*` properties when set |
 
 ### Method-Level Scoring Overrides

@@ -14,7 +14,7 @@ Each test class receives a score. Tests are sorted by descending score, with fas
 | **Speed penalty** | 1 | `testorder.score.speedPenalty` | Penalty for slow tests (logarithmic scale: full penalty at 8× median, zero at median) |
 | **Dependency overlap** | 5 (max) | `testorder.score.depOverlap` | Max score from dependency overlap (sqrt-normalized: overlap/√max(totalDeps,5) × weight). Disabled when `coverageBonus > 0`. |
 | **Change complexity** | 2 (max) | `testorder.score.changeComplexity` | Complexity-weighted overlap using Deflate-compressed file size as information-density proxy. Disabled when `coverageBonus > 0`. |
-| **Package proximity** | 2 (hardcoded) | *(not configurable)* | Fixed +2 bonus when the test class package matches the package of any changed class. Encourages co-located tests to run before cross-package tests. |
+| **Package proximity** | 2 | `testorder.score.packageProximityBonus` | Bonus when the test class package matches the package of any changed class. Encourages co-located tests to run before cross-package tests. |
 | **Static field bonus** | 0 | `testorder.score.staticFieldBonus` | Fixed bonus when a test directly overlaps a changed static field. Only applied with member-level (`MEMBER` mode) overlap data. |
 | **Coverage bonus** | 0 | `testorder.score.coverageBonus` | Greedy set-cover bonus: replaces `depOverlap` + `changeComplexity` with geometrically declining bonuses (×0.8) for tests that collectively cover all changed classes. Set to 0 (default) to use per-test scoring instead. |
 | **Kill-rate bonus** | 0 | `testorder.score.killRateBonus` | Bonus scaled by mutation kill rate (requires `analyze-mutations` data). Tests with a high kill rate also get a multiplier on dep-overlap: `depOverlapScore × (0.5 + killRate × 0.5)`. Default 0 — no effect until explicitly set. |
@@ -31,12 +31,12 @@ score = (isNew ? newTestBonus : 0)
       - round(|speedRatio| × speedPenalty)      # speedRatio ∈ (0, 1] for slow tests
       + overlapScore                             # see below
       + (overlapsChangedStaticField ? staticFieldBonus : 0)
-      + packageProximityBonus                    # hardcoded +2 when test pkg ⊆ any changed class pkg
+      + packageProximityBonus                    # testorder.score.packageProximityBonus (default 2)
       + round(killRate × killRateBonus)          # 0 when killRateBonus = 0 (default)
 
   where speedRatio = clamp(log₂(duration / median) / 3, -1, 1)
         killRate ∈ [0, 1] from mutation testing; tests without data are unaffected
-        packageProximityBonus = 2 when testPackage == changedClassPackage (or is a parent package)
+        packageProximityBonus = weights.packageProximityBonus() when testPackage == changedClassPackage (or is a parent package)
 
   overlapScore (when coverageBonus = 0, the default):
       min(ceil(|dependencies ∩ changedClasses| / √max(|dependencies|, 5) × depOverlap × killMultiplier), depOverlap)

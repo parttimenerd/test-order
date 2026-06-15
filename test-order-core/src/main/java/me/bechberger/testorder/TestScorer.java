@@ -633,6 +633,8 @@ public class TestScorer {
 	 * transitively.
 	 */
 	private int packageProximityBonus(String testClassName) {
+		if (weights.packageProximityBonus() == 0)
+			return 0;
 		int dot = testClassName.lastIndexOf('.');
 		if (dot < 0 || changedClasses.isEmpty())
 			return 0;
@@ -647,7 +649,7 @@ public class TestScorer {
 			if (!changedPkg.contains("."))
 				continue; // require at least 2 components on the changed side too
 			if (testPkg.equals(changedPkg) || testPkg.startsWith(changedPkg + "."))
-				return 2;
+				return weights.packageProximityBonus();
 		}
 		return 0;
 	}

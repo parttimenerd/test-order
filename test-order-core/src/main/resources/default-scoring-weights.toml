@@ -93,6 +93,15 @@ range = [0, 10]
 value = 0
 range = [0, 10]
 
+# Bonus applied when the test class package matches (or is a sub-package of)
+# any changed class's package.  Helps surface direct unit tests (e.g. FooTest
+# lives in the same package as Foo) before cross-package tests that only load
+# the changed class transitively.
+[packageProximityBonus]
+value = 2
+range = [0, 5]
+
+
 # ── Method-level scoring (for reordering methods within a class) ────
 # Enable via: testorder.methodOrder.enabled=true
 # Note: method-level ordering can expose hidden test dependencies.

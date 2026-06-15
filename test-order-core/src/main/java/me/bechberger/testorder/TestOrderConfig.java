@@ -77,6 +77,8 @@ public final class TestOrderConfig {
 	public static final String SCORE_CHANGE_COMPLEXITY = "testorder.score.changeComplexity";
 	public static final String SCORE_STATIC_FIELD_BONUS = "testorder.score.staticFieldBonus";
 	public static final String SCORE_COVERAGE_BONUS = "testorder.score.coverageBonus";
+	public static final String SCORE_KILL_RATE_BONUS = "testorder.score.killRateBonus";
+	public static final String SCORE_PACKAGE_PROXIMITY_BONUS = "testorder.score.packageProximityBonus";
 
 	// Method-order scoring override keys
 	public static final String METHOD_SCORE_FAILURE_RECENCY = "testorder.method.score.failureRecency";

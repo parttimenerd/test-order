@@ -147,6 +147,7 @@ public class DashboardGenerator {
 		weightsMap.put("staticFieldBonus", sw.staticFieldBonus());
 		weightsMap.put("coverageBonus", sw.coverageBonus());
 		weightsMap.put("killRateBonus", sw.killRateBonus());
+		weightsMap.put("packageProximityBonus", sw.packageProximityBonus());
 		root.put("weights", weightsMap);
 
 		// weight definitions (min/max for sliders)

@@ -52,7 +52,8 @@ public class TestOrderState {
 
 	/** Canonical weight order — defines the sequence for arrays and iteration. */
 	static final List<String> WEIGHT_ORDER = List.of("newTest", "changedTest", "maxFailure", "speed", "speedPenalty",
-			"depOverlap", "changeComplexity", "staticFieldBonus", "coverageBonus", "killRateBonus");
+			"depOverlap", "changeComplexity", "staticFieldBonus", "coverageBonus", "killRateBonus",
+			"packageProximityBonus");
 
 	/**
 	 * Ordered weight definitions loaded from the
@@ -206,23 +207,35 @@ public class TestOrderState {
 	}
 
 	public record ScoringWeights(int newTest, int changedTest, int maxFailure, int speed, int speedPenalty,
-			int depOverlap, int changeComplexity, int staticFieldBonus, int coverageBonus, int killRateBonus) {
+			int depOverlap, int changeComplexity, int staticFieldBonus, int coverageBonus, int killRateBonus,
+			int packageProximityBonus) {
+
+		// Sentinel used by backward-compat constructors before DEFAULT is initialised.
+		// The real default (2) comes from the TOML resource; this matches it.
+		private static final int DEFAULT_PKG_PROXIMITY = 2;
+
+		public ScoringWeights(int newTest, int changedTest, int maxFailure, int speed, int speedPenalty, int depOverlap,
+				int changeComplexity, int staticFieldBonus, int coverageBonus, int killRateBonus) {
+			this(newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity, staticFieldBonus,
+					coverageBonus, killRateBonus, DEFAULT_PKG_PROXIMITY);
+		}
 
 		public ScoringWeights(int newTest, int changedTest, int maxFailure, int speed, int speedPenalty, int depOverlap,
 				int changeComplexity, int staticFieldBonus, int coverageBonus) {
 			this(newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity, staticFieldBonus,
-					coverageBonus, 0);
+					coverageBonus, 0, DEFAULT_PKG_PROXIMITY);
 		}
 
 		public ScoringWeights(int newTest, int changedTest, int maxFailure, int speed, int speedPenalty, int depOverlap,
 				int changeComplexity, int staticFieldBonus) {
 			this(newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity, staticFieldBonus,
-					0);
+					0, 0, DEFAULT_PKG_PROXIMITY);
 		}
 
 		public ScoringWeights(int newTest, int changedTest, int maxFailure, int speed, int speedPenalty, int depOverlap,
 				int changeComplexity) {
-			this(newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity, 0, 0);
+			this(newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity, 0, 0, 0,
+					DEFAULT_PKG_PROXIMITY);
 		}
 
 		public static final ScoringWeights DEFAULT;
@@ -234,7 +247,8 @@ public class TestOrderState {
 			DEFAULT = new ScoringWeights(defaults.get("newTest"), defaults.get("changedTest"),
 					defaults.get("maxFailure"), defaults.get("speed"), defaults.get("speedPenalty"),
 					defaults.get("depOverlap"), defaults.get("changeComplexity"), defaults.get("staticFieldBonus"),
-					defaults.get("coverageBonus"), defaults.getOrDefault("killRateBonus", 0));
+					defaults.get("coverageBonus"), defaults.getOrDefault("killRateBonus", 0),
+					defaults.getOrDefault("packageProximityBonus", DEFAULT_PKG_PROXIMITY));
 		}
 
 		/** Build weights from a name→value map; missing keys use resource defaults. */
@@ -247,7 +261,8 @@ public class TestOrderState {
 			return new ScoringWeights(merged.get("newTest"), merged.get("changedTest"), merged.get("maxFailure"),
 					merged.get("speed"), merged.get("speedPenalty"), merged.get("depOverlap"),
 					merged.get("changeComplexity"), merged.get("staticFieldBonus"), merged.get("coverageBonus"),
-					merged.getOrDefault("killRateBonus", 0));
+					merged.getOrDefault("killRateBonus", 0),
+					merged.getOrDefault("packageProximityBonus", DEFAULT_PKG_PROXIMITY));
 		}
 
 		/** Convert to an ordered name→value map (same order as WEIGHT_DEFS). */
@@ -263,13 +278,14 @@ public class TestOrderState {
 			map.put("staticFieldBonus", staticFieldBonus);
 			map.put("coverageBonus", coverageBonus);
 			map.put("killRateBonus", killRateBonus);
+			map.put("packageProximityBonus", packageProximityBonus);
 			return map;
 		}
 
 		/** Convert to array in WEIGHT_DEFS order. */
 		public int[] toArray() {
 			return new int[]{newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap, changeComplexity,
-					staticFieldBonus, coverageBonus, killRateBonus};
+					staticFieldBonus, coverageBonus, killRateBonus, packageProximityBonus};
 		}
 
 		/** Human-readable key=value format. */
@@ -287,7 +303,8 @@ public class TestOrderState {
 		public static ScoringWeights fromArray(int[] a) {
 			return new ScoringWeights(a[0], a[1], a[2], a[3], a[4], a[5],
 					a.length > 6 ? a[6] : DEFAULT.changeComplexity(), a.length > 7 ? a[7] : DEFAULT.staticFieldBonus(),
-					a.length > 8 ? a[8] : DEFAULT.coverageBonus(), a.length > 9 ? a[9] : DEFAULT.killRateBonus());
+					a.length > 8 ? a[8] : DEFAULT.coverageBonus(), a.length > 9 ? a[9] : DEFAULT.killRateBonus(),
+					a.length > 10 ? a[10] : DEFAULT_PKG_PROXIMITY);
 		}
 
 		/**

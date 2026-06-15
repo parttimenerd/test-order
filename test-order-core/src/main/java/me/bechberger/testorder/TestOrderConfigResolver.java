@@ -158,7 +158,9 @@ public final class TestOrderConfigResolver {
 				getConfigInt(TestOrderConfig.SCORE_DEP_OVERLAP, base.depOverlap()),
 				getConfigInt(TestOrderConfig.SCORE_CHANGE_COMPLEXITY, base.changeComplexity()),
 				getConfigInt(TestOrderConfig.SCORE_STATIC_FIELD_BONUS, base.staticFieldBonus()),
-				getConfigInt(TestOrderConfig.SCORE_COVERAGE_BONUS, base.coverageBonus()));
+				getConfigInt(TestOrderConfig.SCORE_COVERAGE_BONUS, base.coverageBonus()),
+				getConfigInt(TestOrderConfig.SCORE_KILL_RATE_BONUS, base.killRateBonus()),
+				getConfigInt(TestOrderConfig.SCORE_PACKAGE_PROXIMITY_BONUS, base.packageProximityBonus()));
 	}
 
 	/**

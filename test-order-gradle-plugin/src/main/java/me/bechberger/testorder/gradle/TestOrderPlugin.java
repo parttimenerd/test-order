@@ -1164,6 +1164,10 @@ public class TestOrderPlugin implements Plugin<Project> {
             testTask.systemProperty("testorder.score.killRateBonus",
                     String.valueOf(ext.getScoreKillRateBonus().get()));
         }
+        if (ext.getScorePackageProximityBonus().isPresent()) {
+            testTask.systemProperty("testorder.score.packageProximityBonus",
+                    String.valueOf(ext.getScorePackageProximityBonus().get()));
+        }
         String weightsFile = ext.getWeightsFile().get();
         if (weightsFile != null && !weightsFile.isBlank()) {
             testTask.systemProperty("testorder.weights.file",
@@ -2010,6 +2014,183 @@ public class TestOrderPlugin implements Plugin<Project> {
             });
         });
 
+        project.getTasks().register("testOrderInstrument", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Instrument compiled classes at build time (offline mode). "
+                    + "Run before tests with -Dtestorder.instrumentation=offline.");
+            task.doLast(t -> {
+                String instrModeStr = Optional.ofNullable(
+                        gradleOrSystemProperty(project, "testorder.instrumentation.mode"))
+                        .orElse(ext.getInstrumentationMode().getOrElse("MEMBER"));
+                me.bechberger.testorder.agent.Agent.InstrumentationMode mode;
+                try {
+                    mode = me.bechberger.testorder.agent.Agent.InstrumentationMode.fromString(instrModeStr);
+                } catch (IllegalArgumentException e) {
+                    throw new GradleException("[test-order] Invalid instrumentation mode: " + instrModeStr);
+                }
+
+                SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
+                SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+                Path classesDir = mainSourceSet.getOutput().getClassesDirs().getFiles().stream()
+                        .map(File::toPath).filter(Files::isDirectory).findFirst().orElse(null);
+                if (classesDir == null) {
+                    project.getLogger().warn("[test-order] testOrderInstrument: no compiled classes directory found"
+                            + " — run 'classes' first.");
+                    return;
+                }
+
+                String includePackages = ext.getIncludePackages().get();
+                if (includePackages.isEmpty()) {
+                    Path sourceRoot = resolveMainSourceRoot(project);
+                    includePackages = PackageDetector.resolveIncludePackages(
+                            null, ext.getFilterByGroupId().get(),
+                            String.valueOf(project.getGroup()), sourceRoot, project.getLogger());
+                }
+                List<String> includes = includePackages.isBlank()
+                        ? List.of() : List.of(includePackages.split(","));
+
+                project.getLogger().lifecycle("[test-order] Offline instrumentation ({}): {}", mode, classesDir);
+                project.getLogger()
+                        .lifecycle("[test-order] Packages: {}", includes.isEmpty() ? "(all)" : includes);
+
+                me.bechberger.testorder.agent.OfflineInstrumentor instrumentor =
+                        new me.bechberger.testorder.agent.OfflineInstrumentor(mode, includes, List.of(), null);
+                try {
+                    Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
+                    Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
+                    me.bechberger.testorder.agent.runtime.ClassIdMapping mapping =
+                            instrumentor.instrument(classesDir, backupDir);
+                    Path mappingDir = buildDir.resolve(".test-order");
+                    Path mappingFile = mappingDir.resolve("class-id-map.bin");
+                    mapping.save(mappingFile);
+                    project.getLogger().lifecycle(
+                            "[test-order] Instrumented {} classes (skipped {}), mapping: {}",
+                            instrumentor.getTransformedCount(), instrumentor.getSkippedCount(), mappingFile);
+                } catch (IOException e) {
+                    throw new GradleException("[test-order] Offline instrumentation failed", e);
+                }
+            });
+        });
+
+        project.getTasks().register("testOrderRunTiered", Test.class, task -> {
+            configureDerivedTestTask(project, ext, task);
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Run all three tiers (change-affected, top-scored, remaining) in a single test execution."
+                    + " Maven parity for run-tiered goal.");
+
+            task.systemProperty("junit.jupiter.testclass.order.default",
+                    "me.bechberger.testorder.junit.PriorityClassOrderer");
+            if (ext.getMethodOrderingEnabled().get()) {
+                task.systemProperty("junit.jupiter.testmethod.order.default",
+                        "me.bechberger.testorder.junit.PriorityMethodOrderer");
+            }
+            String debugFlag = gradleOrSystemProperty(project, "testorder.debug");
+            if ("true".equalsIgnoreCase(debugFlag)) {
+                task.systemProperty("testorder.debug", "true");
+            }
+
+            task.doFirst("testOrderRunTieredPrepare", t -> {
+                PluginContext pctx = buildPluginContext(project, ext);
+
+                double tier2Fraction = ext.getTieredTier2Fraction().get();
+                String propFraction = gradleOrSystemProperty(project, "testorder.tiered.tier2Fraction");
+                if (propFraction != null && !propFraction.isBlank()) {
+                    try {
+                        tier2Fraction = Double.parseDouble(propFraction);
+                    } catch (NumberFormatException e) {
+                        throw new GradleException(
+                                "[test-order] Invalid testorder.tiered.tier2Fraction: '" + propFraction + "'");
+                    }
+                }
+                if (tier2Fraction < 0 || tier2Fraction > 1) {
+                    throw new GradleException(
+                            "[test-order] testorder.tiered.tier2Fraction must be in [0, 1], got " + tier2Fraction);
+                }
+                boolean weightByDuration = ext.getTieredWeightByDuration().get();
+                String propWeight = gradleOrSystemProperty(project, "testorder.tiered.weightByDuration");
+                if (propWeight != null) {
+                    weightByDuration = Boolean.parseBoolean(propWeight);
+                }
+
+                Path tier1File = ext.getTieredTier1File().get().getAsFile().toPath();
+                Path tier2File = ext.getTieredTier2File().get().getAsFile().toPath();
+                Path tier3File = ext.getTieredTier3File().get().getAsFile().toPath();
+
+                try {
+                    me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result analysis =
+                            me.bechberger.testorder.ops.workflows.ChangeAnalysis.analyze(
+                                    pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.FOR_SELECTION);
+
+                    Path testClassesDir = resolveTestClassesDir(project);
+                    Set<String> alwaysRun = me.bechberger.testorder.ops.AlwaysRunScanner.scan(testClassesDir);
+
+                    me.bechberger.testorder.ops.TieredSelectOperation.TieredSelectResult result =
+                            me.bechberger.testorder.ops.TieredSelectOperation.select(
+                                    new me.bechberger.testorder.ops.TieredSelectOperation.TieredSelectConfig(
+                                            analysis.depMap(), analysis.state(), analysis.changedClasses(),
+                                            analysis.changedTests(), analysis.weights(), tier2Fraction,
+                                            weightByDuration, alwaysRun, tier1File, tier2File, tier3File,
+                                            wrapLog(project)));
+
+                    me.bechberger.testorder.TieredTestSelector.TieredSelection selection = result.selection();
+
+                    // Apply shard to tier 3 if requested
+                    List<String> tier3 = selection.tier3();
+                    String shardSpec = gradleOrSystemProperty(project, "testorder.tiered.shard");
+                    if (shardSpec != null && !shardSpec.isBlank()) {
+                        try {
+                            tier3 = me.bechberger.testorder.TieredTestSelector.applyShard(tier3, shardSpec);
+                            project.getLogger().lifecycle(
+                                    "[test-order] Shard {}: running {} of {} tier-3 tests",
+                                    shardSpec, tier3.size(), selection.tier3().size());
+                        } catch (IllegalArgumentException e) {
+                            throw new GradleException("[test-order] Invalid shard spec: " + e.getMessage());
+                        }
+                    }
+
+                    // Combine all tiers into one ordered list
+                    List<String> allTests = new java.util.ArrayList<>(
+                            selection.tier1().size() + selection.tier2().size() + tier3.size());
+                    allTests.addAll(selection.tier1());
+                    allTests.addAll(selection.tier2());
+                    allTests.addAll(tier3);
+
+                    if (allTests.isEmpty()) {
+                        project.getLogger().lifecycle("[test-order] run-tiered: no tests to run.");
+                        applySelectedTests((Test) t, List.of());
+                    } else {
+                        project.getLogger().lifecycle(
+                                "[test-order] run-tiered: {} tier-1 + {} tier-2 + {} tier-3 = {} tests",
+                                selection.tier1().size(), selection.tier2().size(), tier3.size(), allTests.size());
+                        applySelectedTests((Test) t, allTests);
+                    }
+
+                    // Inject orderer config so tests are ordered within each tier
+                    Map<String, String> configMap = me.bechberger.testorder.ops.OrdererConfigOperation.buildConfig(
+                            new me.bechberger.testorder.ops.OrdererConfigOperation.OrdererInput(
+                                    pctx.indexFile().toAbsolutePath().toString(),
+                                    pctx.stateFile().toAbsolutePath().toString(),
+                                    pctx.weightsFile() != null
+                                            ? pctx.weightsFile().toAbsolutePath().toString() : null,
+                                    analysis.changedClasses(), analysis.changedTests(), Set.of(),
+                                    pctx.scoreOverrides(), pctx.methodOrderingEnabled(),
+                                    pctx.springContextGrouping(),
+                                    pctx.projectRoot().toAbsolutePath().toString(),
+                                    pctx.sourceRoot() != null
+                                            ? pctx.sourceRoot().toAbsolutePath().toString() : null,
+                                    pctx.changeMode()));
+                    for (var entry : configMap.entrySet()) {
+                        ((Test) t).systemProperty(entry.getKey(), entry.getValue());
+                    }
+
+                } catch (IOException e) {
+                    throw new GradleException("[test-order] Failed to run tiered test selection", e);
+                }
+            });
+        });
+
         project.getTasks().register("testOrderDetectDependencies", task -> {
             task.setGroup("test-order");
             task.setDescription("Detect order-dependent tests by running permutations");
@@ -2335,6 +2516,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  testOrderRunRemaining        Run deferred tests from testOrderAffected");
                 log.lifecycle("  testOrderTieredSelect        Three-tier CI test selection");
                 log.lifecycle("  testOrderRunTier             Run tier 2 or 3 from tiered-select");
+                log.lifecycle("  testOrderRunTiered           Run all tiers in a single execution (Maven run-tiered parity)");
+                log.lifecycle("  testOrderInstrument          Instrument compiled classes offline (use before -Dtestorder.instrumentation=offline)");
                 log.lifecycle("  testOrderShow                Unified view: class order, method order, ML health");
                 log.lifecycle("  testOrderShowAll             Unified view of all tests (including unaffected)");
                 log.lifecycle("  testOrderShowStaticAnalysis  Show static call-graph expansion from changed members");
@@ -2477,7 +2660,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                 orNull(ext.getScoreMaxFailure()), orNull(ext.getScoreSpeed()),
                 orNull(ext.getScoreSpeedPenalty()), orNull(ext.getScoreDepOverlap()),
                 orNull(ext.getScoreChangeComplexity()), orNull(ext.getScoreStaticFieldBonus()),
-                orNull(ext.getScoreCoverageBonus()), orNull(ext.getScoreKillRateBonus()));
+                orNull(ext.getScoreCoverageBonus()), orNull(ext.getScoreKillRateBonus()),
+                orNull(ext.getScorePackageProximityBonus()));
 
         String explicitChanged = ext.getChangedClasses().get();
         String propChanged = gradleOrSystemProperty(project, "testorder.changed.classes");
