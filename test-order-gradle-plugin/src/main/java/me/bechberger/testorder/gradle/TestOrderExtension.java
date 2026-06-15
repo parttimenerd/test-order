@@ -234,14 +234,31 @@ public abstract class TestOrderExtension {
     public abstract Property<Boolean> getTdd();
 
     /**
-     * Storage location for test-order data:
-     * <ul>
-     *   <li><b>local</b> (default) — stores data in {@code <project>/.test-order/}</li>
-     *   <li><b>home</b> — stores data in {@code ~/.test-order/<project-name>-<hash>/},
-     *   surviving {@code git clean -fdx}</li>
-     * </ul>
+     * Explicit override for the main source root directory. When set, replaces
+     * automatic detection from the project's source sets. Useful for non-standard
+     * project layouts.
      */
-    public abstract Property<String> getStorage();
+    public abstract Property<String> getSourceRoot();
+
+    /**
+     * Explicit override for the test source root directory. When set, replaces
+     * automatic detection from the project's source sets.
+     */
+    public abstract Property<String> getTestSourceRoot();
+
+    /**
+     * Enable static call-graph analysis during change detection. When true (default),
+     * the plugin expands the changed-class set by traversing transitive callers up to
+     * {@code staticAnalysisDepth} hops. Disable to fall back to direct dependency
+     * overlap only.
+     */
+    public abstract Property<Boolean> getStaticAnalysisEnabled();
+
+    /**
+     * Maximum depth for static call-graph expansion (0–4 hops, default 2).
+     * Only applies when {@code staticAnalysisEnabled = true}.
+     */
+    public abstract Property<Integer> getStaticAnalysisDepth();
 
     /**
      * In auto mode, whether to run deferred (remaining) tests after selected tests.
@@ -271,7 +288,8 @@ public abstract class TestOrderExtension {
         getInstrumentationMode().convention("MEMBER");
         getInstrumentation().convention("offline");
         getCompression().convention("fast");
-        getStorage().convention("local");
+        getStaticAnalysisEnabled().convention(true);
+        getStaticAnalysisDepth().convention(2);
 
         // In multi-module builds, store all test-order data at the root project
         // level (like Maven's ReactorContext). This ensures a single shared index
@@ -377,6 +395,10 @@ public abstract class TestOrderExtension {
         validateWeightNonNegative(logger, "scoreSpeedPenalty", getScoreSpeedPenalty());
         validateWeightNonNegative(logger, "scoreDepOverlap", getScoreDepOverlap());
         validateWeightNonNegative(logger, "scoreChangeComplexity", getScoreChangeComplexity());
+        validateWeightNonNegative(logger, "scoreStaticFieldBonus", getScoreStaticFieldBonus());
+        validateWeightNonNegative(logger, "scoreCoverageBonus", getScoreCoverageBonus());
+        validateWeightNonNegative(logger, "scoreKillRateBonus", getScoreKillRateBonus());
+        validateWeightNonNegative(logger, "scorePackageProximityBonus", getScorePackageProximityBonus());
 
         // Validate thresholds are non-negative
         int autoLearnThreshold = getAutoLearnRunThreshold().getOrElse(10);

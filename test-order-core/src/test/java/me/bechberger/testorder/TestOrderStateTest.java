@@ -52,6 +52,11 @@ class TestOrderStateTest {
 		assertEquals(2, loaded.weights().speed());
 		assertEquals(1, loaded.weights().speedPenalty());
 		assertEquals(3, loaded.weights().depOverlap());
+		assertEquals(0, loaded.weights().changeComplexity());
+		assertEquals(0, loaded.weights().staticFieldBonus());
+		assertEquals(0, loaded.weights().coverageBonus());
+		assertEquals(0, loaded.weights().killRateBonus());
+		assertEquals(2, loaded.weights().packageProximityBonus()); // default
 		assertEquals(100, loaded.getDuration("com.A", -1));
 		assertEquals(200, loaded.getDuration("com.B", -1));
 		// pending failures saved at full weight (no historical to decay)
@@ -513,6 +518,9 @@ class TestOrderStateTest {
 		assertEquals(3, loaded.weights().speed());
 		assertEquals(2, loaded.weights().speedPenalty());
 		assertEquals(4, loaded.weights().depOverlap());
+		assertEquals(0, loaded.weights().changeComplexity());
+		assertEquals(0, loaded.weights().killRateBonus());
+		assertEquals(2, loaded.weights().packageProximityBonus()); // default
 	}
 
 	@Test

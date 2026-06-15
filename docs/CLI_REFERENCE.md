@@ -313,9 +313,26 @@ The **Static Analysis** tab in the dashboard shows the instrumentation scope fro
 | Property | Default | Notes |
 |---|---|---|
 | `testorder.instrumentation.mode` | `MEMBER` | `CLASS`, `METHOD`, `MEMBER` |
+| `testorder.instrumentation` | `offline` | `offline` (build-time) or `online` (agent at class-load time) |
 | `testorder.includePackages` | unset | Restricts instrumentation scope |
 | `testorder.filterByGroupId` | `true` | Falls back to project groupId when package detection is empty |
 | `testorder.methodOrder.enabled` | `false` | Experimental method ordering |
+| `testorder.compression` | `fast` | LZ4 compression level for index/state files: `fast` or `hc` (high compression) |
+| `testorder.source.root` | auto | Override main source root directory (replaces automatic detection) |
+| `testorder.testSourceRoot` | auto | Override test source root directory (replaces automatic detection) |
+
+### Static Analysis
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.staticAnalysis.enabled` | `true` | Enable static call-graph expansion during change detection |
+| `testorder.staticAnalysis.depth` | `2` | Maximum hops for transitive caller expansion (0–4). Only applies when `staticAnalysis.enabled=true` |
+
+When enabled, changed classes are expanded by static call-graph analysis: callers of changed methods (and their callers) are added to the changed set up to the configured depth. This catches tests that exercise changed code indirectly. Disable (`false`) to use only direct dependency overlap.
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.overrideToolchain` | unset | (Gradle only) Override JDK toolchain selection for test tasks to ensure JDK 17+ |
 
 ### ML (Machine Learning) Predictions
 

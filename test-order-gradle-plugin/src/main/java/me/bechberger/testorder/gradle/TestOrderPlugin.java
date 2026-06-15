@@ -2560,6 +2560,13 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  springContextGrouping   Group tests by Spring context (default: false)");
                 log.lifecycle("  selectiveLearn          Only re-instrument changed classes + transitive callees (default: false)");
                 log.lifecycle("  alwaysLearn             Attach learn agent on every ordered run (default: false)");
+                log.lifecycle("  tdd                     Fail new tests that pass without having failed first (default: false)");
+                log.lifecycle("  instrumentation         offline (default) | online — build-time vs agent instrumentation");
+                log.lifecycle("  compression             fast (default) | hc — LZ4 compression level for index/state");
+                log.lifecycle("  staticAnalysisEnabled   Enable static call-graph expansion during change detection (default: true)");
+                log.lifecycle("  staticAnalysisDepth     Depth of static call-graph expansion, 0–4 (default: 2)");
+                log.lifecycle("  sourceRoot              Override main source root directory (default: auto-detected)");
+                log.lifecycle("  testSourceRoot          Override test source root directory (default: auto-detected)");
                 log.lifecycle("");
                 log.lifecycle("SYSTEM PROPERTIES:");
                 log.lifecycle("  -Dtestorder.mode=<mode>           Override mode for this run");
@@ -2568,10 +2575,13 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  -Dtestorder.debug=true            Verbose scoring output");
                 log.lifecycle("  -Dtestorder.changeMode=<mode>     Override change detection");
                 log.lifecycle("  -Dtestorder.learn.selective=true  Only re-instrument changed classes + transitive callees");
+                log.lifecycle("  -Dtestorder.staticAnalysis.enabled=false  Disable static call-graph expansion");
+                log.lifecycle("  -Dtestorder.staticAnalysis.depth=<n>      Static analysis depth 0–4 (default: 2)");
                 log.lifecycle("  -Dtestorder.failOnError=true      Fail build on diagnostic errors");
                 log.lifecycle("");
                 log.lifecycle("SCORE TUNING (-Dtestorder.score.<name>=<weight>):");
-                log.lifecycle("  newTest, changedTest, maxFailure, speed, depOverlap, changeComplexity");
+                log.lifecycle("  newTest, changedTest, maxFailure, speed, speedPenalty, depOverlap,");
+                log.lifecycle("  changeComplexity, staticFieldBonus, coverageBonus, killRateBonus, packageProximityBonus");
                 log.lifecycle("");
                 log.lifecycle("DOCS: See docs/CLI_REFERENCE.md for full reference");
                 log.lifecycle("═══════════════════════════════════════════════════════════");
@@ -2633,6 +2643,25 @@ public class TestOrderPlugin implements Plugin<Project> {
     static PluginContext.Builder buildPluginContextBuilder(Project project, TestOrderExtension ext) {
         Path sourceRoot = resolveMainSourceRoot(project);
         Path testSourceRoot = resolveTestSourceRoot(project);
+
+        // Allow explicit DSL overrides for source roots
+        String extSourceRoot = ext.getSourceRoot().getOrNull();
+        if (extSourceRoot != null && !extSourceRoot.isBlank()) {
+            sourceRoot = Path.of(extSourceRoot).toAbsolutePath();
+        }
+        String extTestSourceRoot = ext.getTestSourceRoot().getOrNull();
+        if (extTestSourceRoot != null && !extTestSourceRoot.isBlank()) {
+            testSourceRoot = Path.of(extTestSourceRoot).toAbsolutePath();
+        }
+        // Also honour system-property overrides (parity with Maven -D usage)
+        String propSourceRoot = gradleOrSystemProperty(project, "testorder.source.root");
+        if (propSourceRoot != null && !propSourceRoot.isBlank()) {
+            sourceRoot = Path.of(propSourceRoot).toAbsolutePath();
+        }
+        String propTestSourceRoot = gradleOrSystemProperty(project, "testorder.testSourceRoot");
+        if (propTestSourceRoot != null && !propTestSourceRoot.isBlank()) {
+            testSourceRoot = Path.of(propTestSourceRoot).toAbsolutePath();
+        }
         List<Path> additionalSourceRoots = new ArrayList<>();
         Path ktRoot = resolveKotlinSourceRoot(project);
         if (Files.isDirectory(ktRoot)) {
@@ -2718,6 +2747,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .selectedFile(ext.getSelectedFile().get().getAsFile().toPath())
                 .remainingFile(ext.getRemainingFile().get().getAsFile().toPath())
                 .springContextGrouping(ext.getSpringContextGrouping().get())
+                .staticAnalysisEnabled(
+                        resolveBoolean(gradleOrSystemProperty(project, "testorder.staticAnalysis.enabled"),
+                                ext.getStaticAnalysisEnabled().get()))
+                .staticAnalysisDepth(
+                        resolveInt(gradleOrSystemProperty(project, "testorder.staticAnalysis.depth"),
+                                ext.getStaticAnalysisDepth().get()))
                 .selectiveLearn(resolveSelectiveLearn(project, ext))
                 .alwaysLearn(resolveAlwaysLearn(project, ext))
                 .verboseFile(ext.getVerboseFile().get() != null && !ext.getVerboseFile().get().isBlank()
@@ -3137,6 +3172,20 @@ public class TestOrderPlugin implements Plugin<Project> {
     /** Returns the value of a Gradle Property if present, otherwise null. */
     private static Integer orNull(org.gradle.api.provider.Property<Integer> prop) {
         return prop.isPresent() ? prop.get() : null;
+    }
+
+    private static boolean resolveBoolean(String propValue, boolean fallback) {
+        if (propValue == null || propValue.isBlank()) return fallback;
+        return Boolean.parseBoolean(propValue);
+    }
+
+    private static int resolveInt(String propValue, int fallback) {
+        if (propValue == null || propValue.isBlank()) return fallback;
+        try {
+            return Integer.parseInt(propValue);
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     /** Reads a Gradle project property or system property (Gradle property wins). */

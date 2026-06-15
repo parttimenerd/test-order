@@ -334,7 +334,8 @@ Each test gets a score based on multiple signals. Tests run in descending score 
 | **Changed test** | 9 | Test source file was modified |
 | **Dependency overlap** | up to 5 | Test exercises classes you changed |
 | **Recent failures** | up to 5 | Test failed recently (weighted by recency) |
-| **Speed** | ±1 | Fast tests get a small bonus; slow tests a penalty |
+| **Speed bonus** | 1 | Fast tests (≤ 1/8× median) get a small bonus |
+| **Speed penalty** | 1 | Slow tests (≥ 8× median) get a small penalty |
 | **Change complexity** | up to 2 | Changed classes are information-dense |
 | **Package proximity** | 2 | Test package matches a changed class's package (`testorder.score.packageProximityBonus`) |
 | **Static field bonus** | 0 (opt-in) | Bonus when a test touches a changed static field (requires `MEMBER` mode) |
