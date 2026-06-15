@@ -302,6 +302,40 @@ class TestOrderPluginTest {
         assertInstanceOf(IllegalArgumentException.class, thrown.getCause());
         }
 
+    @org.junit.jupiter.api.Test
+    void alwaysLearnInOrderModeAttachesLearnAgent() throws Exception {
+        Project project = newProject();
+        project.getPluginManager().apply("java");
+        TestOrderPlugin plugin = new TestOrderPlugin();
+        TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
+        extension.applyDefaults(project);
+        extension.getInstrumentation().set("online");
+        extension.getAlwaysLearn().set(true);
+        Files.createDirectories(tempDir.resolve("src/main/java/com/example/app"));
+        Files.writeString(tempDir.resolve("src/main/java/com/example/app/App.java"), "class App {}\n");
+        Configuration agentConf = fileConfiguration(project, tempDir.resolve("agent.jar"));
+        Test testTask = (Test) project.getTasks().getByName("test");
+
+        // Run order mode first (sets orderer system props)
+        Path indexFile = extension.getIndexFile().get().getAsFile().toPath();
+        Files.createDirectories(indexFile.getParent());
+        Files.write(indexFile, new byte[]{1, 2, 3});
+        plugin.configureOrderMode(project, extension, testTask);
+
+        // Then simulate alwaysLearn: also attach learn agent
+        plugin.configureLearnMode(project, extension, testTask, agentConf);
+
+        // Both order-mode AND learn-mode properties should be present
+        assertEquals("me.bechberger.testorder.junit.PriorityClassOrderer",
+                testTask.getSystemProperties().get("junit.jupiter.testclass.order.default"),
+                "Order-mode orderer should be set");
+        assertEquals("true", testTask.getSystemProperties().get("testorder.learn"),
+                "Learn agent should also be attached");
+        // Agent argument provider should have been added
+        assertFalse(testTask.getJvmArgumentProviders().isEmpty(),
+                "JVM argument provider (learn agent) should be attached");
+    }
+
     private Project newProject() {
         return ProjectBuilder.builder().withProjectDir(tempDir.toFile()).build();
     }

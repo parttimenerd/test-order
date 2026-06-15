@@ -591,6 +591,11 @@ public class TestOrderPlugin implements Plugin<Project> {
                 learnModeConfigurator.configure(project, ext, testTask, agentConf);
             } else if ("order".equals(effectiveMode)) {
                 orderModeConfigurator.configure(project, ext, testTask);
+                // alwaysLearn: also attach the learn agent so the index is updated incrementally
+                // on every ordered run. Mirror of Maven AutoMojo lines 214-224.
+                if (resolveAlwaysLearn(project, ext)) {
+                    learnModeConfigurator.configure(project, ext, testTask, agentConf);
+                }
             } else if ("optimize".equals(effectiveMode)) {
                 // Optimize mode: run tests in priority order, then evolve scoring weights
                 // using a genetic algorithm (Jenetic) over the recorded run history
@@ -1418,6 +1423,46 @@ public class TestOrderPlugin implements Plugin<Project> {
             });
         });
 
+        project.getTasks().register("testOrderReactorOrder", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Show recommended module execution order for multi-project builds"
+                            + " (-Dtestorder.reactor.suggest=true for machine-readable -pl argument)");
+            task.doLast(t -> runReactorOrder(project, ext));
+        });
+
+        project.getTasks().register("testOrderShowAll", task -> {
+            task.setGroup("test-order");
+            task.setDescription("Unified view of all test classes with full scoring details"
+                    + " (includes passing tests, not just changed ones)");
+            task.doLast(t -> {
+                String format = Optional.ofNullable(gradleOrSystemProperty(project, "testorder.show.format"))
+                        .orElse("text");
+                String filter = gradleOrSystemProperty(project, "testorder.show.filter");
+                String topNStr = gradleOrSystemProperty(project, "testorder.show.topN");
+                String randomMStr = gradleOrSystemProperty(project, "testorder.show.randomM");
+                String seedStr = gradleOrSystemProperty(project, "testorder.show.seed");
+                int topN = parseIntOrDefault(topNStr, -1, "testorder.show.topN");
+                int randomM = parseIntOrDefault(randomMStr, -1, "testorder.show.randomM");
+                Long seed = parseLongOrNull(seedStr, "testorder.show.seed");
+                runShowReport(project, ext, null, null, null, true, false, false,
+                        format, filter, topN, randomM, seed);
+            });
+        });
+
+        project.getTasks().register("testOrderShowStaticAnalysis", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Show which members were detected as changed and which callers were"
+                            + " pulled in by static call-graph expansion");
+            task.doLast(t -> {
+                boolean verbose = Boolean.parseBoolean(Optional
+                        .ofNullable(gradleOrSystemProperty(project, "testorder.showStaticAnalysis.verbose"))
+                        .orElse("false"));
+                runShowStaticAnalysis(project, ext, verbose);
+            });
+        });
+
         project.getTasks().register("testOrderShowOrder", task -> {
             task.setGroup("test-order");
             task.setDescription(
@@ -1618,11 +1663,6 @@ public class TestOrderPlugin implements Plugin<Project> {
                             pctx, "order", ciDownloadCb, effectiveDepsDir).execute();
 
                     if (result instanceof AutoWorkflow.Result.OrderSelect os) {
-                        if (os.attachLearnAgent()) {
-                            project.getLogger().warn(
-                                    "[test-order] alwaysLearn=true is currently only supported in the Maven plugin. "
-                                    + "Gradle support is pending — flag has no effect on this run.");
-                        }
                         TestSelector.Selection selection = os.selection();
                         applySelectedTests((Test) t, selection.selected());
                         if (selection.selected().isEmpty()) {
@@ -2296,6 +2336,9 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  testOrderTieredSelect        Three-tier CI test selection");
                 log.lifecycle("  testOrderRunTier             Run tier 2 or 3 from tiered-select");
                 log.lifecycle("  testOrderShow                Unified view: class order, method order, ML health");
+                log.lifecycle("  testOrderShowAll             Unified view of all tests (including unaffected)");
+                log.lifecycle("  testOrderShowStaticAnalysis  Show static call-graph expansion from changed members");
+                log.lifecycle("  testOrderReactorOrder        Show recommended module execution order (multi-project)");
                 log.lifecycle("  testOrderShowOrder           Display predicted test order");
                 log.lifecycle("  testOrderExplainOrder        Detailed per-test score breakdown");
                 log.lifecycle("  testOrderShowMethodOrder     Display predicted method order");
@@ -2989,6 +3032,323 @@ public class TestOrderPlugin implements Plugin<Project> {
         } catch (IOException e) {
             throw new GradleException("Failed to compute show report: " + e.getMessage(), e);
         }
+    }
+
+    private static void runReactorOrder(Project project, TestOrderExtension ext) {
+        boolean suggest = Boolean.parseBoolean(Optional
+                .ofNullable(gradleOrSystemProperty(project, "testorder.reactor.suggest"))
+                .orElse("false"));
+        int topN = parseIntOrDefault(
+                gradleOrSystemProperty(project, "testorder.reactor.topN"), 5, "testorder.reactor.topN");
+
+        Path idxPath = ext.getIndexFile().get().getAsFile().toPath();
+        if (!Files.exists(idxPath)) {
+            autoAggregateIfNeeded(project, ext);
+        }
+        if (!Files.exists(idxPath)) {
+            throw new GradleException("[test-order] No dependency index found at " + idxPath
+                    + ". Run ./gradlew testOrderLearn (or ./gradlew test -Dtestorder.mode=learn) first.");
+        }
+
+        Path statePath = ext.getStateFile().get().getAsFile().toPath();
+        Project rootProject = project.getRootProject();
+        Path reactorRoot = rootProject.getProjectDir().toPath();
+
+        // Collect test-classes directories from all subprojects
+        java.util.Map<String, Path> moduleTestDirs = new java.util.LinkedHashMap<>();
+        java.util.Map<String, String> moduleIdToRelativePath = new java.util.LinkedHashMap<>();
+
+        for (Project p : rootProject.getAllprojects()) {
+            SourceSetContainer sourceSets = p.getExtensions().findByType(SourceSetContainer.class);
+            if (sourceSets == null) continue;
+            org.gradle.api.tasks.SourceSet testSourceSet =
+                    sourceSets.findByName(org.gradle.api.tasks.SourceSet.TEST_SOURCE_SET_NAME);
+            if (testSourceSet == null) continue;
+            Path testClassesDir = testSourceSet.getOutput().getClassesDirs()
+                    .getFiles().stream().filter(f -> Files.isDirectory(f.toPath()))
+                    .map(java.io.File::toPath).findFirst().orElse(null);
+            if (testClassesDir == null) continue;
+            String moduleId = p.getPath().equals(":") ? rootProject.getName() : p.getPath();
+            moduleTestDirs.put(moduleId, testClassesDir);
+            Path moduleDir = p.getProjectDir().toPath();
+            String relativePath;
+            try {
+                relativePath = reactorRoot.relativize(moduleDir).toString();
+            } catch (IllegalArgumentException e) {
+                relativePath = moduleDir.toString();
+            }
+            if (relativePath.isEmpty()) relativePath = ".";
+            moduleIdToRelativePath.put(moduleId, relativePath);
+        }
+
+        if (moduleTestDirs.isEmpty()) {
+            project.getLogger().lifecycle("[test-order] No modules with compiled test classes found.");
+            return;
+        }
+
+        // Detect changed classes across all subprojects
+        String changeMode = ext.getChangeMode().get();
+        String effectiveChangeMode = ("auto".equalsIgnoreCase(changeMode) || "since-last-run".equalsIgnoreCase(changeMode))
+                ? "uncommitted" : changeMode;
+        java.util.Set<String> changed = new java.util.LinkedHashSet<>();
+        java.util.Set<String> changedTests = new java.util.LinkedHashSet<>();
+        for (Project p : rootProject.getAllprojects()) {
+            SourceSetContainer sourceSets = p.getExtensions().findByType(SourceSetContainer.class);
+            if (sourceSets == null) continue;
+            org.gradle.api.tasks.SourceSet mainSourceSet =
+                    sourceSets.findByName(org.gradle.api.tasks.SourceSet.MAIN_SOURCE_SET_NAME);
+            if (mainSourceSet != null) {
+                Path srcRoot = mainSourceSet.getJava().getSrcDirs().stream()
+                        .filter(f -> Files.isDirectory(f.toPath()))
+                        .map(java.io.File::toPath).findFirst()
+                        .orElse(p.getProjectDir().toPath().resolve("src/main/java"));
+                if (Files.isDirectory(srcRoot)) {
+                    changed.addAll(me.bechberger.testorder.ops.ChangeDetectionOps.detectChangedClasses(
+                            effectiveChangeMode, reactorRoot, srcRoot, null, null, true, wrapLog(project)));
+                }
+            }
+            org.gradle.api.tasks.SourceSet testSourceSet =
+                    sourceSets.findByName(org.gradle.api.tasks.SourceSet.TEST_SOURCE_SET_NAME);
+            if (testSourceSet != null) {
+                Path testSrcRoot = testSourceSet.getJava().getSrcDirs().stream()
+                        .filter(f -> Files.isDirectory(f.toPath()))
+                        .map(java.io.File::toPath).findFirst()
+                        .orElse(p.getProjectDir().toPath().resolve("src/test/java"));
+                if (Files.isDirectory(testSrcRoot)) {
+                    changedTests.addAll(me.bechberger.testorder.ops.ChangeDetectionOps.detectChangedTestClasses(
+                            effectiveChangeMode, reactorRoot, testSrcRoot, null, null, true, wrapLog(project)));
+                }
+            }
+        }
+
+        me.bechberger.testorder.ops.ReactorOrderOperation.ReactorOrderInput input =
+                new me.bechberger.testorder.ops.ReactorOrderOperation.ReactorOrderInput(
+                        idxPath, statePath, changed, changedTests, moduleTestDirs, null, topN, wrapLog(project));
+        me.bechberger.testorder.ops.ReactorOrderOperation.ReactorOrderResult result;
+        try {
+            result = me.bechberger.testorder.ops.ReactorOrderOperation.compute(input);
+        } catch (IOException e) {
+            throw new GradleException("Failed to compute reactor order: " + e.getMessage(), e);
+        }
+
+        java.util.List<me.bechberger.testorder.ops.ReactorOrderOperation.ModuleScore> sorted =
+                result.moduleScores().stream().sorted().toList();
+
+        if (suggest) {
+            java.util.List<String> affectedPaths = sorted.stream()
+                    .filter(m -> m.affectedTestCount() > 0)
+                    .map(m -> moduleIdToRelativePath.getOrDefault(m.moduleId(), m.moduleId()))
+                    .toList();
+            if (affectedPaths.isEmpty()) {
+                project.getLogger().lifecycle("[test-order] No affected modules — all tests have score 0.");
+            } else {
+                System.out.println("-p " + String.join(",", affectedPaths));
+            }
+            return;
+        }
+
+        project.getLogger().lifecycle("");
+        project.getLogger().lifecycle("╔══════════════════════════════════════════════════════════════╗");
+        project.getLogger().lifecycle("║         test-order: Reactor Module Priority                 ║");
+        project.getLogger().lifecycle("╠══════════════════════════════════════════════════════════════╣");
+        project.getLogger().lifecycle(String.format("║  Changed classes: %-40d ║", changed.size()));
+        project.getLogger().lifecycle(String.format("║  Changed tests:   %-40d ║", changedTests.size()));
+        project.getLogger().lifecycle(String.format("║  Modules:         %-40d ║", moduleTestDirs.size()));
+        project.getLogger().lifecycle("╚══════════════════════════════════════════════════════════════╝");
+        project.getLogger().lifecycle("");
+
+        int rank = 1;
+        for (var ms : sorted) {
+            String relativePath = moduleIdToRelativePath.getOrDefault(ms.moduleId(), ms.moduleId());
+            String affectedStr = ms.affectedTestCount() > 0
+                    ? ms.affectedTestCount() + "/" + ms.totalTestCount() + " affected"
+                    : "no affected tests";
+            project.getLogger().lifecycle(String.format("  #%d  %-40s  max=%3d  sum=%5d  (%s)",
+                    rank, relativePath, ms.maxTestScore(), ms.sumTestScores(), affectedStr));
+            for (String top : ms.topTests()) {
+                project.getLogger().lifecycle("       → " + top);
+            }
+            rank++;
+        }
+
+        java.util.List<me.bechberger.testorder.ops.ReactorOrderOperation.ModuleScore> affectedModules =
+                result.affectedModules();
+        if (!affectedModules.isEmpty() && affectedModules.size() < sorted.size()) {
+            project.getLogger().lifecycle("");
+            project.getLogger().lifecycle("[test-order] Suggested fast-feedback command (affected modules first):");
+            java.util.List<String> paths = affectedModules.stream()
+                    .map(m -> moduleIdToRelativePath.getOrDefault(m.moduleId(), m.moduleId()))
+                    .toList();
+            project.getLogger().lifecycle("  ./gradlew -p " + String.join(",", paths) + " test");
+            project.getLogger().lifecycle("");
+            java.util.List<String> remainingPaths = sorted.stream()
+                    .filter(m -> m.affectedTestCount() == 0)
+                    .map(m -> moduleIdToRelativePath.getOrDefault(m.moduleId(), m.moduleId()))
+                    .toList();
+            if (!remainingPaths.isEmpty()) {
+                project.getLogger().lifecycle("[test-order] Then run remaining modules:");
+                project.getLogger().lifecycle("  ./gradlew -p " + String.join(",", remainingPaths) + " test");
+            }
+        } else if (affectedModules.isEmpty()) {
+            project.getLogger().lifecycle("");
+            project.getLogger().lifecycle("[test-order] No modules have affected tests — full test run recommended.");
+        }
+    }
+
+    private static void runShowStaticAnalysis(Project project, TestOrderExtension ext, boolean verbose) {
+        PluginContext pctx = buildPluginContext(project, ext);
+
+        Path idxPath = ext.getIndexFile().get().getAsFile().toPath();
+        if (!Files.exists(idxPath)) {
+            System.out.println("─── test-order static call-graph analysis ───");
+            System.out.println("(no dependency index found at " + idxPath + ")");
+            System.out.println("Run `./gradlew test` (auto-detects learn mode) or"
+                    + " `./gradlew test -Dtestorder.mode=learn` first, then re-run this task.");
+            return;
+        }
+
+        me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result analysis;
+        try {
+            analysis = me.bechberger.testorder.ops.workflows.ChangeAnalysis.analyze(
+                    pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.FULL_READ_ONLY);
+        } catch (IOException e) {
+            throw new GradleException("Failed to analyze changes: " + e.getMessage(), e);
+        }
+
+        me.bechberger.testorder.changes.StructuralChangeAnalyzer.ChangedMembers expanded =
+                analysis.changedMembers();
+        me.bechberger.testorder.changes.StructuralChangeAnalyzer.ChangedMembers seed =
+                analysis.preSaChangedMembers();
+        java.util.Set<String> changedClasses = analysis.changedClasses();
+
+        System.out.println("─── test-order static call-graph analysis ───");
+        System.out.println("staticAnalysis.enabled = " + pctx.staticAnalysisEnabled());
+        System.out.println("staticAnalysis.depth   = " + pctx.staticAnalysisDepth());
+        System.out.println("classesDir             = " + pctx.classesDir());
+        System.out.println("testClassesDir         = " + pctx.testClassesDir());
+        System.out.println();
+
+        if (changedClasses.isEmpty()) {
+            System.out.println("(no changed classes detected — nothing to expand)");
+            return;
+        }
+
+        System.out.println("changed classes (" + changedClasses.size() + "):");
+        for (String c : changedClasses) {
+            System.out.println("  " + c);
+        }
+        System.out.println();
+
+        if (expanded == null) {
+            System.out.println("(no structural / member-level info available — only class-level changes)");
+            return;
+        }
+
+        java.util.List<Path> classDirs = new java.util.ArrayList<>();
+        if (pctx.classesDir() != null) classDirs.add(pctx.classesDir());
+        if (pctx.testClassesDir() != null) classDirs.add(pctx.testClassesDir());
+
+        if (seed == null) {
+            seed = synthesizeStaticAnalysisSeed(changedClasses, expanded.changedStaticFieldKeys());
+        }
+
+        String classMarkerSuffix = "#" + me.bechberger.testorder.changes.StaticCallGraphAnalyzer.CLASS_MARKER;
+        java.util.Set<String> addedKeys = new java.util.LinkedHashSet<>(expanded.changedMemberKeys());
+        addedKeys.removeAll(seed.changedMemberKeys());
+        addedKeys.removeIf(k -> k.endsWith(classMarkerSuffix));
+        java.util.Set<String> addedClasses = new java.util.LinkedHashSet<>(expanded.changedClasses());
+        addedClasses.removeAll(seed.changedClasses());
+
+        System.out.println("after expansion (depth " + pctx.staticAnalysisDepth() + "):");
+        System.out.println("  seed members:   " + seed.changedMemberKeys().size());
+        System.out.println("  total members:  " + expanded.changedMemberKeys().size());
+        System.out.println("  newly added:    " + addedKeys.size());
+        System.out.println("  total classes:  " + expanded.changedClasses().size());
+        System.out.println("  classes added:  " + addedClasses.size());
+        System.out.println("  classDirs:      " + classDirs);
+
+        if (!seed.changedMemberKeys().isEmpty()) {
+            System.out.println();
+            System.out.println("seed members (directly changed):");
+            java.util.Map<String, java.util.List<String>> seedByClass = new java.util.LinkedHashMap<>();
+            for (String k : seed.changedMemberKeys()) {
+                int hash = k.lastIndexOf('#');
+                String cls = hash > 0 ? k.substring(0, hash) : k;
+                seedByClass.computeIfAbsent(cls, x -> new java.util.ArrayList<>()).add(k);
+            }
+            for (var e : seedByClass.entrySet()) {
+                System.out.println("  " + e.getKey());
+                for (String k : e.getValue()) {
+                    System.out.println("    " + k.substring(k.lastIndexOf('#') + 1));
+                }
+            }
+        }
+
+        if (!addedKeys.isEmpty()) {
+            System.out.println();
+            System.out.println("newly discovered callers:");
+            java.util.Map<String, java.util.List<String>> byClass = new java.util.LinkedHashMap<>();
+            for (String k : addedKeys) {
+                int hash = k.lastIndexOf('#');
+                String cls = hash > 0 ? k.substring(0, hash) : k;
+                byClass.computeIfAbsent(cls, x -> new java.util.ArrayList<>()).add(k);
+            }
+            int shown = 0;
+            int limit = verbose ? Integer.MAX_VALUE : 40;
+            outer:
+            for (var e : byClass.entrySet()) {
+                System.out.println("  " + e.getKey());
+                for (String k : e.getValue()) {
+                    if (shown >= limit) {
+                        System.out.println("  ... (" + (addedKeys.size() - shown)
+                                + " more, use -Dtestorder.showStaticAnalysis.verbose=true)");
+                        break outer;
+                    }
+                    System.out.println("    " + k.substring(k.lastIndexOf('#') + 1));
+                    shown++;
+                }
+            }
+        }
+
+        java.util.Set<String> classesWithMembers = new java.util.LinkedHashSet<>();
+        for (String k : addedKeys) {
+            int hash = k.lastIndexOf('#');
+            classesWithMembers.add(hash > 0 ? k.substring(0, hash) : k);
+        }
+        java.util.Set<String> classOnlyAdditions = new java.util.LinkedHashSet<>(addedClasses);
+        classOnlyAdditions.removeAll(classesWithMembers);
+        if (!classOnlyAdditions.isEmpty()) {
+            System.out.println();
+            System.out.println("newly added classes (no method-level edges):");
+            int shown = 0;
+            int limit = verbose ? Integer.MAX_VALUE : 40;
+            for (String cls : classOnlyAdditions) {
+                if (shown >= limit) {
+                    System.out.println("  ... (" + (classOnlyAdditions.size() - shown)
+                            + " more, use -Dtestorder.showStaticAnalysis.verbose=true)");
+                    break;
+                }
+                System.out.println("  " + cls);
+                shown++;
+            }
+        }
+    }
+
+    private static me.bechberger.testorder.changes.StructuralChangeAnalyzer.ChangedMembers
+            synthesizeStaticAnalysisSeed(java.util.Set<String> classes, java.util.Set<String> staticFields) {
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+        java.util.Map<String, java.util.Set<String>> byClass = new java.util.LinkedHashMap<>();
+        String marker = me.bechberger.testorder.changes.StaticCallGraphAnalyzer.CLASS_MARKER;
+        for (String cls : classes) {
+            keys.add(cls + "#" + marker);
+            byClass.put(cls, java.util.Collections.singleton(marker));
+        }
+        return new me.bechberger.testorder.changes.StructuralChangeAnalyzer.ChangedMembers(
+                new java.util.LinkedHashSet<>(classes),
+                java.util.Collections.unmodifiableSet(keys),
+                java.util.Collections.unmodifiableMap(byClass),
+                java.util.Collections.emptySet(),
+                staticFields != null ? staticFields : java.util.Set.of());
     }
 
     private static Boolean resolveAutoFlag(String value) {

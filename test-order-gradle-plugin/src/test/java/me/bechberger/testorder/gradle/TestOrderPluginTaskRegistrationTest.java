@@ -34,6 +34,48 @@ class TestOrderPluginTaskRegistrationTest {
     }
 
     @Test
+    void applyRegistersNewTasks() {
+        Project project = ProjectBuilder.builder().build();
+        project.getPluginManager().apply("java");
+
+        new TestOrderPlugin().apply(project);
+
+        assertNotNull(project.getTasks().findByName("testOrderShowAll"),
+                "testOrderShowAll task must be registered");
+        assertNotNull(project.getTasks().findByName("testOrderShowStaticAnalysis"),
+                "testOrderShowStaticAnalysis task must be registered");
+        assertNotNull(project.getTasks().findByName("testOrderReactorOrder"),
+                "testOrderReactorOrder task must be registered");
+    }
+
+    @Test
+    void newTasksHaveDescriptionsAndGrouping() {
+        Project project = ProjectBuilder.builder().build();
+        project.getPluginManager().apply("java");
+
+        new TestOrderPlugin().apply(project);
+
+        var showAll = project.getTasks().findByName("testOrderShowAll");
+        assertNotNull(showAll);
+        assertNotNull(showAll.getDescription());
+        assertTrue(showAll.getDescription().contains("all"), "testOrderShowAll description should mention 'all'");
+        assertTrue("test-order".equals(showAll.getGroup()),
+                "testOrderShowAll should be in 'test-order' group");
+
+        var showSa = project.getTasks().findByName("testOrderShowStaticAnalysis");
+        assertNotNull(showSa);
+        assertNotNull(showSa.getDescription());
+        assertTrue("test-order".equals(showSa.getGroup()),
+                "testOrderShowStaticAnalysis should be in 'test-order' group");
+
+        var reactorOrder = project.getTasks().findByName("testOrderReactorOrder");
+        assertNotNull(reactorOrder);
+        assertNotNull(reactorOrder.getDescription());
+        assertTrue("test-order".equals(reactorOrder.getGroup()),
+                "testOrderReactorOrder should be in 'test-order' group");
+    }
+
+    @Test
     void applyIsIdempotent() {
         Project project = ProjectBuilder.builder().build();
         project.getPluginManager().apply("java");
@@ -47,6 +89,9 @@ class TestOrderPluginTaskRegistrationTest {
         assertNotNull(project.getTasks().findByName("testOrderShow"));
         assertNotNull(project.getTasks().findByName("testOrderHelp"));
         assertNotNull(project.getTasks().findByName("testOrderShowOrder"));
+        assertNotNull(project.getTasks().findByName("testOrderShowAll"));
+        assertNotNull(project.getTasks().findByName("testOrderShowStaticAnalysis"));
+        assertNotNull(project.getTasks().findByName("testOrderReactorOrder"));
     }
 
     @Test

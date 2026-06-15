@@ -336,6 +336,9 @@ Each test gets a score based on multiple signals. Tests run in descending score 
 | **Recent failures** | up to 5 | Test failed recently (weighted by recency) |
 | **Speed** | ±1 | Fast tests get a small bonus; slow tests a penalty |
 | **Change complexity** | up to 2 | Changed classes are information-dense |
+| **Package proximity** | +2 (hardcoded) | Test package matches a changed class's package |
+| **Static field bonus** | 0 (opt-in) | Bonus when a test touches a changed static field (requires `MEMBER` mode) |
+| **Coverage bonus** | 0 (opt-in) | Greedy set-cover bonus replacing `depOverlap` — set `coverageBonus > 0` to enable |
 | **Kill-rate bonus** | 0 (opt-in) | Tests killing more mutants rank higher (requires `analyze-mutations`) |
 <!-- END WEIGHTS TABLE -->
 
@@ -481,8 +484,8 @@ mvn test -Dtestorder.auto.alwaysLearn=true -Dtestorder.learn.selective=true
 # Maven CLI goal (explicit)
 mvn test-order:auto test -Dtestorder.auto.alwaysLearn=true -Dtestorder.learn.selective=true
 
-# Gradle (selective only — alwaysLearn Gradle support is planned)
-./gradlew test -Dtestorder.learn.selective=true
+# Gradle (alwaysLearn supported since this release)
+./gradlew test -Dtestorder.auto.alwaysLearn=true -Dtestorder.learn.selective=true
 ```
 
 Both flags default to `false`. When `alwaysLearn=true` and no structural changes are detected (empty uncertain set), the agent attach is skipped automatically — zero overhead on no-change runs.
