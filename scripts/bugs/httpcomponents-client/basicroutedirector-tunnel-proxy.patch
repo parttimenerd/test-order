@@ -1,0 +1,13 @@
+diff --git a/httpclient5/src/main/java/org/apache/hc/client5/http/impl/routing/BasicRouteDirector.java b/httpclient5/src/main/java/org/apache/hc/client5/http/impl/routing/BasicRouteDirector.java
+index 28cda18..4686612 100644
+--- a/httpclient5/src/main/java/org/apache/hc/client5/http/impl/routing/BasicRouteDirector.java
++++ b/httpclient5/src/main/java/org/apache/hc/client5/http/impl/routing/BasicRouteDirector.java
+@@ -162,7 +162,7 @@ protected int proxiedStep(final RouteInfo plan, final RouteInfo fact) {
+         // now we know that the target matches and proxies so far are the same
+         if (phc > fhc)
+          {
+-            return TUNNEL_PROXY; // need to extend the proxy chain
++            return TUNNEL_TARGET; // need to extend the proxy chain
+         }
+ 
+         // proxy chain and target are the same, check tunnelling and layering

@@ -919,3 +919,104 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Patch:** `scripts/bugs/commons-pool/eviction-config-is-positive-flip.patch`  
 **Changed:** `EvictionConfig.isPositive()` — positive check negated  
 **Result:** Bug caught in top-3 selected tests ✓
+
+### pdfbox — CAUGHT ✓
+
+**Patch:** `scripts/bugs/pdfbox/pdDocument-getNumberOfPages-plus-one.patch`  
+**Changed:** `PDDocument.getNumberOfPages()` — changed `getCount()` to `getCount() + 1`  
+**Bug:** Page count always returns one more page than actually exists, causing `assertEquals(1, doc.getNumberOfPages())` to fail with 2  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Note:** `PDDocument` affects 88% of tests (102/116), but top-3 selected tests (`TestPDDocument`, `TestPDDocumentCatalog`, `TestFDF`) directly assert `getNumberOfPages()` with specific values, ensuring detection despite high class coverage.  
+**Failing tests:** `TestPDDocumentCatalog.retrieveNumberOfPages`, `TestPDDocumentCatalog.retrievePageLabels`, `TestPDDocument.testSaveLoadFile`, `TestPDDocument.testSaveLoadStream`
+
+---
+
+### junit5 — CAUGHT ✓
+
+**Patch:** `scripts/bugs/junit5/calculator-add-off-by-one.patch`  
+**Changed:** `Calculator.add()` — off-by-one: `return a + b + 1` instead of `return a + b`  
+**Bug:** Simple arithmetic off-by-one in test documentation Calculator class  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `AssertionsDemo.standardAssertions()` — "expected: <2> but was: <3>"
+
+### micronaut-core — CAUGHT ✓
+
+**Patch:** `scripts/bugs/micronaut-core/http-status-ok-code.patch`  
+**Changed:** `HttpStatus.OK` — HTTP status code changed from 200 to 201, colliding with `CREATED`  
+**Bug:** HTTP 200 OK reports wrong status code, breaking any code checking for `HttpStatus.OK` by code value  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing modules:** `micronaut-http-server-netty`, `micronaut-inject-java` — multiple tests failed
+
+### mockito — CAUGHT ✓
+
+**Patch:** `scripts/bugs/mockito/strictness-flip.patch`  
+**Changed:** `MockitoExtension` constructor — default strictness changed from `Strictness.STRICT_STUBS` to `Strictness.WARN`  
+**Bug:** JUnit 5 extension defaults to lenient strictness, allowing unnecessary stubbings to pass silently  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `StrictnessTest` — tests verifying default strict strictness detected the changed behavior
+
+### commons-collections — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-collections/comparatorpredicate-equal.patch`  
+**Changed:** `ComparatorPredicate` — equality evaluation flipped  
+**Bug:** Comparator-based predicate returns wrong result for equality comparisons  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `ComparatorPredicateTest` — 6 tests run, 1 failure
+
+### spring-ai — CAUGHT ✓
+
+**Patch:** `scripts/bugs/spring-ai/flip-tool-definition-condition.patch`  
+**Changed:** `DefaultToolDefinition` — tool definition condition logic flipped  
+**Bug:** Tool invocation condition evaluation inverted, causing incorrect tool dispatch decisions  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `ToolCallingChatOptionsTests` — 4 errors in 16 tests
+
+### ai-sdk-java — CAUGHT ✓
+
+**Patch:** `scripts/bugs/ai-sdk-java/flip-path-endswith.patch`  
+**Changed:** `DestinationResolver` — `path.endsWith("/")` condition negated  
+**Bug:** URL path trailing-slash detection inverted, causing destination URLs to be constructed incorrectly  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### jackson-databind — CAUGHT ✓
+
+**Patch:** `scripts/bugs/jackson-databind/basenode-container-type-flip.patch`  
+**Changed:** `BaseNodeDeserializer._deserializeContainerNoRecursion()` — flipped `curr instanceof ObjectNode` to `curr instanceof ArrayNode`, inverting array/object container dispatch  
+**Bug:** During iterative JSON tree deserialization, the ObjectNode and ArrayNode code paths are swapped, causing `ClassCastException` when parsing any JSON object  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing tests:** `NodeContext2049Test` (1 error), `JsonPointerWithNodeTest` (3 errors), `ParsingContext2525Test` (3 errors)  
+**Note:** Previous patches (`JavaSqlBlobSerializer.isEmpty` flip, `ClassUtil.isNonStaticInnerClass` flip, `PropertyName.equals` flip) all MISSED — either too narrow (1 test, not critical path) or too broad (94%/82% coverage). `BaseNodeDeserializer` selected `DeepJsonNodeSerTest` (rank #6) which exercises the exact code path.
+
+
+
+### assertj 4.0.0-SNAPSHOT — BLOCKED (JPMS module path conflict)
+
+**Issue:** assertj 4.x uses `--add-modules org.junit.jupiter.api,org.junit.platform.commons` in argFile (JPMS in-module testing). When test-order instruments the JVM, the JPMS boot layer reports `Module org.junit.jupiter.api not found`, crashing the forked test JVM.  
+**Status:** Not supported — requires investigation of JPMS compatibility with test-order's ClassFileTransformer instrumentation.  
+**Error:** `Error occurred during initialization of boot layer: java.lang.module.FindException: Module org.junit.jupiter.api not found`
+
+### cglib — BLOCKED (Java 6 target not supported in JDK 17+)
+
+**Issue:** cglib targets Java 6 (`-source 6`) which is no longer supported in JDK 17+.  
+**Error:** `Source option 6 is no longer supported. Use 7 or later.`  
+**Status:** Skip — would require JDK 8 or special handling.
+
+### eclipse-collections — BLOCKED (custom code generator plugin class loading issue)
+
+**Issue:** eclipse-collections uses `eclipse-collections-code-generator-maven-plugin` which fails with `NoClassDefFoundError: me/bechberger/testorder/agent/runtime/UsageStore` during source generation. The test-order classloader appears to interfere with the code generator's plugin realm.  
+**Status:** Known limitation with custom Maven plugins that use a different classloader realm.
+
+### jimfs — SKIPPED (JUnit 4 only)
+
+**Issue:** jimfs uses JUnit 4 (`junit:junit`), which test-order does not support. Despite successfully compiling and running 5901 tests, test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index.  
+**Status:** Skip — same as awaitility/guice. Would require JUnit 5 migration.
+
+### httpcomponents-client — CAUGHT ✓
+
+**Patch:** `scripts/bugs/httpcomponents-client/basicroutedirector-tunnel-proxy.patch`  
+**Changed:** `BasicRouteDirector.proxiedStep()` — changed `return TUNNEL_PROXY` to `return TUNNEL_TARGET` when proxy hop count is insufficient, causing incorrect routing direction  
+**Bug:** Proxy chain extension returns wrong tunnel action type, breaking proxy routing decisions  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Selected test:** `org.apache.hc.client5.http.impl.routing.TestRouteDirector` — 14 tests run, 1 failure  
+**Note:** First patch (`routetracker-istunnelled-flip.patch`) affected 100% of tests → MISSED. New patch in `BasicRouteDirector` affects ~60/121 tests (50%) → CAUGHT.  
+**Infrastructure issue resolved:** Added JDK 1.8 toolchain entry to `~/.m2/toolchains.xml` pointing to JDK 17 (compatible target).

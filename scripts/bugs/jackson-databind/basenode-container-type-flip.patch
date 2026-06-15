@@ -1,0 +1,10 @@
+diff --git a/src/main/java/tools/jackson/databind/deser/jackson/BaseNodeDeserializer.java b/src/main/java/tools/jackson/databind/deser/jackson/BaseNodeDeserializer.java
+--- a/src/main/java/tools/jackson/databind/deser/jackson/BaseNodeDeserializer.java
++++ b/src/main/java/tools/jackson/databind/deser/jackson/BaseNodeDeserializer.java
+@@ -309,7 +309,7 @@ public abstract class BaseNodeDeserializer<T extends JsonNode>
+         outer_loop:
+         do {
+-            if (curr instanceof ObjectNode) {
++            if (curr instanceof ArrayNode) { /* BUG_INJECTED */
+                 ObjectNode currObject = (ObjectNode) curr;
+                 String propName = p.nextName();

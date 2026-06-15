@@ -30,6 +30,14 @@ detect_compiler_args() {
         # joda-time targets Java 1.5 (source/target 1.5) which JDK 17+ rejects.
         # Override to release=8 which is the minimum still supported.
         joda-time) echo "-Dmaven.compiler.source=8 -Dmaven.compiler.target=8 -Dmaven.compiler.compilerVersion=8" ;;
+        # jimfs targets Java 1.8 using -source 1.8 (not --release 8). JDK 17 warns about
+        # "bootstrap class path not set in conjunction with -source 8" and fails the build.
+        # Override with --release 8. See detect_extra_mvn_args for error-prone profile deactivation.
+        jimfs) echo "-Dmaven.compiler.release=8" ;;
+        # httpcomponents-client uses maven-toolchains-plugin requiring a JDK 1.8 toolchain.
+        # Added 1.8 toolchain to ~/.m2/toolchains.xml pointing to JDK 17 SAP.
+        # Ignore pre-existing test failures (some integration tests need a running server).
+        httpcomponents-client) echo "-Dmaven.test.failure.ignore=true" ;;
         *)          echo "" ;;
     esac
 }
@@ -61,7 +69,9 @@ detect_extra_mvn_args() {
         # guava: guava-testlib's module-info.java (Java 9 multi-release) requires com.google.common
         # but the JPMS compile step fails to find it in the Maven module path.
         # Skip the java9 profile to avoid this; tests in guava-tests still run normally.
-        guava) echo "-P '!java9'" ;;
+        # Also exclude guava-testlib from the build entirely — it requires JPMS compilation
+        # that fails outside of a full build. guava-tests has its own testlib transitive dep via guava.
+        guava) echo "-P '!java9' -pl '!guava-testlib'" ;;
         # spring-ai has pre-existing test failures in spring-ai-commons (DocumentTests,
         # ContentFormatterTests etc — "[DRAFT]" prefix mismatch). Ignore so steps 5/6 run.
         # Also skip spring-javaformat:apply which runs in non-CI mode and causes compilation
@@ -81,6 +91,10 @@ detect_extra_mvn_args() {
         # Without it, the build fails with exit 127 (command not found). Skip this project
         # if @sap/cds is not available.
         cds-feature-attachments) echo "-Dmaven.test.failure.ignore=true -pl 'cds-feature-attachments,storage-targets/cds-feature-attachments-fs,storage-targets/cds-feature-attachments-oss' -am" ;;
+        # jimfs: error-prone profile 'errorprone-enabled' is activated on JDK >= 21 and fails with
+        # NullArgumentForNonNullParameter (PathURLConnection.java:146) that cannot be suppressed.
+        # Deactivate the profile to skip error-prone entirely. The '!' prefix deactivates a profile.
+        jimfs) echo "-P '!errorprone-enabled'" ;;
         # logbook and jetty use JUnit class-level parallel execution (mode.classes.default=concurrent
         # or Surefire <parallel>classesAndMethods</parallel>).  test-order cannot track dependencies
         # when multiple test classes run simultaneously, so we override these to serial execution.
@@ -238,10 +252,15 @@ detect_maven_java_home() {
         # Kotlin compiler in spring-ai-commons also requires JDK 21+.
         # Use 21.0.6-sapmchn (has javac) + enforcer is already skipped via -Denforcer.skip=true.
         spring-ai) _sdkman_java_home "21.0.6-sapmchn" ;;
+        # jimfs: error-prone javac plugin requires JDK 21 (class file version 65.0 = Java 21).
+        # The global default JDK 17 can't load it — use SAP JDK 21 instead.
+        jimfs) _sdkman_java_home "21.0.6-sapmchn" ;;
         # gson: ProGuard obfuscation plugin (proguard-maven-plugin) needs jmods/java.base.jmod
         # to process test classes. The system JDK 21 on Linux is a JRE (no jmods/ dir).
         # SAP JDK 21.0.6 ships with full jmods/ including java.base.jmod.
         gson) _sdkman_java_home "21.0.6-sapmchn" ;;
+        # jackson-databind 3.x requires Java 21 (pom.xml: maven.compiler.release=21).
+        jackson-databind) _sdkman_java_home "21.0.6-sapmchn" ;;
         *) echo "" ;;
     esac
 }

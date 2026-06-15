@@ -996,8 +996,16 @@ phase_learn_maven() {
         export PATH="$maven_java_home/bin:$PATH"
     fi
 
+    local compiler_args
+    compiler_args=$(detect_compiler_args "$repo")
+    local extra_mvn_args=""
+    type detect_extra_mvn_args &>/dev/null && extra_mvn_args=$(detect_extra_mvn_args "$repo")
     local mvn_args=(-B -Denforcer.skip=true -Drat.skip=true -Djacoco.skip=true
                     -Dmaven.build.cache.enabled=false)
+    [[ -n "$compiler_args" ]] && mvn_args+=($compiler_args)
+    if [[ -n "$extra_mvn_args" ]]; then
+        eval "mvn_args+=($extra_mvn_args)"
+    fi
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
 
@@ -1646,6 +1654,14 @@ phase_bugs_maven() {
 
     cd "$dir"
     inject_maven_plugin "$repo" "$module"
+
+    # Per-repo JAVA_HOME override (same as phase_learn_maven)
+    local maven_java_home=""
+    type detect_maven_java_home &>/dev/null && maven_java_home=$(detect_maven_java_home "$repo")
+    if [[ -n "$maven_java_home" ]]; then
+        export JAVA_HOME="$maven_java_home"
+        export PATH="$maven_java_home/bin:$PATH"
+    fi
 
     local compiler_args
     compiler_args=$(detect_compiler_args "$repo")
