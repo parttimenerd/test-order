@@ -987,6 +987,81 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Failing tests:** `NodeContext2049Test` (1 error), `JsonPointerWithNodeTest` (3 errors), `ParsingContext2525Test` (3 errors)  
 **Note:** Previous patches (`JavaSqlBlobSerializer.isEmpty` flip, `ClassUtil.isNonStaticInnerClass` flip, `PropertyName.equals` flip) all MISSED — either too narrow (1 test, not critical path) or too broad (94%/82% coverage). `BaseNodeDeserializer` selected `DeepJsonNodeSerTest` (rank #6) which exercises the exact code path.
 
+### commons-csv — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-csv/csvprinter-newrecord-flip.patch`  
+**Changed:** `CSVPrinter.printRaw()` — `newRecord = false` changed to `newRecord = true`  
+**Bug:** Record boundary flag never reset, causing all CSV fields to be treated as the start of a new record  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `JiraCsv227Test.test` — 1 failure
+
+### commons-dbcp — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-dbcp/cpdssconnectionfactory-validatingset-flip.patch`  
+**Changed:** `CPDSConnectionFactory.connectionClosed()` — `!validatingSet.contains(pc)` changed to `validatingSet.contains(pc)`  
+**Bug:** Connection error handling inverted: connections being validated are treated as free to return to pool  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `TestCPDSConnectionFactory.testConnectionErrorCleanup` — 2 failures
+
+### commons-geometry — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-geometry/iteratortransform-hasnext-flip.patch`  
+**Changed:** `IteratorTransform.next()` — `outputQueue.removeFirst()` changed to `outputQueue.removeLast()`  
+**Bug:** Iterator removes elements from wrong end of queue, reversing the transformed iteration order  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `IteratorTransformTest.testIteration` — 1 failure
+
+### commons-math — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-math/matharrays-checkorder-strict-flip.patch`  
+**Changed:** `MathArrays.checkOrder()` — `val[index] <= previous` changed to `val[index] < previous`  
+**Bug:** Strict ordering check becomes non-strict, allowing duplicate values in strictly increasing sequences  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `MathArraysTest.testCheckOrder` — 2 failures
+
+### commons-statistics — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-statistics/intmath-squarehigh-sign-flip.patch`  
+**Changed:** `IntMath.squareHigh()` — sign correction changed from subtraction to addition  
+**Bug:** High 32-bit word of 64-bit integer square computation has incorrect sign adjustment  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `IntKurtosisTest.testArrayAndCombineRandom` — 5 failures
+
+### commons-lang — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-lang/stringutils-isblank-whitespace-flip.patch`  
+**Changed:** `StringUtils.isAlpha()` — `!Character.isLetter(...)` condition negated  
+**Bug:** `isAlpha()` completely inverts its contract — returns false for alpha-only strings  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `StringUtilsSubstringTest` — 2 failures
+
+### logbook — CAUGHT ✓
+
+**Patch:** `scripts/bugs/logbook/contenttype-json-check-flip.patch`  
+**Changed:** `ContentType.isApplicationJson()` — `||` changed to `&&` in MIME type check  
+**Bug:** JSON content type detection requires both `/json` and `+json` suffix simultaneously (impossible), making all JSON appear non-JSON  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `ContentTypeTest` — 11 failures (build still SUCCESS due to `maven.test.failure.ignore=true`)
+
+### jackson-core — CAUGHT ✓
+
+**Patch:** `scripts/bugs/jackson-core/numberinput-inlongrange-flip.patch`  
+**Changed:** `NumberInput.inLongRange()` — comparison inverted from `diff < 0` to `diff > 0`  
+**Bug:** Long range check inverted, causing valid long values to be rejected and invalid ones to be accepted  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Failing test:** `NumberInputTest` — 1 failure
+
+### kafka — INFRASTRUCTURE ISSUE (cleanTestOrderSelect not found)
+
+**Patch:** `scripts/bugs/kafka/utils-isblank-negate.patch`  
+**Issue:** Gradle task `cleanTestOrderSelect` not registered in `:clients` subproject. test-order's `affected` Gradle goal requires this task.  
+**Status:** Infrastructure failure — not a detection result; needs investigation of Gradle multi-project task registration.
+
+### maven — MISSED ✗ (patch class not in dependency index)
+
+**Patch:** `scripts/bugs/maven/pathselector-needrelativize-flip.patch`  
+**Result:** MISSED — `PathSelector` class lives in `impl/maven-impl` submodule which is not indexed when using `-pl maven-api-annotations -am`  
+**Reason:** Need to configure `detect_single_module` to use a module containing `PathSelector`.
 
 
 ### assertj 4.0.0-SNAPSHOT — BLOCKED (JPMS module path conflict)
