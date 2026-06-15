@@ -7,11 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 CLOUD_SDK_DIR="$SCRIPT_DIR/cloud-sdk-java"
 CLOUD_SDK_URL="https://github.com/SAP/cloud-sdk-java.git"
-CLOUD_SDK_COMMIT="0dd531be850b5c70aa73e8322b58a02e5eb99cd0"
+CLOUD_SDK_COMMIT="432db950ec364b7591b286942a1140617ff5ddcd"
 
 CAP_SFLIGHT_DIR="$SCRIPT_DIR/cap-sflight"
 CAP_SFLIGHT_URL="https://github.com/SAP-samples/cap-sflight.git"
-CAP_SFLIGHT_COMMIT="5f92a54d563193f1730d0c051ff11a2925bf5ee3"
+CAP_SFLIGHT_COMMIT="9724a2865dbc669073a2f60d59b0970ba882dae7"
 
 clone_at_commit() {
     local dir="$1" url="$2" commit="$3"

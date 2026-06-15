@@ -10,9 +10,11 @@
 2. [Architecture](#architecture)
 3. [Maven Setup](#maven-setup)
 4. [Gradle Setup](#gradle-setup)
-5. [Parallel Execution](#parallel-execution)
-6. [Best Practices](#best-practices)
-7. [Troubleshooting](#troubleshooting)
+5. [How Multi-Module Reordering Works](#how-multi-module-reordering-works)
+6. [PIT Mutation Testing in Multi-Module Builds](#pit-mutation-testing-in-multi-module-builds)
+7. [Parallel Execution](#parallel-execution)
+8. [Best Practices](#best-practices)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -387,7 +389,114 @@ The shared index (test-dependencies.lz4) is only written during aggregation (aft
 
 ---
 
-## Automatic Reactor Reordering
+## How Multi-Module Reordering Works
+
+### The Dependency Index: One File, All Modules
+
+The dependency index (`test-dependencies.lz4`) is the heart of the reordering system. In a multi-module build, **all modules share a single index** stored at the reactor root (`.test-order/test-dependencies.lz4`). This is intentional: cross-module dependencies are common (module A's tests cover classes in module B), and a shared index captures those edges.
+
+#### How the index is built
+
+During **learn mode**, each module independently instruments its production classes using offline bytecode instrumentation. When the test JVM runs, it records which test class accessed which production class via the `IndexCollectorServer` — every test method → production class edge is written to a per-module `.deps` file under `.test-order/deps/`.
+
+```
+Learn run:
+  module-a tests run → write .test-order/deps/com.app-module-a-*.deps
+  module-b tests run → write .test-order/deps/com.app-module-b-*.deps
+                                    ↓
+  mvn test-order:aggregate   ← merges all .deps files into test-dependencies.lz4
+```
+
+> In Maven the `CollectorLifecycleParticipant` (registered automatically via `extensions.xml`) calls `aggregate` at session end, so an explicit `test-order:aggregate` goal is usually not needed. In Gradle the `testOrderAggregateAll` task combines all subproject `.deps` outputs.
+
+#### What the index stores
+
+Each entry in the index maps a **test class** to the set of **production class FQCNs** it covers. A single test class may cover hundreds of classes across modules. This is what enables cross-module change detection:
+
+```
+com.example.CartTest → [com.example.Cart, com.example.Inventory,
+                         com.pricing.PriceCalculator,   ← from module-b!
+                         com.db.OrderRepository]         ← from module-c!
+```
+
+When `PriceCalculator` changes, `CartTest` is boosted even though it lives in a different module.
+
+### Per-Module Change Detection
+
+Although the index is shared, **change detection runs per-module**. Each module tracks its own source file hashes in `.test-order/hashes/<groupId>-<artifactId>-hashes.lz4`. When you run order mode on module A, the plugin:
+
+1. Reads the **local** hash file for module A to detect changed classes
+2. Looks up those changed classes in the **shared** index
+3. Finds and scores every test that covers those changed classes — including tests in module B or C
+
+This is how a one-line change in `module-a/src/main/java/…/Cart.java` surfaces as a score boost for `CartTest` in module C during a full reactor build.
+
+### Reactor Build Flow
+
+In a normal `mvn test` run across all modules:
+
+```
+1. CollectorLifecycleParticipant.afterProjectsRead()
+   → allocates a shared ClassIdMap (reactor-wide class ID registry)
+   → scores modules by affected test count; optionally reorders reactor
+
+2. For each module in reactor order:
+   a. test-order:prepare fires (bound to process-test-classes)
+      → reads per-module hash file, computes changed classes
+      → looks up shared index → builds score-ordered test list
+      → writes JUnit platform properties for PriorityClassOrderer
+
+   b. Maven Surefire runs tests in plugin-specified order
+      → TelemetryListener records durations and outcomes to .part files
+
+3. CollectorLifecycleParticipant.afterSessionEnd()
+   → merges all .part files into shared state.lz4
+   → increments runsSinceLearn, updates failure decay
+   → triggers auto-aggregate if enough new .deps files accumulated
+```
+
+### The `reactor-order` Goal
+
+`mvn test-order:reactor-order` is a **diagnostic / planning goal** for understanding module prioritization before committing to a full build.
+
+**What it does:**
+- Computes a per-module urgency score based on affected test count, maximum test score, and sum of test scores
+- Ranks modules from most urgent (many high-score tests) to least urgent (no affected tests)
+- Suggests a `-pl` argument to run affected modules first in a two-step build
+
+```bash
+# See urgency ranking + suggested -pl
+mvn test-order:reactor-order
+
+# Machine-readable: just the -pl argument
+PL=$(mvn -q test-order:reactor-order -Dtestorder.reactor.suggest=true)
+mvn test $PL -am           # run affected modules first
+mvn test --resume-from=…   # run remaining modules
+```
+
+**Example output:**
+```
+║  Changed classes: 3
+║  Modules:         5
+  #1  payment-service           max=210  sum= 4500  (8/42 affected)
+       → PaymentProcessorTest
+       → RefundWorkflowTest
+  #2  inventory-service         max=120  sum= 2100  (3/31 affected)
+  #3  notification-service      max=  0  sum=    0  (no affected tests)
+  ...
+
+[test-order] Suggested fast-feedback command (affected modules first):
+  mvn test -pl payment-service,inventory-service -am
+[test-order] Then run remaining modules:
+  mvn test -pl notification-service,reporting-service,gateway
+```
+
+**Important constraints:**
+- Requires an existing dependency index (run learn mode first)
+- `auto` and `since-last-run` change modes are downgraded to `uncommitted` in this aggregator context — per-module hash files are not accessible from the reactor root
+- Module ordering respects Maven's dependency DAG: the goal only reorders **topologically independent** modules
+
+### Automatic Reactor Reordering
 
 The `CollectorLifecycleParticipant` lifecycle extension (automatically active when the plugin is on the classpath) can reorder Maven reactor modules at build startup so modules with the most affected tests run first:
 
@@ -409,6 +518,101 @@ mvn test -Dtestorder.reactorReorder=true -Dtestorder.reactorReorder.dryRun=true
 | `testorder.reactorReorder.dryRun` | `false` | Print reorder plan without modifying the reactor |
 
 > Requires at least one prior learn run so the plugin has dependency data to score modules against the current change set.
+
+---
+
+## PIT Mutation Testing in Multi-Module Builds
+
+### What `analyze-mutations` does
+
+`mvn test-order:analyze-mutations` (Maven) / `./gradlew testOrderAnalyzeMutations` (Gradle) runs [PIT](https://pitest.org/) mutation testing on the production classes covered by the dependency index, then feeds the per-test kill rates back into the shared `state.lz4` for use in future scoring runs.
+
+**Purpose:** Tests that reliably kill mutants in the classes they cover are stronger indicators of code correctness than tests that merely execute the code. The `killRateBonus` scoring weight (`scoreKillRateBonus`) uses these rates to boost high-kill tests.
+
+**Designed for nightly / weekly CI** — not every commit. PIT is slow (it runs tests N times, one per mutant). A typical project with 1,000 tests might take 20–60 minutes.
+
+### How it works
+
+```
+1. Load dependency index → extract the set of all indexed production classes
+2. Build PIT target-class glob from those classes (or from -Dtestorder.mutations.targetClasses)
+3. Invoke PIT programmatically (via EntryPoint reflection — no separate process)
+4. PIT mutates each production class, runs the test suite, records which test kills which mutant
+5. Parse PIT XML report → compute per-test kill rate = mutants_killed / mutants_tested_by_this_test
+6. Write kill rates to state.lz4 (keyed by test class FQCN)
+7. Write test-mutation-results.json report
+```
+
+### In Multi-Module Projects
+
+`analyze-mutations` is an **aggregator goal** — it runs once from the reactor root and sees the entire dependency index. However, there is an important constraint: **PIT must be able to find all production class files and test class files** from the path it is invoked.
+
+For multi-module builds, the simplest approach is to run from the root after a full build:
+
+```bash
+# 1. Full build with tests (ensures all class files are compiled)
+mvn clean install -DskipTests
+
+# 2. Run mutation analysis (aggregator goal, runs at root)
+mvn test-order:analyze-mutations
+
+# 3. Enable kill-rate bonus in scoring
+mvn test -DscoreKillRateBonus=50
+```
+
+**Per-module scope:** Use `-Dtestorder.mutations.targetClasses` to limit mutation to one module:
+
+```bash
+mvn test-order:analyze-mutations \
+  -Dtestorder.mutations.targetClasses="com.example.payment.*"
+```
+
+**Time budget:** For large projects, limit PIT's runtime:
+
+```bash
+# Stop after 10 minutes (useful for CI time limits)
+mvn test-order:analyze-mutations -Dtestorder.mutations.timeBudget=600
+```
+
+### Kill Rate in Scoring
+
+Once kill rates are stored in `state.lz4`, every subsequent order/select run incorporates them automatically when `scoreKillRateBonus > 0`:
+
+```xml
+<!-- pom.xml -->
+<configuration>
+    <scoreKillRateBonus>50</scoreKillRateBonus>  <!-- add up to 50 points for high kill rate -->
+</configuration>
+```
+
+Or from the command line:
+
+```bash
+mvn test -DscoreKillRateBonus=50
+```
+
+Kill rates decay over time as the code changes — after a re-run of `analyze-mutations`, the rates are refreshed. The state file stores them per-test and they persist across builds until explicitly cleared.
+
+### PIT Prerequisites
+
+PIT must be on the classpath. Add the dependency to your root POM (test scope, since it's only needed for mutation runs):
+
+```xml
+<dependency>
+    <groupId>org.pitest</groupId>
+    <artifactId>pitest-entry</artifactId>
+    <version>1.16.1</version>  <!-- use latest stable -->
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>org.pitest</groupId>
+    <artifactId>pitest-junit5-plugin</artifactId>
+    <version>1.2.1</version>
+    <scope>test</scope>
+</dependency>
+```
+
+If PIT is not on the classpath, `analyze-mutations` fails with a clear error message listing the missing class.
 
 ---
 

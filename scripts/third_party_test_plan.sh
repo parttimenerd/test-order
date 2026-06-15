@@ -891,7 +891,7 @@ buildscript {\
         if [[ "$build_file" == *.kts ]]; then
             # Use pluginManager.withPlugin("java") so the plugin is only applied to subprojects
             # that actually have the Java plugin. Subprojects without Java (e.g. BOM-only,
-            # build-logic plugins) have null testClassesDirs and would crash testOrderSelect.
+            # build-logic plugins) have null testClassesDirs and would crash testOrderAffected.
             # Note: plugins.withId("java") { apply(...) } does NOT work in Kotlin DSL — the
             # lambda `this` is Plugin<*>, not Project, so apply() resolves to the wrong overload.
             # pluginManager.withPlugin() correctly scopes to the project context.
@@ -1172,9 +1172,9 @@ phase_select_gradle() {
     local src_class
     src_class=$(detect_source_class_gradle "$repo")
 
-    log "Running: ./gradlew testOrderSelect -Dtestorder.affected.topN=5"
+    log "Running: ./gradlew testOrderAffected -Dtestorder.affected.topN=5"
     # shellcheck disable=SC2086
-    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderSelect \
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderAffected \
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
@@ -1271,7 +1271,7 @@ phase_bugs_gradle() {
         type detect_gradle_subproject_prefix &>/dev/null && \
             subproject_prefix_override=$(detect_gradle_subproject_prefix "$repo" "$first_segment" 2>/dev/null || echo "")
         if [[ "$subproject_prefix_override" == "ROOT" ]]; then
-            task_prefix=""   # root-level tasks: cleanTestOrderSelect testOrderSelect
+            task_prefix=""   # root-level tasks: cleanTestOrderAffected testOrderAffected
         elif [[ -n "$subproject_prefix_override" ]]; then
             task_prefix="$subproject_prefix_override"
         else
@@ -1279,12 +1279,12 @@ phase_bugs_gradle() {
         fi
     fi
 
-    local clean_task="${task_prefix}cleanTestOrderSelect"
-    local select_task="${task_prefix}testOrderSelect"
+    local clean_task="${task_prefix}cleanTestOrderAffected"
+    local select_task="${task_prefix}testOrderAffected"
 
     # shellcheck disable=SC2086
-    # cleanTestOrderSelect forces re-execution of testOrderSelect: after patch the source
-    # changes, but Gradle's incremental tracking may consider testOrderSelect UP-TO-DATE
+    # cleanTestOrderAffected forces re-execution of testOrderAffected: after patch the source
+    # changes, but Gradle's incremental tracking may consider testOrderAffected UP-TO-DATE
     # when production class files change (class dirs on classpath aren't always tracked).
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "$clean_task" "$select_task" \
         --no-build-cache --no-configuration-cache \
@@ -1373,7 +1373,7 @@ phase_full_gradle() {
     # 5. Select
     log "Step 5: Select top-5"
     # shellcheck disable=SC2086
-    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest testOrderSelect \
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew cleanTest testOrderAffected \
         --no-daemon --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$src_class" \
@@ -1422,7 +1422,7 @@ phase_full_gradle() {
                 fi
             fi
             # shellcheck disable=SC2086
-            JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "${bp_task_prefix}testOrderSelect" \
+            JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "${bp_task_prefix}testOrderAffected" \
                 --no-daemon --no-build-cache --no-configuration-cache \
                 -Dtestorder.changeMode=explicit \
                 -Dtestorder.changed.classes="$classname" \
@@ -1442,7 +1442,7 @@ phase_full_gradle() {
                 log "Step 7b: SA auto-mode (changeMode=uncommitted)"
                 local sa_log="$results/full-bug-sa-select.log"
                 # shellcheck disable=SC2086
-                JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "${bp_task_prefix}testOrderSelect" \
+                JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "${bp_task_prefix}testOrderAffected" \
                     --no-daemon --no-build-cache --no-configuration-cache \
                     -Dtestorder.changeMode=uncommitted \
                     -Dtestorder.affected.topN=5 \

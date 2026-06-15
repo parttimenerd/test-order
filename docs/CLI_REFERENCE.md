@@ -117,12 +117,14 @@ Detects classes changed between the previous commit and HEAD (`git diff HEAD~1..
 ---
 
 #### `since-last-run`
-Compares current file hashes against a snapshot saved by the previous test run. Identifies any source files that changed between the two runs.
+Compares current file hashes against a snapshot saved during the last **learn** run. Identifies any source files that changed since that baseline.
 
-**Pros:** Works without git; portable across VCS-agnostic environments. Captures any file changes regardless of commit history. Automatically updates the snapshot after each run.  
+> **Note:** Despite the name, the source-hash baseline (`hashes.lz4`) is **only updated during learn mode**, not on every run. Multiple consecutive order-mode runs all compare against the same learn-time baseline. Bytecode hashes (`bytecode-hashes.lz4`) are updated every order run. Use `mvn test-order:snapshot` to manually advance the source baseline without a full learn run.
+
+**Pros:** Works without git; portable across VCS-agnostic environments. Captures any file changes regardless of commit history.  
 **Cons:** Hash file must exist at `testorder.hashFile` path (defaults to `.test-order/hashes.lz4`). First run with no snapshot treats all files as changed. Hash files must be preserved between runs (may need to be committed or cached in CI).
 
-**Use when:** Non-git environments, or when you want to test "what changed since last time I ran the test suite."
+**Use when:** Non-git environments, or when you want to test "what changed since the last learn run."
 
 ---
 

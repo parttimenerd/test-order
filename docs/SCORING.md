@@ -261,7 +261,7 @@ Measured learn-run timings on `spring-petclinic` (5 measured runs per mode, base
 
 | Mode | Default use case | Source of truth |
 |---|---|---|
-| `since-last-run` | Local iteration without relying on git history | LZ4 hash snapshots (`.test-order/hashes.lz4`) |
+| `since-last-run` | Local iteration without relying on git history | LZ4 hash snapshots — updated during **learn** runs only (`.test-order/hashes.lz4`) |
 | `since-last-commit` | CI or branch workflows comparing against latest commit | `git diff HEAD~1..HEAD` plus uncommitted overlay |
 | `uncommitted` | Run tests for current workspace edits | staged + unstaged + untracked files |
 | `explicit` | Scripted/manual targeting | `-Dtestorder.changed.classes=...` |
