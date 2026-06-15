@@ -345,6 +345,27 @@ Each test gets a score based on multiple signals. Tests run in descending score 
 
 All weights are configurable. Run `mvn test-order:optimize` to auto-tune them for your project.
 
+### Method-level scoring (optional)
+
+When `testorder.methodOrder.enabled=true`, the plugin also reorders methods within each test class. This uses a separate set of 7 weights (all configurable via `testorder.method.score.*`):
+
+| Weight | Default | What it means |
+|---|---|---|
+| **New method** | 5.0 | Method has no telemetry history yet |
+| **Changed method** | 3.0 | Method source was modified since last run |
+| **Failure recency** | 3.0 | Method failed recently |
+| **Dependency overlap** | 2.0 | Method exercises changed classes (requires `METHOD` instrumentation mode) |
+| **Speed bonus** | 1.0 | Method runs in ≤ 1/8× class median |
+| **Speed penalty** | 1.0 | Method runs in ≥ 8× class median |
+| **Coverage bonus** | 0.0 (opt-in) | Greedy set-cover bonus, replaces `depOverlap` when > 0 |
+
+Enable via `-Dtestorder.methodOrder.enabled=true` or in Gradle DSL:
+```groovy
+testOrder {
+    methodOrderingEnabled = true
+}
+```
+
 For the full formula, weight customization (TOML), and tuning guide: **[docs/SCORING.md](docs/SCORING.md)**
 
 ## Mutation Testing (optional)

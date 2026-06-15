@@ -50,6 +50,8 @@ class TestOrderPluginTaskRegistrationTest {
                 "testOrderInstrument task must be registered");
         assertNotNull(project.getTasks().findByName("testOrderRunTiered"),
                 "testOrderRunTiered task must be registered");
+        assertNotNull(project.getTasks().findByName("testOrderPrepare"),
+                "testOrderPrepare task must be registered");
     }
 
     @Test
@@ -89,6 +91,12 @@ class TestOrderPluginTaskRegistrationTest {
         assertNotNull(runTiered.getDescription());
         assertTrue("test-order".equals(runTiered.getGroup()),
                 "testOrderRunTiered should be in 'test-order' group");
+
+        var prepare = project.getTasks().findByName("testOrderPrepare");
+        assertNotNull(prepare);
+        assertNotNull(prepare.getDescription());
+        assertTrue("test-order".equals(prepare.getGroup()),
+                "testOrderPrepare should be in 'test-order' group");
     }
 
     @Test
@@ -110,6 +118,7 @@ class TestOrderPluginTaskRegistrationTest {
         assertNotNull(project.getTasks().findByName("testOrderReactorOrder"));
         assertNotNull(project.getTasks().findByName("testOrderInstrument"));
         assertNotNull(project.getTasks().findByName("testOrderRunTiered"));
+        assertNotNull(project.getTasks().findByName("testOrderPrepare"));
     }
 
     @Test

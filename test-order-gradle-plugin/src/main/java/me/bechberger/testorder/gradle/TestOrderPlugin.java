@@ -2019,6 +2019,10 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setDescription(
                     "Instrument compiled classes at build time (offline mode). "
                     + "Run before tests with -Dtestorder.instrumentation=offline.");
+            task.dependsOn(project.getTasks().named("classes"));
+            Path instrMappingFile = project.getLayout().getBuildDirectory().get().getAsFile().toPath()
+                    .resolve(".test-order").resolve("class-id-map.bin");
+            task.getOutputs().file(instrMappingFile.toFile());
             task.doLast(t -> {
                 String instrModeStr = Optional.ofNullable(
                         gradleOrSystemProperty(project, "testorder.instrumentation.mode"))
@@ -2463,6 +2467,62 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.doLast(t -> runCompact(project, ext));
         });
 
+        project.getTasks().register("testOrderPrepare", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Validate configuration, restore any offline-instrumented classes, and print which mode "
+                    + "(learn/order/skip) would be used for the next test run. Maven parity for prepare goal.");
+            task.doLast(t -> {
+                // Validate mode parameter
+                String mode = ext.getMode().get();
+                String propMode = gradleOrSystemProperty(project, "testorder.mode");
+                if (propMode != null && !propMode.isBlank()) {
+                    mode = propMode;
+                }
+                if (!mode.equals("auto") && !mode.equals("learn") && !mode.equals("order")
+                        && !mode.equals("skip") && !mode.equals("optimize")) {
+                    throw new GradleException("[test-order] Invalid mode '" + mode
+                            + "'. Valid values: auto, learn, order, skip, optimize.");
+                }
+
+                // Validate instrumentation mode
+                String instrMode = ext.getInstrumentationMode().getOrElse("MEMBER");
+                String propInstrMode = gradleOrSystemProperty(project, "testorder.instrumentation.mode");
+                if (propInstrMode != null && !propInstrMode.isBlank()) {
+                    instrMode = propInstrMode;
+                }
+                if (!instrMode.equalsIgnoreCase("CLASS") && !instrMode.equalsIgnoreCase("METHOD")
+                        && !instrMode.equalsIgnoreCase("MEMBER")) {
+                    throw new GradleException("[test-order] Invalid instrumentationMode '" + instrMode
+                            + "'. Valid values: CLASS, METHOD, MEMBER.");
+                }
+
+                // Restore previously offline-instrumented classes to prevent
+                // NoClassDefFoundError if instrumentation is stale from a prior learn run.
+                Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
+                Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
+                try {
+                    if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir)) {
+                        project.getLogger().lifecycle(
+                                "[test-order] Restored original classes (offline instrumentation reverted).");
+                    }
+                } catch (IOException e) {
+                    project.getLogger().warn("[test-order] Failed to restore instrumented classes: {}",
+                            e.getMessage());
+                }
+
+                // Resolve and print effective mode
+                String effectiveMode = resolveMode(ext, project);
+                Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
+                project.getLogger().lifecycle("[test-order] Configuration validated.");
+                project.getLogger().lifecycle("[test-order] Mode: {} → effective: {}", mode, effectiveMode);
+                project.getLogger().lifecycle("[test-order] Index: {} ({})",
+                        indexPath, Files.exists(indexPath) ? "found" : "not found — will learn on next test run");
+                project.getLogger().lifecycle(
+                        "[test-order] Next 'test' run will execute in {} mode.", effectiveMode);
+            });
+        });
+
         project.getTasks().register("testOrderMetrics", task -> {
             task.setGroup("test-order");
             task.setDescription("Export test-order metrics as JSON for CI/CD dashboards and reporting");
@@ -2532,6 +2592,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  testOrderDiagnose            Validate setup and detect issues");
                 log.lifecycle("  testOrderDetectDependencies  Detect order-dependent tests");
                 log.lifecycle("  testOrderCompact             Rebuild index (remove stale entries)");
+                log.lifecycle("  testOrderPrepare             Validate config, restore classes, print effective mode");
                 log.lifecycle("  testOrderMetrics             Export metrics JSON for CI/CD");
                 log.lifecycle("  testOrderAggregate           Aggregate .deps files into index");
                 if (!project.getSubprojects().isEmpty()) {

@@ -186,6 +186,7 @@ Jump to the relevant table below — properties are organized by purpose:
 | `testorder.hashFile` | `${project.basedir}/.test-order/hashes.lz4` |
 | `testorder.testHashFile` | `${project.basedir}/.test-order/test-hashes.lz4` |
 | `testorder.methodHashFile` | `${project.basedir}/.test-order/method-hashes.lz4` |
+| `testorder.bytecodeHashFile` | `${project.basedir}/.test-order/bytecode-hashes.lz4` |
 
 ### Selection and Change Detection
 
@@ -248,6 +249,8 @@ Writes per-run summaries to `target/` (Maven) / `build/` (Gradle) after each tes
 | `testorder.showOrder.fullNames` | `false` | Use fully qualified class names |
 | `testorder.show.format` | `text` | Output format: `text` or `json` |
 | `testorder.show.filter` | unset | Glob pattern to restrict output. Matches the full FQCN — use `*` to match any prefix (e.g. `*Service*,*Controller*`). Comma-separated patterns use OR semantics. Matching is case-insensitive. |
+| `testorder.show.limit` | `20` | Max tests to display (`-1` = all). Stats (score range, counts) always use the full list. |
+| `testorder.show.explain` | `false` | Show detailed per-test score breakdown (why each test scored as it did). Equivalent to running `test-order:explain`. |
 
 ### Reactor Order
 

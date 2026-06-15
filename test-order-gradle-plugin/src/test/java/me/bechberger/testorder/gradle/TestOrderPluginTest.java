@@ -49,7 +49,7 @@ class TestOrderPluginTest {
         assertTrue(project.getTasks().getNames().containsAll(Set.of(
                 "testOrderAggregate", "testOrderDump", "testOrderExportJson", "testOrderShowOrder", "testOrderExplainOrder",
                 "testOrderOptimize", "testOrderAffected", "testOrderRunRemaining", "testOrderClean",
-                "testOrderInstrument", "testOrderRunTiered")));
+                "testOrderInstrument", "testOrderRunTiered", "testOrderPrepare")));
 
         List<ExternalModuleDependency> runtimeDeps = project.getConfigurations().getByName("testRuntimeOnly")
                 .getDependencies().withType(ExternalModuleDependency.class).stream().collect(Collectors.toList());
