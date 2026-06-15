@@ -226,3 +226,220 @@ The consequence: after a deferred-instrumentation learn run, the instrumented by
 **Fix:** Replaced the backward-walk heuristic with a proper forward scan over the JSON array. Each top-level comment object is parsed with full depth-tracking (using explicit brace counting and string-escape handling). The `"id"` field is only extracted when the parser is at depth 1 (directly inside the comment object), so nested sub-objects are invisible to the ID extraction.  
 **Regression test:** `CiSummaryWriterTest.findExistingCommentId_nestedUserIdNotPickedInsteadOfCommentId`
 
+---
+
+## Bugs Found (Session 6 — 2026-06-15, UNFIXED)
+
+### BUG-93: ~~Offline learn mode does not create test-dependencies.lz4 index file~~ (NOT REPRODUCIBLE)
+
+**File:** N/A  
+**Severity:** ~~CRITICAL~~ → NOT A BUG  
+**Status:** Could not reproduce after proper setup. Offline learn mode correctly creates `test-dependencies.lz4` when project has `.mvn/extensions.xml` configured. Original observation was likely caused by BUG-106 (missing extensions.xml), not an offline instrumentation defect. Confirmed working on `single-test-project`: `test-dependencies.lz4` created correctly via offline instrumentation path.
+
+---
+
+### BUG-94: `head` command silently fails with 5MB limit error in test-order diagnostics
+
+**File:** `scripts/` (test-order workflow diagnostic scripts)  
+**Severity:** LOW (cosmetic, non-blocking)  
+**Symptom:** During the `mvn test-order:dump` step, the output shows `head: illegal byte count -- 5M` warning with a "Dump failed" status. This appears to be an attempt to limit dump output to 5MB, but the `head` command syntax is incorrect.
+
+**Root cause:** The scripts likely use `head -c 5M` or similar, but standard `head` command accepts `-c` with byte counts (e.g., `head -c 5242880`), not suffixes like `5M`. The GNU `head` command may support this, but the error message indicates it's being rejected.
+
+**Steps to reproduce:**
+```bash
+cd third-party/jsoup
+mvn test-order:dump
+# Observe the warning: "head: illegal byte count -- 5M"
+```
+
+**Expected behavior:** The dump output should be limited cleanly without error messages, or the diagnostic output should omit this step entirely.
+
+---
+
+### BUG-95: `OrderReportPrinter.shortenClassName` doesn't abbreviate the class name itself, only packages
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java:190-204`  
+**Severity:** LOW (cosmetic, inconsistent abbreviation)  
+**Symptom:** When `shortNames=true` is used in test reports, `shortenClassName("org.apache.commons.text.similarity.JaroWinklerDistanceTest")` returns `o.a.c.t.similarity.JaroWinklerDistanceTest` — all package segments are abbreviated except the final class name. For long test class names like `PropertiesUtilsWithDefaultPropertiesAndSupplierTest`, this still creates a visual line-wrap.
+
+**Root cause:** The method explicitly only abbreviates package parts (lines 198-201), leaving `parts[parts.length - 1].append('.').append(cls)` where `cls` is the unabbreviated class name.
+
+**Expected behavior:** For true "short names", the class name should also be abbreviated (at least the first character + dot + rest, or to a fixed width). Current behavior makes "short names" not very short for verbose class naming conventions.
+
+**Impact:** Low — cosmetic only, doesn't affect test-order functionality. Reports with many long class names still have visual line-wrapping.
+
+---
+
+### BUG-96: Offline instrumentation with deferred mode doesn't validate that classes were actually instrumented
+
+**File:** `test-order-maven-plugin/…/PrepareMojo.java` or `AbstractTestOrderMojo.java`  
+**Severity:** MEDIUM  
+**Symptom:** When offline instrumentation runs in deferred mode (i.e., `configureOfflineLearnMode` sets `testorder.offline.pending=true` because classes aren't compiled yet, then `performDeferredOfflineInstrumentation` runs later at PROCESS_TEST_CLASSES phase), there is no verification that:
+1. The instrumentation actually succeeded (no check for `.instrumented` marker file)
+2. The backup directory was created
+3. The classes were actually modified
+
+If instrumentation silently fails, the test JVM will run with uninstrumented classes, produce no dependency data, and `stopAndMerge()` will write an empty index file (or none at all). This would not be caught by any diagnostic output.
+
+**Root cause:** `performDeferredOfflineInstrumentation` likely doesn't validate post-instrumentation state the way non-deferred paths do.
+
+**Steps to reproduce:** (Difficult without triggering an artificial instrumentation failure)
+1. Run deferred offline instrumentation on a multi-module project
+2. Simulate instrumentation failure (e.g., permission denied on backup directory)
+3. Observe that test JVM still runs without error, but no index is created
+
+**Expected behavior:** Deferred instrumentation should validate that the backup directory exists and is non-empty before proceeding to test execution. If validation fails, emit a clear error.
+
+---
+
+### BUG-97: Test execution in offline instrumentation doesn't verify socket connectivity to IndexCollectorServer
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/agent/OfflineRuntimeBootstrap.java` (or equivalent test-side initialization)  
+**Severity:** MEDIUM  
+**Symptom:** The test JVM is launched with `-Dtestorder.collector.port=<port>`, but there is no validation that:
+1. The port is reachable from the test JVM
+2. The IndexCollectorServer is actually listening (it may have failed to start in the build process)
+3. Dependency data successfully transmits to the server
+
+If socket communication silently fails, the test runs normally but produces no dependency records. When `stopAndMerge()` is called, `mergedClassDeps` is empty, so the index file is either not written or written as empty.
+
+**Expected behavior:** If the test JVM cannot connect to the collector port, it should log a warning or error, or fall back to .deps file mode. The absence of connectivity should not silently result in an empty index.
+
+---
+
+### BUG-98: `OrderReportPrinter.printShowOrderTable` doesn't handle displayLimit=-1 edge case (show all tests)
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java:47-86`  
+**Severity:** LOW (edge case, works in practice)  
+**Symptom:** The method accepts `-Dtestorder.show.limit=-1` to show all tests (line 60), but the logic at line 63 checks `displayLimit > 0`, which treats -1 the same as any negative value. While the code does work (because `ranked.subList(0, displayLimit)` with displayLimit=-1 fails, falling back to the full list), the condition is semantically confusing:
+- `-1` means "show all" (intentional user input)
+- Any other negative value would also be treated as "show all" (accidental)
+
+**Root cause:** The condition should be `displayLimit > 0 && ranked.size() > displayLimit` (correct), but the semantic intent for -1 is not explicit.
+
+**Expected behavior:** Add a comment clarifying that `displayLimit == -1` means unlimited, or change the condition to explicitly check for -1.
+
+**Impact:** Very low — edge case, code works correctly in practice.
+
+---
+
+### BUG-99: No warning when `testorder.show.limit` produces a large memory summary table
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java:114-140`  
+**Severity:** LOW (performance, informational)  
+**Symptom:** When a user sets `-Dtestorder.show.limit=-1` on a large project (e.g., 5000+ tests), the summary table still computes min/max/count stats across all ranked tests (lines 116-120). For very large projects with expensive `rank()` and aggregation, this could consume significant memory or time. There is no warning or progress indication.
+
+**Expected behavior:** For large test counts (>1000), either:
+1. Skip the summary line when `displayLimit=-1` (user asked for all output anyway)
+2. Add a message like "Computing stats for 5000 tests..." before the expensive aggregation
+
+---
+
+### BUG-100: `TestOrderPluginTest.alwaysLearnInOrderModeAttachesLearnAgent` creates files in temp directory but doesn't use @TempDir isolation properly
+
+**File:** `test-order-gradle-plugin/src/test/java/me/bechberger/testorder/gradle/TestOrderPluginTest.java:307-338`  
+**Severity:** VERY LOW (test infrastructure)  
+**Symptom:** The test creates an index file at `indexFile` and writes bytes to it (line 323), but then calls both `configureOrderMode` (which reads/uses the index) and `configureLearnMode` (which expects to write a new index in learn mode). The test verifies that both mode system properties are set, but doesn't clean up the index file between the two operations. If a future test runs in the same temp directory and reuses `@TempDir`, it might find stale artifacts.
+
+**Root cause:** Minor cleanup issue in test setup.
+
+**Expected behavior:** Either clear the index file between the two operations, or use separate temp directories for the two phases of the test. Low priority — doesn't affect actual plugin behavior, only test isolation.
+
+---
+
+### BUG-101: ~~Offline instrumentation bootstrap fails on first learn run when class-id-map.bin doesn't exist~~ (NOT A BUG)
+
+**Status:** NOT A BUG. When `class-id-map.bin` doesn't exist, `configureOfflineLearnMode` automatically runs `runOfflineInstrumentation` to create it (AbstractTestOrderMojo.java:1984-2001). The code handles first-run correctly.
+
+---
+
+### BUG-102: Pending-run .part files not finalized when using goal-based learn mode invocation
+
+**File:** Likely in `PrepareMojo.java` or `AbstractTestOrderMojo.java`  
+**Severity:** MEDIUM  
+**Symptom:** When running `mvn test-order:learn test` (CLI goal-based mode), the pending run tracking files (`.part` files) are sometimes left in place and not finalized to their final filenames. This prevents subsequent `mvn test-order:show` from loading the complete state, causing scoring to be incomplete or incorrect.
+
+**Root cause:** The distinction between `mvn test` (property-based mode, reliable) and `mvn test-order:learn test` (goal-based mode, unreliable) suggests the goal-based approach isn't properly finalizing state files after completion.
+
+**Workaround:** Use property-based invocation: `mvn clean test -Dtestorder.mode=learn` instead of `mvn test-order:learn test`.
+
+**Steps to reproduce:**
+```bash
+cd single-test-project
+mvn test-order:learn test
+ls -la target/.test-order/ | grep -i part  # May show .part files
+mvn test-order:show  # Scoring may be incomplete
+```
+
+**Expected behavior:** Both goal-based and property-based invocations should produce identical results. The `.part` files should be finalized regardless of invocation method.
+
+---
+
+### BUG-103: Project with many tests (500+) shows all tests in show command by default, causing potential line-wrapping
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java`  
+**Severity:** LOW (cosmetic, usability)  
+**Symptom:** When `mvn test-order:show` is run on a project with 500+ tests, all tests are displayed in the table by default. The output creates a very long terminal listing that wraps across many lines, making it hard to focus on the top-N tests.
+
+**Root cause:** No default display limit is applied. The code supports `-Dtestorder.show.limit=5` to show only top 5, but the default shows all tests.
+
+**Expected behavior:** Consider applying a sensible default limit (e.g., 20 or 50 tests) when not explicitly overridden, with a message like "Showing top 50 tests of 500 (use -Dtestorder.show.limit=20 to see more)".
+
+**Workaround:** Always specify `-Dtestorder.show.limit=N` when running on large projects.
+
+---
+
+### BUG-104: JUnit 4 projects silently don't get test-order tracking (warning logged but no error)
+
+**File:** Multiple files (likely in collector initialization)  
+**Severity:** MEDIUM (silent failure mode)  
+**Symptom:** When test-order is applied to a JUnit 4 project (not JUnit 5/Jupiter), no warnings are logged during build. Tests execute normally, but no dependency data is collected because test-order is designed for JUnit 5 listeners. The build succeeds, but subsequent `mvn test-order:show` produces an empty or nearly-empty report.
+
+**Root cause:** test-order primarily supports JUnit 5 Jupiter (`junit-jupiter`). JUnit 4 tests don't trigger the listener infrastructure, so no telemetry is collected.
+
+**Expected behavior:** The plugin should detect JUnit 4 usage during initialization and either:
+1. Log a clear error: "test-order requires JUnit 5 (jupiter), but project uses JUnit 4. Please upgrade your tests."
+2. Fail the build with an actionable error message, OR
+3. Gracefully disable test-order for JUnit 4 projects with a logged warning (current behavior could be improved with clearer messaging)
+
+**Workaround:** Upgrade to JUnit 5, or don't use test-order on JUnit 4 projects.
+
+---
+
+### BUG-105: DisplayLimit edge case: -1 (unlimited) and any other negative value treated identically
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java:63`  
+**Severity:** VERY LOW (cosmetic, semantic)  
+**Symptom:** The method accepts `-1` to mean "show all tests", but the condition `displayLimit > 0` treats any negative value the same way. A user might accidentally pass `-50` intending to limit to 50, but it would show all tests instead.
+
+**Root cause:** The condition should be more explicit about the `-1` semantics.
+
+**Expected behavior:** Add validation/documentation that only `-1` is valid for "show all", or change behavior to treat negative values as invalid.
+
+---
+
+### BUG-106: Missing `.mvn/extensions.xml` (or `<extensions>true</extensions>`) causes silent loss of multi-module partial-run merging
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/AbstractTestOrderMojo.java`  
+**Severity:** MEDIUM (was overstated as CRITICAL)  
+**Status:** FIXED — warning now emitted by `startCollector()`  
+**Symptom:** When test-order-maven-plugin is NOT loaded as a Maven extension (neither `.mvn/extensions.xml` nor `<extensions>true</extensions>` in pom.xml):
+1. Single-module builds still work — the index IS created via the JVM shutdown-hook fallback
+2. BUT: `CollectorLifecycleParticipant.afterSessionEnd()` is never invoked, so:
+   - Multi-module partial-run records (`.part` files) are NOT merged into state
+   - CI index aggregation is skipped
+   - Run history for multi-module builds is silently lost
+
+**Fix applied:** Added a deduplicated warning in `startCollector()` when `testorder.extensionActive` is not set, prompting the user to add `.mvn/extensions.xml`.
+
+---
+
+### BUG-102: ~~Pending-run .part files not finalized when using goal-based learn mode~~ (NOT A BUG)
+
+**Status:** NOT A BUG. `getOrCreateBuildId()` correctly returns null when the extension is not active, so `.part` files are never created. Run records go directly to state instead. This is intentional.
+
+
+
+
+

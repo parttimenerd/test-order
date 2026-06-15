@@ -1126,6 +1126,22 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * collector, or null on failure.
 	 */
 	protected me.bechberger.testorder.IndexCollectorServer startCollector(Path indexFilePath) {
+		// Warn when the Maven lifecycle extension is not loaded: multi-module
+		// partial-run
+		// merging (mergePartialRunRecords) and CI index aggregation won't work because
+		// CollectorLifecycleParticipant.afterSessionEnd() is never invoked.
+		// Single-module builds still work via the JVM shutdown-hook fallback.
+		boolean extensionActive = session != null && session.getUserProperties() != null
+				&& "true".equals(session.getUserProperties().getProperty("testorder.extensionActive"));
+		if (!extensionActive) {
+			String noExtMsg = "[test-order] WARNING: test-order-maven-plugin is not loaded as a Maven extension."
+					+ " Multi-module partial-run merging and CI aggregation will be skipped."
+					+ " For full functionality add the plugin to .mvn/extensions.xml.";
+			if (session != null && session.getUserProperties() != null
+					&& addToSessionWarnedSet(session.getUserProperties(), noExtMsg)) {
+				getLog().warn(noExtMsg);
+			}
+		}
 		// Stop any existing collector for this index (e.g. from a previous module or
 		// re-run)
 		stopCollectorForIndex(indexFilePath);

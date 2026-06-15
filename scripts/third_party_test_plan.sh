@@ -1358,7 +1358,7 @@ phase_full_gradle() {
     JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew testOrderDump \
         --no-daemon --no-build-cache --no-configuration-cache \
         $extra_args \
-        2>&1 | tee >(head -c 5M > "$results/full-dump.log") | tail -20 || warn "Dump failed"
+        2>&1 | tee >(head -c 5242880 > "$results/full-dump.log") | tail -20 || warn "Dump failed"
 
     # 4. Show order (use testOrderShow; testOrderShowOrder is deprecated and doesn't filter excluded/abstract tests)
     log "Step 4: Show order"
@@ -1822,7 +1822,7 @@ phase_full_maven() {
 
     # 3. Dump state
     log "Step 3: Dump state"
-    mvn me.bechberger:test-order-maven-plugin:dump "${cmd_args[@]}" 2>&1 | tee >(head -c 5M > "$results/full-dump.log") | tail -20 || warn "Dump failed"
+    mvn me.bechberger:test-order-maven-plugin:dump "${cmd_args[@]}" 2>&1 | tee >(head -c 5242880 > "$results/full-dump.log") | tail -20 || warn "Dump failed"
 
     # Also dump as TSV for discriminating-power scoring in find_bug_targets (S15)
     local dump_tsv="$results/full-dump.tsv"
