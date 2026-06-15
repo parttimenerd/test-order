@@ -155,9 +155,10 @@ public final class OrderReportPrinter {
 		}
 		out.printf("Median duration: %dms%n", scorer.medianDuration());
 		out.printf(
-				"Weights: newTest=%d changedTest=%d maxFailure=%d speed=%d speedPenalty=%d depOverlap=%d changeComplexity=%d staticFieldBonus=%d coverageBonus=%d%n",
+				"Weights: newTest=%d changedTest=%d maxFailure=%d speed=%d speedPenalty=%d depOverlap=%d changeComplexity=%d staticFieldBonus=%d coverageBonus=%d killRateBonus=%d packageProximityBonus=%d%n",
 				weights.newTest(), weights.changedTest(), weights.maxFailure(), weights.speed(), weights.speedPenalty(),
-				weights.depOverlap(), weights.changeComplexity(), weights.staticFieldBonus(), weights.coverageBonus());
+				weights.depOverlap(), weights.changeComplexity(), weights.staticFieldBonus(), weights.coverageBonus(),
+				weights.killRateBonus(), weights.packageProximityBonus());
 		out.println();
 
 		for (int i = 0; i < ranked.size(); i++) {

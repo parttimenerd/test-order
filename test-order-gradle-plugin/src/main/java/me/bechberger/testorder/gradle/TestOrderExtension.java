@@ -349,7 +349,7 @@ public abstract class TestOrderExtension {
         getAlwaysLearn().convention(false);
         getSkip().convention(false);
         getTdd().convention(false);
-        getAutoRunRemaining().convention(true);
+        getAutoRunRemaining().convention(false);
         getDumpOutputFile().convention("");
         getCoverageThreshold().convention(2);
         getCoverageOutputDir().convention(project.getLayout().getBuildDirectory().dir("coverage-reports"));

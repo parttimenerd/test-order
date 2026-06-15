@@ -1561,10 +1561,12 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setDescription("Run the prioritized selected subset of tests and write remaining tests to disk");
 
             // For the standalone select task, default to NOT auto-running remaining (parity
-            // with Maven's select goal). Users can opt in via -Dtestorder.auto.runRemaining=true.
-            // The implicit auto mode in the 'test' task still uses the extension default (true).
+            // with Maven's select goal). Users can opt in via testOrder { autoRunRemaining = true }
+            // or -Dtestorder.auto.runRemaining=true.
             String propRunRemaining = gradleOrSystemProperty(project, "testorder.auto.runRemaining");
-            boolean runRemaining = propRunRemaining != null && Boolean.parseBoolean(propRunRemaining);
+            boolean runRemaining = propRunRemaining != null
+                    ? Boolean.parseBoolean(propRunRemaining)
+                    : ext.getAutoRunRemaining().get();
             final boolean effectiveRunRemaining = runRemaining;
             if (runRemaining) {
                 task.finalizedBy("testOrderRunRemaining");
@@ -2020,6 +2022,11 @@ public class TestOrderPlugin implements Plugin<Project> {
                     "Instrument compiled classes at build time (offline mode). "
                     + "Run before tests with -Dtestorder.instrumentation=offline.");
             task.dependsOn(project.getTasks().named("classes"));
+            SourceSetContainer sourceSetsForInstr = project.getExtensions().getByType(SourceSetContainer.class);
+            task.getInputs().files(
+                    sourceSetsForInstr.getByName(SourceSet.MAIN_SOURCE_SET_NAME).getOutput().getClassesDirs())
+                    .withPropertyName("mainClassesDirs")
+                    .withPathSensitivity(org.gradle.api.tasks.PathSensitivity.RELATIVE);
             Path instrMappingFile = project.getLayout().getBuildDirectory().get().getAsFile().toPath()
                     .resolve(".test-order").resolve("class-id-map.bin");
             task.getOutputs().file(instrMappingFile.toFile());
@@ -2511,8 +2518,13 @@ public class TestOrderPlugin implements Plugin<Project> {
                             e.getMessage());
                 }
 
-                // Resolve and print effective mode
-                String effectiveMode = resolveMode(ext, project);
+                // Resolve effective mode — pass null for CI-download callback and depsDir
+                // so that prepare never triggers a CI download or auto-aggregation.
+                PluginContext pctx = buildPluginContext(project, ext);
+                me.bechberger.testorder.ops.ModeResolverOperation.ModeDecision decision =
+                        me.bechberger.testorder.ops.workflows.AutoWorkflow.resolveMode(
+                                pctx, mode, null, null);
+                String effectiveMode = decision.effectiveMode();
                 Path indexPath = ext.getIndexFile().get().getAsFile().toPath();
                 project.getLogger().lifecycle("[test-order] Configuration validated.");
                 project.getLogger().lifecycle("[test-order] Mode: {} → effective: {}", mode, effectiveMode);
