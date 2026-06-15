@@ -331,6 +331,13 @@ public final class MutationAnalysisOperation {
 		// Project test dependencies passed explicitly by the build tool (most reliable)
 		if (extraClasspath != null) {
 			cp.addAll(extraClasspath);
+
+			// PIT's minion needs junit-platform-launcher to initialise
+			// JUnit5TestUnitFinder.
+			// Maven doesn't declare it as a direct test dependency so it may not appear in
+			// extraClasspath — derive it from the junit-platform-engine jar path (same
+			// version, adjacent directory) and add it if not already present.
+			addJunitPlatformLauncher(extraClasspath, cp);
 		}
 
 		// Add jars from target/dependency (if Maven copied them there)
@@ -342,18 +349,73 @@ public final class MutationAnalysisOperation {
 			}
 		}
 
-		// Add jars from the current JVM classpath (covers plugin dependencies)
+		// Add pitest jars from the current JVM classpath.
+		// Only pitest jars — JUnit jars must come from the project's own test classpath
+		// (via extraClasspath) to avoid version conflicts between test-order's JUnit
+		// 6.x
+		// and the project's JUnit 5.x dependencies.
 		String jvmClasspath = System.getProperty("java.class.path", "");
 		if (!jvmClasspath.isBlank()) {
-			cp.addAll(Arrays.asList(jvmClasspath.split(java.io.File.pathSeparator)));
+			for (String entry : jvmClasspath.split(java.io.File.pathSeparator)) {
+				String name = entry.contains(java.io.File.separator)
+						? entry.substring(entry.lastIndexOf(java.io.File.separator) + 1)
+						: entry;
+				if (name.startsWith("pitest")) {
+					cp.add(entry);
+				}
+			}
 		}
 
 		// Also scan classloader URL hierarchy — Maven plugin class-realms do not appear
 		// on java.class.path but their JARs must be visible so PIT can read
-		// HotSwapAgent.class bytes when building the agent JAR.
+		// HotSwapAgent.class bytes when building the agent JAR. Apply same filter.
 		addClassloaderUrls(MutationAnalysisOperation.class.getClassLoader(), cp);
 
 		return cp;
+	}
+
+	/**
+	 * Adds junit-platform-launcher to the classpath if it isn't already there.
+	 * PIT's JUnit 5 plugin needs LauncherFactory (from junit-platform-launcher) but
+	 * Maven projects often don't declare it as a direct test dependency. We derive
+	 * its path from the junit-platform-engine jar (same version, sibling
+	 * directory).
+	 */
+	private static void addJunitPlatformLauncher(List<String> extraClasspath, List<String> cp) {
+		boolean alreadyPresent = cp.stream().anyMatch(e -> e.contains("junit-platform-launcher"));
+		if (alreadyPresent) {
+			return;
+		}
+		// Find junit-platform-engine in the extraClasspath to derive the version
+		for (String entry : extraClasspath) {
+			Path p = Path.of(entry);
+			String name = p.getFileName().toString();
+			if (name.startsWith("junit-platform-engine-") && name.endsWith(".jar")) {
+				// Extract version: "junit-platform-engine-1.11.4.jar" → "1.11.4"
+				String version = name.substring("junit-platform-engine-".length(), name.length() - ".jar".length());
+				// Sibling dir:
+				// .../junit-platform-launcher/<version>/junit-platform-launcher-<version>.jar
+				Path launcherJar = p.getParent().getParent().getParent().resolve("junit-platform-launcher")
+						.resolve(version).resolve("junit-platform-launcher-" + version + ".jar");
+				if (Files.exists(launcherJar)) {
+					cp.add(launcherJar.toAbsolutePath().toString());
+					return;
+				}
+			}
+		}
+	}
+
+	private static void addIfPitOrJunit(String path, List<String> cp) {
+		String name = path.contains(java.io.File.separator)
+				? path.substring(path.lastIndexOf(java.io.File.separator) + 1)
+				: path;
+		// Only add pitest jars from the plugin classloader — JUnit jars
+		// (junit-platform-*,
+		// junit-jupiter-*) must come from the project's own test classpath to avoid
+		// version conflicts between test-order's JUnit 6.x and the project's JUnit 5.x.
+		if (name.startsWith("pitest")) {
+			cp.add(new java.io.File(path).getAbsolutePath());
+		}
 	}
 
 	private static void addClassloaderUrls(ClassLoader cl, List<String> cp) {
@@ -362,7 +424,7 @@ public final class MutationAnalysisOperation {
 		if (cl instanceof java.net.URLClassLoader ucl) {
 			for (java.net.URL url : ucl.getURLs()) {
 				if ("file".equals(url.getProtocol())) {
-					cp.add(new java.io.File(url.getFile()).getAbsolutePath());
+					addIfPitOrJunit(url.getFile(), cp);
 				}
 			}
 		} else {
@@ -372,7 +434,7 @@ public final class MutationAnalysisOperation {
 				java.net.URL[] urls = (java.net.URL[]) getUrls.invoke(cl);
 				for (java.net.URL url : urls) {
 					if ("file".equals(url.getProtocol())) {
-						cp.add(new java.io.File(url.getFile()).getAbsolutePath());
+						addIfPitOrJunit(url.getFile(), cp);
 					}
 				}
 			} catch (Exception ignored) {

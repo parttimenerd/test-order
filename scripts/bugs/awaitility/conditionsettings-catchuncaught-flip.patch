@@ -1,0 +1,13 @@
+diff --git a/awaitility/src/main/java/org/awaitility/core/ConditionSettings.java b/awaitility/src/main/java/org/awaitility/core/ConditionSettings.java
+index 9738e03..c151c80 100644
+--- a/awaitility/src/main/java/org/awaitility/core/ConditionSettings.java
++++ b/awaitility/src/main/java/org/awaitility/core/ConditionSettings.java
+@@ -133,7 +133,7 @@ public class ConditionSettings {
+      * @return a boolean.
+      */
+     public boolean shouldCatchUncaughtExceptions() {
+-        return catchUncaughtExceptions;
++        return !catchUncaughtExceptions;
+     }
+ 
+     /**

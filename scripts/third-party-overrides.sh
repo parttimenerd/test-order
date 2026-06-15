@@ -86,6 +86,9 @@ detect_extra_mvn_args() {
         # when multiple test classes run simultaneously, so we override these to serial execution.
         logbook) echo "-Dparallel=none -Dmaven.test.failure.ignore=true" ;;
         jetty) echo "-Dparallel=none -Djunit.jupiter.execution.parallel.mode.classes.default=same_thread -Dmaven.test.failure.ignore=true -pl '!jetty-ee8,!jetty-demos,!jetty-p2' -am" ;;
+        # spring-petclinic: third-party clone has a broken .git folder (missing commits);
+        # git-commit-id plugin fails even with failOnNoGitDirectory=false. Skip the plugin.
+        spring-petclinic) echo "-Dmaven.gitcommitid.skip=true -Dmaven.test.failure.ignore=true" ;;
         *)          echo "" ;;
     esac
 }
@@ -106,6 +109,10 @@ detect_module_override() {
         # spring-ai: heuristic picks mcp/mcp-annotations (85 tests) but the injected bug
         # is in DefaultToolDefinition which lives in spring-ai-model (70 tests).
         spring-ai) echo "spring-ai-model" ;;
+        # javaparser: heuristic picks javaparser-symbol-solver-testing (285 files) which
+        # skips javaparser-core-testing (230+ tests including RangeTest). Use NONE to
+        # run the full reactor; package filter 'com.github.javaparser' captures both.
+        javaparser) echo "NONE" ;;
         *) echo "" ;;
     esac
 }
@@ -123,6 +130,8 @@ detect_package_override() {
         # misses the 230+ tests in javaparser-core-testing (com.github.javaparser.*).
         # Use the two-level common prefix to capture all test modules.
         javaparser) echo "com.github.javaparser" ;;
+        # pdfbox: all test classes live under org.apache.pdfbox
+        pdfbox) echo "org.apache.pdfbox" ;;
         # maven: heuristic picks org.apache.maven.it (integration tests, 745 files) which are
         # Failsafe IT tests requiring a running Maven process, not Surefire unit tests.
         # Use the 3-level prefix to capture model/core/impl tests while skipping IT infra.
@@ -229,6 +238,10 @@ detect_maven_java_home() {
         # Kotlin compiler in spring-ai-commons also requires JDK 21+.
         # Use 21.0.6-sapmchn (has javac) + enforcer is already skipped via -Denforcer.skip=true.
         spring-ai) _sdkman_java_home "21.0.6-sapmchn" ;;
+        # gson: ProGuard obfuscation plugin (proguard-maven-plugin) needs jmods/java.base.jmod
+        # to process test classes. The system JDK 21 on Linux is a JRE (no jmods/ dir).
+        # SAP JDK 21.0.6 ships with full jmods/ including java.base.jmod.
+        gson) _sdkman_java_home "21.0.6-sapmchn" ;;
         *) echo "" ;;
     esac
 }

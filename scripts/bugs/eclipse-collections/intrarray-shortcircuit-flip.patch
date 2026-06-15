@@ -1,0 +1,13 @@
+diff --git a/eclipse-collections/src/main/java/org/eclipse/collections/impl/utility/internal/InternalArrayIterate.java b/eclipse-collections/src/main/java/org/eclipse/collections/impl/utility/internal/InternalArrayIterate.java
+index d58e4ed..d68a9f2 100644
+--- a/eclipse-collections/src/main/java/org/eclipse/collections/impl/utility/internal/InternalArrayIterate.java
++++ b/eclipse-collections/src/main/java/org/eclipse/collections/impl/utility/internal/InternalArrayIterate.java
+@@ -711,7 +711,7 @@ public final class InternalArrayIterate
+         for (int i = 0; i < size; i++)
+         {
+             T each = array[i];
+-            if (predicate.accept(each) == expected)
++            if (predicate.accept(each) != expected)
+             {
+                 return onShortCircuit;
+             }

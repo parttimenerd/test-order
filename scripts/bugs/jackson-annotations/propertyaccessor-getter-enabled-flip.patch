@@ -1,0 +1,13 @@
+diff --git a/src/main/java/com/fasterxml/jackson/annotation/PropertyAccessor.java b/src/main/java/com/fasterxml/jackson/annotation/PropertyAccessor.java
+index dc13fb7..7ed5ff1 100644
+--- a/src/main/java/com/fasterxml/jackson/annotation/PropertyAccessor.java
++++ b/src/main/java/com/fasterxml/jackson/annotation/PropertyAccessor.java
+@@ -84,7 +84,7 @@ public enum PropertyAccessor
+     }
+ 
+     public boolean getterEnabled() {
+-        return (this == GETTER) || (this == ALL);
++        return (this != GETTER) && (this != ALL);
+     }
+ 
+     public boolean isGetterEnabled() {

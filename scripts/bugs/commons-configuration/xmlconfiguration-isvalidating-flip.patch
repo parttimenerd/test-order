@@ -1,0 +1,15 @@
+diff --git a/src/main/java/org/apache/commons/configuration2/XMLConfiguration.java b/src/main/java/org/apache/commons/configuration2/XMLConfiguration.java
+index 0cb9d73..6153ab4 100644
+--- a/src/main/java/org/apache/commons/configuration2/XMLConfiguration.java
++++ b/src/main/java/org/apache/commons/configuration2/XMLConfiguration.java
+@@ -903,8 +903,8 @@ public class XMLConfiguration extends BaseHierarchicalConfiguration implements F
+      * @return the validating flag.
+      * @since 1.2
+      */
+-    public boolean isValidating() {
+-        return validating;
++    public boolean isValidating() { // BUGGY
++        return !validating;
+     }
+ 
+     /**

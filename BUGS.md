@@ -439,7 +439,483 @@ mvn test-order:show  # Scoring may be incomplete
 
 **Status:** NOT A BUG. `getOrCreateBuildId()` correctly returns null when the extension is not active, so `.part` files are never created. Run records go directly to state instead. This is intentional.
 
+---
+
+### BUG-107: `ChangeDetectionSupport.parseMode("auto")` throws IOException but `isSupportedMode("auto")` returns true
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/ChangeDetectionSupport.java:70`  
+**Severity:** LOW (API inconsistency, potential confusion for future callers)  
+**Symptom:** `isSupportedMode("auto")` returns `true` because `SUPPORTED_CHANGE_MODES` contains `"auto"`. However, calling `parseMode("auto")` directly throws `IOException("Unknown changeMode: auto")` because the switch statement has no `case "auto"` branch.
+
+**Root cause:** `"auto"` is a meta-mode that resolves to either `SINCE_LAST_RUN` or `SINCE_LAST_COMMIT` based on whether a hash snapshot file exists. This resolution logic lives in `resolveMode()`, not `parseMode()`. The two methods have different contracts but this distinction is not surfaced by `isSupportedMode()`.
+
+**Safe path:** All production callers use `resolveMode()` (lines 116, 140), which handles `"auto"` before delegating to `parseMode()`. Direct callers of `parseMode("auto")` would get an unexpected exception.
+
+**Expected behavior:** Either:
+1. Add a `case "auto"` to `parseMode()` that throws with a clear message like `"Use resolveMode() for 'auto' mode — it requires a hashFile path"`, OR
+2. Document the contract difference in `parseMode()` Javadoc, OR
+3. Remove `"auto"` from `SUPPORTED_CHANGE_MODES` and have `isSupportedMode()` handle it separately
+
+**Workaround:** Always use `resolveMode()` instead of `parseMode()` when the mode might be `"auto"`.
+
+---
+
+### BUG-108: Child module aggregation loop mutates cached `DependencyMap` instance, poisoning LOAD_CACHE
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/AbstractTestOrderMojo.java:1376-1395`  
+**Severity:** MEDIUM (data corruption in multi-module reactor scenarios, silent)  
+**Symptom:** When `mvn test-order:show` (or similar) is run at the reactor root and no root index exists, the plugin iterates over child modules to aggregate their indexes. The loop sets `merged = child` on the first iteration, then calls `merged.mergeWith(child2)`, etc. Since `merged` IS the cached instance returned by `DependencyMap.load(childIdx)`, calling `mergeWith()` on it silently mutates the entry stored in `LOAD_CACHE` for `childIdx`.
+
+Any subsequent call to `DependencyMap.load(childIdx)` within the same JVM (before the file is written) returns the corrupted merged instance instead of child module 1's actual data.
+
+**Root cause:** `LOAD_CACHE` stores live mutable references. The comment on the cache says "callers that mutate the returned instance must call save() immediately after — save() evicts the stale cache entry." The child aggregation loop saves to the NEW aggregated `idxPath`, but never evicts or saves back to `childIdx`. The first child's cached entry is left contaminated with all subsequent children's data.
+
+**Affected code:**
+```java
+DependencyMap child = DependencyMap.load(childIdx);  // returns cached instance
+if (merged == null) {
+    merged = child;          // merged IS the cached instance!
+} else {
+    merged.mergeWith(child); // mutates cached instance in place
+}
+// ...
+merged.save(idxPath);        // evicts idxPath, NOT childIdx — stale entry remains
+```
+
+**Expected behavior:** Either:
+1. Make a defensive copy: `merged = new DependencyMap(child)` on first iteration, OR  
+2. Call `DependencyMap.evictCache(childIdx)` after the loop completes, OR
+3. Load child indexes without caching (new API) when they will be mutated
+
+**Workaround:** None automatically — this only affects multi-module scenarios where `DependencyMap.load(childIdx)` is called again in the same JVM after the aggregation loop.
+
+---
+
+### BUG-109: `RunRemainingMojo` silently skips remaining tests when `.consumed` file exists from a prior failed run
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/RunRemainingMojo.java:47-51`  
+**Severity:** MEDIUM (silent test gap — tests that should run are silently not run)  
+**Symptom:** When `mvn test-order:run-remaining test` is interrupted or fails after `run-remaining` has already renamed the file to `.consumed` (but before surefire completes), a subsequent retry of the same command will:
+1. See no remaining-tests file (it's been renamed to `.consumed`)
+2. Log "No remaining-tests file found — nothing to run." at INFO level
+3. Set `skipTests=true` silently
+
+The user has no indication that remaining tests were skipped because of a prior failed run. The `.consumed` file sits on disk with unconsumed tests.
+
+**Root cause:** The file is renamed to `.consumed` before test execution begins (line 60). If the subsequent surefire execution fails (build error, OOM, etc.), the file is gone, and there's no recovery detection on the next run.
+
+**Expected behavior:** When the remaining-tests file is absent, check for a `.consumed` sibling. If found, emit a WARN-level message like:
+```
+[test-order] WARNING: remaining-tests file not found, but test-order-remaining.txt.consumed exists.
+A prior run may have been interrupted. If remaining tests were not fully executed, manually
+rename test-order-remaining.txt.consumed → test-order-remaining.txt to replay them.
+```
+
+**Workaround:** Manually rename `.consumed` back to the original file name before re-running.
+
+---
+
+### BUG-110: `forceSingleForkForOrdering` logs spurious "Overriding Surefire forkCount=<unset>→1" when config is already at defaults
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/SurefireHelper.java:683-706`  
+**Severity:** VERY LOW (cosmetic, confusing log noise)  
+**Symptom:** When `mvn test-order:affected test` is run on a project that doesn't explicitly set `<forkCount>` or `<reuseForks>` in the Surefire configuration, the method logs:
+```
+[test-order] Overriding Surefire forkCount=<unset>→1, reuseForks=<unset>→true so PriorityClassOrderer can reorder selected classes within one JVM.
+```
+But Surefire's defaults ARE `forkCount=1` and `reuseForks=true`, so no actual behavior change occurs. The message implies a real override when none took place.
+
+**Root cause:** `changedFork` and `changedReuse` are computed as "not equal to the value we're setting" rather than "different from Surefire's effective default." When the XML element is absent (`null`), the code treats null as "changed from 1" and "changed from true," even though null means "use default which is 1/true."
+
+**Expected behavior:** Either:
+1. Treat `null` forkCount as equivalent to `"1"` for the change-detection logic, OR
+2. Only emit the INFO log when the original value was something other than the default
+
+**Workaround:** None needed — this is purely a cosmetic issue with no behavioral impact.
+
+---
+
+### BUG-111: `PartialRunAggregator.mergeAndApply` deduplication is non-deterministic when multiple forks ran the same test class
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/PartialRunAggregator.java:134-142`  
+**Severity:** LOW (inconsistent history, subtle APFD drift over multiple builds)  
+**Symptom:** When multiple Surefire forks record the same test class (overlapping test distribution), `mergeAndApply` deduplicates by keeping the first occurrence. The "first occurrence" depends on `Files.list()` ordering, which is filesystem-order (non-deterministic across builds, OS, and file creation timestamps).
+
+**Consequence:** If `FooTest` ran in fork 1 (failed) AND fork 2 (passed due to test isolation), the merged outcome records whichever fork's result `Files.list()` returns first — non-deterministically alternating between pass and fail across retries. This causes flaky `RunRecord` history and inaccurate APFD calculations.
+
+**Root cause:** Line 136-141 deduplicates outcomes using `seen.add(o.testClass())` with iteration order tied to `partFiles` which comes from `Files.list()` (non-deterministic). Combined with deduplication by test class name, the "winner" for overlapping forks is non-deterministic.
+
+**Expected behavior:** When a test class appears in multiple fork `.part` files, prefer the worst-case outcome (failed > passed) to be conservative (safety-first).
+
+**Workaround:** Avoid overlapping test distributions across forks.
+
+---
+
+### BUG-112: `DependencyMap.aggregateFromDepsDirectory` mutates a cached `DependencyMap` instance while holding only a file lock, racing concurrent `load()` callers
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/DependencyMap.java:1742-1943`  
+**Severity:** MEDIUM (data corruption in parallel `mvn -T N` builds with multi-module selective-learn)  
+**Symptom:** In `aggregateFromDepsDirectory`, the code acquires a file lock and loads the existing index:
+```java
+DependencyMap map = load(indexFile);  // returns cached instance from LOAD_CACHE
+...
+map.dependencies.put(entry.getKey(), ...);  // mutates the cached object directly
+map.methodDependencies.put(...);            // more mutations
+map.invertedIndex = null;                   // invalidates lazy cache
+map.save(indexFile);                        // evicts cache entry
+```
+The file lock serializes concurrent `aggregateFromDepsDirectory` calls in the same JVM (via `JVM_LOCKS`). But it does NOT prevent a concurrent `load(indexFile)` call (from another Mojo on another module) from returning the same cached `DependencyMap` instance. That caller sees in-flight mutations: partially-merged dependency sets, null invertedIndex, and possibly a partially-rebuilt `depFrequencies` map.
+
+**Consequence:** Under `mvn -T N` with N ≥ 2, a module B's mojo calling `load(indexFile)` while module A's `aggregateFromDepsDirectory` is mid-merge can observe partially-written or incoherent dependency data. This can cause incorrect test selection or scoring for module B's run.
+
+**Root cause:** `load()` returns a mutable cached instance. The pattern "load → mutate in place → save" is documented as safe only when callers save immediately after mutation (comment at `DependencyMap.java:42`). But `aggregateFromDepsDirectory` mutates the cached object across many steps (two parallel task loops for `.deps` and `.mdeps` files, plus `.members` and `.mmembers` loops), then saves at the end — leaving a wide window where the cache holds a partially-mutated object.
+
+**Expected behavior:** Either (a) `aggregateFromDepsDirectory` should work on a local copy (not the cached instance), and only update the cache after `save()` completes; or (b) the file lock scope should prevent concurrent `load()` calls, e.g. by evicting the cache entry before loading.
+
+**Fix:** Evict the cache entry before loading inside the lock: call `evictCache(indexFile)` before `load(indexFile)` so any concurrent `load()` caller that sneaks in will re-read from disk rather than getting the stale cached object. After `save()`, the cache is properly repopulated on next load.
+
+**Workaround:** Use `mvn -T 1` (single-threaded) to avoid the race.
+
+---
+
+### BUG-113: `TestOrderPlugin.isProjectTargeted` always returns `true` for the root project when qualified task paths are used
+
+**File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java:129-141`  
+**Severity:** LOW (cosmetic — verbose log output on root project when targeting subprojects)  
+**Symptom:** When running `./gradlew :subproject:test` in a multi-project build, `isProjectTargeted(rootProject)` returns `true` even though the root project was not explicitly targeted.
+
+**Root cause:** Line 134 checks `task.startsWith(projectPath.substring(1) + ":")`. For the root project, `projectPath = ":"` so `projectPath.substring(1) = ""`, making the condition `task.startsWith(":")`. Any qualified task path like `:subproject:test` starts with `":"`, so the root project matches unconditionally.
+
+```java
+if (task.startsWith(projectPath + ":") || task.startsWith(projectPath.substring(1) + ":")
+    || (!task.contains(":") && project == project.getRootProject())) {
+    return true;
+}
+```
+
+**Consequence:** The root project uses the verbose `wrapLog` (lifecycle-level) instead of `wrapQuietLog` (debug-level) when computing its mode decision. This causes "New test class(es) detected" and other lifecycle messages to appear on the root project even when the user only targeted a submodule.
+
+**Expected behavior:** The root project should be considered "targeted" only when the task name has no project qualifier (e.g. `test`, not `:subproject:test`), or when it explicitly matches the root project path.
+
+**Fix:** Guard the `projectPath.substring(1) + ":"` check to skip it when `projectPath.length() == 1` (i.e. root project):
+```java
+if (task.startsWith(projectPath + ":") 
+    || (projectPath.length() > 1 && task.startsWith(projectPath.substring(1) + ":"))
+    || (!task.contains(":") && project == project.getRootProject())) {
+    return true;
+}
+```
+
+**Workaround:** Suppress `[test-order]` lifecycle output by running with `--quiet` flag.
+
+---
+
+### BUG-114: `DetectDependenciesOperation` never calls `runner.setDeadline()`, so in-progress subprocesses are never killed when the time budget expires
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/DetectDependenciesOperation.java:205-256`  
+**Severity:** LOW (time budget overrun when individual test runs are slow)  
+**Symptom:** When `testorderDetectDependencies` (or `testOrderDetectDependencies` on Gradle) runs with a `timeBudget`, the deadline is computed at line 207:
+```java
+long deadline = config.timeBudgetSeconds() > 0
+    ? startTime + config.timeBudgetSeconds() * 1000L
+    : Long.MAX_VALUE;
+```
+The `deadline` value is passed to `DetectionContext` (line 255), which algorithms check with `ctx.timeBudgetExhausted()` before starting new runs. However, `runner.setDeadline(deadline)` is **never called**. The `GradleTestRunner` and `MavenTestRunner` both implement `setDeadline()` to kill running subprocesses via `destroyForcibly()`, but since it's never invoked, their `deadlineMillis` field stays at `Long.MAX_VALUE`.
+
+**Consequence:** If the last test run starts just before the deadline (budget check passes), it runs to full completion regardless of how long it takes. For slow test suites, the actual wall-clock time of the detect operation can far exceed `timeBudget`.
+
+**Root cause:** `DetectionContext.run()` calls `runner.run(order)` directly without any deadline-enforcement guard. The `setDeadline()` method on the runner was added precisely to kill in-progress subprocesses, but was never wired from `DetectDependenciesOperation`. Additionally, `MavenTestRunner` does not implement `setDeadline()` at all (only `GradleTestRunner` does), so the Gradle runner would benefit from the fix but the Maven runner still needs its own implementation.
+
+**Expected behavior:** Before the first detection run (after the reference run completes), call `runner.setDeadline(deadline)` so that if any individual subprocess run is still executing when the deadline arrives, it gets force-killed and the runner returns a partial result.
+
+**Fix:** Add `runner.setDeadline(deadline);` after computing `deadline` in `DetectDependenciesOperation.run()`, before calling `algorithm.detect(ctx)`.
+
+**Workaround:** Set `timeBudget` conservatively to account for one full test suite run beyond the budget.
+
+---
+
+### BUG-115: `CombinedAdaptiveAlgorithm.executeMinimize` underestimates run-count for `DeltaDebugging.minimize`, allowing the outer budget to be exceeded
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/detection/CombinedAdaptiveAlgorithm.java:235-236`  
+**Severity:** LOW (run budget overrun in OD detection — more test runs than `maxRuns` allows)  
+**Symptom:** `executeMinimize` delegates to `DeltaDebugging.minimize` with a `runBudget` of 15, then estimates the runs consumed as:
+```java
+int runs = Math.min(15, candidates.size()); // Approximate runs used
+```
+For `candidates.size() < 15`, this caps the estimate at `candidates.size()`, but `DeltaDebugging.minimize` can still use up to 15 runs (the full budget). For example, with 3 candidates and a ddmin tree that requires many small subset trials, `minimize` may use 12 runs while `executeMinimize` reports only 3 to the outer loop's `runsUsed` counter.
+
+**Consequence:** The `runsUsed < maxRuns` guard in the outer `detect()` loop is tricked into continuing past the true budget. This causes more test executions than `estimatedRuns()` intended, which can make OD detection take significantly longer than expected when the candidate sets are small.
+
+**Root cause:** The approximation `Math.min(15, candidates.size())` assumes that ddmin requires at most one run per candidate. In reality, ddmin can use up to `runBudget` runs regardless of the candidate count, because it bisects the problem tree — small sets take roughly `log2(n) * 2` runs, not `n` runs.
+
+**Expected behavior:** The returned run count should be the actual number of `runner.run()` calls made inside `DeltaDebugging.minimize`. This requires either passing a shared counter or returning the consumed run count from `DeltaDebugging.minimize`.
+
+**Fix:** Have `DeltaDebugging.minimize` return a `record MinimizeResult(List<String> minimal, int runsUsed)`, or pass an `AtomicInteger` counter. Alternatively, replace the approximation with `Math.min(15, 2 * (int) Math.ceil(Math.log(Math.max(candidates.size(), 1)) / Math.log(2)) + 1)` as a tighter upper bound.
+
+**Workaround:** Set `timeBudgetSeconds` conservatively to account for the overrun, or accept slightly more test runs than the budget specifies.
 
 
 
 
+
+
+---
+
+### BUG-116: `TestNGTelemetryListener` closes all class tracking boundaries in bulk at `onFinish` instead of when each class completes, polluting per-class dependency data
+
+**File:** `test-order-testng/src/main/java/me/bechberger/testorder/testng/TestNGTelemetryListener.java`  
+**Lines:** `onStart` (line 113), `onFinish` (lines 196–200)
+
+**Symptom:** In learn mode, `bridge.callStartTestClass(className)` is called in `onTestStart` (line 113) when each class first executes — but `bridge.callEndTestClass(className)` is called for **all tracked classes in bulk** at `onFinish` (lines 196–200):
+
+```java
+// onFinish, lines 196–200
+if (learnMode && bridge.isAvailable()) {
+    for (String className : executionOrderSet) {
+        bridge.callEndTestClass(className);   // all classes closed at suite end
+    }
+}
+```
+
+By contrast, the JUnit `TelemetryListener` calls `bridge.callEndTestClass(name)` in `executionFinished` when the class-level container node completes (line 280), meaning each class's tracking window is closed as soon as its last test finishes.
+
+**Consequence:** When TestNG runs class A then class B sequentially, the `UsageStore` tracking window for class A stays open until the entire test suite ends. All of B's field reads, method calls, and allocations during B's tests are recorded as dependencies of A. This causes **cross-class dependency pollution**: A's `.deps` entries include B's dependencies, inflating the conflict graph and producing false-positive OD findings.
+
+In parallel execution (`parallel="classes"`) the pollution is even worse: all classes are open simultaneously, causing every class to absorb the full suite's dependency footprint.
+
+**Root cause:** `executionOrderSet` is populated on the first `onTestStart` call for each class, but there is no `IClassListener` or `onAfterClass` hook being used to close each class boundary when its tests complete. The `onFinish` bulk-close is a correctness placeholder.
+
+**Expected behavior:** Each class should be closed via `bridge.callEndTestClass(className)` immediately after its last test method completes — i.e., when the next test's class name changes, or via a TestNG `IClassListener.afterClass` callback.
+
+**Fix:** Implement `org.testng.IClassListener` (available since TestNG 6.5) and call `bridge.callEndTestClass(testClass.getRealClass().getName())` in `afterClass(ITestClass)`. This provides the correct per-class boundary semantics matching the JUnit implementation.
+
+
+---
+
+### BUG-117: `IndexCollectorServer.stampNewTestsWithModule` races with concurrent handlers, attributing new test-keys to the wrong module
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/IndexCollectorServer.java`  
+**Lines:** 484 and 861–870
+
+**Symptom:** In a parallel fork build with multiple JVMs connecting simultaneously, test-class entries can be stamped with the wrong moduleId. A test class recorded by fork A may end up attributed to the module of fork B.
+
+**Root cause:** The snapshot `testKeysBefore` is taken *outside* any synchronized block (line 484), then `handleBinaryPayload(in)` merges under `synchronized(this)`, and finally `stampNewTestsWithModule` (lines 861–870) iterates `mergedClassDeps.keySet()` to stamp keys not present in the snapshot:
+
+```java
+// handle(), line 484 — snapshot taken with no lock held
+Set<String> testKeysBefore = new HashSet<>(mergedClassDeps.keySet());
+boolean handled = handleBinaryPayload(in);   // merges under synchronized(this)
+stampNewTestsWithModule(testKeysBefore, moduleId);
+```
+
+Between the snapshot at line 484 and the synchronized merge inside `handleBinaryPayload`, another handler thread (fork B) can call its own synchronized merge and insert keys for B's tests into `mergedClassDeps`. When thread A then calls `stampNewTestsWithModule`, those B-keys are not in A's `testKeysBefore` snapshot and get stamped with A's `moduleId` — even though they were inserted by B's merge.
+
+**Consequence:** `mergedTestToModule` maps B's test classes to A's moduleId. Any downstream multi-module logic that partitions test results by module will mis-route B's dependency data.
+
+**Expected behavior:** The snapshot, merge, and stamp should be performed atomically under the same lock, or the stamp should only iterate keys that were actually inserted by the current merge callback (e.g., by having the merge callback return the set of new keys).
+
+---
+
+### BUG-118: `IndexCollectorServer.processFallbackFile` double-processes the fallback file when `AtomicMoveNotSupportedException` is thrown concurrently
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/IndexCollectorServer.java`  
+**Lines:** 957–966
+
+**Symptom:** Fallback dependency payloads can be merged twice into the index, producing doubled dependency counts for affected test classes.
+
+**Root cause:** The claim logic uses an atomic rename to prevent concurrent processing. When `AtomicMoveNotSupportedException` is thrown (filesystem doesn't support atomic moves), the code falls back to processing the original path:
+
+```java
+try {
+    Files.move(fallbackFile, claimedFile, ATOMIC_MOVE);
+} catch (NoSuchFileException | AtomicMoveNotSupportedException e) {
+    if (!Files.exists(fallbackFile)) return false;
+    // Non-atomic fallback: accept the small risk and continue with original path
+    claimedFile = fallbackFile;  // line 966
+}
+```
+
+When two threads hit `AtomicMoveNotSupportedException` concurrently (e.g., both called `Files.move` for the same file on a filesystem that doesn't support atomic moves), both threads execute the `exists()` check, both see the file present, both set `claimedFile = fallbackFile`, and both proceed to read and merge the same file. The comment acknowledges "small risk" but does not document that it results in double-merging.
+
+**Consequence:** All class and method dependencies from the fallback file are merged twice. This inflates dependency counts, potentially causing test-order to over-count overlap scores and mis-rank tests.
+
+**Expected behavior:** On `AtomicMoveNotSupportedException`, only one thread should process the fallback file. A non-atomic file lock (e.g., a `.lock` sentinel file) or a try-rename-with-retry loop would prevent the race.
+
+---
+
+### BUG-119: `APFDCalculator.scoreOutcome` uses raw dep-overlap count but live scorer uses IDF-weighted overlap, making the optimizer optimize the wrong formula
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/APFDCalculator.java`  
+**Lines:** 191–197
+
+**Symptom:** The genetic optimizer (`ScoringOptimizer`) learns weights that are suboptimal for the actual scoring formula used at runtime. Optimized `depOverlap` weights may be systematically over- or under-valued compared to what would actually maximize APFD.
+
+**Root cause:** When `TestScorer.score()` runs live, it computes an IDF-weighted overlap:
+
+```java
+for (String dep : overlapClasses)
+    weightedDepOverlap += depMap.idf(dep);
+int rawDepOverlap = depOverlapScore(weightedDepOverlap, depTotal, weights.depOverlap());
+score += rawDepOverlap;  // uses IDF-weighted sum
+```
+
+But the resulting `TestOutcome` persisted to state only stores `depOverlap` — the raw *count* of overlapping classes — not `weightedDepOverlap`. When `APFDCalculator.scoreOutcome()` later re-scores for the optimizer:
+
+```java
+score += TestScorer.depOverlapScore(outcome.depOverlap(), outcome.depTotal(), weights.depOverlap());
+```
+
+It calls `depOverlapScore` with the raw count, not the IDF sum. Since `depOverlapScore(x, total, w) = w * x / sqrt(max(total, 5))`, the optimizer evaluates different values of `x` than the live scorer used. For any test class whose overlap deps are rare (high IDF), the live score is higher than the optimizer assumes; for tests with common deps, the live score is lower.
+
+**Consequence:** The optimizer's fitness function does not faithfully replicate the scoring function it is trying to optimize. It may converge to weights that maximize count-based APFD rather than IDF-weighted APFD, producing suboptimal test ordering after optimization.
+
+**Expected behavior:** `TestOutcome` should store `weightedDepOverlap` (the IDF-weighted sum), and `APFDCalculator.scoreOutcome()` should use that value instead of `depOverlap` when re-scoring. This would require a schema migration since `TestOutcome` is persisted to state files.
+
+### BUG-120: `CombinedAdaptiveAlgorithm.EXCLUSION_PROBE` actions set `victim` to the excluded test, causing false early-exit via the `confirmedPolluters` guard
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/detection/CombinedAdaptiveAlgorithm.java`  
+**Lines:** 329–350 (`addExclusionProbes`, `addInitialExclusionProbes`) and 178–180 (`executeAction`)
+
+**Symptom:** Exclusion probes scheduled for tests that happen to have been identified as OD victims earlier in the same detection run are silently skipped. This suppresses BRITTLE detection for those tests, causing the algorithm to miss brittle test relationships.
+
+**Root cause:** `addExclusionProbes` and `addInitialExclusionProbes` construct actions with both `victim` and `candidates.get(0)` set to the same test (the excluded test):
+
+```java
+workQueue.add(new Action(ActionType.EXCLUSION_PROBE, 15.0, test, List.of(test)));
+```
+
+But `executeAction` guards on `action.victim`:
+
+```java
+TestKnowledge tk = knowledge.computeIfAbsent(action.victim, k -> new TestKnowledge());
+if (!tk.confirmedPolluters().isEmpty() && action.type != ActionType.CONFIRM_BRITTLE) {
+    return 0;  // Skip — already resolved
+}
+```
+
+For `EXCLUSION_PROBE`, `action.victim` is the test being *excluded* (the potential setter), not the test being *probed for victimhood*. If that excluded test was previously identified as a polluter for some other victim, its `TestKnowledge.confirmedPolluters()` is non-empty (since the same `knowledge` map is keyed by test class name). The guard treats this as "already resolved" and skips the exclusion probe entirely.
+
+**Consequence:** Any test that was identified as a polluter (OD victim) is never used as an exclusion probe, even though it could also be a state-setter for BRITTLE tests. BRITTLE test relationships where the setter test is a known polluter will be missed.
+
+**Expected behavior:** `EXCLUSION_PROBE` actions should use a sentinel (e.g., an empty string or a dedicated marker) for `action.victim`, or `executeAction` should not apply the `confirmedPolluters` guard to `EXCLUSION_PROBE` actions (similar to how it already makes an exception for `CONFIRM_BRITTLE`). The fix: change the guard to `action.type != ActionType.CONFIRM_BRITTLE && action.type != ActionType.EXCLUSION_PROBE`.
+
+---
+
+## Third-Party Synthetic Bug Validation Results (2026-06-15)
+
+The following campaigns validate that test-order's selection correctly prioritizes tests that catch injected synthetic bugs. Each entry records the repo, the patched method, the logical error, and whether the top-3 selected tests caught the bug.
+
+### jackson-annotations — CAUGHT ✓
+
+**Patch:** `scripts/bugs/jackson-annotations/propertyaccessor-getter-enabled-flip.patch`  
+**Changed:** `PropertyAccessor.getterEnabled()` in `com/fasterxml/jackson/annotation/PropertyAccessor.java`  
+**Bug:** Flipped `return (this == GETTER) || (this == ALL)` → `return (this != GETTER) && (this != ALL)` — getter-enabled logic inverted  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### commons-configuration — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-configuration/xmlconfiguration-isvalidating-flip.patch`  
+**Changed:** `XMLConfiguration.isValidating()` in `org/apache/commons/configuration2/XMLConfiguration.java`  
+**Bug:** Flipped `return validating` → `return !validating` — default non-validating XML parser now always validates, causing parse failures for XML configs without DTD  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### okhttp — CAUGHT ✓
+
+**Patch:** `scripts/bugs/okhttp/dns-aaaa-type-bug.patch`  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### resilience4j — CAUGHT ✓
+
+**Patch:** `scripts/bugs/resilience4j/bulkhead-default-concurrent-calls.patch`  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### netty — CAUGHT ✓
+
+**Patch:** `scripts/bugs/netty/netutil-validipv4-flip.patch`  
+**Changed:** `NetUtil.isValidIpV4Address(String, int, int)` in `io/netty/util/NetUtil.java`  
+**Bug:** Flipped `len <= 15 && len >= 7 &&` → `len > 15 || len < 7 ||` — valid IPv4 lengths now rejected, invalid lengths accepted  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### classgraph — MISSED ✗
+
+**Patch (v1):** `scripts/bugs/classgraph/classinfo-isstandardclass-flip.patch`  
+**Changed:** `ClassInfo.isStandardClass()` — flipped to return `(isAnnotation() || isInterface())`  
+**Reason MISSED:** `ClassInfo` depends on >80% of tests; selection signal too weak (top-3 tests don't call `getAllStandardClasses()`)  
+
+**Patch (v2):** `scripts/bugs/classgraph/classinfo-getsuperclass-flip.patch`  
+**Changed:** `ClassInfo.getSuperclass()` — flipped Object null check so non-Object classes return null  
+**Reason MISSED:** Same root cause — `ClassInfo` is too central (80% test coverage); selected top-3 tests don't trigger the flipped code path in assertions  
+
+**Note:** classgraph needs a more targeted patch in a less central class (e.g. `ScanResult.getClassesWithAnnotation()` or a specific feature class) to get discriminating selection.
+
+---
+
+## Synthetic Bug Campaign — 2026-06-15 (continued)
+
+All bugs in this section are **synthetic** (injected for test-order validation). Patches are in `scripts/bugs/<repo>/`.
+
+### classgraph — CAUGHT ✓ (v5)
+
+**Patch:** `scripts/bugs/classgraph/jsonobject-closing-bracket-bug.patch`  
+**Changed:** `JSONObject.toJSONString()` — changed `buf.append('}')` to `buf.append(']')` at object close  
+**Bug:** JSON objects serialize as `{key: value]` (mismatched bracket), causing `JSONParser` to throw `ParseException` when parsing the output  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Note:** Previous patches (v1-v4) MISSED because `ClassInfo`/`ClassMemberInfo` are too central (>50% test coverage) and `ClassInfo.getName()→getSimpleName()` bug didn't affect the actually-selected tests. `JSONObject` is only in 10/110 tests; selected top-3 tests (`Issue310Test`, `JSONSerializationTest`, `Issue314Test`) all call `toJSON()` and detect the malformed JSON.
+
+### hibernate-orm — CAUGHT ✓
+
+**Patch:** `scripts/bugs/hibernate-orm/standard-stack-depth.patch`  
+**Changed:** `StandardStack` — off-by-one or depth computation error  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### javaparser — CAUGHT ✓ (v2)
+
+**Patch:** `scripts/bugs/javaparser/range-contains.patch`  
+**Changed:** `Range.contains(Range other)` — flipped early-return logic: `if (!beginResult) return false` → `return true`  
+**Bug:** `contains()` now returns `true` when `other.begin < this.begin` (range that starts before this range is falsely reported as contained)  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Note:** v1 MISSED because learn phase only ran `javaparser-symbol-solver-testing` module (missing `RangeTest` in `javaparser-core-testing`). Fixed by adding `javaparser) echo "NONE"` to `detect_module_override` in `third-party-overrides.sh` to run the full reactor.
+
+### jsoup — CAUGHT ✓
+
+**Patch:** `scripts/bugs/jsoup/printer-shouldindent.patch`  
+**Changed:** `Printer.shouldIndent()` — flipped indentation logic  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### logging-log4j2 — CAUGHT ✓
+
+**Patch:** `scripts/bugs/logging-log4j2/closeablethreadcontext-put.patch`  
+**Changed:** `CloseableThreadContext` — put logic bug  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### spring-petclinic — CAUGHT ✓
+
+**Patch:** `scripts/bugs/spring-petclinic/petvalidator-supports.patch`  
+**Changed:** `PetValidator.supports()` — validation type check flipped  
+**Bug:** Validator incorrectly rejects valid Pet objects or accepts invalid ones  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Note:** Build initially failed due to `git-commit-id-maven-plugin` requiring git commits in a broken `.git` folder. Fixed by adding `-Dmaven.gitcommitid.skip=true` override in `third-party-overrides.sh`.
+
+### commons-io — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-io/byteorderparser-endian.patch`  
+**Changed:** `ByteOrderParser` — byte order detection flipped  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### commons-text — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-text/alphabetconverter-size.patch`  
+**Changed:** `AlphabetConverter` — size computation error  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### commons-compress — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-compress/flip-byteutils-shift.patch`  
+**Changed:** `ByteUtils` — byte shift direction flipped  
+**Result:** Bug caught in top-3 selected tests ✓
+
+### commons-pool — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-pool/eviction-config-is-positive-flip.patch`  
+**Changed:** `EvictionConfig.isPositive()` — positive check negated  
+**Result:** Bug caught in top-3 selected tests ✓

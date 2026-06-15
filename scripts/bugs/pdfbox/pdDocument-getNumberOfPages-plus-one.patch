@@ -1,0 +1,13 @@
+diff --git a/pdfbox/src/main/java/org/apache/pdfbox/pdmodel/PDDocument.java b/pdfbox/src/main/java/org/apache/pdfbox/pdmodel/PDDocument.java
+index b00c6f0..7c95de1 100644
+--- a/pdfbox/src/main/java/org/apache/pdfbox/pdmodel/PDDocument.java
++++ b/pdfbox/src/main/java/org/apache/pdfbox/pdmodel/PDDocument.java
+@@ -1240,7 +1240,7 @@ public class PDDocument implements Closeable
+      */
+     public int getNumberOfPages()
+     {
+-        return getDocumentCatalog().getPages().getCount();
++        return getDocumentCatalog().getPages().getCount() + 1;
+     }
+ 
+     /**

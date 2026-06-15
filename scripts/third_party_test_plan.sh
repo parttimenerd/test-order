@@ -43,6 +43,7 @@ MAVEN_REPOS=(
     "jackson-databind"
     "gson"
     "jsoup"
+    "pdfbox"
     "javaparser"
     "commons-collections"
     "commons-io"

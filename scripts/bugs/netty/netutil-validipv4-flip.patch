@@ -1,0 +1,31 @@
+diff --git a/common/src/main/java/io/netty/util/NetUtil.java b/common/src/main/java/io/netty/util/NetUtil.java
+index 418dd89..d9fde32 100644
+--- a/common/src/main/java/io/netty/util/NetUtil.java
++++ b/common/src/main/java/io/netty/util/NetUtil.java
+@@ -642,7 +642,7 @@ public final class NetUtil {
+     private static boolean isValidIpV4Address(String ip, int from, int toExcluded) {
+         int len = toExcluded - from;
+         int i;
+-        return len <= 15 && len >= 7 &&
++        return len > 15 || len < 7 ||
+                 (i = ip.indexOf('.', from + 1)) > 0 && isValidIpV4Word(ip, from, i) &&
+                 (i =  ip.indexOf('.', from = i + 2)) > 0 && isValidIpV4Word(ip, from - 1, i) &&
+                 (i =  ip.indexOf('.', from = i + 2)) > 0 && isValidIpV4Word(ip, from - 1, i) &&
+@@ -653,7 +653,7 @@ public final class NetUtil {
+     private static boolean isValidIpV4Address(AsciiString ip, int from, int toExcluded) {
+         int len = toExcluded - from;
+         int i;
+-        return len <= 15 && len >= 7 &&
++        return len > 15 || len < 7 ||
+                 (i = ip.indexOf('.', from + 1)) > 0 && isValidIpV4Word(ip, from, i) &&
+                 (i =  ip.indexOf('.', from = i + 2)) > 0 && isValidIpV4Word(ip, from - 1, i) &&
+                 (i =  ip.indexOf('.', from = i + 2)) > 0 && isValidIpV4Word(ip, from - 1, i) &&
+@@ -664,7 +664,7 @@ public final class NetUtil {
+     private static boolean isValidIpV4Address0(CharSequence ip, int from, int toExcluded) {
+         int len = toExcluded - from;
+         int i;
+-        return len <= 15 && len >= 7 &&
++        return len > 15 || len < 7 ||
+                 (i = indexOf(ip, '.', from + 1)) > 0 && isValidIpV4Word(ip, from, i) &&
+                 (i =  indexOf(ip, '.', from = i + 2)) > 0 && isValidIpV4Word(ip, from - 1, i) &&
+                 (i =  indexOf(ip, '.', from = i + 2)) > 0 && isValidIpV4Word(ip, from - 1, i) &&

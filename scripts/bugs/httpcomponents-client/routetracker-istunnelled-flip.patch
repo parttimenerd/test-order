@@ -1,0 +1,13 @@
+diff --git a/httpclient5/src/main/java/org/apache/hc/client5/http/RouteTracker.java b/httpclient5/src/main/java/org/apache/hc/client5/http/RouteTracker.java
+index d0e6ba0..d15591c 100644
+--- a/httpclient5/src/main/java/org/apache/hc/client5/http/RouteTracker.java
++++ b/httpclient5/src/main/java/org/apache/hc/client5/http/RouteTracker.java
+@@ -262,7 +262,7 @@ public TunnelType getTunnelType() {
+ 
+     @Override
+     public boolean isTunnelled() {
+-        return this.tunnelled == TunnelType.TUNNELLED;
++        return this.tunnelled != TunnelType.TUNNELLED;
+     }
+ 
+     @Override

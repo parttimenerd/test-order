@@ -1,0 +1,13 @@
+diff --git a/assertj-core/src/main/java/org/assertj/core/internal/Strings.java b/assertj-core/src/main/java/org/assertj/core/internal/Strings.java
+index c7484a5..35a60d4 100644
+--- a/assertj-core/src/main/java/org/assertj/core/internal/Strings.java
++++ b/assertj-core/src/main/java/org/assertj/core/internal/Strings.java
+@@ -141,7 +141,7 @@ public class Strings {
+   }
+ 
+   private static boolean hasContent(CharSequence s) {
+-    return s.length() > 0;
++    return s.length() == 0;
+   }
+ 
+   public void assertHasSize(AssertionInfo info, CharSequence actual, int expectedSize) {

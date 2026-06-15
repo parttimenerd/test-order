@@ -1,0 +1,22 @@
+diff --git a/src/main/java/nonapi/io/github/classgraph/json/JSONSerializer.java b/src/main/java/nonapi/io/github/classgraph/json/JSONSerializer.java
+index 63f2395..933cb0b 100644
+--- a/src/main/java/nonapi/io/github/classgraph/json/JSONSerializer.java
++++ b/src/main/java/nonapi/io/github/classgraph/json/JSONSerializer.java
+@@ -184,7 +184,7 @@ public final class JSONSerializer {
+             }
+             // Special handling for class references: Convert to class name string
+             if (val instanceof Class) {
+-                convertedVals[i] = ((Class<?>) val).getName();
++                convertedVals[i] = ((Class<?>) val).getSimpleName();
+             }
+         }
+         // Pass 2: Recursively convert items in standard objects, maps, collections and arrays to JSON objects.
+@@ -253,7 +253,7 @@ public final class JSONSerializer {
+ 
+         // For class references, return class name as a string
+         if (obj instanceof Class) {
+-            return ((Class<?>) obj).getName();
++            return ((Class<?>) obj).getSimpleName();
+         }
+ 
+         // For null and basic value types, just return value

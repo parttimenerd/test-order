@@ -1,0 +1,13 @@
+diff --git a/src/main/java/io/github/classgraph/ClassInfo.java b/src/main/java/io/github/classgraph/ClassInfo.java
+index dfc691a..521f3a4 100644
+--- a/src/main/java/io/github/classgraph/ClassInfo.java
++++ b/src/main/java/io/github/classgraph/ClassInfo.java
+@@ -1335,7 +1335,7 @@ public class ClassInfo extends ScanResultObject implements Comparable<ClassInfo>
+      * @return true if this class is a standard class (i.e. is not an annotation or interface).
+      */
+     public boolean isStandardClass() {
+-        return !(isAnnotation() || isInterface());
++        return (isAnnotation() || isInterface());
+     }
+ 
+     /**

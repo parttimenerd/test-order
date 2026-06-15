@@ -1,0 +1,13 @@
+diff --git a/src/main/java/io/github/classgraph/ClassInfo.java b/src/main/java/io/github/classgraph/ClassInfo.java
+index dfc691a..ff2a98d 100644
+--- a/src/main/java/io/github/classgraph/ClassInfo.java
++++ b/src/main/java/io/github/classgraph/ClassInfo.java
+@@ -1849,7 +1849,7 @@ public class ClassInfo extends ScanResultObject implements Comparable<ClassInfo>
+             throw new IllegalArgumentException("More than one superclass: " + superClasses);
+         } else {
+             final ClassInfo superclass = superClasses.iterator().next();
+-            if (superclass.getName().equals("java.lang.Object")) {
++            if (!superclass.getName().equals("java.lang.Object")) {
+                 return null;
+             } else {
+                 return superclass;

@@ -1,0 +1,13 @@
+diff --git a/jimfs/src/main/java/com/google/common/jimfs/File.java b/jimfs/src/main/java/com/google/common/jimfs/File.java
+index 9a9deeb..39e8d64 100644
+--- a/jimfs/src/main/java/com/google/common/jimfs/File.java
++++ b/jimfs/src/main/java/com/google/common/jimfs/File.java
+@@ -69,7 +69,7 @@ public abstract class File {
+ 
+   /** Returns whether or not this file is a directory. */
+   public final boolean isDirectory() {
+-    return this instanceof Directory;
++    return !(this instanceof Directory);
+   }
+ 
+   /** Returns whether or not this file is a regular file. */

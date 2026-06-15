@@ -1,0 +1,13 @@
+diff --git a/core/src/com/google/inject/Scopes.java b/core/src/com/google/inject/Scopes.java
+index 0442d80..97fec8f 100644
+--- a/core/src/com/google/inject/Scopes.java
++++ b/core/src/com/google/inject/Scopes.java
+@@ -79,7 +79,7 @@ public class Scopes {
+ 
+         @Override
+         public Boolean visitEagerSingleton() {
+-          return true;
++          return false;
+         }
+       };
+ 
