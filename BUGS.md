@@ -1527,6 +1527,17 @@ This is internally inconsistent: the write path at line 842 already uses the cor
 
 ---
 
+### BUG-144: `CoverageOperation.analyze` uses `hasMemberDeps()` but calls `getMemberDeps()`, producing empty member coverage when only per-method deps exist
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/coverage/CoverageOperation.java` line 52  
+**Severity:** MEDIUM (member-level coverage report is silently empty when instrumentation only populated `methodMemberDepsMap`)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** `analyze()` gates the member-data path at line 52 with `depMap.hasMemberDeps()`, which (after BUG-141 fix) returns true if either `memberDepsMap` or `methodMemberDepsMap` is non-empty. But the loop at line 73 calls `depMap.getMemberDeps(testClass)`, which reads only from `memberDepsMap`. If instrumentation populated only `methodMemberDepsMap` (method-granularity recording), `hasMemberData` is true, the loop runs, but `getMemberDeps` returns empty sets for every test class — `prodMemberToTests` stays empty. The result: all `ClassCoverage` entries are constructed without member data (the else branch at line 106), even though MEMBER-mode data exists. The coverage report shows no member coverage at all.  
+**Root cause:** `hasMemberDeps()` was widened by BUG-141 to check both maps, but `CoverageOperation` (which only reads class-level data) was not updated to use the narrower `hasClassMemberDeps()` gate.  
+**Fix:** Replace `depMap.hasMemberDeps()` with `depMap.hasClassMemberDeps()` at line 52.
+
+---
+
 ### BUG-140: `JavaParserModel.visitType` does not extract compact record constructors
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/JavaParserModel.java` lines 111–112  

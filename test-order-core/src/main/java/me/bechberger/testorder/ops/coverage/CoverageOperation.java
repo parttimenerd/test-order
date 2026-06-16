@@ -49,7 +49,7 @@ public final class CoverageOperation {
 	 */
 	public static CoverageAnalysis analyze(DependencyMap depMap, PluginLog log) {
 		log.info("Analyzing coverage from dependency map (" + depMap.size() + " test classes)");
-		boolean hasMemberData = depMap.hasMemberDeps();
+		boolean hasMemberData = depMap.hasClassMemberDeps();
 
 		// 1. Build inverse map: production class → set of exercising test classes
 		// Exclude test classes (and their inner classes) — they are not production
