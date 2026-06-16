@@ -1391,7 +1391,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                     Path buildDir = project.getLayout().getBuildDirectory().getAsFile().get().toPath();
                     me.bechberger.testorder.ops.MutationAnalysisOperation
                             .run(new me.bechberger.testorder.ops.MutationAnalysisOperation.Config(indexFile, stateFile,
-                                    outputPath, projectRoot, targetClassesStr, timeBudget, wrapLog(project), List.of(),
+                                    outputPath, projectRoot, targetClassesStr, timeBudget, wrapLog(project),
+                                    List.<String>of(),
                                     buildDir.resolve("classes/java/main"), buildDir.resolve("classes/java/test"),
                                     buildDir.resolve("pit-reports")));
                 } catch (IOException e) {
@@ -1610,7 +1611,10 @@ public class TestOrderPlugin implements Plugin<Project> {
                 // Parity with Maven AffectedMojo: validate topN/randomM before running
                 // so invalid combinations (e.g. topN=-2, randomM=-1) fail immediately.
                 int topN = resolveSelectTopN(project, ext);
-                int randomM = resolveSelectRandomM(project, ext);
+                // Maven AffectedMojo defaults randomM=0 (no random sampling in affected mode).
+                // Maven AutoMojo defaults randomM=10. Match that split: use 0 here unless the
+                // user explicitly configured selectRandomM in the DSL or via system property.
+                int randomM = resolveSelectRandomMAffected(project, ext);
                 try {
                     new ParameterValidator(wrapLog(project)).validateSelectParameters(topN, randomM);
                 } catch (IllegalArgumentException e) {
@@ -3729,26 +3733,14 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static void configureDerivedTestTask(Project project, TestOrderExtension ext, Test task) {
-        SourceSetContainer sourceSets = project.getExtensions().findByType(SourceSetContainer.class);
-        if (sourceSets != null) {
-            SourceSet testSourceSet = sourceSets.findByName(SourceSet.TEST_SOURCE_SET_NAME);
-            if (testSourceSet != null) {
-                task.setTestClassesDirs(testSourceSet.getOutput().getClassesDirs());
-                task.setClasspath(testSourceSet.getRuntimeClasspath());
-                // Re-set at execution time in case the FileCollection resolved empty at
-                // configuration time (complex multi-module projects, e.g. spring-boot).
-                final SourceSet capturedSourceSet = testSourceSet;
-                task.doFirst("testOrderRefreshTestClassesDirs",
-                        t -> ((Test) t).setTestClassesDirs(capturedSourceSet.getOutput().getClassesDirs()));
-            }
-        }
+        // Defer testClassesDirs/classpath/dependsOn setup to when the Java plugin is applied.
+        // In projects that use withType(Test.class) in a convention plugin (e.g. spring-boot's
+        // JavaConventions), our lazy task config fires during project configuration — before the
+        // subproject's own `plugins {}` block has run. Using withType(JavaPlugin.class) ensures
+        // we wire the source set only after the Java plugin (and thus the "test" source set) exists.
+        // If Java is already applied, withType fires immediately (synchronously).
+        project.getPlugins().withType(JavaPlugin.class, ignored -> wireDerivedTaskSourceSet(project, task));
         task.useJUnitPlatform();
-        if (project.getTasks().findByName("test") != null) {
-            task.shouldRunAfter(project.getTasks().named("test"));
-        }
-        if (project.getTasks().findByName("testClasses") != null) {
-            task.dependsOn(project.getTasks().named("testClasses"));
-        }
         task.systemProperty("testorder.state.path",
                 ext.getStateFile().get().getAsFile().getAbsolutePath());
         // Clear any task-level include patterns that were added by build conventions
@@ -3759,6 +3751,17 @@ public class TestOrderPlugin implements Plugin<Project> {
         // convention. If the project uses JDK < 17, override to ensure the test-order agent
         // (compiled for 17+) can load. We prefer JavaToolchainService; fall back to setExecutable.
         ensureJdk17OrHigher(project, task);
+    }
+
+    private static void wireDerivedTaskSourceSet(Project project, Test task) {
+        SourceSetContainer sourceSets = project.getExtensions().findByType(SourceSetContainer.class);
+        if (sourceSets == null) return;
+        SourceSet testSourceSet = sourceSets.findByName(SourceSet.TEST_SOURCE_SET_NAME);
+        if (testSourceSet == null) return;
+        task.setTestClassesDirs(testSourceSet.getOutput().getClassesDirs());
+        task.setClasspath(testSourceSet.getRuntimeClasspath());
+        task.dependsOn(project.getTasks().named("testClasses"));
+        task.shouldRunAfter(project.getTasks().named("test"));
     }
 
     private static void ensureJdk17OrHigher(Project project, Test task) {
@@ -3947,6 +3950,28 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
         }
         return ext.getSelectRandomM().get();
+    }
+
+    /**
+     * Resolves randomM for {@code testOrderAffected}, matching Maven {@code AffectedMojo}'s
+     * default of 0 (no random fast-test sampling). The extension {@code selectRandomM}
+     * convention of 10 matches Maven's {@code AutoMojo}, not the affected goal — so a
+     * dedicated {@code affectedSelectRandomM} property (default 0) is used instead.
+     * <p>
+     * Precedence: system/gradle property {@code testorder.affected.randomM} →
+     * {@code affectedSelectRandomM} DSL value.
+     */
+    private static int resolveSelectRandomMAffected(Project project, TestOrderExtension ext) {
+        String override = gradleOrSystemProperty(project, "testorder.affected.randomM");
+        if (override != null && !override.isBlank()) {
+            try {
+                return Integer.parseInt(override);
+            } catch (NumberFormatException e) {
+                throw new GradleException("[test-order] Invalid value for testorder.affected.randomM: '"
+                        + override + "' (expected integer)");
+            }
+        }
+        return ext.getAffectedSelectRandomM().get();
     }
 
     // -----------------------------------------------------------------------

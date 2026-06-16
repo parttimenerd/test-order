@@ -840,14 +840,22 @@ For `EXCLUSION_PROBE`, `action.victim` is the test being *excluded* (the potenti
 
 ---
 
-### BUG-124: `configureDerivedTestTask` sets `testClassesDirs` to an empty FileCollection for subprojects without test output at configuration time, causing Gradle to report NO-SOURCE ✓ FIXED
+### BUG-124: `configureDerivedTestTask` sets `testClassesDirs` to an empty FileCollection for subprojects without test output at configuration time, causing Gradle to report NO-SOURCE ✓ FIXED (re-fixed again)
 
 **File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java` line 3733  
-**Severity:** MEDIUM (feature gap: selected subprojects silently produce NO-SOURCE instead of running tests)  
-**Status:** Fixed — added `doFirst("testOrderRefreshTestClassesDirs", ...)` to re-set `testClassesDirs` at execution time from the live SourceSet, after `testClasses` has run.  
-**Symptom:** In complex multi-module Gradle builds (e.g. spring-boot), some subprojects (like `spring-boot-batch`) have a `test` SourceSet whose `getOutput().getClassesDirs()` resolves to an empty `FileCollection` at Gradle's **configuration phase**. When `configureDerivedTestTask` calls `task.setTestClassesDirs(emptyFileCollection)`, Gradle sees no test inputs and marks the task as `NO-SOURCE` — the task never executes, even though the module's tests are in the dependency index and the patch targets that module.  
-**Root cause:** `getOutput().getClassesDirs()` for certain SourceSets may not be fully configured at the time the `testOrderAffected` task is registered (configuration vs execution phase mismatch). Gradle's task skipping logic treats an empty `testClassesDirs` as "no test sources" → NO-SOURCE.  
-**Evidence:** spring-boot campaign: `:module:spring-boot-batch:testOrderAffected` consistently returns `NO-SOURCE` even though `spring-boot-batch` tests are in the 1.3MB index and the `job-exit-code-eq-zero.patch` targets that module.
+**Severity:** HIGH (testOrderAffected/testOrderLearn/etc. report NO-SOURCE on ALL subprojects in multi-module builds like spring-boot and kafka)  
+**Status:** Fixed (re-fixed 2026-06-16, final fix confirmed 2026-06-16) — multiple intermediate fixes failed:
+1. `doFirst("testOrderRefreshTestClassesDirs")` — failed because `@SkipWhenEmpty` fires before doFirst
+2. `task.dependsOn("testClasses")` string form — failed because testClasses doesn't exist on all projects (e.g. spring-boot-antlib has java-library but no src/test)
+3. `task.dependsOn(project.getTasks().named("testClasses"))` inside `if (testSourceSet != null)` — failed because `sourceSets.findByName("test")` returns null when the task config lambda fires during configuration (see root cause below)
+4. `withPlugin("java", callback)` — failed because `withPlugin` fires during java-base plugin application (before JavaPlugin.apply() creates source sets), so SourceSetContainer is empty
+
+**Final root cause:** When a convention plugin calls `project.getTasks().withType(Test.class, action)`, it forces all Test tasks to be realized eagerly during project configuration. Our lazy task config lambdas (registered via `tasks.register("testOrderAffected", ...)`) fire at this point — but because the subproject's own `plugins {}` block may not have run yet (or is in the middle of running), `sourceSets.findByName("test")` returns null.
+
+**Final fix:** Use `project.getPlugins().withType(JavaPlugin.class, callback)` inside the task config to defer source-set wiring until AFTER `JavaPlugin.apply()` completes (not just when the plugin ID is registered as `withPlugin("java")` does). `withType(JavaPlugin.class)` fires after `JavaPlugin`'s full `apply()`, at which point "main" and "test" source sets are populated. Extracted as `wireDerivedTaskSourceSet(project, task)`.
+
+**Symptom:** In complex multi-module Gradle builds (e.g. spring-boot Gradle 9.4.1), ALL subprojects' `testOrderAffected` tasks return `NO-SOURCE` — even subprojects with compiled test classes.  
+**Evidence:** spring-boot campaign: every subproject's `testOrderAffected` shows `NO-SOURCE`; confirmed by debug logging showing `sourceSets.getNames()=[]` when task config fires.
 
 ---
 
@@ -1602,3 +1610,62 @@ In contrast, `SourceFileModel.findMethodIslands` handles compact constructors vi
 **Symptom:** The mojo accepted no parameters to override the compiled classes directories. With the BUG-126 fix, `MutationAnalysisOperation.Config` gained `classesDir` and `testClassesDir` optional fields, but the Maven mojo never exposed them as `@Parameter` fields, making them inaccessible from Maven.
 **Fix:** Added `@Parameter(property = "testorder.mutations.classesDir")` and `@Parameter(property = "testorder.mutations.testClassesDir")` fields to `MutationAnalyzeMojo`, with corresponding `MUTATIONS_CLASSES_DIR` / `MUTATIONS_TEST_CLASSES_DIR` constants in `MavenPluginConfigKeys`.
 
+
+---
+
+### BUG-150: `PrepareMojo` never calls `trainAndPredict()` or `writePredictions()`, making ML prediction a no-op at runtime
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/PrepareMojo.java`
+**Severity:** HIGH (the entire ML failure prediction pipeline was architecturally incomplete — P(fail) scores were never computed or written during `mvn test`)
+**Status:** FIXED (2026-06-16)
+**Symptom:** `TestFailurePredictor.trainAndPredict()` and `writePredictions()` were only called from display goals (`ShowMojo`, `ShowAllMojo`, `DashboardMojo`). During normal `mvn test`, `PrepareMojo.executeOrderMode()` had zero ML code. `PriorityClassOrderer.loadMLPredictions()` tried to read `ml-predictions.properties` (via `TestOrderConfig.ML_PREDICTIONS_FILE`), but the file was never created, so it always returned `Map.of()`. The ML bonus scoring block in `PriorityClassOrderer` (lines 177–197) was dead code in every production test run. `TestHealthAnalyzer` output was similarly never used by any ordering path.
+**Root cause:** The `trainAndPredict()` + `writePredictions()` pipeline was implemented in the Maven plugin module but never wired into the prepare/order path. The `testorder.ml.enabled` config constant existed but was never read by `PrepareMojo`.
+**Fix:** Added `mlEnabled` `@Parameter(property = "testorder.ml.enabled", defaultValue = "false")` to `PrepareMojo`. After `writeOrdererConfig()`, when `mlEnabled=true`, calls `generateAndWriteMLPredictions()` which: loads the dependency map, calls `TestFailurePredictor.trainAndPredict()` with the current change set, writes predictions to `target/test-order-runtime/ml-predictions.properties`, and appends `testorder.ml.enabled=true` and `testorder.ml.predictions.file=<path>` to the runtime config so `PriorityClassOrderer` loads them in the forked JVM. Failures are warned but non-fatal.
+
+---
+
+### BUG-151: `CollectorLifecycleParticipant` never appends completed test runs to ML history, starving the prediction model of training data
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/CollectorLifecycleParticipant.java` + `AbstractTestOrderMojo.java` + `PrepareMojo.java`
+**Severity:** HIGH (ML predictions can never improve over time; every session starts cold with zero history)
+**Status:** FIXED (2026-06-16)
+**Symptom:** `MLHistoryPersistence.append()` was never called anywhere in production code. Even with `testorder.ml.enabled=true`, each Maven session would find an empty `history.lz4` (or no file at all) and skip prediction. There was no mechanism to accumulate the test outcome history that the ML model requires for training.
+**Root cause:** The ML history pipeline was architecturally incomplete — the record-after-test-run step was never implemented.
+**Fix:** Added `PendingMLHistory` record to `AbstractTestOrderMojo`. `PrepareMojo.generateAndWriteMLPredictions()` registers a `PendingMLHistory` for every order-mode run (not just when predictions are generated), capturing the `historyFile` path, `stateFile` path, and changed classes. `CollectorLifecycleParticipant.afterSessionEnd()` calls `appendMLHistories()` which reads the most recent `RunRecord` from the state file, converts it to an `MLRunRecord`, and appends it to `history.lz4` (capped at 200 runs). This runs after `mergePartialRunRecords()` so the state file reflects the complete merged run.
+
+---
+
+### BUG-152: `AnalyzeMojo` reads ML history from wrong path (`stateDir/ml/history.lz4` vs `.test-order/ml-history/history.lz4`)
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/AnalyzeMojo.java` line 45
+**Severity:** LOW (AnalyzeMojo is deprecated; the wrong path means it always loads empty history)
+**Status:** FIXED (2026-06-16)
+**Symptom:** `AnalyzeMojo.execute()` constructs `historyFile = stateDir.resolve("ml").resolve("history.lz4")` but `AbstractTestOrderMojo.resolveMLHistoryDir()` returns `ctx.resolveBaseDir().resolve("ml-history")` (i.e., `.test-order/ml-history/`). The two paths diverge: `AnalyzeMojo` reads from `.test-order/ml/history.lz4` while all other code writes to `.test-order/ml-history/history.lz4`. `AnalyzeMojo` always loads empty history.
+**Root cause:** `AnalyzeMojo` predates the standardization of `resolveMLHistoryDir()` and was not updated when the path convention was established.
+
+---
+
+### BUG-153: Gradle `testOrderAffected` task selects tests but never executes them on multi-module projects (e.g. kafka, spring-boot) ✓ FIXED
+
+**File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java` lines 1563-1725
+**Severity:** HIGH (testOrderAffected appears to work — selection messages print — but no tests actually run; BUILD SUCCESSFUL is misleading)
+**Status:** Fixed (2026-06-16) — same root cause as BUG-124 final fix: `configureDerivedTestTask` failed to wire source set and dependsOn because `sourceSets.findByName("test")` returned null when the task config fired during project configuration (before JavaPlugin had populated source sets). Fixed by using `project.getPlugins().withType(JavaPlugin.class, callback)` to defer source-set wiring until after JavaPlugin.apply() completes. Confirmed by spring-boot campaign: 1/1 bugs CAUGHT after fix, previously all UNKNOWN.
+**Symptom:** In Gradle multi-module projects like spring-boot, `testOrderAffected` shows `NO-SOURCE` across ALL subprojects — even those with compiled test classes in the index. The test selection log lines print (from the selection prelude) but no JUnit Platform test execution follows.
+**Root cause:** Convention plugins like spring-boot's `JavaConventions` call `project.getTasks().withType(Test.class, action)`, which forces all Test tasks to be realized during configuration. At that point, `sourceSets.findByName("test")` returns null because `JavaPlugin.apply()` hasn't finished populating source sets yet. Without testClassesDirs being set, `@SkipWhenEmpty` skips the task as NO-SOURCE.
+**Impact:** All spring-boot and kafka campaigns reported UNKNOWN — tests were not actually run.
+
+---
+
+### BUG-154: `cleanTestOrderAffected` Gradle auto-task deletes production class files, breaking subsequent `compileJava`
+
+**File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java` `configureDerivedTestTask()` / `testOrderAffected` task registration
+**Severity:** HIGH (corrupts the build; all compilation fails with "bad class file: NoSuchFileException" errors)
+**Status:** OPEN
+**Symptom:** After `cleanTestOrderAffected` runs (Gradle auto-generated clean task for `testOrderAffected`), `compileJava FAILED` with errors like:
+```
+bad class file: .../build/classes/java/main/org/apache/kafka/common/config/ConfigTransformer.class
+unable to access file: java.nio.file.NoSuchFileException: ...ConfigTransformer.class
+```
+The production class files in `clients/build/classes/java/main/` are deleted by `cleanTestOrderAffected`.
+**Root cause:** When `configureDerivedTestTask()` sets `task.setTestClassesDirs(testSourceSet.getOutput().getClassesDirs())`, Gradle registers the `testClassesDirs` as BOTH an input AND an output of the test task. Gradle's `cleanFoo` generated task deletes all outputs, which (incorrectly) includes the test classes dirs. For projects with unusual SourceSet configurations, Gradle may resolve `getClassesDirs()` to include the production classes dir, causing all production `.class` files to be deleted on `cleanTestOrderAffected`.
+**Fix approach:** Use `task.setTestClassesDirs()` with a `project.files(...)` wrapper that is explicitly marked as `@Input` only (not output), or register a custom `cleanTestOrderAffected` task that only deletes the state file (deferred-tests file) rather than relying on Gradle's auto-generated clean task.
