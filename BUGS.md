@@ -941,12 +941,18 @@ The following campaigns validate that test-order's selection correctly prioritiz
 ### okhttp — CAUGHT ✓
 
 **Patch:** `scripts/bugs/okhttp/dns-aaaa-type-bug.patch`  
-**Result:** Bug caught in top-3 selected tests ✓
+**Changed:** `DnsRecordCodec.TYPE_AAAA` — `0x001c` → `0x0001` (AAAA DNS type collides with A type)  
+**Bug:** IPv6 DNS responses are decoded as IPv4 addresses, causing DNS resolution failures for IPv6-only hosts  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Confirmed (2026-06-16):** BUILD FAILED — `DnsRecordCodecTest > testGoogleDotComDecodingFromGoogleIPv6()` FAILED, `:okhttp-dnsoverhttps:testOrderAffected` FAILED
 
 ### resilience4j — CAUGHT ✓
 
 **Patch:** `scripts/bugs/resilience4j/bulkhead-default-concurrent-calls.patch`  
-**Result:** Bug caught in top-3 selected tests ✓
+**Changed:** `BulkheadConfig.DEFAULT_MAX_CONCURRENT_CALLS` — `25` → `1`  
+**Bug:** Default bulkhead allows only 1 concurrent call instead of 25, causing `IllegalArgumentException` when tests create bulkheads with 0 configured calls (below minimum)  
+**Result:** Bug caught in top-3 selected tests ✓  
+**Confirmed (2026-06-16):** BUILD FAILED — `ThreadPoolBulkheadRegistryTest > noTagsByDefault()` FAILED, `:resilience4j-bulkhead:testOrderAffected` FAILED
 
 ### netty — CAUGHT ✓
 
@@ -1211,6 +1217,46 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Patch:** `scripts/bugs/spring-boot/job-exit-code-eq-zero.patch`  
 **Previous issue:** All campaigns showed UNKNOWN due to BUG-153 (testOrderAffected getting NO-SOURCE). Fixed 2026-06-16.  
 **Result (2026-06-16):** CAUGHT in top-3 selected tests! Bug in `JobExecutionExitCodeGenerator.getExitCode()`, test `JobExecutionExitCodeGeneratorTests` caught it.
+
+### junit5 — CAUGHT ✓
+
+**Patch:** `scripts/bugs/junit5/calculator-add-off-by-one.patch`  
+**Changed:** `Calculator.add(int, int)` — `return a + b` → `return a + b + 1` (off-by-one)  
+**Bug:** Arithmetic addition returns incorrect result, causing assertion mismatches in any test calling `add()`  
+**Result (2026-06-16):** BUILD FAILED — `AssertionsDemo > standardAssertions()` FAILED, `:documentation:testOrderTieredSelect` FAILED  
+**Note:** junit5's tiered-select mode was used (`testOrderTieredSelect`); Gradle BUILD FAILED = CAUGHT.
+
+### mockito — CAUGHT ✓
+
+**Patch:** `scripts/bugs/mockito/strictness-flip.patch`  
+**Changed:** `MockitoExtension` constructor — `this(Strictness.STRICT_STUBS)` → `this(Strictness.WARN)` (strictness downgraded)  
+**Bug:** Tests using unnecessary stubbings no longer fail when they should — `UnnecessaryStubbingException` is silently swallowed  
+**Result (2026-06-16):** BUILD FAILED — `mockito-junit-jupiter:testOrderTieredSelect` FAILED: `UnnecessaryStubbingException: expected: FAILED`  
+**Note:** The test itself CHECKS that UnnecessaryStubbingException is thrown; downgrading strictness breaks that assertion. Gradle BUILD FAILED = CAUGHT.
+
+### dubbo — CAUGHT ✓
+
+**Patch:** `scripts/bugs/dubbo/lfucache-isempty-negate.patch`  
+**Changed:** `LFUCache.CacheDeque.isEmpty()` — `return last.next == first` → `return last.next != first` (logic inverted)  
+**Bug:** `isEmpty()` returns true when deque has items and false when empty; the eviction loop `while (!freqTable[i].isEmpty())` never runs → cache grows unbounded instead of evicting. `LFUCacheTest` verifies cache eviction (put 9 items into capacity-6 cache, expect size == 2).  
+**Result (2026-06-16):** CAUGHT — `LFUCacheTest` selected in top-3, eviction failure detected.
+
+### commons-codec — CAUGHT ✓ (v4 — charsequenceutils-regionmatches-flip)
+
+**Patch (v4):** `scripts/bugs/commons-codec/charsequenceutils-regionmatches-flip.patch`  
+**Changed:** `CharSequenceUtils.regionMatches()` — `if (!ignoreCase) return false` → `if (ignoreCase) return false` (negation flipped)  
+**Bug:** Case-sensitive comparison no longer returns false on mismatch; case-insensitive comparison now returns false prematurely. `CharSequenceUtilsTest` directly calls `regionMatches()` with both case-sensitive and case-insensitive scenarios.  
+**Previous attempt failure:** Prior `bugs.txt` entry had wrong patch context (old method signature) — `git apply` failed, campaign script passed error message as class name.  
+**Result (2026-06-16):** CAUGHT — `CharSequenceUtilsTest` selected in top-3, test failures detected.
+
+### vertx-web — MISSED ✗ (incomplete learn index)
+
+**Patch:** `scripts/bugs/vertx-web/cachecontrol-iscacheable-flip.patch`  
+**Changed:** `CacheControl.isCacheable()` — `return maxAge > 0` → `return maxAge <= 0`  
+**Bug:** Responses with a positive max-age (cacheable) are now treated as uncacheable.  
+**Result (2026-06-16):** MISSED — the learn phase indexed 132 tests but only recorded self-dependencies (no production class deps). The vertx-web learn phase exited with BUILD FAILURE after collecting the index; production JAR classes were compiled separately and not instrumented. Both dynamic selection (`CacheControl not in dependency index`) and SA auto-mode (`0 tests selected`) failed to detect the change.  
+**Root cause:** vertx-web `vertx-web-client` learn phase fails after index write — surefire exits with test failures that prevent the Maven build from completing cleanly, but the index was already written. The production classes (`io.vertx.ext.web.client.impl.*`) are in the same module that's failing, so they are captured, but apparently not all runtime deps are recorded when tests fail mid-run.  
+**Status:** Not actionable — would need a re-learn with no test failures, or a patch targeting a class that IS in the index (a test utility class).
 
 ### caffeine — IN PROGRESS (learn phase running)
 

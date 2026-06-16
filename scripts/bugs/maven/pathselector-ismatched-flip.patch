@@ -1,0 +1,12 @@
+diff --git a/impl/maven-impl/src/main/java/org/apache/maven/impl/PathSelector.java b/impl/maven-impl/src/main/java/org/apache/maven/impl/PathSelector.java
+--- a/impl/maven-impl/src/main/java/org/apache/maven/impl/PathSelector.java
++++ b/impl/maven-impl/src/main/java/org/apache/maven/impl/PathSelector.java
+@@ -541,7 +541,7 @@
+     private static boolean isMatched(Path path, PathMatcher[] matchers) {
+         for (PathMatcher matcher : matchers) {
+             if (matcher.matches(path)) {
+-                return true;
++                return false; /* BUG_INJECTED */
+             }
+         }
+         return false;
