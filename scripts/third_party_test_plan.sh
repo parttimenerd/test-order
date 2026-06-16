@@ -91,6 +91,9 @@ MAVEN_REPOS=(
     "logging-log4j-alt"
     "commons-rng"
     "problem"
+    "mapstruct"
+    "gson-alt"
+    "smallrye-mutiny"
 )
 
 # Gradle repos (use test-order-gradle-plugin)
@@ -1051,6 +1054,17 @@ phase_learn_maven() {
     [[ -n "$pkg" ]] && mvn_args+=("-Dtestorder.includePackages=$pkg")
     [[ -n "$module" && "$module" != "NONE" ]] && mvn_args+=(-pl "$module" -am)
 
+    # Pre-learn: install jars first if required by this repo (e.g. cross-module test deps)
+    local prelearn_goals=""
+    type detect_maven_prelearn_goals &>/dev/null && prelearn_goals=$(detect_maven_prelearn_goals "$repo")
+    if [[ -n "$prelearn_goals" ]]; then
+        log "Running pre-learn install: mvn $prelearn_goals ${mvn_args[*]}"
+        # shellcheck disable=SC2086
+        mvn $prelearn_goals "${mvn_args[@]}" \
+            2>&1 | tee "$results/prelearn-install.log" | tail -3 || \
+            warn "Pre-learn install had failures (continuing)"
+    fi
+
     # Run learn
     log "Running: mvn_learn ${mvn_args[*]}"
     if mvn_learn "${mvn_args[@]}" \
@@ -1725,6 +1739,16 @@ phase_bugs_maven() {
     idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -z "$idx" ]]; then
         log "No index found, running learn first..."
+        # Pre-learn: install jars first if required by this repo (e.g. cross-module test deps)
+        local prelearn_goals=""
+        type detect_maven_prelearn_goals &>/dev/null && prelearn_goals=$(detect_maven_prelearn_goals "$repo")
+        if [[ -n "$prelearn_goals" ]]; then
+            log "Running pre-learn install: mvn $prelearn_goals"
+            # shellcheck disable=SC2086
+            mvn $prelearn_goals "${mvn_args[@]}" \
+                2>&1 | tee "$results/bug-prelearn-install.log" | tail -3 || \
+                warn "Pre-learn install had failures (continuing)"
+        fi
         mvn_learn "${mvn_args[@]}" \
             2>&1 | tee "$results/bug-learn.log" | tail -3
         idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)

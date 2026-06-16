@@ -1,0 +1,12 @@
+diff --git a/processor/src/main/java/org/mapstruct/ap/spi/util/IntrospectorUtils.java b/processor/src/main/java/org/mapstruct/ap/spi/util/IntrospectorUtils.java
+--- a/processor/src/main/java/org/mapstruct/ap/spi/util/IntrospectorUtils.java
++++ b/processor/src/main/java/org/mapstruct/ap/spi/util/IntrospectorUtils.java
+@@ -35,7 +35,7 @@ public class IntrospectorUtils {
+         if ( name == null || name.isEmpty() ) {
+             return name;
+         }
+-        if ( name.length() > 1 && Character.isUpperCase( name.charAt( 1 ) ) &&
++        if ( name.length() > 1 || Character.isUpperCase( name.charAt( 1 ) ) && /* BUG_INJECTED */
+             Character.isUpperCase( name.charAt( 0 ) ) ) {
+             return name;
+         }

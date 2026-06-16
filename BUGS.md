@@ -1493,6 +1493,25 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 
 ---
 
+### mapstruct — CAUGHT ✓ (1.7.0-SNAPSHOT)
+
+**Patch:** `scripts/bugs/mapstruct/introspectorutils-decapitalize-flip.patch`  
+**Changed:** `IntrospectorUtils.decapitalize()` — `&&` changed to `||` in the condition `name.length() > 1 && Character.isUpperCase(name.charAt(1))`, so any string longer than 1 char is treated as having a leading sequence of uppercase chars and is never decapitalized  
+**Bug:** `decapitalize()` never lowercases the first letter of a property name when the name has more than one character. All standard Java bean property names (e.g. `fooBar`) would remain capitalized (`FooBar`), breaking all MapStruct getter/setter mapping.  
+**Result (2026-06-16):** CAUGHT — top-3 selected tests detected test failures.  
+**Notes:** Required `detect_module_override` → NONE (heuristic picked `mapstruct-parent` but tests live in `processor`), `detect_maven_java_home` → SAP JDK 21 (processor tests use `--release 21` features).
+
+---
+
+### gson-alt — SKIPPED (JUnit 4 only)
+
+**Patch:** `scripts/bugs/gson-alt/jsonprimitive-isnumber-flip.patch`  
+**Changed:** `JsonPrimitive.isNumber()` — same patch as gson  
+**Issue:** gson-alt (gson 2.13.1-SNAPSHOT alternate branch) uses JUnit 4 (`junit:junit`). test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index. Only `test-graal-native-image` submodule has JUnit 5, but the main `gson` module tests are all JUnit 4.  
+**Status:** Skip — same as canonical gson. Requires JUnit 5 migration.
+
+---
+
 ### Bytecode / Method-Hash Change Detection — VERIFIED ✓
 
 **Test project:** `test-order-example/test-order-example-service` (8 tests, 8 classes)

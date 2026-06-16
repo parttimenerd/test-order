@@ -133,6 +133,9 @@ detect_extra_mvn_args() {
         # Surefire pom uses <parallel>classesAndMethods</parallel> hardcoded; use
         # -Dtestorder.learn.allowParallel=true to proceed despite the parallel warning.
         problem) echo "-Dmaven.compiler.fork=true -Dmaven.test.failure.ignore=true -Dtestorder.learn.allowParallel=true" ;;
+        # smallrye-mutiny: maven-compiler-plugin uses in-process javac without ct.sym for --release 17.
+        # Force forked javac from JAVA_HOME (SAP JDK 21 with ct.sym).
+        smallrye-mutiny) echo "-Dmaven.compiler.fork=true -Dmaven.test.failure.ignore=true" ;;
         # commons-rng: checkstyle rejects BUG_INJECTED comment style.
         commons-rng) echo "-Dcheckstyle.skip=true" ;;
         *)          echo "" ;;
@@ -168,6 +171,12 @@ detect_module_override() {
         # commons-rng: heuristic picks commons-rng-core but tests for RandomSource are in
         # commons-rng-simple. Run the full reactor to capture all modules.
         commons-rng) echo "NONE" ;;
+        # smallrye-mutiny: tests are spread across implementation, test-utils, and
+        # context-propagation modules. Run the full reactor to capture all tests.
+        smallrye-mutiny) echo "NONE" ;;
+        # mapstruct: heuristic picks mapstruct-parent but tests live in processor submodule.
+        # Run the full reactor so the index is written to the root .test-order directory.
+        mapstruct) echo "NONE" ;;
         *) echo "" ;;
     esac
 }
@@ -193,6 +202,8 @@ detect_package_override() {
         # Failsafe IT tests requiring a running Maven process, not Surefire unit tests.
         # Use the 3-level prefix to capture model/core/impl tests while skipping IT infra.
         maven) echo "org.apache.maven" ;;
+        # smallrye-mutiny: tests span multiple submodules under io.smallrye.mutiny
+        smallrye-mutiny) echo "io.smallrye.mutiny" ;;
         *) echo "" ;;
     esac
 }
@@ -325,6 +336,28 @@ detect_maven_java_home() {
         # problem: uses module-info.java with Jackson 3.x module names; requires SAP JDK 21
         # with full ct.sym support for --release 17. Ubuntu JDK 21 rejects --release 17.
         problem) _sdkman_java_home "21-sapmchn" ;;
+        # smallrye-mutiny: uses --release 17 in maven-compiler-plugin; requires SAP JDK 21
+        # with full ct.sym. Ubuntu JDK 21 (JRE) lacks ct.sym for cross-compilation targets.
+        smallrye-mutiny) _sdkman_java_home "21-sapmchn" ;;
+        # mapstruct-processor tests require --release 21 (JDK 21 features in test sources).
+        # Ubuntu JDK 17 cannot compile --release 21. Use SAP JDK 21.
+        mapstruct) _sdkman_java_home "21-sapmchn" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Return Maven args to run BEFORE the main learn phase (install jars first), or empty.
+# Called in phase_learn_maven and phase_bugs_maven before mvn_learn.
+# Output format: "install -DskipTests <additional-args>" (Maven goals+args after 'mvn').
+# The caller prepends the standard base_args (enforcer.skip, rat.skip, etc.).
+detect_maven_prelearn_goals() {
+    local repo="$1"
+    case "$repo" in
+        # smallrye-mutiny: reactor module order is test-utils (module 2) before implementation
+        # (module 3). test-utils tests import io.smallrye.mutiny.Multi from implementation.
+        # With 'mvn clean test', clean wipes prior jars and test-utils tests fail with
+        # ClassNotFoundException. Install all jars first so reactor tests can find each other.
+        smallrye-mutiny) echo "install -DskipTests" ;;
         *) echo "" ;;
     esac
 }

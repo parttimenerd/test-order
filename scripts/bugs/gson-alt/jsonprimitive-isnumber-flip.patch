@@ -1,0 +1,11 @@
+--- a/gson/src/main/java/com/google/gson/JsonPrimitive.java
++++ b/gson/src/main/java/com/google/gson/JsonPrimitive.java
+@@ -125,7 +125,7 @@
+    * @return true if this primitive contains a Number, false otherwise.
+    */
+   public boolean isNumber() {
+-    return value instanceof Number;
++    return !(value instanceof Number);
+   }
+ 
+   /**

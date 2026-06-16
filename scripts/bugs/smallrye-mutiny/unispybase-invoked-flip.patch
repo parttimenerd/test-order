@@ -1,0 +1,12 @@
+diff --git a/implementation/src/main/java/io/smallrye/mutiny/helpers/spies/UniSpyBase.java b/implementation/src/main/java/io/smallrye/mutiny/helpers/spies/UniSpyBase.java
+--- a/implementation/src/main/java/io/smallrye/mutiny/helpers/spies/UniSpyBase.java
++++ b/implementation/src/main/java/io/smallrye/mutiny/helpers/spies/UniSpyBase.java
+@@ -18,7 +18,7 @@ abstract class UniSpyBase<T> extends UniOperator<T, T> {
+     }
+
+     public boolean invoked() {
+-        return invocationCount() > 0;
++        return invocationCount() <= 0; /* BUG_INJECTED */
+     }
+
+     UniSpyBase(Uni<T> upstream) {
