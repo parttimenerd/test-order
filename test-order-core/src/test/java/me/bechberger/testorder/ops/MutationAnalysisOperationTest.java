@@ -273,4 +273,59 @@ class MutationAnalysisOperationTest {
 		Set<String> prod = MutationAnalysisOperation.deriveProductionClasses(depMap, "  ");
 		assertTrue(prod.contains("com.example.Foo"));
 	}
+
+	@Test
+	void derivesProductionClassesReturnsEmptyWhenAllDepsAreTests() {
+		// Both test classes are indexed; each depends only on the other test class.
+		// Since both are in testClasses, deriveProductionClasses should return empty.
+		DependencyMap depMap = buildDepMap(Map.of("com.example.FooTest", Set.of("com.example.BarTest"),
+				"com.example.BarTest", Set.of("com.example.FooTest")));
+
+		Set<String> prod = MutationAnalysisOperation.deriveProductionClasses(depMap, null);
+		assertTrue(prod.isEmpty(), "Expected no production classes when all deps are test classes, got: " + prod);
+	}
+
+	// ── Config resolver methods ───────────────────────────────────────────────
+
+	@Test
+	void configResolvedClassesDirUsesDefaultWhenNull() throws IOException {
+		Path root = tempDir.resolve("project");
+		MutationAnalysisOperation.Config config = new MutationAnalysisOperation.Config(root.resolve("idx.lz4"),
+				root.resolve("state"), root.resolve("out.json"), root, null, 0,
+				me.bechberger.testorder.ops.PluginLog.NOOP, List.of(), null, null, null);
+
+		assertEquals(root.resolve("target/classes"), config.resolvedClassesDir());
+		assertEquals(root.resolve("target/test-classes"), config.resolvedTestClassesDir());
+		assertEquals(root.resolve("target/pit-reports"), config.resolvedPitReportDir());
+	}
+
+	@Test
+	void configResolvedClassesDirUsesProvidedValue() throws IOException {
+		Path root = tempDir.resolve("project");
+		Path customClasses = tempDir.resolve("custom/classes");
+		Path customTestClasses = tempDir.resolve("custom/test-classes");
+		Path customPitDir = tempDir.resolve("custom/pit");
+		MutationAnalysisOperation.Config config = new MutationAnalysisOperation.Config(root.resolve("idx.lz4"),
+				root.resolve("state"), root.resolve("out.json"), root, null, 0,
+				me.bechberger.testorder.ops.PluginLog.NOOP, List.of(), customClasses, customTestClasses, customPitDir);
+
+		assertEquals(customClasses, config.resolvedClassesDir());
+		assertEquals(customTestClasses, config.resolvedTestClassesDir());
+		assertEquals(customPitDir, config.resolvedPitReportDir());
+	}
+
+	// ── Glob pattern correctness ──────────────────────────────────────────────
+
+	@Test
+	void deriveProductionClassesPreservesInnerClassSeparator() {
+		DependencyMap depMap = buildDepMap(
+				Map.of("com.example.FooTest", Set.of("com.example.Outer$Inner", "com.example.Outer")));
+
+		Set<String> prod = MutationAnalysisOperation.deriveProductionClasses(depMap, null);
+		// Inner class separator must be preserved; NOT replaced with *
+		assertTrue(prod.contains("com.example.Outer$Inner"),
+				"Expected 'com.example.Outer$Inner' in production classes, got: " + prod);
+		assertFalse(prod.stream().anyMatch(c -> c.contains("*")),
+				"Production class names must not contain wildcard (*), got: " + prod);
+	}
 }

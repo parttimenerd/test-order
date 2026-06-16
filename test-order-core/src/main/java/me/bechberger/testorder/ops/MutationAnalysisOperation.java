@@ -145,6 +145,13 @@ public final class MutationAnalysisOperation {
 		log.info("[test-order] Mutation analysis: " + testClasses.size() + " test classes, " + productionClasses.size()
 				+ " target production classes");
 
+		if (productionClasses.isEmpty()) {
+			log.warn("[test-order] No production classes found to mutate — "
+					+ "all dependencies point to test classes, or the dependency index is incomplete. "
+					+ "Run learn mode first and ensure production source packages match the index filter.");
+			return new Result(Map.of(), 0, 0, config.outputFile(), System.currentTimeMillis() - start);
+		}
+
 		// Resolve classpath entries from the project
 		Path targetClasses = config.resolvedClassesDir();
 		Path targetTestClasses = config.resolvedTestClassesDir();
@@ -153,10 +160,16 @@ public final class MutationAnalysisOperation {
 			throw new IOException(
 					"Compiled classes directory not found: " + targetClasses + ". Run compile and test-compile first.");
 		}
+		if (!Files.exists(targetTestClasses)) {
+			throw new IOException(
+					"Compiled test classes directory not found: " + targetTestClasses + ". Run test-compile first.");
+		}
 
-		// Build the target-class glob patterns for PIT
-		String targetGlob = productionClasses.stream().map(c -> c.replace('$', '*')).collect(Collectors.joining(","));
-		String testGlob = testClasses.stream().map(c -> c.replace('$', '*')).collect(Collectors.joining(","));
+		// Build the target-class glob patterns for PIT.
+		// Inner-class separators ($) must be preserved — PIT understands them.
+		// We do NOT replace $ with * because that would also match unrelated classes.
+		String targetGlob = String.join(",", productionClasses);
+		String testGlob = String.join(",", testClasses);
 
 		// Resolve PIT report output directory
 		Path pitReportDir = config.resolvedPitReportDir();

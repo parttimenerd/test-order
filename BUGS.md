@@ -1547,3 +1547,58 @@ This is internally inconsistent: the write path at line 842 already uses the cor
 
 In contrast, `SourceFileModel.findMethodIslands` handles compact constructors via a dedicated detection path (lines 900–952), so the two parsers produce inconsistent results for records with compact constructors.  
 **Root cause:** `CompactConstructorDeclaration` was introduced in JavaParser alongside Java 14 record support. The iteration at line 111 was never updated to also walk `td.getMembers()` and pick up `CompactConstructorDeclaration` instances, unlike `InitializerDeclaration` handling for classes (lines 123–135) which correctly iterates members.
+
+---
+
+## Session 8 — 2026-06-16 Mutation Testing Audit
+
+### BUG-145: `MutationAnalysisOperation.run` replaces `$` in class names with `*` when building PIT glob patterns
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/MutationAnalysisOperation.java` line 158 (before fix)
+**Severity:** HIGH (inner-class members of any indexed class produce an invalid PIT glob — `Outer*Inner` matches unrelated classes)
+**Status:** FIXED (2026-06-16)
+**Symptom:** The glob patterns passed to PIT were built with `.replace('$', '*')`, turning `com.example.Outer$Inner` into `com.example.Outer*Inner`. PIT's glob matcher treats `*` as a wildcard, so the pattern would match `com.example.OuterHelper` or any class with `Outer` as prefix — either silently overselecting (mutating unrelated classes) or misidentifying the target. All projects with inner classes are affected.
+**Root cause:** Copy from an older PIT integration that used `$`→`*` expansion for glob matching. PIT accepts `$` directly in class name patterns and does not require wildcard substitution.
+**Fix:** Removed `.replace('$', '*')`. PIT globs now use the fully-qualified class names as-is: `String.join(",", productionClasses)`.
+
+---
+
+### BUG-146: `MutationAnalysisOperation.run` does not validate that `testClassesDir` exists before invoking PIT
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/MutationAnalysisOperation.java` line 150 (before fix)
+**Severity:** MEDIUM (PIT invocation silently fails or produces misleading errors when test-compile was not run)
+**Status:** FIXED (2026-06-16)
+**Symptom:** The method validated that `classesDir` exists (throws `IOException` if not), but did not validate `testClassesDir`. When `test-compile` was skipped or failed, PIT would start with an empty test-classes directory and produce zero mutants with no useful error message.
+**Fix:** Added an explicit existence check for `testClassesDir`, mirroring the `classesDir` check.
+
+---
+
+### BUG-147: `MutationAnalysisOperation.run` silently returns empty results when no production classes are found
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/MutationAnalysisOperation.java` line 142 (before fix)
+**Severity:** MEDIUM (empty mutation run completes successfully, user gets no feedback that the index is incomplete)
+**Status:** FIXED (2026-06-16)
+**Symptom:** If `deriveProductionClasses()` returns an empty set (all dep-map entries point to test classes, or the index filter excluded all production code), `targetGlob` was an empty string. PIT ran with no mutation targets and produced a `mutations.xml` with zero entries. `run()` returned a `Result` with `totalMutants=0` and `totalKilled=0` without any warning, making the empty run look like a successful run with perfect kill rate.
+**Fix:** Added an early-return with a `log.warn()` after `deriveProductionClasses()` when the returned set is empty.
+
+---
+
+### BUG-148: `MutationAnalyzeMojo` uses only root project's test classpath in multi-module builds
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/MutationAnalyzeMojo.java` lines 69–73 (before fix)
+**Severity:** HIGH (multi-module mutation analysis silently misses test classes from all non-root modules)
+**Status:** FIXED (2026-06-16)
+**Symptom:** The mojo is annotated `aggregator = true` (runs once at reactor root), but called `project.getTestClasspathElements()` which returns only the root project's classpath. In a multi-module build, test classes from module B are compiled into `module-b/target/test-classes`, which is never added to PIT's classpath. PIT's test discovery finds only root-module tests, and kill rates are computed only from those.
+**Root cause:** The `aggregator = true` pattern was added for consistency with other mojos, but the classpath collection was not updated to aggregate across modules.
+**Fix:** Added `collectReactorTestClasspath()` method that iterates `session.getAllProjects()` and collects `getTestClasspathElements()`, `getOutputDirectory()`, and `getTestOutputDirectory()` from every module, using a `LinkedHashSet` to deduplicate.
+
+---
+
+### BUG-149: `MutationAnalyzeMojo` has no parameters for `classesDir` / `testClassesDir` overrides
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/MutationAnalyzeMojo.java`
+**Severity:** LOW (non-standard Maven layouts and Gradle can't override class directories)
+**Status:** FIXED (2026-06-16)
+**Symptom:** The mojo accepted no parameters to override the compiled classes directories. With the BUG-126 fix, `MutationAnalysisOperation.Config` gained `classesDir` and `testClassesDir` optional fields, but the Maven mojo never exposed them as `@Parameter` fields, making them inaccessible from Maven.
+**Fix:** Added `@Parameter(property = "testorder.mutations.classesDir")` and `@Parameter(property = "testorder.mutations.testClassesDir")` fields to `MutationAnalyzeMojo`, with corresponding `MUTATIONS_CLASSES_DIR` / `MUTATIONS_TEST_CLASSES_DIR` constants in `MavenPluginConfigKeys`.
+

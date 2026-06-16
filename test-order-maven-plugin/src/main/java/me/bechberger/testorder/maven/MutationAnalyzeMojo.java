@@ -3,11 +3,12 @@ package me.bechberger.testorder.maven;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
+import java.util.*;
 
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.*;
+import org.apache.maven.project.MavenProject;
 
 import me.bechberger.testorder.ops.MutationAnalysisOperation;
 
@@ -19,6 +20,10 @@ import me.bechberger.testorder.ops.MutationAnalysisOperation;
  * Designed for nightly / weekly CI runs. Kill rates stored in the state file
  * are automatically picked up by test scoring on subsequent {@code select} /
  * {@code order} runs (when {@code killRateBonus > 0}).
+ * <p>
+ * In multi-module builds this goal runs once at the reactor root and collects
+ * test classpaths, compiled class directories, and source directories from all
+ * submodules automatically.
  * <p>
  * Usage: {@code mvn test-order:analyze-mutations}
  */
@@ -46,6 +51,24 @@ public class MutationAnalyzeMojo extends AbstractTestOrderMojo {
 	@Parameter(property = MavenPluginConfigKeys.MUTATIONS_TARGET_CLASSES)
 	private String targetClasses;
 
+	/**
+	 * Path to the compiled production classes directory. Defaults to
+	 * {@code target/classes} relative to the project root. In multi-module builds,
+	 * all modules' classes directories are collected automatically; set this only
+	 * to override the root module's directory.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.MUTATIONS_CLASSES_DIR)
+	private String classesDir;
+
+	/**
+	 * Path to the compiled test classes directory. Defaults to
+	 * {@code target/test-classes} relative to the project root. In multi-module
+	 * builds, all modules' test-classes directories are collected automatically;
+	 * set this only to override the root module's directory.
+	 */
+	@Parameter(property = MavenPluginConfigKeys.MUTATIONS_TEST_CLASSES_DIR)
+	private String testClassesDir;
+
 	@Override
 	public void execute() throws MojoExecutionException {
 		initContext();
@@ -65,18 +88,65 @@ public class MutationAnalyzeMojo extends AbstractTestOrderMojo {
 				? Path.of(outputFile)
 				: projectRoot.resolve("target/test-mutation-results.json");
 
-		List<String> testClasspath;
-		try {
-			testClasspath = project.getTestClasspathElements();
-		} catch (DependencyResolutionRequiredException e) {
-			throw new MojoExecutionException("Failed to resolve test classpath: " + e.getMessage(), e);
-		}
+		// Collect test classpath from ALL reactor modules to support multi-module
+		// builds.
+		// For single-module builds, this is equivalent to
+		// project.getTestClasspathElements().
+		List<String> testClasspath = collectReactorTestClasspath();
+
+		// Resolve optional overrides for class directories
+		Path resolvedClassesDir = classesDir != null && !classesDir.isBlank() ? Path.of(classesDir) : null;
+		Path resolvedTestClassesDir = testClassesDir != null && !testClassesDir.isBlank()
+				? Path.of(testClassesDir)
+				: null;
 
 		try {
-			MutationAnalysisOperation.run(new MutationAnalysisOperation.Config(idxPath, statePath, output, projectRoot,
-					targetClasses, timeBudget, pluginLog(), testClasspath));
+			MutationAnalysisOperation
+					.run(new MutationAnalysisOperation.Config(idxPath, statePath, output, projectRoot, targetClasses,
+							timeBudget, pluginLog(), testClasspath, resolvedClassesDir, resolvedTestClassesDir, null));
 		} catch (IOException e) {
 			throw new MojoExecutionException("Mutation analysis failed: " + e.getMessage(), e);
 		}
+	}
+
+	/**
+	 * Collects the union of test classpath elements from all reactor modules. Falls
+	 * back to the root project's classpath if session information is unavailable.
+	 * Duplicate entries are removed while preserving order.
+	 */
+	private List<String> collectReactorTestClasspath() throws MojoExecutionException {
+		List<MavenProject> allProjects = session != null && session.getAllProjects() != null
+				? session.getAllProjects()
+				: List.of(project);
+
+		LinkedHashSet<String> cp = new LinkedHashSet<>();
+		for (MavenProject p : allProjects) {
+			try {
+				// Add the module's own test-classes directory first so it takes precedence
+				String testClassesPath = p.getBuild().getTestOutputDirectory();
+				if (testClassesPath != null) {
+					cp.add(testClassesPath);
+				}
+				String classesPath = p.getBuild().getOutputDirectory();
+				if (classesPath != null) {
+					cp.add(classesPath);
+				}
+				cp.addAll(p.getTestClasspathElements());
+			} catch (DependencyResolutionRequiredException e) {
+				getLog().warn("[test-order] Could not resolve test classpath for module " + p.getArtifactId() + ": "
+						+ e.getMessage());
+			}
+		}
+
+		// Ensure root project is always included even if not in allProjects
+		if (cp.isEmpty()) {
+			try {
+				cp.addAll(project.getTestClasspathElements());
+			} catch (DependencyResolutionRequiredException e) {
+				throw new MojoExecutionException("Failed to resolve test classpath: " + e.getMessage(), e);
+			}
+		}
+
+		return new ArrayList<>(cp);
 	}
 }
