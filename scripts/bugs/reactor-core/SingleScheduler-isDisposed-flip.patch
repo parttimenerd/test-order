@@ -1,0 +1,13 @@
+diff --git a/reactor-core/src/main/java/reactor/core/scheduler/SingleScheduler.java b/reactor-core/src/main/java/reactor/core/scheduler/SingleScheduler.java
+index dda601a..01cb8de 100644
+--- a/reactor-core/src/main/java/reactor/core/scheduler/SingleScheduler.java
++++ b/reactor-core/src/main/java/reactor/core/scheduler/SingleScheduler.java
+@@ -80,7 +80,7 @@ final class SingleScheduler implements Scheduler, Supplier<ScheduledExecutorServ
+ 	public boolean isDisposed() {
+ 		// we only consider disposed as actually shutdown
+ 		SchedulerState<ScheduledExecutorService> current = state;
+-		return current != INIT && current.currentResource == TERMINATED;
++		return !(current != INIT && current.currentResource == TERMINATED); /* BUG_INJECTED */
+ 	}
+ 
+ 	@Override

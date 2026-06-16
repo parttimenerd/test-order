@@ -1,0 +1,13 @@
+diff --git a/core/src/main/java/io/undertow/util/HttpString.java b/core/src/main/java/io/undertow/util/HttpString.java
+index bd7a5bc..333af51 100644
+--- a/core/src/main/java/io/undertow/util/HttpString.java
++++ b/core/src/main/java/io/undertow/util/HttpString.java
+@@ -324,7 +324,7 @@ public final class HttpString implements Comparable<HttpString>, Serializable {
+     }
+ 
+     private static boolean bytesAreEqual(final byte[] a, final byte[] b) {
+-        return a.length == b.length && bytesAreEquivalent(a, b);
++        return a.length != b.length && bytesAreEquivalent(a, b); /* BUG_INJECTED */
+     }
+ 
+     private static boolean bytesAreEquivalent(final byte[] a, final byte[] b) {

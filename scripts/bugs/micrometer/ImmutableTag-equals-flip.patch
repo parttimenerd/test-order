@@ -1,0 +1,13 @@
+diff --git a/micrometer-core/src/main/java/io/micrometer/core/instrument/ImmutableTag.java b/micrometer-core/src/main/java/io/micrometer/core/instrument/ImmutableTag.java
+index cb797b8..bbcb871 100644
+--- a/micrometer-core/src/main/java/io/micrometer/core/instrument/ImmutableTag.java
++++ b/micrometer-core/src/main/java/io/micrometer/core/instrument/ImmutableTag.java
+@@ -56,7 +56,7 @@ public class ImmutableTag implements Tag {
+         if (!(o instanceof ImmutableTag))
+             return false;
+         Tag that = (Tag) o;
+-        return Objects.equals(key, that.getKey()) && Objects.equals(value, that.getValue());
++        return !(Objects.equals(key, that.getKey()) && Objects.equals(value, that.getValue())); /* BUG_INJECTED */
+     }
+ 
+     @Override

@@ -1,0 +1,9 @@
+--- a/dubbo-common/src/main/java/org/apache/dubbo/common/utils/LFUCache.java
++++ b/dubbo-common/src/main/java/org/apache/dubbo/common/utils/LFUCache.java
+@@ -275,6 +275,6 @@
+         boolean isEmpty() {
+-            return last.next == first;
++            return last.next != first; /* BUG_INJECTED */
+         }
+     }
+ }

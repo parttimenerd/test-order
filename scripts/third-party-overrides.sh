@@ -135,7 +135,9 @@ detect_extra_mvn_args() {
         problem) echo "-Dmaven.compiler.fork=true -Dmaven.test.failure.ignore=true -Dtestorder.learn.allowParallel=true" ;;
         # smallrye-mutiny: maven-compiler-plugin uses in-process javac without ct.sym for --release 17.
         # Force forked javac from JAVA_HOME (SAP JDK 21 with ct.sym).
-        smallrye-mutiny) echo "-Dmaven.compiler.fork=true -Dmaven.test.failure.ignore=true" ;;
+        # Use agent mode: offline instrumentation corrupts Mocks.class (test-utils module imports
+        # Mocks in tests; offline pre-instrumentation causes ClassNotFoundException at test runtime).
+        smallrye-mutiny) echo "-Dmaven.compiler.fork=true -Dmaven.test.failure.ignore=true -Dtestorder.instrumentation=agent" ;;
         # commons-rng: checkstyle rejects BUG_INJECTED comment style.
         commons-rng) echo "-Dcheckstyle.skip=true" ;;
         *)          echo "" ;;

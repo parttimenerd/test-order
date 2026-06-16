@@ -1,0 +1,13 @@
+diff --git a/api/all/src/main/java/io/opentelemetry/api/trace/ImmutableTraceFlags.java b/api/all/src/main/java/io/opentelemetry/api/trace/ImmutableTraceFlags.java
+index ca00799..2753c82 100644
+--- a/api/all/src/main/java/io/opentelemetry/api/trace/ImmutableTraceFlags.java
++++ b/api/all/src/main/java/io/opentelemetry/api/trace/ImmutableTraceFlags.java
+@@ -55,7 +55,7 @@ final class ImmutableTraceFlags implements TraceFlags, TraceFlagsBuilder {
+ 
+   @Override
+   public boolean isSampled() {
+-    return (this.byteRep & SAMPLED_BIT) != 0;
++    return (this.byteRep & SAMPLED_BIT) == 0; /* BUG_INJECTED */
+   }
+ 
+   @Override

@@ -1,0 +1,12 @@
+--- a/vertx-web-client/src/main/java/io/vertx/ext/web/client/impl/cache/CacheControl.java
++++ b/vertx-web-client/src/main/java/io/vertx/ext/web/client/impl/cache/CacheControl.java
+@@ -120,7 +120,7 @@
+     if ("*".equals(vary)) {
+       return false;
+     }
+ 
+-    return maxAge > 0;
++    return maxAge <= 0; /* BUG_INJECTED */
+   }
+ 
+   public boolean isPublic() {

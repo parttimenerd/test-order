@@ -1,0 +1,13 @@
+diff --git a/quartz/src/main/java/org/quartz/CronExpression.java b/quartz/src/main/java/org/quartz/CronExpression.java
+index c981a3a..ae8e694 100644
+--- a/quartz/src/main/java/org/quartz/CronExpression.java
++++ b/quartz/src/main/java/org/quartz/CronExpression.java
+@@ -329,7 +329,7 @@ public final class CronExpression implements Serializable, Cloneable {
+         
+         Date timeAfter = getTimeAfter(testDateCal.getTime());
+ 
+-        return ((timeAfter != null) && (timeAfter.equals(originalDate)));
++        return ((timeAfter != null) && (!timeAfter.equals(originalDate))); /* BUG_INJECTED */
+     }
+     
+     /**

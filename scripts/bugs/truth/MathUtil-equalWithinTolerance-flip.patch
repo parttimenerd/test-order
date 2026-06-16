@@ -1,0 +1,13 @@
+diff --git a/core/src/main/java/com/google/common/truth/MathUtil.java b/core/src/main/java/com/google/common/truth/MathUtil.java
+index 0ecf0c5..7972d2c 100644
+--- a/core/src/main/java/com/google/common/truth/MathUtil.java
++++ b/core/src/main/java/com/google/common/truth/MathUtil.java
+@@ -30,7 +30,7 @@ final class MathUtil {
+    * either {@code left} or {@code right} is infinite or NaN.
+    */
+   public static boolean equalWithinTolerance(double left, double right, double tolerance) {
+-    return abs(left - right) <= abs(tolerance);
++    return abs(left - right) > abs(tolerance); /* BUG_INJECTED */
+   }
+ 
+   /**

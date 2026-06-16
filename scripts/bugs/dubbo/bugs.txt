@@ -1,0 +1,1 @@
+lfucache-isempty-negate.patch

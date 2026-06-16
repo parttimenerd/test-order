@@ -1,0 +1,10 @@
+diff --git a/src/main/java/io/neonbee/internal/RegexBlockList.java b/src/main/java/io/neonbee/internal/RegexBlockList.java
+--- a/src/main/java/io/neonbee/internal/RegexBlockList.java
++++ b/src/main/java/io/neonbee/internal/RegexBlockList.java
+@@ -132,7 +132,7 @@ public class RegexBlockList {
+     public boolean isAllowed(String input) {
+-        boolean allowed = true;
++        boolean allowed = false; /* BUG_INJECTED */
+
+         // special case: if only allow list is filled, assume also only those entries are permitted
+         if ((blockList.isEmpty() && !allowList.isEmpty()) || isOnList(blockList, input)) {
