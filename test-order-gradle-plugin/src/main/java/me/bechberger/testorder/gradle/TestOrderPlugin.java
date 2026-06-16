@@ -37,6 +37,7 @@ import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.testing.Test;
 import org.gradle.api.JavaVersion;
+import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.process.CommandLineArgumentProvider;
 
 import me.bechberger.testorder.dashboard.DashboardResources;
@@ -131,7 +132,7 @@ public class TestOrderPlugin implements Plugin<Project> {
         String projectPath = project.getPath(); // e.g. ":micronaut-core"
         for (String task : taskNames) {
             // Task names can be ":proj:taskName", "proj:taskName", "taskName" (root), etc.
-            if (task.startsWith(projectPath + ":") || task.startsWith(projectPath.substring(1) + ":")
+            if (task.startsWith(projectPath + ":") || (projectPath.length() > 1 && task.startsWith(projectPath.substring(1) + ":"))
                     || (!task.contains(":") && project == project.getRootProject())) {
                 return true;
             }
@@ -2016,73 +2017,77 @@ public class TestOrderPlugin implements Plugin<Project> {
             });
         });
 
-        project.getTasks().register("testOrderInstrument", task -> {
-            task.setGroup("test-order");
-            task.setDescription(
-                    "Instrument compiled classes at build time (offline mode). "
-                    + "Run before tests with -Dtestorder.instrumentation=offline.");
-            task.dependsOn(project.getTasks().named("classes"));
-            SourceSetContainer sourceSetsForInstr = project.getExtensions().getByType(SourceSetContainer.class);
-            task.getInputs().files(
-                    sourceSetsForInstr.getByName(SourceSet.MAIN_SOURCE_SET_NAME).getOutput().getClassesDirs())
-                    .withPropertyName("mainClassesDirs")
-                    .withPathSensitivity(org.gradle.api.tasks.PathSensitivity.RELATIVE);
-            Path instrMappingFile = project.getLayout().getBuildDirectory().get().getAsFile().toPath()
-                    .resolve(".test-order").resolve("class-id-map.bin");
-            task.getOutputs().file(instrMappingFile.toFile());
-            task.doLast(t -> {
-                String instrModeStr = Optional.ofNullable(
-                        gradleOrSystemProperty(project, "testorder.instrumentation.mode"))
-                        .orElse(ext.getInstrumentationMode().getOrElse("MEMBER"));
-                me.bechberger.testorder.agent.Agent.InstrumentationMode mode;
-                try {
-                    mode = me.bechberger.testorder.agent.Agent.InstrumentationMode.fromString(instrModeStr);
-                } catch (IllegalArgumentException e) {
-                    throw new GradleException("[test-order] Invalid instrumentation mode: " + instrModeStr);
-                }
+        // Only register testOrderInstrument for projects that apply the Java plugin.
+        // BOM-only / java-platform projects don't have a 'classes' task or SourceSets.
+        project.getPlugins().withType(JavaPlugin.class, javaPlugin -> {
+            project.getTasks().register("testOrderInstrument", task -> {
+                task.setGroup("test-order");
+                task.setDescription(
+                        "Instrument compiled classes at build time (offline mode). "
+                        + "Run before tests with -Dtestorder.instrumentation=offline.");
+                task.dependsOn(project.getTasks().named("classes"));
+                SourceSetContainer sourceSetsForInstr = project.getExtensions().getByType(SourceSetContainer.class);
+                task.getInputs().files(
+                        sourceSetsForInstr.getByName(SourceSet.MAIN_SOURCE_SET_NAME).getOutput().getClassesDirs())
+                        .withPropertyName("mainClassesDirs")
+                        .withPathSensitivity(org.gradle.api.tasks.PathSensitivity.RELATIVE);
+                Path instrMappingFile = project.getLayout().getBuildDirectory().get().getAsFile().toPath()
+                        .resolve(".test-order").resolve("class-id-map.bin");
+                task.getOutputs().file(instrMappingFile.toFile());
+                task.doLast(t -> {
+                    String instrModeStr = Optional.ofNullable(
+                            gradleOrSystemProperty(project, "testorder.instrumentation.mode"))
+                            .orElse(ext.getInstrumentationMode().getOrElse("MEMBER"));
+                    me.bechberger.testorder.agent.Agent.InstrumentationMode mode;
+                    try {
+                        mode = me.bechberger.testorder.agent.Agent.InstrumentationMode.fromString(instrModeStr);
+                    } catch (IllegalArgumentException e) {
+                        throw new GradleException("[test-order] Invalid instrumentation mode: " + instrModeStr);
+                    }
 
-                SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
-                SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-                Path classesDir = mainSourceSet.getOutput().getClassesDirs().getFiles().stream()
-                        .map(File::toPath).filter(Files::isDirectory).findFirst().orElse(null);
-                if (classesDir == null) {
-                    project.getLogger().warn("[test-order] testOrderInstrument: no compiled classes directory found"
-                            + " — run 'classes' first.");
-                    return;
-                }
+                    SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
+                    SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+                    Path classesDir = mainSourceSet.getOutput().getClassesDirs().getFiles().stream()
+                            .map(File::toPath).filter(Files::isDirectory).findFirst().orElse(null);
+                    if (classesDir == null) {
+                        project.getLogger().warn("[test-order] testOrderInstrument: no compiled classes directory found"
+                                + " — run 'classes' first.");
+                        return;
+                    }
 
-                String includePackages = ext.getIncludePackages().get();
-                if (includePackages.isEmpty()) {
-                    Path sourceRoot = resolveMainSourceRoot(project);
-                    includePackages = PackageDetector.resolveIncludePackages(
-                            null, ext.getFilterByGroupId().get(),
-                            String.valueOf(project.getGroup()), sourceRoot, project.getLogger());
-                }
-                List<String> includes = includePackages.isBlank()
-                        ? List.of() : List.of(includePackages.split(","));
+                    String includePackages = ext.getIncludePackages().get();
+                    if (includePackages.isEmpty()) {
+                        Path sourceRoot = resolveMainSourceRoot(project);
+                        includePackages = PackageDetector.resolveIncludePackages(
+                                null, ext.getFilterByGroupId().get(),
+                                String.valueOf(project.getGroup()), sourceRoot, project.getLogger());
+                    }
+                    List<String> includes = includePackages.isBlank()
+                            ? List.of() : List.of(includePackages.split(","));
 
-                project.getLogger().lifecycle("[test-order] Offline instrumentation ({}): {}", mode, classesDir);
-                project.getLogger()
-                        .lifecycle("[test-order] Packages: {}", includes.isEmpty() ? "(all)" : includes);
+                    project.getLogger().lifecycle("[test-order] Offline instrumentation ({}): {}", mode, classesDir);
+                    project.getLogger()
+                            .lifecycle("[test-order] Packages: {}", includes.isEmpty() ? "(all)" : includes);
 
-                me.bechberger.testorder.agent.OfflineInstrumentor instrumentor =
-                        new me.bechberger.testorder.agent.OfflineInstrumentor(mode, includes, List.of(), null);
-                try {
-                    Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
-                    Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
-                    me.bechberger.testorder.agent.runtime.ClassIdMapping mapping =
-                            instrumentor.instrument(classesDir, backupDir);
-                    Path mappingDir = buildDir.resolve(".test-order");
-                    Path mappingFile = mappingDir.resolve("class-id-map.bin");
-                    mapping.save(mappingFile);
-                    project.getLogger().lifecycle(
-                            "[test-order] Instrumented {} classes (skipped {}), mapping: {}",
-                            instrumentor.getTransformedCount(), instrumentor.getSkippedCount(), mappingFile);
-                } catch (IOException e) {
-                    throw new GradleException("[test-order] Offline instrumentation failed", e);
-                }
-            });
-        });
+                    me.bechberger.testorder.agent.OfflineInstrumentor instrumentor =
+                            new me.bechberger.testorder.agent.OfflineInstrumentor(mode, includes, List.of(), null);
+                    try {
+                        Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
+                        Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
+                        me.bechberger.testorder.agent.runtime.ClassIdMapping mapping =
+                                instrumentor.instrument(classesDir, backupDir);
+                        Path mappingDir = buildDir.resolve(".test-order");
+                        Path mappingFile = mappingDir.resolve("class-id-map.bin");
+                        mapping.save(mappingFile);
+                        project.getLogger().lifecycle(
+                                "[test-order] Instrumented {} classes (skipped {}), mapping: {}",
+                                instrumentor.getTransformedCount(), instrumentor.getSkippedCount(), mappingFile);
+                    } catch (IOException e) {
+                        throw new GradleException("[test-order] Offline instrumentation failed", e);
+                    }
+                });
+            }); // end testOrderInstrument
+        }); // end withType(JavaPlugin.class)
 
         project.getTasks().register("testOrderRunTiered", Test.class, task -> {
             configureDerivedTestTask(project, ext, task);
@@ -3727,6 +3732,11 @@ public class TestOrderPlugin implements Plugin<Project> {
             if (testSourceSet != null) {
                 task.setTestClassesDirs(testSourceSet.getOutput().getClassesDirs());
                 task.setClasspath(testSourceSet.getRuntimeClasspath());
+                // Re-set at execution time in case the FileCollection resolved empty at
+                // configuration time (complex multi-module projects, e.g. spring-boot).
+                final SourceSet capturedSourceSet = testSourceSet;
+                task.doFirst("testOrderRefreshTestClassesDirs",
+                        t -> ((Test) t).setTestClassesDirs(capturedSourceSet.getOutput().getClassesDirs()));
             }
         }
         task.useJUnitPlatform();

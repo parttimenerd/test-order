@@ -111,6 +111,14 @@ class JavaParserModel {
 			for (ConstructorDeclaration cd : td.getConstructors()) {
 				visitConstructor(cd, fqcn, stripped, source, methods);
 			}
+			// CompactConstructorDeclaration (records) is not returned by getConstructors()
+			if (td instanceof RecordDeclaration rd) {
+				for (var member : rd.getMembers()) {
+					if (member instanceof CompactConstructorDeclaration ccd) {
+						visitCompactConstructor(ccd, fqcn, source, methods);
+					}
+				}
+			}
 		}
 
 		// Fields
@@ -217,6 +225,39 @@ class JavaParserModel {
 			if (start >= 0 && end >= 0 && end < source.length()) {
 				// Use normalizeForHashing on original body text so that comment/whitespace
 				// changes are ignored but string literal changes are detected
+				bodyText = SourceFileModel.normalizeForHashing(source.substring(start, end + 1));
+				bodyHash = SourceFileModel.sha256(bodyText);
+				compactBody = SourceFileModel.removeCommentsAndEmptyLines(source.substring(start, end + 1));
+			}
+		}
+
+		methods.add(new SourceFileModel.MethodNode(name, fqcn, true, false, bodyText, bodyHash, compactBody,
+				signatureText));
+	}
+
+	private static void visitCompactConstructor(CompactConstructorDeclaration ccd, String fqcn, String source,
+			List<SourceFileModel.MethodNode> methods) {
+		String name = ccd.getNameAsString();
+		String bodyText = null;
+		String bodyHash = null;
+		String compactBody = null;
+		String signatureText = null;
+
+		if (ccd.getRange().isPresent() && ccd.getBody().getRange().isPresent()) {
+			var fullRange = ccd.getRange().get();
+			var bodyRange = ccd.getBody().getRange().get();
+			int sigStart = positionToOffset(source, fullRange.begin.line, fullRange.begin.column);
+			int bodyStart = positionToOffset(source, bodyRange.begin.line, bodyRange.begin.column);
+			if (sigStart >= 0 && bodyStart >= 0 && bodyStart > sigStart) {
+				signatureText = SourceFileModel.normalizeForHashing(source.substring(sigStart, bodyStart));
+			}
+		}
+
+		if (ccd.getBody().getRange().isPresent()) {
+			var range = ccd.getBody().getRange().get();
+			int start = positionToOffset(source, range.begin.line, range.begin.column);
+			int end = positionToOffset(source, range.end.line, range.end.column);
+			if (start >= 0 && end >= 0 && end < source.length()) {
 				bodyText = SourceFileModel.normalizeForHashing(source.substring(start, end + 1));
 				bodyHash = SourceFileModel.sha256(bodyText);
 				compactBody = SourceFileModel.removeCommentsAndEmptyLines(source.substring(start, end + 1));

@@ -798,4 +798,39 @@ class DependencyMapTest {
 		// idf must be non-negative: ln(3/2) ≈ 0.41
 		assertTrue(map.idf("app.Outer") >= 0.0, "idf must not be negative when df <= n");
 	}
+
+	// ── Regression: BUG-122 — filterForModule must preserve member-level data ──
+
+	@Test
+	void filterForModule_preservesMemberDepsForKeptTests() {
+		DependencyMap map = new DependencyMap();
+
+		// Two tests in different modules
+		map.put("com.example.AlphaTest", Set.of("com.example.Alpha"));
+		map.putMemberDeps("com.example.AlphaTest", Set.of("com.example.Alpha#doWork", "com.example.Alpha#field"));
+		map.putMethodMemberDeps("com.example.AlphaTest#testA", Set.of("com.example.Alpha#doWork"));
+		map.putModule("com.example.AlphaTest", "g:module-alpha");
+
+		map.put("com.example.BetaTest", Set.of("com.example.Beta"));
+		map.putMemberDeps("com.example.BetaTest", Set.of("com.example.Beta#run"));
+		map.putModule("com.example.BetaTest", "g:module-beta");
+
+		DependencyMap filtered = map.filterForModule("g:module-alpha", null);
+
+		// hasMemberDeps() must be true — before BUG-122 fix it returned false
+		assertTrue(filtered.hasMemberDeps(), "filterForModule must preserve member-dep data");
+
+		// Class-level member deps for kept test must be present and correct
+		assertEquals(Set.of("com.example.Alpha#doWork", "com.example.Alpha#field"),
+				filtered.getMemberDeps("com.example.AlphaTest"),
+				"class-level member deps for kept test must survive filterForModule");
+
+		// Method-level member deps must also be preserved
+		assertEquals(Set.of("com.example.Alpha#doWork"), filtered.getMethodMemberDeps("com.example.AlphaTest#testA"),
+				"method-level member deps for kept test must survive filterForModule");
+
+		// The excluded test must not appear in class dependencies
+		assertFalse(filtered.testClasses().contains("com.example.BetaTest"),
+				"excluded test must not appear in filtered map's test classes");
+	}
 }

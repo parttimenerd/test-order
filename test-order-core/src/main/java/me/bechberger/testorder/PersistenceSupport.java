@@ -114,6 +114,10 @@ public final class PersistenceSupport {
 		// the same instance. Removing eagerly caused a race where a waiting
 		// thread and a new arrival could obtain different lock objects.
 		Object jvmLock = JVM_LOCKS.computeIfAbsent(lockFile, ignored -> new Object());
+		if (JVM_LOCKS.size() > 512) {
+			LOGGER.warning("[test-order] JVM_LOCKS has " + JVM_LOCKS.size()
+					+ " entries — possible leak in a long-running daemon process.");
+		}
 		synchronized (jvmLock) {
 			Path parent = lockFile.getParent();
 			if (parent != null) {

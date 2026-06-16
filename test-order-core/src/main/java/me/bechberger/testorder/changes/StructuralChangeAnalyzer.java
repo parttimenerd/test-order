@@ -161,7 +161,13 @@ public class StructuralChangeAnalyzer {
 			}
 			case FIELD -> change.name();
 			case INITIALIZER -> {
-				// StructuralDiff now reports "<clinit>" for static and "<init>" for instance
+				// Static initializers are recorded as <clinit>.
+				// Instance initializers would collide with constructor's <init> key, so
+				// use a distinct sentinel to preserve granularity in member-level impact
+				// analysis (instance-init body changes are different from constructor changes).
+				if ("<init>".equals(change.name())) {
+					yield "##instance-init";
+				}
 				yield change.name();
 			}
 			case TYPE -> null;

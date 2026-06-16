@@ -150,8 +150,8 @@ class StructuralChangeAnalyzerTest {
 
 			StructuralChangeAnalyzer.ChangedMembers result = StructuralChangeAnalyzer.fromDiffs(diffs);
 
-			assertTrue(result.changedMemberKeys().contains("com.example.Lazy#<init>"));
-			assertTrue(result.membersByClass().get("com.example.Lazy").contains("<init>"));
+			assertTrue(result.changedMemberKeys().contains("com.example.Lazy#" + "##instance-init"));
+			assertTrue(result.membersByClass().get("com.example.Lazy").contains("##instance-init"));
 		}
 
 		@Test
@@ -305,12 +305,12 @@ class StructuralChangeAnalyzerTest {
 		}
 
 		@Test
-		@DisplayName("INITIALIZER with <init> returns <init>")
+		@DisplayName("INITIALIZER with <init> returns ##instance-init sentinel (not <init>) to avoid collision with constructors")
 		void instanceInitializerReturnsInit() {
 			StructuralDiff.Change change = createChange(StructuralDiff.Change.Kind.ADDED,
 					StructuralDiff.Change.Category.INITIALIZER, "com.example.Lazy", "<init>", "{ ... }");
 			String result = StructuralChangeAnalyzer.resolveMemberName(change);
-			assertEquals("<init>", result);
+			assertEquals("##instance-init", result);
 		}
 
 		@Test

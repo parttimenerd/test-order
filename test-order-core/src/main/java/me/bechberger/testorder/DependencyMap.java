@@ -491,6 +491,12 @@ public class DependencyMap {
 					+ " tests from other modules");
 		}
 		filtered.methodDependencies.putAll(methodDependencies);
+		filtered.memberKeyDictionary.addAll(memberKeyDictionary);
+		filtered.memberKeyIndex.putAll(memberKeyIndex);
+		for (var e : memberDepsMap.entrySet())
+			filtered.memberDepsMap.put(e.getKey(), e.getValue().clone());
+		for (var e : methodMemberDepsMap.entrySet())
+			filtered.methodMemberDepsMap.put(e.getKey(), e.getValue().clone());
 		filtered.testToModule.putAll(testToModule);
 		return filtered;
 	}
@@ -1742,6 +1748,9 @@ public class DependencyMap {
 		return PersistenceSupport.withFileLock(indexFile, () -> {
 			// Load existing index as base, or start fresh — inside the lock so we read
 			// the latest committed state.
+			// Evict the cache entry first so any concurrent load() call re-reads from disk
+			// rather than seeing the partially-mutated object during merge.
+			evictCache(indexFile);
 			DependencyMap map;
 			if (Files.exists(indexFile)) {
 				map = load(indexFile);

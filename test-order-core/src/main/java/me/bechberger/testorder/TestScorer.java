@@ -425,7 +425,7 @@ public class TestScorer {
 			if (weights.staticFieldBonus() > 0 && memberDeps != null && !memberDeps.isEmpty()) {
 				staticFieldOverlap = StructuralChangeAnalyzer.computeStaticFieldOverlap(memberDeps, changedMembers);
 				if (staticFieldOverlap > 0) {
-					score += weights.staticFieldBonus();
+					score += (int) Math.round(weights.staticFieldBonus() * killMultiplier);
 				}
 			}
 		}
@@ -611,9 +611,10 @@ public class TestScorer {
 		int adjustedDepOverlapPts = (int) Math.round(depOverlapPts * killMultiplier);
 		int adjustedComplexityPts = (int) Math.round(complexityPts * killMultiplier);
 		int adjustedSetCoverPts = (int) Math.round(setCoverPts * killMultiplier);
+		int adjustedStaticFieldPts = (int) Math.round(staticFieldPts * killMultiplier);
 		if (killRate >= 0) {
 			totalScore += (adjustedDepOverlapPts - depOverlapPts) + (adjustedComplexityPts - complexityPts)
-					+ (adjustedSetCoverPts - setCoverPts);
+					+ (adjustedSetCoverPts - setCoverPts) + (adjustedStaticFieldPts - staticFieldPts);
 		}
 
 		// Package-proximity bonus
@@ -621,9 +622,9 @@ public class TestScorer {
 		totalScore += packageProximityPts;
 
 		return new ExplainEntry(testClassName, rank, totalScore, isChanged, changedTestPts, deps, overlapClasses,
-				adjustedDepOverlapPts, complexityOvlp, adjustedComplexityPts, hasStaticFieldOvlp, staticFieldPts,
-				failScore, failurePts, isNew, newTestPts, dur, medianDuration, sRatio, speedPts, adjustedSetCoverPts,
-				killRate, killRatePts, packageProximityPts, weights);
+				adjustedDepOverlapPts, complexityOvlp, adjustedComplexityPts, hasStaticFieldOvlp,
+				adjustedStaticFieldPts, failScore, failurePts, isNew, newTestPts, dur, medianDuration, sRatio, speedPts,
+				adjustedSetCoverPts, killRate, killRatePts, packageProximityPts, weights);
 	}
 
 	/**
@@ -648,7 +649,8 @@ public class TestScorer {
 			String changedPkg = changed.substring(0, cdot);
 			if (!changedPkg.contains("."))
 				continue; // require at least 2 components on the changed side too
-			if (testPkg.equals(changedPkg) || testPkg.startsWith(changedPkg + "."))
+			if (testPkg.equals(changedPkg) || testPkg.startsWith(changedPkg + ".")
+					|| changedPkg.startsWith(testPkg + "."))
 				return weights.packageProximityBonus();
 		}
 		return 0;

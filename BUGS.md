@@ -6,65 +6,65 @@ Audit conducted 2026-06-05 on the reactor class-id map implementation and relate
 
 ## Bugs Fixed
 
-### BUG-1: SourceRootScanner — hidden files produced malformed FQNs
+### BUG-1: SourceRootScanner — hidden files produced malformed FQNs ✓ FIXED
 
 **File:** `test-order-core/…/SourceRootScanner.java`  
 **Symptom:** A file like `.foo.java` would be scanned, stripped of `.java`, and registered as FQN `.foo` — a malformed, dot-leading name that would never match any real class.  
 **Fix:** Added explicit check `if (name.startsWith(".")) continue;` inside `visitFile`.  
 **Test:** `SourceRootScannerTest.hiddenFilesAreSkipped`
 
-### BUG-2: SourceRootScanner — hidden directories were descended into
+### BUG-2: SourceRootScanner — hidden directories were descended into ✓ FIXED
 
 **File:** `test-order-core/…/SourceRootScanner.java`  
 **Symptom:** Directories like `.git/refs/heads/` or `.archived/pkg/` would be traversed, and any `.java` files inside would be scanned. In a worst case, someone pointing the scanner at a project root would register thousands of junk FQNs.  
 **Fix:** Added `preVisitDirectory` override in the new `Files.walkFileTree` implementation that returns `SKIP_SUBTREE` for dot-prefixed directories (except the root itself).  
 **Test:** `SourceRootScannerTest.hiddenDirectoriesAreSkipped`, `.rootItselfMayBeHidden`
 
-### BUG-3: SourceRootScanner — `Files.walk` aborted entire scan on symlink cycle
+### BUG-3: SourceRootScanner — `Files.walk` aborted entire scan on symlink cycle ✓ FIXED
 
 **File:** `test-order-core/…/SourceRootScanner.java`  
 **Symptom:** `Files.walk` throws `FileSystemLoopException` on a symlink cycle; the catch block silently returned whatever had been collected so far, dropping all files not yet visited. Similar failure modes for broken symlinks or permission-denied directories.  
 **Fix:** Rewrote scanner to use `Files.walkFileTree` with `SimpleFileVisitor`. `visitFileFailed` returns `CONTINUE` so per-file errors never abort the scan. The outer `IOException` catch is the last resort for catastrophic failures.  
 **Test:** `SourceRootScannerTest.brokenSymlinkDoesNotAbortScan`
 
-### BUG-4: ReactorContext — reactor root not normalized
+### BUG-4: ReactorContext — reactor root not normalized ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/ReactorContext.java` line 68  
 **Symptom:** `session.getTopLevelProject().getBasedir().toPath()` was used without `.normalize()`. If the path contained `..` segments, derived paths (`<reactorRoot>/.test-order/class-id-map.bin`) would differ in surface form between modules, potentially tripping up `Path.equals` comparisons and making the FileLock identity inconsistent across `mvn -T` threads.  
 **Fix:** Added `.normalize()` call to the reactor root assignment (both the `mmDir` and fallback branches).
 
-### BUG-5: CollectorLifecycleParticipant — reactor root used wrong source in `-pl` builds
+### BUG-5: CollectorLifecycleParticipant — reactor root used wrong source in `-pl` builds ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/CollectorLifecycleParticipant.java` line 145  
 **Symptom:** `prepareReactorClassIdMap` used `session.getTopLevelProject().getBasedir()` to determine the reactor root. In a `mvn -pl <submodule>` invocation from the reactor root, `getTopLevelProject()` returns the *selected* submodule (not the reactor root). This caused the lifecycle participant to write `class-id-map.bin` to a DIFFERENT location than `ReactorContext` (which correctly uses `getMultiModuleProjectDirectory()`), so the per-module prepares would not find the pre-allocated IDs.  
 **Fix:** Changed `prepareReactorClassIdMap` to use `session.getRequest().getMultiModuleProjectDirectory()` (with fallback to `getTopLevelProject()` for safety), matching the logic already in `ReactorContext`.
 
-### BUG-6: `configureOfflineLearnMode` deleted the reactor-wide class-id map on re-instrumentation
+### BUG-6: `configureOfflineLearnMode` deleted the reactor-wide class-id map on re-instrumentation ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/AbstractTestOrderMojo.java` lines 1673-1678  
 **Symptom:** When a module had a stale instrumentation state (mapping file exists but no backup), the code deleted the mapping file before calling `runOfflineInstrumentation`. In a multi-module build, the mapping file is the REACTOR-WIDE `class-id-map.bin` shared by all modules. Deleting it destroyed every other module's pre-allocated IDs, causing cross-module edges to be either mis-attributed or dropped.  
 **Fix:** Removed the `Files.deleteIfExists(mappingFile)` call. `runOfflineInstrumentation` already handles the stale-marker case via `setIgnoreMarker(true)` and correctly loads the existing map before instrumenting.
 
-### BUG-7: PrepareMojo had a duplicate `REACTOR_MAP_INTRA_JVM_LOCK` shadowing the parent's lock
+### BUG-7: PrepareMojo had a duplicate `REACTOR_MAP_INTRA_JVM_LOCK` shadowing the parent's lock ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/PrepareMojo.java` line 115  
 **Symptom:** `PrepareMojo` declared its own `private static final Object REACTOR_MAP_INTRA_JVM_LOCK` while `AbstractTestOrderMojo` (the parent) also had a `static final Object REACTOR_MAP_INTRA_JVM_LOCK`. Since Java `static` fields belong to the declaring class, `PrepareMojo.REACTOR_MAP_INTRA_JVM_LOCK` and `AbstractTestOrderMojo.REACTOR_MAP_INTRA_JVM_LOCK` were **two different objects**. `PrepareMojo.performDeferredOfflineInstrumentation` and `AbstractTestOrderMojo.runOfflineInstrumentation` therefore did NOT mutually exclude each other. In a `mvn -T` build, a parallel `prepare` from module A (using the child-class lock) could race against `runOfflineInstrumentation` from module B (using the parent-class lock), corrupting the ClassIdMap singleton.  
 **Fix:** Removed the duplicate field from `PrepareMojo` entirely. `synchronized (REACTOR_MAP_INTRA_JVM_LOCK)` in `PrepareMojo` now resolves to `AbstractTestOrderMojo.REACTOR_MAP_INTRA_JVM_LOCK` (the shared one).
 
-### BUG-8: `InstrumentMojo` overwrote reactor-wide map with only single-module data
+### BUG-8: `InstrumentMojo` overwrote reactor-wide map with only single-module data ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/InstrumentMojo.java` lines 147-162 (before fix)  
 **Symptom:** `instrumentor.instrument(classesDir)` returned a `ClassIdMapping` snapshot containing ONLY the IDs allocated during that one module's instrumentation. `mapping.save(mappingFile)` then wrote that partial snapshot to the reactor-wide `class-id-map.bin`, overwriting every other module's IDs with a single-module view. In a multi-module build with `mvn -T`, two concurrent `InstrumentMojo` executions would also race on the singleton ClassIdMap without any lock.  
 **Fix:** Added the same `synchronized (REACTOR_MAP_INTRA_JVM_LOCK)` + `FileLock` pattern used by `PrepareMojo` and `runOfflineInstrumentation`. Within the lock, load the existing reactor map into the singleton before instrumenting, then save `ClassIdMapping.fromClassIdMap(singleton, ...)` (the full union, not just this module's additions). Removed the now-unused `ClassIdMapping` import.
 
-### BUG-9: `IndexCollectorServer.hasSource` — package prefix matched prefix-of-package-name
+### BUG-9: `IndexCollectorServer.hasSource` — package prefix matched prefix-of-package-name ✓ FIXED
 
 **File:** `test-order-core/…/IndexCollectorServer.java` method `hasSource`  
 **Symptom:** `className.startsWith(prefix)` without a boundary check accepted `com.example2.Foo` as matching prefix `com.example`. In projects with package names sharing a common prefix (e.g. `com.example` and `com.example2`), classes from `com.example2` would be incorrectly retained in the dependency index even when `includePackages=com.example` was set. This would silently inflate the dependency graph and cause unnecessary test reruns.  
 **Fix:** Changed the match condition to require that the character immediately after the prefix is `.`, `$`, or end-of-string — i.e., a real package/class boundary.  
 **Test:** `IndexCollectorServerTest.packagePrefixFilterRespectsBoundary`, `.packagePrefixFilterKeepsInnerClasses`
 
-### BUG-10: `processFallbackFile` leaked `claimedFile` on `readAllLines` IOException
+### BUG-10: `processFallbackFile` leaked `claimedFile` on `readAllLines` IOException ✓ FIXED
 
 **File:** `test-order-core/…/IndexCollectorServer.java` line 843 (before fix)  
 **Symptom:** If `Files.readAllLines(claimedFile)` threw (e.g. encoding error, transient I/O), the exception propagated out of `processFallbackFile` without deleting `claimedFile`. The `.processing` temp file would remain on disk forever (or until manually cleaned), blocking future calls to `processFallbackFile` from picking up and retrying the original fallback file (since it had already been renamed away).  
@@ -74,19 +74,19 @@ Audit conducted 2026-06-05 on the reactor class-id map implementation and relate
 
 ## Bugs Fixed (Session 2 — 2026-06-05)
 
-### BUG-11: `testorder.extensionActive` produced spurious "Unknown property" warning
+### BUG-11: `testorder.extensionActive` produced spurious "Unknown property" warning ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/MavenPluginConfigKeys.java` line 229  
 **Symptom:** The lifecycle extension sets `testorder.extensionActive` in Maven's user properties to signal to the plugin that the extension is active. This internal coordination key was not in `ALL_KNOWN_KEYS` and not in the skip list, so every build logged `[WARNING] Unknown property 'testorder.extensionActive'`.  
 **Fix:** Added `key.equals("testorder.extensionActive")` to the skip list in `findUnknownProperties`.
 
-### BUG-12: `SelectMojo` ignored user's `-Dtest=` filter, producing misleading "not selected" warnings
+### BUG-12: `SelectMojo` ignored user's `-Dtest=` filter, producing misleading "not selected" warnings ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/SelectMojo.java`  
 **Symptom:** When a user passed `-Dtest=CartTest` alongside `test-order:affected`, `SelectMojo` still ran its selection logic and warned "N tests were NOT selected and will NOT run" — even though the user's explicit filter would override test-order's selection via Maven property precedence. This was both confusing and wasted time.  
 **Fix:** Added a guard at the top of `execute()`: if `session.getUserProperties().getProperty("test")` is non-blank, skip selection entirely and log "Skipping selection — -Dtest=X filter active." Consistent with the guard already in `PrepareMojo.executeOrderMode()`.
 
-### BUG-13: `AutoMojo` ignored user's `-Dtest=` filter in auto-select mode
+### BUG-13: `AutoMojo` ignored user's `-Dtest=` filter in auto-select mode ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/AutoMojo.java`  
 **Symptom:** Same issue as BUG-12 but in `test-order:auto` mode. If a user passed `-Dtest=CartTest` with `test-order:auto test`, the auto-selection would run, potentially produce "Remaining tests written to..." messages, and try to override Surefire's test filter.  
@@ -98,7 +98,7 @@ Audit conducted 2026-06-05 on the reactor class-id map implementation and relate
 **Symptom:** `addRunRecord()` (which sets `pendingRunCompleted = true`) is `synchronized`, but `toPersistedRoot()` reads `pendingRunCompleted` outside any lock and `afterSave()` writes it outside any lock. Under concurrent saves (theoretically possible in tests or benchmarks), a thread could see a stale `false` value, causing failure-score decay to be skipped for a run.  
 **Fix:** Changed `private boolean pendingRunCompleted` to `private volatile boolean pendingRunCompleted`.
 
-### BUG-15: `TieredSelectMojo` also ignored user's `-Dtest=` filter
+### BUG-15: `TieredSelectMojo` also ignored user's `-Dtest=` filter ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/TieredSelectMojo.java`  
 **Symptom:** Same as BUG-12/13 but in `test-order:tiered-select`. When `-Dtest=CartTest` was specified alongside `tiered-select`, the mojo still ran its tier-selection logic, writing tier files and running `configureIncludes`, even though the user's filter would override the selection.  
@@ -108,7 +108,7 @@ Audit conducted 2026-06-05 on the reactor class-id map implementation and relate
 
 ## Bugs Fixed (Session 3 — 2026-06-05)
 
-### BUG-16: `performDeferredOfflineInstrumentation` in `PrepareMojo` did not register backup for session-end restoration
+### BUG-16: `performDeferredOfflineInstrumentation` in `PrepareMojo` did not register backup for session-end restoration ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/PrepareMojo.java` line 504 (before fix)  
 **Symptom:** When deferred offline instrumentation ran (i.e., `configureOfflineLearnMode` set `testorder.offline.pending=true` because classes weren't compiled yet, and `PrepareMojo.performDeferredOfflineInstrumentation` ran them at `process-test-classes`), the resulting `classes-backup` directory was added to `AbstractTestOrderMojo.pendingRestores` (a static set that nothing reads) but was NOT registered via `registerPendingRestoreInSession`. As a result:
@@ -117,7 +117,7 @@ Audit conducted 2026-06-05 on the reactor class-id map implementation and relate
 The consequence: after a deferred-instrumentation learn run, the instrumented bytecode was left on disk. The next `mvn test` (without `clean`) would encounter `UsageStore` call-sites injected into compiled classes and fail with `NoClassDefFoundError` when non-test plugins (e.g. annotation processors) loaded those classes outside the test classpath.  
 **Fix:** Added `registerPendingRestoreInSession(backupDir)` and `registerPendingRestoreInSession(testBackupDir)` after the existing `pendingRestores.add()` call, matching the pattern in `runOfflineInstrumentation` (lines 1955–1956).
 
-### BUG-17: `RunTieredMojo` also ignored user's `-Dtest=` filter
+### BUG-17: `RunTieredMojo` also ignored user's `-Dtest=` filter ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/RunTieredMojo.java`  
 **Symptom:** Same as BUG-12/13/15 but in `test-order:run-tiered`. When `-Dtest=CartTest` was specified alongside `run-tiered`, the mojo still ran full tiered selection and configured Surefire's include list, even though Maven's user property `test=CartTest` would override the selection anyway. This wasted time computing tier assignments and wrote unnecessary tier files.  
@@ -127,26 +127,26 @@ The consequence: after a deferred-instrumentation learn run, the instrumented by
 
 ## Bugs Fixed (Session 4 — 2026-06-05)
 
-### BUG-18: `OrderConstraintManager.applyMustNotPrecede` missed cascading MUST_NOT_PRECEDE violations
+### BUG-18: `OrderConstraintManager.applyMustNotPrecede` missed cascading MUST_NOT_PRECEDE violations ✓ FIXED
 
 **File:** `test-order-core/…/ops/detection/OrderConstraintManager.java` lines 126-142  
 **Symptom:** The greedy swap loop checked adjacent pairs but did not decrement `i` after a swap. If the element now at `i+1` was also a victim of the same polluter (e.g., both `P→V1` and `P→V2` are MUST_NOT_PRECEDE pairs and V2 was swapped into the slot after P), the second violation was never detected or fixed.  
 **Fix:** Added `i--` after every swap so the loop re-checks position `i` with its new neighbor before advancing.  
 **Tests:** `OrderConstraintManagerTest.mustNotPrecedeRecheckAfterSwapCatchesNewViolation`, `.mustNotPrecedeAtEndMovesVictimBeforePolluter`
 
-### BUG-19: `DashboardMojo` passed relative-path `outPath.getParent()` to `DashboardWorkflow` instead of absolute
+### BUG-19: `DashboardMojo` passed relative-path `outPath.getParent()` to `DashboardWorkflow` instead of absolute ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/DashboardMojo.java` line 92  
 **Symptom:** When a user overrides `testorder.dashboard.output` with a relative path like `dashboard/index.html`, `outPath.getParent()` returns `Path("dashboard")` (relative). However, `DashboardWorkflow` stores this as `outputDir` and calls `outputDir.resolve("index.html")`, which produces a path relative to the JVM working directory rather than the project directory. If `outputDir` was null (bare filename like `index.html`), it caused a `NullPointerException`.  
 **Fix:** Changed `outPath.getParent()` to `outPath.toAbsolutePath().getParent()` (consistent with the null-safe check already on line 61).
 
-### BUG-21: `TestScorer.explain()` omitted complexity bonus in set-cover mode, diverging from `score()`
+### BUG-21: `TestScorer.explain()` omitted complexity bonus in set-cover mode, diverging from `score()` ✓ FIXED
 
 **File:** `test-order-core/…/TestScorer.java` lines 519-540  
 **Symptom:** `score()` computes the complexity bonus in both the set-cover path AND the non-set-cover path (lines 374-387 and 389-407 respectively). However `explain()` only computed the complexity bonus in the non-set-cover `else` branch (lines 533-539). When set-cover mode was active and `changeComplexity` data was non-empty, `explain()` reported a lower total score than `score()` actually used for ordering. The `show` command's score breakdown was therefore misleading — it showed a lower score than what drove the actual test sequence.  
 **Fix:** Added the complexity bonus calculation to the set-cover branch in `explain()`, mirroring lines 380-386 of `score()`.
 
-### BUG-20: `TestOrderState.save` / `saveAggregatedFork` did not invalidate the load cache on IOException
+### BUG-20: `TestOrderState.save` / `saveAggregatedFork` did not invalidate the load cache on IOException ✓ FIXED
 
 **File:** `test-order-core/…/TestOrderState.java` lines 783-811  
 **Symptom:** If `StateSerializer.save` threw an `IOException` (e.g., disk full, `moveIntoPlace` failed), the `STATE_LOAD_CACHE.removeIf` call was never reached. The mutated in-memory object (with `pendingRunCompleted = true` from the previous `addRunRecord` call, but not yet persisted) remained cached under the old file key. The next `load()` with the same file metadata returned the stale object. On the next successful save, `toPersistedRoot(applyDecay=true)` applied a second decay round for the same run, causing old failure scores to decay twice as fast.  
@@ -156,7 +156,7 @@ The consequence: after a deferred-instrumentation learn run, the instrumented by
 
 ## Bugs Fixed (Session 5 — 2026-06-05)
 
-### BUG-22: `ChangeAnalysis` bytecode-augmentation filter used `startsWith` without package-boundary check
+### BUG-22: `ChangeAnalysis` bytecode-augmentation filter used `startsWith` without package-boundary check ✓ FIXED
 
 **File:** `test-order-core/…/ops/workflows/ChangeAnalysis.java` line 392 (before fix)  
 **Symptom:** The bytecode-dependency-augmentation filter applied `includePackages` using `dep::startsWith` with no boundary check. A user configuring `includePackages=com.example` would incorrectly let augmented edges to `com.example2.Service` pass through the filter (same root cause as BUG-9 in `IndexCollectorServer.hasSource`). This silently inflated the dependency graph with cross-package edges, causing tests to be unnecessarily re-run whenever `com.example2` classes changed.  
@@ -171,7 +171,7 @@ The consequence: after a deferred-instrumentation learn run, the instrumented by
 - **Select mode**: `topN=1` selects 1 test; `run-remaining` correctly runs the deferred 2.
 - **`-Dtest=` filter interaction**: verified that `-Dtest=CartTest` with order mode, affected mode, and auto mode all correctly skip reordering/selection and let Surefire handle the explicit filter.
 - **All 250 unit tests pass** after session-2 fixes.
-- **All ITs pass**: cross-module-tracking, diamond-modules, transitive-modules, select-mode.
+- **All ITs pass**: cross-module-tracking, diamond-modules, transitive-modules, affected-mode.
 
 ---
 
@@ -204,7 +204,7 @@ The consequence: after a deferred-instrumentation learn run, the instrumented by
 - `PersistenceSupport.cleanupStaleLock` TOCTOU — safe (FileLock holds even after file deletion)
 
 
-## BUG-90: `StateConfiguration.runsSinceLearn` int overflow silences weight optimizer permanently
+## BUG-90: `StateConfiguration.runsSinceLearn` int overflow silences weight optimizer permanently ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/StateConfiguration.java`  
 **Symptom:** After ~2.1 billion test-order runs (achievable by long-running CI pipelines over years), `incrementRunsSinceLearn()` wraps `int` from `Integer.MAX_VALUE` to `Integer.MIN_VALUE`. `AutoWorkflow.optimizeIfDue` checks `state.runsSinceLearn() <= 0`, which then evaluates to `true` permanently, disabling the periodic weight optimizer forever without any log message.  
@@ -212,14 +212,14 @@ The consequence: after a deferred-instrumentation learn run, the instrumented by
 **Regression test:** `StateConfigurationTest.incrementRunsSinceLearnSaturesAtMaxValue`
 
 
-## BUG-91: `StateConfiguration.emaVarianceThreshold` Javadoc inverts the actual adaptive-alpha direction
+## BUG-91: `StateConfiguration.emaVarianceThreshold` Javadoc inverts the actual adaptive-alpha direction ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/StateConfiguration.java`  
 **Symptom:** The Javadoc on `emaVarianceThreshold()` stated "When variance is high, alpha is *increased* to track real changes quickly." In reality, `DurationTracker.adaptiveAlpha` *reduces* alpha when the relative standard deviation exceeds the threshold (more aggressive smoothing to damp noise). Any developer reading the Javadoc would configure the threshold backwards — e.g., raising it to get less noise, when raising it actually means fewer tests get dampened at all.  
 **Fix:** Corrected the Javadoc to say: "When the relative standard deviation exceeds this threshold, the effective EMA alpha is *reduced* (more aggressive smoothing) to damp out measurement noise."  
 **Regression tests:** `DurationTrackerTest.highVarianceDampensAlphaForMoreSmoothing`, `DurationTrackerTest.stableVarianceUsesBaseAlpha`, `DurationTrackerTest.negativeOrZeroDurationIsIgnored`
 
-## BUG-92: `CiSummaryWriter.findExistingCommentId` returns wrong ID when comment object contains nested sub-objects with `"id"` fields
+## BUG-92: `CiSummaryWriter.findExistingCommentId` returns wrong ID when comment object contains nested sub-objects with `"id"` fields ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/CiSummaryWriter.java`  
 **Symptom:** The GitHub API response for listing PR comments includes nested sub-objects like `"user": {"id": 789, "login": "bot"}`. The old backward-walk scanned from the marker position towards the beginning of the string using `lastIndexOf('{')`, finding the innermost `{` first. That innermost `{` belonged to the `"user"` object, whose `"id"` field was extracted — returning the user's numeric ID (e.g. 789) instead of the comment's ID (e.g. 12345). Consequence: the subsequent PATCH request would target the wrong endpoint, failing with a 404 or silently updating the wrong resource.  
@@ -228,7 +228,7 @@ The consequence: after a deferred-instrumentation learn run, the instrumented by
 
 ---
 
-## Bugs Found (Session 6 — 2026-06-15, UNFIXED)
+## Bugs Found (Session 6 — 2026-06-15)
 
 ### BUG-93: ~~Offline learn mode does not create test-dependencies.lz4 index file~~ (NOT REPRODUCIBLE)
 
@@ -238,7 +238,7 @@ The consequence: after a deferred-instrumentation learn run, the instrumented by
 
 ---
 
-### BUG-94: `head` command silently fails with 5MB limit error in test-order diagnostics
+### BUG-94: `head` command silently fails with 5MB limit error in test-order diagnostics ✓ FIXED
 
 **File:** `scripts/` (test-order workflow diagnostic scripts)  
 **Severity:** LOW (cosmetic, non-blocking)  
@@ -253,11 +253,12 @@ mvn test-order:dump
 # Observe the warning: "head: illegal byte count -- 5M"
 ```
 
-**Expected behavior:** The dump output should be limited cleanly without error messages, or the diagnostic output should omit this step entirely.
+**Expected behavior:** The dump output should be limited cleanly without error messages, or the diagnostic output should omit this step entirely.  
+**Fix:** Changed `head -c 5M` to `head -c 5242880` in `scripts/third_party_test_plan.sh`.
 
 ---
 
-### BUG-95: `OrderReportPrinter.shortenClassName` doesn't abbreviate the class name itself, only packages
+### BUG-95: `OrderReportPrinter.shortenClassName` doesn't abbreviate the class name itself, only packages ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java:190-204`  
 **Severity:** LOW (cosmetic, inconsistent abbreviation)  
@@ -265,13 +266,12 @@ mvn test-order:dump
 
 **Root cause:** The method explicitly only abbreviates package parts (lines 198-201), leaving `parts[parts.length - 1].append('.').append(cls)` where `cls` is the unabbreviated class name.
 
-**Expected behavior:** For true "short names", the class name should also be abbreviated (at least the first character + dot + rest, or to a fixed width). Current behavior makes "short names" not very short for verbose class naming conventions.
-
-**Impact:** Low — cosmetic only, doesn't affect test-order functionality. Reports with many long class names still have visual line-wrapping.
+**Expected behavior:** For true "short names", the class name should also be abbreviated (at least the first character + dot + rest, or to a fixed width). Current behavior makes "short names" not very short for verbose class naming conventions.  
+**Fix:** `shortenClassName` now truncates class names longer than 30 characters to 27 chars + `...` suffix via the new `abbreviateClassName` helper.
 
 ---
 
-### BUG-96: Offline instrumentation with deferred mode doesn't validate that classes were actually instrumented
+### BUG-96: Offline instrumentation with deferred mode doesn't validate that classes were actually instrumented ✓ FIXED
 
 **File:** `test-order-maven-plugin/…/PrepareMojo.java` or `AbstractTestOrderMojo.java`  
 **Severity:** MEDIUM  
@@ -289,11 +289,12 @@ If instrumentation silently fails, the test JVM will run with uninstrumented cla
 2. Simulate instrumentation failure (e.g., permission denied on backup directory)
 3. Observe that test JVM still runs without error, but no index is created
 
-**Expected behavior:** Deferred instrumentation should validate that the backup directory exists and is non-empty before proceeding to test execution. If validation fails, emit a clear error.
+**Expected behavior:** Deferred instrumentation should validate that the backup directory exists and is non-empty before proceeding to test execution. If validation fails, emit a clear error.  
+**Fix:** Added WARN-level log after instrumentation when `transformedCount == 0` (no classes instrumented) and when backup directory was not created. Both are emitted to stderr via the Maven build log, making silent failures visible.
 
 ---
 
-### BUG-97: Test execution in offline instrumentation doesn't verify socket connectivity to IndexCollectorServer
+### BUG-97: Test execution in offline instrumentation doesn't verify socket connectivity to IndexCollectorServer ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/agent/OfflineRuntimeBootstrap.java` (or equivalent test-side initialization)  
 **Severity:** MEDIUM  
@@ -304,11 +305,12 @@ If instrumentation silently fails, the test JVM will run with uninstrumented cla
 
 If socket communication silently fails, the test runs normally but produces no dependency records. When `stopAndMerge()` is called, `mergedClassDeps` is empty, so the index file is either not written or written as empty.
 
-**Expected behavior:** If the test JVM cannot connect to the collector port, it should log a warning or error, or fall back to .deps file mode. The absence of connectivity should not silently result in an empty index.
+**Expected behavior:** If the test JVM cannot connect to the collector port, it should log a warning or error, or fall back to .deps file mode. The absence of connectivity should not silently result in an empty index.  
+**Fix:** Upgraded `AgentLogger.log` (verbose-only) to `AgentLogger.warn` (always emits to stderr) for both binary and string-based socket send failures in `UsageStore.flush()`. Users will now see a visible warning when socket send fails and the fallback .deps path is used.
 
 ---
 
-### BUG-98: `OrderReportPrinter.printShowOrderTable` doesn't handle displayLimit=-1 edge case (show all tests)
+### BUG-98: `OrderReportPrinter.printShowOrderTable` doesn't handle displayLimit=-1 edge case (show all tests) ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java:47-86`  
 **Severity:** LOW (edge case, works in practice)  
@@ -318,13 +320,12 @@ If socket communication silently fails, the test runs normally but produces no d
 
 **Root cause:** The condition should be `displayLimit > 0 && ranked.size() > displayLimit` (correct), but the semantic intent for -1 is not explicit.
 
-**Expected behavior:** Add a comment clarifying that `displayLimit == -1` means unlimited, or change the condition to explicitly check for -1.
-
-**Impact:** Very low — edge case, code works correctly in practice.
+**Expected behavior:** Add a comment clarifying that `displayLimit == -1` means unlimited, or change the condition to explicitly check for -1.  
+**Fix:** Added clarifying comment in `printShowOrderTable` that `-1` means show all and any other negative value is treated identically.
 
 ---
 
-### BUG-99: No warning when `testorder.show.limit` produces a large memory summary table
+### BUG-99: No warning when `testorder.show.limit` produces a large memory summary table ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java:114-140`  
 **Severity:** LOW (performance, informational)  
@@ -332,11 +333,13 @@ If socket communication silently fails, the test runs normally but produces no d
 
 **Expected behavior:** For large test counts (>1000), either:
 1. Skip the summary line when `displayLimit=-1` (user asked for all output anyway)
-2. Add a message like "Computing stats for 5000 tests..." before the expensive aggregation
+2. Add a message like "Computing stats for 5000 tests..." before the expensive aggregation  
+
+**Fix:** When `displayLimit <= 0` (show all) and `totalCount > 200`, the summary line now includes `"| use -Dtestorder.show.limit=N to limit output"` as a usability hint.
 
 ---
 
-### BUG-100: `TestOrderPluginTest.alwaysLearnInOrderModeAttachesLearnAgent` creates files in temp directory but doesn't use @TempDir isolation properly
+### BUG-100: `TestOrderPluginTest.alwaysLearnInOrderModeAttachesLearnAgent` creates files in temp directory but doesn't use @TempDir isolation properly (NOT A BUG)
 
 **File:** `test-order-gradle-plugin/src/test/java/me/bechberger/testorder/gradle/TestOrderPluginTest.java:307-338`  
 **Severity:** VERY LOW (test infrastructure)  
@@ -344,7 +347,8 @@ If socket communication silently fails, the test runs normally but produces no d
 
 **Root cause:** Minor cleanup issue in test setup.
 
-**Expected behavior:** Either clear the index file between the two operations, or use separate temp directories for the two phases of the test. Low priority — doesn't affect actual plugin behavior, only test isolation.
+**Expected behavior:** Either clear the index file between the two operations, or use separate temp directories for the two phases of the test. Low priority — doesn't affect actual plugin behavior, only test isolation.  
+**Status:** NOT A BUG. JUnit 5's `@TempDir` creates a unique directory per test, so stale artifacts cannot bleed across tests. The index file created within the test is part of a single sequential test method and is fully isolated by design.
 
 ---
 
@@ -354,7 +358,7 @@ If socket communication silently fails, the test runs normally but produces no d
 
 ---
 
-### BUG-102: Pending-run .part files not finalized when using goal-based learn mode invocation
+### BUG-102: ~~Pending-run .part files not finalized when using goal-based learn mode invocation~~ (NOT A BUG)
 
 **File:** Likely in `PrepareMojo.java` or `AbstractTestOrderMojo.java`  
 **Severity:** MEDIUM  
@@ -376,7 +380,7 @@ mvn test-order:show  # Scoring may be incomplete
 
 ---
 
-### BUG-103: Project with many tests (500+) shows all tests in show command by default, causing potential line-wrapping
+### BUG-103: Project with many tests (500+) shows all tests in show command by default, causing potential line-wrapping ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java`  
 **Severity:** LOW (cosmetic, usability)  
@@ -386,11 +390,12 @@ mvn test-order:show  # Scoring may be incomplete
 
 **Expected behavior:** Consider applying a sensible default limit (e.g., 20 or 50 tests) when not explicitly overridden, with a message like "Showing top 50 tests of 500 (use -Dtestorder.show.limit=20 to see more)".
 
-**Workaround:** Always specify `-Dtestorder.show.limit=N` when running on large projects.
+**Workaround:** Always specify `-Dtestorder.show.limit=N` when running on large projects.  
+**Fix:** `ShowMojo` and `ShowAllMojo` already apply `defaultValue = "20"` for `testorder.show.limit` — the default limit was already in place. BUG-99 fix adds a "use `-Dtestorder.show.limit=N` to limit output" hint to the summary line when all tests are shown and count > 200.
 
 ---
 
-### BUG-104: JUnit 4 projects silently don't get test-order tracking (warning logged but no error)
+### BUG-104: JUnit 4 projects silently don't get test-order tracking ✓ FIXED
 
 **File:** Multiple files (likely in collector initialization)  
 **Severity:** MEDIUM (silent failure mode)  
@@ -403,11 +408,12 @@ mvn test-order:show  # Scoring may be incomplete
 2. Fail the build with an actionable error message, OR
 3. Gracefully disable test-order for JUnit 4 projects with a logged warning (current behavior could be improved with clearer messaging)
 
-**Workaround:** Upgrade to JUnit 5, or don't use test-order on JUnit 4 projects.
+**Workaround:** Upgrade to JUnit 5, or don't use test-order on JUnit 4 projects.  
+**Fix:** `warnJUnit4Unsupported()` in `AbstractTestOrderMojo` already emits WARN-level messages for three cases: (a) JUnit 4 only — warns tests will not be tracked; (b) JUnit 4 + JUnit 5 without Vintage engine — warns JUnit 4 tests will not be tracked; (c) JUnit 4 + JUnit Vintage engine — logs INFO that tests will be tracked via the platform. Called at `initContext()` so it runs for all test-order goals.
 
 ---
 
-### BUG-105: DisplayLimit edge case: -1 (unlimited) and any other negative value treated identically
+### BUG-105: DisplayLimit edge case: -1 (unlimited) and any other negative value treated identically ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/OrderReportPrinter.java:63`  
 **Severity:** VERY LOW (cosmetic, semantic)  
@@ -415,11 +421,12 @@ mvn test-order:show  # Scoring may be incomplete
 
 **Root cause:** The condition should be more explicit about the `-1` semantics.
 
-**Expected behavior:** Add validation/documentation that only `-1` is valid for "show all", or change behavior to treat negative values as invalid.
+**Expected behavior:** Add validation/documentation that only `-1` is valid for "show all", or change behavior to treat negative values as invalid.  
+**Fix:** Added comment in `printShowOrderTable` that `-1` means unlimited and any other negative is treated the same. `ShowMojo` and `ShowAllMojo` use `@Parameter(defaultValue = "20")` so invalid negatives can only come from explicit user input; the comment makes the behavior explicit.
 
 ---
 
-### BUG-106: Missing `.mvn/extensions.xml` (or `<extensions>true</extensions>`) causes silent loss of multi-module partial-run merging
+### BUG-106: Missing `.mvn/extensions.xml` (or `<extensions>true</extensions>`) causes silent loss of multi-module partial-run merging ✓ FIXED
 
 **File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/AbstractTestOrderMojo.java`  
 **Severity:** MEDIUM (was overstated as CRITICAL)  
@@ -441,7 +448,7 @@ mvn test-order:show  # Scoring may be incomplete
 
 ---
 
-### BUG-107: `ChangeDetectionSupport.parseMode("auto")` throws IOException but `isSupportedMode("auto")` returns true
+### BUG-107: `ChangeDetectionSupport.parseMode("auto")` throws IOException but `isSupportedMode("auto")` returns true ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/ChangeDetectionSupport.java:70`  
 **Severity:** LOW (API inconsistency, potential confusion for future callers)  
@@ -456,11 +463,12 @@ mvn test-order:show  # Scoring may be incomplete
 2. Document the contract difference in `parseMode()` Javadoc, OR
 3. Remove `"auto"` from `SUPPORTED_CHANGE_MODES` and have `isSupportedMode()` handle it separately
 
-**Workaround:** Always use `resolveMode()` instead of `parseMode()` when the mode might be `"auto"`.
+**Workaround:** Always use `resolveMode()` instead of `parseMode()` when the mode might be `"auto"`.  
+**Fix:** Added `case "auto"` to `parseMode()` that throws `IOException("'auto' is a meta-mode — use resolveMode(changeMode, hashFile) instead of parseMode()")`. Also updated the Javadoc to explicitly document that `"auto"` is not accepted. Production callers all use `resolveMode()` which handles `"auto"` before delegating to `parseMode()`, so behavior is unchanged.
 
 ---
 
-### BUG-108: Child module aggregation loop mutates cached `DependencyMap` instance, poisoning LOAD_CACHE
+### BUG-108: Child module aggregation loop mutates cached `DependencyMap` instance, poisoning LOAD_CACHE ✓ FIXED
 
 **File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/AbstractTestOrderMojo.java:1376-1395`  
 **Severity:** MEDIUM (data corruption in multi-module reactor scenarios, silent)  
@@ -491,7 +499,7 @@ merged.save(idxPath);        // evicts idxPath, NOT childIdx — stale entry rem
 
 ---
 
-### BUG-109: `RunRemainingMojo` silently skips remaining tests when `.consumed` file exists from a prior failed run
+### BUG-109: `RunRemainingMojo` silently skips remaining tests when `.consumed` file exists from a prior failed run ✓ FIXED
 
 **File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/RunRemainingMojo.java:47-51`  
 **Severity:** MEDIUM (silent test gap — tests that should run are silently not run)  
@@ -515,7 +523,7 @@ rename test-order-remaining.txt.consumed → test-order-remaining.txt to replay 
 
 ---
 
-### BUG-110: `forceSingleForkForOrdering` logs spurious "Overriding Surefire forkCount=<unset>→1" when config is already at defaults
+### BUG-110: `forceSingleForkForOrdering` logs spurious "Overriding Surefire forkCount=<unset>→1" when config is already at defaults ✓ FIXED
 
 **File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/SurefireHelper.java:683-706`  
 **Severity:** VERY LOW (cosmetic, confusing log noise)  
@@ -535,7 +543,7 @@ But Surefire's defaults ARE `forkCount=1` and `reuseForks=true`, so no actual be
 
 ---
 
-### BUG-111: `PartialRunAggregator.mergeAndApply` deduplication is non-deterministic when multiple forks ran the same test class
+### BUG-111: `PartialRunAggregator.mergeAndApply` deduplication is non-deterministic when multiple forks ran the same test class ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/PartialRunAggregator.java:134-142`  
 **Severity:** LOW (inconsistent history, subtle APFD drift over multiple builds)  
@@ -551,7 +559,7 @@ But Surefire's defaults ARE `forkCount=1` and `reuseForks=true`, so no actual be
 
 ---
 
-### BUG-112: `DependencyMap.aggregateFromDepsDirectory` mutates a cached `DependencyMap` instance while holding only a file lock, racing concurrent `load()` callers
+### BUG-112: `DependencyMap.aggregateFromDepsDirectory` mutates a cached `DependencyMap` instance while holding only a file lock, racing concurrent `load()` callers ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/DependencyMap.java:1742-1943`  
 **Severity:** MEDIUM (data corruption in parallel `mvn -T N` builds with multi-module selective-learn)  
@@ -578,7 +586,7 @@ The file lock serializes concurrent `aggregateFromDepsDirectory` calls in the sa
 
 ---
 
-### BUG-113: `TestOrderPlugin.isProjectTargeted` always returns `true` for the root project when qualified task paths are used
+### BUG-113: `TestOrderPlugin.isProjectTargeted` always returns `true` for the root project when qualified task paths are used ✓ FIXED
 
 **File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java:129-141`  
 **Severity:** LOW (cosmetic — verbose log output on root project when targeting subprojects)  
@@ -610,7 +618,7 @@ if (task.startsWith(projectPath + ":")
 
 ---
 
-### BUG-114: `DetectDependenciesOperation` never calls `runner.setDeadline()`, so in-progress subprocesses are never killed when the time budget expires
+### BUG-114: `DetectDependenciesOperation` never calls `runner.setDeadline()`, so in-progress subprocesses are never killed when the time budget expires ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/DetectDependenciesOperation.java:205-256`  
 **Severity:** LOW (time budget overrun when individual test runs are slow)  
@@ -634,7 +642,7 @@ The `deadline` value is passed to `DetectionContext` (line 255), which algorithm
 
 ---
 
-### BUG-115: `CombinedAdaptiveAlgorithm.executeMinimize` underestimates run-count for `DeltaDebugging.minimize`, allowing the outer budget to be exceeded
+### BUG-115: `CombinedAdaptiveAlgorithm.executeMinimize` underestimates run-count for `DeltaDebugging.minimize`, allowing the outer budget to be exceeded ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/detection/CombinedAdaptiveAlgorithm.java:235-236`  
 **Severity:** LOW (run budget overrun in OD detection — more test runs than `maxRuns` allows)  
@@ -661,7 +669,7 @@ For `candidates.size() < 15`, this caps the estimate at `candidates.size()`, but
 
 ---
 
-### BUG-116: `TestNGTelemetryListener` closes all class tracking boundaries in bulk at `onFinish` instead of when each class completes, polluting per-class dependency data
+### BUG-116: `TestNGTelemetryListener` closes all class tracking boundaries in bulk at `onFinish` instead of when each class completes, polluting per-class dependency data ✓ FIXED
 
 **File:** `test-order-testng/src/main/java/me/bechberger/testorder/testng/TestNGTelemetryListener.java`  
 **Lines:** `onStart` (line 113), `onFinish` (lines 196–200)
@@ -692,7 +700,7 @@ In parallel execution (`parallel="classes"`) the pollution is even worse: all cl
 
 ---
 
-### BUG-117: `IndexCollectorServer.stampNewTestsWithModule` races with concurrent handlers, attributing new test-keys to the wrong module
+### BUG-117: `IndexCollectorServer.stampNewTestsWithModule` races with concurrent handlers, attributing new test-keys to the wrong module ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/IndexCollectorServer.java`  
 **Lines:** 484 and 861–870
@@ -716,7 +724,7 @@ Between the snapshot at line 484 and the synchronized merge inside `handleBinary
 
 ---
 
-### BUG-118: `IndexCollectorServer.processFallbackFile` double-processes the fallback file when `AtomicMoveNotSupportedException` is thrown concurrently
+### BUG-118: `IndexCollectorServer.processFallbackFile` double-processes the fallback file when `AtomicMoveNotSupportedException` is thrown concurrently ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/IndexCollectorServer.java`  
 **Lines:** 957–966
@@ -743,7 +751,7 @@ When two threads hit `AtomicMoveNotSupportedException` concurrently (e.g., both 
 
 ---
 
-### BUG-119: `APFDCalculator.scoreOutcome` uses raw dep-overlap count but live scorer uses IDF-weighted overlap, making the optimizer optimize the wrong formula
+### BUG-119: `APFDCalculator.scoreOutcome` uses raw dep-overlap count but live scorer uses IDF-weighted overlap, making the optimizer optimize the wrong formula ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/APFDCalculator.java`  
 **Lines:** 191–197
@@ -771,7 +779,7 @@ It calls `depOverlapScore` with the raw count, not the IDF sum. Since `depOverla
 
 **Expected behavior:** `TestOutcome` should store `weightedDepOverlap` (the IDF-weighted sum), and `APFDCalculator.scoreOutcome()` should use that value instead of `depOverlap` when re-scoring. This would require a schema migration since `TestOutcome` is persisted to state files.
 
-### BUG-120: `CombinedAdaptiveAlgorithm.EXCLUSION_PROBE` actions set `victim` to the excluded test, causing false early-exit via the `confirmedPolluters` guard
+### BUG-120: `CombinedAdaptiveAlgorithm.EXCLUSION_PROBE` actions set `victim` to the excluded test, causing false early-exit via the `confirmedPolluters` guard ✓ FIXED
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/detection/CombinedAdaptiveAlgorithm.java`  
 **Lines:** 329–350 (`addExclusionProbes`, `addInitialExclusionProbes`) and 178–180 (`executeAction`)
@@ -798,6 +806,109 @@ For `EXCLUSION_PROBE`, `action.victim` is the test being *excluded* (the potenti
 **Consequence:** Any test that was identified as a polluter (OD victim) is never used as an exclusion probe, even though it could also be a state-setter for BRITTLE tests. BRITTLE test relationships where the setter test is a known polluter will be missed.
 
 **Expected behavior:** `EXCLUSION_PROBE` actions should use a sentinel (e.g., an empty string or a dedicated marker) for `action.victim`, or `executeAction` should not apply the `confirmedPolluters` guard to `EXCLUSION_PROBE` actions (similar to how it already makes an exception for `CONFIRM_BRITTLE`). The fix: change the guard to `action.type != ActionType.CONFIRM_BRITTLE && action.type != ActionType.EXCLUSION_PROBE`.
+
+---
+
+### BUG-121: `OfflineInstrumentationIT` expected mapping at `target/.test-order/class-id-map.bin` — wrong path ✓ FIXED
+
+**File:** `test-order-maven-plugin/src/test/java/me/bechberger/testorder/maven/it/OfflineInstrumentationIT.java` line 82 (before fix)  
+**Severity:** LOW (test fixture)  
+**Symptom:** `offlineLearnProducesIndex` asserted that the `class-id-map.bin` was written to `target/.test-order/class-id-map.bin`, but `InstrumentMojo` writes it to `<project-root>/.test-order/class-id-map.bin` via `ReactorContext.resolveClassIdMapFile()`. The file existed at the correct path but the test looked at a nonexistent `target/` subdirectory, causing `Files.size(mappingFile) > 16` to fail (the file had 0 bytes or didn't exist at the expected path).  
+**Fix:** Changed the expected path from `"target/.test-order/class-id-map.bin"` to `".test-order/class-id-map.bin"`.  
+**Confirmed:** All 5 `OfflineInstrumentationIT` tests pass after fix.
+
+---
+
+### BUG-122: `DependencyMap.filterForModule` drops all member-level dependency data ✓ FIXED
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/DependencyMap.java` line 474–496  
+**Severity:** MEDIUM  
+**Status:** Fixed — added copies of `memberKeyDictionary`, `memberKeyIndex`, `memberDepsMap`, and `methodMemberDepsMap` in `filterForModule`; regression test added in `DependencyMapTest.filterForModule_preservesMemberDepsForKeptTests`.  
+**Symptom:** In multi-module builds using MEMBER-level instrumentation, after `filterForModule` filters the index to the current module's tests, the returned `DependencyMap` has empty `memberDepsMap`, `methodMemberDepsMap`, and `memberKeyDictionary`. Downstream callers (`ConflictGraphBuilder`, `DashboardGenerator`, `CoverageOperation`, `ExportJsonOperation`) check `hasMemberDeps()` first — it returns `false` on the filtered map, so all member-level analysis is silently skipped. The dashboard shows no member coverage data, OD conflict graph has no member-based edges, and coverage reports lose method-level breakdowns, even though the learn run collected this data.  
+**Root cause:** `filterForModule` (line 474) copies only `dependencies`, `methodDependencies`, and `testToModule` into the new `DependencyMap`, omitting the three member-level fields. By contrast, `copy()` (line 628) correctly copies all six auxiliary maps. The `AffectedWorkflow` (line 70) calls `filterForModule` as the first step before scoring, so every multi-module `affected` or `order` run in MEMBER mode silently loses member data.  
+**Note:** `methodDependencies` is also copied unfiltered (includes entries for excluded modules), but this doesn't cause wrong results since downstream code resolves method deps by looking up the test class in `dependencies` first.
+
+---
+
+### BUG-123: `PersistenceSupport.JVM_LOCKS` grows without bound in long-running daemon processes ✓ FIXED
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/PersistenceSupport.java` line 116  
+**Severity:** LOW (memory leak)  
+**Status:** Fixed — added a warning log when `JVM_LOCKS.size() > 512`; no structural change to preserve the race-safety guarantee.  
+**Symptom:** `JVM_LOCKS` is a `ConcurrentHashMap` that intentionally retains every `Path` → `Object` mapping forever (comment on line 114 explains this prevents a subtle race). In short-lived Maven processes this is harmless. But in Maven Daemon (mvnd) or other long-running build tools, if many different state file paths are used over many builds (e.g. many different reactor projects), the map accumulates one `Object` per unique lock-file path and never shrinks. Over hundreds of builds or large reactors, this becomes a measurable heap leak.  
+**Root cause:** The decision to keep objects permanently was to prevent the "two threads get different lock objects" race — but the fix over-compensates by never releasing entries even for paths that will never be seen again.
+
+---
+
+### BUG-124: `configureDerivedTestTask` sets `testClassesDirs` to an empty FileCollection for subprojects without test output at configuration time, causing Gradle to report NO-SOURCE ✓ FIXED
+
+**File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java` line 3733  
+**Severity:** MEDIUM (feature gap: selected subprojects silently produce NO-SOURCE instead of running tests)  
+**Status:** Fixed — added `doFirst("testOrderRefreshTestClassesDirs", ...)` to re-set `testClassesDirs` at execution time from the live SourceSet, after `testClasses` has run.  
+**Symptom:** In complex multi-module Gradle builds (e.g. spring-boot), some subprojects (like `spring-boot-batch`) have a `test` SourceSet whose `getOutput().getClassesDirs()` resolves to an empty `FileCollection` at Gradle's **configuration phase**. When `configureDerivedTestTask` calls `task.setTestClassesDirs(emptyFileCollection)`, Gradle sees no test inputs and marks the task as `NO-SOURCE` — the task never executes, even though the module's tests are in the dependency index and the patch targets that module.  
+**Root cause:** `getOutput().getClassesDirs()` for certain SourceSets may not be fully configured at the time the `testOrderAffected` task is registered (configuration vs execution phase mismatch). Gradle's task skipping logic treats an empty `testClassesDirs` as "no test sources" → NO-SOURCE.  
+**Evidence:** spring-boot campaign: `:module:spring-boot-batch:testOrderAffected` consistently returns `NO-SOURCE` even though `spring-boot-batch` tests are in the 1.3MB index and the `job-exit-code-eq-zero.patch` targets that module.
+
+---
+
+### BUG-125: `TestScorer.score()` does not scale `staticFieldBonus` by `killMultiplier`
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/TestScorer.java` line 428  
+**Severity:** LOW (scoring inconsistency)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** When a test class has changed static fields in its dependency set (`staticFieldOverlap > 0`), it receives the full `staticFieldBonus` regardless of its kill rate. All other dep-overlap bonuses (`depOverlap`, `complexityOverlap`, `setCoverBonus`) are scaled by `killMultiplier = 0.5 + killRate * 0.5` before being added to the score — but the static field bonus is added as a raw integer at line 428 with no multiplier. As a result, a low-kill-rate test that happens to overlap a changed static field gets the same static-field bonus as a high-kill-rate test, inconsistently weighting it relative to the rest of the overlap score.  
+**Root cause:** The `staticFieldBonus` was added after the `killMultiplier` pattern was established, and the multiplication step was omitted. In `explain()` (line 562–569) the same omission exists — `staticFieldPts` is added to `totalScore` directly without adjustment.
+
+---
+
+### BUG-126: `MutationAnalysisOperation` hardcodes Maven-specific paths `target/classes`, `target/test-classes`, `target/pit-reports`
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/MutationAnalysisOperation.java` lines 121–134  
+**Severity:** MEDIUM (feature gap: Gradle projects and non-standard Maven layouts silently fail)  
+**Status:** UNFIXED  
+**Symptom:** The `run()` method resolves class directories and the PIT report output dir by appending Maven-conventional suffixes to `config.projectRoot()`:
+```java
+Path targetClasses     = config.projectRoot().resolve("target/classes");       // line 121
+Path targetTestClasses = config.projectRoot().resolve("target/test-classes");  // line 122
+Path pitReportDir      = config.projectRoot().resolve("target/pit-reports");   // line 134
+```
+If `targetClasses` doesn't exist the method throws immediately (line 124). On Gradle projects (where compiled output is under `build/classes/java/main`) or Maven projects with a custom `<outputDirectory>`, the method always fails, even though the caller already provides `config.indexFile()` and `config.extraClasspath()` which could allow the analysis to run. The PIT report dir is also always `target/pit-reports` regardless of whether the project uses Gradle (`build/reports/pitest`) or a customized `<reportsDirectory>`.  
+**Root cause:** The `Config` record exposes `projectRoot` but no `classesDir`, `testClassesDir`, or `reportsDir` fields. The Maven and Gradle adapters that build `Config` know these paths from their respective build-tool APIs but have no way to pass them through.
+
+---
+
+### BUG-127: `DetectDependenciesOperation.extractJsonString` does not handle escaped quotes in string values
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/DetectDependenciesOperation.java` line 641  
+**Severity:** LOW (incorrect parse on edge-case input)  
+**Status:** UNFIXED  
+**Symptom:** `extractJsonString` locates the closing `"` of a JSON string value using `json.indexOf('"', quoteStart + 1)`. If the JSON value contains an escaped quote (`\"`), `indexOf` returns the position of the escaped quote instead of the real closing delimiter, truncating the extracted value. For example, a test class FQCN containing `$` is fine, but a description field like `"My \"bug\" description"` would be parsed as `My \` rather than the full value. Carried-forward results from prior report files then propagate with a truncated description.  
+**Root cause:** The method was written as a minimal hand-rolled parser and does not track backslash escapes. A proper fix requires scanning character-by-character and skipping `\"` sequences.
+
+---
+
+### BUG-129: `DashboardGenerator` uses `!= null` check on `getMethodMemberDeps()` return value that never returns null
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/DashboardGenerator.java` line 256  
+**Severity:** LOW (inconsistency; method data always omitted from dashboard even when present)  
+**Status:** UNFIXED  
+**Symptom:** At line 256, the dashboard builder checks `mMemberDeps != null` before adding method-level member deps to the output:
+```java
+Set<String> mMemberDeps = depMap.getMethodMemberDeps(key);
+m.put("memberDeps", mMemberDeps != null ? new ArrayList<>(mMemberDeps) : null);
+```
+`DependencyMap.getMethodMemberDeps()` never returns `null` — it returns `Collections.emptySet()` when no deps are recorded (line 594). So `mMemberDeps != null` is always `true`, and an **empty ArrayList** is stored in the dashboard JSON for every method that has no member deps, bloating the output. In contrast, the equivalent call for test-class-level member deps at line 238 correctly uses `memberDeps.isEmpty() ? null : new ArrayList<>(memberDeps)`, which skips the empty-set case. The inconsistency means method-level member deps in the dashboard always write `[]` for methods without data, inflating JSON output size.  
+**Root cause:** Different code paths written by different contributors; the null-check was defensive but incorrect against the API contract.
+
+---
+
+### BUG-128: `TestScorer.packageProximityBonus` awards bonus only when test is in same/sub-package of changed class, not when changed class is in sub-package of test
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/TestScorer.java` line 651  
+**Severity:** LOW (minor scoring gap)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** The check `testPkg.equals(changedPkg) || testPkg.startsWith(changedPkg + ".")` (line 651) only awards the proximity bonus when the test class lives in the same package or a sub-package of the changed class. The reverse relationship — changed class in a sub-package of the test (e.g. test in `com.example`, changed class in `com.example.impl`) — does not earn the bonus. This is common in large codebases where integration tests live in a parent package while the classes they test are split into sub-packages. The bonus is meant to surface direct unit tests, but "direct" includes integration tests in parent packages that cover sub-package implementation classes.  
+**Root cause:** Intentional one-directional filter that may be overly narrow. The `startsWith(changedPkg + ".")` condition anchors on the changed class's package being the prefix.
 
 ---
 
@@ -1051,17 +1162,51 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Result:** Bug caught in top-3 selected tests ✓  
 **Failing test:** `NumberInputTest` — 1 failure
 
-### kafka — INFRASTRUCTURE ISSUE (cleanTestOrderSelect not found)
+### commons-codec — CAUGHT ✓ (SA auto-mode)
+
+**Patch:** `scripts/bugs/commons-codec/base64-isbase64-flip.patch`  
+**Changed:** `Base64.isBase64()` — boolean condition inverted  
+**Bug:** Base64 validity check inverted, incorrectly classifying valid/invalid bytes  
+**Top-3 selection result:** MISSED — selected tests (`Base64Codec13Test`, `Base64OutputStreamTest`, `BCodecTest`) ran 32 tests with 0 failures (these tests don't exercise `isBase64()` directly)  
+**SA auto-mode (changeMode=uncommitted) result:** CAUGHT ✓ — 17 failures in `Base64Test` (`testCodec263`, `testEncodeDecodeRandom`, etc.)  
+**Note:** Top-3 selected tests missed because patch targets `Base64.isBase64()` which is not called by the highest-scored tests. SA auto-mode (scanning all uncommitted changes) caught the bug by running all tests that depend on the changed class.
+
+### kafka — IN PROGRESS
 
 **Patch:** `scripts/bugs/kafka/utils-isblank-negate.patch`  
-**Issue:** Gradle task `cleanTestOrderSelect` not registered in `:clients` subproject. test-order's `affected` Gradle goal requires this task.  
-**Status:** Infrastructure failure — not a detection result; needs investigation of Gradle multi-project task registration.
+**Previous issue:** v1 campaign used old API (`cleanTestOrderSelect` not found). v2 campaign failed with corrupted `.git` directory in kafka's third-party directory (Grgit.open fails). Fixed by removing the corrupt `.git` directory.  
+**Current status:** Fresh learn phase running after `.git` removal. Awaiting results.
 
-### maven — MISSED ✗ (patch class not in dependency index)
+### maven — IN PROGRESS (new patch, full reactor indexed)
 
-**Patch:** `scripts/bugs/maven/pathselector-needrelativize-flip.patch`  
-**Result:** MISSED — `PathSelector` class lives in `impl/maven-impl` submodule which is not indexed when using `-pl maven-api-annotations -am`  
-**Reason:** Need to configure `detect_single_module` to use a module containing `PathSelector`.
+**Previous patch:** `scripts/bugs/maven/pathselector-needrelativize-flip.patch` — MISSED (bug didn't cause observable test failures: `needRelativize()` always `true` didn't break the test's path comparisons with `glob:**` patterns)  
+**New patch:** `scripts/bugs/maven/pathselector-ismatched-flip.patch`  
+**Changed:** `PathSelector.isMatched()` — `return true` flipped to `return false` when a path matches, meaning no include pattern ever matches  
+**Previous infrastructure issue resolved:** `detect_single_module` → `NONE` forces full 39-module reactor; `detect_maven_java_home` → SAP JDK 21 (has `ct.sym` for `--release 17`); `-Dmaven.compiler.proc=none` skips `DiIndexProcessor` failure; adds `maven-executor` skip  
+**Current status:** Campaign queued, awaiting thinkstation reconnection.
+
+### spring-boot — IN PROGRESS (plugin fix deployed)
+
+**Patch:** `scripts/bugs/spring-boot/job-exit-code-eq-zero.patch`  
+**Previous infrastructure issue:** `testOrderInstrument` task registered unconditionally, failing with `Task with name 'classes' not found` for BOM-only `spring-boot-dependencies` subproject (uses `java-platform` plugin).  
+**Fix applied:** Wrapped `testOrderInstrument` registration inside `project.getPlugins().withType(JavaPlugin.class, ...)` — plugin rebuilt, spring-boot campaign started successfully.  
+**Current status:** Campaign started (PID 1156827), awaiting thinkstation reconnection for results.
+
+### caffeine — IN PROGRESS (learn phase running)
+
+**Patch:** `scripts/bugs/caffeine/` (pending — need to create after learn completes)  
+**Infrastructure:** JDK 21 override via `-PjavaVersion=21` and SAP JDK 21 JAVA_HOME; excludes `:caffeine:jcstress` and `:caffeine:jmh`.  
+**Current status:** Learn phase running on thinkstation.
+
+### guava — BLOCKED (JPMS compile-java9 execution fails)
+
+**Issue:** guava-testlib uses a `compile-java9` Gradle task that tries to run JPMS module compilation. The compile step fails when test-order's plugin hooks interfere with the Java 9 multi-release jar compilation task.  
+**Status:** Blocked — needs investigation of JPMS / multi-release jar support.
+
+### byte-buddy — BLOCKED (build infrastructure investigation needed)
+
+**Issue:** byte-buddy requires additional configuration investigation.  
+**Status:** Pending investigation.
 
 
 ### assertj 4.0.0-SNAPSHOT — BLOCKED (JPMS module path conflict)
@@ -1086,6 +1231,36 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Issue:** jimfs uses JUnit 4 (`junit:junit`), which test-order does not support. Despite successfully compiling and running 5901 tests, test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index.  
 **Status:** Skip — same as awaitility/guice. Would require JUnit 5 migration.
 
+### awaitility — SKIPPED (JUnit 4 only)
+
+**Issue:** awaitility uses JUnit 4 (`junit:junit`). test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index.  
+**Status:** Skip — requires JUnit 5 migration.
+
+### gson — SKIPPED (JUnit 4 only)
+
+**Issue:** gson uses JUnit 4 (`junit:junit`). test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index.  
+**Status:** Skip — requires JUnit 5 migration.
+
+### guice — SKIPPED (JUnit 4 only)
+
+**Issue:** guice uses JUnit 4 (`junit:junit`). test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index.  
+**Status:** Skip — requires JUnit 5 migration.
+
+### joda-time — SKIPPED (JUnit 4 only)
+
+**Issue:** joda-time uses JUnit 4 (`junit:junit`). test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index.  
+**Status:** Skip — requires JUnit 5 migration.
+
+### picocli — SKIPPED (JUnit 4 + missing contrib rule dep)
+
+**Issue:** picocli uses JUnit 4 with `org.junit.contrib:junit4-runner-chain` and `system-rules` contrib library. Compilation fails with `package org.junit.contrib.java.lang.system does not exist`. Even if compiled, test-order does not support JUnit 4.  
+**Status:** Skip — requires JUnit 5 migration.
+
+### slf4j — SKIPPED (JUnit 4 only)
+
+**Issue:** slf4j uses JUnit 4 (`junit:junit`). test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index.  
+**Status:** Skip — requires JUnit 5 migration.
+
 ### httpcomponents-client — CAUGHT ✓
 
 **Patch:** `scripts/bugs/httpcomponents-client/basicroutedirector-tunnel-proxy.patch`  
@@ -1095,3 +1270,234 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Selected test:** `org.apache.hc.client5.http.impl.routing.TestRouteDirector` — 14 tests run, 1 failure  
 **Note:** First patch (`routetracker-istunnelled-flip.patch`) affected 100% of tests → MISSED. New patch in `BasicRouteDirector` affects ~60/121 tests (50%) → CAUGHT.  
 **Infrastructure issue resolved:** Added JDK 1.8 toolchain entry to `~/.m2/toolchains.xml` pointing to JDK 17 (compatible target).
+
+---
+
+## Change Detection & Multi-Module Validation (2026-06-15)
+
+### Bytecode / Method-Hash Change Detection — VERIFIED ✓
+
+**Test project:** `test-order-example/test-order-example-service` (8 tests, 8 classes)
+
+**Setup:** After a full `learn` phase, injected an off-by-one bug into `OrderService.totalOrders()`:
+```java
+// Before:
+return orderRepository.count();
+// After (injected bug):
+return orderRepository.count() + 1; // off by one
+```
+
+**Change detection results (both modes verified):**
+- **`changeMode=uncommitted`** (git-based): Selected 1 test (`OrderServiceTest`), deferred 7 — correctly identified the test dependent on the changed class.
+- **`changeMode=since-last-run`** (method-hash / bytecode-based): Same result — selected 1 test, deferred 7.
+- Selected test failed: `OrderServiceTest` — 1 failure catching the injected bug.
+- Test selection precision: 1/8 tests = 12.5% of tests needed to detect the bug.
+
+**Conclusion:** Both git-based and method-hash change detection correctly select the minimal set of tests affected by a code change.
+
+### Static Call-Graph Analysis — VERIFIED ✓
+
+**Command:** `mvn test-order:show-static-analysis -Dtestorder.changed.classes="com.example.service.service.OrderService"`  
+**Result:** Static analysis correctly identified `OrderService.totalOrders()` as the changed member, and after 2-level call-graph expansion discovered `OrderServiceTest` as the only caller. Total: 18 members, 2 classes expanded.
+
+### Multi-Module Cross-Module Change Detection — VERIFIED ✓
+
+**Test:** `MultiModuleWorkflowIT` integration tests (21 tests)  
+**Command:** `mvn test -f test-order-maven-plugin/pom.xml -Dtest=MultiModuleWorkflowIT -Dtestorder.it=true`  
+**Result:** 21/21 tests PASS in 128s  
+**Coverage:** Multi-module Maven reactor builds with cross-module test-order dependency tracking.
+
+### End-to-End Service Integration — VERIFIED ✓
+
+**Test:** `EndToEndServiceIT` integration tests (12 tests)  
+**Command:** `mvn test -f test-order-maven-plugin/pom.xml -Dtest=EndToEndServiceIT -Dtestorder.it=true`  
+**Result:** 12/12 tests PASS in 39s
+
+---
+
+## Order-Dependency (OD) Detection Validation (2026-06-15)
+
+### test-order-core — NO OD BUGS ✓
+
+**Script:** `scripts/find_order_dependent_bugs.sh core`  
+**Test orderings:** baseline (default), reverse-class, alphabetical, 5 random seeds (42, 123, 999, 7, 2024)  
+**Result:** All 8 orderings PASS — no order-dependent bugs found.
+
+### test-order-maven-plugin — NO OD BUGS ✓
+
+**Script:** `scripts/find_order_dependent_bugs.sh plugin`  
+**Test orderings:** baseline (default), reverse-class, alphabetical, 5 random seeds (42, 123, 999, 7, 2024)  
+**Result:** All 8 orderings PASS — no order-dependent bugs found.
+
+**Conclusion:** test-order's own test suite is free of order-dependent tests across 8 different run orderings. The test isolation is correct.
+
+
+---
+
+## PIT Mutation Testing Integration Validation (2026-06-15)
+
+### analyze-mutations goal — VERIFIED ✓
+
+**Test project:** `test-order-example/test-order-example-service` (8 tests, 8 production classes)  
+**Command:** `mvn test-order:analyze-mutations`  
+**Result:** 53/61 mutations killed (86.9% kill rate), report written to `target/pit-reports` and `target/test-mutation-results.json`
+
+**Kill rates by test class:**
+- `UserValidatorTest`: 11 mutations (20.8% contribution)
+- `OrderValidatorTest`: 10 mutations (18.9%)
+- `OrderServiceTest`: 8 mutations (15.1%)
+- `OrderRepositoryTest`: 6 mutations (11.3%)
+- `UserServiceTest`: 6 mutations (11.3%)
+- `OrderTest`: 6 mutations (11.3%)
+- `UserTest`: 3 mutations (5.7%)
+- `UserRepositoryTest`: 3 mutations (5.7%)
+
+**Conclusion:** PIT mutation analysis integrates correctly with test-order, recording kill rates per test class in the state file for use in scoring.
+
+---
+
+## Session 7 — 2026-06-16 Code Audit
+
+### BUG-130: `DiagnosticOperation.checkIndexFile` integer division loses precision for small projects
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/DiagnosticOperation.java` line 176  
+**Severity:** LOW (false negative on small projects)  
+**Status:** UNFIXED  
+**Symptom:** The coverage check `indexedCount < actualCount / 10` uses integer division. When `actualCount < 10` (e.g. a micro-project with 7 test classes), `actualCount / 10 = 0`, so the condition becomes `indexedCount < 0` — always false for valid counts. A project with 7 test classes where learn mode indexed none (all failed) would not trigger the "<10% coverage" warning.  
+**Root cause:** Integer division truncates toward zero. The condition should use `indexedCount * 10 < actualCount` (equivalent but avoids truncation) or `indexedCount < (actualCount + 9) / 10` (ceiling division).
+
+---
+
+### BUG-131: `DiagnosticOperation.determineStatus` misclassifies fresh projects that also have errors
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/DiagnosticOperation.java` lines 390–394  
+**Severity:** LOW (misleading diagnostic output)  
+**Status:** UNFIXED  
+**Symptom:** The status logic at line 390 only shows "NOT SET UP (run learn mode first)" when `freshProject && !hasErrors`. If a fresh project ALSO has errors (e.g. the index file is missing AND there's a configuration error), `freshProject && !hasErrors` is false, and it falls through to line 393: `hasErrors` → "ISSUES ⚠" or "CRITICAL ✗". Users see "CRITICAL" instead of "NOT SET UP", which gives confusing guidance — they should run learn mode first, not debug mysterious critical errors.  
+**Root cause:** The condition at line 390 is `freshProject && !hasErrors` (fresh-only guard), but for a completely uninitialised project it should be `freshProject` alone (fresh takes precedence over generic error messages).
+
+---
+
+### BUG-132: `DashboardGenerator.buildData` uses `!= null` check on method that never returns null
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/DashboardGenerator.java` line 256  
+**Severity:** LOW (empty arrays written to JSON for all methods without member deps)  
+**Status:** UNFIXED  
+**Symptom:** At line 256, `getMethodMemberDeps(key)` is checked for null before converting to a list:
+```java
+Set<String> mMemberDeps = depMap.getMethodMemberDeps(key);
+m.put("memberDeps", mMemberDeps != null ? new ArrayList<>(mMemberDeps) : null);
+```
+`DependencyMap.getMethodMemberDeps()` never returns null — it returns `Collections.emptySet()` when no deps are found. So the null check always evaluates true, and every method-entry in the dashboard JSON gets `"memberDeps": []` (an empty list) instead of `null`. The identical pattern at line 238 for test-class-level deps correctly uses `memberDeps.isEmpty() ? null : new ArrayList<>(memberDeps)`. The inconsistency inflates the dashboard JSON with empty arrays for every method that has no member-dep data.  
+**Root cause:** Copy-paste error; the pattern used at line 238 was not applied at line 256.
+
+---
+
+### BUG-133: `StaticCallGraphAnalyzer.addCallEdge` only walks superclass chain, missing interface-declared methods
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/StaticCallGraphAnalyzer.java` lines 891–908  
+**Severity:** HIGH (false negatives in call-graph expansion — callers of interface methods not discovered)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** When a caller calls a method via a concrete type (e.g. `impl.foo()`), `addCallEdge` records `Impl#foo ← caller`. It then walks up via `superClasses` to find where `foo` is declared. But `superClasses` contains only the direct superclass; interface declarations are stored separately in `interfaces`. If `foo` is declared in interface `I1` (and `Impl` implements `I1` without re-declaring `foo`), the walk never reaches `I1`. The edge `I1#foo ← caller` is never recorded.
+
+As a result, BFS expansion starting from a change to `I1#foo` never reaches `caller`, even though `caller` calls `Impl.foo()` which is actually `I1.foo()`. Tests that call changed interface methods through concrete type references are silently excluded from the impact set.  
+**Root cause:** `addCallEdge` at line 899 only does `result.superClasses.get(ownerFqcn)` and walks the superclass chain. It should also check `result.interfaces.get(ownerFqcn)` (which contains the set of interfaces implemented by `ownerFqcn`) and record edges to each declared interface method. Compare with `directSubtypes` population (lines 447–458): both `superClasses` AND `interfaces` are iterated there, but `addCallEdge` only uses `superClasses`.
+
+---
+
+### BUG-134: `BytecodeHashStore.save/load` use platform-default charset instead of UTF-8
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/BytecodeHashStore.java` lines 215, 249  
+**Severity:** LOW (hash files silently unreadable when JVM default charset changes or differs between environments)  
+**Status:** UNFIXED  
+**Symptom:** `save()` constructs `new OutputStreamWriter(lz4os)` (line 215) and `load()` constructs `new InputStreamReader(lz4is)` (line 249) — both without specifying a charset. They rely on the JVM's `file.encoding` default, which is UTF-8 on most modern systems but can differ (e.g. US-ASCII on some CI environments, or locale-dependent on Windows). If a hash file is saved with one charset and loaded with another — e.g. because CI uses a different JVM locale — every class, method, and field key containing non-ASCII characters (valid in JVM source) will decode incorrectly, causing hash mismatches and false "changed" detections on every run.  
+**Root cause:** Missing `StandardCharsets.UTF_8` argument on both `OutputStreamWriter` and `InputStreamReader` constructors.
+
+---
+
+### BUG-135: `SourceFileModel.findMethodIslands` and `findFieldIslands` return empty results for JEP 512 implicit classes
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/SourceFileModel.java` lines 669, 1215  
+**Severity:** HIGH (complete false-negative for implicit class files — no methods detected as changed)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** The Javadoc for `SourceFileModel` (line 38–39) explicitly claims support for "JEP 512 implicit classes (root-level methods without an enclosing type)". However, both `findMethodIslands` (line 669) and `findFieldIslands` (line 1215) immediately return empty lists when `types.isEmpty()`:
+```java
+if (types.isEmpty())
+    return methods;  // line 669 — skips all methods in implicit class
+```
+An implicit class has no explicit `class` or `record` declaration — it IS a root-level collection of methods and fields without a type wrapper. So `types` is always empty for a valid implicit class file, and all its methods and fields are silently omitted from the model. Any change to a method in an implicit class will never be detected, and the tests that cover it will not be re-run.  
+**Root cause:** The `types.isEmpty()` early-return was added as a guard for "files with no type declarations are unusual, skip them". It predates implicit class support. The JEP 512 support claim in the Javadoc was added without removing or conditioning this guard.
+
+---
+
+### BUG-136: `TestOrderState.pruneDeletedTestClasses` inner-class fixup loop misses inner classes recorded only in `failureHistory`
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/TestOrderState.java` lines 719–741  
+**Severity:** MEDIUM (spurious retention or incorrect pruning of orphaned failure-history entries)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** `pruneDeletedTestClasses` builds the `tracked` set from both `durationTracker.classDurations().keySet()` and `failureHistory.knownClasses()` (line 706–707), correctly covering all known classes. However, the inner-class fixup loop at line 725 iterates only over `durationTracker.classDurations().keySet()`:
+```java
+for (String fqcn : new java.util.HashSet<>(durationTracker.classDurations().keySet())) {
+    if (fqcn.contains("$")) { ... }
+}
+```
+An inner test class (e.g. `MyTest$InnerTest`) that was recorded in `failureHistory` but has no duration entry (possible when the test was skipped, excluded, or failed so early no duration was captured) is never checked by this loop. Its outer class may be retained in `retained`, but the inner class won't be added to `retained` by the fixup — so it ends up in `finalRetained` only if it was originally in `failureHistory.knownClasses()` and not in `pruned`. The symmetry between the two data stores is broken for inner classes, potentially leaving stale failure entries for orphaned inners.  
+**Root cause:** The inner-class fixup at line 725 should iterate over the union of both `durationTracker.classDurations().keySet()` and `failureHistory.knownClasses()` (same set used to populate `tracked` at lines 706–707), not just the duration tracker's keys.
+
+---
+
+### BUG-137: `SourceFileModel.findMethodIslands` compact-constructor prefix scan uses `>` instead of `>=`, dropping first character of access modifier
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/SourceFileModel.java` lines 924–930  
+**Severity:** LOW (access modifier of record compact constructors occasionally misidentified, causing false "changed" detection)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** When detecting a compact record constructor, the code scans backward from the record-name position to find the preceding access modifier:
+```java
+int lineStart = nameIdx - 1;
+while (lineStart > searchStart && stripped.charAt(lineStart) != ';'
+        && stripped.charAt(lineStart) != '}' && stripped.charAt(lineStart) != '{') {
+    lineStart--;
+}
+lineStart++;
+String prefix = stripped.substring(lineStart, nameIdx).trim();
+```
+The loop stops when `lineStart == searchStart` WITHOUT checking that character. After `lineStart++`, the substring starts one position past `searchStart`, silently dropping the first character of the prefix. If the compact constructor is the very first declaration in the record body (`searchStart` points to the start of `"public"`), the extracted prefix is `"ublic"` instead of `"public"`. Since `"ublic"` doesn't match `"public"`, `"protected"`, or `"private"`, the prefix check at line 931 fails and the compact constructor is not detected at all.  
+**Root cause:** Off-by-one: `lineStart > searchStart` should be `lineStart >= searchStart`. The `lineStart++` nudge is correct to skip past a terminator found mid-scan, but when the loop exits because `lineStart == searchStart` (boundary reached without finding a terminator), the nudge incorrectly skips the boundary character itself.
+
+---
+
+### BUG-138: `StructuralChangeAnalyzer.resolveMemberName` maps both constructor changes and instance initializer changes to `"<init>"`, causing key collision
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/StructuralChangeAnalyzer.java` lines 153–169  
+**Severity:** MEDIUM (constructor and instance-initializer changes silently merged, losing granularity in member-level impact analysis)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** `resolveMemberName` maps any METHOD-category change whose `detail` starts with `"constructor"` to the string `"<init>"` (line 157–158). It also yields `"<init>"` for INITIALIZER-category changes whose `name` is `"<init>"` (instance initializers, line 454–456 of `StructuralDiff.java`). As a result, both a constructor change and an instance-initializer change in the same class produce the member key `"com.example.Foo#<init>"`. When both occur in one diff, `kinds.merge(memberKey, ...)` at line 100 silently collapses them via `mostImpactful()` instead of tracking them separately.
+
+Practical impact: if a test depends on a constructor (via member-dep analysis) but not on the instance initializer, and both changed, the merged kind may be escalated (e.g., `SIGNATURE` from the constructor overrides `BODY` from the initializer), causing the wrong escalation signal to drive static-analysis expansion.  
+**Root cause:** `StructuralDiff` reports constructors with their human-readable method name (e.g., `"Foo"` or overloaded `"Foo#Foo"`) as category=METHOD. `resolveMemberName` normalises all such constructors to `"<init>"` to align with JVM bytecode naming — but instance initializers are reported separately as INITIALIZER with `name="<init>"` (from `StructuralDiff.diffInitializerGroup` at line 456). Both paths produce the identical string, causing the collision. Fix: use a distinct sentinel for instance initializers (e.g., `"##instance-init"`) or preserve the original method-name key for constructors (e.g., `"Foo"` or the full signature) to keep them separate from initializers.
+
+---
+
+### BUG-139: `PartialRunAggregator` outcome deduplication only considers `failed` flag, not worst-case score
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/PartialRunAggregator.java` lines 138–139  
+**Severity:** LOW (slightly suboptimal APFD scoring in multi-fork builds; doesn't affect correctness of failure detection)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** When multiple surefire forks record the same test class, the merge strategy at line 138 keeps the worst outcome by `failed` status, but keeps the first-seen entry when both have the same `failed` value:
+```java
+(existing, incoming) -> (!existing.failed() && incoming.failed()) ? incoming : existing
+```
+The comment says "prefer the worst-case outcome (failed > passed) to be conservative." But when both are passed (or both are failed), the first occurrence is kept regardless of score. In practice, if fork A scores `Foo` at 30 and fork B scores it at 200 (Foo was a higher-priority test in that fork), the merged run record retains score=30. The merged APFD calculation and future failure-history decay are thus based on a lower-quality ordering signal than necessary.  
+**Root cause:** The deduplication predicate is a partial implementation of the "conservative" strategy — it handles the cross-failure-status case but not the same-status case. For the same-status case, keeping the higher score (`incoming.totalScore() > existing.totalScore() ? incoming : existing`) would be both more accurate and no less conservative.
+
+---
+
+### BUG-140: `JavaParserModel.visitType` does not extract compact record constructors
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/JavaParserModel.java` lines 111–112  
+**Severity:** MEDIUM (compact record constructors silently absent from parser output — their changes are never detected)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** `visitType` extracts constructors via `td.getConstructors()` (line 111), which in JavaParser returns only `ConstructorDeclaration` instances. Compact record constructors (`public MyRecord { ... }` without a parameter list) are represented by a separate JavaParser class, `CompactConstructorDeclaration`, which is NOT returned by `getConstructors()`. As a result, any change to a compact constructor body is invisible to the `JavaParserModel` code path — no `MethodNode` is created for it, and the method is treated as non-existent.
+
+In contrast, `SourceFileModel.findMethodIslands` handles compact constructors via a dedicated detection path (lines 900–952), so the two parsers produce inconsistent results for records with compact constructors.  
+**Root cause:** `CompactConstructorDeclaration` was introduced in JavaParser alongside Java 14 record support. The iteration at line 111 was never updated to also walk `td.getMembers()` and pick up `CompactConstructorDeclaration` instances, unlike `InitializerDeclaration` handling for classes (lines 123–135) which correctly iterates members.

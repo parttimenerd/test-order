@@ -464,28 +464,55 @@ public class TestOrderState {
 
 	public record ScoreBreakdown(int totalScore, boolean isNew, boolean isChanged, int depOverlap, int depTotal,
 			double failScore, boolean isFast, boolean isSlow, double complexityOverlap, double speedRatio,
-			boolean hasStaticFieldOverlap) {
-		/** Backward-compat constructor (speedRatio=0, hasStaticFieldOverlap=false). */
+			boolean hasStaticFieldOverlap, double weightedDepOverlap) {
+		/**
+		 * Backward-compat constructor (speedRatio=0, hasStaticFieldOverlap=false,
+		 * weightedDepOverlap=depOverlap).
+		 */
 		public ScoreBreakdown(int totalScore, boolean isNew, boolean isChanged, int depOverlap, int depTotal,
 				double failScore, boolean isFast, boolean isSlow, double complexityOverlap) {
 			this(totalScore, isNew, isChanged, depOverlap, depTotal, failScore, isFast, isSlow, complexityOverlap, 0.0,
-					false);
+					false, depOverlap);
+		}
+		/**
+		 * Backward-compat constructor without weightedDepOverlap (defaults to raw
+		 * depOverlap).
+		 */
+		public ScoreBreakdown(int totalScore, boolean isNew, boolean isChanged, int depOverlap, int depTotal,
+				double failScore, boolean isFast, boolean isSlow, double complexityOverlap, double speedRatio,
+				boolean hasStaticFieldOverlap) {
+			this(totalScore, isNew, isChanged, depOverlap, depTotal, failScore, isFast, isSlow, complexityOverlap,
+					speedRatio, hasStaticFieldOverlap, depOverlap);
 		}
 	}
 
 	public record TestOutcome(String testClass, int totalScore, boolean isNew, boolean isChanged, int depOverlap,
 			int depTotal, double failScore, boolean isFast, boolean isSlow, boolean failed, double complexityOverlap,
-			double speedRatio, boolean hasStaticFieldOverlap) {
-		/** Backward-compat constructor (speedRatio=0, hasStaticFieldOverlap=false). */
+			double speedRatio, boolean hasStaticFieldOverlap, double weightedDepOverlap) {
+		/**
+		 * Backward-compat constructor (speedRatio=0, hasStaticFieldOverlap=false,
+		 * weightedDepOverlap=depOverlap).
+		 */
 		public TestOutcome(String testClass, int totalScore, boolean isNew, boolean isChanged, int depOverlap,
 				int depTotal, double failScore, boolean isFast, boolean isSlow, boolean failed,
 				double complexityOverlap) {
 			this(testClass, totalScore, isNew, isChanged, depOverlap, depTotal, failScore, isFast, isSlow, failed,
-					complexityOverlap, 0.0, false);
+					complexityOverlap, 0.0, false, depOverlap);
+		}
+		/**
+		 * Backward-compat constructor without weightedDepOverlap (defaults to raw
+		 * depOverlap).
+		 */
+		public TestOutcome(String testClass, int totalScore, boolean isNew, boolean isChanged, int depOverlap,
+				int depTotal, double failScore, boolean isFast, boolean isSlow, boolean failed,
+				double complexityOverlap, double speedRatio, boolean hasStaticFieldOverlap) {
+			this(testClass, totalScore, isNew, isChanged, depOverlap, depTotal, failScore, isFast, isSlow, failed,
+					complexityOverlap, speedRatio, hasStaticFieldOverlap, depOverlap);
 		}
 		TestOutcome(String testClass, ScoreBreakdown b, boolean failed) {
 			this(testClass, b.totalScore(), b.isNew(), b.isChanged(), b.depOverlap(), b.depTotal(), b.failScore(),
-					b.isFast(), b.isSlow(), failed, b.complexityOverlap(), b.speedRatio(), b.hasStaticFieldOverlap());
+					b.isFast(), b.isSlow(), failed, b.complexityOverlap(), b.speedRatio(), b.hasStaticFieldOverlap(),
+					b.weightedDepOverlap());
 		}
 	}
 
@@ -695,7 +722,9 @@ public class TestOrderState {
 			retained.addAll(failureHistory.knownClasses());
 			retained.removeAll(pruned);
 			// Also keep inner classes whose outer class is retained
-			for (String fqcn : new java.util.HashSet<>(durationTracker.classDurations().keySet())) {
+			Set<String> allTracked = new java.util.HashSet<>(durationTracker.classDurations().keySet());
+			allTracked.addAll(failureHistory.knownClasses());
+			for (String fqcn : allTracked) {
 				if (fqcn.contains("$")) {
 					String outer = fqcn.substring(0, fqcn.indexOf('$'));
 					if (!retained.contains(outer)) {

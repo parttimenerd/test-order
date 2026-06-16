@@ -896,14 +896,40 @@ public class StaticCallGraphAnalyzer {
 		if (ownerDeclared != null && ownerDeclared.contains(methodName)) {
 			return; // owner declares the method directly — no need to walk up
 		}
-		String sup = result.superClasses.get(ownerFqcn);
-		while (sup != null) {
-			Set<String> supDeclared = result.declaredMethods.get(sup);
-			if (supDeclared != null && supDeclared.contains(methodName)) {
-				result.reverseCallGraph.computeIfAbsent(sup + "#" + methodName, k -> new HashSet<>()).add(callerKey);
-				return;
+		// BFS over full supertype hierarchy (superclasses + interfaces) to find
+		// where the method is actually declared and register that as the call target.
+		// Without this, a caller using an interface receiver type would miss changes
+		// to the interface method itself.
+		Deque<String> queue = new ArrayDeque<>();
+		Set<String> visited = new HashSet<>();
+		queue.add(ownerFqcn);
+		visited.add(ownerFqcn);
+		while (!queue.isEmpty()) {
+			String current = queue.poll();
+			String sup = result.superClasses.get(current);
+			if (sup != null && visited.add(sup)) {
+				Set<String> supDeclared = result.declaredMethods.get(sup);
+				if (supDeclared != null && supDeclared.contains(methodName)) {
+					result.reverseCallGraph.computeIfAbsent(sup + "#" + methodName, k -> new HashSet<>())
+							.add(callerKey);
+					return;
+				}
+				queue.add(sup);
 			}
-			sup = result.superClasses.get(sup);
+			Set<String> ifaces = result.interfaces.get(current);
+			if (ifaces != null) {
+				for (String iface : ifaces) {
+					if (visited.add(iface)) {
+						Set<String> ifaceDeclared = result.declaredMethods.get(iface);
+						if (ifaceDeclared != null && ifaceDeclared.contains(methodName)) {
+							result.reverseCallGraph.computeIfAbsent(iface + "#" + methodName, k -> new HashSet<>())
+									.add(callerKey);
+							return;
+						}
+						queue.add(iface);
+					}
+				}
+			}
 		}
 	}
 }

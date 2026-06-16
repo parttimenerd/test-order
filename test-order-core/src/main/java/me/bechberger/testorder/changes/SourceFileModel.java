@@ -666,18 +666,28 @@ public class SourceFileModel {
 			boolean includeCompactBody) {
 
 		List<MethodNode> methods = new ArrayList<>();
-		if (types.isEmpty())
-			return methods;
+
+		// For JEP 512 implicit classes (no enclosing type declaration), synthesize
+		// a virtual IMPLICIT TypeNode that spans the entire file at depth 0.
+		List<TypeNode> effectiveTypes = types;
+		if (types.isEmpty()) {
+			String fqcn = "";
+			TypeNode implicit = new TypeNode(TypeKind.IMPLICIT, "", fqcn, -1, stripped.length(), "", null, null);
+			effectiveTypes = List.of(implicit);
+		}
 
 		Matcher matcher = METHOD_OR_CTOR_ISLAND.matcher(stripped);
 
 		// Iterate per type and restrict the regex search to each type's body,
 		// excluding nested type bodies. This avoids the expensive regex trying
 		// (and failing) at every character position inside nested classes.
-		for (TypeNode enclosing : types) {
-			if (enclosing.bodyStart < 0 || enclosing.bodyEnd < 0)
+		for (TypeNode enclosing : effectiveTypes) {
+			if (enclosing.bodyEnd < 0)
 				continue;
-			int expectedDepth = braceDepth[enclosing.bodyStart] + 1;
+			// For IMPLICIT types (bodyStart == -1) methods live at depth 0;
+			// for regular types they live one level deeper than the opening brace.
+			int expectedDepth = (enclosing.bodyStart < 0) ? 0 : braceDepth[enclosing.bodyStart] + 1;
+			int bodySearchStart = (enclosing.bodyStart < 0) ? 0 : enclosing.bodyStart + 1;
 
 			// Build list of regions to skip (nested type bodies at our depth).
 			// These are child types whose opening brace is at expectedDepth
@@ -726,7 +736,7 @@ public class SourceFileModel {
 			// limited lookback window before each candidate.
 			List<int[]> segments = new ArrayList<>();
 			{
-				int segStart = enclosing.bodyStart + 1;
+				int segStart = bodySearchStart;
 				int regionEnd = enclosing.bodyEnd;
 				int sIdx = 0;
 				while (segStart < regionEnd) {
@@ -903,7 +913,7 @@ public class SourceFileModel {
 			if (enclosing.kind == TypeKind.RECORD) {
 				String recordName = enclosing.simpleName;
 				// Search for pattern: (access-modifier)? RecordName { in the type body
-				int searchStart = enclosing.bodyStart + 1;
+				int searchStart = bodySearchStart;
 				int searchEnd = enclosing.bodyEnd;
 				int nameIdx = stripped.indexOf(recordName, searchStart);
 				while (nameIdx >= 0 && nameIdx < searchEnd) {
@@ -922,7 +932,7 @@ public class SourceFileModel {
 								// Verify it's preceded only by access modifiers / whitespace
 								// Look back from nameIdx to the last statement terminator or body start
 								int lineStart = nameIdx - 1;
-								while (lineStart > searchStart && stripped.charAt(lineStart) != ';'
+								while (lineStart >= searchStart && stripped.charAt(lineStart) != ';'
 										&& stripped.charAt(lineStart) != '}' && stripped.charAt(lineStart) != '{') {
 									lineStart--;
 								}
