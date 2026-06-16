@@ -1492,6 +1492,17 @@ The comment says "prefer the worst-case outcome (failed > passed) to be conserva
 
 ---
 
+### BUG-143: `StructuralChangeAnalyzer.memberLevelOverlapClasses` uses `##instance-init` sentinel as lookup key against agent-recorded `<init>` deps
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/StructuralChangeAnalyzer.java` lines 347–353  
+**Severity:** MEDIUM (instance initializer changes never match in member-level overlap; test affected by `{ … }` block change is not detected as affected)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** After BUG-138 introduced the `"##instance-init"` sentinel for instance initializer changes, the member-level overlap check at line 348 builds the lookup key `"classDep###instance-init"`. But `testMemberDeps` (built from bytecode agent recordings) always uses `"<init>"` for both constructors and instance initializers — the agent has no way to distinguish them at the call site. So `testMemberDeps.contains("com.Foo###instance-init")` is always false, meaning: if a class has an instance initializer changed, no test is ever scored as affected by it through member-level analysis.  
+**Root cause:** BUG-138 added the sentinel to disambiguate the change-side key (constructor change vs instance initializer change) but forgot that the lookup side (testMemberDeps) still uses the JVM's `<init>` for both. The two sides of the lookup must use the same key format.  
+**Fix:** Added a sentinel-to-`<init>` translation in `memberLevelOverlapClasses`: when iterating `changedInClass`, resolve `"##instance-init"` back to `"<init>"` before building the member key for the `testMemberDeps` lookup.
+
+---
+
 ### BUG-142: `ConflictGraphBuilder.build` enters member-dep path when only `methodMemberDepsMap` is non-empty, returning empty edge list
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/detection/ConflictGraphBuilder.java` line 38  

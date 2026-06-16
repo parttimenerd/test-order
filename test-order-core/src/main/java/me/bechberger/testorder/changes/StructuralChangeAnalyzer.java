@@ -345,7 +345,11 @@ public class StructuralChangeAnalyzer {
 			// testMemberDeps
 			// to avoid string concatenation in the loop.
 			for (String changedMember : changedInClass) {
-				String memberKey = classDep + "#" + changedMember;
+				// ##instance-init is the sentinel for instance initializer changes (BUG-138).
+				// The agent records both constructors and instance initializers as <init>,
+				// so resolve the sentinel back to <init> for the testMemberDeps lookup.
+				String agentMemberName = "##instance-init".equals(changedMember) ? "<init>" : changedMember;
+				String memberKey = classDep + "#" + agentMemberName;
 				if (testMemberDeps.contains(memberKey)) {
 					affectedClasses.add(classDep);
 					break;
