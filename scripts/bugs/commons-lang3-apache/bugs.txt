@@ -1,0 +1,2 @@
+booleanutils-istrue-flip.patch
+stringutils-isblank-whitespace-flip.patch

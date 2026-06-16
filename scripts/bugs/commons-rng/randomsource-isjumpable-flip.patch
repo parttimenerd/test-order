@@ -1,0 +1,10 @@
+diff --git a/commons-rng-simple/src/main/java/org/apache/commons/rng/simple/RandomSource.java b/commons-rng-simple/src/main/java/org/apache/commons/rng/simple/RandomSource.java
+--- a/commons-rng-simple/src/main/java/org/apache/commons/rng/simple/RandomSource.java
++++ b/commons-rng-simple/src/main/java/org/apache/commons/rng/simple/RandomSource.java
+@@ -777,7 +777,7 @@
+      */
+     public boolean isJumpable() {
+-        return isAssignableTo(org.apache.commons.rng.JumpableUniformRandomProvider.class);
++        return !isAssignableTo(org.apache.commons.rng.JumpableUniformRandomProvider.class); /* BUG_INJECTED */
+     }
+ 

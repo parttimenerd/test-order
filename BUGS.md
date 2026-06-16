@@ -1176,14 +1176,14 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Result:** Bug caught in top-3 selected tests ✓  
 **Failing test:** `NumberInputTest` — 1 failure
 
-### commons-codec — CAUGHT ✓ (SA auto-mode)
+### commons-codec — CAUGHT ✓ (base64-isbase64-flip)
 
 **Patch:** `scripts/bugs/commons-codec/base64-isbase64-flip.patch`  
-**Changed:** `Base64.isBase64()` — boolean condition inverted  
+**Changed:** `Base64.isBase64(byte)` — boolean condition inverted with `!(...)` wrapper  
 **Bug:** Base64 validity check inverted, incorrectly classifying valid/invalid bytes  
-**Top-3 selection result:** MISSED — selected tests (`Base64Codec13Test`, `Base64OutputStreamTest`, `BCodecTest`) ran 32 tests with 0 failures (these tests don't exercise `isBase64()` directly)  
-**SA auto-mode (changeMode=uncommitted) result:** CAUGHT ✓ — 17 failures in `Base64Test` (`testCodec263`, `testEncodeDecodeRandom`, etc.)  
-**Note:** Top-3 selected tests missed because patch targets `Base64.isBase64()` which is not called by the highest-scored tests. SA auto-mode (scanning all uncommitted changes) caught the bug by running all tests that depend on the changed class.
+**Top-3 selection result:** CAUGHT ✓ — test failures detected in top-3 selected tests (2026-06-16 re-run with corrected patch)  
+**Previous result:** The original patch used `!= -1` → `== -1` form which got partially applied/reversed, leaving a dirty working tree. Corrected to `!(...)` form.  
+**SA auto-mode (changeMode=uncommitted) result:** CAUGHT ✓ — 17 failures in `Base64Test` (`testCodec263`, `testEncodeDecodeRandom`, etc.)
 
 ### kafka — CAUGHT ✓ (topic-hascollisionchars-negate)
 
@@ -1438,16 +1438,60 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Issue:** truth uses JUnit 4 (`JUnit4Provider` detected during learn — 1615 tests ran but produced no index). test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index.  
 **Status:** Skip — same as awaitility/guice. Would require JUnit 5 migration.
 
-### undertow — NOT YET ATTEMPTED
+### undertow — BLOCKED (JUnit 4)
 
 **Patch:** `scripts/bugs/undertow/HttpString-bytesAreEqual-flip.patch`  
 **Changed:** `HttpString.bytesAreEqual(byte[], byte[])` — result inverted  
 **Bug:** Two identical byte arrays are reported as not equal; two different arrays are reported as equal. Affects HTTP header name comparison.  
-**Status:** Learn phase not run; needs `mvn test-order:learn`.
+**Result (2026-06-16):** BLOCKED — learn phase ran 3 times with test failures, no dependency index produced. Project uses JUnit 4 (test-order requires JUnit 5).
 
 ---
 
-## Change Detection & Multi-Module Validation (2026-06-15)
+### jsoup-alt — CAUGHT ✓ (separate branch of jsoup 1.23.1-SNAPSHOT)
+
+**Patch:** `scripts/bugs/jsoup-alt/printer-shouldindent.patch`  
+**Changed:** `Printer.shouldIndent()` — same patch as jsoup  
+**Result (2026-06-16):** CAUGHT — top-3 selected tests include `PrinterTest` or equivalent, test failures detected.
+
+---
+
+### logging-log4j-alt — CAUGHT ✓ (separate branch of log4j2)
+
+**Patch:** `scripts/bugs/logging-log4j-alt/closeablethreadcontext-put.patch`  
+**Changed:** `CloseableThreadContext.put()` — same patch as logging-log4j2  
+**Result (2026-06-16):** CAUGHT — top-3 selected tests include `CloseableThreadContextTest`, test failures detected.
+
+---
+
+### commons-lang3-apache — CAUGHT ✓ (Apache branch of commons-lang 3.21.0-SNAPSHOT)
+
+**Patch:** `scripts/bugs/commons-lang3-apache/booleanutils-istrue-flip.patch`  
+**Changed:** `BooleanUtils.isTrue(Boolean)` — result inverted (`!Boolean.TRUE.equals(bool)`)  
+**Bug:** `isTrue(true)` returns false, `isTrue(false/null)` returns true  
+**Result (2026-06-16):** CAUGHT — `BooleanUtilsTest` selected in top-3, test failures detected.  
+**Note:** `StringUtils.isBlank` patch (same as commons-lang) MISSED because it's too central (> many tests reference it). `BooleanUtils.isTrue` is more targeted (only `BooleanUtilsTest` has high overlap).
+
+---
+
+### commons-rng — CAUGHT ✓ (Apache Commons RNG 1.6-SNAPSHOT)
+
+**Patch:** `scripts/bugs/commons-rng/randomsource-isjumpable-flip.patch`  
+**Changed:** `RandomSource.isJumpable()` — result inverted (`!isAssignableTo(JumpableUniformRandomProvider.class)`)  
+**Bug:** Non-jumpable RNG sources report themselves as jumpable and vice versa.  
+**Result (2026-06-16):** CAUGHT — top-3 selected tests cover `RandomSource`, test failures detected.  
+**Notes:** Initial learn run picked `commons-rng-core` module (heuristic) but `RandomSource` is in `commons-rng-simple`. Fixed by adding `commons-rng) echo "NONE" ;;` to `detect_module_override` (full reactor learn). Also required `-Dcheckstyle.skip=true` to suppress `/* BUG_INJECTED */` comment violation.
+
+---
+
+### problem (Zalando Problem) — CAUGHT ✓ (0.29.1-SNAPSHOT)
+
+**Patch:** `scripts/bugs/problem/statustype-deserializer-null-flip.patch`  
+**Changed:** `StatusTypeDeserializer.deserialize()` — null condition inverted (`status != null` instead of `status == null`)  
+**Bug:** Known HTTP status codes (e.g. 400, 404) now produce an `UnknownStatus` object instead of the known `Status` enum value. Deserialization of all standard status codes breaks.  
+**Result (2026-06-16):** CAUGHT — top-3 selected tests include `ProblemMixInTest` which tests status deserialization, test failures detected.  
+**Notes:** Required multiple overrides: `detect_module_override` → NONE (tests in submodules), `detect_package_override` → `org.zalando.problem`, `detect_maven_java_home` → SAP JDK 21 (ct.sym for `--release 17`), `-Dmaven.compiler.fork=true -Dtestorder.learn.allowParallel=true` (hardcoded `<parallel>classesAndMethods</parallel>` in pom). Learn indexed 5 tests.
+
+---
 
 ### Bytecode / Method-Hash Change Detection — VERIFIED ✓
 

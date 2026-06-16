@@ -1,0 +1,9 @@
+diff --git a/src/main/java/org/apache/commons/lang3/BooleanUtils.java b/src/main/java/org/apache/commons/lang3/BooleanUtils.java
+--- a/src/main/java/org/apache/commons/lang3/BooleanUtils.java
++++ b/src/main/java/org/apache/commons/lang3/BooleanUtils.java
+@@ -243,7 +243,7 @@
+      */
+     public static boolean isTrue(final Boolean bool) {
+-        return Boolean.TRUE.equals(bool);
++        return !Boolean.TRUE.equals(bool); /* BUG_INJECTED */
+     }

@@ -86,6 +86,11 @@ MAVEN_REPOS=(
     "hazelcast"
     "truth"
     "undertow"
+    "commons-lang3-apache"
+    "jsoup-alt"
+    "logging-log4j-alt"
+    "commons-rng"
+    "problem"
 )
 
 # Gradle repos (use test-order-gradle-plugin)

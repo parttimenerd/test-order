@@ -127,6 +127,14 @@ detect_extra_mvn_args() {
         # spring-petclinic: third-party clone has a broken .git folder (missing commits);
         # git-commit-id plugin fails even with failOnNoGitDirectory=false. Skip the plugin.
         spring-petclinic) echo "-Dmaven.gitcommitid.skip=true -Dmaven.test.failure.ignore=true" ;;
+        # problem (Zalando Problem): maven-compiler-plugin uses in-process javac which loads
+        # from the Maven JVM (Ubuntu OpenJDK 21 without ct.sym for --release 17). Force a
+        # forked javac compilation from JAVA_HOME which has the full ct.sym.
+        # Surefire pom uses <parallel>classesAndMethods</parallel> hardcoded; use
+        # -Dtestorder.learn.allowParallel=true to proceed despite the parallel warning.
+        problem) echo "-Dmaven.compiler.fork=true -Dmaven.test.failure.ignore=true -Dtestorder.learn.allowParallel=true" ;;
+        # commons-rng: checkstyle rejects BUG_INJECTED comment style.
+        commons-rng) echo "-Dcheckstyle.skip=true" ;;
         *)          echo "" ;;
     esac
 }
@@ -154,6 +162,12 @@ detect_module_override() {
         # opentelemetry: ImmutableTraceFlags lives in :api module, but testOrderAffected
         # must run at the reactor root because the Gradle plugin is applied at root level.
         opentelemetry) echo "NONE" ;;
+        # problem: tests are in submodules (problem-jackson3, problem-gson, etc.) not
+        # in the 'problem' module itself. Run full reactor to capture all submodule tests.
+        problem) echo "NONE" ;;
+        # commons-rng: heuristic picks commons-rng-core but tests for RandomSource are in
+        # commons-rng-simple. Run the full reactor to capture all modules.
+        commons-rng) echo "NONE" ;;
         *) echo "" ;;
     esac
 }
@@ -167,6 +181,8 @@ detect_package_override() {
         cds-feature-attachments) echo "com.sap.cds" ;;
         neonbee) echo "io.neonbee" ;;
         resilience4j) echo "io.github.resilience4j" ;;
+        # problem: tests span multiple submodules under org.zalando.problem
+        problem) echo "org.zalando.problem" ;;
         # javaparser: heuristic picks com.github.javaparser.symbolsolver (285 files) which
         # misses the 230+ tests in javaparser-core-testing (com.github.javaparser.*).
         # Use the two-level common prefix to capture all test modules.
@@ -306,6 +322,9 @@ detect_maven_java_home() {
         # maven: root pom sets javaVersion=17, which requires --release 17 (cross-compilation).
         # The Ubuntu JDK 21 lacks ct.sym for --release; SAP JDK 21 has it.
         maven) _sdkman_java_home "21.0.6-sapmchn" ;;
+        # problem: uses module-info.java with Jackson 3.x module names; requires SAP JDK 21
+        # with full ct.sym support for --release 17. Ubuntu JDK 21 rejects --release 17.
+        problem) _sdkman_java_home "21-sapmchn" ;;
         *) echo "" ;;
     esac
 }

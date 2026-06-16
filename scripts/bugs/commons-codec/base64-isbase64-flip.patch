@@ -1,8 +1,12 @@
+diff --git a/src/main/java/org/apache/commons/codec/binary/Base64.java b/src/main/java/org/apache/commons/codec/binary/Base64.java
 --- a/src/main/java/org/apache/commons/codec/binary/Base64.java
 +++ b/src/main/java/org/apache/commons/codec/binary/Base64.java
-@@ -613,7 +613,7 @@
+@@ -612,7 +612,7 @@
+      * @since 1.4
       */
      public static boolean isBase64(final byte octet) {
 -        return octet == PAD_DEFAULT || octet >= 0 && octet < DECODE_TABLE.length && DECODE_TABLE[octet] != -1;
-+        return octet == PAD_DEFAULT || octet >= 0 && octet < DECODE_TABLE.length && DECODE_TABLE[octet] == -1;
++        return !(octet == PAD_DEFAULT || octet >= 0 && octet < DECODE_TABLE.length && DECODE_TABLE[octet] != -1); /* BUG_INJECTED */
      }
+
+     /**
