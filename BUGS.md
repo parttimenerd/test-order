@@ -1492,6 +1492,17 @@ The comment says "prefer the worst-case outcome (failed > passed) to be conserva
 
 ---
 
+### BUG-142: `ConflictGraphBuilder.build` enters member-dep path when only `methodMemberDepsMap` is non-empty, returning empty edge list
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/detection/ConflictGraphBuilder.java` line 38  
+**Severity:** LOW (conflict graph empty when method-only member deps exist; falls through to no edges rather than class-dep fallback)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** After the BUG-141 fix, `hasMemberDeps()` returns `true` when only `methodMemberDepsMap` is populated. `ConflictGraphBuilder.build()` gates on `hasMemberDeps()` to choose `buildFromMemberDeps()` over `buildFromClassDeps()`. But `buildFromMemberDeps()` only calls `getMemberDeps(test)` (class-level), never `getMethodMemberDeps()`. When `memberDepsMap` is empty (and only `methodMemberDepsMap` has data), every test returns an empty member set, no shared-member edges are built, and the method returns an empty list — worse than falling through to `buildFromClassDeps()`.  
+**Root cause:** `hasMemberDeps()` was widened by BUG-141 to cover both maps, but `ConflictGraphBuilder` only needs to branch on the class-level map (which `buildFromMemberDeps` actually reads).  
+**Fix:** Added `hasClassMemberDeps()` to `DependencyMap` (returns `!memberDepsMap.isEmpty()`) and changed the `ConflictGraphBuilder` gate to use it.
+
+---
+
 ### BUG-141: `DependencyMap.hasMemberDeps()` only checks `memberDepsMap`, ignoring `methodMemberDepsMap`
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/DependencyMap.java` line 396  

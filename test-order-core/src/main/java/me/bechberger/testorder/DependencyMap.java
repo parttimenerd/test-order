@@ -397,6 +397,14 @@ public class DependencyMap {
 	}
 
 	/**
+	 * Whether this map has per-test-class (as opposed to per-test-method)
+	 * member-level data.
+	 */
+	public boolean hasClassMemberDeps() {
+		return !memberDepsMap.isEmpty();
+	}
+
+	/**
 	 * Returns the number of distinct tracked members (methods) per source class,
 	 * derived from the member key dictionary. Only populated when member-level
 	 * instrumentation is active (i.e. {@link #hasMemberDeps()} is true). Keys are

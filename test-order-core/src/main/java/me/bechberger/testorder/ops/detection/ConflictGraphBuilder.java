@@ -35,7 +35,7 @@ public final class ConflictGraphBuilder {
 		List<ConflictEdge> edges = new ArrayList<>();
 		Set<String> intermittent = findIntermittentTests(state);
 
-		if (depMap.hasMemberDeps()) {
+		if (depMap.hasClassMemberDeps()) {
 			edges = buildFromMemberDeps(depMap, testClasses, intermittent);
 		} else {
 			edges = buildFromClassDeps(depMap, testClasses, intermittent);
