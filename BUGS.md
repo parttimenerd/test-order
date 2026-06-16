@@ -92,7 +92,7 @@ Audit conducted 2026-06-05 on the reactor class-id map implementation and relate
 **Symptom:** Same issue as BUG-12 but in `test-order:auto` mode. If a user passed `-Dtest=CartTest` with `test-order:auto test`, the auto-selection would run, potentially produce "Remaining tests written to..." messages, and try to override Surefire's test filter.  
 **Fix:** Same guard pattern: check `session.getUserProperties().getProperty("test")` before running the auto workflow; skip and return early if the user specified an explicit test filter.
 
-### BUG-14 (minor): `pendingRunCompleted` in `TestOrderState` not declared volatile
+### BUG-14 (minor): `pendingRunCompleted` in `TestOrderState` not declared volatile ✓ FIXED
 
 **File:** `test-order-core/…/TestOrderState.java` line 495  
 **Symptom:** `addRunRecord()` (which sets `pendingRunCompleted = true`) is `synchronized`, but `toPersistedRoot()` reads `pendingRunCompleted` outside any lock and `afterSave()` writes it outside any lock. Under concurrent saves (theoretically possible in tests or benchmarks), a thread could see a stale `false` value, causing failure-score decay to be skipped for a run.  
@@ -1682,3 +1682,14 @@ unable to access file: java.nio.file.NoSuchFileException: ...ConfigTransformer.c
 The production class files in `clients/build/classes/java/main/` are deleted by `cleanTestOrderAffected`.
 **Root cause:** When `configureDerivedTestTask()` sets `task.setTestClassesDirs(testSourceSet.getOutput().getClassesDirs())`, Gradle registers the `testClassesDirs` as BOTH an input AND an output of the test task. Gradle's `cleanFoo` generated task deletes all outputs, which (incorrectly) includes the test classes dirs. For projects with unusual SourceSet configurations, Gradle may resolve `getClassesDirs()` to include the production classes dir, causing all production `.class` files to be deleted on `cleanTestOrderAffected`.
 **Fix approach:** Use `task.setTestClassesDirs()` with a `project.files(...)` wrapper that is explicitly marked as `@Input` only (not output), or register a custom `cleanTestOrderAffected` task that only deletes the state file (deferred-tests file) rather than relying on Gradle's auto-generated clean task.
+
+---
+
+### BUG-155: `ChangeAnalysis.analyze` swallows `IOException` from parallel change detection as uncaught `CompletionException` ✓ FIXED
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/workflows/ChangeAnalysis.java` lines 213–288  
+**Severity:** MEDIUM (unexpected runtime exception propagates past callers' `catch (IOException)` — produces confusing error messages instead of actionable messages)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** `ChangeAnalysis.analyze()` uses `CompletableFuture.supplyAsync()` to parallelize production-source and test-source change detection. When the underlying `ChangeDetectionOps` methods throw a `RuntimeException` wrapping an `IOException` (e.g., git command fails, hash file I/O error), `.join()` rethrows it as `CompletionException(cause)`. The `analyze()` method is declared `throws IOException`, but `CompletionException` is unchecked and propagates past the callers' `catch (IOException)` blocks, producing a raw `java.util.concurrent.CompletionException` stack trace instead of the expected user-friendly `[test-order] Failed to select tests: ...` message.  
+**Root cause:** Direct `.join()` calls on `CompletableFuture` inside a method declared `throws IOException` don't unwrap `CompletionException` to recover the original `IOException`.  
+**Fix:** Added `joinOrRethrow()` helper that catches `CompletionException`, unwraps `IOException` causes and rethrows them directly, and rethrows other `RuntimeException` causes unwrapped as well. Applied to all five `.join()` call sites in `analyze()` (prodChangeFuture, testChangeFuture, module futures, sibling futures).

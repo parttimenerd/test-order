@@ -217,8 +217,8 @@ public final class ChangeAnalysis {
 				() -> ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
 						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log()));
 
-		Set<String> changed = prodChangeFuture.join();
-		Set<String> changedTests = testChangeFuture.join();
+		Set<String> changed = joinOrRethrow(prodChangeFuture);
+		Set<String> changedTests = joinOrRethrow(testChangeFuture);
 
 		// ── Cross-module change propagation ─────────────────────────
 		// In multi-module builds, test modules (e.g. jupiter-tests) or modules with
@@ -249,7 +249,7 @@ public final class ChangeAnalysis {
 			if (!moduleFutures.isEmpty()) {
 				Set<String> mergedChanged = new java.util.LinkedHashSet<>(changed);
 				for (var f : moduleFutures) {
-					mergedChanged.addAll(f.join());
+					mergedChanged.addAll(joinOrRethrow(f));
 				}
 				if (mergedChanged.size() > changed.size()) {
 					ctx.log()
@@ -275,7 +275,7 @@ public final class ChangeAnalysis {
 			if (!siblingFutures.isEmpty()) {
 				Set<String> mergedChanged = new java.util.LinkedHashSet<>(changed);
 				for (var f : siblingFutures) {
-					mergedChanged.addAll(f.join());
+					mergedChanged.addAll(joinOrRethrow(f));
 				}
 				if (mergedChanged.size() > changed.size()) {
 					ctx.log()
@@ -557,5 +557,25 @@ public final class ChangeAnalysis {
 			}
 			default -> null;
 		};
+	}
+
+	/**
+	 * Joins a CompletableFuture, unwrapping CompletionException so that an
+	 * IOException cause propagates as IOException rather than a RuntimeException
+	 * that bypasses callers' {@code catch (IOException)} blocks.
+	 */
+	private static <T> T joinOrRethrow(java.util.concurrent.CompletableFuture<T> f) throws IOException {
+		try {
+			return f.join();
+		} catch (java.util.concurrent.CompletionException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof IOException ioe) {
+				throw ioe;
+			}
+			if (cause instanceof RuntimeException re) {
+				throw re;
+			}
+			throw e;
+		}
 	}
 }
