@@ -1179,12 +1179,24 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **SA auto-mode (changeMode=uncommitted) result:** CAUGHT ✓ — 17 failures in `Base64Test` (`testCodec263`, `testEncodeDecodeRandom`, etc.)  
 **Note:** Top-3 selected tests missed because patch targets `Base64.isBase64()` which is not called by the highest-scored tests. SA auto-mode (scanning all uncommitted changes) caught the bug by running all tests that depend on the changed class.
 
-### kafka — MISSED (utility class too central)
+### kafka — CAUGHT ✓ (topic-hascollisionchars-negate)
+
+**Winning patch:** `scripts/bugs/kafka/topic-hascollisionchars-negate.patch`  
+**Changed:** `Topic.hasCollisionChars()` — return negated (returns false for topics with `_` or `.`, true for others)  
+**Result (2026-06-16):** CAUGHT — `TopicTest` selected as top-3, `testTopicHasCollisionChars()` / `testTopicHasCollision()` fail immediately.  
+**Infrastructure fix:** Campaign script updated to use `--rerun "$select_task"` instead of non-existent `cleanTestOrderAffected` task (see BUG-154 fix).  
+
+### kafka/utils-isblank — MISSED (utility class too central)
 
 **Patch:** `scripts/bugs/kafka/utils-isblank-negate.patch`  
-**Previous issue:** v1 campaign used old API (`cleanTestOrderSelect` not found). v2/v3 campaigns showed UNKNOWN due to BUG-153 (testOrderAffected getting NO-SOURCE). v3 fixed by BUG-153 fix.  
-**Result (2026-06-16):** MISSED — `testOrderAffected` ran correctly (selected 13 tests, compiled + executed), but `UtilsTest` was not in the top-3 selected. Bug is in `Utils.isBlank` which is a utility method referenced by many classes equally, so the scoring doesn't differentiate `UtilsTest` from others.  
-**Notes:** This is expected behavior for heavily-used utility methods. `Utils` is a dependency of ~100+ test classes, so no single test ranks highly for it.
+**Result (2026-06-16):** MISSED — `testOrderAffected` ran correctly (selected 13 tests, compiled + executed), but `UtilsTest` was not in the top-3 selected. Bug is in `Utils.isBlank` which is a utility method referenced by many classes equally.  
+**Notes:** Expected behavior for heavily-used utility methods — `Utils` is a dependency of ~100+ test classes, so no single test ranks highly for it.
+
+### kafka/topic-isvalid — MISSED (method not called by tests)
+
+**Patch:** `scripts/bugs/kafka/topic-isvalid-negate.patch`  
+**Changed:** `Topic.isValid()` — return negated  
+**Result (2026-06-16):** Tests PASSED despite bug — `TopicTest` never calls `Topic.isValid()` directly (uses `Topic.validate()` which calls `detectInvalidTopic()` internally, bypassing `isValid()`). Campaign showed UNKNOWN due to BUILD SUCCESSFUL with no test failures.
 
 ### maven — IN PROGRESS (new patch, full reactor indexed)
 
@@ -1656,11 +1668,12 @@ In contrast, `SourceFileModel.findMethodIslands` handles compact constructors vi
 
 ---
 
-### BUG-154: `cleanTestOrderAffected` Gradle auto-task deletes production class files, breaking subsequent `compileJava`
+### BUG-154: `cleanTestOrderAffected` Gradle auto-task deletes production class files, breaking subsequent `compileJava` — PARTIALLY WORKED AROUND
 
-**File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java` `configureDerivedTestTask()` / `testOrderAffected` task registration
-**Severity:** HIGH (corrupts the build; all compilation fails with "bad class file: NoSuchFileException" errors)
-**Status:** OPEN
+**File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java` `configureDerivedTestTask()` / `testOrderAffected` task registration  
+**Campaign script:** `scripts/third_party_test_plan.sh` — `phase_bugs_gradle()` function  
+**Severity:** HIGH (corrupts the build; all compilation fails with "bad class file: NoSuchFileException" errors)  
+**Status:** WORKAROUND applied (2026-06-16) — campaign script changed to use `--rerun "$select_task"` instead of running `cleanTestOrderAffected`. The underlying plugin bug (Gradle registering testClassesDirs as an output) is still present but no longer triggered during campaigns.
 **Symptom:** After `cleanTestOrderAffected` runs (Gradle auto-generated clean task for `testOrderAffected`), `compileJava FAILED` with errors like:
 ```
 bad class file: .../build/classes/java/main/org/apache/kafka/common/config/ConfigTransformer.class

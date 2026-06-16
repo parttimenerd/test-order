@@ -1,0 +1,11 @@
+--- a/clients/src/main/java/org/apache/kafka/common/internals/Topic.java
++++ b/clients/src/main/java/org/apache/kafka/common/internals/Topic.java
+@@ -61,7 +61,7 @@
+
+     public static boolean isValid(String name) {
+         String reasonInvalid = detectInvalidTopic(name);
+-        return reasonInvalid == null;
++        return reasonInvalid != null; /* BUG_INJECTED */
+     }
+
+     public static void validate(String name, String logPrefix, Consumer<String> throwableConsumer) {

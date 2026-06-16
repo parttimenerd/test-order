@@ -1,0 +1,12 @@
+diff -u a/clients/src/main/java/org/apache/kafka/common/internals/Topic.java b/clients/src/main/java/org/apache/kafka/common/internals/Topic.java
+--- a/clients/src/main/java/org/apache/kafka/common/internals/Topic.java
++++ b/clients/src/main/java/org/apache/kafka/common/internals/Topic.java
+@@ -82,7 +82,7 @@
+      * @return true if the topic has collision characters
+      */
+     public static boolean hasCollisionChars(String topic) {
+-        return topic.contains("_") || topic.contains(".");
++        return !topic.contains("_") && !topic.contains("."); /* BUG_INJECTED */
+     }
+
+     /**

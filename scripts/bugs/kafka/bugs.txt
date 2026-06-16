@@ -1,1 +1,3 @@
+topic-hascollisionchars-negate.patch
+topic-isvalid-negate.patch
 utils-isblank-negate.patch

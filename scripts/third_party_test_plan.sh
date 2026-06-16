@@ -1288,14 +1288,14 @@ phase_bugs_gradle() {
         fi
     fi
 
-    local clean_task="${task_prefix}cleanTestOrderAffected"
     local select_task="${task_prefix}testOrderAffected"
 
     # shellcheck disable=SC2086
-    # cleanTestOrderAffected forces re-execution of testOrderAffected: after patch the source
-    # changes, but Gradle's incremental tracking may consider testOrderAffected UP-TO-DATE
-    # when production class files change (class dirs on classpath aren't always tracked).
-    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "$clean_task" "$select_task" \
+    # --rerun forces re-execution of testOrderAffected: after patch the source changes, but
+    # Gradle's incremental tracking may consider testOrderAffected UP-TO-DATE when production
+    # class files change (class dirs on classpath aren't always tracked).
+    JAVA_HOME="${override_java_home:-${JAVA_HOME:-}}" ./gradlew "$select_task" \
+        --rerun "$select_task" \
         --no-build-cache --no-configuration-cache \
         -Dtestorder.changeMode=explicit \
         -Dtestorder.changed.classes="$classname" \
