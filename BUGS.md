@@ -1485,14 +1485,16 @@ As a result, BFS expansion starting from a change to `I1#foo` never reaches `cal
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/SourceFileModel.java` lines 669, 1215  
 **Severity:** HIGH (complete false-negative for implicit class files — no methods detected as changed)  
-**Status:** FIXED (2026-06-16)  
+**Status:** FIXED (2026-06-16) — `findMethodIslands` fixed; `findFieldIslands` fix completed 2026-06-16  
 **Symptom:** The Javadoc for `SourceFileModel` (line 38–39) explicitly claims support for "JEP 512 implicit classes (root-level methods without an enclosing type)". However, both `findMethodIslands` (line 669) and `findFieldIslands` (line 1215) immediately return empty lists when `types.isEmpty()`:
 ```java
 if (types.isEmpty())
     return methods;  // line 669 — skips all methods in implicit class
 ```
 An implicit class has no explicit `class` or `record` declaration — it IS a root-level collection of methods and fields without a type wrapper. So `types` is always empty for a valid implicit class file, and all its methods and fields are silently omitted from the model. Any change to a method in an implicit class will never be detected, and the tests that cover it will not be re-run.  
-**Root cause:** The `types.isEmpty()` early-return was added as a guard for "files with no type declarations are unusual, skip them". It predates implicit class support. The JEP 512 support claim in the Javadoc was added without removing or conditioning this guard.
+**Root cause:** The `types.isEmpty()` early-return was added as a guard for "files with no type declarations are unusual, skip them". It predates implicit class support. The JEP 512 support claim in the Javadoc was added without removing or conditioning this guard.  
+**Fix:** Both `findMethodIslands` and `findFieldIslands` now synthesize a virtual IMPLICIT TypeNode spanning the entire file at brace depth 0 when `types.isEmpty()`, matching the JEP 512 semantics.  
+**Test:** `SourceFileModelTest.PathologicalParsing.implicitClassFieldsExtracted`
 
 ---
 
@@ -1757,7 +1759,18 @@ The production class files in `clients/build/classes/java/main/` are deleted by 
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/IndexCollectorServer.java` lines 486–498  
 **Severity:** LOW (race window is small; only affects module attribution in parallel multi-module builds)  
-**Status:** OPEN  
+**Status:** FIXED (2026-06-16)  
 **Symptom:** The BUG-117 fix synchronized the `testKeysBefore` snapshot and `stampNewTestsWithModule` calls separately, but the payload processing (`handleBinaryPayload`/`handleStringPayload`) runs between them WITHOUT holding the lock. Another thread can insert test keys into `mergedClassDeps` between the snapshot (line 488) and the stamp (line 497). `stampNewTestsWithModule` would then stamp those externally-inserted keys as belonging to this thread's module — wrong module attribution.  
 **Root cause:** Two separate synchronized blocks around the snapshot and the stamp with un-synchronized mutation in between. True atomicity would require holding the lock across the entire snapshot→payload→stamp sequence, which is blocked by the I/O-bound payload processing.  
-**Proper fix approach:** Modify `handleBinaryPayload`/`handleStringPayload` to return the set of keys they added (or track added keys internally), then stamp only those returned keys rather than using a before/after snapshot diff. This avoids holding the lock during I/O.
+**Fix:** `handleBinaryPayload` and `handleStringPayload` now return the set of test keys they processed. The caller stamps exactly those returned keys via `stampTestsWithModule(payloadKeys, moduleId)`, eliminating the before/after snapshot diff. No lock needed since we stamp only what this thread processed.
+
+---
+
+### BUG-158: `AbstractTestOrderMojo.injectAgentViaDebugProperty` and `injectAgentAndConfigureSurefireStandalone` have spurious null guards that imply `getProperties()` can return null ✓ FIXED
+
+**File:** `test-order-maven-plugin/src/main/java/me/bechberger/testorder/maven/AbstractTestOrderMojo.java` lines 1931–1936, 2115–2119  
+**Severity:** LOW (no runtime failure; inconsistency creates false impression of null risk)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** Two methods contained `project.getProperties() != null ? project.getProperties().getProperty(k) : null` guards before reading a property, but then called `project.getProperties().setProperty(...)` unconditionally on the next line. If `getProperties()` could actually return null, the set call would NPE. All other 12+ call sites in the same file call `getProperties()` without any null guard, matching Maven's guarantee that `MavenProject.getProperties()` never returns null.  
+**Root cause:** Over-defensive coding added inconsistently; the null guard on the read was not extended to the write.  
+**Fix:** Removed the spurious ternary null guards; both methods now call `project.getProperties().getProperty(k)` directly, consistent with all other call sites.

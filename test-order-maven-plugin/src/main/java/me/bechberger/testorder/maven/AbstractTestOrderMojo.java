@@ -1928,9 +1928,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				getLog().info("[test-order] Detected CLI -DargLine override. Injecting agent via " + debugProperty
 						+ " to preserve existing argLine.");
 			}
-			String existingDebugValue = project.getProperties() != null
-					? project.getProperties().getProperty(debugProperty)
-					: null;
+			String existingDebugValue = project.getProperties().getProperty(debugProperty);
 			String debugValue = ((existingDebugValue == null ? "" : existingDebugValue + " ") + agentString + sysProps)
 					.trim();
 			project.getProperties().setProperty(debugProperty, debugValue);
@@ -2112,9 +2110,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (hasHardcodedSurefireArgLine || hasCliArgLine) {
 			boolean isFailsafe = "maven-failsafe-plugin".equals(surefire.getArtifactId());
 			String debugProperty = isFailsafe ? "maven.failsafe.debug" : "maven.surefire.debug";
-			String existingDebugValue = project.getProperties() != null
-					? project.getProperties().getProperty(debugProperty)
-					: null;
+			String existingDebugValue = project.getProperties().getProperty(debugProperty);
 			String debugValue = ((existingDebugValue == null ? "" : existingDebugValue + " ") + sysProps).trim();
 			project.getProperties().setProperty(debugProperty, debugValue);
 		} else {

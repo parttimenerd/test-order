@@ -4994,6 +4994,21 @@ class SourceFileModelTest {
 			assertEquals("real", model.methods().get(0).name());
 			assertEquals(1, model.types().size());
 		}
+
+		@Test
+		void implicitClassFieldsExtracted() {
+			// JEP 512 implicit classes have no enclosing type declaration.
+			// findFieldIslands previously returned immediately when types.isEmpty().
+			String src = """
+					int x = 42;
+					String label = "hello";
+					void main() { System.out.println(label + x); }
+					""";
+			var model = parseAll(src, "");
+			var fieldNames = model.fields().stream().map(f -> f.name()).toList();
+			assertTrue(fieldNames.contains("x"), "field 'x' should be extracted; got " + fieldNames);
+			assertTrue(fieldNames.contains("label"), "field 'label' should be extracted; got " + fieldNames);
+		}
 	}
 
 	// ── Kotlin method parsing ─────────────────────────────────────────────
