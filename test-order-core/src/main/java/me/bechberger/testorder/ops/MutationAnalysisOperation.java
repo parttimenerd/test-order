@@ -58,13 +58,41 @@ public final class MutationAnalysisOperation {
 	 * @param extraClasspath
 	 *            additional classpath entries for the forked test minion (e.g.
 	 *            Maven project test classpath), may be empty or {@code null}
+	 * @param classesDir
+	 *            compiled production classes directory, or {@code null} to use
+	 *            {@code projectRoot/target/classes} (Maven default)
+	 * @param testClassesDir
+	 *            compiled test classes directory, or {@code null} to use
+	 *            {@code projectRoot/target/test-classes} (Maven default)
+	 * @param pitReportDir
+	 *            PIT report output directory, or {@code null} to use
+	 *            {@code projectRoot/target/pit-reports} (Maven default)
 	 */
 	public record Config(Path indexFile, Path stateFile, Path outputFile, Path projectRoot, String targetClasses,
-			int timeBudgetSeconds, PluginLog log, List<String> extraClasspath) {
+			int timeBudgetSeconds, PluginLog log, List<String> extraClasspath, Path classesDir, Path testClassesDir,
+			Path pitReportDir) {
+
+		public Config(Path indexFile, Path stateFile, Path outputFile, Path projectRoot, String targetClasses,
+				int timeBudgetSeconds, PluginLog log, List<String> extraClasspath) {
+			this(indexFile, stateFile, outputFile, projectRoot, targetClasses, timeBudgetSeconds, log, extraClasspath,
+					null, null, null);
+		}
 
 		public Config(Path indexFile, Path stateFile, Path outputFile, Path projectRoot, String targetClasses,
 				int timeBudgetSeconds, PluginLog log) {
 			this(indexFile, stateFile, outputFile, projectRoot, targetClasses, timeBudgetSeconds, log, List.of());
+		}
+
+		public Path resolvedClassesDir() {
+			return classesDir != null ? classesDir : projectRoot.resolve("target/classes");
+		}
+
+		public Path resolvedTestClassesDir() {
+			return testClassesDir != null ? testClassesDir : projectRoot.resolve("target/test-classes");
+		}
+
+		public Path resolvedPitReportDir() {
+			return pitReportDir != null ? pitReportDir : projectRoot.resolve("target/pit-reports");
 		}
 	}
 
@@ -118,12 +146,12 @@ public final class MutationAnalysisOperation {
 				+ " target production classes");
 
 		// Resolve classpath entries from the project
-		Path targetClasses = config.projectRoot().resolve("target/classes");
-		Path targetTestClasses = config.projectRoot().resolve("target/test-classes");
+		Path targetClasses = config.resolvedClassesDir();
+		Path targetTestClasses = config.resolvedTestClassesDir();
 
 		if (!Files.exists(targetClasses)) {
 			throw new IOException(
-					"Compiled classes directory not found: " + targetClasses + ". Run mvn compile test-compile first.");
+					"Compiled classes directory not found: " + targetClasses + ". Run compile and test-compile first.");
 		}
 
 		// Build the target-class glob patterns for PIT
@@ -131,7 +159,7 @@ public final class MutationAnalysisOperation {
 		String testGlob = testClasses.stream().map(c -> c.replace('$', '*')).collect(Collectors.joining(","));
 
 		// Resolve PIT report output directory
-		Path pitReportDir = config.projectRoot().resolve("target/pit-reports");
+		Path pitReportDir = config.resolvedPitReportDir();
 
 		// Invoke PIT programmatically
 		invokePit(config.projectRoot(), targetClasses, targetTestClasses, targetGlob, testGlob, pitReportDir,

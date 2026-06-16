@@ -865,7 +865,7 @@ For `EXCLUSION_PROBE`, `action.victim` is the test being *excluded* (the potenti
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/MutationAnalysisOperation.java` lines 121–134  
 **Severity:** MEDIUM (feature gap: Gradle projects and non-standard Maven layouts silently fail)  
-**Status:** UNFIXED  
+**Status:** FIXED (2026-06-16)  
 **Symptom:** The `run()` method resolves class directories and the PIT report output dir by appending Maven-conventional suffixes to `config.projectRoot()`:
 ```java
 Path targetClasses     = config.projectRoot().resolve("target/classes");       // line 121
@@ -881,7 +881,7 @@ If `targetClasses` doesn't exist the method throws immediately (line 124). On Gr
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/DetectDependenciesOperation.java` line 641  
 **Severity:** LOW (incorrect parse on edge-case input)  
-**Status:** UNFIXED  
+**Status:** FIXED (2026-06-16)  
 **Symptom:** `extractJsonString` locates the closing `"` of a JSON string value using `json.indexOf('"', quoteStart + 1)`. If the JSON value contains an escaped quote (`\"`), `indexOf` returns the position of the escaped quote instead of the real closing delimiter, truncating the extracted value. For example, a test class FQCN containing `$` is fine, but a description field like `"My \"bug\" description"` would be parsed as `My \` rather than the full value. Carried-forward results from prior report files then propagate with a truncated description.  
 **Root cause:** The method was written as a minimal hand-rolled parser and does not track backslash escapes. A proper fix requires scanning character-by-character and skipping `\"` sequences.
 
@@ -891,7 +891,7 @@ If `targetClasses` doesn't exist the method throws immediately (line 124). On Gr
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/DashboardGenerator.java` line 256  
 **Severity:** LOW (inconsistency; method data always omitted from dashboard even when present)  
-**Status:** UNFIXED  
+**Status:** FIXED (2026-06-16)  
 **Symptom:** At line 256, the dashboard builder checks `mMemberDeps != null` before adding method-level member deps to the output:
 ```java
 Set<String> mMemberDeps = depMap.getMethodMemberDeps(key);
@@ -1362,7 +1362,7 @@ return orderRepository.count() + 1; // off by one
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/DiagnosticOperation.java` line 176  
 **Severity:** LOW (false negative on small projects)  
-**Status:** UNFIXED  
+**Status:** FIXED (2026-06-16)  
 **Symptom:** The coverage check `indexedCount < actualCount / 10` uses integer division. When `actualCount < 10` (e.g. a micro-project with 7 test classes), `actualCount / 10 = 0`, so the condition becomes `indexedCount < 0` — always false for valid counts. A project with 7 test classes where learn mode indexed none (all failed) would not trigger the "<10% coverage" warning.  
 **Root cause:** Integer division truncates toward zero. The condition should use `indexedCount * 10 < actualCount` (equivalent but avoids truncation) or `indexedCount < (actualCount + 9) / 10` (ceiling division).
 
@@ -1372,7 +1372,7 @@ return orderRepository.count() + 1; // off by one
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/DiagnosticOperation.java` lines 390–394  
 **Severity:** LOW (misleading diagnostic output)  
-**Status:** UNFIXED  
+**Status:** FIXED (2026-06-16)  
 **Symptom:** The status logic at line 390 only shows "NOT SET UP (run learn mode first)" when `freshProject && !hasErrors`. If a fresh project ALSO has errors (e.g. the index file is missing AND there's a configuration error), `freshProject && !hasErrors` is false, and it falls through to line 393: `hasErrors` → "ISSUES ⚠" or "CRITICAL ✗". Users see "CRITICAL" instead of "NOT SET UP", which gives confusing guidance — they should run learn mode first, not debug mysterious critical errors.  
 **Root cause:** The condition at line 390 is `freshProject && !hasErrors` (fresh-only guard), but for a completely uninitialised project it should be `freshProject` alone (fresh takes precedence over generic error messages).
 
@@ -1382,7 +1382,7 @@ return orderRepository.count() + 1; // off by one
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/DashboardGenerator.java` line 256  
 **Severity:** LOW (empty arrays written to JSON for all methods without member deps)  
-**Status:** UNFIXED  
+**Status:** FIXED (2026-06-16)  
 **Symptom:** At line 256, `getMethodMemberDeps(key)` is checked for null before converting to a list:
 ```java
 Set<String> mMemberDeps = depMap.getMethodMemberDeps(key);
@@ -1409,7 +1409,7 @@ As a result, BFS expansion starting from a change to `I1#foo` never reaches `cal
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/BytecodeHashStore.java` lines 215, 249  
 **Severity:** LOW (hash files silently unreadable when JVM default charset changes or differs between environments)  
-**Status:** UNFIXED  
+**Status:** FIXED (2026-06-16)  
 **Symptom:** `save()` constructs `new OutputStreamWriter(lz4os)` (line 215) and `load()` constructs `new InputStreamReader(lz4is)` (line 249) — both without specifying a charset. They rely on the JVM's `file.encoding` default, which is UTF-8 on most modern systems but can differ (e.g. US-ASCII on some CI environments, or locale-dependent on Windows). If a hash file is saved with one charset and loaded with another — e.g. because CI uses a different JVM locale — every class, method, and field key containing non-ASCII characters (valid in JVM source) will decode incorrectly, causing hash mismatches and false "changed" detections on every run.  
 **Root cause:** Missing `StandardCharsets.UTF_8` argument on both `OutputStreamWriter` and `InputStreamReader` constructors.
 

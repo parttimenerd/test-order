@@ -212,7 +212,8 @@ public class BytecodeHashStore {
 		}
 		Path tempFile = PersistenceSupport.temporarySibling(hashFile);
 		try (LZ4FrameOutputStream lz4os = LZ4Support.frameOutputStreamHC(Files.newOutputStream(tempFile));
-				PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os))) {
+				PrintWriter pw = new PrintWriter(
+						new OutputStreamWriter(lz4os, java.nio.charset.StandardCharsets.UTF_8))) {
 			pw.println(FORMAT_HEADER);
 			for (var e : classHashes.entrySet()) {
 				pw.print("#CLASS:");
@@ -246,7 +247,8 @@ public class BytecodeHashStore {
 		Map<String, String> fieldMap = new TreeMap<>();
 		Path loadPath = PersistenceSupport.resolveLoadPath(hashFile);
 		try (LZ4FrameInputStream lz4is = LZ4Support.frameInputStream(Files.newInputStream(loadPath));
-				BufferedReader br = new BufferedReader(new InputStreamReader(lz4is))) {
+				BufferedReader br = new BufferedReader(
+						new InputStreamReader(lz4is, java.nio.charset.StandardCharsets.UTF_8))) {
 			String line;
 			boolean firstLine = true;
 			while ((line = br.readLine()) != null) {

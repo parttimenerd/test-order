@@ -3,6 +3,9 @@ package me.bechberger.testorder.agent.runtime;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Lock-free tracker for class and member IDs using two compact atomic bitsets.
@@ -188,10 +191,10 @@ public class BitsetTracker {
 	 * Convert recorded class IDs to class names. Single-pass: iterates only up to
 	 * the high-water mark and skips zero words.
 	 */
-	public java.util.Set<String> toClassNames() {
+	public Set<String> toClassNames() {
 		int hw = classWords.highWater;
 		if (hw < 0)
-			return java.util.Collections.emptySet();
+			return Collections.emptySet();
 		ClassIdMap classIdMap = ClassIdMap.getInstance();
 		long[] w = classWords.words;
 		int limit = Math.min(hw + 1, w.length);
@@ -199,7 +202,7 @@ public class BitsetTracker {
 		int estimated = 0;
 		for (int wi = 0; wi < limit; wi++)
 			estimated += Long.bitCount(w[wi]);
-		java.util.Set<String> result = new java.util.LinkedHashSet<>(Math.max(16, estimated + (estimated >>> 2)));
+		Set<String> result = new HashSet<>(Math.max(16, estimated + (estimated >>> 2)));
 		for (int wi = 0; wi < limit; wi++) {
 			long word = w[wi];
 			if (word == 0)
@@ -219,20 +222,20 @@ public class BitsetTracker {
 	 * Convert recorded member IDs to member names. Single-pass: iterates only up to
 	 * the high-water mark and skips zero words.
 	 */
-	public java.util.Set<String> toMemberNames() {
+	public Set<String> toMemberNames() {
 		WordArray mw = memberWords;
 		if (mw == null)
-			return java.util.Collections.emptySet();
+			return Collections.emptySet();
 		int hw = mw.highWater;
 		if (hw < 0)
-			return java.util.Collections.emptySet();
+			return Collections.emptySet();
 		ClassIdMap classIdMap = ClassIdMap.getInstance();
 		long[] w = mw.words;
 		int limit = Math.min(hw + 1, w.length);
 		int estimated = 0;
 		for (int wi = 0; wi < limit; wi++)
 			estimated += Long.bitCount(w[wi]);
-		java.util.Set<String> result = new java.util.LinkedHashSet<>(Math.max(16, estimated + (estimated >>> 2)));
+		Set<String> result = new HashSet<>(Math.max(16, estimated + (estimated >>> 2)));
 		for (int wi = 0; wi < limit; wi++) {
 			long word = w[wi];
 			if (word == 0)
@@ -323,7 +326,7 @@ public class BitsetTracker {
 		int limit = Math.min(hw + 1, w.length);
 		// If the live array is already the right size, return it directly
 		// (safe at flush time when recording is stopped).
-		return (w.length == limit) ? w : java.util.Arrays.copyOf(w, limit);
+		return (w.length == limit) ? w : Arrays.copyOf(w, limit);
 	}
 
 	/** Effective length of class words (highWater + 1), or 0 if empty. */
@@ -354,7 +357,7 @@ public class BitsetTracker {
 			return EMPTY_LONGS;
 		long[] w = mw.words;
 		int limit = Math.min(hw + 1, w.length);
-		return (w.length == limit) ? w : java.util.Arrays.copyOf(w, limit);
+		return (w.length == limit) ? w : Arrays.copyOf(w, limit);
 	}
 
 	/** Effective length of member words (highWater + 1), or 0 if empty. */

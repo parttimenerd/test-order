@@ -1388,9 +1388,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                                 .resolve("test-mutation-results.json");
                 Path projectRoot = project.getProjectDir().toPath().toAbsolutePath();
                 try {
+                    Path buildDir = project.getLayout().getBuildDirectory().getAsFile().get().toPath();
                     me.bechberger.testorder.ops.MutationAnalysisOperation
                             .run(new me.bechberger.testorder.ops.MutationAnalysisOperation.Config(indexFile, stateFile,
-                                    outputPath, projectRoot, targetClassesStr, timeBudget, wrapLog(project)));
+                                    outputPath, projectRoot, targetClassesStr, timeBudget, wrapLog(project), List.of(),
+                                    buildDir.resolve("classes/java/main"), buildDir.resolve("classes/java/test"),
+                                    buildDir.resolve("pit-reports")));
                 } catch (IOException e) {
                     throw new GradleException("Mutation analysis failed: " + e.getMessage(), e);
                 }

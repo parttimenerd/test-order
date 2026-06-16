@@ -207,6 +207,7 @@ public final class DetectDependenciesOperation {
 		long deadline = config.timeBudgetSeconds() > 0
 				? startTime + config.timeBudgetSeconds() * 1000L
 				: Long.MAX_VALUE;
+		runner.setDeadline(deadline);
 
 		// Determine passing tests (run in reference order)
 		log.info("Running reference test run (" + referenceOrder.size()
@@ -637,10 +638,18 @@ public final class DetectDependenciesOperation {
 		int quoteStart = json.indexOf('"', colonIdx + 1);
 		if (quoteStart < 0)
 			return "";
-		int quoteEnd = json.indexOf('"', quoteStart + 1);
-		if (quoteEnd < 0)
-			return "";
-		return json.substring(quoteStart + 1, quoteEnd);
+		int i = quoteStart + 1;
+		while (i < json.length()) {
+			char c = json.charAt(i);
+			if (c == '\\') {
+				i += 2; // skip escaped character
+			} else if (c == '"') {
+				return json.substring(quoteStart + 1, i);
+			} else {
+				i++;
+			}
+		}
+		return "";
 	}
 
 	/**

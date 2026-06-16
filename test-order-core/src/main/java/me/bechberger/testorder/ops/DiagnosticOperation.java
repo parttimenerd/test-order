@@ -173,7 +173,7 @@ public final class DiagnosticOperation {
 									"Run 'mvn test-order:diagnose' for further analysis"));
 				}
 				int actualCount = countTestClasses(config.testClassesDir());
-				if (actualCount > 0 && indexedCount < actualCount / 10) {
+				if (actualCount > 0 && indexedCount * 10 < actualCount) {
 					return DiagnosticResult.error(ErrorCode.INDEX_EMPTY,
 							"Index covers only " + indexedCount + " of ~" + actualCount
 									+ " test classes (<10%) — learn mode likely did not complete successfully",
@@ -387,7 +387,7 @@ public final class DiagnosticOperation {
 	private static String determineStatus(int score, List<DiagnosticResult> results) {
 		boolean hasErrors = results.stream().anyMatch(DiagnosticResult::isError);
 		boolean freshProject = results.stream().anyMatch(r -> r.code() == ErrorCode.NOT_INITIALIZED_INDEX);
-		if (freshProject && !hasErrors) {
+		if (freshProject) {
 			return "NOT SET UP (run learn mode first)";
 		}
 		if (hasErrors) {
