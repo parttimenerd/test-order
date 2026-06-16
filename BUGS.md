@@ -1198,13 +1198,13 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Changed:** `Topic.isValid()` — return negated  
 **Result (2026-06-16):** Tests PASSED despite bug — `TopicTest` never calls `Topic.isValid()` directly (uses `Topic.validate()` which calls `detectInvalidTopic()` internally, bypassing `isValid()`). Campaign showed UNKNOWN due to BUILD SUCCESSFUL with no test failures.
 
-### maven — IN PROGRESS (new patch, full reactor indexed)
+### maven — CAUGHT ✓
 
 **Previous patch:** `scripts/bugs/maven/pathselector-needrelativize-flip.patch` — MISSED (bug didn't cause observable test failures: `needRelativize()` always `true` didn't break the test's path comparisons with `glob:**` patterns)  
-**New patch:** `scripts/bugs/maven/pathselector-ismatched-flip.patch`  
+**Winning patch:** `scripts/bugs/maven/pathselector-ismatched-flip.patch`  
 **Changed:** `PathSelector.isMatched()` — `return true` flipped to `return false` when a path matches, meaning no include pattern ever matches  
-**Previous infrastructure issue resolved:** `detect_single_module` → `NONE` forces full 39-module reactor; `detect_maven_java_home` → SAP JDK 21 (has `ct.sym` for `--release 17`); `-Dmaven.compiler.proc=none` skips `DiIndexProcessor` failure; adds `maven-executor` skip  
-**Current status:** Campaign queued, awaiting thinkstation reconnection.
+**Infrastructure fix:** Added `-pl '!:maven-executor'` to `detect_extra_mvn_args` for maven — `maven-executor` needs `apache-maven:zip:bin` SNAPSHOT artifact not available locally.  
+**Result (2026-06-16):** CAUGHT in top-3 selected tests! BUILD SUCCESS, test failures detected.
 
 ### spring-boot — CAUGHT ✓
 

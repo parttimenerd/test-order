@@ -82,7 +82,11 @@ detect_extra_mvn_args() {
         # maven (Apache Maven itself): RAT license check fails on injected extensions.xml
         # because it lacks an Apache license header. Skip RAT; also ignore test failures
         # since some integration tests require a fully installed Maven.
-        maven) echo "-Drat.skip=true -Dmaven.test.failure.ignore=true" ;;
+        # maven-api-core uses DiIndexProcessor annotation processor that fails to instantiate
+        # when running clean build (processor JAR from maven-api-di isn't pre-built).
+        # Skip annotation processing to allow compilation past maven-api-core.
+        # maven-executor needs apache-maven:zip:bin SNAPSHOT not available locally; exclude it.
+        maven) echo "-Drat.skip=true -Dmaven.test.failure.ignore=true -Dmaven.compiler.proc=none -pl '!:maven-executor'" ;;
         # cds-feature-attachments: integration-tests module requires a running server;
         # exclude it and focus on the core cds-feature-attachments module.
         # Use positive selection (-pl <modules> -am) since Maven's !exclude syntax
@@ -159,6 +163,10 @@ detect_package_override() {
 detect_gradle_extra_args() {
     local repo="$1"
     case "$repo" in
+        # caffeine: javaVersion() defaults to 11 when no javaVersion property or JAVA_VERSION env var
+        # is set. Pass -PjavaVersion=21 to use JDK 21 toolchain (avoids pre-existing JDK 11 test failures).
+        # Only :caffeine has jcstress/jmh tasks (not :guava, :jcache, :simulator). Exclude them.
+        caffeine) echo "--continue -PjavaVersion=21 -x :caffeine:jcstress -x :caffeine:jmh" ;;
         # resilience4j does not have checkstyle/spotbugs tasks at root level;
         # Gradle 9 errors on -x for non-existent tasks.
         # Reactive/Spring subprojects hang indefinitely on JDK 25 (Mockito + reactor
@@ -197,12 +205,19 @@ detect_gradle_extra_args() {
         hibernate-orm) echo "--continue -x :hibernate-envers:test" ;;
         # spring-boot: no checkstyle/spotbugs tasks; custom Gradle build convention.
         # antora/docs subprojects generate documentation and are slow; exclude documentation tests.
+        # spring-boot-dependencies is a BOM-only project (no Java sources); testOrderInstrument
+        # fails because 'classes' task doesn't exist in BOM projects. Exclude it from instrumentation.
+        # Note: '-x :platform:spring-boot-dependencies:testOrderInstrument' won't work (task can't
+        # be created, fails at config time). Work around via --continue which skips config failures.
         spring-boot) echo "--continue -x :documentation:spring-boot-docs:test -x :documentation:spring-boot-actuator-docs:test" ;;
         # kafka: upgrade-system-tests-* are live-cluster system tests (no @Test methods) that
         # compile against old Kafka versions. They cannot run without a live Kafka cluster and
         # produce GradleWorkerMain errors and compileTestJava failures on JDK 25.
         # Exclude both :test and :compileTestJava for all upgrade-system-tests-* subprojects.
-        kafka) echo "--continue \
+        # -PcommitId=unknown: kafka's build.gradle opens Grgit on a corrupt .git dir (no HEAD).
+        # Passing -PcommitId=unknown bypasses the Grgit.open() call (determineCommitId() returns
+        # the property value directly without touching git).
+        kafka) echo "--continue -PcommitId=unknown \
 -x :streams:upgrade-system-tests-0110:test -x :streams:upgrade-system-tests-0110:compileTestJava \
 -x :streams:upgrade-system-tests-10:test -x :streams:upgrade-system-tests-10:compileTestJava \
 -x :streams:upgrade-system-tests-11:test -x :streams:upgrade-system-tests-11:compileTestJava \
@@ -261,6 +276,9 @@ detect_maven_java_home() {
         gson) _sdkman_java_home "21.0.6-sapmchn" ;;
         # jackson-databind 3.x requires Java 21 (pom.xml: maven.compiler.release=21).
         jackson-databind) _sdkman_java_home "21.0.6-sapmchn" ;;
+        # maven: root pom sets javaVersion=17, which requires --release 17 (cross-compilation).
+        # The Ubuntu JDK 21 lacks ct.sym for --release; SAP JDK 21 has it.
+        maven) _sdkman_java_home "21.0.6-sapmchn" ;;
         *) echo "" ;;
     esac
 }
@@ -295,6 +313,9 @@ detect_gradle_java_home() {
         hibernate-orm) _sdkman_java_home "25-sapmchn" ;;
         # resilience4j: targets Java 21; system JDK may be a JRE (no javac); use SAP JDK 21.
         resilience4j) _sdkman_java_home "21-sapmchn" ;;
+        # caffeine: defaults to JDK 11 toolchain; we override to JDK 21 via -PjavaVersion=21
+        # (see detect_gradle_extra_args). Run the Gradle wrapper itself on JDK 21 too.
+        caffeine) _sdkman_java_home "21-sapmchn" ;;
         *) echo "" ;;
     esac
 }
