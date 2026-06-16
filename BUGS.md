@@ -1693,3 +1693,14 @@ The production class files in `clients/build/classes/java/main/` are deleted by 
 **Symptom:** `ChangeAnalysis.analyze()` uses `CompletableFuture.supplyAsync()` to parallelize production-source and test-source change detection. When the underlying `ChangeDetectionOps` methods throw a `RuntimeException` wrapping an `IOException` (e.g., git command fails, hash file I/O error), `.join()` rethrows it as `CompletionException(cause)`. The `analyze()` method is declared `throws IOException`, but `CompletionException` is unchecked and propagates past the callers' `catch (IOException)` blocks, producing a raw `java.util.concurrent.CompletionException` stack trace instead of the expected user-friendly `[test-order] Failed to select tests: ...` message.  
 **Root cause:** Direct `.join()` calls on `CompletableFuture` inside a method declared `throws IOException` don't unwrap `CompletionException` to recover the original `IOException`.  
 **Fix:** Added `joinOrRethrow()` helper that catches `CompletionException`, unwraps `IOException` causes and rethrows them directly, and rethrows other `RuntimeException` causes unwrapped as well. Applied to all five `.join()` call sites in `analyze()` (prodChangeFuture, testChangeFuture, module futures, sibling futures).
+
+---
+
+### BUG-156: `DetectDependenciesOperation.loadPriorResults` drops dependency chain on carry-forward ✓ FIXED
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/ops/DetectDependenciesOperation.java` line 620  
+**Severity:** LOW (incremental detection only; display artifact, not a missed detection)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** In incremental detection mode, previously confirmed findings are carried forward from a prior JSON report. The parser correctly extracts `victim` and `type` but ignores the `dependencyChain` array — constructing `new ODResult(victim, type, List.of(victim), ...)`. This causes `polluter()` to return the victim itself instead of the actual polluter, and the markdown report shows only `victim → victim` in the chain column for all carried-forward entries.  
+**Root cause:** `loadPriorResults` JSON extraction loop reads `victim`, `type`, and `description` but never extracts the `dependencyChain` array.  
+**Fix:** Extract the `dependencyChain` JSON array for each finding using a helper that parses the array between `[` and `]`, splitting on `","` after stripping quotes.

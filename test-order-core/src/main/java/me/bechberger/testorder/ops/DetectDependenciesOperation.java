@@ -616,8 +616,14 @@ public final class DetectDependenciesOperation {
 					type = ODType.VICTIM;
 				}
 
+				int chainIdx = content.indexOf("\"dependencyChain\"", victimIdx);
+				boolean chainInFindings = chainIdx > 0 && (constraintsIdx < 0 || chainIdx < constraintsIdx);
+				List<String> chain = chainInFindings ? extractJsonStringArray(content, chainIdx) : List.of(victim);
+				if (chain.isEmpty())
+					chain = List.of(victim);
+
 				String suffix = desc.contains("[carried from prior run]") ? "" : " [carried from prior run]";
-				results.add(new ODResult(victim, type, List.of(victim), desc + suffix, 0.9));
+				results.add(new ODResult(victim, type, chain, desc + suffix, 0.9));
 				// Advance past the closing quote of the victim string value to avoid
 				// re-finding the same "victim" key on the next iteration.
 				int colonAfterVictim = content.indexOf(':', victimIdx);
@@ -650,6 +656,40 @@ public final class DetectDependenciesOperation {
 			}
 		}
 		return "";
+	}
+
+	private static List<String> extractJsonStringArray(String json, int keyIdx) {
+		int colonIdx = json.indexOf(':', keyIdx);
+		if (colonIdx < 0)
+			return List.of();
+		int arrStart = json.indexOf('[', colonIdx + 1);
+		if (arrStart < 0)
+			return List.of();
+		int arrEnd = json.indexOf(']', arrStart + 1);
+		if (arrEnd < 0)
+			return List.of();
+		List<String> result = new ArrayList<>();
+		int i = arrStart + 1;
+		while (i < arrEnd) {
+			int qs = json.indexOf('"', i);
+			if (qs < 0 || qs >= arrEnd)
+				break;
+			int qe = qs + 1;
+			while (qe < arrEnd) {
+				char c = json.charAt(qe);
+				if (c == '\\') {
+					qe += 2;
+				} else if (c == '"') {
+					break;
+				} else {
+					qe++;
+				}
+			}
+			if (qe < arrEnd)
+				result.add(json.substring(qs + 1, qe));
+			i = qe + 1;
+		}
+		return result;
 	}
 
 	/**
