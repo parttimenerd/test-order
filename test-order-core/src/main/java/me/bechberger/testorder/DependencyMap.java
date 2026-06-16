@@ -393,7 +393,7 @@ public class DependencyMap {
 
 	/** Whether this map has any member-level dependency data. */
 	public boolean hasMemberDeps() {
-		return !memberDepsMap.isEmpty();
+		return !memberDepsMap.isEmpty() || !methodMemberDepsMap.isEmpty();
 	}
 
 	/**

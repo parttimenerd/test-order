@@ -1492,6 +1492,19 @@ The comment says "prefer the worst-case outcome (failed > passed) to be conserva
 
 ---
 
+### BUG-141: `DependencyMap.hasMemberDeps()` only checks `memberDepsMap`, ignoring `methodMemberDepsMap`
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/DependencyMap.java` line 396  
+**Severity:** MEDIUM (method-level member deps present but flag returns false; member-level analysis silently skipped)  
+**Status:** FIXED (2026-06-16)  
+**Symptom:** `hasMemberDeps()` returns `false` when `memberDepsMap` is empty but `methodMemberDepsMap` is non-empty. Callers such as `AffectedWorkflow`, `ConflictGraphBuilder`, and `DashboardGenerator` guard member-level analysis on this flag. If instrumentation produced only method-level member deps (`methodMemberDepsMap`) but no class-level member deps (`memberDepsMap`), those callers skip member analysis entirely, silently falling back to coarser class-level dependency tracking.
+
+This is internally inconsistent: the write path at line 842 already uses the correct combined check `!memberDepsMap.isEmpty() || !methodMemberDepsMap.isEmpty()` for the serialization gate, but the public API method was never updated to match.  
+**Root cause:** `hasMemberDeps()` was written when only `memberDepsMap` existed. `methodMemberDepsMap` was added later for per-method member tracking, and the single-field check in `hasMemberDeps()` was not updated.  
+**Fix:** Changed to `return !memberDepsMap.isEmpty() || !methodMemberDepsMap.isEmpty();`
+
+---
+
 ### BUG-140: `JavaParserModel.visitType` does not extract compact record constructors
 
 **File:** `test-order-core/src/main/java/me/bechberger/testorder/changes/JavaParserModel.java` lines 111–112  
