@@ -481,19 +481,31 @@ public class IndexCollectorServer implements AutoCloseable {
 			byte version = in.readByte();
 			if (version == PROTOCOL_VERSION_V3) {
 				String moduleId = readString(in);
-				Set<String> testKeysBefore = new HashSet<>(mergedClassDeps.keySet());
+				// Take snapshot and stamp atomically so concurrent handlers can't insert
+				// their keys between our snapshot and our stamp call (BUG-117).
+				Set<String> testKeysBefore;
+				synchronized (this) {
+					testKeysBefore = new HashSet<>(mergedClassDeps.keySet());
+				}
 				boolean handled = handleBinaryPayload(in);
 				if (!handled) {
 					rawOut.write(0);
 					rawOut.flush();
 					return;
 				}
-				stampNewTestsWithModule(testKeysBefore, moduleId);
+				synchronized (this) {
+					stampNewTestsWithModule(testKeysBefore, moduleId);
+				}
 			} else if (version == PROTOCOL_VERSION_V4) {
 				String moduleId = readString(in);
-				Set<String> testKeysBefore = new HashSet<>(mergedClassDeps.keySet());
+				Set<String> testKeysBefore;
+				synchronized (this) {
+					testKeysBefore = new HashSet<>(mergedClassDeps.keySet());
+				}
 				handleStringPayload(in);
-				stampNewTestsWithModule(testKeysBefore, moduleId);
+				synchronized (this) {
+					stampNewTestsWithModule(testKeysBefore, moduleId);
+				}
 			} else if (version == PROTOCOL_VERSION_V2) {
 				boolean handled = handleBinaryPayload(in);
 				if (!handled) {
@@ -877,6 +889,12 @@ public class IndexCollectorServer implements AutoCloseable {
 	private static final String FALLBACK_SUFFIX = ".collector-fallback";
 
 	/**
+	 * Guards against two threads processing the same fallback file on
+	 * non-atomic-move filesystems.
+	 */
+	private static final java.util.concurrent.ConcurrentHashMap<Path, Boolean> FALLBACK_PROCESSING = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/**
 	 * Write raw payloads to a fallback file next to the index file using only JDK
 	 * classes. This is the last-resort path when the plugin classloader is torn
 	 * down. Format: line-based text, "K\tV1\tV2\t..." per entry, sections separated
@@ -957,12 +975,15 @@ public class IndexCollectorServer implements AutoCloseable {
 		try {
 			java.nio.file.Files.move(fallbackFile, claimedFile, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
 		} catch (java.nio.file.NoSuchFileException | java.nio.file.AtomicMoveNotSupportedException e) {
-			// Already claimed by another module, or atomic move not available — either
-			// way the other invocation will handle it; skip silently.
+			// Already claimed by another module, or atomic move not available.
 			if (!java.nio.file.Files.exists(fallbackFile)) {
 				return false;
 			}
-			// Non-atomic fallback: accept the small risk and continue with original path
+			// On non-atomic-move filesystems two threads can both see the file and reach
+			// here. Use a JVM-level sentinel to ensure only one processes it.
+			if (FALLBACK_PROCESSING.putIfAbsent(fallbackFile.toAbsolutePath().normalize(), Boolean.TRUE) != null) {
+				return false; // another thread is already processing this file
+			}
 			claimedFile = fallbackFile;
 		}
 		List<String> lines;
@@ -1029,6 +1050,7 @@ public class IndexCollectorServer implements AutoCloseable {
 			DependencyMap.mergeFromAgent(indexFile, classDeps, methodDeps, memberDeps, methodMemberDeps, testToModule);
 		} finally {
 			java.nio.file.Files.deleteIfExists(claimedFile);
+			FALLBACK_PROCESSING.remove(fallbackFile.toAbsolutePath().normalize());
 		}
 		return true;
 	}

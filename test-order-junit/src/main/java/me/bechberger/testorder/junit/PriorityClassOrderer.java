@@ -1,13 +1,29 @@
 package me.bechberger.testorder.junit;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.ClassDescriptor;
 import org.junit.jupiter.api.ClassOrderer;
 import org.junit.jupiter.api.ClassOrdererContext;
 
-import me.bechberger.testorder.*;
+import me.bechberger.testorder.ClassOrderingEngine;
+import me.bechberger.testorder.DependencyMap;
+import me.bechberger.testorder.MethodOrderingEngine;
+import me.bechberger.testorder.MethodScorer;
+import me.bechberger.testorder.TestOrderConfig;
+import me.bechberger.testorder.TestOrderConfigResolver;
+import me.bechberger.testorder.TestOrderLogger;
+import me.bechberger.testorder.TestOrderState;
+import me.bechberger.testorder.TestScorer;
 import me.bechberger.testorder.annotations.AlwaysRun;
 import me.bechberger.testorder.annotations.TestOrder;
 import me.bechberger.testorder.ml.MLPredictions;
@@ -64,7 +80,6 @@ public class PriorityClassOrderer implements ClassOrderer {
 	 */
 	private volatile ClassOrderingEngine.SetupResult cachedSetup;
 	private volatile boolean setupAttempted;
-
 	/** Lock for one-time setup initialization. */
 	private final Object setupLock = new Object();
 
@@ -188,6 +203,8 @@ public class PriorityClassOrderer implements ClassOrderer {
 		List<ClassDescriptor> pinFirst = new ArrayList<>();
 		List<ClassDescriptor> pinLast = new ArrayList<>();
 		List<ClassDescriptor> junitOrdered = new ArrayList<>();
+		// Identity-based sets: ClassDescriptor does not override equals(), so identity
+		// equality is required to correctly track which descriptor objects are pinned.
 		Set<ClassDescriptor> pinFirstSet = Collections.newSetFromMap(new IdentityHashMap<>());
 		for (ClassDescriptor desc : mutableDescriptors) {
 			// JUnit's @Order: extract into a separate block sorted by @Order value,
@@ -230,7 +247,14 @@ public class PriorityClassOrderer implements ClassOrderer {
 						testClassName, prio, bonus, ann.changeBonus(), changeBonus);
 			}
 		}
-		// Remove pinned and @Order descriptors from main list before score-based sort
+		// Remove pinned and @Order descriptors from main list before score-based sort.
+		// IdentityHashMap is required here: ClassDescriptor does not override equals(),
+		// so reference equality (==) is the only safe way to identify the same
+		// descriptor
+		// object. Using a regular HashSet would silently fall back to Object.equals()
+		// ==
+		// reference equality too, but makes the intent explicit and avoids a future
+		// regression if equals() is ever overridden.
 		Set<ClassDescriptor> toRemove = Collections.newSetFromMap(new IdentityHashMap<>());
 		toRemove.addAll(pinFirst);
 		toRemove.addAll(pinLast);
@@ -284,9 +308,11 @@ public class PriorityClassOrderer implements ClassOrderer {
 		// JUnit's ClassOrderer contract requires in-place modification of the list
 		// returned by getClassDescriptors(). If the list is somehow immutable
 		// (should not happen in practice), log a warning and skip reordering.
+		// The cast is safe: JUnit always provides an ArrayList<ClassDescriptor>; the
+		// wildcard bound on getClassDescriptors() is a declaration-site constraint, not
+		// a runtime type change.
 		@SuppressWarnings("unchecked")
 		List<ClassDescriptor> originalList = (List<ClassDescriptor>) descriptors;
-		List<ClassDescriptor> backup = new java.util.ArrayList<>(originalList);
 		try {
 			originalList.clear();
 			originalList.addAll(mutableDescriptors);
@@ -296,7 +322,8 @@ public class PriorityClassOrderer implements ClassOrderer {
 			return;
 		} catch (Exception e) {
 			// Unexpected failure after clear() — restore original order to avoid
-			// silently dropping all tests
+			// silently dropping all tests. Allocate backup here only on this rare path.
+			List<ClassDescriptor> backup = new ArrayList<>(mutableDescriptors);
 			try {
 				originalList.clear();
 				originalList.addAll(backup);

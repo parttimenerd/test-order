@@ -695,6 +695,11 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			} catch (Exception e) {
 				System.err.println("[test-order] Failed to merge partial run records: " + e.getMessage());
 			}
+			try {
+				appendMLHistories();
+			} catch (Exception e) {
+				System.err.println("[test-order] Failed to append ML history: " + e.getMessage());
+			}
 			// Always restore instrumented bytecode — leaving it in place corrupts the
 			// compiled classes directory even if earlier steps threw.
 			restoreInstrumentedClasses(session);
@@ -807,7 +812,54 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	}
 
 	/**
-	 * Restore class trees that were offline-instrumented during this session.
+	 * For each registered {@link AbstractTestOrderMojo.PendingMLHistory}, reads the
+	 * most recent {@code RunRecord} from the state file and appends it as an
+	 * {@link me.bechberger.testorder.ml.MLRunRecord} to {@code history.lz4}. This
+	 * builds up training data for future ML predictions.
+	 */
+	private void appendMLHistories() {
+		java.util.List<AbstractTestOrderMojo.PendingMLHistory> pending = AbstractTestOrderMojo.pendingMLHistories;
+		if (pending.isEmpty()) {
+			return;
+		}
+		java.util.List<AbstractTestOrderMojo.PendingMLHistory> drained = new java.util.ArrayList<>(pending);
+		pending.clear();
+
+		for (AbstractTestOrderMojo.PendingMLHistory mlh : drained) {
+			try {
+				if (!java.nio.file.Files.exists(mlh.stateFile())) {
+					continue;
+				}
+				me.bechberger.testorder.TestOrderState state = me.bechberger.testorder.TestOrderState
+						.load(mlh.stateFile());
+				java.util.List<me.bechberger.testorder.TestOrderState.RunRecord> runs = state.runs();
+				if (runs.isEmpty()) {
+					continue;
+				}
+				me.bechberger.testorder.TestOrderState.RunRecord last = runs.get(runs.size() - 1);
+				java.util.List<me.bechberger.testorder.ml.MLTestOutcome> outcomes = last.outcomes().stream()
+						.map(o -> new me.bechberger.testorder.ml.MLTestOutcome(o.testClass(), o.failed(), 0L, // duration
+																												// not
+																												// tracked
+																												// in
+																												// RunRecord
+								null))
+						.toList();
+				me.bechberger.testorder.ml.MLRunRecord mlRun = new me.bechberger.testorder.ml.MLRunRecord(
+						last.timestamp(), mlh.changedClasses(), mlh.changedTestClasses(), last.totalTests(),
+						last.totalFailures(), outcomes);
+				java.nio.file.Files.createDirectories(mlh.historyFile().getParent());
+				me.bechberger.testorder.ml.MLHistoryPersistence.append(mlh.historyFile(), mlRun, 200);
+				System.out.println("[test-order][ml] Appended run record to ML history: " + last.totalTests()
+						+ " tests, " + last.totalFailures() + " failures -> " + mlh.historyFile());
+			} catch (Exception e) {
+				System.err.println("[test-order][ml] Failed to append ML history for " + mlh.historyFile() + ": "
+						+ e.getMessage());
+			}
+		}
+	}
+
+	/**
 	 * Without this, a subsequent {@code mvn} invocation (without {@code clean})
 	 * would re-run plugin executions like log4j2's
 	 * {@code generate-plugin-descriptors} against instrumented bytecode and fail

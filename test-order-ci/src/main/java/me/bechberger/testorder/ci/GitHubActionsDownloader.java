@@ -46,12 +46,6 @@ public class GitHubActionsDownloader implements DepDownloader {
 		if (!config.isValid()) {
 			throw new DepDownloadException("Invalid GitHub config: missing owner, repo, workflow, or artifact-name");
 		}
-		if (config.getOwner() == null || config.getOwner().isEmpty()) {
-			throw new DepDownloadException("GitHub owner is required");
-		}
-		if (config.getRepo() == null || config.getRepo().isEmpty()) {
-			throw new DepDownloadException("GitHub repo is required");
-		}
 	}
 
 	@Override
@@ -197,7 +191,7 @@ public class GitHubActionsDownloader implements DepDownloader {
 			}
 
 			try (InputStream input = response.body().byteStream();
-					FileOutputStream output = new FileOutputStream(outputPath.toFile())) {
+					java.io.OutputStream output = java.nio.file.Files.newOutputStream(outputPath)) {
 				byte[] buffer = new byte[8192];
 				int bytesRead;
 				long totalRead = 0;

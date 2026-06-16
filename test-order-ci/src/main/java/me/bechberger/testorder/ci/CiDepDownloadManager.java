@@ -5,9 +5,7 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,31 +70,14 @@ public class CiDepDownloadManager {
 	}
 
 	private static OkHttpClient buildHttpClient(CiConfig.ProxyConfig proxyConfig) {
+		OkHttpClient base = CiHttpClientFactory.buildDefault();
 		if (proxyConfig == null) {
-			return CiHttpClientFactory.buildDefault();
+			return base;
 		}
-		int connectTimeout = getTimeoutProperty("testorder.ci.connect.timeout.seconds", 30);
-		int readTimeout = getTimeoutProperty("testorder.ci.read.timeout.seconds", 60);
-		int writeTimeout = getTimeoutProperty("testorder.ci.write.timeout.seconds", 30);
-		OkHttpClient.Builder builder = new OkHttpClient.Builder().connectTimeout(connectTimeout, TimeUnit.SECONDS)
-				.readTimeout(readTimeout, TimeUnit.SECONDS).writeTimeout(writeTimeout, TimeUnit.SECONDS)
-				.dns(CiHttpClientFactory.SSRF_SAFE_DNS);
 		Proxy.Type proxyType = "socks5".equalsIgnoreCase(proxyConfig.getType()) ? Proxy.Type.SOCKS : Proxy.Type.HTTP;
-		builder.proxy(new Proxy(proxyType, new InetSocketAddress(proxyConfig.getHost(), proxyConfig.getPort())));
-		return builder.build();
-	}
-
-	private static int getTimeoutProperty(String key, int defaultSeconds) {
-		String prop = System.getProperty(key);
-		if (prop != null) {
-			try {
-				int val = Integer.parseInt(prop);
-				if (val > 0)
-					return val;
-			} catch (NumberFormatException ignored) {
-			}
-		}
-		return defaultSeconds;
+		return base.newBuilder()
+				.proxy(new Proxy(proxyType, new InetSocketAddress(proxyConfig.getHost(), proxyConfig.getPort())))
+				.build();
 	}
 
 	/**
@@ -104,7 +85,7 @@ public class CiDepDownloadManager {
 	 */
 	public Path download() throws IOException, DepDownloader.DepDownloadException {
 		DepDownloader downloader = selectDownloader();
-		Path tempFile = Files.createTempFile("ci-deps-", ".zip");
+		Path tempFile = Files.createTempFile("ci-deps-", ".tmp");
 		try {
 			downloader.validate();
 			downloader.download(tempFile);
@@ -396,56 +377,18 @@ public class CiDepDownloadManager {
 	 * warning only.
 	 */
 	private static void tryDownloadState(CiConfig config, Path stateTarget) {
-		// State download is provider-specific. For GitHub and GitLab, the state
-		// artifact uses a conventional name alongside the dep index.
-		// For Maven repos it's published as a separate classifier.
-		// For generic HTTP it is not supported (URL is fixed).
 		if (config.getGithub() != null) {
-			CiConfig.GithubConfig gh = config.getGithub();
-			// Build a variant config pointing at the state artifact name
-			String stateArtifactName = gh.getArtifactName() + "-state";
-			java.util.Map<String, Object> cfg = new java.util.LinkedHashMap<>();
-			java.util.Map<String, Object> ciMap = new java.util.LinkedHashMap<>();
-			java.util.Map<String, Object> ghMap = new java.util.LinkedHashMap<>();
-			ghMap.put("owner", gh.getOwner());
-			ghMap.put("repo", gh.getRepo());
-			ghMap.put("workflow", gh.getWorkflow());
-			ghMap.put("artifact-name", stateArtifactName);
-			ghMap.put("branch", gh.getBranch());
-			ciMap.put("github", ghMap);
-			cfg.put("ci", ciMap);
-			doDownload(new CiConfig(cfg), stateTarget);
+			CiConfig stateConfig = new CiConfig(
+					config.getGithub().withArtifactName(config.getGithub().getArtifactName() + "-state"), null, null,
+					null, null);
+			doDownload(stateConfig, stateTarget);
 		} else if (config.getGitlab() != null) {
-			CiConfig.GitLabConfig gl = config.getGitlab();
-			String stateArtifactName = "test-state.lz4";
-			java.util.Map<String, Object> cfg = new java.util.LinkedHashMap<>();
-			java.util.Map<String, Object> ciMap = new java.util.LinkedHashMap<>();
-			java.util.Map<String, Object> glMap = new java.util.LinkedHashMap<>();
-			glMap.put("base-url", gl.getBaseUrl());
-			glMap.put("project-id", gl.getProjectId());
-			glMap.put("job-name", gl.getJobName());
-			glMap.put("artifact-name", stateArtifactName);
-			glMap.put("branch", gl.getBranch());
-			glMap.put("token-env", gl.getTokenEnv());
-			ciMap.put("gitlab", glMap);
-			cfg.put("ci", ciMap);
-			doDownload(new CiConfig(cfg), stateTarget);
+			CiConfig stateConfig = new CiConfig(null, config.getGitlab().withArtifactName("test-state.lz4"), null, null,
+					null);
+			doDownload(stateConfig, stateTarget);
 		} else if (config.getMaven() != null) {
-			CiConfig.MavenConfig mv = config.getMaven();
-			java.util.Map<String, Object> cfg = new java.util.LinkedHashMap<>();
-			java.util.Map<String, Object> ciMap = new java.util.LinkedHashMap<>();
-			java.util.Map<String, Object> mvMap = new java.util.LinkedHashMap<>();
-			mvMap.put("url", mv.getUrl());
-			mvMap.put("group-id", mv.getGroupId());
-			mvMap.put("artifact-id", mv.getArtifactId());
-			mvMap.put("version", mv.getVersion());
-			mvMap.put("classifier", "test-state");
-			mvMap.put("extension", mv.getExtension());
-			mvMap.put("auth", mv.getAuth());
-			mvMap.put("token-env", mv.getTokenEnv());
-			ciMap.put("maven", mvMap);
-			cfg.put("ci", ciMap);
-			doDownload(new CiConfig(cfg), stateTarget);
+			CiConfig stateConfig = new CiConfig(null, null, config.getMaven().withClassifier("test-state"), null, null);
+			doDownload(stateConfig, stateTarget);
 		} else {
 			logger.debug("State download not supported for HTTP provider");
 		}

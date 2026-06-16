@@ -28,6 +28,7 @@ import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
 import me.bechberger.testorder.DependencyMap;
+import me.bechberger.testorder.IndexCollectorServer;
 import me.bechberger.testorder.PersistenceSupport;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.agent.Agent;
@@ -53,7 +54,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * JVM and can be explicitly stopped when tests complete or when a new collector
 	 * is needed.
 	 */
-	static final ConcurrentHashMap<Path, me.bechberger.testorder.IndexCollectorServer> activeCollectors = new ConcurrentHashMap<>();
+	static final ConcurrentHashMap<Path, IndexCollectorServer> activeCollectors = new ConcurrentHashMap<>();
 
 	/**
 	 * Pending partial-run aggregation entries: maps build session ID to the
@@ -65,6 +66,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	static final ConcurrentHashMap<String, PendingAggregation> pendingAggregations = new ConcurrentHashMap<>();
+
+	/**
+	 * Registered by {@code PrepareMojo} when {@code mlEnabled=true} and order mode
+	 * is active. Consumed by {@link CollectorLifecycleParticipant} after tests
+	 * complete to append the run outcomes to the ML history file.
+	 */
+	record PendingMLHistory(Path historyFile, Path stateFile, List<String> changedClasses,
+			List<String> changedTestClasses) {
+	}
+
+	static final java.util.concurrent.CopyOnWriteArrayList<PendingMLHistory> pendingMLHistories = new java.util.concurrent.CopyOnWriteArrayList<>();
 
 	/**
 	 * Per-JVM lock that serializes the load → instrument → save sequence on the
@@ -1376,10 +1388,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						}
 						DependencyMap child = DependencyMap.load(childIdx);
 						if (merged == null) {
-							merged = child;
-						} else {
-							merged.mergeWith(child);
+							merged = new DependencyMap();
 						}
+						merged.mergeWith(child);
 						mergedNames.add(p.getArtifactId());
 					}
 					int depCount = merged != null ? merged.testClasses().size() : 0;

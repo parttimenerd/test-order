@@ -1,12 +1,26 @@
 package me.bechberger.testorder.testng;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.testng.IMethodInstance;
 import org.testng.IMethodInterceptor;
 import org.testng.ITestContext;
 
-import me.bechberger.testorder.*;
+import me.bechberger.testorder.ClassOrderingEngine;
+import me.bechberger.testorder.DependencyMap;
+import me.bechberger.testorder.MethodOrderingEngine;
+import me.bechberger.testorder.TestOrderConfig;
+import me.bechberger.testorder.TestOrderConfigResolver;
+import me.bechberger.testorder.TestOrderLogger;
+import me.bechberger.testorder.TestOrderState;
+import me.bechberger.testorder.TestScorer;
+import me.bechberger.testorder.annotations.AlwaysRun;
 
 /**
  * TestNG method interceptor that reorders test methods across all classes based
@@ -39,15 +53,18 @@ import me.bechberger.testorder.*;
  */
 public class TestNGPriorityInterceptor implements IMethodInterceptor {
 
-	private TestOrderConfigResolver config;
+	private final TestOrderConfigResolver config;
+
+	public TestNGPriorityInterceptor() {
+		this.config = new TestOrderConfigResolver(getClass().getClassLoader());
+	}
 
 	String getConfig(String key) {
-		return getResolver().getConfig(key);
+		return config.getConfig(key);
 	}
 
 	@Override
 	public List<IMethodInstance> intercept(List<IMethodInstance> methods, ITestContext context) {
-		TestOrderConfigResolver config = getResolver();
 
 		ClassOrderingEngine.SetupResult s = ClassOrderingEngine.setup(config);
 		if (s == null) {
@@ -85,7 +102,7 @@ public class TestNGPriorityInterceptor implements IMethodInterceptor {
 			List<IMethodInstance> group = byClass.get(className);
 			if (group != null && !group.isEmpty()) {
 				Class<?> realClass = group.get(0).getMethod().getRealClass();
-				if (realClass.isAnnotationPresent(me.bechberger.testorder.annotations.AlwaysRun.class)) {
+				if (realClass.isAnnotationPresent(AlwaysRun.class)) {
 					alwaysRunClasses.add(className);
 				}
 			}
@@ -134,13 +151,6 @@ public class TestNGPriorityInterceptor implements IMethodInterceptor {
 		}
 
 		return result;
-	}
-
-	private TestOrderConfigResolver getResolver() {
-		if (config == null) {
-			config = new TestOrderConfigResolver(getClass().getClassLoader());
-		}
-		return config;
 	}
 
 	/**
@@ -238,17 +248,17 @@ public class TestNGPriorityInterceptor implements IMethodInterceptor {
 	 * appears before B in the list. Modifies {@code order} in-place.
 	 */
 	private static void enforceDependencyOrder(List<String> order, Map<String, Set<String>> methodDeps) {
-		// Simple iterative fixup: scan left-to-right, if a method appears before
-		// one of its dependencies, move it after the latest dependency.
+		// Build position map once; update it incrementally after each move.
 		// Repeat until stable (max N passes for N methods).
+		Map<String, Integer> posMap = new HashMap<>();
+		for (int i = 0; i < order.size(); i++) {
+			posMap.put(order.get(i), i);
+		}
+
 		boolean changed = true;
 		int maxPasses = order.size();
 		while (changed && maxPasses-- > 0) {
 			changed = false;
-			Map<String, Integer> posMap = new HashMap<>();
-			for (int i = 0; i < order.size(); i++) {
-				posMap.put(order.get(i), i);
-			}
 			for (int i = 0; i < order.size(); i++) {
 				String method = order.get(i);
 				Set<String> deps = methodDeps.get(method);
@@ -265,8 +275,12 @@ public class TestNGPriorityInterceptor implements IMethodInterceptor {
 					// Move method to just after its latest dependency
 					order.remove(i);
 					order.add(latestDepPos, method);
+					// Update posMap for the affected range [i, latestDepPos]
+					for (int j = i; j <= latestDepPos; j++) {
+						posMap.put(order.get(j), j);
+					}
 					changed = true;
-					break; // restart scan
+					break; // restart scan with updated posMap
 				}
 			}
 		}

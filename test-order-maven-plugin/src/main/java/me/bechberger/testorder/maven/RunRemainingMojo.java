@@ -46,7 +46,15 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 
 		Path remaining = Path.of(remainingFile);
 		if (!Files.exists(remaining)) {
-			getLog().info("[test-order] No remaining-tests file found at " + remaining + " — nothing to run.");
+			Path consumed = remaining.resolveSibling(remaining.getFileName() + ".consumed");
+			if (Files.exists(consumed)) {
+				getLog().warn("[test-order] remaining-tests file not found, but " + consumed.getFileName()
+						+ " exists. A prior run may have been interrupted."
+						+ " If remaining tests were not fully executed, rename " + consumed.getFileName() + " → "
+						+ remaining.getFileName() + " to replay them.");
+			} else {
+				getLog().info("[test-order] No remaining-tests file found at " + remaining + " — nothing to run.");
+			}
 			project.getProperties().setProperty("skipTests", "true");
 			return;
 		}

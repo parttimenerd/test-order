@@ -71,7 +71,7 @@ public class ClassIdMap {
 	private static final ClassIdMap INSTANCE = new ClassIdMap();
 
 	private static final int MEMBER_ID_OFFSET = 8_000_000; // members start at 8M
-	private static final int CAPACITY_LIMIT = 16_000_000; // total capacity: 16K classes + 8M members
+	private static final int CAPACITY_LIMIT = 16_000_000; // total capacity: 8M classes + 8M members
 	// Medium project: ~2 000 instrumented application classes; 4 096 avoids any
 	// rehash below that.
 	private static final int INITIAL_CLASS_MAP_CAPACITY = 4_096 * 2;
@@ -284,12 +284,8 @@ public class ClassIdMap {
 				maxId = entry.getValue();
 			}
 		}
-		// Advance counter past highest loaded ID (called once at startup, so loop is
-		// fine)
 		if (maxId >= 0) {
-			while (nextClassId.get() <= maxId) {
-				nextClassId.getAndIncrement();
-			}
+			nextClassId.set(maxId + 1);
 		}
 	}
 
@@ -318,11 +314,7 @@ public class ClassIdMap {
 			}
 		}
 		// Advance counter past highest loaded ID
-		int target = maxId + 1;
-		int current;
-		while ((current = nextMemberId.get()) < target) {
-			nextMemberId.getAndIncrement();
-		}
+		nextMemberId.set(maxId + 1);
 		// Populate memberIdToClassId for all bulk-loaded members
 		for (var entry : mapping.entrySet()) {
 			int memberId = entry.getValue();

@@ -7,12 +7,20 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a test class or method to <b>always run first</b> and to be <b>always
- * included</b> in select-mode subsets.
+ * Guarantees a test class or method is <b>always included</b> in affected-mode
+ * subsets <em>and</em> <b>always runs first</b> within the ordered suite.
  *
  * <p>
- * Use this for smoke tests, critical fast tests, or any test that should never
- * be deferred to a later CI step.
+ * Use this for smoke tests, critical fast tests, or any test that must never be
+ * skipped when test-order is running in {@code affected} or {@code auto} mode.
+ *
+ * <p>
+ * <b>How it differs from {@code @TestOrder(priority = Priority.FIRST)}:</b>
+ * {@code Priority.FIRST} only affects <em>ordering</em> — the test still
+ * participates in affected-mode filtering and can be omitted when running a
+ * subset. {@code @AlwaysRun} adds a <em>selection guarantee</em>: the annotated
+ * class is unconditionally included in the run set regardless of whether it is
+ * affected by recent changes or scores highly enough to make the top-N cut.
  *
  * <h3>Class-level</h3>
  *
@@ -21,19 +29,21 @@ import java.lang.annotation.Target;
  * class CriticalSmokeTest { … }
  * }</pre>
  *
- * The class is pinned before all score-driven tests (same position as
- * {@link TestOrder.Priority#FIRST}) <b>and</b> is guaranteed to be included
- * when using {@code test-order:affected} or {@code test-order:auto}.
+ * The class is pinned before all score-driven tests <b>and</b> is guaranteed to
+ * be included when using {@code test-order:affected} or
+ * {@code test-order:auto}.
  *
  * <h3>Method-level</h3>
  *
- * <pre>{@code
+ * <pre>
+ * {@code
  * class PaymentTest {
  *     &#64;AlwaysRun
  *     &#64;Test
  *     void criticalPaymentFlow() { … }
  * }
- * }</pre>
+ * }
+ * </pre>
  *
  * The method is pinned before all score-driven methods within its class.
  *

@@ -11,6 +11,8 @@ This tutorial walks you through using test-order from scratch. By the end, you'l
 - A **Git** repository (test-order uses Git to detect changes)
 - A project with **JUnit 5/6**, **TestNG 7.x+**, or **Kotest** tests
 
+> **Using TestNG?** The setup is the same — add the plugin and run `mvn test`. The TestNG integration module (`test-order-testng`) is included automatically. See [test-order-testng/README.md](../test-order-testng/README.md) for TestNG-specific behaviour, or [docs/FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) for a side-by-side comparison with JUnit 5.
+
 Quick check:
 ```bash
 bash scripts/check_prerequisites.sh   # or just verify manually:

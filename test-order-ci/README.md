@@ -22,7 +22,7 @@ automatically from environment variables — no `download-config.yml` needed:
 
 | Environment | Required env vars | What is inferred |
 |---|---|---|
-| GitHub Actions | `GITHUB_ACTIONS=true`, `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW` or `GITHUB_WORKFLOW_REF` | owner, repo, workflow file, artifact name `test-order-deps` |
+| GitHub Actions | `GITHUB_ACTIONS=true`, `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW_REF` (preferred) or `GITHUB_WORKFLOW` (fallback) | owner, repo, workflow file, artifact name `test-order-deps` |
 | GitLab CI | `GITLAB_CI=true`, `CI_PROJECT_PATH`, `CI_JOB_NAME` | project path, job name |
 
 Auto-detection is a best-effort fallback. Create a `download-config.yml` to
@@ -87,11 +87,47 @@ ci:
 
 ### Proxy support (optional)
 
+`proxy:` is a **top-level key** — it sits alongside `ci:`, not inside it:
+
 ```yaml
+ci:
+  github:
+    owner: your-org
+    repo: your-project
+    workflow: ci.yml
+    artifact-name: test-order-deps
+    branch: main
 proxy:
   host: proxy.corp.com
   port: 8080
   type: http              # http or socks5
+```
+
+### Multiple providers (fallback chain)
+
+Use `providers:` under `ci:` to list providers in priority order. The first
+successful download wins; the rest are skipped. Useful when a primary CI
+artifact may not be available (e.g. on a fresh branch) and a Maven repository
+is the reliable fallback:
+
+```yaml
+ci:
+  providers:
+    - github:
+        owner: your-org
+        repo: your-project
+        workflow: ci.yml
+        artifact-name: test-order-deps
+        branch: main
+    - maven:
+        url: https://repo.example.com/repository/snapshots
+        group-id: com.example
+        artifact-id: my-service
+        version: LATEST
+proxy:
+  host: proxy.corp.com
+  port: 8080
+  type: http
 ```
 
 ## Optional: download state alongside the index

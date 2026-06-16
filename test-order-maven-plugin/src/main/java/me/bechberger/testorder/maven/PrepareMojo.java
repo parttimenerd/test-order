@@ -12,8 +12,10 @@ import org.apache.maven.plugins.annotations.*;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.ErrorCode;
+import me.bechberger.testorder.TestOrderConfig;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.changes.ChangeDetectionSupport;
+import me.bechberger.testorder.maven.ml.TestFailurePredictor;
 import me.bechberger.testorder.ops.AggregateOperation;
 import me.bechberger.testorder.ops.IndexCompactionOperation;
 import me.bechberger.testorder.ops.workflows.OrderWorkflow;
@@ -99,6 +101,17 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	 */
 	@Parameter(property = "testorder.tdd", defaultValue = "false")
 	private boolean tdd;
+
+	/**
+	 * When {@code true}, trains a logistic-regression model on the ML run history
+	 * and writes P(fail) predictions to the runtime config dir before Surefire
+	 * forks the test JVM, enabling the ML bonus scoring in
+	 * {@code PriorityClassOrderer}. Requires at least 5 historical runs; silently
+	 * skipped when history is too short. Set via
+	 * {@code -Dtestorder.ml.enabled=true}.
+	 */
+	@Parameter(property = TestOrderConfig.ML_ENABLED, defaultValue = "false")
+	private boolean mlEnabled;
 
 	private static final Set<String> VALID_MODES = Set.of("auto", "learn", "order", "skip");
 	private static final Set<String> VALID_INSTR_MODES = Set.of("CLASS", "METHOD", "MEMBER");
@@ -511,6 +524,15 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			}
 			getLog().info("[test-order] Instrumented " + instrumentor.getTransformedCount() + " classes" + " (skipped "
 					+ instrumentor.getSkippedCount() + ")");
+			if (instrumentor.getTransformedCount() == 0) {
+				getLog().warn("[test-order] No classes were instrumented in deferred offline mode. "
+						+ "Dependency data will not be collected for this module. " + "Check that classesDir '"
+						+ classesDir + "' contains compilable classes.");
+			}
+			if (!Files.isDirectory(backupDir) || !Files.exists(backupDir)) {
+				getLog().warn("[test-order] Backup directory was not created at '" + backupDir
+						+ "'. Bytecode restore at session end may fail.");
+			}
 			AbstractTestOrderMojo.pendingRestores.add(backupDir);
 			registerPendingRestoreInSession(backupDir);
 			Path testBackupDir = backupDir.resolveSibling("classes-backup-test");
@@ -722,6 +744,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		writeOrdererConfig(result.changedClasses(), result.changedTests(), result.changedMethods(),
 				buildScoreOverrides());
 
+		if (mlEnabled) {
+			generateAndWriteMLPredictions(mergedChanged, mergedChangedTests);
+		}
+
 		if (alwaysLearn) {
 			String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
 
@@ -931,5 +957,50 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Trains the ML model on history and writes P(fail) predictions to the runtime
+	 * config directory so {@code PriorityClassOrderer.loadMLPredictions()} finds
+	 * them in the forked Surefire JVM.
+	 */
+	private void generateAndWriteMLPredictions(Set<String> changedClasses, Set<String> changedTestClasses)
+			throws MojoExecutionException {
+		Path histFile = resolveMLHistoryDir().resolve("history.lz4");
+
+		// Always register history collection — builds training data even before
+		// there are enough runs to produce predictions.
+		Path stateFilePath = ctx.resolveStateFile(stateFile);
+		pendingMLHistories.add(new PendingMLHistory(histFile, stateFilePath, List.copyOf(changedClasses),
+				List.copyOf(changedTestClasses)));
+
+		if (!Files.exists(histFile)) {
+			getLog().debug("[test-order][ml] No ML history yet — will start recording after this run.");
+			return;
+		}
+		try {
+			DependencyMap depMap = DependencyMap.load(resolveIndexPath());
+			Set<String> testClasses = depMap.testClasses();
+			if (testClasses.isEmpty()) {
+				getLog().debug("[test-order][ml] Dependency map has no test classes — skipping predictions.");
+				return;
+			}
+			Map<String, Double> predictions = TestFailurePredictor.trainAndPredict(histFile, depMap, changedClasses,
+					changedTestClasses, testClasses);
+			if (predictions.isEmpty()) {
+				getLog().debug("[test-order][ml] Insufficient history for ML predictions (need >=5 runs).");
+				return;
+			}
+			Path predictionsFile = runtimeConfigDir().resolve("ml-predictions.properties");
+			TestFailurePredictor.writePredictions(predictionsFile, predictions);
+			appendRuntimeConfigProperty(TestOrderConfig.ML_ENABLED, "true");
+			appendRuntimeConfigProperty(TestOrderConfig.ML_PREDICTIONS_FILE,
+					predictionsFile.toAbsolutePath().toString());
+			getLog().info("[test-order][ml] Generated ML failure predictions for " + predictions.size()
+					+ " test classes -> " + predictionsFile);
+		} catch (IOException e) {
+			getLog().warn("[test-order][ml] ML prediction generation failed (ordering continues without ML): "
+					+ e.getMessage());
+		}
 	}
 }

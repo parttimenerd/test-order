@@ -17,6 +17,7 @@ import org.testng.ITestNGMethod;
 
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
+import me.bechberger.testorder.annotations.AlwaysRun;
 
 /**
  * Unit tests for {@link TestNGPriorityInterceptor}.
@@ -184,13 +185,100 @@ class TestNGPriorityInterceptorTest {
 		}
 	}
 
+	@me.bechberger.testorder.annotations.AlwaysRun
+	static class AlwaysRunTest {
+	}
+
+	private static final String ALWAYS = AlwaysRunTest.class.getName();
+
+	@Test
+	void alwaysRunClassIsPinnedFirst() throws IOException {
+		DependencyMap depMap = new DependencyMap();
+		depMap.put(A, Set.of("com.example.Dep1"));
+		depMap.put(ALWAYS, Set.of("com.example.Dep2"));
+		depMap.save(indexFile);
+
+		System.setProperty("testorder.index.path", indexFile.toString());
+
+		TestNGPriorityInterceptor interceptor = new TestNGPriorityInterceptor();
+
+		List<IMethodInstance> methods = new ArrayList<>(
+				List.of(mockMethod(StubTestA.class, "test1"), mockMethod(AlwaysRunTest.class, "test2")));
+
+		List<IMethodInstance> result = interceptor.intercept(methods, mock(ITestContext.class));
+
+		assertEquals(2, result.size());
+		assertEquals(ALWAYS, className(result.get(0)), "@AlwaysRun class should come first");
+		assertEquals(A, className(result.get(1)));
+	}
+
+	@Test
+	void dependsOnMethodsConstraintIsRespected() throws IOException {
+		DependencyMap depMap = new DependencyMap();
+		depMap.put(A, Set.of("com.example.Dep1"));
+		depMap.save(indexFile);
+
+		System.setProperty("testorder.index.path", indexFile.toString());
+		System.setProperty("testorder.methodOrder.enabled", "true");
+
+		TestNGPriorityInterceptor interceptor = new TestNGPriorityInterceptor();
+
+		// setup: testSetup must run before testLogic (dependsOnMethods)
+		List<IMethodInstance> methods = new ArrayList<>(List.of(
+				mockMethod(StubTestA.class, "testLogic", new String[]{"testSetup"}, new String[0], new String[0]),
+				mockMethod(StubTestA.class, "testSetup", new String[0], new String[0], new String[0])));
+
+		List<IMethodInstance> result = interceptor.intercept(methods, mock(ITestContext.class));
+
+		assertEquals(2, result.size());
+		List<String> names = result.stream().map(m -> m.getMethod().getMethodName()).toList();
+		int setupIdx = names.indexOf("testSetup");
+		int logicIdx = names.indexOf("testLogic");
+		assertTrue(setupIdx < logicIdx, "testSetup must come before testLogic");
+	}
+
+	@Test
+	void dataProviderGroupsArePreserved() throws IOException {
+		DependencyMap depMap = new DependencyMap();
+		depMap.put(A, Set.of("com.example.Dep1"));
+		depMap.save(indexFile);
+
+		System.setProperty("testorder.index.path", indexFile.toString());
+		System.setProperty("testorder.methodOrder.enabled", "true");
+
+		TestNGPriorityInterceptor interceptor = new TestNGPriorityInterceptor();
+
+		// Two IMethodInstance entries for the same method name (DataProvider
+		// repetitions)
+		List<IMethodInstance> methods = new ArrayList<>(List.of(mockMethod(StubTestA.class, "paramTest"),
+				mockMethod(StubTestA.class, "paramTest"), mockMethod(StubTestA.class, "otherTest")));
+
+		List<IMethodInstance> result = interceptor.intercept(methods, mock(ITestContext.class));
+
+		assertEquals(3, result.size());
+		// Both paramTest instances should appear consecutively (grouped)
+		List<String> names = result.stream().map(m -> m.getMethod().getMethodName()).toList();
+		int first = names.indexOf("paramTest");
+		int second = names.lastIndexOf("paramTest");
+		assertEquals(first + 1, second, "DataProvider repetitions must be consecutive");
+	}
+
 	// ── Helpers ────────────────────────────────────────────────────────
 
 	@SuppressWarnings("unchecked")
 	private IMethodInstance mockMethod(Class<?> realClass, String methodName) {
+		return mockMethod(realClass, methodName, new String[0], new String[0], new String[0]);
+	}
+
+	@SuppressWarnings("unchecked")
+	private IMethodInstance mockMethod(Class<?> realClass, String methodName, String[] dependsOnMethods,
+			String[] dependsOnGroups, String[] groups) {
 		ITestNGMethod testNGMethod = mock(ITestNGMethod.class);
 		when(testNGMethod.getRealClass()).thenReturn((Class) realClass);
 		when(testNGMethod.getMethodName()).thenReturn(methodName);
+		when(testNGMethod.getMethodsDependedUpon()).thenReturn(dependsOnMethods);
+		when(testNGMethod.getGroupsDependedUpon()).thenReturn(dependsOnGroups);
+		when(testNGMethod.getGroups()).thenReturn(groups);
 
 		IMethodInstance instance = mock(IMethodInstance.class);
 		when(instance.getMethod()).thenReturn(testNGMethod);

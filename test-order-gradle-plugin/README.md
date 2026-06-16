@@ -140,53 +140,151 @@ All settings are optional. The plugin works out of the box with sensible default
 
 ```groovy
 testOrder {
+    // ---- Mode ----
+
     // Mode: "auto" (default) | "learn" | "order" | "optimize" | "skip"
     mode = "auto"
+
+    // ---- Instrumentation ----
 
     // Agent instrumentation depth:
     //   MEMBER  — most detailed: per-method deps + field accesses (default)
     //   METHOD  — like MEMBER but without instance-field tracking
     //   CLASS   — method entries + field accesses only (lightest)
+    //   FULL    — maximum granularity
     instrumentationMode = "MEMBER"
+
+    // Instrumentation strategy:
+    //   "offline" (default) — instrument bytecode at build time; no per-fork agent overhead
+    //   "online"            — instrument at class-load time via agent; needed for dynamic class loading
+    instrumentation = "offline"
+
+    // LZ4 compression for index writes: "fast" (default) or "hc" (high compression)
+    compression = "fast"
 
     // Comma-separated package prefixes to instrument.
     // Auto-detected from src/main/java if left empty.
     includePackages = ""
 
-    // TDD enforcement: new tests that pass without failing first are artificially failed
-    tdd = false
+    // Fall back to project groupId as package filter when src/main/java scan finds nothing (default: true)
+    filterByGroupId = true
 
-    // Storage location: "local" (default, in-project .test-order/) or "home" (~/.test-order/<project>/)
-    // "home" survives git clean -fdx and fresh clones
-    storage = "local"
+    // Path for verbose agent logging (empty = disabled)
+    verboseFile = ""
 
-    // Change detection: "uncommitted" | "auto" | "since-last-run" | "since-last-commit" | "explicit"
+    // ---- Change Detection ----
+
+    // Change detection: "uncommitted" (default) | "auto" | "since-last-run" | "since-last-commit" | "explicit"
     changeMode = "uncommitted"
 
-    // For changeMode = "explicit": comma-separated FQCNs of changed classes
+    // For changeMode = "explicit": comma-separated FQCNs of changed production classes
     changedClasses = ""
 
-    // Paths (all relative to project dir by default)
+    // Comma-separated FQCNs of changed test classes (CI integrations that detect changes externally)
+    changedTestClasses = ""
+
+    // Expand changed-class set via static call-graph analysis (default: true, up to 2 hops)
+    staticAnalysisEnabled = true
+    staticAnalysisDepth   = 2    // 0–4 hops
+
+    // ---- Ordering ----
+
+    // Enable method-level ordering within test classes (default: false)
+    methodOrderingEnabled = false
+
+    // Optional path to a JSON weights override file
+    weightsFile = ""
+
+    // Number of top-scored tests to always select (-1 = all change-affected, default: -1)
+    selectTopN    = -1
+    // Number of diverse fast tests to additionally select in auto/order mode (default: 10)
+    selectRandomM = 10
+    // Number of diverse fast tests to additionally select in testOrderAffected (default: 0)
+    // Matches Maven AffectedMojo default; set higher to also sample random fast tests
+    affectedSelectRandomM = 0
+    // Random seed for deterministic selection (null = random)
+    // selectSeed = 42L
+
+    // ---- Paths ----
+
     indexFile = file(".test-order/test-dependencies.lz4")
     stateFile = file(".test-order/state.lz4")
     depsDir   = layout.buildDirectory.dir("test-order-deps")
 
-    // Scoring weights — see "Scoring system" below
-    scoreNewTest          = 15
-    scoreChangedTest      = 9
-    scoreMaxFailure       = 5
-    scoreSpeed            = 1
-    scoreSpeedPenalty     = 1
-    scoreDepOverlap       = 5
-    scoreChangeComplexity = 2
-    scoreStaticFieldBonus = 0
+    // ---- Auto-mode behavior ----
+
+    // Force a full re-learn after N consecutive order-mode runs (0 = disabled, default: 10)
+    autoLearnRunThreshold  = 10
+    // Force learn when changed-class count reaches N (0 = disabled)
+    autoLearnDiffThreshold = 0
+    // Run weight optimisation every N order-mode runs (0 = disabled, default: 10)
+    autoOptimizeEvery      = 10
+    // Auto-compact index every N order-mode runs (0 = disabled, default: 50)
+    autoCompactEvery       = 50
+
+    // In auto mode, also run remaining tests after the affected subset (default: false for testOrderAffected)
+    autoRunRemaining = false
+
+    // Always attach the learn-mode agent even in order runs (incremental refinement, default: false)
+    alwaysLearn = false
+    // Only instrument classes in the static call graph of changed classes (default: false)
+    selectiveLearn = false
+
+    // Group Spring context tests together for scoring (default: false)
+    springContextGrouping = false
+
+    // ---- TDD enforcement ----
+
+    // New tests that pass without failing first are artificially failed (default: false)
+    tdd = false
+
+    // ---- Non-standard layouts ----
+
+    // Explicit main source root (replaces auto-detection from source sets)
+    // sourceRoot = "src/main/java"
+    // Explicit test source root
+    // testSourceRoot = "src/test/java"
+
+    // ---- Scoring Weights ----
+    // When not set, PriorityClassOrderer uses optimizer-tuned weights from state.lz4
+    // or its own built-in defaults. Setting these here overrides the optimizer.
+
+    scoreNewTest              = 15
+    scoreChangedTest          = 9
+    scoreMaxFailure           = 5
+    scoreSpeed                = 1
+    scoreSpeedPenalty         = 1
+    scoreDepOverlap           = 5
+    scoreChangeComplexity     = 2
+    scoreStaticFieldBonus     = 0
+    scoreCoverageBonus        = 0   // bonus for well-covered classes
+    scoreKillRateBonus        = 0   // bonus based on PIT kill rate
+    scorePackageProximityBonus = 0  // bonus for tests in the same package as changed code
+
+    // ---- Dump ----
+
+    // Output file for testOrderDump (empty = stdout)
+    dumpOutputFile = ""
+
+    // ---- Coverage ----
+
+    coverageThreshold = 2   // minimum exercising tests for "well-tested"
+    coverageOutputDir = layout.buildDirectory.dir("coverage-reports")
 }
+```
+
+### Per-task mode override
+
+Override the mode for a specific test task without affecting others:
+
+```bash
+./gradlew integrationTest -Dtestorder.mode.integrationTest=order
 ```
 
 ### Property overrides
 
 Most settings can be overridden on the command line via `-D` (system property) or `-P` (Gradle project property).
-Score weights (`scoreNewTest`, `scoreChangedTest`, etc.) must be set in the `testOrder { }` DSL block.
+Score weights must be set in the `testOrder { }` DSL block (they don't map to system properties).
 
 ```bash
 # System property
@@ -198,38 +296,66 @@ Score weights (`scoreNewTest`, `scoreChangedTest`, etc.) must be set in the `tes
 
 ## Tasks
 
-| Task | Description |
-|---|---|
-| `testOrderDashboard` | Generate an interactive HTML dashboard from current index/state |
-| `testOrderServe` | Serve dashboard over local HTTP (supports timed shutdown) |
-| `testOrderShow` | Unified view: class order, method order, ML health (auto-detects) |
-| `testOrderShowOrder` | _(deprecated → use `testOrderShow`)_ Display predicted test execution order |
-| `testOrderTieredSelect` | Run tier-1 tests and write tier-2/tier-3 files for three-phase CI |
-| `testOrderRunTier` | Run tier 2 or tier 3 from a previous `testOrderTieredSelect` |
-| `testOrderAffected` | Run the prioritized subset and write remaining tests to disk |
-| `testOrderRunRemaining` | Run deferred tests written by `testOrderAffected` |
-| `testOrderDump` | Dump the binary dependency index as human-readable text |
-| `testOrderAggregate` | Re-aggregate `.deps` files into `test-dependencies.lz4` |
-| `testOrderCompact` | Rebuild index from `.deps` files, removing stale entries |
-| `testOrderClean` | Remove all test-order generated files (index, state, hashes, deps) |
-| `testOrderDiagnose` | Run diagnostic checks on the test-order setup |
-| `testOrderOptimize` | Tune scoring weights based on failure history |
-| `testOrderExportJson` | Export test-order data as JSON for scripting |
-| `testOrderCoverage` | Analyze dependency coverage and identify gaps |
-| `testOrderDetectDependencies` | Detect order-dependent (flaky) tests via reordering strategies |
-| `testOrderAnalyzeMutations` | Run PIT mutation testing and record kill-rate data for scoring |
-| `testOrderMetrics` | Export test-order metrics as JSON for CI/CD dashboards |
-| `testOrderDownload` | Download dependency index from CI artifacts |
-| `testOrderSnapshot` | Create hash snapshot for since-last-run change detection |
-| `testOrderHelp` | List all available test-order tasks and properties |
-
 All tasks are in the `test-order` group:
 
 ```bash
 ./gradlew tasks --group test-order
 ```
 
-Serve options:
+### Core test-execution tasks
+
+| Task | Maven equivalent | Description |
+|---|---|---|
+| `testOrderLearn` | `test-order:learn` | Run tests in learn mode (always instruments, regardless of current mode) |
+| `testOrderAffected` | `test-order:affected` | Run the prioritized subset; write remaining tests to disk for `testOrderRunRemaining` |
+| `testOrderRunRemaining` | `test-order:run-remaining` | Run deferred tests written by `testOrderAffected` |
+| `testOrderTieredSelect` | `test-order:run-tiered` (tier 1) | Run tier-1 (change-affected) tests and write tier-2/tier-3 lists |
+| `testOrderRunTier` | `test-order:run-tiered` (tier 2/3) | Run tier 2 or tier 3 from a previous `testOrderTieredSelect` |
+| `testOrderRunTiered` | `test-order:run-tiered` | Run all three tiers in a single test execution (Maven parity) |
+
+### Index maintenance
+
+| Task | Maven equivalent | Description |
+|---|---|---|
+| `testOrderInstrument` | `test-order:instrument` | Instrument compiled classes at build time (offline mode) |
+| `testOrderAggregate` | `test-order:aggregate` | Re-aggregate `.deps` files into `test-dependencies.lz4` |
+| `testOrderCompact` | `test-order:compact` | Rebuild index from `.deps` files, removing stale entries |
+| `testOrderClean` | `test-order:clean` | Remove all test-order generated files (index, state, hashes, deps) |
+| `testOrderSnapshot` | `test-order:snapshot` | Create hash snapshot for since-last-run change detection |
+| `testOrderPrepare` | `test-order:prepare` | Validate configuration, restore offline classes, print what mode would be used |
+| `testOrderDownload` | `test-order:download` | Download dependency index from CI artifacts |
+
+### Reporting and inspection
+
+| Task | Maven equivalent | Description |
+|---|---|---|
+| `testOrderShow` | `test-order:show` | Unified view: class order, method order, ML health (auto-detects) |
+| `testOrderShowAll` | — | Like `testOrderShow` but includes all test classes, not just change-affected ones |
+| `testOrderShowOrder` | — | _(deprecated → use `testOrderShow`)_ Display predicted test execution order |
+| `testOrderShowMethodOrder` | — | Display predicted method execution order within test classes |
+| `testOrderShowStaticAnalysis` | — | Show which members changed and which callers were pulled in by call-graph expansion |
+| `testOrderReactorOrder` | `test-order:reactor-order` | Show recommended module execution order for multi-project builds |
+| `testOrderExplain` | `test-order:explain` | Explain why a test (or method) was scored: `-Ptest=com.example.MyTest` or `-Ptest=com.example.MyTest#myMethod` |
+| `testOrderExplainOrder` | — | Display detailed per-test score explanations for all classes |
+| `testOrderExplainMethodOrder` | — | Display detailed per-method score explanations |
+| `testOrderDump` | `test-order:dump` | Dump the binary dependency index as human-readable text |
+| `testOrderExportJson` | `test-order:export-json` | Export test-order data as JSON for scripting |
+| `testOrderDashboard` | `test-order:dashboard` | Generate an interactive HTML dashboard from current index/state |
+| `testOrderServe` | — | Serve dashboard over local HTTP |
+| `testOrderMetrics` | `test-order:metrics` | Export test-order metrics as JSON for CI/CD dashboards |
+| `testOrderCoverage` | `test-order:coverage` | Analyze dependency coverage and identify gaps |
+
+### Analysis and tuning
+
+| Task | Maven equivalent | Description |
+|---|---|---|
+| `testOrderOptimize` | `test-order:optimize` | Tune scoring weights based on failure history |
+| `testOrderDetectDependencies` | `test-order:detect-dependencies` | Detect order-dependent (flaky) tests via reordering strategies |
+| `testOrderAnalyzeMutations` | `test-order:analyze-mutations` | Run PIT mutation testing and record kill-rate data for scoring |
+| `testOrderDiagnose` | `test-order:diagnose` | Run diagnostic checks on the test-order setup |
+| `testOrderHelp` | `test-order:help` | List all available test-order tasks and properties |
+
+### Serve options
 
 ```bash
 ./gradlew testOrderServe -Dtestorder.dashboard.port=8080
@@ -328,9 +454,16 @@ Each test class receives a score. Tests are sorted by descending score (highest 
 | Speed penalty | 1 | Continuous log₂ penalty for slow tests (scaled by `duration/median` ratio) |
 | Dependency overlap | 0–5 | `overlap / √totalDeps × weight` — proportional to changed-code coverage |
 | Change complexity | 0–2 | Weighted by information density of changed files (Deflate size) |
+| Coverage bonus | 0 | Extra weight for well-tested classes (configurable via `scoreCoverageBonus`) |
+| Kill-rate bonus | 0 | Extra weight from PIT mutation kill rate (after `testOrderAnalyzeMutations`) |
+| Package proximity | 0 | Bonus for tests in the same package as changed production classes |
 
 Ties are broken by Jaccard diversity (maximising coverage breadth),
 then by shorter duration, then alphabetically.
+
+When no scoring weights are set in the DSL, the plugin uses optimizer-tuned values from
+`state.lz4` (after running `testOrderOptimize`) or its own built-in defaults.
+**Setting any weight in the DSL overrides the optimizer output for that weight.**
 
 ## Files produced
 
@@ -423,6 +556,112 @@ After 5+ recorded runs:
 
 Re-run learn mode periodically (e.g. nightly on CI) to capture new dependencies.
 The index is compact (typically a few KB) and safe to commit.
+
+## Multi-module builds
+
+In multi-project builds the plugin shares a single dependency index across all subprojects
+(stored at the root project level in `<root>/.test-order/`), mirroring how the Maven plugin
+uses a shared reactor context. Hash snapshots are stored per-subproject to avoid one module
+overwriting another's baseline:
+
+```
+<root>/.test-order/
+├── test-dependencies.lz4       # shared index (all modules)
+├── state.lz4                   # shared state
+└── hashes/
+    ├── module-a-hashes.lz4
+    ├── module-a-test-hashes.lz4
+    ├── module-b-hashes.lz4
+    └── ...
+```
+
+To see recommended module execution order based on dependency overlap:
+
+```bash
+./gradlew testOrderReactorOrder
+# Machine-readable -pl argument:
+./gradlew testOrderReactorOrder -Dtestorder.reactor.suggest=true
+```
+
+To re-aggregate all subproject `.deps` files into one shared index:
+
+```bash
+./gradlew testOrderAggregateAll
+```
+
+## Offline vs online instrumentation
+
+| Mode | Default | When to use |
+|---|---|---|
+| `offline` | Yes | Production use. Bytecode rewritten once at build time; no per-fork JVM overhead |
+| `online` | No | Classes loaded dynamically (e.g. OSGi, custom class loaders). Agent runs in each test fork |
+
+Switch to online instrumentation:
+
+```groovy
+testOrder {
+    instrumentation = "online"
+}
+```
+
+Or per-run:
+
+```bash
+./gradlew test -Dtestorder.instrumentation=online -Dtestorder.mode=learn
+```
+
+When using offline instrumentation, `testOrderInstrument` pre-processes compiled classes before
+the test task runs. The original classes are restored by `testOrderOfflineRestore` (a `doLast`
+action on the test task) so subsequent non-test-order builds see the original bytecode.
+
+## Static call-graph analysis
+
+In order mode the plugin expands the changed-class set by traversing transitive callers in the
+compiled bytecode, pulling in additional tests that call (directly or indirectly) the changed code:
+
+```groovy
+testOrder {
+    staticAnalysisEnabled = true   // default
+    staticAnalysisDepth   = 2      // 0–4 hops
+}
+```
+
+To inspect what was detected as changed and what callers were pulled in:
+
+```bash
+./gradlew testOrderShowStaticAnalysis
+./gradlew testOrderShowStaticAnalysis -Dtestorder.showStaticAnalysis.verbose=true
+```
+
+## Explaining scores
+
+```bash
+# Explain a test class
+./gradlew testOrderExplain -Ptest=com.example.MyServiceTest
+
+# Explain a specific method
+./gradlew testOrderExplain -Ptest=com.example.MyServiceTest#shouldReturnEmpty
+
+# Show all class scores with full breakdown
+./gradlew testOrderExplainOrder
+
+# Show all method scores with full breakdown
+./gradlew testOrderExplainMethodOrder
+```
+
+## Selective learn
+
+When learning only a subset of classes (e.g. on CI with many unchanged modules), you can
+restrict instrumentation to classes reachable from your changed code:
+
+```groovy
+testOrder {
+    selectiveLearn = true   // only instrument call-graph of changed classes
+}
+```
+
+Combine with `alwaysLearn = true` to incrementally refine the index on every order run
+without a separate full learn step.
 
 ## Compatibility
 

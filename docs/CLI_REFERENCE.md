@@ -2,6 +2,19 @@
 
 Practical reference for Maven plugin goals and the most important configuration properties.
 
+## Supported Frameworks
+
+test-order supports three test frameworks. The Maven/Gradle plugin auto-detects which is in use.
+
+| Framework | Module | Notes |
+|---|---|---|
+| **JUnit 5 / 6** | `test-order-junit` | Full support: class ordering, method ordering, TDD enforcement, fixed-order orderers, Spring context grouping |
+| **JUnit 4** (Vintage) | `test-order-junit` | Via JUnit Platform Vintage engine; class ordering only (no method orderer API in JUnit 4) |
+| **TestNG 7.x+** | `test-order-testng` | Class and method ordering via `IMethodInterceptor`; no TDD enforcement or fixed-order orderers |
+| **Kotest** | `test-order-junit` | Via JUnit Platform runner (`kotest-runner-junit5`); class-level ordering; see [KOTEST.md](KOTEST.md) |
+
+For a detailed side-by-side comparison of JUnit 5 and TestNG integration behaviour, see [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md).
+
 ## Quick Start
 
 ```bash
@@ -373,6 +386,8 @@ ML data is shown in:
 ### Method-Level Scoring Overrides
 
 When method-level ordering is active (the default for JUnit 5/6), these per-component weights tune how individual test methods are ranked within a class. Method scores combine the same change/coverage/speed signals as class scores, but at method granularity using telemetry from `MEMBER`-mode instrumentation.
+
+> **Note:** These properties apply to JUnit 5/6 (`PriorityMethodOrderer`) and to TestNG's `TestNGPriorityInterceptor` when `testorder.methodOrder.enabled=true`. They have no effect in JUnit 4 / Vintage, which has no method-ordering API.
 
 | Property | Default | Description |
 |---|---|---|

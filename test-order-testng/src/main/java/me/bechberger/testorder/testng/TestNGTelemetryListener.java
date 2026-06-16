@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.testng.IClassListener;
 import org.testng.ITestContext;
 import org.testng.ITestListener;
 import org.testng.ITestResult;
@@ -35,7 +36,7 @@ import me.bechberger.testorder.UsageStoreReflectionBridge;
  * <p>
  * Auto-discovered via {@code META-INF/services/org.testng.ITestNGListener}.
  */
-public class TestNGTelemetryListener implements ITestListener {
+public class TestNGTelemetryListener implements ITestListener, IClassListener {
 
 	private boolean learnMode;
 	private boolean fullMethodMode;
@@ -44,12 +45,16 @@ public class TestNGTelemetryListener implements ITestListener {
 	private String statePath;
 
 	// Thread-safe collections — TestNG supports parallel="methods"/"classes".
-	private final Set<String> executionOrderSet = ConcurrentHashMap.newKeySet();
+	private final Map<String, Long> executionOrderSet = new ConcurrentHashMap<>();
 	private final List<String> executionOrder = Collections.synchronizedList(new ArrayList<>());
 	private final Set<String> failedClassNames = ConcurrentHashMap.newKeySet();
 	private final Map<String, List<Long>> pendingDurations = new ConcurrentHashMap<>();
 	private final Map<String, List<Long>> pendingMethodDurations = new ConcurrentHashMap<>();
 	private final Set<String> failedMethodNames = ConcurrentHashMap.newKeySet();
+	/**
+	 * Classes whose learn-mode boundary has already been closed via onAfterClass.
+	 */
+	private final Set<String> closedLearnClasses = ConcurrentHashMap.newKeySet();
 
 	/** Per-class start times for parallel-safe class boundary tracking. */
 	private final Map<String, Long> classStartTimes = new ConcurrentHashMap<>();
@@ -102,12 +107,14 @@ public class TestNGTelemetryListener implements ITestListener {
 	@Override
 	public void onTestStart(ITestResult result) {
 		String className = result.getTestClass().getRealClass().getName();
-		// Track execution order and start time per class (thread-safe for parallel
-		// modes)
-		if (executionOrderSet.add(className)) {
+		// computeIfAbsent is atomic: exactly one thread performs the first-seen action
+		// per class, preventing the add+callStart race under parallel="methods".
+		long startTime = debugMode ? 0L : System.nanoTime();
+		boolean firstSeen = executionOrderSet.putIfAbsent(className, startTime) == null;
+		if (firstSeen) {
 			executionOrder.add(className);
 			if (!debugMode) {
-				classStartTimes.putIfAbsent(className, System.nanoTime());
+				classStartTimes.put(className, startTime);
 			}
 			if (learnMode && bridge.isAvailable()) {
 				bridge.callStartTestClass(className);
@@ -157,6 +164,23 @@ public class TestNGTelemetryListener implements ITestListener {
 	}
 
 	@Override
+	public void onBeforeClass(org.testng.ITestClass testClass) {
+		// Nothing to do at class start — tracking begins on the first onTestStart call.
+	}
+
+	@Override
+	public void onAfterClass(org.testng.ITestClass testClass) {
+		// Close the learn-mode tracking window for this class as soon as its tests
+		// complete, matching the per-class boundary semantics of the JUnit listener.
+		if (learnMode && bridge.isAvailable()) {
+			String className = testClass.getRealClass().getName();
+			if (closedLearnClasses.add(className)) {
+				bridge.callEndTestClass(className);
+			}
+		}
+	}
+
+	@Override
 	public void onFinish(ITestContext context) {
 		// Guard against multiple <test> tags calling onFinish multiple times
 		if (!finished.compareAndSet(false, true))
@@ -192,10 +216,13 @@ public class TestNGTelemetryListener implements ITestListener {
 						.add(durationMs);
 			}
 		}
-		// End learn-mode tracking for all discovered classes
+		// End learn-mode tracking for any classes that missed onAfterClass (e.g.
+		// on test frameworks that don't fire IClassListener for all classes).
 		if (learnMode && bridge.isAvailable()) {
-			for (String className : executionOrderSet) {
-				bridge.callEndTestClass(className);
+			for (String className : executionOrderSet.keySet()) {
+				if (closedLearnClasses.add(className)) {
+					bridge.callEndTestClass(className);
+				}
 			}
 		}
 
@@ -302,7 +329,7 @@ public class TestNGTelemetryListener implements ITestListener {
 	}
 
 	private void emergencySave() {
-		if (finishedNormally)
+		if (finishedNormally || !initialized.get())
 			return;
 		TelemetryPersistence.emergencySave(statePath, pendingDurations, failedClassNames, pendingMethodDurations,
 				failedMethodNames, false);

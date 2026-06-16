@@ -63,7 +63,7 @@ final class GradlePluginSupport {
 
     /**
      * Injects PriorityClassOrderer and debug flag into a test task.
-     * This pattern is needed in order mode, select mode, and optimize mode.
+     * This pattern is needed in order mode, affected mode, and optimize mode.
      */
     static void configureOrderer(Test task, Project project) {
         task.systemProperty("junit.jupiter.testclass.order.default",

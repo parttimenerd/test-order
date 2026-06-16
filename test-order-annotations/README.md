@@ -1,11 +1,8 @@
 # test-order-annotations
 
-Zero-dependency annotation library for test-order. Provides two annotations for
-overriding score-based test ordering without touching scoring configuration.
+Zero-dependency annotation library for overriding score-based test ordering.
 
-## Annotations
-
-### `@TestOrder`
+## `@TestOrder`
 
 Fine-grained control over position and score. Can be placed on a test class or method.
 
@@ -25,40 +22,53 @@ class ImportantTest { … }
 // Extra points only when change-detection marks this test as affected
 @TestOrder(changeBonus = 150)
 class PaymentServiceTest { … }
+
+// Combined: unconditional boost + extra push when changed
+@TestOrder(scoreBonus = 50, changeBonus = 150)
+class AuthTest { … }
 ```
 
-| Attribute | Type | Default | Effect |
-|---|---|---|---|
-| `priority` | `Priority` | `NORMAL` | Position pin or score boost/penalty |
-| `scoreBonus` | `int` | `0` | Added to computed score unconditionally |
-| `changeBonus` | `int` | `0` | Added when change-detection marks this test affected |
+| Attribute     | Type       | Default  | Effect                                               |
+|---------------|------------|----------|------------------------------------------------------|
+| `priority`    | `Priority` | `NORMAL` | Position pin or score boost/penalty                  |
+| `scoreBonus`  | `int`      | `0`      | Added to computed score unconditionally              |
+| `changeBonus` | `int`      | `0`      | Added when change-detection marks this test affected |
 
 **`Priority` values:**
 
-| Value | Effect |
-|---|---|
-| `FIRST` | Pinned before all score-driven tests |
-| `HIGH` | +1 000 to computed score |
-| `NORMAL` | No override (default) |
-| `LOW` | −1 000 from computed score |
-| `LAST` | Pinned after all score-driven tests |
+| Value    | Effect                                                                      |
+|----------|-----------------------------------------------------------------------------|
+| `FIRST`  | Pinned before all score-driven tests (ordering only — see `@AlwaysRun`)    |
+| `HIGH`   | +1 000 to computed score                                                    |
+| `NORMAL` | No override (default)                                                       |
+| `LOW`    | −1 000 from computed score                                                  |
+| `LAST`   | Pinned after all score-driven tests                                         |
 
-### `@AlwaysRun`
+## `@AlwaysRun`
 
-Guarantees a test class or method is **always included in select-mode subsets**
-(`test-order:affected` / `test-order:auto`), regardless of score. In order mode,
-`@AlwaysRun` classes are pinned to the front of the execution order (before all
-score-driven tests). Among multiple `@AlwaysRun` classes, alphabetical order is used.
+Guarantees a test class or method is **always included in affected-mode subsets**
+(`test-order:affected` / `test-order:auto`) regardless of score, **and** pins it before all
+score-driven tests in the execution order.
 
 ```java
 @AlwaysRun
 class CriticalSmokeTest { … }
 ```
 
+**How it differs from `@TestOrder(priority = Priority.FIRST)`:**
+`Priority.FIRST` only affects ordering — the test can still be omitted when running a
+subset. `@AlwaysRun` adds a selection guarantee: the class is unconditionally included even
+if it has no dependency overlap with changed code and does not make the top-N cut.
+
+**Ordering among multiple `@AlwaysRun` / `FIRST`-pinned classes:**
+Sorted by `scoreBonus` descending (from a combined `@TestOrder`), then alphabetically by
+class name. A class with `@AlwaysRun @TestOrder(scoreBonus = 100)` runs before one with
+only `@AlwaysRun`.
+
 `@AlwaysRun` can be combined with `@TestOrder`: `scoreBonus` / `changeBonus` still apply
-for score-based positioning when not pinned first.
+for relative ordering within the pinned group.
 
 ## Notes
 
-* **Not `@Inherited`** — annotations on a test base class are not inherited by subclasses;
-  annotate each class independently.
+* **Not `@Inherited`** — subclasses of an annotated test base class are not annotated
+  implicitly; each class must be annotated independently.

@@ -83,7 +83,11 @@ public @interface TestOrder {
 
 	/** Priority levels for {@link TestOrder#priority()}. */
 	enum Priority {
-		/** Pinned before all score-driven tests. */
+		/**
+		 * Pinned before all score-driven tests. Does not affect affected-mode inclusion
+		 * — use {@link AlwaysRun} if the test must also be guaranteed to run in
+		 * {@code affected} or {@code auto} mode.
+		 */
 		FIRST,
 
 		/**

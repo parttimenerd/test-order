@@ -290,11 +290,12 @@ public class UsageStore {
 	/** Called when a test class finishes execution. */
 	public void endTestClass(String testClass) {
 		if (activeTrackers.test != null && testClass.equals(activeTrackers.testClassName)) {
-			// Clear volatile fields — acts as release fence.
+			// Clear plain field first so instance-method hot path stops recording,
+			// then clear volatiles as a release fence for static hot-path callers.
+			activeTrackers = ActiveTrackers.IDLE;
 			activeState = null;
 			activeClassTracker = null;
 			recording = false;
-			activeTrackers = ActiveTrackers.IDLE;
 		}
 	}
 
@@ -402,7 +403,8 @@ public class UsageStore {
 				AgentLogger.info("[flush] Invalid collector port: " + collectorPort);
 			}
 			// Fall through to string-based approach on failure
-			AgentLogger.info("[flush] Binary socket send failed, falling back to string-based approach");
+			AgentLogger.warn("[flush] Binary socket send to port " + collectorPort
+					+ " failed, falling back to string-based approach");
 		}
 
 		// String-based path: convert IDs to names (needed for .deps files or v1
@@ -454,7 +456,8 @@ public class UsageStore {
 			} catch (NumberFormatException e) {
 				// already logged above
 			}
-			AgentLogger.log("[flush] Socket send failed, falling back to file-based approach");
+			AgentLogger.warn("[flush] String-based socket send to port " + collectorPort
+					+ " failed, falling back to file-based approach");
 		}
 
 		// Fallback: write .deps files when socket is unavailable (standalone agent

@@ -141,7 +141,7 @@ mvn clean test-order:combined
 2. Run test-order learn mode to build dependency index
 3. Run test-order order mode to reorder tests
 4. Verify reordering actually happened (order change from first to second run)
-5. Run test-order select mode to validate subset selection
+5. Run test-order affected mode to validate subset selection
 6. Validate that all modes complete without errors
 
 ## Directory Structure

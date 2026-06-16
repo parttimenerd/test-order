@@ -5,12 +5,24 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Configuration for CI artifact downloading. Parsed from .test-order-ci.yml
- * config file.
+ * Configuration for CI artifact downloading. Parsed from
+ * {@code .test-order/download-config.yml}.
  *
- * Example: ci: github: owner: bechberger repo: test-order workflow:
- * integration-tests.yml artifact-name: test-order-deps branch: main http: url:
- * https://ci.example.com/artifacts/deps.json auth: bearer token-env: CI_TOKEN
+ * Example:
+ *
+ * <pre>
+ * ci:
+ *   github:
+ *     owner: bechberger
+ *     repo: test-order
+ *     workflow: integration-tests.yml
+ *     artifact-name: test-order-deps
+ *     branch: main
+ * proxy:
+ *   host: proxy.corp.com
+ *   port: 8080
+ *   type: http
+ * </pre>
  */
 public class CiConfig {
 	private final GithubConfig github;
@@ -28,8 +40,20 @@ public class CiConfig {
 		this.http = parseHttpConfig(ciConfig);
 		this.gitlab = parseGitLabConfig(ciConfig);
 		this.maven = parseMavenConfig(ciConfig);
-		this.proxy = parseProxyConfig(ciConfig);
+		this.proxy = parseProxyConfig(configMap);
 		this.providers = parseProviders(configMap, ciConfig);
+	}
+
+	/**
+	 * Constructor for programmatic construction from already-parsed sub-configs.
+	 */
+	CiConfig(GithubConfig github, GitLabConfig gitlab, MavenConfig maven, HttpConfig http, ProxyConfig proxy) {
+		this.github = github;
+		this.gitlab = gitlab;
+		this.maven = maven;
+		this.http = http;
+		this.proxy = proxy;
+		this.providers = List.of();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -102,9 +126,10 @@ public class CiConfig {
 				(String) mvnCfg.get("token-env"));
 	}
 
-	private ProxyConfig parseProxyConfig(Map<String, Object> ciConfig) {
+	private ProxyConfig parseProxyConfig(Map<String, Object> topLevel) {
+		// proxy: is a top-level key alongside ci:, not nested inside ci:
 		@SuppressWarnings("unchecked")
-		Map<String, Object> proxyCfg = (Map<String, Object>) ciConfig.get("proxy");
+		Map<String, Object> proxyCfg = (Map<String, Object>) topLevel.get("proxy");
 		if (proxyCfg == null) {
 			return null;
 		}
@@ -175,6 +200,10 @@ public class CiConfig {
 		public boolean isValid() {
 			return owner != null && repo != null && workflow != null && artifactName != null;
 		}
+
+		public GithubConfig withArtifactName(String newArtifactName) {
+			return new GithubConfig(owner, repo, workflow, newArtifactName, branch);
+		}
 	}
 
 	public static class HttpConfig {
@@ -242,6 +271,10 @@ public class CiConfig {
 
 		public boolean isValid() {
 			return projectId != null && !projectId.isEmpty() && jobName != null && !jobName.isEmpty();
+		}
+
+		public GitLabConfig withArtifactName(String newArtifactName) {
+			return new GitLabConfig(baseUrl, projectId, jobName, newArtifactName, branch, tokenEnv);
 		}
 	}
 
@@ -339,6 +372,10 @@ public class CiConfig {
 		public boolean isValid() {
 			return url != null && !url.isEmpty() && groupId != null && !groupId.isEmpty() && artifactId != null
 					&& !artifactId.isEmpty();
+		}
+
+		public MavenConfig withClassifier(String newClassifier) {
+			return new MavenConfig(url, groupId, artifactId, version, newClassifier, extension, auth, tokenEnv);
 		}
 	}
 }

@@ -131,7 +131,8 @@ public class TelemetryListener implements TestExecutionListener {
 
 		// Register a JVM shutdown hook so accumulated durations/failures are not
 		// lost when the JVM terminates abnormally (e.g. OOM, kill signal) before
-		// testPlanExecutionFinished() runs.
+		// testPlanExecutionFinished() runs. emergencySave is a no-op when statePath
+		// is absent, so registering unconditionally is safe.
 		finishedNormally = false;
 		shutdownHook = new Thread(this::emergencySave, "test-order-emergency-save");
 		Runtime.getRuntime().addShutdownHook(shutdownHook);
@@ -416,8 +417,7 @@ public class TelemetryListener implements TestExecutionListener {
 			Path stateFile = Path.of(effectiveStatePath);
 			boolean isLearnRun = Boolean.parseBoolean(System.getProperty(TestOrderConfig.LEARN, "false"));
 			try {
-				if (buildId != null && !buildId.isBlank() && pendingRunsDir != null && !pendingRunsDir.isBlank()
-						&& !executionOrder.isEmpty()) {
+				if (isAggregatedMode() && !executionOrder.isEmpty()) {
 					// Build-session aggregation mode: write partial record to staging dir.
 					// The Maven plugin will merge all per-fork records after all forks complete.
 					TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder, failedClassNames);
@@ -489,11 +489,12 @@ public class TelemetryListener implements TestExecutionListener {
 		} catch (NoClassDefFoundError ignored) {
 			// JUnit Jupiter method orderer API not available (e.g. JUnit 4 / Vintage
 			// engine)
+		} finally {
+			// Set finishedNormally=true BEFORE clearing the maps: the shutdown hook reads
+			// this flag first and returns early, so it cannot race with the clears below
+			// and save an empty snapshot (double-save prevented by the flag, not a lock).
+			finishedNormally = true;
 		}
-
-		// Mark normal completion BEFORE clearing maps so the emergency-save shutdown
-		// hook cannot observe cleared maps and save empty telemetry if it races here.
-		finishedNormally = true;
 
 		// Clear accumulated data after persisting to prevent double-counting
 		// when Surefire re-runs the test plan (rerunFailingTestsCount > 0).
@@ -564,8 +565,11 @@ public class TelemetryListener implements TestExecutionListener {
 		Set<String> failSnap = new java.util.HashSet<>(failedClassNames);
 		Map<String, List<Long>> methDurSnap = snapshotMapOfLists(pendingMethodDurations);
 		Set<String> methFailSnap = new java.util.HashSet<>(failedMethodNames);
-		boolean aggregatedMode = buildId != null && !buildId.isBlank();
-		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methDurSnap, methFailSnap, aggregatedMode);
+		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methDurSnap, methFailSnap, isAggregatedMode());
+	}
+
+	private boolean isAggregatedMode() {
+		return buildId != null && !buildId.isBlank() && pendingRunsDir != null && !pendingRunsDir.isBlank();
 	}
 
 	private static Map<String, List<Long>> snapshotMapOfLists(Map<String, List<Long>> source) {
@@ -625,7 +629,7 @@ public class TelemetryListener implements TestExecutionListener {
 				}
 			}
 		} catch (ClassNotFoundException ignored) {
-			warnedConcurrentClasses.remove(className);
+			// Class not yet loaded — leave the dedup entry so we don't retry on every call
 		} catch (ReflectiveOperationException ignored) {
 			// Jupiter parallel API not available or annotation not present
 		}

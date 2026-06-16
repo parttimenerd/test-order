@@ -63,9 +63,14 @@ public final class ChangeDetectionSupport {
 
 	/**
 	 * Parse an explicit change-detection mode string.
+	 * <p>
+	 * Note: {@code "auto"} is not a concrete mode — it is resolved by
+	 * {@link #resolveMode(String, Path)} based on snapshot existence. Calling
+	 * {@code parseMode("auto")} throws with a diagnostic message directing callers
+	 * to use {@code resolveMode} instead.
 	 *
 	 * @throws IOException
-	 *             when the mode is unknown
+	 *             when the mode is unknown or {@code "auto"} is passed directly
 	 */
 	public static ChangeDetector.Mode parseMode(String changeMode) throws IOException {
 		return switch (normalizeMode(changeMode)) {
@@ -73,6 +78,8 @@ public final class ChangeDetectionSupport {
 			case "since-last-commit" -> ChangeDetector.Mode.SINCE_LAST_COMMIT;
 			case "uncommitted" -> ChangeDetector.Mode.UNCOMMITTED;
 			case "explicit" -> ChangeDetector.Mode.EXPLICIT;
+			case "auto" -> throw new IOException(
+					"'auto' is a meta-mode — use resolveMode(changeMode, hashFile) instead of parseMode()");
 			default -> throw new IOException("Unknown changeMode: " + changeMode);
 		};
 	}

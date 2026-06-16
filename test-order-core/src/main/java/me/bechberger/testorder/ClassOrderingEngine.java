@@ -152,7 +152,7 @@ public final class ClassOrderingEngine {
 					new TestOrderState.ScoreBreakdown(result.score(), result.isNew(), result.isChanged(),
 							result.depOverlap(), result.depTotal(), result.failScore(), result.isFast(),
 							result.isSlow(), result.complexityOverlap(), result.speedRatio(),
-							result.hasStaticFieldOverlap()));
+							result.hasStaticFieldOverlap(), result.weightedDepOverlap()));
 		}
 	}
 

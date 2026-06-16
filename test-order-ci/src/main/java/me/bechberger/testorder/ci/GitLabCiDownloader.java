@@ -160,7 +160,7 @@ public class GitLabCiDownloader implements DepDownloader {
 				throw new DepDownloadException("Artifact response body is empty");
 			}
 			try (InputStream in = response.body().byteStream();
-					FileOutputStream out = new FileOutputStream(outputPath.toFile())) {
+					java.io.OutputStream out = java.nio.file.Files.newOutputStream(outputPath)) {
 				byte[] buf = new byte[8192];
 				int n;
 				long totalRead = 0;

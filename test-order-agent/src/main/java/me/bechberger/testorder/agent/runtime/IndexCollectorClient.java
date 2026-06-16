@@ -145,10 +145,6 @@ public final class IndexCollectorClient {
 		}
 	}
 
-	// Reusable scratch buffer for writeLongsBulk. Flush runs in the JVM shutdown
-	// hook (single-threaded), so a static field avoids per-call allocation.
-	private static byte[] writeBuf = new byte[1024];
-
 	/**
 	 * Write a long[] as a single bulk byte[] write. 8x fewer write calls than
 	 * per-element writeLong(), and the BufferedOutputStream only needs one bounds
@@ -158,9 +154,7 @@ public final class IndexCollectorClient {
 		if (len == 0)
 			return;
 		int needed = len * 8;
-		if (writeBuf.length < needed)
-			writeBuf = new byte[needed];
-		byte[] buf = writeBuf;
+		byte[] buf = new byte[needed];
 		for (int i = 0, off = 0; i < len; i++, off += 8) {
 			long v = arr[i];
 			buf[off] = (byte) (v >>> 56);

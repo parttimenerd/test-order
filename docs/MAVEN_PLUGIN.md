@@ -599,6 +599,256 @@ Beyond the standard plugin parameters, these system properties control advanced 
 | `testorder.changed.classes.file` | Read changed classes from a file (one fully-qualified class name per line; blank lines ignored) |
 | `testorder.changed.methods` | Explicit changed production methods in `className#methodName` format (comma-separated). Affects method-level scoring; use with `changeMode=explicit` to restrict scoring to specific changed methods (e.g. `com.example.Foo#doWork,com.example.Bar#process`) |
 
+## Mutation Testing (`analyze-mutations`)
+
+The `analyze-mutations` goal runs [PIT](https://pitest.org/) mutation testing scoped to the classes in your dependency index, computes per-test mutation kill rates, and stores them in the state file so future ordering runs can reward tests that actually kill mutants.
+
+This is an **aggregator goal** — it runs once at the reactor root and automatically collects test classpaths, compiled class directories, and source directories from all submodules in multi-module builds.
+
+### Quickstart
+
+```bash
+# Ensure the dependency index exists first
+mvn test -Dtestorder.mode=learn
+
+# Run mutation analysis (may take several minutes)
+mvn test-order:analyze-mutations
+
+# Enable kill-rate bonus in scoring
+mvn test -Dtestorder.score.killRateBonus=5
+```
+
+### What it produces
+
+- **`target/test-mutation-results.json`** — per-test kill rate breakdown (killed / total mutants per test class)
+- **Updated `.test-order/state.lz4`** — kill rates persisted for all future ordering runs
+- **Dashboard Mutation tab** — visual breakdown by kill-rate tier (high / medium / low / none) when `mvn test-order:dashboard` is run afterwards
+
+### Parameters
+
+| Parameter | Property | Default | Description |
+|---|---|---|---|
+| `outputFile` | `testorder.mutations.outputFile` | `target/test-mutation-results.json` | Output path for the JSON report |
+| `timeBudget` | `testorder.mutations.timeBudget` | `0` | Maximum seconds to spend on mutation testing (`0` = no limit) |
+| `targetClasses` | `testorder.mutations.targetClasses` | — | Comma-separated glob of production class FQCNs to mutate; when unset, derived automatically from the dependency index (all production classes covered by at least one test) |
+| `classesDir` | `testorder.mutations.classesDir` | `target/classes` | Override the compiled production classes directory for the root module (multi-module builds collect all modules automatically) |
+| `testClassesDir` | `testorder.mutations.testClassesDir` | `target/test-classes` | Override the compiled test classes directory for the root module (multi-module builds collect all modules automatically) |
+
+### Multi-module builds
+
+No extra configuration needed. The goal is declared as an **aggregator** (`@Mojo(aggregator = true)`) and runs once at the reactor root. It collects test classpath elements, output directories, and test-output directories from all reactor modules via `session.getAllProjects()`, deduplicating entries while preserving order.
+
+For unusual layouts, override per-module directories with:
+
+```bash
+mvn test-order:analyze-mutations \
+    -Dtestorder.mutations.classesDir=/path/to/classes \
+    -Dtestorder.mutations.testClassesDir=/path/to/test-classes
+```
+
+### Scoping to specific classes or modules
+
+Large projects can scope mutation analysis with `-pl` (Maven module restriction) and `targetClasses`:
+
+```bash
+# Single module only
+mvn test-order:analyze-mutations -pl my-module
+
+# Only mutate a specific package
+mvn test-order:analyze-mutations -Dtestorder.mutations.targetClasses=com.example.service.*
+
+# Combined: limit time and scope
+mvn test-order:analyze-mutations \
+    -Dtestorder.mutations.targetClasses=com.example.core.* \
+    -Dtestorder.mutations.timeBudget=600
+```
+
+### CI integration (scheduled workflow)
+
+Mutation analysis is slow — run it as a scheduled nightly or weekly job rather than on every commit:
+
+```yaml
+# .github/workflows/mutation-testing.yml
+name: Mutation Testing
+on:
+  schedule:
+    - cron: '0 2 * * 1'   # Mondays at 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  mutate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { java-version: '21', distribution: 'temurin' }
+
+      - name: Restore test-order index
+        uses: actions/cache@v4
+        with:
+          path: .test-order/
+          key: test-order-${{ runner.os }}-${{ github.ref_name }}
+          restore-keys: test-order-${{ runner.os }}-
+
+      - name: Learn (if index missing)
+        run: mvn test -Dtestorder.mode=learn --batch-mode
+
+      - name: Analyze mutations
+        run: mvn test-order:analyze-mutations --batch-mode
+
+      - name: Save updated state (with kill rates)
+        uses: actions/cache/save@v4
+        with:
+          path: .test-order/
+          key: test-order-${{ runner.os }}-${{ github.ref_name }}
+
+      - name: Upload mutation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-results
+          path: target/test-mutation-results.json
+```
+
+### Enabling the kill-rate scoring bonus
+
+Kill rates stored in the state file have **no effect** until you opt in with a positive `killRateBonus`:
+
+```bash
+# CLI (one-off)
+mvn test -Dtestorder.score.killRateBonus=5
+
+# Persistent via weights file
+# weights.toml
+[killRateBonus]
+value = 5
+```
+
+Pass the weights file: `mvn test -Dtestorder.weights.file=weights.toml`
+
+Or set it in the plugin configuration:
+
+```xml
+<plugin>
+  <groupId>me.bechberger</groupId>
+  <artifactId>test-order-maven-plugin</artifactId>
+  <configuration>
+    <scoreKillRateBonus>5</scoreKillRateBonus>
+  </configuration>
+</plugin>
+```
+
+---
+
+## Three-Tier CI Workflow
+
+The tiered workflow splits the test suite into three groups for progressive CI pipelines: fail fast on the most important tests, then run everything else in order of priority.
+
+### Goals
+
+| Goal | Description |
+|---|---|
+| `tiered-select` | Partition tests into tier-1 / tier-2 / tier-3 files and configure Surefire to run tier 1 |
+| `run-tier` | Execute a specific tier (2 or 3) from files written by a prior `tiered-select` run |
+| `run-tiered` | Run all three tiers in a single Maven invocation (alternative to multi-step) |
+
+### Tiers
+
+| Tier | Contents |
+|---|---|
+| **Tier 1** | `@AlwaysRun` tests + new tests + tests affected by changed classes, ranked by score |
+| **Tier 2** | Top-scored remaining tests, weighted by expected duration to fill a time budget (fraction of tier 1 wall time) |
+| **Tier 3** | Everything else |
+
+### `tiered-select` parameters
+
+| Parameter | Property | Default | Description |
+|---|---|---|---|
+| `tier2Fraction` | `testorder.tiered.tier2Fraction` | `0.5` | Duration fraction of tier 1 to use for tier 2 selection |
+| `weightByDuration` | `testorder.tiered.weightByDuration` | `true` | Weight tier 2 selection by historical test duration |
+| `tier1File` | `testorder.tiered.tier1File` | `target/test-order-tier1.txt` | File for tier-1 test class names |
+| `tier2File` | `testorder.tiered.tier2File` | `target/test-order-tier2.txt` | File for tier-2 test class names |
+| `tier3File` | `testorder.tiered.tier3File` | `target/test-order-tier3.txt` | File for tier-3 test class names |
+
+### `run-tier` parameters
+
+| Parameter | Property | Default | Description |
+|---|---|---|---|
+| `currentTier` | `testorder.tiered.currentTier` | `0` | Which tier to run (`2` or `3`; `1` is implicit in `tiered-select`) |
+| `tier2File` | `testorder.tiered.tier2File` | `target/test-order-tier2.txt` | Source file for tier-2 classes |
+| `tier3File` | `testorder.tiered.tier3File` | `target/test-order-tier3.txt` | Source file for tier-3 classes |
+| `shard` | `testorder.tiered.shard` | — | Shard specifier (`N/M`) for parallel CI: selects 1/M of the tier's tests (this runner's slice) |
+
+### GitHub Actions example
+
+```yaml
+- name: "Tier 1: affected tests"
+  run: |
+    mvn test-order:tiered-select test \
+      -Dtestorder.tiered.tier2Fraction=0.5 \
+      -Dtestorder.ci.summary=true \
+      -Dtestorder.ci.githubStepSummary=true \
+      -Dsurefire.failIfNoSpecifiedTests=false
+
+- name: "Tier 2: top remaining"
+  if: success()
+  run: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2 -Dsurefire.failIfNoSpecifiedTests=false
+
+- name: "Tier 3: full coverage"
+  if: success()
+  run: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3 -Dsurefire.failIfNoSpecifiedTests=false
+
+- name: Aggregate results
+  if: always()
+  run: mvn test-order:aggregate
+```
+
+Full examples (GitHub Actions, GitLab CI, Azure Pipelines): [`docs/ci-examples/`](ci-examples/)
+
+### Sharding (parallel matrix jobs)
+
+Run tier 2 or tier 3 across N parallel CI runners:
+
+```yaml
+strategy:
+  matrix:
+    shard: ["1/4", "2/4", "3/4", "4/4"]
+
+steps:
+  - run: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3 -Dtestorder.tiered.shard=${{ matrix.shard }}
+```
+
+Each runner processes 1/4 of the tier's tests. Requires the tier files from a prior `tiered-select` invocation to be available (cache or artifact).
+
+---
+
+## CI Summary and Step Summary
+
+The `ci.summary` and `ci.githubStepSummary` flags print a Markdown summary of the test run that is readable by CI log parsers and, for GitHub Actions, appended to the job's Step Summary page.
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.ci.summary` | `false` | Print a Markdown summary to stdout at the end of the test run |
+| `testorder.ci.githubStepSummary` | `false` | Append the same summary to `$GITHUB_STEP_SUMMARY` (GitHub Actions only) |
+| `testorder.ci.prComment` | `false` | Post the summary as a PR comment (requires `gh` CLI in `PATH` and write permissions) |
+
+---
+
+## Metrics Export
+
+The `metrics` goal exports test-order statistics as JSON for CI/CD dashboards and trend tracking:
+
+```bash
+mvn test-order:metrics
+```
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.metrics.output` | `target/test-order-metrics.json` | Output path for the JSON metrics file |
+
+Metrics include: APFD for recent runs, test count, indexed test count, scored-run count, and weight values.
+
+---
+
 ## Coverage Analysis
 
 The `coverage` goal analyses the dependency index to identify least-tested production classes:

@@ -143,8 +143,19 @@ public abstract class TestOrderExtension {
      */
     public abstract Property<Integer> getSelectTopN();
 
-    /** Number of diverse fast tests to additionally select. */
+    /**
+     * Number of diverse fast tests to additionally select in auto/order mode.
+     * Default: 10 (matches Maven {@code AutoMojo}).
+     * For the {@code testOrderAffected} task, use {@link #getAffectedSelectRandomM()} instead.
+     */
     public abstract Property<Integer> getSelectRandomM();
+
+    /**
+     * Number of diverse fast tests to additionally select in {@code testOrderAffected}.
+     * Default: 0 (matches Maven {@code AffectedMojo}).
+     * Set this to override the affected-task default independently of {@code selectRandomM}.
+     */
+    public abstract Property<Integer> getAffectedSelectRandomM();
 
     /** Optional random seed for deterministic selection. */
     public abstract Property<Long> getSelectSeed();
@@ -332,6 +343,7 @@ public abstract class TestOrderExtension {
         getWeightsFile().convention("");
         getSelectTopN().convention(-1);
         getSelectRandomM().convention(10);
+        getAffectedSelectRandomM().convention(0);
         getSelectSeed().convention((Long) null);
         getSelectedFile().convention(project.getLayout().getBuildDirectory().file("test-order-selected.txt"));
         getRemainingFile().convention(project.getLayout().getBuildDirectory().file("test-order-remaining.txt"));

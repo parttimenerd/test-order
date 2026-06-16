@@ -1,12 +1,24 @@
 package me.bechberger.testorder.junit;
 
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.MethodOrdererContext;
 
-import me.bechberger.testorder.*;
+import me.bechberger.testorder.DependencyMap;
+import me.bechberger.testorder.MethodOrderingEngine;
+import me.bechberger.testorder.MethodScorer;
+import me.bechberger.testorder.TestOrderConfig;
+import me.bechberger.testorder.TestOrderConfigResolver;
+import me.bechberger.testorder.TestOrderLogger;
+import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.annotations.AlwaysRun;
 import me.bechberger.testorder.annotations.TestOrder;
 

@@ -176,7 +176,8 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 		TestKnowledge tk = knowledge.computeIfAbsent(action.victim, k -> new TestKnowledge());
 
 		// Skip if already fully resolved
-		if (!tk.confirmedPolluters().isEmpty() && action.type != ActionType.CONFIRM_BRITTLE) {
+		if (!tk.confirmedPolluters().isEmpty() && action.type != ActionType.CONFIRM_BRITTLE
+				&& action.type != ActionType.EXCLUSION_PROBE) {
 			return 0;
 		}
 
@@ -233,7 +234,7 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 			return 0;
 
 		List<String> minimal = DeltaDebugging.minimize(candidates, action.victim, ctx.countingRunner(), 15);
-		int runs = Math.min(15, candidates.size()); // Approximate runs used
+		int runs = 15; // ddmin may use up to runBudget runs regardless of candidate count
 
 		if (!minimal.isEmpty()) {
 			// Verify: does victim pass alone?

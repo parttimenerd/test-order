@@ -143,7 +143,7 @@ public final class ParameterValidator {
 	}
 
 	/**
-	 * Validates select-mode parameters (topN and randomM).
+	 * Validates affected-mode parameters (topN and randomM).
 	 *
 	 * @throws IllegalArgumentException
 	 *             if topN is less than -1 or if randomM is negative

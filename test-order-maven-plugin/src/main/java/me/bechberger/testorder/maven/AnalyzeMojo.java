@@ -42,7 +42,7 @@ public class AnalyzeMojo extends AbstractTestOrderMojo {
 		}
 
 		Path stateDir = ctx.resolveStateFile(stateFile).getParent();
-		Path historyFile = stateDir.resolve("ml").resolve("history.lz4");
+		Path historyFile = resolveMLHistoryDir().resolve("history.lz4");
 
 		if (!Files.exists(historyFile)) {
 			getLog().warn("[test-order] No ML history found at " + historyFile);

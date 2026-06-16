@@ -266,10 +266,6 @@ public class AsmClassTransformer implements ClassFileTransformer {
 						mv.visitMethodInsn(Opcodes.INVOKESTATIC, USAGE_STORE, classMethod, "(I)V", false);
 					}
 				}
-				if (memberId >= 0) {
-					emitPushInt(memberId);
-					mv.visitMethodInsn(Opcodes.INVOKESTATIC, USAGE_STORE, "recordMemberUsageIdFast", "(I)V", false);
-				}
 				extraStack = Math.max(extraStack, 1);
 			}
 		}

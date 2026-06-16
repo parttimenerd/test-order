@@ -599,7 +599,7 @@ final class SurefireHelper {
 	/**
 	 * Warns when Surefire has {@code <groups>}, {@code <excludedGroups>},
 	 * {@code <includes>}, or {@code <excludes>} configured while test-order is in
-	 * select mode. These filters interact with test-order's selection:
+	 * affected mode. These filters interact with test-order's selection:
 	 * <ul>
 	 * <li>{@code <groups>/<excludedGroups>} (JUnit 5 tags) still apply alongside
 	 * {@code <test>}, so tests selected by test-order may be silently skipped by
@@ -607,7 +607,7 @@ final class SurefireHelper {
 	 * <li>{@code <includes>/<excludes>} are overridden by {@code <test>}, so
 	 * test-order may run classes the user explicitly excluded.</li>
 	 * </ul>
-	 * Call this once before {@link #configureIncludes} in select-mode paths.
+	 * Call this once before {@link #configureIncludes} in affected-mode paths.
 	 */
 	static void warnSelectModeFilters(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -641,7 +641,7 @@ final class SurefireHelper {
 				patterns.append(val);
 			}
 			log.warn("[test-order] Surefire <excludes> is configured (" + patterns
-					+ ") but test-order's select mode overrides it via the <test> parameter. "
+					+ ") but test-order's affected mode overrides it via the <test> parameter. "
 					+ "File-based exclusions of non-test helpers are usually harmless. "
 					+ "Tag-based filtering should use <excludedGroups> (JUnit 5 @Tag) for consistent behaviour.");
 		}
@@ -681,8 +681,8 @@ final class SurefireHelper {
 		String forkCount = childValue(config, "forkCount");
 		String reuseForks = childValue(config, "reuseForks");
 
-		boolean changedFork = !"1".equals(forkCount);
-		boolean changedReuse = !"true".equalsIgnoreCase(reuseForks);
+		boolean changedFork = forkCount != null && !"1".equals(forkCount);
+		boolean changedReuse = reuseForks != null && !"true".equalsIgnoreCase(reuseForks);
 
 		setChild(config, "forkCount", "1");
 		setChild(config, "reuseForks", "true");

@@ -189,9 +189,10 @@ final class APFDCalculator {
 		}
 
 		if (weights.coverageBonus() > 0) {
-			score += TestScorer.depOverlapScore(outcome.depOverlap(), outcome.depTotal(), weights.coverageBonus());
+			score += TestScorer.depOverlapScore(outcome.weightedDepOverlap(), outcome.depTotal(),
+					weights.coverageBonus());
 		} else {
-			score += TestScorer.depOverlapScore(outcome.depOverlap(), outcome.depTotal(), weights.depOverlap());
+			score += TestScorer.depOverlapScore(outcome.weightedDepOverlap(), outcome.depTotal(), weights.depOverlap());
 			score += TestScorer.complexityScore(outcome.complexityOverlap(), outcome.depTotal(),
 					weights.changeComplexity());
 		}

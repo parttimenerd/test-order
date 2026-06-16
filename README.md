@@ -411,7 +411,9 @@ value = 5
 
 **For CI**, add a scheduled workflow so kill rates stay fresh as the codebase evolves. See [`.github/workflows/mutation-testing.yml`](.github/workflows/mutation-testing.yml) for a ready-to-use example that runs weekly and uploads the report as a build artifact.
 
-> **Note:** Mutation analysis is slow on large projects. Scope it to a specific module with `-pl <module>` or limit the target classes with `-Dtestorder.mutations.targetClasses=com.example.*`.
+> **Note:** Mutation analysis is slow on large projects. Scope it to a specific module with `-pl <module>` or limit the target classes with `-Dtestorder.mutations.targetClasses=com.example.*`. In multi-module builds the goal runs once at the reactor root and collects all module classpaths automatically. For non-standard layouts, set `-Dtestorder.mutations.classesDir` and `-Dtestorder.mutations.testClassesDir`.
+>
+> Full parameter reference: [docs/MAVEN_PLUGIN.md — Mutation Testing](docs/MAVEN_PLUGIN.md#mutation-testing-analyze-mutations)
 
 ### Run Quality: APFD
 

@@ -11,6 +11,7 @@
 | [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) | Order-dependent test detection algorithms and configuration |
 | [INDEX_FORMAT.md](INDEX_FORMAT.md) | Dependency index binary format specification |
 | [KOTEST.md](KOTEST.md) | Kotest framework integration guide |
+| [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) | JUnit 5 vs TestNG feature comparison and migration guide |
 | [MAVEN_PLUGIN.md](MAVEN_PLUGIN.md) | Maven plugin detailed reference: goals, ML predictions, show command, CI setup |
 | [MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md) | Multi-module project setup and aggregation |
 | [SCORING.md](SCORING.md) | Scoring formula, weights, ML-enhanced scoring, and automatic tuning |
@@ -20,6 +21,9 @@
 - **New here?** Start with the [Cheat Sheet](CHEAT_SHEET.md) or the [Getting Started tutorial](GETTING_STARTED.md)
 - **Building from source**: [DEVELOPMENT.md](DEVELOPMENT.md)
 - **Gradle plugin**: See [test-order-gradle-plugin/README.md](../test-order-gradle-plugin/README.md)
+- **JUnit 5 module details**: [test-order-junit/README.md](../test-order-junit/README.md)
+- **TestNG module details**: [test-order-testng/README.md](../test-order-testng/README.md)
+- **JUnit 5 vs TestNG differences**: [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md)
 - **CI setup**: [CI.md](CI.md) and [ci-examples/](ci-examples/)
 - **ML predictions**: [MAVEN_PLUGIN.md § ML Failure Predictions](MAVEN_PLUGIN.md#ml-failure-predictions)
 - **Show command**: [MAVEN_PLUGIN.md § Show Goal](MAVEN_PLUGIN.md#show-goal)
@@ -30,6 +34,7 @@
 Pick the path that matches your role:
 
 - **New user, just want to try it** → [GETTING_STARTED.md](GETTING_STARTED.md), then poke at [`samples/sample-basic`](../samples/sample-basic/README.md).
+- **Using TestNG** → [GETTING_STARTED.md](GETTING_STARTED.md) applies equally; see [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) for differences from the JUnit integration.
 - **Already have a project, want a quick lookup** → [CHEAT_SHEET.md](CHEAT_SHEET.md) (one-page command/property reference).
 - **CI engineer wiring this into a pipeline** → [CI.md](CI.md) plus [ci-examples/](ci-examples/).
 - **Multi-module reactor maintainer** → [MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md).

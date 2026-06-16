@@ -57,7 +57,7 @@ public final class ClassIdMapping {
 	}
 
 	public String getMemberName(int memberId) {
-		int idx = memberId - 8_000_000;
+		int idx = memberId - BitsetTracker.MEMBER_ID_OFFSET;
 		return (idx >= 0 && idx < memberNames.length) ? memberNames[idx] : null;
 	}
 
@@ -70,11 +70,11 @@ public final class ClassIdMapping {
 			classes[i] = classIdMap.getClassNameForId(i);
 		}
 		String[] members;
-		if (maxMemberId > 8_000_000) {
-			int memberCount = maxMemberId - 8_000_000;
+		if (maxMemberId > BitsetTracker.MEMBER_ID_OFFSET) {
+			int memberCount = maxMemberId - BitsetTracker.MEMBER_ID_OFFSET;
 			members = new String[memberCount];
 			for (int i = 0; i < memberCount; i++) {
-				members[i] = classIdMap.getMemberNameForId(i + 8_000_000);
+				members[i] = classIdMap.getMemberNameForId(i + BitsetTracker.MEMBER_ID_OFFSET);
 			}
 		} else {
 			members = new String[0];
@@ -162,7 +162,7 @@ public final class ClassIdMapping {
 		Map<String, Integer> map = new HashMap<>(memberNames.length * 2);
 		for (int i = 0; i < memberNames.length; i++) {
 			if (memberNames[i] != null && !memberNames[i].isEmpty()) {
-				map.put(memberNames[i], i + 8_000_000);
+				map.put(memberNames[i], i + BitsetTracker.MEMBER_ID_OFFSET);
 			}
 		}
 		return map;

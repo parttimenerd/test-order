@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.function.Function;
 
+import me.bechberger.testorder.TestOrderLogger;
+
 /**
  * Shared utilities for {@link FixedOrderClassOrderer} and
  * {@link FixedOrderMethodOrderer}.
@@ -45,8 +47,7 @@ final class FixedOrderSupport {
 					}
 				}
 			} catch (IOException e) {
-				System.err
-						.println("[test-order] Warning: failed to read testorder-config.properties: " + e.getMessage());
+				TestOrderLogger.warn("[test-order] failed to read testorder-config.properties: {}", e.getMessage());
 			}
 		}
 		return (path == null || path.isBlank()) ? null : path;
@@ -69,8 +70,7 @@ final class FixedOrderSupport {
 			lines = Files.readAllLines(orderFile).stream().map(String::trim)
 					.filter(s -> !s.isEmpty() && !s.startsWith("#")).toList();
 		} catch (IOException e) {
-			System.err.println("[test-order] Warning: failed to read " + label + " order file " + orderFile + ": "
-					+ e.getMessage());
+			TestOrderLogger.warn("[test-order] failed to read {} order file {}: {}", label, orderFile, e.getMessage());
 			return null;
 		}
 		Map<String, Integer> positionMap = new HashMap<>();

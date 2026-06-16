@@ -78,8 +78,8 @@ class OfflineInstrumentationIT {
 		assertThat(result).succeeded().outputContains("[test-order] Offline instrumentation")
 				.outputContains("[test-order] Instrumented").outputContains("Tests run:");
 
-		// Mapping file created
-		Path mappingFile = project.path("target/.test-order/class-id-map.bin");
+		// Mapping file created — goes to <project-root>/.test-order/ via ReactorContext
+		Path mappingFile = project.path(".test-order/class-id-map.bin");
 		assertTrue(Files.exists(mappingFile));
 		assertTrue(Files.size(mappingFile) > 16);
 

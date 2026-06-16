@@ -57,8 +57,8 @@ public final class OrderReportPrinter {
 		}
 		out.println();
 
-		// Apply display limit: only show top displayLimit rows (all stats still use
-		// full list)
+		// Apply display limit: -1 means show all; positive N shows top N rows.
+		// Any other negative value is treated as unlimited (same as -1).
 		int totalCount = ranked.size();
 		List<RankedTest> display = (displayLimit > 0 && ranked.size() > displayLimit)
 				? ranked.subList(0, displayLimit)
@@ -124,6 +124,9 @@ public final class OrderReportPrinter {
 				summary.append(" | use -Dtestorder.show.limit=-1 to show all");
 			} else {
 				summary.append("Total: ").append(totalCount).append(" tests");
+				if (totalCount > 200) {
+					summary.append(" | use -Dtestorder.show.limit=N to limit output");
+				}
 			}
 			summary.append(" | Score range: ").append(minScore).append("–").append(maxScore);
 			if (newCount > 0)
@@ -185,12 +188,16 @@ public final class OrderReportPrinter {
 	}
 
 	/**
-	 * Abbreviates all package segments except the last one.
+	 * Abbreviates all package segments and truncates long class names.
+	 * <p>
+	 * Package parts are reduced to their initial letter. Class names longer than 30
+	 * characters are truncated to 27 chars with a {@code ...} suffix, so the full
+	 * short form fits on a single terminal line.
 	 */
 	public static String shortenClassName(String fqcn) {
 		int lastDot = fqcn.lastIndexOf('.');
 		if (lastDot < 0) {
-			return fqcn;
+			return abbreviateClassName(fqcn);
 		}
 		String pkg = fqcn.substring(0, lastDot);
 		String cls = fqcn.substring(lastDot + 1);
@@ -199,7 +206,16 @@ public final class OrderReportPrinter {
 		for (int i = 0; i < parts.length - 1; i++) {
 			sb.append(parts[i].charAt(0)).append('.');
 		}
-		sb.append(parts[parts.length - 1]).append('.').append(cls);
+		sb.append(parts[parts.length - 1]).append('.').append(abbreviateClassName(cls));
 		return sb.toString();
+	}
+
+	private static final int CLASS_NAME_MAX = 30;
+
+	private static String abbreviateClassName(String cls) {
+		if (cls.length() <= CLASS_NAME_MAX) {
+			return cls;
+		}
+		return cls.substring(0, CLASS_NAME_MAX - 3) + "...";
 	}
 }

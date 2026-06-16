@@ -213,7 +213,7 @@ public class HttpDownloader implements DepDownloader {
 				MessageDigest digest = createSha256Digest();
 
 				try (InputStream input = response.body().byteStream();
-						FileOutputStream output = new FileOutputStream(outputPath.toFile())) {
+						java.io.OutputStream output = java.nio.file.Files.newOutputStream(outputPath)) {
 					byte[] buffer = new byte[8192];
 					int bytesRead;
 					long totalRead = 0;
