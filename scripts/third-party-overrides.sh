@@ -173,9 +173,11 @@ detect_module_override() {
         # commons-rng: heuristic picks commons-rng-core but tests for RandomSource are in
         # commons-rng-simple. Run the full reactor to capture all modules.
         commons-rng) echo "NONE" ;;
-        # smallrye-mutiny: tests are spread across implementation, test-utils, and
-        # context-propagation modules. Run the full reactor to capture all tests.
-        smallrye-mutiny) echo "NONE" ;;
+        # smallrye-mutiny: test-utils module fails with ClassNotFoundException (Mocks.class
+        # not on surefire classpath due to multi-release JAR output directory override).
+        # The bug patch is in UniSpyBase (implementation module), so limit to implementation
+        # and its dependencies. The test-utils module is excluded to avoid surefire failure.
+        smallrye-mutiny) echo "implementation" ;;
         # mapstruct: heuristic picks mapstruct-parent but tests live in processor submodule.
         # Run the full reactor so the index is written to the root .test-order directory.
         mapstruct) echo "NONE" ;;
@@ -225,11 +227,10 @@ detect_gradle_extra_args() {
         # Futures never resolve); exclude them and test the core modules only.
         resilience4j) echo "--continue -x jmh -x :resilience4j-reactor:test -x :resilience4j-rxjava2:test -x :resilience4j-rxjava3:test -x :resilience4j-spring6:test -x :resilience4j-spring-boot3:test -x :resilience4j-spring-boot4:test" ;;
         # neonbee uses Gradle 8.5 which requires JDK ≤ 21; run with JDK 21.
-        # KNOWN LIMITATION: Both offline and online instrumentation fail with NPE in
-        # BitsetTracker.recordMember because Vert.x creates objects via Unsafe.allocateInstance
-        # bypassing constructors, so the injected $testorder$tracker field is never initialized.
-        # Neonbee learn will produce an index only for classes that avoid these paths.
-        neonbee) echo "--continue" ;;
+        # Use CLASS instrumentation mode: MEMBER mode triggers NPE in BitsetTracker.recordMember
+        # because Vert.x creates objects via Unsafe.allocateInstance (bypassing constructors),
+        # so the injected $testorder$tracker field is never initialized.
+        neonbee) echo "--continue -Dtestorder.instrumentation.mode=CLASS" ;;
         # junit5's platform-tooling-support-tests need pre-built JARs in a specific
         # local Maven repo layout. Skip them — they test distribution packaging, not
         # unit functionality, and fail with "Failed to find JAR file" on dev machines.
@@ -355,11 +356,6 @@ detect_maven_java_home() {
 detect_maven_prelearn_goals() {
     local repo="$1"
     case "$repo" in
-        # smallrye-mutiny: reactor module order is test-utils (module 2) before implementation
-        # (module 3). test-utils tests import io.smallrye.mutiny.Multi from implementation.
-        # With 'mvn clean test', clean wipes prior jars and test-utils tests fail with
-        # ClassNotFoundException. Install all jars first so reactor tests can find each other.
-        smallrye-mutiny) echo "install -DskipTests" ;;
         *) echo "" ;;
     esac
 }
