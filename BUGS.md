@@ -1179,11 +1179,12 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **SA auto-mode (changeMode=uncommitted) result:** CAUGHT ✓ — 17 failures in `Base64Test` (`testCodec263`, `testEncodeDecodeRandom`, etc.)  
 **Note:** Top-3 selected tests missed because patch targets `Base64.isBase64()` which is not called by the highest-scored tests. SA auto-mode (scanning all uncommitted changes) caught the bug by running all tests that depend on the changed class.
 
-### kafka — IN PROGRESS
+### kafka — MISSED (utility class too central)
 
 **Patch:** `scripts/bugs/kafka/utils-isblank-negate.patch`  
-**Previous issue:** v1 campaign used old API (`cleanTestOrderSelect` not found). v2 campaign failed with corrupted `.git` directory in kafka's third-party directory (Grgit.open fails). Fixed by removing the corrupt `.git` directory.  
-**Current status:** Fresh learn phase running after `.git` removal. Awaiting results.
+**Previous issue:** v1 campaign used old API (`cleanTestOrderSelect` not found). v2/v3 campaigns showed UNKNOWN due to BUG-153 (testOrderAffected getting NO-SOURCE). v3 fixed by BUG-153 fix.  
+**Result (2026-06-16):** MISSED — `testOrderAffected` ran correctly (selected 13 tests, compiled + executed), but `UtilsTest` was not in the top-3 selected. Bug is in `Utils.isBlank` which is a utility method referenced by many classes equally, so the scoring doesn't differentiate `UtilsTest` from others.  
+**Notes:** This is expected behavior for heavily-used utility methods. `Utils` is a dependency of ~100+ test classes, so no single test ranks highly for it.
 
 ### maven — IN PROGRESS (new patch, full reactor indexed)
 
@@ -1193,12 +1194,11 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Previous infrastructure issue resolved:** `detect_single_module` → `NONE` forces full 39-module reactor; `detect_maven_java_home` → SAP JDK 21 (has `ct.sym` for `--release 17`); `-Dmaven.compiler.proc=none` skips `DiIndexProcessor` failure; adds `maven-executor` skip  
 **Current status:** Campaign queued, awaiting thinkstation reconnection.
 
-### spring-boot — IN PROGRESS (plugin fix deployed)
+### spring-boot — CAUGHT ✓
 
 **Patch:** `scripts/bugs/spring-boot/job-exit-code-eq-zero.patch`  
-**Previous infrastructure issue:** `testOrderInstrument` task registered unconditionally, failing with `Task with name 'classes' not found` for BOM-only `spring-boot-dependencies` subproject (uses `java-platform` plugin).  
-**Fix applied:** Wrapped `testOrderInstrument` registration inside `project.getPlugins().withType(JavaPlugin.class, ...)` — plugin rebuilt, spring-boot campaign started successfully.  
-**Current status:** Campaign started (PID 1156827), awaiting thinkstation reconnection for results.
+**Previous issue:** All campaigns showed UNKNOWN due to BUG-153 (testOrderAffected getting NO-SOURCE). Fixed 2026-06-16.  
+**Result (2026-06-16):** CAUGHT in top-3 selected tests! Bug in `JobExecutionExitCodeGenerator.getExitCode()`, test `JobExecutionExitCodeGeneratorTests` caught it.
 
 ### caffeine — IN PROGRESS (learn phase running)
 
