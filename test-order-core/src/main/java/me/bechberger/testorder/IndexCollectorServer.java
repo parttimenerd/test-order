@@ -481,34 +481,20 @@ public class IndexCollectorServer implements AutoCloseable {
 			byte version = in.readByte();
 			if (version == PROTOCOL_VERSION_V3) {
 				String moduleId = readString(in);
-				// Take snapshot and stamp atomically so concurrent handlers can't insert
-				// their keys between our snapshot and our stamp call (BUG-117).
-				Set<String> testKeysBefore;
-				synchronized (this) {
-					testKeysBefore = new HashSet<>(mergedClassDeps.keySet());
-				}
-				boolean handled = handleBinaryPayload(in);
-				if (!handled) {
+				Set<String> payloadKeys = handleBinaryPayload(in);
+				if (payloadKeys == null) {
 					rawOut.write(0);
 					rawOut.flush();
 					return;
 				}
-				synchronized (this) {
-					stampNewTestsWithModule(testKeysBefore, moduleId);
-				}
+				stampTestsWithModule(payloadKeys, moduleId);
 			} else if (version == PROTOCOL_VERSION_V4) {
 				String moduleId = readString(in);
-				Set<String> testKeysBefore;
-				synchronized (this) {
-					testKeysBefore = new HashSet<>(mergedClassDeps.keySet());
-				}
-				handleStringPayload(in);
-				synchronized (this) {
-					stampNewTestsWithModule(testKeysBefore, moduleId);
-				}
+				Set<String> payloadKeys = handleStringPayload(in);
+				stampTestsWithModule(payloadKeys, moduleId);
 			} else if (version == PROTOCOL_VERSION_V2) {
-				boolean handled = handleBinaryPayload(in);
-				if (!handled) {
+				Set<String> payloadKeys = handleBinaryPayload(in);
+				if (payloadKeys == null) {
 					// No ClassIdMapping loaded — NACK so client falls back to v1
 					rawOut.write(0);
 					rawOut.flush();
@@ -531,7 +517,7 @@ public class IndexCollectorServer implements AutoCloseable {
 		}
 	}
 
-	private void handleStringPayload(DataInputStream in) throws IOException {
+	private Set<String> handleStringPayload(DataInputStream in) throws IOException {
 		Map<String, Set<String>> classDeps = readMap(in);
 		Map<String, Set<String>> methodDeps = readMap(in);
 		Map<String, Set<String>> memberDeps = readMap(in);
@@ -542,27 +528,32 @@ public class IndexCollectorServer implements AutoCloseable {
 		mergeMaps(mergedMethodDeps, methodDeps);
 		mergeMaps(mergedMemberDeps, memberDeps);
 		mergeMaps(mergedMethodMemberDeps, methodMemberDeps);
+		return classDeps.keySet();
 	}
 
 	/**
-	 * Handle a v2 binary payload. Returns true if the payload was decoded and
-	 * merged, false if no ClassIdMapping was available (caller should NACK so the
-	 * client falls back to v1 string protocol).
+	 * Handle a v2/v3 binary payload. Returns the set of test-class keys that were
+	 * in the payload (regardless of whether they were new), or {@code null} if no
+	 * ClassIdMapping was available (caller should NACK so the client falls back to
+	 * v1 string protocol).
 	 */
-	private boolean handleBinaryPayload(DataInputStream in) throws IOException {
+	private Set<String> handleBinaryPayload(DataInputStream in) throws IOException {
 		String[] cn = ensureClassNames();
 		String[] mn = ensureMemberNames();
 		if (cn == null) {
 			// No mapping loaded — can't decode v2. Signal caller to NACK.
 			System.err.println("[test-order] IndexCollectorServer: v2 payload received but no ClassIdMapping loaded"
 					+ " — sending NACK so client retries with v1 string protocol");
-			return false;
+			return null;
 		}
+
+		Set<String> payloadTestKeys = new HashSet<>();
 
 		// Read test-class trackers
 		int testCount = in.readInt();
 		for (int i = 0; i < testCount; i++) {
 			String key = readString(in);
+			payloadTestKeys.add(key);
 			long[] classWords = readLongArray(in);
 			long[] memberWords = readLongArray(in);
 			Set<String> classDeps = resolveClassIds(classWords, cn);
@@ -610,7 +601,7 @@ public class IndexCollectorServer implements AutoCloseable {
 				});
 			}
 		}
-		return true;
+		return payloadTestKeys;
 	}
 
 	private static final long[] EMPTY_LONGS = new long[0];
@@ -878,6 +869,15 @@ public class IndexCollectorServer implements AutoCloseable {
 			if (!beforeKeys.contains(testKey)) {
 				mergedTestToModule.putIfAbsent(testKey, moduleId);
 			}
+		}
+	}
+
+	private void stampTestsWithModule(Set<String> payloadKeys, String moduleId) {
+		if (moduleId == null || moduleId.isEmpty() || payloadKeys == null || payloadKeys.isEmpty()) {
+			return;
+		}
+		for (String testKey : payloadKeys) {
+			mergedTestToModule.putIfAbsent(testKey, moduleId);
 		}
 	}
 

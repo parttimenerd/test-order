@@ -1750,3 +1750,14 @@ The production class files in `clients/build/classes/java/main/` are deleted by 
 **Symptom:** In incremental detection mode, previously confirmed findings are carried forward from a prior JSON report. The parser correctly extracts `victim` and `type` but ignores the `dependencyChain` array — constructing `new ODResult(victim, type, List.of(victim), ...)`. This causes `polluter()` to return the victim itself instead of the actual polluter, and the markdown report shows only `victim → victim` in the chain column for all carried-forward entries.  
 **Root cause:** `loadPriorResults` JSON extraction loop reads `victim`, `type`, and `description` but never extracts the `dependencyChain` array.  
 **Fix:** Extract the `dependencyChain` JSON array for each finding using a helper that parses the array between `[` and `]`, splitting on `","` after stripping quotes.
+
+---
+
+### BUG-157: `IndexCollectorServer.handleClient` still has TOCTOU race in module stamping (partial BUG-117 fix)
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/IndexCollectorServer.java` lines 486–498  
+**Severity:** LOW (race window is small; only affects module attribution in parallel multi-module builds)  
+**Status:** OPEN  
+**Symptom:** The BUG-117 fix synchronized the `testKeysBefore` snapshot and `stampNewTestsWithModule` calls separately, but the payload processing (`handleBinaryPayload`/`handleStringPayload`) runs between them WITHOUT holding the lock. Another thread can insert test keys into `mergedClassDeps` between the snapshot (line 488) and the stamp (line 497). `stampNewTestsWithModule` would then stamp those externally-inserted keys as belonging to this thread's module — wrong module attribution.  
+**Root cause:** Two separate synchronized blocks around the snapshot and the stamp with un-synchronized mutation in between. True atomicity would require holding the lock across the entire snapshot→payload→stamp sequence, which is blocked by the I/O-bound payload processing.  
+**Proper fix approach:** Modify `handleBinaryPayload`/`handleStringPayload` to return the set of keys they added (or track added keys internally), then stamp only those returned keys rather than using a before/after snapshot diff. This avoids holding the lock during I/O.
