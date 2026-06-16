@@ -1249,30 +1249,90 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Previous attempt failure:** Prior `bugs.txt` entry had wrong patch context (old method signature) — `git apply` failed, campaign script passed error message as class name.  
 **Result (2026-06-16):** CAUGHT — `CharSequenceUtilsTest` selected in top-3, test failures detected.
 
-### vertx-web — MISSED ✗ (incomplete learn index)
+### vertx-web — MISSED ✗ (CacheControl has no recorded deps in index)
 
 **Patch:** `scripts/bugs/vertx-web/cachecontrol-iscacheable-flip.patch`  
 **Changed:** `CacheControl.isCacheable()` — `return maxAge > 0` → `return maxAge <= 0`  
 **Bug:** Responses with a positive max-age (cacheable) are now treated as uncacheable.  
-**Result (2026-06-16):** MISSED — the learn phase indexed 132 tests but only recorded self-dependencies (no production class deps). The vertx-web learn phase exited with BUILD FAILURE after collecting the index; production JAR classes were compiled separately and not instrumented. Both dynamic selection (`CacheControl not in dependency index`) and SA auto-mode (`0 tests selected`) failed to detect the change.  
-**Root cause:** vertx-web `vertx-web-client` learn phase fails after index write — surefire exits with test failures that prevent the Maven build from completing cleanly, but the index was already written. The production classes (`io.vertx.ext.web.client.impl.*`) are in the same module that's failing, so they are captured, but apparently not all runtime deps are recorded when tests fail mid-run.  
-**Status:** Not actionable — would need a re-learn with no test failures, or a patch targeting a class that IS in the index (a test utility class).
+**Result (2026-06-16):** MISSED — `CacheControlTest` appears in `.test-order/pending-runs` with `depTotal=0 depOverlap=0` (no recorded class dependencies). The class `io.vertx.ext.web.client.impl.cache.CacheControl` is absent from the `test-dependencies.lz4` index, so `testOrderAffected` emits "Bug class not in dependency index".  
+**Root cause:** vertx-web-client tests use an event-loop-based async test harness (Vert.x `TestContext`). The test-order ClassFileTransformer instruments class loads, but the `CacheControl` class is only loaded in a separate forked Vert.x context at test execution time (not during static class loading at JVM start). The class does not get tracked as a dependency of `CacheControlTest`.  
+**Status:** MISSED — async/event-loop testing frameworks prevent static dependency tracking.
 
-### caffeine — IN PROGRESS (learn phase running)
+### caffeine — MISSED ✗ (async tests timeout under instrumentation overhead)
 
-**Patch:** `scripts/bugs/caffeine/` (pending — need to create after learn completes)  
+**Patch:** `scripts/bugs/caffeine/caffeine-isbounded-flip.patch`  
+**Changed:** `Caffeine.isBounded()` — `maximumSize != UNSET_INT` → `maximumSize == UNSET_INT` (first condition inverted)  
+**Bug:** `isBounded()` returns `true` when no size limit is set and `false` when one is set. Affects cache construction path: bounded caches use concurrent thread-safe maps; unbounded caches use simpler structures. With this bug, unbounded caches get the bounded-cache implementation and vice versa.  
 **Infrastructure:** JDK 21 override via `-PjavaVersion=21` and SAP JDK 21 JAVA_HOME; excludes `:caffeine:jcstress` and `:caffeine:jmh`.  
-**Current status:** Learn phase running on thinkstation.
+**Result (2026-06-16):** MISSED — full re-learn stuck on `RefreshAfterWriteTest` — tests use awaitility with 10-second timeouts waiting for async cache refresh, and the test-order instrumentation overhead causes the timeouts to expire before cache refresh occurs. Re-learn killed after >1 hour. The partial index (82 tests) still doesn't include `CaffeineTest` so the bug is missed even in a partial run.  
+**Root cause:** (1) caffeine's async tests are timing-sensitive and incompatible with instrumentation overhead, causing learn to hang. (2) Even with a complete index, `isBounded()` is called transitively by hundreds of tests so no single test "owns" it and it ranks low.  
+**Status:** MISSED — both timing issues and transitive dependency dilution prevent detection.
+
+### commons-email — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-email/email-isdebug-flip.patch`  
+**Changed:** `Email.isDebug()` — `return debug` → `return !debug` (return value inverted)  
+**Bug:** `isDebug()` reports debug mode as disabled when it's enabled and vice versa. Code that checks `email.isDebug()` before conditional logging or SMTP debug stream attachment would silently suppress debug output (or enable it when not requested).  
+**Result (2026-06-16):** CAUGHT — 3 tests selected from 18 in `commons-email2-jakarta` module, test failures detected. (`commons-email2-core` had 0 of 1 tests selected — the abstract test class there has no test for `isDebug()`.)
+
+### commons-validator — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-validator/emailvalidator-isvaliduser-flip.patch`  
+**Changed:** `EmailValidator.isValidUser(String)` — `return USER_PATTERN.matcher(user).matches()` → `return !USER_PATTERN.matcher(user).matches()` (result inverted)  
+**Bug:** Every syntactically valid email local part is now rejected, and every invalid local part is accepted. Email validation logic is completely inverted.  
+**Result (2026-06-16):** CAUGHT — 2 tests selected from 75, test failures detected. Email validator tests directly call `isValidUser()` or `isValidEmail()` which delegates to it.
+
+### commons-numbers — CAUGHT ✓
+
+**Patch:** `scripts/bugs/commons-numbers/arithmeticutils-ispowertwo-flip.patch`  
+**Changed:** `ArithmeticUtils.isPowerOfTwo(long)` — `return n > 0 && (n & (n - 1)) == 0` → `return !(n > 0 && (n & (n - 1)) == 0)` (result inverted)  
+**Bug:** Every power-of-two returns false and every non-power-of-two returns true. Affects any algorithm that uses `isPowerOfTwo()` as a precondition or guard.  
+**Result (2026-06-16):** CAUGHT — top-3 selected tests include `ArithmeticUtilsTest`, test failures detected.  
+**Infrastructure note:** `-Dcheckstyle.skip=true` required — checkstyle rejects the `/* BUG_INJECTED */` comment style.
+
+### shiro — CAUGHT ✓
+
+**Patch:** `scripts/bugs/shiro/delegatingsubject-isauthenticated-flip.patch`  
+**Changed:** `DelegatingSubject.isAuthenticated()` — `return authenticated && hasPrincipals()` → `return !(authenticated && hasPrincipals())` (result inverted)  
+**Bug:** Authenticated users appear unauthenticated and vice versa. All authorization checks that depend on `isAuthenticated()` (permission checks, role checks) would be inverted.  
+**Result (2026-06-16):** CAUGHT — top-3 selected tests include `DelegatingSubjectTest`, test failures detected.  
+**Infrastructure note:** `-Dcheckstyle.skip=true -Dmaven.test.failure.ignore=true` required.
+
+### hazelcast — MISSED ✗ (IOVector.isEmpty() not exercised in top-3 tests)
+
+**Patch:** `scripts/bugs/hazelcast/iovector-isempty-flip.patch`  
+**Changed:** `IOVector.isEmpty()` — `return length == 0` → `return length != 0` (result inverted)  
+**Bug:** IOVector always appears non-empty; NIO write operations that check isEmpty() before writing would fail to detect empty buffers.  
+**Result (2026-06-16):** MISSED — 3 tests selected from `hazelcast-tpc-engine`, but build fails at `modulepath-tests` compilation (requires full reactor). No test failures detected. The selected tests don't exercise the empty-buffer code path.  
+**Root cause:** `modulepath-tests` requires `com.hazelcast.core` JPMS module which isn't built without the full reactor. The bug is in a low-level NIO utility not tested directly by the indexed tests.
+
+### quarkus — BLOCKED (full reactor required for test execution)
+
+**Patch:** `scripts/bugs/quarkus/namespaces-isvalidnamespace-flip.patch`  
+**Changed:** `Namespaces.isValidNamespace(String)` — inverts the result  
+**Bug:** Any valid namespace is rejected and any invalid namespace is accepted. Qute template namespace validation is completely inverted.  
+**Result (2026-06-16):** BLOCKED — build fails at `arc-cdi-tck-runner` module (`copy-dependencies` fails because `arc-cdi-tck-porting-pkg` JAR isn't packaged without full reactor). Test-order needs the full quarkus reactor to be pre-built before individual modules can run tests.  
+**Status:** Skip — quarkus requires full reactor build (~20-30 min) and is not suitable for incremental bug campaigns without pre-built artifacts.
+
+### jetty — CAUGHT ✓
+
+**Patch:** `scripts/bugs/jetty/jettylogger-isdebugenabled-flip.patch`  
+**Changed:** `JettyLogger.isDebugEnabled()` — `return level.includes(JettyLevel.DEBUG)` → `return !level.includes(JettyLevel.DEBUG)` (result inverted)  
+**Bug:** Debug-level logging is always disabled regardless of configured level; all debug log calls would be suppressed.  
+**Result (2026-06-16):** CAUGHT — top-3 selected tests include `JettyLoggerTest`, test failures detected.
 
 ### guava — BLOCKED (JPMS compile-java9 execution fails)
 
 **Issue:** guava-testlib uses a `compile-java9` Gradle task that tries to run JPMS module compilation. The compile step fails when test-order's plugin hooks interfere with the Java 9 multi-release jar compilation task.  
 **Status:** Blocked — needs investigation of JPMS / multi-release jar support.
 
-### byte-buddy — BLOCKED (build infrastructure investigation needed)
+### byte-buddy — SKIPPED (fundamental JVM agent conflict)
 
-**Issue:** byte-buddy requires additional configuration investigation.  
-**Status:** Pending investigation.
+**Patch:** `scripts/bugs/byte-buddy/classfileversion-isatleast-flip.patch`  
+**Changed:** `ClassFileVersion.isAtLeast(ClassFileVersion)` — `compareTo(classFileVersion) > -1` → `compareTo(classFileVersion) > 0` (off-by-one: strict greater-than instead of greater-than-or-equal)  
+**Bug:** `isAtLeast(version)` returns false when the current version exactly equals `version`, causing `isAtLeast(JAVA_V8)` to return false on a Java 8 class file.  
+**Issue:** 256 of 10,981 tests error with `IllegalStateException: Could not self-attach` during learn — byte-buddy's tests try to dynamically instrument classes at test initialization time, which conflicts with test-order's ClassFileTransformer agent. The forked test JVM crashes during class initialization for those 256 tests, preventing test-order from writing `test-dependencies.lz4`. Even with `-Dmaven.test.failure.ignore=true`, the index is never produced.  
+**Status:** SKIPPED — byte-buddy's own agent tests are fundamentally incompatible with test-order's instrumentation agent. Both use JVM dynamic attachment and class retransformation simultaneously.
 
 
 ### assertj 4.0.0-SNAPSHOT — BLOCKED (JPMS module path conflict)
@@ -1336,6 +1396,54 @@ All bugs in this section are **synthetic** (injected for test-order validation).
 **Selected test:** `org.apache.hc.client5.http.impl.routing.TestRouteDirector` — 14 tests run, 1 failure  
 **Note:** First patch (`routetracker-istunnelled-flip.patch`) affected 100% of tests → MISSED. New patch in `BasicRouteDirector` affects ~60/121 tests (50%) → CAUGHT.  
 **Infrastructure issue resolved:** Added JDK 1.8 toolchain entry to `~/.m2/toolchains.xml` pointing to JDK 17 (compatible target).
+
+### micrometer — CAUGHT ✓
+
+**Patch:** `scripts/bugs/micrometer/ImmutableTag-equals-flip.patch`  
+**Changed:** `ImmutableTag.equals(Object)` — inverts equality check logic  
+**Bug:** Tag equality returns wrong result; tags that should be equal appear different and vice versa. Affects any metric with tag-based deduplication or lookup.  
+**Result (2026-06-16):** CAUGHT — 3 tests selected from `micrometer-core`, test failures detected. Initially MISSED with partial learn (252 of 419 tests not indexed); after full re-learn, `ImmutableTagTest` was indexed and selected.  
+**Note:** Full re-learn required — initial partial learn left 252 of 419 test classes unindexed.
+
+### reactor-core — BLOCKED (Gradle Java toolchain conflict)
+
+**Patch:** `scripts/bugs/reactor-core/SingleScheduler-isDisposed-flip.patch`  
+**Changed:** `SingleScheduler.isDisposed()` — return value inverted  
+**Bug:** `isDisposed()` returns `true` when the scheduler is active and `false` when it's disposed; downstream logic that checks `!isDisposed()` before scheduling work would fail to detect disposed schedulers.  
+**Infrastructure:** Gradle 9.5.1, JDK 21 override, `--continue`, `foojay-resolver-convention` plugin removal.  
+**Result (2026-06-16):** BLOCKED — "Toolchain from `executable` property does not match toolchain from `javaLauncher` property." reactor-core specifies `languageVersion = JavaLanguageVersion.of(8)` in its toolchain configuration. When the test-order Gradle plugin configures the test JVM executable, Gradle 9.5.1 detects a mismatch between the configured `javaLauncher` (JDK 8 toolchain) and the `executable` property. All 4 test tasks fail with this error before any tests run.  
+**Status:** Needs investigation — `-Dtestorder.overrideToolchain=true` flag is set but not sufficient. Possible fix: disable toolchain resolution for test tasks in the test-order Gradle plugin when toolchain version < 11.
+
+### opentelemetry — CAUGHT ✓
+
+**Patch:** `scripts/bugs/opentelemetry/ImmutableTraceFlags-isSampled-flip.patch`  
+**Changed:** `ImmutableTraceFlags.isSampled()` — return value inverted  
+**Bug:** Sampling decisions are inverted; traces that should be sampled are dropped and vice versa.  
+**Result (2026-06-16):** CAUGHT — 4 tests run in `:api:all:testOrderAffected`, test failures detected. Initially BLOCKED by Develocity ToS + wrong module scoping (`:api:` vs `:api:all:`); fixed with `--no-scan` flag and `detect_gradle_subproject_prefix` override mapping `api/` → `:api:all:`.  
+**Infrastructure fix:** `opentelemetry) echo "NONE"` in `detect_module_override()` (learn phase), plus `api → :api:all:` in `detect_gradle_subproject_prefix` (bugs phase).
+
+### quartz — BLOCKED (Gradle test executor memory crash)
+
+**Patch:** `scripts/bugs/quartz/CronExpression-isSatisfiedBy-flip.patch`  
+**Changed:** `CronExpression.isSatisfiedBy(Date)` — return value inverted  
+**Bug:** All cron expressions report the wrong satisfaction state; a job that should fire doesn't, and one that shouldn't does.  
+**Result (2026-06-16):** BLOCKED — Learn phase fails with `Unable to connect to the child process 'Gradle Test Executor 56'` after 14 minutes. The test executor JVM crashes (OOM or test executor timeout). quartz runs Gradle 8.5 with parallelized tests.  
+**Status:** Needs investigation — try running with `-Dorg.gradle.workers.max=1` or reduced memory to avoid OOM.
+
+### truth — SKIPPED (JUnit 4 only)
+
+**Patch:** `scripts/bugs/truth/MathUtil-equalWithinTolerance-flip.patch`  
+**Changed:** `MathUtil.equalWithinTolerance(double, double, double)` — tolerance comparison inverted  
+**Bug:** Two doubles that are within tolerance are reported as NOT equal; two that differ more than tolerance are reported as equal. Breaks `Correspondence.tolerance(double)` assertions in Truth.  
+**Issue:** truth uses JUnit 4 (`JUnit4Provider` detected during learn — 1615 tests ran but produced no index). test-order emits `"JUnit 4 dependency detected but no JUnit 5 (Jupiter) found"` and produces no dependency index.  
+**Status:** Skip — same as awaitility/guice. Would require JUnit 5 migration.
+
+### undertow — NOT YET ATTEMPTED
+
+**Patch:** `scripts/bugs/undertow/HttpString-bytesAreEqual-flip.patch`  
+**Changed:** `HttpString.bytesAreEqual(byte[], byte[])` — result inverted  
+**Bug:** Two identical byte arrays are reported as not equal; two different arrays are reported as equal. Affects HTTP header name comparison.  
+**Status:** Learn phase not run; needs `mvn test-order:learn`.
 
 ---
 

@@ -1,0 +1,10 @@
+diff --git a/jetty-core/jetty-slf4j-impl/src/main/java/org/eclipse/jetty/logging/JettyLogger.java b/jetty-core/jetty-slf4j-impl/src/main/java/org/eclipse/jetty/logging/JettyLogger.java
+--- a/jetty-core/jetty-slf4j-impl/src/main/java/org/eclipse/jetty/logging/JettyLogger.java
++++ b/jetty-core/jetty-slf4j-impl/src/main/java/org/eclipse/jetty/logging/JettyLogger.java
+@@ -254,7 +254,7 @@ public class JettyLogger implements Logger
+     public boolean isDebugEnabled()
+     {
+-        return level.includes(JettyLevel.DEBUG);
++        return !level.includes(JettyLevel.DEBUG); /* BUG_INJECTED */
+     }
+ 

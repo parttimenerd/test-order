@@ -1,0 +1,11 @@
+diff --git a/commons-numbers-core/src/main/java/org/apache/commons/numbers/core/ArithmeticUtils.java b/commons-numbers-core/src/main/java/org/apache/commons/numbers/core/ArithmeticUtils.java
+--- a/commons-numbers-core/src/main/java/org/apache/commons/numbers/core/ArithmeticUtils.java
++++ b/commons-numbers-core/src/main/java/org/apache/commons/numbers/core/ArithmeticUtils.java
+@@ -455,7 +455,7 @@ public final class ArithmeticUtils {
+      * @return true if the argument is a power of two
+      */
+     public static boolean isPowerOfTwo(long n) {
+-        return n > 0 && (n & (n - 1)) == 0;
++        return !(n > 0 && (n & (n - 1)) == 0); /* BUG_INJECTED */
+     }
+ 

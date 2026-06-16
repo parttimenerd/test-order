@@ -47,6 +47,15 @@ detect_compiler_args() {
 detect_extra_mvn_args() {
     local repo="$1"
     case "$repo" in
+        # commons-numbers: checkstyle rejects the BUG_INJECTED comment style (trailing whitespace
+        # or line-length violation). Skip checkstyle so the test phase runs during bug injection.
+        commons-numbers) echo "-Dcheckstyle.skip=true" ;;
+        # shiro: checkstyle rejects the BUG_INJECTED comment style. Skip checkstyle.
+        shiro) echo "-Dcheckstyle.skip=true -Dmaven.test.failure.ignore=true" ;;
+        # hazelcast: checkstyle rejects the BUG_INJECTED comment style.
+        hazelcast) echo "-Dcheckstyle.skip=true" ;;
+        # quarkus: checkstyle rejects the BUG_INJECTED comment style.
+        quarkus) echo "-Dcheckstyle.skip=true -Dmaven.test.failure.ignore=true" ;;
         # javaparser-symbol-solver-testing has a pre-existing test failure:
         # "Unable to determine the current version of java running" on Java 21.
         # maven.test.failure.ignore lets the build continue past this module;
@@ -104,6 +113,17 @@ detect_extra_mvn_args() {
         # when multiple test classes run simultaneously, so we override these to serial execution.
         logbook) echo "-Dparallel=none -Dmaven.test.failure.ignore=true" ;;
         jetty) echo "-Dparallel=none -Djunit.jupiter.execution.parallel.mode.classes.default=same_thread -Dmaven.test.failure.ignore=true -pl '!jetty-ee8,!jetty-demos,!jetty-p2' -am" ;;
+        # byte-buddy-agent tests (ByteBuddyAgentInstallationTest) fail when test-order's
+        # ClassFileTransformer agent is active — both agents compete for JVM agent attachment.
+        # Use maven.test.failure.ignore so byte-buddy-dep (which depends on byte-buddy-agent
+        # as a test dep) still builds and gets indexed after agent tests fail.
+        byte-buddy) echo "-Dmaven.test.failure.ignore=true" ;;
+        # truth (Google Truth) has pre-existing test failures in some extension modules;
+        # ignore test failures so learn continues.
+        truth) echo "-Dmaven.test.failure.ignore=true" ;;
+        # undertow has pre-existing test failures in undertow-core (NIO/SSL tests require network);
+        # ignore test failures to capture dependency index despite failures.
+        undertow) echo "-Dmaven.test.failure.ignore=true" ;;
         # spring-petclinic: third-party clone has a broken .git folder (missing commits);
         # git-commit-id plugin fails even with failOnNoGitDirectory=false. Skip the plugin.
         spring-petclinic) echo "-Dmaven.gitcommitid.skip=true -Dmaven.test.failure.ignore=true" ;;
@@ -131,6 +151,9 @@ detect_module_override() {
         # skips javaparser-core-testing (230+ tests including RangeTest). Use NONE to
         # run the full reactor; package filter 'com.github.javaparser' captures both.
         javaparser) echo "NONE" ;;
+        # opentelemetry: ImmutableTraceFlags lives in :api module, but testOrderAffected
+        # must run at the reactor root because the Gradle plugin is applied at root level.
+        opentelemetry) echo "NONE" ;;
         *) echo "" ;;
     esac
 }
@@ -243,7 +266,11 @@ detect_gradle_extra_args() {
 -x :streams:upgrade-system-tests-40:test -x :streams:upgrade-system-tests-40:compileTestJava \
 -x :streams:upgrade-system-tests-41:test -x :streams:upgrade-system-tests-41:compileTestJava" ;;
         # opentelemetry uses spotless/otel-conventions, not checkstyle/spotbugs.
-        opentelemetry) echo "--continue" ;;
+        # Requires --no-scan to bypass Develocity Gradle plugin ToS check (non-interactive env).
+        opentelemetry) echo "--continue --no-scan" ;;
+        # quartz: Gradle 8.5 test executor crashes with OOM on default parallelism.
+        # Reduce max workers to 1 to avoid resource exhaustion during learn/test phases.
+        quartz) echo "--continue -Dorg.gradle.workers.max=1" ;;
         # reactor-core uses the nohttp Spring plugin which registers checkstyleMain at root level;
         # Gradle 9 fails the task-graph computation if that task is a dependency but not found.
         # Exclude check (which pulls in checkstyleMain) and the slow docs/benchmarks subprojects.
@@ -393,6 +420,13 @@ detect_gradle_subproject_prefix() {
         # would only run the http module's unit tests (none of which test status codes directly).
         # Use root-level testOrderSelect so all modules' tests are candidates.
         micronaut-core) echo "ROOT" ;;
+        # opentelemetry: uses two-level project structure (e.g. api/all, api/incubator).
+        # The first path segment "api" is a parent project without test tasks.
+        # Map "api" → ":api:all:" where ImmutableTraceFlags and TraceFlagsTest live.
+        opentelemetry) case "$dir_name" in
+            api) echo ":api:all:" ;;
+            *) echo "ROOT" ;;
+          esac ;;
         # spring-boot: uses a two-level project structure (e.g. :core:spring-boot).
         # The first path segment alone is insufficient to scope to the right leaf project.
         # Use ROOT so all leaf projects' testOrderSelect tasks are candidates.

@@ -1,0 +1,12 @@
+diff --git a/byte-buddy-dep/src/main/java/net/bytebuddy/ClassFileVersion.java b/byte-buddy-dep/src/main/java/net/bytebuddy/ClassFileVersion.java
+--- a/byte-buddy-dep/src/main/java/net/bytebuddy/ClassFileVersion.java
++++ b/byte-buddy-dep/src/main/java/net/bytebuddy/ClassFileVersion.java
+@@ -426,7 +426,7 @@ public class ClassFileVersion implements Comparable<ClassFileVersion>, Serializa
+      * @return {@code true} if this version is at least of the given version.
+      */
+     public boolean isAtLeast(ClassFileVersion classFileVersion) {
+-        return compareTo(classFileVersion) > -1;
++        return compareTo(classFileVersion) > 0; /* BUG_INJECTED */
+     }
+
+     /**

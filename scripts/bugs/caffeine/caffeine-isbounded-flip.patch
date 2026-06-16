@@ -1,0 +1,14 @@
+diff --git a/caffeine/src/main/java/com/github/benmanes/caffeine/cache/Caffeine.java b/caffeine/src/main/java/com/github/benmanes/caffeine/cache/Caffeine.java
+--- a/caffeine/src/main/java/com/github/benmanes/caffeine/cache/Caffeine.java
++++ b/caffeine/src/main/java/com/github/benmanes/caffeine/cache/Caffeine.java
+@@ -1060,7 +1060,7 @@
+   boolean isBounded() {
+-    return (maximumSize != UNSET_INT)
++    return (maximumSize == UNSET_INT) /* BUG_INJECTED */
+         || (maximumWeight != UNSET_INT)
+         || (expireAfterAccessNanos != UNSET_INT)
+         || (expireAfterWriteNanos != UNSET_INT)
+         || (expiry != null)
+         || (keyStrength != null)
+         || (valueStrength != null);
+   }

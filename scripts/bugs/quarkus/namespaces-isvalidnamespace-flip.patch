@@ -1,0 +1,11 @@
+diff --git a/independent-projects/qute/core/src/main/java/io/quarkus/qute/Namespaces.java b/independent-projects/qute/core/src/main/java/io/quarkus/qute/Namespaces.java
+--- a/independent-projects/qute/core/src/main/java/io/quarkus/qute/Namespaces.java
++++ b/independent-projects/qute/core/src/main/java/io/quarkus/qute/Namespaces.java
+@@ -13,7 +13,7 @@ public final class Namespaces {
+     }
+ 
+     public static boolean isValidNamespace(String value) {
+-        return NAMESPACE_PATTERN.matcher(value).matches();
++        return !NAMESPACE_PATTERN.matcher(value).matches(); /* BUG_INJECTED */
+     }
+ 

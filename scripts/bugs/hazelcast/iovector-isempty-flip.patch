@@ -1,0 +1,10 @@
+diff --git a/hazelcast-tpc-engine/src/main/java/com/hazelcast/internal/tpcengine/nio/IOVector.java b/hazelcast-tpc-engine/src/main/java/com/hazelcast/internal/tpcengine/nio/IOVector.java
+--- a/hazelcast-tpc-engine/src/main/java/com/hazelcast/internal/tpcengine/nio/IOVector.java
++++ b/hazelcast-tpc-engine/src/main/java/com/hazelcast/internal/tpcengine/nio/IOVector.java
+@@ -37,7 +37,7 @@ public class IOVector {
+ 
+     public boolean isEmpty() {
+-        return length == 0;
++        return length != 0; /* BUG_INJECTED */
+     }
+ 

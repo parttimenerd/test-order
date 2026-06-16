@@ -1,0 +1,1 @@
+jettylogger-isdebugenabled-flip.patch

@@ -1,0 +1,12 @@
+diff --git a/src/main/java/org/apache/commons/validator/routines/EmailValidator.java b/src/main/java/org/apache/commons/validator/routines/EmailValidator.java
+--- a/src/main/java/org/apache/commons/validator/routines/EmailValidator.java
++++ b/src/main/java/org/apache/commons/validator/routines/EmailValidator.java
+@@ -224,7 +224,7 @@ public class EmailValidator implements Serializable {
+             return false;
+         }
+
+-        return USER_PATTERN.matcher(user).matches();
++        return !USER_PATTERN.matcher(user).matches(); /* BUG_INJECTED */
+     }
+
+ }

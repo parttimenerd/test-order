@@ -1,0 +1,1 @@
+delegatingsubject-isauthenticated-flip.patch

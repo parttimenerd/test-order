@@ -1,0 +1,10 @@
+diff --git a/core/src/main/java/org/apache/shiro/subject/support/DelegatingSubject.java b/core/src/main/java/org/apache/shiro/subject/support/DelegatingSubject.java
+--- a/core/src/main/java/org/apache/shiro/subject/support/DelegatingSubject.java
++++ b/core/src/main/java/org/apache/shiro/subject/support/DelegatingSubject.java
+@@ -296,7 +296,7 @@ public class DelegatingSubject implements Subject {
+ 
+     public boolean isAuthenticated() {
+-        return authenticated && hasPrincipals();
++        return !(authenticated && hasPrincipals()); /* BUG_INJECTED */
+     }
+ 

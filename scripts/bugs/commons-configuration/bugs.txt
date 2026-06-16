@@ -1,0 +1,1 @@
+xmlconfiguration-isvalidating-flip.patch

@@ -1,0 +1,12 @@
+diff --git a/commons-email2-jakarta/src/main/java/org/apache/commons/mail2/jakarta/Email.java b/commons-email2-jakarta/src/main/java/org/apache/commons/mail2/jakarta/Email.java
+--- a/commons-email2-jakarta/src/main/java/org/apache/commons/mail2/jakarta/Email.java
++++ b/commons-email2-jakarta/src/main/java/org/apache/commons/mail2/jakarta/Email.java
+@@ -999,7 +999,7 @@ public abstract class Email {
+      * @since 1.6.0
+      */
+     public boolean isDebug() {
+-        return debug;
++        return !debug; /* BUG_INJECTED */
+     }
+
+     /**
