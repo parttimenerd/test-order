@@ -63,12 +63,13 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	private String instrumentation;
 
 	/**
-	 * LZ4 compression level for index writes: "fast" (default — 10-50x faster
-	 * writes, ~5-15% larger files) or "hc" (high compression, smallest files). The
-	 * setting is passed as a system property so that the IndexCollectorServer in
-	 * the build process uses it when writing the final index.
+	 * LZ4 compression level for index writes: "fast" (10-50x faster writes, ~40-50%
+	 * larger files), "medium" (default — HC level 4, ~2-3x slower than fast, ~40%
+	 * smaller files), or "hc" (HC level 9, maximum compression). The setting is
+	 * passed as a system property so that the IndexCollectorServer in the build
+	 * process uses it when writing the final index.
 	 */
-	@Parameter(property = MavenPluginConfigKeys.COMPRESSION, defaultValue = "fast")
+	@Parameter(property = MavenPluginConfigKeys.COMPRESSION, defaultValue = "medium")
 	private String compression;
 
 	/**
