@@ -833,4 +833,43 @@ class DependencyMapTest {
 		assertFalse(filtered.testClasses().contains("com.example.BetaTest"),
 				"excluded test must not appear in filtered map's test classes");
 	}
+
+	// ── Ubiquitous-dep compression (section 9) ────────────────────────────────
+
+	@Test
+	void ubiquitousDeps_strippedFromBitmapsAndRestoredAfterRoundTrip(@TempDir Path tempDir) throws IOException {
+		DependencyMap map = new DependencyMap();
+		// 10 tests: all share "ubiq.ClassUtil" and "ubiq.ObjectMapper" (100% = ≥ 90%)
+		// "rare.Helper" appears in only 5 of 10 tests (50% < 90%)
+		for (int i = 0; i < 10; i++) {
+			Set<String> deps = new java.util.HashSet<>(Set.of("ubiq.ClassUtil", "ubiq.ObjectMapper"));
+			if (i < 5)
+				deps.add("rare.Helper");
+			map.put("com.test.Test" + i, deps);
+		}
+
+		Path indexFile = tempDir.resolve("test.idx");
+		map.save(indexFile);
+
+		DependencyMap loaded = DependencyMap.load(indexFile);
+
+		// All original deps must be present in loaded map (round-trip correct)
+		for (int i = 0; i < 10; i++) {
+			Set<String> deps = loaded.get("com.test.Test" + i);
+			assertTrue(deps.contains("ubiq.ClassUtil"), "ClassUtil must be restored for Test" + i);
+			assertTrue(deps.contains("ubiq.ObjectMapper"), "ObjectMapper must be restored for Test" + i);
+			if (i < 5)
+				assertTrue(deps.contains("rare.Helper"), "rare.Helper must be present for Test" + i);
+			else
+				assertFalse(deps.contains("rare.Helper"), "rare.Helper must not appear for Test" + i);
+		}
+
+		// getAffectedTests for a ubiquitous dep must return all 10 tests
+		Set<String> all = loaded.getAffectedTests(Set.of("ubiq.ClassUtil"));
+		assertEquals(10, all.size(), "getAffectedTests for ubiquitous dep must return all tests");
+
+		// getAffectedTests for a rare dep must return only the 5 tests
+		Set<String> rare = loaded.getAffectedTests(Set.of("rare.Helper"));
+		assertEquals(5, rare.size(), "getAffectedTests for rare dep must return only the 5 tests that reference it");
+	}
 }

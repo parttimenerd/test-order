@@ -81,6 +81,19 @@ public class DependencyMap {
 	 * MEMBER_DEPS / METHOD_MEMBER_DEPS index into this table.
 	 */
 	static final short SECTION_MEMBER_KEY_TABLE = 8;
+	/**
+	 * Section type: single RoaringBitmap of ubiquitous dep trie IDs (≥ threshold
+	 * fraction).
+	 */
+	static final short SECTION_UBIQUITOUS_DEPS = 9;
+
+	private static final double DEFAULT_UBIQUITOUS_THRESHOLD = 0.90;
+
+	/**
+	 * Deps that appear in ≥ threshold fraction of tests; stripped from individual
+	 * dep bitmaps at save time.
+	 */
+	private Set<String> ubiquitousDeps = Collections.emptySet();
 
 	private final Map<String, Set<String>> dependencies;
 
@@ -544,6 +557,7 @@ public class DependencyMap {
 			}
 		}
 		filtered.testToModule.putAll(testToModule);
+		filtered.ubiquitousDeps = this.ubiquitousDeps;
 		return filtered;
 	}
 
@@ -584,6 +598,9 @@ public class DependencyMap {
 			}
 		}
 		invalidateCaches();
+		// Recompute ubiquitous deps after merge — the merged map may have a different
+		// distribution
+		ubiquitousDeps = computeUbiquitousDeps(readUbiquitousThreshold());
 	}
 
 	/**
@@ -696,6 +713,7 @@ public class DependencyMap {
 		for (var e : methodMemberDepsMap.entrySet())
 			result.methodMemberDepsMap.put(e.getKey(), e.getValue().clone());
 		result.testToModule.putAll(testToModule);
+		result.ubiquitousDeps = this.ubiquitousDeps;
 		return result;
 	}
 
@@ -707,6 +725,13 @@ public class DependencyMap {
 		Set<String> affected = new LinkedHashSet<>();
 		if (changedClasses.isEmpty())
 			return affected;
+		// Ubiquitous dep changed → all tests depend on it
+		if (!ubiquitousDeps.isEmpty()) {
+			for (String changed : changedClasses) {
+				if (ubiquitousDeps.contains(changed))
+					return new LinkedHashSet<>(dependencies.keySet());
+			}
+		}
 		Map<String, Set<String>> idx = getInvertedIndex();
 		for (String changed : changedClasses) {
 			Set<String> tests = idx.get(changed);
@@ -851,6 +876,34 @@ public class DependencyMap {
 		LOAD_CACHE.keySet().removeIf(k -> k.path().equals(abs));
 	}
 
+	private Set<String> computeUbiquitousDeps(double threshold) {
+		if (dependencies.isEmpty())
+			return Collections.emptySet();
+		Map<String, Integer> freq = new HashMap<>();
+		for (Set<String> deps : dependencies.values()) {
+			for (String dep : deps)
+				freq.merge(dep, 1, Integer::sum);
+		}
+		int minCount = (int) Math.ceil(dependencies.size() * threshold);
+		Set<String> result = new HashSet<>();
+		for (Map.Entry<String, Integer> e : freq.entrySet()) {
+			if (e.getValue() >= minCount)
+				result.add(e.getKey());
+		}
+		return result;
+	}
+
+	private static double readUbiquitousThreshold() {
+		String prop = System.getProperty("testorder.deps.ubiquitousThreshold");
+		if (prop != null) {
+			try {
+				return Double.parseDouble(prop);
+			} catch (NumberFormatException ignored) {
+			}
+		}
+		return DEFAULT_UBIQUITOUS_THRESHOLD;
+	}
+
 	/**
 	 * Writes the binary index payload (header + all sections) to the given stream.
 	 * Separated from {@link #save(Path, LZ4Support.Compression)} so it can be used
@@ -903,6 +956,19 @@ public class DependencyMap {
 		List<String> testList = new ArrayList<>(dependencies.keySet());
 		int testCount = testList.size();
 
+		// compute ubiquitous deps (≥ threshold fraction of tests) and their bitmap of
+		// trie IDs
+		Set<String> ubiqSet = computeUbiquitousDeps(readUbiquitousThreshold());
+		// ubiqBitmap is populated after trie.assignIds() is called (above) — IDs are
+		// now stable
+		RoaringBitmap ubiqBitmap = new RoaringBitmap();
+		for (String dep : ubiqSet) {
+			int id = trie.getId(dep);
+			if (id >= 0)
+				ubiqBitmap.add(id);
+		}
+		ubiqBitmap.runOptimize();
+
 		// group tests by identical dependency set (row deduplication)
 		Map<RoaringBitmap, List<Integer>> groups = new HashMap<>();
 		List<RoaringBitmap> groupOrder = new ArrayList<>();
@@ -915,6 +981,9 @@ public class DependencyMap {
 				depIds[di++] = trie.getId(dep);
 			java.util.Arrays.sort(depIds);
 			RoaringBitmap depBitmap = RoaringBitmap.bitmapOf(depIds);
+			if (!ubiqBitmap.isEmpty()) {
+				depBitmap.andNot(ubiqBitmap); // ubiquitous deps stored once in section 9
+			}
 			List<Integer> members = groups.get(depBitmap);
 			if (members != null) {
 				members.add(ti);
@@ -928,6 +997,8 @@ public class DependencyMap {
 
 		// Count sections to write
 		int sectionCount = 3; // trie + test classes + dep groups (always present)
+		if (!ubiqBitmap.isEmpty())
+			sectionCount++;
 		if (!methodDependencies.isEmpty())
 			sectionCount++;
 		if (hasMemberDeps)
@@ -960,6 +1031,52 @@ public class DependencyMap {
 			writeSection(out, SECTION_TEST_CLASSES, buf.toByteArray());
 		}
 
+		// ── Section: UBIQUITOUS_DEPS (section 9, optional) ──────────
+		if (!ubiqBitmap.isEmpty()) {
+			// For each ubiquitous dep, store its trie ID and a bitmap of test indices
+			// that do NOT reference it (absent-set encoding). This lets the decoder add
+			// the dep to all tests and then remove exceptions — most tests have all
+			// ubiquitous deps, so absence bitmaps are tiny or empty.
+			ByteArrayOutputStream ubiqBuf = new ByteArrayOutputStream((int) ubiqBitmap.getLongCardinality() * 8 + 4);
+			DataOutputStream ubiqOut = new DataOutputStream(ubiqBuf);
+			List<Integer> ubiqDepIds = new ArrayList<>((int) ubiqBitmap.getLongCardinality());
+			ubiqBitmap.forEach((int id) -> ubiqDepIds.add(id));
+
+			// Build per-test presence bitmaps (testIndex → which ubiquous dep IDs it has)
+			// We need per-ubiq-dep the set of TEST INDICES that have the dep.
+			// Then absence = allTests \ presence.
+			Map<Integer, RoaringBitmap> presenceByDepId = new HashMap<>();
+			for (int ubiqId : ubiqDepIds) {
+				presenceByDepId.put(ubiqId, new RoaringBitmap());
+			}
+			RoaringBitmap ubiqBitmapFinal = ubiqBitmap;
+			for (int ti = 0; ti < testCount; ti++) {
+				Set<String> deps = dependencies.get(testList.get(ti));
+				for (String dep : deps) {
+					int depId = trie.getId(dep);
+					if (ubiqBitmapFinal.contains(depId)) {
+						presenceByDepId.get(depId).add(ti);
+					}
+				}
+			}
+
+			RoaringBitmap allTestsBm = RoaringBitmap.bitmapOfRange(0, testCount);
+			ubiqOut.writeInt(ubiqDepIds.size());
+			for (int ubiqId : ubiqDepIds) {
+				RoaringBitmap presence = presenceByDepId.get(ubiqId);
+				presence.runOptimize();
+				RoaringBitmap absent = RoaringBitmap.andNot(allTestsBm, presence);
+				absent.runOptimize();
+				ubiqOut.writeInt(ubiqId);
+				int absentSize = absent.serializedSizeInBytes();
+				ubiqOut.writeInt(absentSize);
+				if (absentSize > 0)
+					absent.serialize(ubiqOut);
+			}
+			ubiqOut.flush();
+			writeSection(out, SECTION_UBIQUITOUS_DEPS, ubiqBuf.toByteArray());
+		}
+
 		// ── Section: DEP_GROUPS ──────────────────────────────────
 		{
 			ByteArrayOutputStream buf = new ByteArrayOutputStream(groupOrder.size() * 24 + 8);
@@ -975,6 +1092,7 @@ public class DependencyMap {
 
 				int[] sortedMemberIds = memberIndices.stream().mapToInt(Integer::intValue).sorted().toArray();
 				RoaringBitmap memberBitmap = RoaringBitmap.bitmapOf(sortedMemberIds);
+				memberBitmap.runOptimize();
 				int memberSize = memberBitmap.serializedSizeInBytes();
 				s.writeInt(memberSize);
 				memberBitmap.serialize(s);
@@ -1308,6 +1426,9 @@ public class DependencyMap {
 			// true when MEMBER_KEY_TABLE has not been seen yet and we've encountered
 			// MEMBER_DEPS in old string-based format (pre-RoaringBitmap)
 			boolean legacyMemberFormat = false;
+			// ubiquitous-dep presence data: depName → bitmap of test indices that reference
+			// it. Populated by SECTION_UBIQUITOUS_DEPS; applied by SECTION_DEP_GROUPS.
+			Map<String, RoaringBitmap> ubiqPresenceByDep = null;
 
 			for (int si = 0; si < sectionCount; si++) {
 				short sectionType = in.readShort();
@@ -1352,6 +1473,8 @@ public class DependencyMap {
 						@SuppressWarnings("unchecked")
 						Set<String>[] ds = new Set[testNames.length];
 						depSets = ds;
+						final Map<String, RoaringBitmap> ubiqAbsent = ubiqPresenceByDep; // null if no section 9
+						final boolean hasUbiq = ubiqAbsent != null && !ubiqAbsent.isEmpty();
 						for (int g = 0; g < groupCount; g++) {
 							int depSize = s.readInt();
 							checkSize(depSize, "Dependency bitmap", indexFile);
@@ -1360,10 +1483,10 @@ public class DependencyMap {
 							RoaringBitmap depBitmap = new RoaringBitmap();
 							depBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(depBytes)));
 
-							Set<String> deps = new HashSet<>((int) (depBitmap.getLongCardinality() * 2));
+							// Base dep set from the stripped bitmap (non-ubiquitous deps)
+							Set<String> baseDeps = new HashSet<>((int) (depBitmap.getLongCardinality() * 2));
 							ClassNameTrie finalTrie = trie;
-							depBitmap.forEach((int id) -> deps.add(finalTrie.getName(id)));
-							Set<String> sharedDeps = Collections.unmodifiableSet(deps);
+							depBitmap.forEach((int id) -> baseDeps.add(finalTrie.getName(id)));
 
 							int memberSize = s.readInt();
 							checkSize(memberSize, "Member bitmap", indexFile);
@@ -1372,14 +1495,39 @@ public class DependencyMap {
 							RoaringBitmap memberBitmap = new RoaringBitmap();
 							memberBitmap.deserialize(new DataInputStream(new ByteArrayInputStream(memberBytes)));
 							Set<String>[] finalDepSets = ds;
-							int testCount = ds.length;
-							memberBitmap.forEach((int ti) -> {
-								if (ti < 0 || ti >= testCount) {
-									throw new IllegalStateException("Invalid test index " + ti
-											+ " in member bitmap (valid: 0–" + (testCount - 1) + ")");
-								}
-								finalDepSets[ti] = sharedDeps;
-							});
+							int numTests = ds.length;
+
+							if (!hasUbiq) {
+								// No ubiquitous section — all tests in group share the same dep set
+								Set<String> sharedDeps = Collections.unmodifiableSet(baseDeps);
+								memberBitmap.forEach((int ti) -> {
+									if (ti < 0 || ti >= numTests) {
+										throw new IllegalStateException("Invalid test index " + ti
+												+ " in member bitmap (valid: 0–" + (numTests - 1) + ")");
+									}
+									finalDepSets[ti] = sharedDeps;
+								});
+							} else {
+								// Ubiquitous section present — each test gets base deps + its own ubiquitous
+								// subset (using absence bitmaps to determine which ubiquitous deps apply)
+								Set<String> ubiqNames = map.ubiquitousDeps;
+								memberBitmap.forEach((int ti) -> {
+									if (ti < 0 || ti >= numTests) {
+										throw new IllegalStateException("Invalid test index " + ti
+												+ " in member bitmap (valid: 0–" + (numTests - 1) + ")");
+									}
+									Set<String> testDeps = new HashSet<>(
+											(int) ((baseDeps.size() + ubiqNames.size()) * 1.5));
+									testDeps.addAll(baseDeps);
+									for (String ubiqDep : ubiqNames) {
+										RoaringBitmap absent = ubiqAbsent.get(ubiqDep);
+										if (absent == null || !absent.contains(ti)) {
+											testDeps.add(ubiqDep); // test has this ubiquitous dep
+										}
+									}
+									finalDepSets[ti] = Collections.unmodifiableSet(testDeps);
+								});
+							}
 						}
 						// build map preserving test insertion order
 						for (int i = 0; i < testNames.length; i++) {
@@ -1486,6 +1634,34 @@ public class DependencyMap {
 							String moduleId = s.readUTF();
 							map.testToModule.put(testClass, moduleId);
 						}
+					}
+					case SECTION_UBIQUITOUS_DEPS -> {
+						byte[] payload = new byte[sectionLength];
+						in.readFully(payload);
+						Objects.requireNonNull(trie, "TRIE section must precede UBIQUITOUS_DEPS");
+						DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
+						int ubiqCount = s.readInt();
+						validateCount(ubiqCount, "ubiqCount");
+						Set<String> ubiqs = new HashSet<>(ubiqCount * 2);
+						ubiqPresenceByDep = new HashMap<>(ubiqCount * 2);
+						ClassNameTrie finalTrie = trie;
+						for (int i = 0; i < ubiqCount; i++) {
+							int depId = s.readInt();
+							int absentSize = s.readInt();
+							RoaringBitmap absent = new RoaringBitmap();
+							if (absentSize > 0) {
+								checkSize(absentSize, "absent bitmap", indexFile);
+								byte[] absentBytes = new byte[absentSize];
+								s.readFully(absentBytes);
+								absent.deserialize(new DataInputStream(new ByteArrayInputStream(absentBytes)));
+							}
+							if (depId >= 0 && depId < finalTrie.size()) {
+								String depName = finalTrie.getName(depId);
+								ubiqs.add(depName);
+								ubiqPresenceByDep.put(depName, absent); // reuse as "absent" for now
+							}
+						}
+						map.ubiquitousDeps = Collections.unmodifiableSet(ubiqs);
 					}
 					default -> {
 						// Unknown section type — skip for forward compatibility
