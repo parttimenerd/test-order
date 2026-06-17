@@ -251,12 +251,13 @@ public class IndexCollectorServer implements AutoCloseable {
 			Thread.currentThread().interrupt();
 		}
 		// Wait for any in-progress handler threads to finish writing to the maps.
-		// Handler threads are short-lived (read socket data → merge), so a brief
-		// spin-wait is sufficient to avoid a race between their writes and our read.
+		// Use exponential backoff instead of fixed 10ms polling to reduce CPU spin.
 		long deadline = System.currentTimeMillis() + 3000;
+		long delay = 1;
 		while (activeHandlers.get() > 0 && System.currentTimeMillis() < deadline) {
 			try {
-				Thread.sleep(10);
+				Thread.sleep(Math.min(delay, 100));
+				delay = Math.min(delay * 2, 100);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				break;
@@ -438,13 +439,14 @@ public class IndexCollectorServer implements AutoCloseable {
 			try {
 				Socket client = serverSocket.accept();
 				activeHandlers.incrementAndGet();
+				// Create a daemon thread for each client. Handler threads are short-lived
+				// (milliseconds), so thread allocation is not a concern. No pooling needed.
 				Thread handler = new Thread(() -> {
 					try {
 						handleClient(client);
+					} catch (Throwable t) {
+						System.err.println("[test-order] Unhandled exception in client handler: " + t);
 					} finally {
-						// Clean up ThreadLocal to prevent memory leak in thread pools.
-						// READ_BUF can grow up to 8MB if a large array is read; without removal
-						// it stays retained forever in pooled threads.
 						READ_BUF.remove();
 						activeHandlers.decrementAndGet();
 					}
@@ -551,6 +553,9 @@ public class IndexCollectorServer implements AutoCloseable {
 
 		// Read test-class trackers
 		int testCount = in.readInt();
+		if (testCount < 0 || testCount > 100_000) {
+			throw new IOException("Invalid testCount from client: " + testCount);
+		}
 		for (int i = 0; i < testCount; i++) {
 			String key = readString(in);
 			payloadTestKeys.add(key);
@@ -560,17 +565,13 @@ public class IndexCollectorServer implements AutoCloseable {
 			Set<String> memberDeps = resolveMemberIds(memberWords, mn);
 			if (!classDeps.isEmpty()) {
 				mergedClassDeps.merge(key, classDeps, (existing, incoming) -> {
-					synchronized (existing) {
-						existing.addAll(incoming);
-					}
+					existing.addAll(incoming);
 					return existing;
 				});
 			}
 			if (!memberDeps.isEmpty()) {
 				mergedMemberDeps.merge(key, memberDeps, (existing, incoming) -> {
-					synchronized (existing) {
-						existing.addAll(incoming);
-					}
+					existing.addAll(incoming);
 					return existing;
 				});
 			}
@@ -578,6 +579,9 @@ public class IndexCollectorServer implements AutoCloseable {
 
 		// Read method trackers
 		int methodCount = in.readInt();
+		if (methodCount < 0 || methodCount > 1_000_000) {
+			throw new IOException("Invalid methodCount from client: " + methodCount);
+		}
 		for (int i = 0; i < methodCount; i++) {
 			String key = readString(in);
 			long[] classWords = readLongArray(in);
@@ -586,17 +590,13 @@ public class IndexCollectorServer implements AutoCloseable {
 			Set<String> memberDeps = resolveMemberIds(memberWords, mn);
 			if (!classDeps.isEmpty()) {
 				mergedMethodDeps.merge(key, classDeps, (existing, incoming) -> {
-					synchronized (existing) {
-						existing.addAll(incoming);
-					}
+					existing.addAll(incoming);
 					return existing;
 				});
 			}
 			if (!memberDeps.isEmpty()) {
 				mergedMethodMemberDeps.merge(key, memberDeps, (existing, incoming) -> {
-					synchronized (existing) {
-						existing.addAll(incoming);
-					}
+					existing.addAll(incoming);
 					return existing;
 				});
 			}

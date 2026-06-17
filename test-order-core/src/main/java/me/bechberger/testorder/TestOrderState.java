@@ -542,9 +542,9 @@ public class TestOrderState {
 	private int mutationTotalKilled = 0;
 	/**
 	 * True when addRunRecord was called since the last save — enables decay even on
-	 * all-pass runs.
+	 * all-pass runs. Protected by monitor lock during read in toPersistedRoot().
 	 */
-	private volatile boolean pendingRunCompleted;
+	private boolean pendingRunCompleted;
 
 	public TestOrderState() {
 		this.config = new StateConfiguration();
@@ -1023,7 +1023,11 @@ public class TestOrderState {
 		// then add pending failures (current run) at full weight, prune.
 		// When save() is called without a run (e.g. optimizer saving weights only),
 		// scores are preserved without decay — decay represents "one run passed".
-		boolean hasRunData = applyDecay && (pendingRunCompleted || failureHistory.hasPendingData());
+		// Read pendingRunCompleted under synchronized to avoid torn read.
+		boolean hasRunData;
+		synchronized (this) {
+			hasRunData = applyDecay && (pendingRunCompleted || failureHistory.hasPendingData());
+		}
 		FailureHistoryTracker.PersistedScores mergedFailureState = failureHistory.mergeForSave(hasRunData,
 				config.failureDecay(), config.methodFailureDecay(), config.failurePruneThreshold(), LOG);
 		Map<String, Object> mergedFailures = mergedFailureState.failureScores();

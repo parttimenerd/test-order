@@ -17,18 +17,19 @@ import java.util.stream.Stream;
  * to collapse all per-fork records into one.
  * <p>
  * File format: each partial record is a plain-text file named
- * {@code <buildId>-<randomUUID>.part} in the pending-runs directory. The format
- * is line-based:
+ * {@code <buildId>-<randomUUID>.part} in the pending-runs directory. Format:
  *
  * <pre>
+ * version=1
  * buildId=&lt;uuid&gt;
  * timestamp=&lt;millis&gt;
  * isLearnRun=true|false
- * testClass=&lt;fqcn&gt; failed=true|false score=&lt;n&gt; isNew=true|false isChanged=true|false depOverlap=&lt;n&gt; depTotal=&lt;n&gt; failScore=&lt;d&gt; isFast=true|false isSlow=true|false complexityOverlap=&lt;d&gt; speedRatio=&lt;d&gt; hasStaticFieldOverlap=true|false
+ * testClass=&lt;fqcn&gt; failed=true|false score=&lt;n&gt; ... (outcome line)
  * ...
  * </pre>
  */
 public final class PartialRunAggregator {
+	private static final int PARTIAL_FILE_VERSION = 1;
 
 	private PartialRunAggregator() {
 	}
@@ -54,6 +55,8 @@ public final class PartialRunAggregator {
 		// (mergeAndApply) never see a partially-written .part file.
 		Path temp = pendingRunsDir.resolve(fileName + ".tmp");
 		try (BufferedWriter w = Files.newBufferedWriter(temp, StandardCharsets.UTF_8)) {
+			w.write("version=" + PARTIAL_FILE_VERSION);
+			w.newLine();
 			w.write("buildId=" + buildId);
 			w.newLine();
 			w.write("timestamp=" + record.timestamp());

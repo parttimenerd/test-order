@@ -65,9 +65,12 @@ public final class TelemetryPersistence {
 				} else {
 					// Multiple observations in one run (e.g. @ParameterizedTest invocations).
 					// Aggregate to a single observation to preserve cross-run EMA smoothing.
-					// Applying N separate EMA updates in one run effectively erases historical
-					// data after ~log(0.03)/log(1-alpha) updates.
-					long avg = durations.stream().mapToLong(Long::longValue).sum() / durations.size();
+					// Use double arithmetic to avoid integer division loss, then round.
+					double sum = 0.0;
+					for (Long d : durations) {
+						sum += d.doubleValue();
+					}
+					long avg = Math.round(sum / durations.size());
 					state.recordMethodDuration(parts[0], parts[1], avg);
 				}
 			}

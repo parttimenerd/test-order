@@ -76,9 +76,12 @@ final class FailureHistoryTracker {
 			double failurePruneThreshold, Logger log) {
 		double retain = hasRunData ? (1.0 - failureDecay) : 1.0;
 		Map<String, Object> mergedFailures = new LinkedHashMap<>();
-		for (var entry : failureScores.entrySet()) {
+		// Snapshot both maps atomically to avoid concurrent modification
+		Map<String, Double> fsSnapshot = new java.util.HashMap<>(failureScores);
+		Map<String, Double> pfsSnapshot = new java.util.HashMap<>(pendingFailureScores);
+		for (var entry : fsSnapshot.entrySet()) {
 			double historical = entry.getValue() * retain;
-			double pending = pendingFailureScores.getOrDefault(entry.getKey(), 0.0);
+			double pending = pfsSnapshot.getOrDefault(entry.getKey(), 0.0);
 			double total = historical + pending;
 			if (total >= failurePruneThreshold) {
 				mergedFailures.put(entry.getKey(), total);
@@ -87,8 +90,8 @@ final class FailureHistoryTracker {
 						+ " (threshold " + failurePruneThreshold + ")");
 			}
 		}
-		for (var entry : pendingFailureScores.entrySet()) {
-			if (!failureScores.containsKey(entry.getKey())) {
+		for (var entry : pfsSnapshot.entrySet()) {
+			if (!fsSnapshot.containsKey(entry.getKey())) {
 				if (entry.getValue() >= failurePruneThreshold) {
 					mergedFailures.put(entry.getKey(), entry.getValue());
 				}
@@ -97,16 +100,19 @@ final class FailureHistoryTracker {
 
 		double methodRetain = hasRunData ? (1.0 - methodFailureDecay) : 1.0;
 		Map<String, Object> mergedMethodFailures = new LinkedHashMap<>();
-		for (var entry : methodFailureScores.entrySet()) {
+		// Snapshot both maps atomically
+		Map<String, Double> mfsSnapshot = new java.util.HashMap<>(methodFailureScores);
+		Map<String, Double> pmfsSnapshot = new java.util.HashMap<>(pendingMethodFailureScores);
+		for (var entry : mfsSnapshot.entrySet()) {
 			double historical = entry.getValue() * methodRetain;
-			double pending = pendingMethodFailureScores.getOrDefault(entry.getKey(), 0.0);
+			double pending = pmfsSnapshot.getOrDefault(entry.getKey(), 0.0);
 			double total = historical + pending;
 			if (total >= failurePruneThreshold) {
 				mergedMethodFailures.put(entry.getKey(), total);
 			}
 		}
-		for (var entry : pendingMethodFailureScores.entrySet()) {
-			if (!methodFailureScores.containsKey(entry.getKey())) {
+		for (var entry : pmfsSnapshot.entrySet()) {
+			if (!mfsSnapshot.containsKey(entry.getKey())) {
 				if (entry.getValue() >= failurePruneThreshold) {
 					mergedMethodFailures.put(entry.getKey(), entry.getValue());
 				}

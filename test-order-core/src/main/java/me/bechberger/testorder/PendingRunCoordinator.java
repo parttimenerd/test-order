@@ -26,6 +26,8 @@ final class PendingRunCoordinator {
 
 	static boolean hasPendingData() {
 		synchronized (LOCK) {
+			// Both conditions must be stable through the read to avoid race where
+			// one is true, then both become false before caller reads them.
 			return !PENDING_BREAKDOWNS.isEmpty() && PENDING_STATE_PATH != null;
 		}
 	}

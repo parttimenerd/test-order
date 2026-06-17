@@ -34,7 +34,8 @@ final class DurationTracker {
 		double effectiveAlpha = adaptiveAlpha(alpha, previous.doubleValue(), variance, varianceThreshold,
 				minAdaptiveAlphaFactor);
 		double delta = measuredMs - previous;
-		classDurations.put(testClass, Math.round(effectiveAlpha * measuredMs + (1.0 - effectiveAlpha) * previous));
+		long clamped = Math.max(0, Math.min(measuredMs, Long.MAX_VALUE));
+		classDurations.put(testClass, Math.round(effectiveAlpha * clamped + (1.0 - effectiveAlpha) * previous));
 		classDurationVariances.put(testClass, updatedVariance(variance, delta, effectiveAlpha));
 	}
 
@@ -59,8 +60,8 @@ final class DurationTracker {
 		double variance = classVariances.getOrDefault(methodName, 0.0);
 		double effectiveAlpha = adaptiveAlpha(alpha, previous, variance, varianceThreshold, minAdaptiveAlphaFactor);
 		double delta = measuredMs - previous;
-		classMethods.put(methodName,
-				(double) Math.round(effectiveAlpha * measuredMs + (1.0 - effectiveAlpha) * previous));
+		long clamped = Math.max(0, Math.min(measuredMs, Long.MAX_VALUE));
+		classMethods.put(methodName, (double) Math.round(effectiveAlpha * clamped + (1.0 - effectiveAlpha) * previous));
 		classVariances.put(methodName, updatedVariance(variance, delta, effectiveAlpha));
 	}
 
