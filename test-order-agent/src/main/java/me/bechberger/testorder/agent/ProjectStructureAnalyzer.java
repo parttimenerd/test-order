@@ -287,8 +287,8 @@ public class ProjectStructureAnalyzer {
 		}
 	}
 
-	private static final HashMap<String, Pattern> xmlTagPatterns = new HashMap<>();
-	private static final HashMap<String, Pattern> gradlePropertyPatterns = new HashMap<>();
+	private static final java.util.concurrent.ConcurrentHashMap<String, Pattern> xmlTagPatterns = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final java.util.concurrent.ConcurrentHashMap<String, Pattern> gradlePropertyPatterns = new java.util.concurrent.ConcurrentHashMap<>();
 
 	/**
 	 * Extract XML tag value from content.
