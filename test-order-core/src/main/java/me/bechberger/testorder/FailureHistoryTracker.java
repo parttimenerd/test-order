@@ -7,10 +7,21 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
+import me.bechberger.testorder.annotations.ThreadSafe;
+
 /**
  * Tracks class-level and method-level failure history with pending per-run
  * updates.
+ *
+ * <p>
+ * Thread-safety: all mutating methods use {@link ConcurrentHashMap#merge} for
+ * atomic per-key updates. {@link #mergeForSave} takes sequential (non-atomic)
+ * snapshots of historical and pending maps; this is safe because pending writes
+ * arriving between snapshots are accounted for via the "pending-only" loop.
+ * Callers must not invoke {@link #applyPersisted} concurrently with other
+ * methods.
  */
+@ThreadSafe
 final class FailureHistoryTracker {
 
 	private final Map<String, Double> failureScores = new ConcurrentHashMap<>();

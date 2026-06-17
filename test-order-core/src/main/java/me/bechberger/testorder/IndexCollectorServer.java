@@ -15,6 +15,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import me.bechberger.testorder.annotations.ThreadSafe;
+
 /**
  * TCP server that collects dependency data from forked test JVMs via socket.
  * <p>
@@ -29,7 +31,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <li>File locking for concurrent index merge</li>
  * <li>Reflective DependencyMap access in forked JVMs (classloader issues)</li>
  * </ul>
+ *
+ * <p>
+ * Thread-safety: accept-loop runs on a single thread; per-connection handlers
+ * run on a fixed thread pool ({@value #MAX_HANDLER_THREADS} threads). Shared
+ * state uses {@link ConcurrentHashMap} for lock-free access. Lazy class-name
+ * dictionary load is protected by {@code synchronized(this)} double-check.
  */
+@ThreadSafe
 public class IndexCollectorServer implements AutoCloseable {
 
 	private static final int MAGIC = 0x54_4F_44_50; // "TODP"
@@ -824,10 +833,13 @@ public class IndexCollectorServer implements AutoCloseable {
 				continue;
 			}
 			target.merge(entry.getKey(), filtered, (existing, incoming) -> {
-				synchronized (existing) {
-					existing.addAll(incoming);
-				}
-				return existing;
+				// merge() serializes per-key access already; build a new combined Set
+				// rather than mutating `existing` so the value semantics stay immutable
+				// from the perspective of concurrent readers iterating the map.
+				Set<String> combined = new java.util.HashSet<>(existing.size() + incoming.size());
+				combined.addAll(existing);
+				combined.addAll(incoming);
+				return combined;
 			});
 		}
 	}

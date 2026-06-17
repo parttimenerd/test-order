@@ -5,22 +5,36 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
+import me.bechberger.testorder.annotations.GuardedBy;
+import me.bechberger.testorder.annotations.ThreadSafe;
+
 /**
  * Tracks class-level and method-level EMA durations and variance used for
  * adaptive smoothing.
+ *
+ * <p>
+ * Thread-safety: all mutating and reading methods synchronize on {@code this}.
+ * Compound updates (mean + variance for the same class/method) are atomic.
+ * Returned unmodifiable map views are <em>weakly consistent</em>: they reflect
+ * the underlying maps and may observe concurrent mutations.
  */
+@ThreadSafe
 final class DurationTracker {
 
+	@GuardedBy("this")
 	private final Map<String, Long> classDurations = new LinkedHashMap<>();
+	@GuardedBy("this")
 	private final Map<String, Double> classDurationVariances = new LinkedHashMap<>();
+	@GuardedBy("this")
 	private final Map<String, Map<String, Double>> methodDurations = new LinkedHashMap<>();
+	@GuardedBy("this")
 	private final Map<String, Map<String, Double>> methodDurationVariances = new LinkedHashMap<>();
 
-	long getClassDuration(String testClass, long defaultValue) {
+	synchronized long getClassDuration(String testClass, long defaultValue) {
 		return classDurations.getOrDefault(testClass, defaultValue);
 	}
 
-	void recordClassDuration(String testClass, long measuredMs, double alpha, double varianceThreshold,
+	synchronized void recordClassDuration(String testClass, long measuredMs, double alpha, double varianceThreshold,
 			double minAdaptiveAlphaFactor) {
 		if (measuredMs < 0)
 			return; // ignore negative durations from clock skew or time adjustment
@@ -39,11 +53,11 @@ final class DurationTracker {
 		classDurationVariances.put(testClass, updatedVariance(variance, delta, effectiveAlpha));
 	}
 
-	double getMethodDuration(String className, String methodName, double defaultValue) {
+	synchronized double getMethodDuration(String className, String methodName, double defaultValue) {
 		return methodDurations.getOrDefault(className, Map.of()).getOrDefault(methodName, defaultValue);
 	}
 
-	void recordMethodDuration(String className, String methodName, long measuredMs, double alpha,
+	synchronized void recordMethodDuration(String className, String methodName, long measuredMs, double alpha,
 			double varianceThreshold, double minAdaptiveAlphaFactor) {
 		if (measuredMs < 0)
 			return; // ignore negative durations from clock skew or time adjustment
@@ -65,39 +79,47 @@ final class DurationTracker {
 		classVariances.put(methodName, updatedVariance(variance, delta, effectiveAlpha));
 	}
 
-	Map<String, Long> classDurations() {
-		return Collections.unmodifiableMap(classDurations);
+	synchronized Map<String, Long> classDurations() {
+		return Collections.unmodifiableMap(new LinkedHashMap<>(classDurations));
 	}
 
-	Map<String, Double> classDurationVariances() {
-		return Collections.unmodifiableMap(classDurationVariances);
+	synchronized Map<String, Double> classDurationVariances() {
+		return Collections.unmodifiableMap(new LinkedHashMap<>(classDurationVariances));
 	}
 
-	Map<String, Map<String, Double>> methodDurations() {
-		return Collections.unmodifiableMap(methodDurations);
+	synchronized Map<String, Map<String, Double>> methodDurations() {
+		LinkedHashMap<String, Map<String, Double>> snapshot = new LinkedHashMap<>();
+		for (var e : methodDurations.entrySet()) {
+			snapshot.put(e.getKey(), new LinkedHashMap<>(e.getValue()));
+		}
+		return Collections.unmodifiableMap(snapshot);
 	}
 
-	Map<String, Map<String, Double>> methodDurationVariances() {
-		return Collections.unmodifiableMap(methodDurationVariances);
+	synchronized Map<String, Map<String, Double>> methodDurationVariances() {
+		LinkedHashMap<String, Map<String, Double>> snapshot = new LinkedHashMap<>();
+		for (var e : methodDurationVariances.entrySet()) {
+			snapshot.put(e.getKey(), new LinkedHashMap<>(e.getValue()));
+		}
+		return Collections.unmodifiableMap(snapshot);
 	}
 
-	void putClassDuration(String className, long duration) {
+	synchronized void putClassDuration(String className, long duration) {
 		classDurations.put(className, duration);
 	}
 
-	void putClassDurationVariance(String className, double variance) {
+	synchronized void putClassDurationVariance(String className, double variance) {
 		classDurationVariances.put(className, variance);
 	}
 
-	void putMethodDuration(String className, String methodName, double duration) {
+	synchronized void putMethodDuration(String className, String methodName, double duration) {
 		methodDurations.computeIfAbsent(className, ignored -> new LinkedHashMap<>()).put(methodName, duration);
 	}
 
-	void putMethodDurationVariance(String className, String methodName, double variance) {
+	synchronized void putMethodDurationVariance(String className, String methodName, double variance) {
 		methodDurationVariances.computeIfAbsent(className, ignored -> new LinkedHashMap<>()).put(methodName, variance);
 	}
 
-	void pruneToActiveClasses(Set<String> activeClasses) {
+	synchronized void pruneToActiveClasses(Set<String> activeClasses) {
 		classDurations.keySet().removeIf(key -> !isActive(key, activeClasses));
 		classDurationVariances.keySet().removeIf(key -> !isActive(key, activeClasses));
 		methodDurations.keySet().removeIf(key -> !isActive(key, activeClasses));

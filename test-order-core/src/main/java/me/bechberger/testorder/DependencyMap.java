@@ -10,6 +10,7 @@ import java.util.stream.Stream;
 
 import org.roaringbitmap.RoaringBitmap;
 
+import me.bechberger.testorder.annotations.NotThreadSafe;
 import net.jpountz.lz4.LZ4FrameInputStream;
 import net.jpountz.lz4.LZ4FrameOutputStream;
 
@@ -22,7 +23,15 @@ import net.jpountz.lz4.LZ4FrameOutputStream;
  * tag, length prefix, and payload — unknown section types are skipped on read,
  * enabling forward-compatible extensibility. {@link #save(Path)} writes v1.
  * {@link #load(Path)} reads v1.
+ *
+ * <p>
+ * Thread-safety: instance state is <b>not</b> thread-safe — concurrent mutation
+ * is unsafe. Lazy-built caches ({@code invertedIndex}, {@code depFrequencies})
+ * use the volatile + double-check pattern and are safe to read concurrently.
+ * Cross-JVM merges go through {@link PersistenceSupport#withFileLock}; the
+ * static load cache uses {@link ConcurrentHashMap}.
  */
+@NotThreadSafe
 public class DependencyMap {
 
 	/** LZ4 frame magic bytes (big-endian read of 04 22 4D 18). */

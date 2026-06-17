@@ -20,7 +20,19 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-/** Shared helpers for atomic writes and temp-file recovery. */
+import me.bechberger.testorder.annotations.ThreadSafe;
+
+/**
+ * Shared helpers for atomic writes and temp-file recovery.
+ *
+ * <p>
+ * Thread-safety: all public methods are safe for concurrent use. Per-path locks
+ * are held in a {@link ConcurrentHashMap} and serialize concurrent
+ * {@link #withFileLock} calls in the same JVM. Reentrant calls on the same
+ * thread are tracked via a {@link ThreadLocal} so nested invocations don't
+ * deadlock. Cross-JVM coordination relies on OS-level file locks.
+ */
+@ThreadSafe
 public final class PersistenceSupport {
 
 	private static final String TEMP_SUFFIX = ".tmp";

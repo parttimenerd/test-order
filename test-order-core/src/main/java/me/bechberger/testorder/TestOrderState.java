@@ -13,6 +13,7 @@ import com.electronwill.nightconfig.core.CommentedConfig;
 import com.electronwill.nightconfig.toml.TomlParser;
 import com.electronwill.nightconfig.toml.TomlWriter;
 
+import me.bechberger.testorder.annotations.NotThreadSafe;
 import me.bechberger.util.json.Util;
 
 /**
@@ -25,7 +26,17 @@ import me.bechberger.util.json.Util;
  * per-test score breakdowns during ordering; {@link TelemetryListener} reads
  * them at the end of the run and appends a complete run record to the state
  * file.
+ *
+ * <p>
+ * Thread-safety: each instance is <b>not</b> thread-safe — callers must ensure
+ * single-threaded access per instance, except for the inner trackers
+ * ({@link DurationTracker}, {@link FailureHistoryTracker}) which are
+ * thread-safe in their own right. The static load cache uses
+ * {@link ConcurrentHashMap} and the static coordination methods
+ * ({@link #recordBreakdown}, {@link #setStatePath}, etc.) are safe to call from
+ * multiple threads.
  */
+@NotThreadSafe
 public class TestOrderState {
 
 	static final Logger LOG = Logger.getLogger(TestOrderState.class.getName());
