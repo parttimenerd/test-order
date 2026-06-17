@@ -175,9 +175,12 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 			Map<String, TestKnowledge> knowledge, List<ODResult> findings, Random rng) {
 		TestKnowledge tk = knowledge.computeIfAbsent(action.victim, k -> new TestKnowledge());
 
-		// Skip if already fully resolved
+		// Skip if already fully resolved — but still process actions that can find
+		// additional polluters (ISOLATE_PAIR) or classify brittle tests
+		// (CONFIRM_BRITTLE,
+		// EXCLUSION_PROBE).
 		if (!tk.confirmedPolluters().isEmpty() && action.type != ActionType.CONFIRM_BRITTLE
-				&& action.type != ActionType.EXCLUSION_PROBE) {
+				&& action.type != ActionType.EXCLUSION_PROBE && action.type != ActionType.ISOLATE_PAIR) {
 			return 0;
 		}
 

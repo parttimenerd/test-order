@@ -307,6 +307,11 @@ public class BytecodeHashStore {
 	 * used by {@link StructuralChangeAnalyzer.ChangedMembers#changedMemberKeys()}.
 	 */
 	public Set<String> getChangedMethodKeys(BytecodeHashStore prev) {
+		if (prev.methodHashes.isEmpty() && !prev.classHashes.isEmpty()) {
+			// prev is a class-hash-only store (v1 or partial); can't compare at method
+			// level
+			return Set.of();
+		}
 		Set<String> changed = new TreeSet<>();
 		for (var e : methodHashes.entrySet()) {
 			String prior = prev.methodHashes.get(e.getKey());
@@ -530,6 +535,7 @@ public class BytecodeHashStore {
 			for (int k : keys) {
 				writeInt(k);
 			}
+			writeInt(labels.length);
 			super.visitLookupSwitchInsn(dflt, keys, labels);
 		}
 

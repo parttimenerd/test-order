@@ -80,6 +80,8 @@ public final class LearnWorkflow {
 			try {
 				changeMode = ChangeDetectionSupport.resolveMode(ctx.changeMode(), ctx.hashFile());
 			} catch (IOException e) {
+				ctx.log().warn("[test-order] IOException resolving change mode, falling back to UNCOMMITTED: "
+						+ e.getMessage());
 				changeMode = ChangeDetector.Mode.UNCOMMITTED;
 			}
 			// Use repoRoot (git root) if available so cross-module changes are detected;

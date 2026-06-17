@@ -163,7 +163,7 @@ public final class ChangeAnalysis {
 			// Try compiled-classes filter first (most precise match).
 			if (ctx.testClassesDir() != null && Files.isDirectory(ctx.testClassesDir())) {
 				DependencyMap filtered = TestClassDiscovery.filterToModule(depMap, ctx.testClassesDir());
-				if (filtered.testClasses().size() > 0 && filtered.testClasses().size() < beforeCount) {
+				if (filtered.testClasses().size() > 0) {
 					depMap = filtered;
 					filteredByClasses = true;
 					ctx.log().debug("[test-order] filtered index by testClassesDir: " + beforeCount + " -> "
@@ -187,7 +187,7 @@ public final class ChangeAnalysis {
 			if (!filteredByClasses && ctx.testSourceRoot() != null && Files.isDirectory(ctx.testSourceRoot())) {
 				DependencyMap sourcFiltered = TestClassDiscovery.filterToModuleBySourceRoot(depMap,
 						ctx.testSourceRoot());
-				if (sourcFiltered.testClasses().size() > 0 && sourcFiltered.testClasses().size() < beforeCount) {
+				if (sourcFiltered.testClasses().size() > 0) {
 					depMap = sourcFiltered;
 					ctx.log().debug("[test-order] filtered index by testSourceRoot: " + beforeCount + " -> "
 							+ depMap.testClasses().size() + " test classes");
@@ -317,6 +317,9 @@ public final class ChangeAnalysis {
 						ctx.log().debug("[test-order] bytecode change detection added " + (changed.size() - before)
 								+ " classes (total bytecode-changed: " + bytecodeChangedClasses.size() + ").");
 					}
+					bytecodeChangedMethodKeys = curr.getChangedMethodKeys(prev);
+				} else {
+					// First run — no prior snapshot; treat every current method as changed.
 					bytecodeChangedMethodKeys = curr.getChangedMethodKeys(prev);
 				}
 				if (!opts.readOnly()) {
@@ -569,6 +572,8 @@ public final class ChangeAnalysis {
 			return f.join();
 		} catch (java.util.concurrent.CompletionException e) {
 			Throwable cause = e.getCause();
+			if (cause instanceof Error err)
+				throw err;
 			if (cause instanceof IOException ioe) {
 				throw ioe;
 			}

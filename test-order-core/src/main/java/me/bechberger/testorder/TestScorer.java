@@ -50,7 +50,7 @@ public class TestScorer {
 				boolean isFast, boolean isSlow, double complexityOverlap, double speedRatio,
 				boolean hasStaticFieldOverlap) {
 			this(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOverlap,
-					speedRatio, hasStaticFieldOverlap, -1.0, depOverlap);
+					speedRatio, hasStaticFieldOverlap, -1.0, depTotal > 0 ? (double) depOverlap / depTotal : 0.0);
 		}
 
 		/**
@@ -61,7 +61,7 @@ public class TestScorer {
 				boolean isFast, boolean isSlow, double complexityOverlap, double speedRatio,
 				boolean hasStaticFieldOverlap, double killRate) {
 			this(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOverlap,
-					speedRatio, hasStaticFieldOverlap, killRate, depOverlap);
+					speedRatio, hasStaticFieldOverlap, killRate, depTotal > 0 ? (double) depOverlap / depTotal : 0.0);
 		}
 	}
 
@@ -388,6 +388,18 @@ public class TestScorer {
 	}
 
 	/**
+	 * Computes the kill-rate multiplier applied to dep-overlap, complexity,
+	 * set-cover, and static-field scores.
+	 * <p>
+	 * Returns 1.0 when no kill-rate data is available ({@code killRate < 0}), and
+	 * scales linearly from 0.5 (killRate=0) to 1.0 (killRate=1) when data is
+	 * present.
+	 */
+	private static double killMultiplier(double killRate) {
+		return killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0;
+	}
+
+	/**
 	 * Scores a single test class.
 	 */
 	public ScoreResult score(String testClassName) {
@@ -411,7 +423,7 @@ public class TestScorer {
 			killRate = state.getKillRates().getOrDefault(topLevel, -1.0);
 		}
 		// multiplier: 1.0 when no data, 0.5..1.0 when data available
-		double killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0;
+		double killMultiplier = killMultiplier(killRate);
 
 		Set<String> deps = depMap.get(testClassName);
 		if (deps == null)
@@ -608,7 +620,7 @@ public class TestScorer {
 		if (killRate < 0 && !topLevel.equals(testClassName)) {
 			killRate = state.getKillRates().getOrDefault(topLevel, -1.0);
 		}
-		double killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0;
+		double killMultiplier = killMultiplier(killRate);
 		int killRatePts = 0;
 		if (killRate >= 0 && weights.killRateBonus() > 0) {
 			killRatePts = (int) Math.round(killRate * weights.killRateBonus());

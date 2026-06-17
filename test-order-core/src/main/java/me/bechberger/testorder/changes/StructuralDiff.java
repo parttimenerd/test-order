@@ -542,31 +542,68 @@ public class StructuralDiff {
 		if (relPaths.isEmpty()) {
 			return Map.of();
 		}
+
+		// Phase 1: resolve OID for each requested path using git ls-tree.
+		// Build Map<OID, relPath> so we can match by OID, not by position.
+		// git ls-tree outputs: "<mode> <type> <hash>\t<path>" per entry.
+		Map<String, String> oidToRelPath = new LinkedHashMap<>();
+		Set<String> requested = new HashSet<>(relPaths);
+		List<String> lsTreeOutput;
+		try {
+			lsTreeOutput = runGit(projectRoot, "ls-tree", "-r", ref, "--");
+		} catch (IOException e) {
+			// ref may not exist (e.g. brand-new repo); fall through — all paths missing
+			lsTreeOutput = List.of();
+		}
+		for (String line : lsTreeOutput) {
+			// format: "<mode> <type> <hash>\t<path>"
+			int tab = line.indexOf('\t');
+			if (tab < 0)
+				continue;
+			String metaSection = line.substring(0, tab);
+			String path = line.substring(tab + 1);
+			if (!requested.contains(path))
+				continue;
+			String[] meta = metaSection.split(" ", 3);
+			if (meta.length < 3)
+				continue;
+			String oid = meta[2];
+			oidToRelPath.put(oid, path);
+		}
+
+		// Any paths not found in ls-tree are missing (new files, untracked, etc.)
+		Set<String> foundPaths = new HashSet<>(oidToRelPath.values());
+		Map<String, String> contents = new LinkedHashMap<>();
+		for (String relPath : relPaths) {
+			if (!foundPaths.contains(relPath)) {
+				contents.put(relPath, null);
+			}
+		}
+		if (oidToRelPath.isEmpty()) {
+			return contents;
+		}
+
+		// Phase 2: fetch blobs by OID via git cat-file --batch.
 		ProcessBuilder pb = new ProcessBuilder("git", "cat-file", "--batch");
 		pb.directory(projectRoot.toFile());
-		pb.redirectErrorStream(true); // merge stderr into stdout to prevent pipe-buffer deadlock
+		pb.redirectErrorStream(true);
 		Process process = pb.start();
 		try (BufferedWriter writer = new BufferedWriter(
 				new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8))) {
-			for (String relPath : relPaths) {
-				writer.write(ref);
-				writer.write(':');
-				writer.write(relPath);
+			for (String oid : oidToRelPath.keySet()) {
+				writer.write(oid);
 				writer.newLine();
 			}
 		}
 
-		Map<String, String> contents;
 		try {
 			try (BufferedInputStream input = new BufferedInputStream(process.getInputStream())) {
-				contents = parseGitBatchResponse(relPaths, input);
+				contents.putAll(parseGitBatchResponse(oidToRelPath, input));
 			}
 			if (!process.waitFor(GitTimeout.seconds(), TimeUnit.SECONDS)) {
 				throw new IOException("git cat-file timed out");
 			}
 			if (process.exitValue() != 0) {
-				// stderr was merged into stdout (redirectErrorStream=true), so there is no
-				// separate error stream to read here.
 				throw new IOException("git cat-file failed (exit " + process.exitValue() + ")");
 			}
 		} catch (InterruptedException e) {
@@ -578,39 +615,48 @@ public class StructuralDiff {
 		return contents;
 	}
 
-	static Map<String, String> parseGitBatchResponse(Collection<String> relPaths, InputStream input)
+	static Map<String, String> parseGitBatchResponse(Map<String, String> oidToRelPath, InputStream input)
 			throws IOException {
 		Map<String, String> contents = new LinkedHashMap<>();
 		BufferedInputStream buffered = input instanceof BufferedInputStream bis ? bis : new BufferedInputStream(input);
-		for (String relPath : relPaths) {
+		// Read until EOF; match each response to a path by OID in the header.
+		while (true) {
 			String header = readAsciiLine(buffered);
 			if (header == null || header.isBlank()) {
-				throw new EOFException("Unexpected end of git cat-file output for " + relPath);
+				break; // EOF
 			}
 			if (header.endsWith(" missing")) {
-				contents.put(relPath, null);
+				String oid = header.substring(0, header.indexOf(' '));
+				String relPath = oidToRelPath.get(oid);
+				if (relPath != null) {
+					contents.put(relPath, null);
+				}
 				continue;
 			}
 			String[] parts = header.split(" ", 3);
 			if (parts.length != 3) {
-				throw new IOException("Malformed git cat-file header for " + relPath + ": " + header);
+				throw new IOException("Malformed git cat-file header: " + header);
 			}
+			String oid = parts[0];
+			String relPath = oidToRelPath.get(oid);
 			long sizeL;
 			try {
 				sizeL = Long.parseLong(parts[2]);
 			} catch (NumberFormatException e) {
-				throw new IOException("Non-numeric blob size in git cat-file header for " + relPath + ": " + parts[2]);
+				throw new IOException("Non-numeric blob size in git cat-file header: " + parts[2]);
 			}
 			if (sizeL > Integer.MAX_VALUE) {
-				throw new IOException("Blob too large for in-memory read (" + sizeL + " bytes) for " + relPath);
+				throw new IOException("Blob too large for in-memory read (" + sizeL + " bytes)");
 			}
 			int size = (int) sizeL;
 			byte[] bytes = buffered.readNBytes(size);
 			if (bytes.length != size) {
-				throw new EOFException("Incomplete git blob for " + relPath);
+				throw new EOFException("Incomplete git blob for oid " + oid);
 			}
-			contents.put(relPath, new String(bytes, StandardCharsets.UTF_8));
-			consumeRecordTerminator(buffered, relPath);
+			if (relPath != null) {
+				contents.put(relPath, new String(bytes, StandardCharsets.UTF_8));
+			}
+			consumeRecordTerminator(buffered, oid);
 		}
 		return contents;
 	}

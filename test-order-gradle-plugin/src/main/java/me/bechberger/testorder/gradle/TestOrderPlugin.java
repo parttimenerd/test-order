@@ -730,7 +730,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
                     // Set compression level for IndexCollectorServer merge
                     String compressionLevel = ext.getCompression().getOrElse("fast");
-                    System.setProperty("testorder.compression", compressionLevel);
+                    testTask.jvmArgs("-Dtestorder.compression=" + compressionLevel);
 
                     java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
                     me.bechberger.testorder.IndexCollectorServer collector =
@@ -951,7 +951,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
                     // Set compression level for IndexCollectorServer merge
                     String compressionLevel = ext.getCompression().getOrElse("fast");
-                    System.setProperty("testorder.compression", compressionLevel);
+                    testTask.jvmArgs("-Dtestorder.compression=" + compressionLevel);
 
                     java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
                     me.bechberger.testorder.IndexCollectorServer collector =

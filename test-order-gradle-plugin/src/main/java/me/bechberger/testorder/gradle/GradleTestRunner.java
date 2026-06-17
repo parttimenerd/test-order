@@ -329,11 +329,11 @@ class GradleTestRunner implements TestRunner {
      * forked test JVM. An init script with {@code test.systemProperty()} is the correct
      * mechanism to forward properties to the forked JVM.
      */
-    private Path writeInitScript(String sysPropKey, String sysPropValue) throws IOException {
+    private synchronized Path writeInitScript(String sysPropKey, String sysPropValue) throws IOException {
         return writeInitScript(Map.of(sysPropKey, sysPropValue));
     }
 
-    private Path writeInitScript(Map<String, String> sysProps) throws IOException {
+    private synchronized Path writeInitScript(Map<String, String> sysProps) throws IOException {
         Files.createDirectories(runtimeDir);
         Path initScript = runtimeDir.resolve("detect-init.gradle");
         String escapedRuntimeDir = runtimeDir.toAbsolutePath().toString()

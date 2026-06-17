@@ -247,14 +247,10 @@ public final class PersistenceSupport {
 		if (JVM_LOCKS.size() <= MAX_JVM_LOCKS) {
 			return;
 		}
-		// Crudely prune by removing half the entries (least recently used is hard to
-		// track)
-		// This is rare enough (only when > 512 entries) that crude pruning is
-		// acceptable
-		java.util.List<Path> keys = new java.util.ArrayList<>(JVM_LOCKS.keySet());
-		int removeCount = keys.size() - MAX_JVM_LOCKS;
-		for (int i = 0; i < removeCount && i < keys.size(); i++) {
-			JVM_LOCKS.remove(keys.get(i));
-		}
+		// Use removeIf on entrySet() — ConcurrentHashMap.entrySet().removeIf() is
+		// atomic per-entry and avoids the check-then-remove race of the snapshot
+		// approach. Remove entries whose path is not currently held by any thread.
+		java.util.Set<Path> held = HELD_LOCKS.get();
+		JVM_LOCKS.entrySet().removeIf(e -> JVM_LOCKS.size() > MAX_JVM_LOCKS && !held.contains(e.getKey()));
 	}
 }

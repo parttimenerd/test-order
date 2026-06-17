@@ -31,7 +31,7 @@ import java.util.Set;
  * [1 byte]  version: 2
  * [4 bytes] test-class tracker count
  * per tracker:
- *   [2 bytes] key length (UTF-8)
+ *   [4 bytes] key length (UTF-8)
  *   [N bytes] key (test class name)
  *   [4 bytes] classWords length (number of longs)
  *   [M×8 bytes] classWords data
@@ -39,7 +39,7 @@ import java.util.Set;
  *   [K×8 bytes] memberWords data
  * [4 bytes] method tracker count
  * per tracker:
- *   [2 bytes] key length (UTF-8)
+ *   [4 bytes] key length (UTF-8)
  *   [N bytes] key (className#methodName)
  *   [4 bytes] classWords length
  *   [M×8 bytes] classWords data
@@ -233,7 +233,7 @@ public final class IndexCollectorClient {
 
 	private static void writeString(DataOutputStream out, String s) throws IOException {
 		byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
-		out.writeShort(bytes.length);
+		out.writeInt(bytes.length);
 		out.write(bytes);
 	}
 }

@@ -155,8 +155,11 @@ public class TestSelector {
 					continue;
 				if (alwaysRunClasses.contains(s.name()))
 					continue; // additive, doesn't count
-				selected.add(s.name());
-				counted++;
+				// M19: only count toward the budget when the element is actually new
+				// (selected.add returns false for duplicates added by earlier phases)
+				if (selected.add(s.name())) {
+					counted++;
+				}
 			}
 			return;
 		}
@@ -173,8 +176,10 @@ public class TestSelector {
 				break;
 			if (alwaysRunClasses.contains(s.name()))
 				continue;
-			selected.add(s.name());
-			counted++;
+			// M19: only count toward the budget when the element is actually new
+			if (selected.add(s.name())) {
+				counted++;
+			}
 		}
 	}
 

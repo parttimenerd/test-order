@@ -116,8 +116,10 @@ public class AsmClassTransformer implements ClassFileTransformer {
 		try {
 			return doTransform(className, classfileBuffer);
 		} catch (Throwable e) {
-			// Catch Throwable (not just Exception) to handle LinkageError,
-			// NoClassDefFoundError, etc. that can occur in forked JVMs where
+			if (e instanceof Error)
+				throw (Error) e;
+			// Catch Exception (and Throwable sub-types that are not Errors) to handle
+			// unexpected failures during class transformation in forked JVMs where
 			// classpath or agent state is partially initialized.
 			if (AgentLogger.isVerbose()) {
 				AgentLogger.log("[transform] FAIL: " + className + " -> " + e);

@@ -644,7 +644,7 @@ public class StaticCallGraphAnalyzer {
 							String ownerFqcn = owner.replace('/', '.');
 							if (isLibraryType(ownerFqcn))
 								return;
-							addCallEdge(result, ownerFqcn, name, callerKey);
+							addCallEdge(result, ownerFqcn, name, descriptor, callerKey);
 						}
 
 						@Override
@@ -659,7 +659,7 @@ public class StaticCallGraphAnalyzer {
 										String ownerFqcn = h.getOwner().replace('/', '.');
 										if (isLibraryType(ownerFqcn))
 											continue;
-										addCallEdge(result, ownerFqcn, h.getName(), callerKey);
+										addCallEdge(result, ownerFqcn, h.getName(), h.getDesc(), callerKey);
 									}
 								}
 							}
@@ -888,7 +888,13 @@ public class StaticCallGraphAnalyzer {
 	 * {@link #propagateToOverrides} handles the symmetric direction (subtype
 	 * propagation from a changed supertype).
 	 */
-	private static void addCallEdge(ScanResult result, String ownerFqcn, String methodName, String callerKey) {
+	private static void addCallEdge(ScanResult result, String ownerFqcn, String methodName, String descriptor,
+			String callerKey) {
+		// Primary edge uses name-only key (no descriptor) to match the format used
+		// by changedMemberKeys from StructuralChangeAnalyzer (fqcn#name).
+		// We record one edge per (owner, name) pair — if the same method name is called
+		// with multiple descriptors, they all point to the same key, which is correct
+		// since changedMemberKeys doesn't distinguish overloads either.
 		String key = ownerFqcn + "#" + methodName;
 		result.reverseCallGraph.computeIfAbsent(key, k -> new HashSet<>()).add(callerKey);
 
@@ -912,7 +918,6 @@ public class StaticCallGraphAnalyzer {
 				if (supDeclared != null && supDeclared.contains(methodName)) {
 					result.reverseCallGraph.computeIfAbsent(sup + "#" + methodName, k -> new HashSet<>())
 							.add(callerKey);
-					return;
 				}
 				queue.add(sup);
 			}
@@ -924,7 +929,6 @@ public class StaticCallGraphAnalyzer {
 						if (ifaceDeclared != null && ifaceDeclared.contains(methodName)) {
 							result.reverseCallGraph.computeIfAbsent(iface + "#" + methodName, k -> new HashSet<>())
 									.add(callerKey);
-							return;
 						}
 						queue.add(iface);
 					}

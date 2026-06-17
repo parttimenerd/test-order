@@ -121,11 +121,12 @@ public final class AutoWorkflow {
 	 */
 	public Result execute() throws IOException {
 
-		// ── 0. alwaysLearn pre-aggregation ──────────────────────────
+		// ── 1a. alwaysLearn pre-aggregation ────────────────────────────
 		// When alwaysLearn=true and an index already exists, fold any .deps files
-		// recorded during prior runs into the existing index incrementally. The
-		// existing auto-aggregation path in ModeResolverOperation only fires when
-		// no index exists yet.
+		// recorded during prior runs into the existing index incrementally. This runs
+		// before mode resolution so it works even in skip mode. When mode resolves to
+		// "learn", the learn workflow will rebuild the full index anyway, so running
+		// this first is harmless (not a double-aggregate — learn replaces, not merges).
 		if (ctx.alwaysLearn() && depsDir != null && ctx.indexFile() != null && Files.exists(ctx.indexFile())
 				&& Files.isDirectory(depsDir)) {
 			try {
@@ -135,7 +136,7 @@ public final class AutoWorkflow {
 			}
 		}
 
-		// ── 1. Mode resolution ──────────────────────────────────────
+		// ── 1b. Mode resolution ─────────────────────────────────────────
 		ModeResolverOperation.ModeDecision decision = resolveMode(ctx, requestedMode, ciDownloadCallback, depsDir);
 
 		if ("skip".equals(decision.effectiveMode())) {
@@ -145,7 +146,7 @@ public final class AutoWorkflow {
 			return new Result.Learn(decision.reason());
 		}
 
-		// ── 2. Order + select (single analysis pass) ────────────────
+		// ── 2. Order + select (single analysis pass) ──────────────────
 		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.FOR_AUTO);
 
 		var alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());

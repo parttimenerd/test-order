@@ -181,15 +181,28 @@ public class IntelligentClassFilter {
 		cacheMisses.increment();
 		boolean result = evaluateFilter(className);
 
-		// Atomically claim a cache slot; roll back if over capacity
+		// Atomically claim a cache slot; roll back if over capacity or duplicate.
+		// Use getAndIncrement so the slot is reserved while we attempt the insert.
 		int slot = cacheSize.getAndIncrement();
 		if (slot < maxCacheSize) {
 			boolean added = (result ? cachedTrue : cachedFalse).add(className);
 			if (!added) {
-				cacheSize.decrementAndGet(); // duplicate key — slot unused
+				// Key was already present (racing insertion by another thread).
+				// Release the claimed slot — no new entry was actually stored.
+				cacheSize.decrementAndGet();
 			}
 		} else {
-			cacheSize.decrementAndGet(); // over capacity, release slot
+			// Over capacity: do not add a new entry.
+			// Only release the claimed slot if the key is genuinely new; if the key is
+			// already present (a duplicate that raced past the early-return check),
+			// releasing the slot would create a phantom free slot and allow the cache
+			// to grow beyond maxCacheSize on the next call.
+			boolean alreadyPresent = cachedTrue.contains(className) || cachedFalse.contains(className);
+			if (!alreadyPresent) {
+				cacheSize.decrementAndGet(); // new key refused due to capacity, release slot
+			}
+			// For duplicates: key is already counted in cacheSize from its original
+			// insertion; do not decrement to avoid opening a phantom free slot.
 		}
 
 		return result;

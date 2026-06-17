@@ -87,7 +87,10 @@ final class FailureHistoryTracker {
 			double failurePruneThreshold, Logger log) {
 		double retain = hasRunData ? (1.0 - failureDecay) : 1.0;
 		Map<String, Object> mergedFailures = new LinkedHashMap<>();
-		// Snapshot both maps atomically to avoid concurrent modification
+		// Non-atomic snapshot: two separate HashMap copies taken sequentially.
+		// Concurrent writes arriving between the two copies are safe because
+		// the "pending-only" loop below accounts for any entries added after the
+		// fsSnapshot was taken.
 		Map<String, Double> fsSnapshot = new java.util.HashMap<>(failureScores);
 		Map<String, Double> pfsSnapshot = new java.util.HashMap<>(pendingFailureScores);
 		for (var entry : fsSnapshot.entrySet()) {
@@ -111,7 +114,7 @@ final class FailureHistoryTracker {
 
 		double methodRetain = hasRunData ? (1.0 - methodFailureDecay) : 1.0;
 		Map<String, Object> mergedMethodFailures = new LinkedHashMap<>();
-		// Snapshot both maps atomically
+		// Non-atomic snapshot: two separate HashMap copies taken sequentially.
 		Map<String, Double> mfsSnapshot = new java.util.HashMap<>(methodFailureScores);
 		Map<String, Double> pmfsSnapshot = new java.util.HashMap<>(pendingMethodFailureScores);
 		for (var entry : mfsSnapshot.entrySet()) {

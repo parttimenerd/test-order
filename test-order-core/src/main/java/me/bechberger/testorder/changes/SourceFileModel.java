@@ -1758,8 +1758,8 @@ public class SourceFileModel {
 						break;
 					}
 					if (body.charAt(i) == '\n') {
-						lineNum++;
 						textBlockLines.add(lineNum);
+						lineNum++;
 					}
 					sb.append(body.charAt(i));
 					i++;
@@ -1772,9 +1772,11 @@ public class SourceFileModel {
 				sb.append(c);
 				i++;
 				while (i < len && body.charAt(i) != '"') {
-					if (body.charAt(i) == '\\' && i + 1 < len) {
+					if (body.charAt(i) == '\\') {
 						sb.append(body.charAt(i));
-						i++;
+						if (i + 1 < len) {
+							i++; // skip escaped char
+						}
 					}
 					sb.append(body.charAt(i));
 					i++;
@@ -1791,9 +1793,11 @@ public class SourceFileModel {
 				sb.append(c);
 				i++;
 				while (i < len && body.charAt(i) != '\'') {
-					if (body.charAt(i) == '\\' && i + 1 < len) {
+					if (body.charAt(i) == '\\') {
 						sb.append(body.charAt(i));
-						i++;
+						if (i + 1 < len) {
+							i++; // skip escaped char
+						}
 					}
 					sb.append(body.charAt(i));
 					i++;
@@ -2407,7 +2411,9 @@ public class SourceFileModel {
 
 			// Text block: preserve verbatim
 			if (c == '"' && i + 2 < len && source.charAt(i + 1) == '"' && source.charAt(i + 2) == '"') {
-				o = emitPendingSpaceChar(out, o, pendingSpace, c);
+				// Always emit exactly """ — do not call emitPendingSpaceChar with '"'
+				// since '"' is neither a word nor an operator char, so no space is needed
+				// and calling it with c='"' could yield 2-4 quotes via the pendingSpace path.
 				pendingSpace = false;
 				out[o++] = '"';
 				out[o++] = '"';

@@ -73,8 +73,14 @@ final class StateMigrations {
 			LOG.info("Migrating state from schema v" + v + " to v" + (v + 1));
 			Map<String, Object> migrated = migration.transform().apply(current);
 			if (migrated == current) {
-				// Identity transform — just update schema version in-place
-				current.put("schemaVersion", v + 1);
+				// Identity transform — update schema version in the current map.
+				// Guard against immutable maps (e.g. Map.of()) by copying on first mutation.
+				try {
+					current.put("schemaVersion", v + 1);
+				} catch (UnsupportedOperationException e) {
+					current = new java.util.HashMap<>(current);
+					current.put("schemaVersion", v + 1);
+				}
 			} else {
 				Map<String, Object> normalized = new java.util.LinkedHashMap<>(migrated);
 				normalized.put("schemaVersion", v + 1);

@@ -8,6 +8,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.MethodOrdererContext;
@@ -41,54 +42,56 @@ import me.bechberger.testorder.annotations.TestOrder;
  */
 public class PriorityMethodOrderer implements MethodOrderer {
 
-	private static volatile TestOrderState pendingState;
-	private static volatile TestOrderState.MethodScoringWeights methodWeights;
-	private static volatile boolean enabled = false;
-	private static volatile DependencyMap depMap;
-	private static volatile Set<String> changedClasses;
-	private static volatile Set<String> changedMethods;
+	/**
+	 * Immutable holder for all per-invocation state injected by
+	 * PriorityClassOrderer. Using a single AtomicReference to a record avoids the
+	 * partially-updated-state race that was present with 6 individual static
+	 * volatile fields.
+	 */
+	private record PendingStateHolder(TestOrderState state, TestOrderState.MethodScoringWeights weights,
+			boolean enabled, DependencyMap depMap, Set<String> changedClasses, Set<String> changedMethods) {
+	}
+
+	private static final AtomicReference<PendingStateHolder> pendingStateRef = new AtomicReference<>(null);
 
 	/**
 	 * Called by PriorityClassOrderer to inject the state, weights, and dep map for
 	 * method ordering.
 	 */
-	public static synchronized void setPendingState(TestOrderState state, TestOrderState.MethodScoringWeights weights,
+	public static void setPendingState(TestOrderState state, TestOrderState.MethodScoringWeights weights,
 			boolean enabled, DependencyMap depMap, Set<String> changedClasses, Set<String> changedMethods) {
-		PriorityMethodOrderer.pendingState = state;
-		PriorityMethodOrderer.methodWeights = weights;
-		PriorityMethodOrderer.enabled = enabled;
-		PriorityMethodOrderer.depMap = depMap;
-		PriorityMethodOrderer.changedClasses = changedClasses;
-		PriorityMethodOrderer.changedMethods = changedMethods;
+		pendingStateRef.set(new PendingStateHolder(state, weights, enabled, depMap, changedClasses, changedMethods));
 	}
 
-	public static synchronized void clearPendingState() {
-		pendingState = null;
-		methodWeights = null;
-		enabled = false;
-		depMap = null;
-		changedClasses = null;
-		changedMethods = null;
+	public static void clearPendingState() {
+		pendingStateRef.set(null);
 	}
 
 	@Override
 	public void orderMethods(MethodOrdererContext context) {
-		// Snapshot all volatile fields under the same lock used by setPendingState()
-		// to avoid seeing a partially-updated state (e.g., new 'enabled' but old
-		// 'pendingState' from a concurrent setPendingState() call).
+		// Atomically read the entire state holder — a single AtomicReference.get()
+		// guarantees all fields are seen consistently (no partial-update window).
+		PendingStateHolder holder = pendingStateRef.get();
 		final TestOrderState localState;
 		final TestOrderState.MethodScoringWeights localWeights;
 		final boolean localEnabled;
 		final DependencyMap localDepMap;
 		final Set<String> localChangedClasses;
 		final Set<String> localChangedMethods;
-		synchronized (PriorityMethodOrderer.class) {
-			localState = pendingState;
-			localWeights = methodWeights;
-			localEnabled = enabled;
-			localDepMap = depMap;
-			localChangedClasses = changedClasses;
-			localChangedMethods = changedMethods;
+		if (holder == null) {
+			localState = null;
+			localWeights = null;
+			localEnabled = false;
+			localDepMap = null;
+			localChangedClasses = null;
+			localChangedMethods = null;
+		} else {
+			localState = holder.state();
+			localWeights = holder.weights();
+			localEnabled = holder.enabled();
+			localDepMap = holder.depMap();
+			localChangedClasses = holder.changedClasses();
+			localChangedMethods = holder.changedMethods();
 		}
 		if (!localEnabled || localState == null || localWeights == null) {
 			// No reordering if disabled or state not available
@@ -179,10 +182,12 @@ public class PriorityMethodOrderer implements MethodOrderer {
 		}
 
 		// Pre-build lookup map for O(1) score access (instead of O(N) linear search per
-		// comparator call)
+		// comparator call).
+		// Key includes parameter types so overloaded methods (same name, different
+		// params) get distinct entries and do not collide.
 		Map<String, Integer> scoreIndexMap = new HashMap<>(scores.size() * 2);
 		for (int i = 0; i < scores.size(); i++) {
-			scoreIndexMap.put(scores.get(i).methodName(), i);
+			scoreIndexMap.put(methodUniqueKey(methods.get(i)), i);
 		}
 
 		// Apply @TestOrder and @AlwaysRun annotation overrides
@@ -191,8 +196,8 @@ public class PriorityMethodOrderer implements MethodOrderer {
 		List<org.junit.jupiter.api.MethodDescriptor> pinLastMethods = new ArrayList<>();
 		Set<org.junit.jupiter.api.MethodDescriptor> pinFirstSet = Collections.newSetFromMap(new IdentityHashMap<>());
 		Set<org.junit.jupiter.api.MethodDescriptor> pinLastSet = Collections.newSetFromMap(new IdentityHashMap<>());
-		for (MethodScorer.MethodScoreResult sr : scores) {
-			effectiveScores.put(sr.methodName(), sr.score());
+		for (int i = 0; i < scores.size(); i++) {
+			effectiveScores.put(methodUniqueKey(methods.get(i)), scores.get(i).score());
 		}
 		for (org.junit.jupiter.api.MethodDescriptor md : context.getMethodDescriptors()) {
 			boolean alwaysRun = md.getMethod().isAnnotationPresent(AlwaysRun.class);
@@ -203,23 +208,24 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			boolean isChanged = localChangedMethods != null && localChangedMethods.contains(methodKey);
 			double delta = ann != null ? ann.scoreBonus() + (isChanged ? ann.changeBonus() : 0) : 0;
 			TestOrder.Priority prio = ann != null ? ann.priority() : TestOrder.Priority.NORMAL;
+			String uniqueKey = methodUniqueKey(md.getMethod());
 			if (alwaysRun || prio == TestOrder.Priority.FIRST) {
 				if (pinFirstSet.add(md))
 					pinFirstMethods.add(md);
 				if (delta != 0)
-					effectiveScores.merge(md.getMethod().getName(), delta, Double::sum);
+					effectiveScores.merge(uniqueKey, delta, Double::sum);
 			} else if (prio == TestOrder.Priority.LAST) {
 				pinLastMethods.add(md);
 				pinLastSet.add(md);
 				if (delta != 0)
-					effectiveScores.merge(md.getMethod().getName(), delta, Double::sum);
+					effectiveScores.merge(uniqueKey, delta, Double::sum);
 			} else {
 				if (prio == TestOrder.Priority.HIGH)
 					delta += TestOrder.Priority.BOOST;
 				else if (prio == TestOrder.Priority.LOW)
 					delta -= TestOrder.Priority.BOOST;
 				if (delta != 0)
-					effectiveScores.merge(md.getMethod().getName(), delta, Double::sum);
+					effectiveScores.merge(uniqueKey, delta, Double::sum);
 			}
 		}
 
@@ -235,12 +241,12 @@ public class PriorityMethodOrderer implements MethodOrderer {
 				return 1;
 			if (!aPin0 && bPin0)
 				return -1;
-			double sa = effectiveScores.getOrDefault(a.getMethod().getName(), 0.0);
-			double sb = effectiveScores.getOrDefault(b.getMethod().getName(), 0.0);
+			double sa = effectiveScores.getOrDefault(methodUniqueKey(a.getMethod()), 0.0);
+			double sb = effectiveScores.getOrDefault(methodUniqueKey(b.getMethod()), 0.0);
 			int cmp = Double.compare(sb, sa); // higher score first
 			if (cmp == 0) {
-				int ia = scoreIndexMap.getOrDefault(a.getMethod().getName(), -1);
-				int ib = scoreIndexMap.getOrDefault(b.getMethod().getName(), -1);
+				int ia = scoreIndexMap.getOrDefault(methodUniqueKey(a.getMethod()), -1);
+				int ib = scoreIndexMap.getOrDefault(methodUniqueKey(b.getMethod()), -1);
 				return Integer.compare(ia, ib);
 			}
 			return cmp;
@@ -299,5 +305,23 @@ public class PriorityMethodOrderer implements MethodOrderer {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Returns a unique key for a method that includes the parameter types, so that
+	 * overloaded methods (same name, different parameter lists) produce distinct
+	 * entries in score maps.
+	 * <p>
+	 * Format: {@code methodName(param1Type,param2Type,...)}
+	 */
+	private static String methodUniqueKey(Method m) {
+		StringBuilder sb = new StringBuilder(m.getName()).append('(');
+		Class<?>[] params = m.getParameterTypes();
+		for (int i = 0; i < params.length; i++) {
+			if (i > 0)
+				sb.append(',');
+			sb.append(params[i].getName());
+		}
+		return sb.append(')').toString();
 	}
 }

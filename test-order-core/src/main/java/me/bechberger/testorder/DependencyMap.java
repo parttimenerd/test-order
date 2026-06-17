@@ -145,7 +145,7 @@ public class DependencyMap {
 	private final Map<String, String> testToModule;
 
 	public DependencyMap() {
-		this.dependencies = new HashMap<>();
+		this.dependencies = new TreeMap<>();
 		this.methodDependencies = new HashMap<>();
 		this.memberKeyDictionary = new ArrayList<>();
 		this.memberKeyIndex = new LinkedHashMap<>();
@@ -185,7 +185,7 @@ public class DependencyMap {
 	}
 
 	public DependencyMap(Map<String, Set<String>> dependencies) {
-		this.dependencies = new HashMap<>();
+		this.dependencies = new TreeMap<>();
 		for (var e : dependencies.entrySet()) {
 			this.dependencies.put(e.getKey(), Collections.unmodifiableSet(new HashSet<>(e.getValue())));
 		}
@@ -516,7 +516,15 @@ public class DependencyMap {
 			log.debug("[test-order] Module filter '" + moduleId + "': excluded " + excluded
 					+ " tests from other modules");
 		}
-		filtered.methodDependencies.putAll(methodDependencies);
+		for (var entry : methodDependencies.entrySet()) {
+			String methodKey = entry.getKey();
+			int hash = methodKey.indexOf('#');
+			String testClass = hash >= 0 ? methodKey.substring(0, hash) : methodKey;
+			String ownerModule = testToModule.get(testClass);
+			if (ownerModule == null || ownerModule.equals(moduleId)) {
+				filtered.methodDependencies.put(methodKey, entry.getValue());
+			}
+		}
 		filtered.memberKeyDictionary.addAll(memberKeyDictionary);
 		filtered.memberKeyIndex.putAll(memberKeyIndex);
 		for (var e : memberDepsMap.entrySet())
@@ -563,8 +571,7 @@ public class DependencyMap {
 				testToModule.put(entry.getKey(), entry.getValue());
 			}
 		}
-		invertedIndex = null; // invalidate cache
-		depFrequencies = null;
+		invalidateCaches();
 	}
 
 	/**

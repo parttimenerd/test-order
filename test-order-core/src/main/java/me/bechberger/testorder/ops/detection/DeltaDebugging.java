@@ -3,6 +3,7 @@ package me.bechberger.testorder.ops.detection;
 import java.util.ArrayList;
 import java.util.List;
 
+import me.bechberger.testorder.TestOrderLogger;
 import me.bechberger.testorder.ops.detection.TestRunner.TestRunResult;
 
 /**
@@ -50,7 +51,14 @@ public final class DeltaDebugging {
 
 	private static List<String> ddmin(List<String> candidates, String victim, TestRunner runner, int partitions,
 			int runBudget) {
-		if (candidates.size() == 1 || runBudget <= 0) {
+		if (candidates.size() == 1) {
+			return candidates;
+		}
+		if (runBudget <= 0) {
+			// Budget exhausted — returning un-minimized list; caller cannot distinguish
+			// from success
+			TestOrderLogger
+					.warn("[ddmin] budget exhausted, returning un-minimized list of " + candidates.size() + " tests");
 			return candidates;
 		}
 

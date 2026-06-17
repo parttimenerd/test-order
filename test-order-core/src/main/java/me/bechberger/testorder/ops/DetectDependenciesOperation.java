@@ -9,7 +9,9 @@ import java.util.stream.Collectors;
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.ops.detection.*;
+import me.bechberger.util.json.JSONParser;
 import me.bechberger.util.json.PrettyPrinter;
+import me.bechberger.util.json.Util;
 
 /**
  * Orchestrator for order-dependent test detection. Loads dependencies and
@@ -535,23 +537,18 @@ public final class DetectDependenciesOperation {
 
 		try {
 			String content = Files.readString(priorReport);
-			// Simple extraction of victim fields from JSON
-			int idx = 0;
-			while (true) {
-				int victimIdx = content.indexOf("\"victim\"", idx);
-				if (victimIdx < 0)
-					break;
-				int colonIdx = content.indexOf(':', victimIdx);
-				if (colonIdx < 0)
-					break;
-				int quoteStart = content.indexOf('"', colonIdx + 1);
-				if (quoteStart < 0)
-					break;
-				int quoteEnd = content.indexOf('"', quoteStart + 1);
-				if (quoteEnd < 0)
-					break;
-				known.add(content.substring(quoteStart + 1, quoteEnd));
-				idx = quoteEnd + 1;
+			Object parsed = JSONParser.parse(content);
+			Map<String, Object> root = Util.asMap(parsed);
+			Object findingsObj = root.get("findings");
+			if (findingsObj instanceof List<?> findings) {
+				for (Object item : findings) {
+					if (item instanceof Map<?, ?> finding) {
+						Object victim = finding.get("victim");
+						if (victim instanceof String v && !v.isEmpty()) {
+							known.add(v);
+						}
+					}
+				}
 			}
 			if (!known.isEmpty()) {
 				log.info(
@@ -577,37 +574,25 @@ public final class DetectDependenciesOperation {
 
 		try {
 			String content = Files.readString(priorReport);
-			// Parse each finding block from the JSON
-			int findingsIdx = content.indexOf("\"findings\"");
-			if (findingsIdx < 0)
+			Object parsed = JSONParser.parse(content);
+			Map<String, Object> root = Util.asMap(parsed);
+			Object findingsObj = root.get("findings");
+			if (!(findingsObj instanceof List<?> findings)) {
 				return results;
+			}
+			for (Object item : findings) {
+				if (!(item instanceof Map<?, ?> findingRaw)) {
+					continue;
+				}
+				@SuppressWarnings("unchecked")
+				Map<String, Object> finding = (Map<String, Object>) findingRaw;
 
-			int arrStart = content.indexOf('[', findingsIdx);
-			if (arrStart < 0)
-				return results;
-
-			// Find each victim/type/confidence/description/dependencyChain in the findings
-			// array
-			int idx = arrStart;
-			int constraintsIdx = content.indexOf("\"constraints\"", arrStart); // computed once
-			while (true) {
-				int victimIdx = content.indexOf("\"victim\"", idx);
-				if (victimIdx < 0)
-					break;
-				// Check if we're still in "findings" array (before "constraints" or
-				// "methodFindings")
-				if (constraintsIdx > 0 && victimIdx > constraintsIdx)
-					break;
-
-				String victim = extractJsonString(content, victimIdx);
-				int typeIdx = content.indexOf("\"type\"", victimIdx);
-				// Only use typeIdx if it's still within the findings array (not in constraints)
-				boolean typeInFindings = typeIdx > 0 && (constraintsIdx < 0 || typeIdx < constraintsIdx);
-				String typeStr = typeInFindings ? extractJsonString(content, typeIdx) : "VICTIM";
-				int descSearchFrom = typeInFindings ? typeIdx : victimIdx;
-				int descIdx = content.indexOf("\"description\"", descSearchFrom);
-				boolean descInFindings = descIdx > 0 && (constraintsIdx < 0 || descIdx < constraintsIdx);
-				String desc = descInFindings ? extractJsonString(content, descIdx) : "Carried from prior run";
+				String victim = finding.get("victim") instanceof String s ? s : "";
+				if (victim.isEmpty()) {
+					continue;
+				}
+				String typeStr = finding.get("type") instanceof String t ? t : "VICTIM";
+				String desc = finding.get("description") instanceof String d ? d : "Carried from prior run";
 
 				ODType type;
 				try {
@@ -616,80 +601,25 @@ public final class DetectDependenciesOperation {
 					type = ODType.VICTIM;
 				}
 
-				int chainIdx = content.indexOf("\"dependencyChain\"", victimIdx);
-				boolean chainInFindings = chainIdx > 0 && (constraintsIdx < 0 || chainIdx < constraintsIdx);
-				List<String> chain = chainInFindings ? extractJsonStringArray(content, chainIdx) : List.of(victim);
-				if (chain.isEmpty())
+				List<String> chain = new ArrayList<>();
+				if (finding.get("dependencyChain") instanceof List<?> chainList) {
+					for (Object entry : chainList) {
+						if (entry instanceof String s) {
+							chain.add(s);
+						}
+					}
+				}
+				if (chain.isEmpty()) {
 					chain = List.of(victim);
+				}
 
 				String suffix = desc.contains("[carried from prior run]") ? "" : " [carried from prior run]";
 				results.add(new ODResult(victim, type, chain, desc + suffix, 0.9));
-				// Advance past the closing quote of the victim string value to avoid
-				// re-finding the same "victim" key on the next iteration.
-				int colonAfterVictim = content.indexOf(':', victimIdx);
-				int openQuote = colonAfterVictim > 0 ? content.indexOf('"', colonAfterVictim + 1) : -1;
-				int closeQuote = openQuote > 0 ? content.indexOf('"', openQuote + 1) : -1;
-				idx = closeQuote > 0 ? closeQuote + 1 : victimIdx + victim.length() + 10;
 			}
 		} catch (IOException e) {
 			// Ignore
 		}
 		return results;
-	}
-
-	private static String extractJsonString(String json, int keyIdx) {
-		int colonIdx = json.indexOf(':', keyIdx);
-		if (colonIdx < 0)
-			return "";
-		int quoteStart = json.indexOf('"', colonIdx + 1);
-		if (quoteStart < 0)
-			return "";
-		int i = quoteStart + 1;
-		while (i < json.length()) {
-			char c = json.charAt(i);
-			if (c == '\\') {
-				i += 2; // skip escaped character
-			} else if (c == '"') {
-				return json.substring(quoteStart + 1, i);
-			} else {
-				i++;
-			}
-		}
-		return "";
-	}
-
-	private static List<String> extractJsonStringArray(String json, int keyIdx) {
-		int colonIdx = json.indexOf(':', keyIdx);
-		if (colonIdx < 0)
-			return List.of();
-		int arrStart = json.indexOf('[', colonIdx + 1);
-		if (arrStart < 0)
-			return List.of();
-		int arrEnd = json.indexOf(']', arrStart + 1);
-		if (arrEnd < 0)
-			return List.of();
-		List<String> result = new ArrayList<>();
-		int i = arrStart + 1;
-		while (i < arrEnd) {
-			int qs = json.indexOf('"', i);
-			if (qs < 0 || qs >= arrEnd)
-				break;
-			int qe = qs + 1;
-			while (qe < arrEnd) {
-				char c = json.charAt(qe);
-				if (c == '\\') {
-					qe += 2;
-				} else if (c == '"') {
-					break;
-				} else {
-					qe++;
-				}
-			}
-			if (qe < arrEnd)
-				result.add(json.substring(qs + 1, qe));
-			i = qe + 1;
-		}
-		return result;
 	}
 
 	/**

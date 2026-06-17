@@ -318,10 +318,13 @@ class StructuralDiffTest {
 
 	@Test
 	void parseGitBatchResponseSupportsPresentAndMissingFiles() throws Exception {
-		byte[] payload = ("abc123 blob 11\nhello world\n" + "HEAD:src/Missing.java missing\n")
-				.getBytes(StandardCharsets.UTF_8);
+		// The batch response format: "<oid> <type> <size>\n<content>\n" or "<oid>
+		// missing\n"
+		// We submit OIDs, so oidToRelPath maps each OID to its path.
+		byte[] payload = ("abc123 blob 11\nhello world\n" + "def456 missing\n").getBytes(StandardCharsets.UTF_8);
 
-		Map<String, String> result = StructuralDiff.parseGitBatchResponse(List.of("src/Foo.java", "src/Missing.java"),
+		Map<String, String> oidToRelPath = Map.of("abc123", "src/Foo.java", "def456", "src/Missing.java");
+		Map<String, String> result = StructuralDiff.parseGitBatchResponse(oidToRelPath,
 				new ByteArrayInputStream(payload));
 
 		assertEquals("hello world", result.get("src/Foo.java"));

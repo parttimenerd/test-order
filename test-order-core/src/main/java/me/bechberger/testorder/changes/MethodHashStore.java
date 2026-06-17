@@ -131,6 +131,11 @@ public class MethodHashStore {
 			// Convert path to class name: com/example/FooTest.java → com.example.FooTest
 			String className = relPath.replaceFirst("\\.(java|kt)$", "").replace('/', '.');
 			classToFile.put(className, relPath);
+			// Kotlin file classes are named FooKt but the source file is Foo.kt.
+			// Add a mapping for the synthetic Kt-suffixed name so carry-over works.
+			if (relPath.endsWith(".kt") && !className.endsWith("Kt")) {
+				classToFile.put(className + "Kt", relPath);
+			}
 		}
 
 		// Separate files into changed and unchanged (parallel fingerprinting)

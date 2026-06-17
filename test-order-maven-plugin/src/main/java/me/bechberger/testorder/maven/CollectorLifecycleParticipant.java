@@ -715,7 +715,6 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 				? session.getUserProperties().getProperty(AbstractTestOrderMojo.SESSION_ACTIVE_COLLECTORS_KEY, "")
 				: "";
 		if (!activeEntry.isBlank()) {
-			session.getUserProperties().remove(AbstractTestOrderMojo.SESSION_ACTIVE_COLLECTORS_KEY);
 			for (String entry : activeEntry.split("\\|")) {
 				if (entry.isBlank()) {
 					continue;
@@ -751,6 +750,10 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 					System.err.println("[test-order] CollectorLifecycleParticipant: drain entry error: " + e);
 				}
 			}
+			// Remove the session key only after all modules have been drained, so that
+			// parallel module builds that registered after we started draining are not
+			// lost.
+			session.getUserProperties().remove(AbstractTestOrderMojo.SESSION_ACTIVE_COLLECTORS_KEY);
 			// Fall through: drain any remaining static-map entries not covered by session
 			// properties (e.g. a module that registered before the session property was
 			// written, or a cross-realm registration that didn't match any entry above).

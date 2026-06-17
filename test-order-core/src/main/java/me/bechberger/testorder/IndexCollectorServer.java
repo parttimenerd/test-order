@@ -786,8 +786,11 @@ public class IndexCollectorServer implements AutoCloseable {
 
 	/** Maximum number of entries allowed in a single map (safety limit). */
 	private static final int MAX_MAP_ENTRIES = 500_000;
-	/** Maximum string length in the wire protocol (64 KB). */
-	private static final int MAX_STRING_LENGTH = 65535;
+	/**
+	 * Maximum string length in the wire protocol (2 GB theoretical limit; practical
+	 * limit).
+	 */
+	private static final int MAX_STRING_LENGTH = 64 * 1024 * 1024; // 64 MB
 
 	private static Map<String, Set<String>> readMap(DataInputStream in) throws IOException {
 		int entryCount = in.readInt();
@@ -814,8 +817,8 @@ public class IndexCollectorServer implements AutoCloseable {
 	}
 
 	private static String readString(DataInputStream in) throws IOException {
-		int len = in.readUnsignedShort();
-		if (len > MAX_STRING_LENGTH) {
+		int len = in.readInt();
+		if (len < 0 || len > MAX_STRING_LENGTH) {
 			throw new IOException("String length exceeds maximum: " + len);
 		}
 		byte[] buf = READ_BUF.get();

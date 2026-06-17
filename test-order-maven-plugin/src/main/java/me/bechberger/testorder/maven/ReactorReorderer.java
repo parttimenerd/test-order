@@ -178,7 +178,7 @@ public final class ReactorReorderer {
 			map.put(p, new HashSet<>());
 		}
 		for (MavenProject p : reactor) {
-			Set<MavenProject> preds = map.get(p);
+			Set<MavenProject> preds = map.getOrDefault(p, java.util.Set.of());
 			// declared <dependency> entries that resolve to another reactor module
 			List<Dependency> deps = p.getDependencies();
 			if (deps != null) {

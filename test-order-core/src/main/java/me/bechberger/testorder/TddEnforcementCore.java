@@ -160,9 +160,16 @@ public final class TddEnforcementCore {
 	}
 
 	static boolean isLikelyRenamedClass(String newClassName, TestOrderState state) {
+		// M16: nested classes (containing '$') should not trigger rename detection —
+		// they are handled separately as "new inner class" violations above.
+		if (newClassName.contains("$")) {
+			return false;
+		}
 		Class<?> newClass;
 		try {
-			newClass = Class.forName(newClassName);
+			// M17: use the context classloader so the correct class definition is found
+			// in Surefire's isolated classloader hierarchy.
+			newClass = Class.forName(newClassName, false, Thread.currentThread().getContextClassLoader());
 		} catch (ClassNotFoundException | Error e) {
 			return false;
 		}

@@ -110,6 +110,8 @@ public final class SelectiveLearnSupport {
 					List.of(classesDir), expandDepth);
 			return expanded.changedClasses();
 		} catch (IOException e) {
+			// M18: null signals "computation failed — caller must fall back to full
+			// instrumentation". Callers are expected to handle null explicitly.
 			return null;
 		}
 	}
@@ -152,6 +154,8 @@ public final class SelectiveLearnSupport {
 					changed.changedClasses(), changed.membersByClass(), changed.memberChangeKinds(),
 					changed.classesWithTypeChanges(), changed.changedStaticFieldKeys(), fileSummaries);
 		} catch (IOException e) {
+			// M18: null signals "computation failed — caller must fall back to full
+			// instrumentation". Callers are expected to handle null explicitly.
 			return null;
 		}
 	}

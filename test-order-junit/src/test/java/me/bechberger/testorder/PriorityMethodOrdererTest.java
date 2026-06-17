@@ -435,10 +435,11 @@ class PriorityMethodOrdererTest {
 		var ctx = new StubMethodOrdererContext(DummyTests.class, descs);
 		// Should not throw — just leave order unchanged
 		assertDoesNotThrow(() -> orderer.orderMethods(ctx));
-		// After clearing, pendingState field should be null (check via reflection)
-		var field = PriorityMethodOrderer.class.getDeclaredField("pendingState");
+		// After clearing, pendingStateRef field should be null (check via reflection)
+		var field = PriorityMethodOrderer.class.getDeclaredField("pendingStateRef");
 		field.setAccessible(true);
-		assertNull(field.get(null), "pendingState should be null after clearPendingState()");
+		assertNull(((java.util.concurrent.atomic.AtomicReference<?>) field.get(null)).get(),
+				"pendingStateRef should hold null after clearPendingState()");
 	}
 
 	// ── @Order annotation tests ───────────────────────────────────────

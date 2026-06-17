@@ -420,7 +420,12 @@ public class TelemetryListener implements TestExecutionListener {
 				if (isAggregatedMode() && !executionOrder.isEmpty()) {
 					// Build-session aggregation mode: write partial record to staging dir.
 					// The Maven plugin will merge all per-fork records after all forks complete.
-					TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder, failedClassNames);
+					// Synchronize on executionOrder to prevent ConcurrentModificationException
+					// from concurrent testFinished writes during iteration in buildRunRecord.
+					TestOrderState.RunRecord record;
+					synchronized (executionOrder) {
+						record = TestOrderState.buildRunRecord(executionOrder, failedClassNames);
+					}
 					try {
 						PartialRunAggregator.writePartial(Path.of(pendingRunsDir), buildId, record, isLearnRun);
 					} catch (IOException e) {
@@ -445,28 +450,32 @@ public class TelemetryListener implements TestExecutionListener {
 						TelemetryPersistence.applyHistoryMaxRuns(lockedState);
 						TelemetryPersistence.applyPendingTelemetry(lockedState, pendingDurations, failedClassNames,
 								pendingMethodDurations, failedMethodNames);
-						if (!executionOrder.isEmpty()) {
-							TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder,
-									failedClassNames);
-							lockedState.addRunRecord(record);
-							if (!isLearnRun) {
-								lockedState.incrementRunsSinceLearn();
-							}
-							if (record.totalFailures() > 0) {
-								String timeSavedMsg = formatTimeSaved(executionOrder, failedClassNames,
-										pendingDurations, lockedState);
-								if (timeSavedMsg != null) {
-									TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{}) — {}",
-											String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
-											record.firstFailurePosition() + 1, record.totalTests(), timeSavedMsg);
-								} else {
-									TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
-											String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
-											record.firstFailurePosition() + 1, record.totalTests());
+						// Synchronize on executionOrder to prevent ConcurrentModificationException
+						// from concurrent testFinished writes during iteration in buildRunRecord.
+						synchronized (executionOrder) {
+							if (!executionOrder.isEmpty()) {
+								TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder,
+										failedClassNames);
+								lockedState.addRunRecord(record);
+								if (!isLearnRun) {
+									lockedState.incrementRunsSinceLearn();
 								}
-							} else if (!isLearnRun && record.totalTests() > 1) {
-								TestOrderLogger.info("{} tests ran in priority order — all passed",
-										record.totalTests());
+								if (record.totalFailures() > 0) {
+									String timeSavedMsg = formatTimeSaved(executionOrder, failedClassNames,
+											pendingDurations, lockedState);
+									if (timeSavedMsg != null) {
+										TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{}) — {}",
+												String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
+												record.firstFailurePosition() + 1, record.totalTests(), timeSavedMsg);
+									} else {
+										TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
+												String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
+												record.firstFailurePosition() + 1, record.totalTests());
+									}
+								} else if (!isLearnRun && record.totalTests() > 1) {
+									TestOrderLogger.info("{} tests ran in priority order — all passed",
+											record.totalTests());
+								}
 							}
 						}
 						lockedState.save(stateFile);
@@ -489,11 +498,6 @@ public class TelemetryListener implements TestExecutionListener {
 		} catch (NoClassDefFoundError ignored) {
 			// JUnit Jupiter method orderer API not available (e.g. JUnit 4 / Vintage
 			// engine)
-		} finally {
-			// Set finishedNormally=true BEFORE clearing the maps: the shutdown hook reads
-			// this flag first and returns early, so it cannot race with the clears below
-			// and save an empty snapshot (double-save prevented by the flag, not a lock).
-			finishedNormally = true;
 		}
 
 		// Clear accumulated data after persisting to prevent double-counting
@@ -504,7 +508,9 @@ public class TelemetryListener implements TestExecutionListener {
 		pendingMethodDurations.clear();
 		failedClassNames.clear();
 		failedMethodNames.clear();
-		executionOrder.clear();
+		synchronized (executionOrder) {
+			executionOrder.clear();
+		}
 		executionOrderSet.clear();
 		if (shutdownHook != null) {
 			try {
@@ -512,6 +518,10 @@ public class TelemetryListener implements TestExecutionListener {
 			} catch (IllegalStateException ignored) {
 				/* JVM already shutting down */ }
 		}
+		// Set finishedNormally=true AFTER all IO and map clearing is done.
+		// The shutdown hook reads this flag and returns early, so setting it last
+		// ensures it cannot observe an empty/partially-cleared snapshot.
+		finishedNormally = true;
 
 		// Offline mode: restore original (uninstrumented) class files from backup
 		// so that subsequent builds/tools don't encounter instrumented bytecode.

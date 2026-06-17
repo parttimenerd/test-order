@@ -202,7 +202,9 @@ public class TieredTestSelector {
 		long estimatedTotal = (estimatedUnknown <= Long.MAX_VALUE - totalDuration)
 				? totalDuration + estimatedUnknown
 				: Long.MAX_VALUE;
-		long budget = (long) (estimatedTotal * config.tier2Fraction());
+		// M20: use double arithmetic to avoid overflow when estimatedTotal is
+		// Long.MAX_VALUE; Math.min clamps the result back into long range.
+		long budget = (long) Math.min((double) estimatedTotal * config.tier2Fraction(), (double) Long.MAX_VALUE);
 		for (ScoredTest s : remaining) {
 			long dur = s.duration() != Long.MAX_VALUE ? s.duration() : avgDuration;
 			if (spent + dur > budget && !tier2.isEmpty()) {

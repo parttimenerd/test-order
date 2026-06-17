@@ -109,7 +109,15 @@ final class StateSerializer {
 		if (raw.length == 0) {
 			return "";
 		}
-		if (raw[0] == '{' || raw[0] == ' ' || raw[0] == '\n' || raw[0] == '\r' || raw[0] == '\t') {
+		// Detect LZ4 by magic bytes rather than by checking for JSON-leading
+		// characters,
+		// which can misidentify binary data that happens to start with '{' or
+		// whitespace.
+		// lz4-java LZ4BlockOutputStream magic: 4C 5A 34 42 ('L','Z','4','B')
+		// LZ4 frame format magic: 04 22 4D 18
+		boolean isLz4 = raw.length >= 4 && ((raw[0] == 0x4C && raw[1] == 0x5A && raw[2] == 0x34 && raw[3] == 0x42)
+				|| (raw[0] == 0x04 && raw[1] == 0x22 && raw[2] == (byte) 0x4D && raw[3] == 0x18));
+		if (!isLz4) {
 			return new String(raw, StandardCharsets.UTF_8).strip();
 		}
 		try (var reader = new java.io.InputStreamReader(LZ4Support.blockInputStream(new ByteArrayInputStream(raw)),

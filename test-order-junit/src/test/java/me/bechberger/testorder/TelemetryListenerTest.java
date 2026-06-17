@@ -265,9 +265,9 @@ class TelemetryListenerTest {
 
 	private static boolean isMethodOrderingStateConfigured() {
 		try {
-			var field = PriorityMethodOrderer.class.getDeclaredField("pendingState");
+			var field = PriorityMethodOrderer.class.getDeclaredField("pendingStateRef");
 			field.setAccessible(true);
-			return field.get(null) != null;
+			return ((java.util.concurrent.atomic.AtomicReference<?>) field.get(null)).get() != null;
 		} catch (ReflectiveOperationException e) {
 			fail("Could not inspect PriorityMethodOrderer pending state: " + e.getMessage());
 			return false;
