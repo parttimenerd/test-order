@@ -93,7 +93,7 @@ public class TestScorer {
 	 * <p>
 	 * The weight acts as the maximum contribution (like {@code maxFailure}).
 	 */
-	private static final int MIN_DEPS_DENOMINATOR = 5;
+	static final int MIN_DEPS_DENOMINATOR = 5;
 
 	public static int depOverlapScore(double depOverlap, int depTotal, int weight) {
 		if (depOverlap <= 0 || depTotal == 0 || weight == 0)

@@ -1945,3 +1945,34 @@ The production class files in `clients/build/classes/java/main/` are deleted by 
 **Symptom:** Two methods contained `project.getProperties() != null ? project.getProperties().getProperty(k) : null` guards before reading a property, but then called `project.getProperties().setProperty(...)` unconditionally on the next line. If `getProperties()` could actually return null, the set call would NPE. All other 12+ call sites in the same file call `getProperties()` without any null guard, matching Maven's guarantee that `MavenProject.getProperties()` never returns null.  
 **Root cause:** Over-defensive coding added inconsistently; the null guard on the read was not extended to the write.  
 **Fix:** Removed the spurious ternary null guards; both methods now call `project.getProperties().getProperty(k)` directly, consistent with all other call sites.
+
+### BUG-159: `FailureHistoryTracker.pruneToActiveClasses` uses `hash > 0` instead of `hash >= 0`, leaking method entries with empty class name ✓ FIXED
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/FailureHistoryTracker.java` line 62
+**Severity:** LOW (memory leak; stale method failure scores never pruned for malformed keys)
+**Status:** FIXED (2026-06-17)
+**Symptom:** `pruneToActiveClasses` iterates `methodFailureScores` and removes entries whose class name is no longer active. The condition `hash > 0` skips removal when `hash == 0`, meaning method keys of the form `#methodName` (class name is empty string) are never pruned regardless of whether the class is active. Any such stale entry accumulates indefinitely.
+**Root cause:** `indexOf('#')` returns 0 when `#` is the first character. `hash > 0` treats this as "valid key, don't prune" when it should prune (empty class name). The condition should be `hash >= 0`.
+**Fix:** Changed `hash > 0` to `hash >= 0`.
+
+---
+
+### BUG-160: `ScoringWeights.fromArray` accesses `a[0]..a[5]` without a length guard, crashing on short arrays ✓ FIXED
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/TestOrderState.java` line 304
+**Severity:** MEDIUM (crash when deserializing legacy state with fewer weight fields)
+**Status:** FIXED (2026-06-17)
+**Symptom:** `fromArray` applies defensive `a.length > N` guards only for indices 6–10 (the newer weight fields). Indices 0–5 are accessed unconditionally. If an older serialized state produced a shorter array (e.g., a TOML weight file with fewer than 6 entries), calling `fromArray` throws `ArrayIndexOutOfBoundsException` rather than falling back to defaults.
+**Root cause:** Guards were added for new fields added after the initial implementation, but the original 6 fields were assumed to always be present.
+**Fix:** Added an explicit `if (a.length < 6) throw new IllegalArgumentException(...)` at the top of `fromArray`, giving a clear diagnostic instead of a cryptic AIOOBE.
+
+---
+
+### BUG-161: `MethodScorer.computeDepOverlapBonus` normalizes by `sqrt(methodDeps.size())` with no minimum denominator, inflating scores for methods with tiny dep sets ✓ FIXED
+
+**File:** `test-order-core/src/main/java/me/bechberger/testorder/MethodScorer.java` line 196
+**Severity:** LOW (scoring inconsistency; methods with 1–2 deps receive disproportionately high bonus)
+**Status:** FIXED (2026-06-17)
+**Symptom:** `computeDepOverlapBonus` computes `intersectionSize / sqrt(methodDeps.size())`. For a method with 1 dep, the denominator is 1.0, giving a raw normalized value equal to `intersectionSize`. `TestScorer.depOverlapScore` uses `Math.max(depTotal, MIN_DEPS_DENOMINATOR)` (where `MIN_DEPS_DENOMINATOR = 5`) to floor the denominator, preventing runaway scores for methods/tests with very few deps. Without this floor, a method with a single changed dep scores as high as one with 25 deps overlapping 5, inflating its bonus relative to the test-class-level scoring.
+**Root cause:** The denominator floor (`MIN_DEPS_DENOMINATOR`) was not applied when `computeDepOverlapBonus` was written in `MethodScorer`.
+**Fix:** Changed `sqrt(methodDeps.size())` to `sqrt(Math.max(methodDeps.size(), TestScorer.MIN_DEPS_DENOMINATOR))` and widened `MIN_DEPS_DENOMINATOR` from `private` to package-private in `TestScorer` so `MethodScorer` can reference it.
