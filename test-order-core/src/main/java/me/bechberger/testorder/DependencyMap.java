@@ -527,10 +527,22 @@ public class DependencyMap {
 		}
 		filtered.memberKeyDictionary.addAll(memberKeyDictionary);
 		filtered.memberKeyIndex.putAll(memberKeyIndex);
-		for (var e : memberDepsMap.entrySet())
-			filtered.memberDepsMap.put(e.getKey(), e.getValue().clone());
-		for (var e : methodMemberDepsMap.entrySet())
-			filtered.methodMemberDepsMap.put(e.getKey(), e.getValue().clone());
+		for (var e : memberDepsMap.entrySet()) {
+			String testClass = e.getKey();
+			String ownerModule = testToModule.get(testClass);
+			if (ownerModule == null || ownerModule.equals(moduleId)) {
+				filtered.memberDepsMap.put(testClass, e.getValue().clone());
+			}
+		}
+		for (var e : methodMemberDepsMap.entrySet()) {
+			String methodKey = e.getKey();
+			int hash = methodKey.indexOf('#');
+			String testClass = hash >= 0 ? methodKey.substring(0, hash) : methodKey;
+			String ownerModule = testToModule.get(testClass);
+			if (ownerModule == null || ownerModule.equals(moduleId)) {
+				filtered.methodMemberDepsMap.put(methodKey, e.getValue().clone());
+			}
+		}
 		filtered.testToModule.putAll(testToModule);
 		return filtered;
 	}

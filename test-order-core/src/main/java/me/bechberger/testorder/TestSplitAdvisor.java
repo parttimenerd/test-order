@@ -160,7 +160,8 @@ public class TestSplitAdvisor {
 			// O(K²×M²) where K = number of clusters and M = max cluster size. The
 			// early-exit at checksPerformed > 50 makes this a greedy approximation —
 			// it finds a good (but not globally optimal) merge candidate quickly.
-			int maxChecks = Math.max(100, (clusters.size() * clusters.size()) / 4);
+			int maxChecks = Math.max(100,
+					(int) Math.min((long) clusters.size() * clusters.size() / 4, Integer.MAX_VALUE));
 			int checksPerformed = 0;
 			outerLoop : for (int i = 0; i < clusters.size() && checksPerformed < maxChecks; i++) {
 				for (int j = i + 1; j < clusters.size() && checksPerformed < maxChecks; j++) {
