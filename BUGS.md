@@ -1887,12 +1887,12 @@ In contrast, `SourceFileModel.findMethodIslands` handles compact constructors vi
 
 ---
 
-### BUG-154: `cleanTestOrderAffected` Gradle auto-task deletes production class files, breaking subsequent `compileJava` — PARTIALLY WORKED AROUND
+### BUG-154: `cleanTestOrderAffected` Gradle auto-task deletes production class files, breaking subsequent `compileJava` ✓ FIXED
 
-**File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java` `configureDerivedTestTask()` / `testOrderAffected` task registration  
+**File:** `test-order-gradle-plugin/src/main/java/me/bechberger/testorder/gradle/TestOrderPlugin.java` after `testOrderAffected` task registration  
 **Campaign script:** `scripts/third_party_test_plan.sh` — `phase_bugs_gradle()` function  
 **Severity:** HIGH (corrupts the build; all compilation fails with "bad class file: NoSuchFileException" errors)  
-**Status:** WORKAROUND applied (2026-06-16) — campaign script changed to use `--rerun "$select_task"` instead of running `cleanTestOrderAffected`. The underlying plugin bug (Gradle registering testClassesDirs as an output) is still present but no longer triggered during campaigns.
+**Status:** FIXED (2026-06-17) — registered a custom `cleanTestOrderAffected` task that only deletes the deferred-tests file (`build/test-order-remaining.txt`), overriding Gradle's auto-generated clean task which deleted all declared outputs including testClassesDirs.
 **Symptom:** After `cleanTestOrderAffected` runs (Gradle auto-generated clean task for `testOrderAffected`), `compileJava FAILED` with errors like:
 ```
 bad class file: .../build/classes/java/main/org/apache/kafka/common/config/ConfigTransformer.class
@@ -1900,7 +1900,7 @@ unable to access file: java.nio.file.NoSuchFileException: ...ConfigTransformer.c
 ```
 The production class files in `clients/build/classes/java/main/` are deleted by `cleanTestOrderAffected`.
 **Root cause:** When `configureDerivedTestTask()` sets `task.setTestClassesDirs(testSourceSet.getOutput().getClassesDirs())`, Gradle registers the `testClassesDirs` as BOTH an input AND an output of the test task. Gradle's `cleanFoo` generated task deletes all outputs, which (incorrectly) includes the test classes dirs. For projects with unusual SourceSet configurations, Gradle may resolve `getClassesDirs()` to include the production classes dir, causing all production `.class` files to be deleted on `cleanTestOrderAffected`.
-**Fix approach:** Use `task.setTestClassesDirs()` with a `project.files(...)` wrapper that is explicitly marked as `@Input` only (not output), or register a custom `cleanTestOrderAffected` task that only deletes the state file (deferred-tests file) rather than relying on Gradle's auto-generated clean task.
+**Fix:** Registered a custom `cleanTestOrderAffected` task immediately after `testOrderAffected`. Gradle does not auto-generate `cleanX` when a task named `cleanX` already exists. The custom task only deletes `ext.getRemainingFile()` (the deferred-tests file written by `testOrderAffected`) — it never touches class directories.
 
 ---
 

@@ -1728,6 +1728,23 @@ public class TestOrderPlugin implements Plugin<Project> {
             });
         });
 
+        // Register a custom cleanTestOrderAffected that only deletes the remaining-tests file.
+        // Without this, Gradle auto-generates cleanTestOrderAffected which deletes all declared
+        // outputs of testOrderAffected — including testClassesDirs (the test class files).
+        // That corrupts the build: subsequent compileJava fails with NoSuchFileException on the
+        // deleted .class files. Our custom task overrides the auto-generated one.
+        project.getTasks().register("cleanTestOrderAffected", task -> {
+            task.setGroup("test-order");
+            task.setDescription("Reset testOrderAffected state (deferred-tests file only)");
+            task.doLast(t -> {
+                java.io.File remainingFile = ext.getRemainingFile().get().getAsFile();
+                if (remainingFile.exists()) {
+                    remainingFile.delete();
+                    project.getLogger().lifecycle("[test-order] Deleted {}", remainingFile);
+                }
+            });
+        });
+
         project.getTasks().register("testOrderRunRemaining", Test.class, task -> {
             configureDerivedTestTask(project, ext, task);
             task.setGroup("test-order");
