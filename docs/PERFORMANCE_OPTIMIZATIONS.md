@@ -1,68 +1,36 @@
 # Performance Optimization Opportunities
 
 **Status**: Agent instrumentation is at ~0% overhead (down from 40%).  
-This document now tracks only remaining optimization opportunities.
+This document tracks optimization work — completed items are marked **DONE**.
 
-Only items marked **TODO** are included.
-
-**Last audited:** 2026-05-22 (updated 2026-05-22 for ASM transformer, incremental method scan)
+**Last audited:** 2026-06-17
 
 ---
 
 ## Category A: Agent Shutdown / Flush Path
 
-### A1. `mergeFromAgent` full index round-trip on shutdown — **TODO**
+### A1. `mergeFromAgent` full index round-trip on shutdown — **DONE**
 
 **Location**: `UsageStore.flush()` → `DependencyMap.mergeFromAgent()`  
 **Files**: `test-order-agent/.../runtime/UsageStore.java`, `test-order-core/.../DependencyMap.java`
 
-**Problem**: When the Surefire JVM shuts down, `mergeFromAgent` (line 971) does:
+**Problem**: When the Surefire JVM shuts down, `mergeFromAgent` does:
 1. Load the full `.test-order/test-dependencies.lz4` index from disk
-2. Merge new dependency sets in memory (via `Map.merge()` with `HashSet` union)
+2. Merge new dependency sets in memory
 3. Re-save the entire index
 
-This is the critical path for the majority of users — typical workflows (`mvn test`, `mvn test-order:affected test`) do not call `test-order:aggregate`, so `tryDirectMerge()` in the flush path is the only way the index gets updated. Removing it would silently stop the index from being updated.
-
-**Why it's expensive**: `DependencyMap.loadBinary()` decompresses and deserializes the full LZ4-compressed binary index (ClassNameTrie + RoaringBitmaps for every test). For a medium project with 200 tests and 500 deps per test, this is a non-trivial amount of work just to add 10–20 new entries from the current fork's results.
-
-**Impact**: 100–500ms per forked JVM. With 4 forks configured (`<forkCount>4</forkCount>`), this is 400ms–2s of pure serialization overhead added to every `mvn test` run. Scales with index size, not test count.
-
-**Risk**: High if the path is removed entirely — index updates would silently stop for the majority of users. The fix strategies below have different risk profiles:
-- Option 1 (append-only format): requires an aggregation step post-test and changes the on-disk format — medium effort, high compatibility risk until old format is phased out.
-- Option 2 (auto-wire aggregate): low implementation risk but changes Maven lifecycle behavior, which could surprise users.
-- Option 3 (optimize the round-trip): lowest risk — keeps `tryDirectMerge()` but replaces the full reload/save with an incremental merge operation (read old, write a delta patch, apply on next full load).
-
-**Fix**: Trade-off options:
-1. Keep `tryDirectMerge()` but make the merge incremental — instead of full reload+save, write a small per-fork `.delta` file and lazily apply deltas on next full read.
-2. Auto-wire `test-order:aggregate` into the default lifecycle binding so `tryDirectMerge()` becomes a no-op for most users.
-3. Use a lock-free, append-only format (newline-delimited `.deps` merged by a post-test aggregator).
-
-**Interaction**: Compounds with [[A2]] — each fork also writes 200 individual `.deps` files before this merge begins.
-
-
-Hey: Shouldn't this be improved with the server component?
+**Fix**: `IndexCollectorServer` — the Maven/Gradle plugin JVM now starts a socket server before tests run. Each forked Surefire JVM sends its dep data over the socket at shutdown (`flush()` in `UsageStore`). The server merges all data once when the test task completes and writes the index a single time. The per-fork full-reload/save is now a fallback used only when no collector port is configured (standalone agent mode).
 
 ---
 
-### A2. 200 separate `.deps` file writes — **TODO**
+### A2. 200 separate `.deps` file writes — **DONE**
 
 **Location**: `UsageStore.flush()` → `writeDepsFile()` / `writeMethodDepsFiles()` / `writeMemberDepsFiles()`  
 **Files**: `test-order-agent/.../runtime/UsageStore.java`
 
-**Problem**: The flush path has four write methods (`writeDepsFile`, `writeMethodDepsFiles`, `writeMemberDepsFiles`, `writeMethodMemberDepsFiles`), each writing one file per test class via separate `Files.write()` calls. For a 200-test class suite in `FULL_MEMBER` mode, this is up to 800 `open→write→close` cycles, though typically fewer (most tests don't have member-level deps).
+**Problem**: The flush path wrote one file per test class via separate `Files.write()` calls — up to 800 `open→write→close` cycles in `FULL_MEMBER` mode.
 
-For a baseline of 200 `.deps` files alone, each `Files.write()` on Linux/macOS involves at least an `open(2)`, `write(2)`, and `close(2)` syscall — plus `fsync` on some filesystems or build systems that enforce durability.
-
-**Impact**: ~50–100ms on SSD (bounded by syscall overhead), up to 1s on HDD or networked filesystems (NFS home directories are common in enterprise environments). Multiplies with fork count in parallel Surefire configurations.
-
-**Risk**: Medium. The per-file format isn't just for aggregation — `run-remaining` mode checks which `.deps` files exist to determine which tests have run in the current session. Any consolidation must either preserve per-file semantics or update `run-remaining` to handle a combined format. Additionally, the aggregator in `mergeFromDepsDir` scans a directory for `*.deps` files, so the reader-side change is non-trivial.
-
-**Fix**:
-- For the common case: batch all test class entries into a single combined file with a header line per test class. The aggregator already reads line-by-line; adding a header parser is straightforward.
-- For `run-remaining` compatibility: store the set of completed test classes in a separate small manifest file rather than relying on file existence.
-- Alternatively, keep the current format but open a single `BufferedWriter` and write all files sequentially, reducing syscall overhead without changing the format.
-
-introduce a better format
+**Fix**: Same as A1 — when `IndexCollectorServer` is running, all dep data is sent over the socket in a single binary batch at flush time (`sendBinaryDepsToServer()`). The per-file writes (`writeDepsFile` etc.) are only used as a fallback when no collector port is available.
 
 ---
 
@@ -118,16 +86,16 @@ For a CI pipeline that calls multiple `tool` sub-commands in sequence (e.g., a p
 
 | Priority | ID | Description | Impact | Risk | Effort |
 |----------|----|-------------|--------|------|--------|
-| **High** | A1 | Replace direct merge on flush with append-only/aggregator | 100–500ms/fork | Low | Medium |
-| **High** | A2 | Batch `.deps` writes into one file | 50–100ms / 1s on HDD | Low | Medium |
-| **High** | H12 | Cache loaded `DependencyMap` per (path, mtime) | 50–500ms × N modules | Medium | Medium | **DONE** |
-| **Low** | H16 | Cache `TestOrderState` parse by mtime within JVM (audit) | 100ms × N CLI calls | Low | Low | **DONE** |
+| **Done** | A1 | Replace direct merge on flush with IndexCollectorServer | 100–500ms/fork | — | — | **DONE** |
+| **Done** | A2 | Batch `.deps` writes via socket protocol | 50–100ms / 1s on HDD | — | — | **DONE** |
+| **Done** | H12 | Cache loaded `DependencyMap` per (path, mtime) | 50–500ms × N modules | — | — | **DONE** |
+| **Done** | H16 | Cache `TestOrderState` parse by mtime within JVM | 100ms × N CLI calls | — | — | **DONE** |
 
 ---
 
 ## Quick Wins
 
-No <30 minute, zero-risk TODO items are currently listed.
+No open TODO items remain.
 
 ---
 

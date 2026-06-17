@@ -635,7 +635,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			return false;
 		}
 		getLog().info("[test-order] Skipping " + goalName + " for reactor dependency module " + project.getArtifactId()
-				+ " — it was included by -am but not selected explicitly.");
+				+ " — it was included by -am but not selected explicitly."
+				+ " To also run test-order on upstream modules, select them explicitly or omit -pl to run across the full reactor.");
 		return true;
 	}
 

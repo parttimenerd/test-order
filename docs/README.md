@@ -20,11 +20,11 @@
 
 - **New here?** Start with the [Cheat Sheet](CHEAT_SHEET.md) or the [Getting Started tutorial](GETTING_STARTED.md)
 - **Building from source**: [DEVELOPMENT.md](DEVELOPMENT.md)
-- **Gradle plugin**: See [test-order-gradle-plugin/README.md](../test-order-gradle-plugin/README.md)
-- **JUnit 5 module details**: [test-order-junit/README.md](../test-order-junit/README.md)
-- **TestNG module details**: [test-order-testng/README.md](../test-order-testng/README.md)
+- **Gradle plugin**: See [test-order-gradle-plugin/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-gradle-plugin/README.md)
+- **JUnit 5 module details**: [test-order-junit/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-junit/README.md)
+- **TestNG module details**: [test-order-testng/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-testng/README.md)
 - **JUnit 5 vs TestNG differences**: [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md)
-- **CI setup**: [CI.md](CI.md) and [ci-examples/](ci-examples/)
+- **CI setup**: [CI.md](CI.md) and [ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples)
 - **ML predictions**: [MAVEN_PLUGIN.md § ML Failure Predictions](MAVEN_PLUGIN.md#ml-failure-predictions)
 - **Show command**: [MAVEN_PLUGIN.md § Show Goal](MAVEN_PLUGIN.md#show-goal)
 - **Dashboard**: [CLI_REFERENCE.md § Dashboard](CLI_REFERENCE.md#dashboard)
@@ -33,18 +33,16 @@
 
 Pick the path that matches your role:
 
-- **New user, just want to try it** → [GETTING_STARTED.md](GETTING_STARTED.md), then poke at [`samples/sample-basic`](../samples/sample-basic/README.md).
+- **New user, just want to try it** → [GETTING_STARTED.md](GETTING_STARTED.md), then poke at [`samples/sample-basic`](https://github.com/parttimenerd/test-order/tree/main/samples/sample-basic).
 - **Using TestNG** → [GETTING_STARTED.md](GETTING_STARTED.md) applies equally; see [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) for differences from the JUnit integration.
 - **Already have a project, want a quick lookup** → [CHEAT_SHEET.md](CHEAT_SHEET.md) (one-page command/property reference).
-- **CI engineer wiring this into a pipeline** → [CI.md](CI.md) plus [ci-examples/](ci-examples/).
+- **CI engineer wiring this into a pipeline** → [CI.md](CI.md) plus [ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples).
 - **Multi-module reactor maintainer** → [MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md).
 - **Tuning scoring or weights** → [SCORING.md](SCORING.md), then the dashboard's Weights tab.
-- **Hunting a flaky test** → [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) + [`samples/sample-od-bugs`](../samples/sample-od-bugs/README.md).
+- **Hunting a flaky test** → [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) + [`samples/sample-od-bugs`](https://github.com/parttimenerd/test-order/tree/main/samples/sample-od-bugs).
 - **Something is broken** → [CHEAT_SHEET.md § Troubleshooting](CHEAT_SHEET.md), then `mvn test-order:diagnose`.
 - **Contributing or building from source** → [DEVELOPMENT.md](DEVELOPMENT.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Known limitations
 
-Active rough edges, deferred work, and known compromises live in
-[FOLLOWUPS.md](FOLLOWUPS.md). Skim it before filing a feature request — the
-limitation may already be tracked.
+The dependency index cannot distinguish _how heavily_ a test exercises a class — only whether it touched it at all. For highly-transitive dependencies (e.g. Jackson's `ClassUtil`, which appears in 97% of tests), the selection signal is weak. TF-IDF scoring reduces the noise but does not eliminate it for classes with near-universal coverage. Use `-Dtestorder.deps.dropFrequencyThreshold=0.8` to filter out near-universal deps from the index entirely.

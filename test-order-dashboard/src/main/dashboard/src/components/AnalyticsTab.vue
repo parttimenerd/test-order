@@ -1710,7 +1710,10 @@ onMounted(initAll)
 
 <template>
   <div v-if="d.activeTab.value === 'analytics'">
-    <div v-if="d.runs.length === 0 && !d.hasCoverage && !d.tests.length" style="height:180px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">No run history yet</div>
+    <div v-if="d.runs.length === 0 && !d.hasCoverage && !d.tests.length" style="height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text-muted)">
+      <div style="font-size:1.1rem;font-weight:600">No run history yet</div>
+      <div style="font-size:.8rem;text-align:center;max-width:360px">Run learn mode to start collecting data:<br><code style="font-size:.75rem;color:var(--accent)">mvn test -Dtestorder.mode=learn</code></div>
+    </div>
     <div v-else>
       <!-- Sticky section nav -->
       <nav class="analytics__subnav">

@@ -1117,8 +1117,10 @@ public class TestOrderState {
 		if (schemaVersion > CURRENT_SCHEMA_VERSION) {
 			throw new StateDowngradeException("State file was written by a newer plugin version (schema v"
 					+ schemaVersion + ", current plugin expects v" + CURRENT_SCHEMA_VERSION + "). "
-					+ "Run 'test-order:clean' (Maven) or 'testOrderClean' (Gradle) to reset, "
-					+ "or upgrade the plugin back to match the state file.");
+					+ "To reset: delete the '.test-order/' directory and re-run learn mode "
+					+ "('mvn test -Dtestorder.mode=learn' or 'gradle test -Ptestorder.mode=learn'). "
+					+ "Alternatively, run 'test-order:clean' (Maven) or 'testOrderClean' (Gradle), "
+					+ "or upgrade the plugin to match the state file version.");
 		}
 		if (schemaVersion < CURRENT_SCHEMA_VERSION) {
 			try {

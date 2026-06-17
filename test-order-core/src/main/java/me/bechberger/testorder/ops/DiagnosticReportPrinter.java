@@ -1,5 +1,8 @@
 package me.bechberger.testorder.ops;
 
+import java.util.Comparator;
+import java.util.List;
+
 import me.bechberger.testorder.ops.DiagnosticOperation.DiagnosticReport;
 
 /**
@@ -33,7 +36,12 @@ public final class DiagnosticReportPrinter {
 		log.info("  Warnings: " + report.results().stream().filter(r -> r.isInformational() && !r.isSuccess()).count());
 		log.info("");
 
-		for (var result : report.results()) {
+		// Sort ERROR → WARNING → SUCCESS so the most actionable issues appear first.
+		List<DiagnosticResult> sorted = report.results().stream()
+				.sorted(Comparator.comparingInt(r -> r.isError() ? 0 : (r.isInformational() && !r.isSuccess()) ? 1 : 2))
+				.toList();
+
+		for (var result : sorted) {
 			if (result.isError()) {
 				log.error("❌ " + result.code() + ": " + result.message());
 				for (String suggestion : result.suggestions()) {
