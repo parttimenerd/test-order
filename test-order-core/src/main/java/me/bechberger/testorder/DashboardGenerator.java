@@ -125,17 +125,57 @@ public class DashboardGenerator {
 			TestHealthReport healthReport) {
 
 		Map<String, Object> root = new LinkedHashMap<>();
+		root.put("project", buildProjectInfo());
+		root.put("weights", buildWeightsMap(sw));
+		root.put("weightDefs", buildWeightDefs(weightDefs));
+		root.put("config", buildConfigMap(state));
+		root.put("medianDuration", medianDuration);
+		root.put("changedClasses", new ArrayList<>(changed));
+		root.put("changedTestClasses", new ArrayList<>(changedTests));
 
-		// project info
+		Map<String, Double> killRates = state.getKillRates();
+		Map<String, String> classToModule = deriveClassToModule(depMap);
+		List<Object> tests = buildTestEntries(scored, depMap, classToModule, mlPredictions, killRates);
+		// Compress memberDeps: replace repeated strings with integer indices into a
+		// shared dictionary. This reduces the 355MB jackson-databind dashboard to
+		// ~12MB.
+		compressMemberDeps(tests, root);
+		root.put("tests", tests);
+		// class→module lookup for DepGraph cross-module edge coloring (omitted for
+		// single-module projects to avoid bloat)
+		if (!classToModule.isEmpty()) {
+			root.put("classToModule", classToModule);
+		}
+
+		root.put("runs", buildRunHistory(state));
+		root.put("coverage", depMap != null ? buildCoverageData(depMap) : null);
+
+		Map<String, Object> ml = buildMlSection(healthReport, mlPredictions);
+		if (ml != null) {
+			root.put("ml", ml);
+		}
+
+		Map<String, Object> mutation = buildMutationSection(state, killRates);
+		if (mutation != null) {
+			root.put("mutation", mutation);
+		}
+
+		root.put("staticAnalysis", buildStaticAnalysisData(depMap));
+
+		return root;
+	}
+
+	private Map<String, Object> buildProjectInfo() {
 		Map<String, Object> proj = new LinkedHashMap<>();
 		proj.put("name", projectName);
 		proj.put("generated", DateTimeFormatter.ISO_INSTANT.format(Instant.now().atZone(ZoneOffset.UTC)));
 		proj.put("pluginVersion", pluginVersion);
 		proj.put("stateFilePath", stateFilePath);
 		proj.put("indexFilePath", indexFilePath);
-		root.put("project", proj);
+		return proj;
+	}
 
-		// scoring weights
+	private static Map<String, Object> buildWeightsMap(TestOrderState.ScoringWeights sw) {
 		Map<String, Object> weightsMap = new LinkedHashMap<>();
 		weightsMap.put("newTest", sw.newTest());
 		weightsMap.put("changedTest", sw.changedTest());
@@ -148,9 +188,10 @@ public class DashboardGenerator {
 		weightsMap.put("coverageBonus", sw.coverageBonus());
 		weightsMap.put("killRateBonus", sw.killRateBonus());
 		weightsMap.put("packageProximityBonus", sw.packageProximityBonus());
-		root.put("weights", weightsMap);
+		return weightsMap;
+	}
 
-		// weight definitions (min/max for sliders)
+	private static List<Object> buildWeightDefs(List<TestOrderState.WeightDef> weightDefs) {
 		List<Object> weightDefsJson = new ArrayList<>();
 		for (TestOrderState.WeightDef def : weightDefs) {
 			Map<String, Object> wd = new LinkedHashMap<>();
@@ -160,26 +201,21 @@ public class DashboardGenerator {
 			wd.put("max", def.max());
 			weightDefsJson.add(wd);
 		}
-		root.put("weightDefs", weightDefsJson);
+		return weightDefsJson;
+	}
 
-		// state config
+	private static Map<String, Object> buildConfigMap(TestOrderState state) {
 		Map<String, Object> configMap = new LinkedHashMap<>();
 		configMap.put("failureDecay", state.failureDecay());
 		configMap.put("durationAlpha", state.durationAlpha());
 		configMap.put("failurePruneThreshold", state.failurePruneThreshold());
 		configMap.put("emaVarianceThreshold", state.emaVarianceThreshold());
 		configMap.put("historyMaxRuns", state.historyMaxRuns());
-		root.put("config", configMap);
+		return configMap;
+	}
 
-		root.put("medianDuration", medianDuration);
-		root.put("changedClasses", new ArrayList<>(changed));
-		root.put("changedTestClasses", new ArrayList<>(changedTests));
-
-		// test entries
-		Map<String, Double> killRates = state.getKillRates();
-		// derive class→module for cross-module dep analysis (empty for single-module
-		// projects)
-		Map<String, String> classToModule = deriveClassToModule(depMap);
+	private List<Object> buildTestEntries(List<ScoredTest> scored, DependencyMap depMap,
+			Map<String, String> classToModule, Map<String, Double> mlPredictions, Map<String, Double> killRates) {
 		List<Object> tests = new ArrayList<>();
 		for (int i = 0; i < scored.size(); i++) {
 			ScoredTest st = scored.get(i);
@@ -276,18 +312,10 @@ public class DashboardGenerator {
 			}
 			tests.add(t);
 		}
-		// Compress memberDeps: replace repeated strings with integer indices into a
-		// shared dictionary. This reduces the 355MB jackson-databind dashboard to
-		// ~12MB.
-		compressMemberDeps(tests, root);
-		root.put("tests", tests);
-		// class→module lookup for DepGraph cross-module edge coloring (omitted for
-		// single-module projects to avoid bloat)
-		if (!classToModule.isEmpty()) {
-			root.put("classToModule", classToModule);
-		}
+		return tests;
+	}
 
-		// run history (most-recent first)
+	private static List<Object> buildRunHistory(TestOrderState state) {
 		List<Object> runs = new ArrayList<>();
 		List<TestOrderState.RunRecord> history = state.runs();
 		for (int ri = history.size() - 1; ri >= 0; ri--) {
@@ -319,95 +347,93 @@ public class DashboardGenerator {
 			run.put("outcomes", outcomes);
 			runs.add(run);
 		}
-		root.put("runs", runs);
+		return runs;
+	}
 
-		// coverage: invert dependency map (test→sources) to (source→tests)
-		root.put("coverage", depMap != null ? buildCoverageData(depMap) : null);
-
-		// ML section (health report + predictions summary)
-		if (healthReport != null) {
-			Map<String, Object> ml = new LinkedHashMap<>();
-			ml.put("enabled", true);
-			ml.put("runsAnalyzed", healthReport.runsAnalyzed());
-
-			Map<String, Object> summary = new LinkedHashMap<>();
-			summary.put("healthy", healthReport.byStatus(TestHealthReport.HealthStatus.HEALTHY).size());
-			summary.put("degrading", healthReport.byStatus(TestHealthReport.HealthStatus.DEGRADING).size());
-			summary.put("flaky", healthReport.byStatus(TestHealthReport.HealthStatus.FLAKY).size());
-			summary.put("failing", healthReport.byStatus(TestHealthReport.HealthStatus.FAILING).size());
-			ml.put("summary", summary);
-
-			List<Object> health = new ArrayList<>();
-			for (var entry : healthReport.tests().values()) {
-				Map<String, Object> h = new LinkedHashMap<>();
-				h.put("testClass", entry.testClass());
-				h.put("status", entry.status().name());
-				h.put("flakinessScore", Math.round(entry.flakinessScore() * 10000.0) / 10000.0);
-				h.put("degradationTrend", Math.round(entry.degradationTrend() * 10000.0) / 10000.0);
-				h.put("recentFailureRate", Math.round(entry.recentFailureRate() * 10000.0) / 10000.0);
-				h.put("volatility", Math.round(entry.volatility() * 10000.0) / 10000.0);
-				h.put("totalRuns", entry.totalRuns());
-				h.put("totalFailures", entry.totalFailures());
-				health.add(h);
-			}
-			ml.put("health", health);
-
-			if (mlPredictions != null && !mlPredictions.isEmpty()) {
-				ml.put("hasPredictions", true);
-			}
-
-			root.put("ml", ml);
+	/** Returns null if no health report is available; caller skips the section. */
+	private static Map<String, Object> buildMlSection(TestHealthReport healthReport,
+			Map<String, Double> mlPredictions) {
+		if (healthReport == null) {
+			return null;
 		}
+		Map<String, Object> ml = new LinkedHashMap<>();
+		ml.put("enabled", true);
+		ml.put("runsAnalyzed", healthReport.runsAnalyzed());
 
-		// Mutation testing section (from state kill rates)
-		if (!killRates.isEmpty()) {
-			Map<String, Object> mutation = new LinkedHashMap<>();
-			mutation.put("enabled", true);
+		Map<String, Object> summary = new LinkedHashMap<>();
+		summary.put("healthy", healthReport.byStatus(TestHealthReport.HealthStatus.HEALTHY).size());
+		summary.put("degrading", healthReport.byStatus(TestHealthReport.HealthStatus.DEGRADING).size());
+		summary.put("flaky", healthReport.byStatus(TestHealthReport.HealthStatus.FLAKY).size());
+		summary.put("failing", healthReport.byStatus(TestHealthReport.HealthStatus.FAILING).size());
+		ml.put("summary", summary);
 
-			// Overall mutation score from persisted totals
-			int totalMutants = state.getMutationTotalMutants();
-			int totalKilled = state.getMutationTotalKilled();
-			mutation.put("totalMutants", totalMutants);
-			mutation.put("totalKilled", totalKilled);
-			mutation.put("overallKillRate",
-					totalMutants > 0 ? Math.round((double) totalKilled / totalMutants * 10000.0) / 10000.0 : 0.0);
-
-			// Summary: count tests by kill-rate tier
-			int high = 0, medium = 0, low = 0, none = 0;
-			for (double rate : killRates.values()) {
-				if (rate >= 0.15)
-					high++;
-				else if (rate >= 0.05)
-					medium++;
-				else if (rate > 0)
-					low++;
-				else
-					none++;
-			}
-			Map<String, Object> summary = new LinkedHashMap<>();
-			summary.put("high", high);
-			summary.put("medium", medium);
-			summary.put("low", low);
-			summary.put("none", none);
-			mutation.put("summary", summary);
-
-			// Per-test entries sorted descending by kill rate
-			List<Map<String, Object>> mutTests = killRates.entrySet().stream()
-					.sorted((a, b) -> Double.compare(b.getValue(), a.getValue())).map(e -> {
-						Map<String, Object> m = new LinkedHashMap<>();
-						m.put("testClass", e.getKey());
-						m.put("killRate", Math.round(e.getValue() * 10000.0) / 10000.0);
-						return m;
-					}).collect(java.util.stream.Collectors.toList());
-			mutation.put("tests", mutTests);
-
-			root.put("mutation", mutation);
+		List<Object> health = new ArrayList<>();
+		for (var entry : healthReport.tests().values()) {
+			Map<String, Object> h = new LinkedHashMap<>();
+			h.put("testClass", entry.testClass());
+			h.put("status", entry.status().name());
+			h.put("flakinessScore", Math.round(entry.flakinessScore() * 10000.0) / 10000.0);
+			h.put("degradationTrend", Math.round(entry.degradationTrend() * 10000.0) / 10000.0);
+			h.put("recentFailureRate", Math.round(entry.recentFailureRate() * 10000.0) / 10000.0);
+			h.put("volatility", Math.round(entry.volatility() * 10000.0) / 10000.0);
+			h.put("totalRuns", entry.totalRuns());
+			h.put("totalFailures", entry.totalFailures());
+			health.add(h);
 		}
+		ml.put("health", health);
 
-		// Static analysis: uncertain classes from selective-learn runs
-		root.put("staticAnalysis", buildStaticAnalysisData(depMap));
+		if (mlPredictions != null && !mlPredictions.isEmpty()) {
+			ml.put("hasPredictions", true);
+		}
+		return ml;
+	}
 
-		return root;
+	/** Returns null if no kill-rate data is available; caller skips the section. */
+	private static Map<String, Object> buildMutationSection(TestOrderState state, Map<String, Double> killRates) {
+		if (killRates.isEmpty()) {
+			return null;
+		}
+		Map<String, Object> mutation = new LinkedHashMap<>();
+		mutation.put("enabled", true);
+
+		// Overall mutation score from persisted totals
+		int totalMutants = state.getMutationTotalMutants();
+		int totalKilled = state.getMutationTotalKilled();
+		mutation.put("totalMutants", totalMutants);
+		mutation.put("totalKilled", totalKilled);
+		mutation.put("overallKillRate",
+				totalMutants > 0 ? Math.round((double) totalKilled / totalMutants * 10000.0) / 10000.0 : 0.0);
+
+		// Summary: count tests by kill-rate tier
+		int high = 0, medium = 0, low = 0, none = 0;
+		for (double rate : killRates.values()) {
+			if (rate >= 0.15)
+				high++;
+			else if (rate >= 0.05)
+				medium++;
+			else if (rate > 0)
+				low++;
+			else
+				none++;
+		}
+		Map<String, Object> summary = new LinkedHashMap<>();
+		summary.put("high", high);
+		summary.put("medium", medium);
+		summary.put("low", low);
+		summary.put("none", none);
+		mutation.put("summary", summary);
+
+		// Per-test entries sorted descending by kill rate
+		List<Map<String, Object>> mutTests = killRates.entrySet().stream()
+				.sorted((a, b) -> Double.compare(b.getValue(), a.getValue())).map(e -> {
+					Map<String, Object> m = new LinkedHashMap<>();
+					m.put("testClass", e.getKey());
+					m.put("killRate", Math.round(e.getValue() * 10000.0) / 10000.0);
+					return m;
+				}).collect(java.util.stream.Collectors.toList());
+		mutation.put("tests", mutTests);
+
+		return mutation;
 	}
 
 	/**
