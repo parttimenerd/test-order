@@ -545,18 +545,13 @@ public class TestOrderState {
 	private final StateConfiguration config;
 	private final ScoringWeightManager scoringWeights;
 	private final TestMetricsTracker metrics;
-	private final RunHistoryManager runHistory;
-	/**
-	 * True when addRunRecord was called since the last save — enables decay even on
-	 * all-pass runs. Protected by monitor lock during read in toPersistedRoot().
-	 */
-	private boolean pendingRunCompleted;
+	private final RunHistoryStorage runHistory;
 
 	public TestOrderState() {
 		this.config = new StateConfiguration();
 		this.scoringWeights = new ScoringWeightManager();
 		this.metrics = new TestMetricsTracker(this.config);
-		this.runHistory = new RunHistoryManager();
+		this.runHistory = new RunHistoryStorage(this.config);
 	}
 
 	// ── Weights ───────────────────────────────────────────────────────
@@ -634,11 +629,10 @@ public class TestOrderState {
 	}
 
 	public int historyMaxRuns() {
-		return config.historyMaxRuns();
+		return runHistory.historyMaxRuns();
 	}
 	public void setHistoryMaxRuns(int maxRuns) {
-		config.setHistoryMaxRuns(maxRuns);
-		runHistory.trimToMax(config.historyMaxRuns());
+		runHistory.setHistoryMaxRuns(maxRuns);
 	}
 
 	/** Get the number of order-mode runs since the last learn mode. */
@@ -803,9 +797,8 @@ public class TestOrderState {
 		return runHistory.runs();
 	}
 
-	public synchronized void addRunRecord(RunRecord record) {
-		runHistory.add(record, config.historyMaxRuns());
-		pendingRunCompleted = true;
+	public void addRunRecord(RunRecord record) {
+		runHistory.addRunRecord(record);
 	}
 
 	// ── Static coordination (PriorityClassOrderer → TelemetryListener) ──
@@ -979,11 +972,9 @@ public class TestOrderState {
 		// then add pending failures (current run) at full weight, prune.
 		// When save() is called without a run (e.g. optimizer saving weights only),
 		// scores are preserved without decay — decay represents "one run passed".
-		// Read pendingRunCompleted under synchronized to avoid torn read.
-		boolean hasRunData;
-		synchronized (this) {
-			hasRunData = applyDecay && (pendingRunCompleted || metrics.failureHistory().hasPendingData());
-		}
+		// Read pendingRunCompleted via synchronized accessor to avoid torn read.
+		boolean hasRunData = applyDecay
+				&& (runHistory.pendingRunCompleted() || metrics.failureHistory().hasPendingData());
 		FailureHistoryTracker.PersistedScores mergedFailureState = metrics.failureHistory().mergeForSave(hasRunData,
 				config.failureDecay(), config.methodFailureDecay(), config.failurePruneThreshold(), LOG);
 		Map<String, Object> mergedFailures = mergedFailureState.failureScores();
@@ -1060,13 +1051,13 @@ public class TestOrderState {
 	void afterSave() {
 		metrics.failureHistory().applyPersisted(
 				new FailureHistoryTracker.PersistedScores(persistedFailureScores, persistedMethodFailureScores));
-		runHistory.replace(persistedRunsAfterSave);
+		runHistory.manager().replace(persistedRunsAfterSave);
 		// Prune stale entries now that the save succeeded — safe to mutate live state
 		if (!persistedActiveClasses.isEmpty()) {
 			metrics.durationTracker().pruneToActiveClasses(persistedActiveClasses);
 			metrics.failureHistory().pruneToActiveClasses(persistedActiveClasses);
 		}
-		pendingRunCompleted = false;
+		runHistory.clearPendingRunCompleted();
 	}
 
 	private static Map<String, Object> runRecordToMap(RunRecord r) {
@@ -1190,7 +1181,7 @@ public class TestOrderState {
 		for (Object item : safeList(root.get("runs"), "runs")) {
 			Map<String, Object> runMap = safeMap(item, "runs[]");
 			if (!runMap.isEmpty()) {
-				state.runHistory.addRaw(mapToRunRecord(runMap));
+				state.runHistory.manager().addRaw(mapToRunRecord(runMap));
 			}
 		}
 
@@ -1241,7 +1232,7 @@ public class TestOrderState {
 					safeInt(root.get("mutationTotalKilled"), 0, "mutationTotalKilled"));
 		}
 
-		state.runHistory.trimToMax(state.config.historyMaxRuns());
+		state.runHistory.manager().trimToMax(state.config.historyMaxRuns());
 
 		return state;
 	}
