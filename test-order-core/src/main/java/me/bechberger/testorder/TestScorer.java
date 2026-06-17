@@ -348,6 +348,46 @@ public class TestScorer {
 	}
 
 	/**
+	 * Bundles the overlapping-class set with its IDF-weighted sum, so callers can
+	 * compute either count-based or weight-based scores without re-iterating.
+	 */
+	private record OverlapData(Set<String> overlapClasses, double weightedDepOverlap) {
+	}
+
+	/**
+	 * Resolves the set of overlapping classes for a test, reusing the set-cover
+	 * pre-computation when available. Returns the IDF-weighted sum so the
+	 * non-set-cover path can compute its weighted score from the same set.
+	 */
+	private OverlapData resolveOverlap(String testClassName, Set<String> deps, Set<String> memberDeps) {
+		Set<String> overlapClasses;
+		if (!setCoverBonuses.isEmpty() || cachedOverlapClasses.containsKey(testClassName)) {
+			overlapClasses = cachedOverlapClasses.getOrDefault(testClassName, null);
+			if (overlapClasses == null) {
+				overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
+						effectiveChangedForOverlap);
+			}
+		} else {
+			overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
+					effectiveChangedForOverlap);
+		}
+		double weighted = 0.0;
+		for (String dep : overlapClasses) {
+			weighted += depMap.idf(dep);
+		}
+		return new OverlapData(overlapClasses, weighted);
+	}
+
+	/** Sums per-class change-complexity values for a set of overlapping classes. */
+	private double sumComplexity(Set<String> overlapClasses) {
+		double sum = 0.0;
+		for (String dep : overlapClasses) {
+			sum += changeComplexity.getOrDefault(dep, 0.0);
+		}
+		return sum;
+	}
+
+	/**
 	 * Scores a single test class.
 	 */
 	public ScoreResult score(String testClassName) {
@@ -383,40 +423,22 @@ public class TestScorer {
 		int staticFieldOverlap = 0;
 		if (!effectiveChangedForOverlap.isEmpty()) {
 			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(testClassName) : null;
+			OverlapData overlap = resolveOverlap(testClassName, deps, memberDeps);
+			depOverlap = overlap.overlapClasses.size();
 
 			if (!setCoverBonuses.isEmpty()) {
-				// Greedy set-cover mode: reuse cached overlap count from set-cover computation
-				depOverlap = cachedOverlapCounts.getOrDefault(testClassName, 0);
 				int rawSetCover = setCoverBonuses.getOrDefault(testClassName, 0);
 				score += (int) Math.round(rawSetCover * killMultiplier);
-				// Complexity bonus uses cached overlap classes (set-cover pre-computed them)
-				if (!changeComplexity.isEmpty() && depOverlap > 0) {
-					Set<String> cachedOvlp = cachedOverlapClasses.getOrDefault(testClassName, Set.of());
-					for (String dep : cachedOvlp) {
-						complexityOvlp += changeComplexity.getOrDefault(dep, 0.0);
-					}
-					int rawComplexity = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
-					score += (int) Math.round(rawComplexity * killMultiplier);
-				}
 			} else {
-				Set<String> overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps,
-						changedMembers, effectiveChangedForOverlap);
-				depOverlap = overlapClasses.size();
-				// Weight each overlapping dep by its IDF so near-universal deps (high df)
-				// contribute near-zero while discriminating rare deps contribute more.
-				for (String dep : overlapClasses)
-					weightedDepOverlap += depMap.idf(dep);
+				weightedDepOverlap = overlap.weightedDepOverlap;
 				int rawDepOverlap = depOverlapScore(weightedDepOverlap, depTotal, weights.depOverlap());
 				score += (int) Math.round(rawDepOverlap * killMultiplier);
+			}
 
-				// Complexity-weighted overlap: sum normalised complexity of overlapping deps
-				if (!changeComplexity.isEmpty() && depOverlap > 0) {
-					for (String dep : overlapClasses) {
-						complexityOvlp += changeComplexity.getOrDefault(dep, 0.0);
-					}
-					int rawComplexity = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
-					score += (int) Math.round(rawComplexity * killMultiplier);
-				}
+			if (!changeComplexity.isEmpty() && depOverlap > 0) {
+				complexityOvlp = sumComplexity(overlap.overlapClasses);
+				int rawComplexity = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
+				score += (int) Math.round(rawComplexity * killMultiplier);
 			}
 
 			// Optional bonus for changed static fields that this test actually overlaps
@@ -528,35 +550,21 @@ public class TestScorer {
 		int setCoverPts = 0;
 
 		if (!effectiveChangedForOverlap.isEmpty()) {
+			OverlapData overlap = resolveOverlap(testClassName, deps, memberDeps);
+			overlapClasses = overlap.overlapClasses;
+
 			if (!setCoverBonuses.isEmpty()) {
 				setCoverPts = setCoverBonuses.getOrDefault(testClassName, 0);
 				totalScore += setCoverPts;
-				// reuse cached overlap classes instead of recomputing
-				overlapClasses = cachedOverlapClasses.getOrDefault(testClassName, Set.of());
-				// Complexity bonus: same condition as score()
-				if (!changeComplexity.isEmpty() && !overlapClasses.isEmpty()) {
-					for (String dep : overlapClasses) {
-						complexityOvlp += changeComplexity.getOrDefault(dep, 0.0);
-					}
-					complexityPts = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
-					totalScore += complexityPts;
-				}
 			} else {
-				overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
-						effectiveChangedForOverlap);
-				double weightedOverlap = 0.0;
-				for (String dep : overlapClasses)
-					weightedOverlap += depMap.idf(dep);
-				depOverlapPts = depOverlapScore(weightedOverlap, depTotal, weights.depOverlap());
+				depOverlapPts = depOverlapScore(overlap.weightedDepOverlap, depTotal, weights.depOverlap());
 				totalScore += depOverlapPts;
+			}
 
-				if (!changeComplexity.isEmpty() && !overlapClasses.isEmpty()) {
-					for (String dep : overlapClasses) {
-						complexityOvlp += changeComplexity.getOrDefault(dep, 0.0);
-					}
-					complexityPts = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
-					totalScore += complexityPts;
-				}
+			if (!changeComplexity.isEmpty() && !overlapClasses.isEmpty()) {
+				complexityOvlp = sumComplexity(overlapClasses);
+				complexityPts = complexityScore(complexityOvlp, depTotal, weights.changeComplexity());
+				totalScore += complexityPts;
 			}
 
 			if (weights.staticFieldBonus() > 0 && memberDeps != null && !memberDeps.isEmpty()) {
