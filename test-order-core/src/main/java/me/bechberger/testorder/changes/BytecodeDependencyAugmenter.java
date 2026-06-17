@@ -32,9 +32,12 @@ public final class BytecodeDependencyAugmenter {
 	 * Cache of the inverted call graph (callerClass → set of calleeClasses) keyed
 	 * by {@link StaticCallGraphAnalyzer.ScanResult} identity. Avoids rebuilding the
 	 * inversion on every {@link #computeAugmentation} call when the same scan
-	 * result is reused across multiple dependency maps.
+	 * result is reused across multiple dependency maps. Wrapped in synchronizedMap
+	 * because parallel Maven reactor builds may call computeAugmentation
+	 * concurrently from different module threads.
 	 */
-	private static final IdentityHashMap<StaticCallGraphAnalyzer.ScanResult, Map<String, Set<String>>> INVERTED_CACHE = new IdentityHashMap<>();
+	private static final Map<StaticCallGraphAnalyzer.ScanResult, Map<String, Set<String>>> INVERTED_CACHE = Collections
+			.synchronizedMap(new IdentityHashMap<>());
 
 	/**
 	 * Invalidates the cached inverted graph for the given scan result. Call this
