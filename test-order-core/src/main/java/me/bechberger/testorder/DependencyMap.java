@@ -42,9 +42,11 @@ public class DependencyMap {
 	// call save() immediately after — save() evicts the stale cache entry so the
 	// next load() picks up the updated file. Do not hold a reference to a cached
 	// instance across a save() call.
+	// Bounded at 256 entries to prevent unbounded growth in long-running builds.
 	private record CacheKey(Path path, long mtime, long size) {
 	}
 	private static final ConcurrentHashMap<CacheKey, DependencyMap> LOAD_CACHE = new ConcurrentHashMap<>();
+	private static final int MAX_CACHE_ENTRIES = 256;
 
 	// ── Section type constants ────────────────────────────────────────
 
@@ -1184,6 +1186,9 @@ public class DependencyMap {
 			throw new IOException("Not a valid binary index (wrong magic bytes): " + loadPath);
 		}
 		DependencyMap result = loadBinary(loadPath);
+		if (LOAD_CACHE.size() >= MAX_CACHE_ENTRIES) {
+			pruneCacheIfNeeded();
+		}
 		LOAD_CACHE.put(key, result);
 		return result;
 	}
@@ -1196,6 +1201,16 @@ public class DependencyMap {
 			// Index is corrupt — start fresh instead of failing
 			System.err.println("[test-order] Index file corrupt, creating fresh index: " + e.getMessage());
 			return new DependencyMap();
+		}
+	}
+
+	private static void pruneCacheIfNeeded() {
+		if (LOAD_CACHE.size() > MAX_CACHE_ENTRIES * 1.5) {
+			java.util.List<CacheKey> keys = new java.util.ArrayList<>(LOAD_CACHE.keySet());
+			int removeCount = keys.size() - MAX_CACHE_ENTRIES;
+			for (int i = 0; i < removeCount && i < keys.size(); i++) {
+				LOAD_CACHE.remove(keys.get(i));
+			}
 		}
 	}
 

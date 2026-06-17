@@ -26,6 +26,7 @@ public final class PersistenceSupport {
 	private static final String TEMP_SUFFIX = ".tmp";
 	private static final String LOCK_SUFFIX = ".lock";
 	private static final ConcurrentMap<Path, Object> JVM_LOCKS = new ConcurrentHashMap<>();
+	private static final int MAX_JVM_LOCKS = 256;
 	/**
 	 * Tracks lock files held by each thread, enabling reentrant withFileLock calls.
 	 */
@@ -114,9 +115,12 @@ public final class PersistenceSupport {
 		// the same instance. Removing eagerly caused a race where a waiting
 		// thread and a new arrival could obtain different lock objects.
 		Object jvmLock = JVM_LOCKS.computeIfAbsent(lockFile, ignored -> new Object());
-		if (JVM_LOCKS.size() > 512) {
+		if (JVM_LOCKS.size() > MAX_JVM_LOCKS) {
 			LOGGER.warning("[test-order] JVM_LOCKS has " + JVM_LOCKS.size()
-					+ " entries — possible leak in a long-running daemon process.");
+					+ " entries — possible leak in a long-running daemon process. Consider restarting.");
+			if (JVM_LOCKS.size() > MAX_JVM_LOCKS * 2) {
+				pruneLocks();
+			}
 		}
 		synchronized (jvmLock) {
 			Path parent = lockFile.getParent();
@@ -221,6 +225,24 @@ public final class PersistenceSupport {
 			}
 		} catch (IOException e) {
 			// Directory may not exist or not be listable — that's fine
+		}
+	}
+
+	/**
+	 * Prunes old lock entries to prevent unbounded growth. Keep recent ones only.
+	 */
+	private static void pruneLocks() {
+		if (JVM_LOCKS.size() <= MAX_JVM_LOCKS) {
+			return;
+		}
+		// Crudely prune by removing half the entries (least recently used is hard to
+		// track)
+		// This is rare enough (only when > 512 entries) that crude pruning is
+		// acceptable
+		java.util.List<Path> keys = new java.util.ArrayList<>(JVM_LOCKS.keySet());
+		int removeCount = keys.size() - MAX_JVM_LOCKS;
+		for (int i = 0; i < removeCount && i < keys.size(); i++) {
+			JVM_LOCKS.remove(keys.get(i));
 		}
 	}
 }

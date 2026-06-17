@@ -58,7 +58,8 @@ public final class TestOrderLogger {
 		if (args == null || args.length == 0) {
 			return template;
 		}
-		StringBuilder builder = new StringBuilder(template.length() + args.length * 8);
+		int estimatedArgLength = Math.min(args.length * 20, 1024);
+		StringBuilder builder = new StringBuilder(Math.min(template.length() + estimatedArgLength, 8192));
 		int argIndex = 0;
 		for (int i = 0; i < template.length(); i++) {
 			char current = template.charAt(i);

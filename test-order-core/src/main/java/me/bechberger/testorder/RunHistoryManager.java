@@ -2,7 +2,7 @@ package me.bechberger.testorder;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -60,7 +60,7 @@ final class RunHistoryManager {
 			target.addAll(historicalRuns);
 			return;
 		}
-		Set<Integer> indices = new LinkedHashSet<>(slots + 1);
+		Set<Integer> indices = new HashSet<>(slots + 1);
 		if (slots == 1) {
 			indices.add(historicalRuns.size() - 1);
 		} else {

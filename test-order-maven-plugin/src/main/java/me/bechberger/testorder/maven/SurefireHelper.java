@@ -79,7 +79,12 @@ final class SurefireHelper {
 			return;
 		}
 		try {
-			int major = Integer.parseInt(version.split("[^0-9]")[0]);
+			String[] parts = version.split("[^0-9]+");
+			if (parts.length == 0 || parts[0].isEmpty()) {
+				log.debug("[test-order] Could not parse version: " + version);
+				return;
+			}
+			int major = Integer.parseInt(parts[0]);
 			if (major < 3) {
 				log.warn("[test-order] " + surefire.getArtifactId() + " version " + version
 						+ " is older than 3.0. test-order requires Surefire >= 3.0 for JUnit Platform support. "

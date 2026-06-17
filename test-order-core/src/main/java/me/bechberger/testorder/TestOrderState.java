@@ -301,6 +301,8 @@ public class TestOrderState {
 
 		/** Build from array in WEIGHT_DEFS order. */
 		public static ScoringWeights fromArray(int[] a) {
+			if (a.length < 6)
+				throw new IllegalArgumentException("ScoringWeights array must have at least 6 elements, got " + a.length);
 			return new ScoringWeights(a[0], a[1], a[2], a[3], a[4], a[5],
 					a.length > 6 ? a[6] : DEFAULT.changeComplexity(), a.length > 7 ? a[7] : DEFAULT.staticFieldBonus(),
 					a.length > 8 ? a[8] : DEFAULT.coverageBonus(), a.length > 9 ? a[9] : DEFAULT.killRateBonus(),

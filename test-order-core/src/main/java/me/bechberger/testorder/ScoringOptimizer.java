@@ -122,9 +122,12 @@ final class ScoringOptimizer {
 		TestOrderState.ScoringWeights scoringWeights = TestOrderState.ScoringWeights.fromArray(weights);
 		double sum = 0;
 		for (TestOrderState.RunRecord run : runs) {
-			sum += APFDCalculator.computeAPFDcWithWeights(run.outcomes(), scoringWeights, durations);
+			var outcomes = run.outcomes();
+			if (outcomes != null) {
+				sum += APFDCalculator.computeAPFDcWithWeights(outcomes, scoringWeights, durations);
+			}
 		}
-		return sum / runs.size();
+		return runs.size() > 0 ? sum / runs.size() : 0.0;
 	}
 
 	static double evaluateExpandingWindow(int[] weights, List<TestOrderState.RunRecord> runs,
@@ -147,10 +150,12 @@ final class ScoringOptimizer {
 				break;
 			}
 			TestOrderState.RunRecord validationRun = runs.get(validationIndex);
-			double foldScore = APFDCalculator.computeAPFDcWithWeights(validationRun.outcomes(), scoringWeights,
-					durations);
-			weightedSum += foldScore * recencyWeight;
-			weightTotal += recencyWeight;
+			var outcomes = validationRun.outcomes();
+			if (outcomes != null) {
+				double foldScore = APFDCalculator.computeAPFDcWithWeights(outcomes, scoringWeights, durations);
+				weightedSum += foldScore * recencyWeight;
+				weightTotal += recencyWeight;
+			}
 			recencyWeight *= retainInv;
 		}
 
@@ -172,9 +177,12 @@ final class ScoringOptimizer {
 		double retainInv = 1.0 / retain;
 
 		for (int i = 0; i < runs.size(); i++) {
-			double score = APFDCalculator.computeAPFDcWithWeights(runs.get(i).outcomes(), scoringWeights, durations);
-			weightedSum += score * recencyWeight;
-			weightTotal += recencyWeight;
+			var outcomes = runs.get(i).outcomes();
+			if (outcomes != null) {
+				double score = APFDCalculator.computeAPFDcWithWeights(outcomes, scoringWeights, durations);
+				weightedSum += score * recencyWeight;
+				weightTotal += recencyWeight;
+			}
 			recencyWeight *= retainInv;
 		}
 

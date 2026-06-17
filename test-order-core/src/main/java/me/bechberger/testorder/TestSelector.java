@@ -116,10 +116,7 @@ public class TestSelector {
 
 	/** Phase 0: always include @AlwaysRun classes (before everything else). */
 	private void selectAlwaysRun(List<ScoredTest> scored, Set<String> selected) {
-		for (ScoredTest s : scored) {
-			if (alwaysRunClasses.contains(s.name()))
-				selected.add(s.name());
-		}
+		selected.addAll(alwaysRunClasses);
 	}
 
 	/** Phase 1: always include all new tests. */

@@ -59,7 +59,7 @@ final class FailureHistoryTracker {
 		failureScores.keySet().removeIf(key -> !isActive(key, activeClasses));
 		methodFailureScores.keySet().removeIf(k -> {
 			int hash = k.indexOf('#');
-			return hash > 0 && !isActive(k.substring(0, hash), activeClasses);
+			return hash >= 0 && !isActive(k.substring(0, hash), activeClasses);
 		});
 	}
 

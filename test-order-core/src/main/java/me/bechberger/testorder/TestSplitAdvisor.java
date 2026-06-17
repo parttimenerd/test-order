@@ -156,13 +156,21 @@ public class TestSplitAdvisor {
 			double bestSim = MERGE_THRESHOLD;
 			int bestI = -1, bestJ = -1;
 
-			for (int i = 0; i < clusters.size(); i++) {
-				for (int j = i + 1; j < clusters.size(); j++) {
+			// Limit iterations to prevent O(n^4) worst case: stop after inspecting N^2/4
+			// pairs
+			int maxChecks = Math.max(100, (clusters.size() * clusters.size()) / 4);
+			int checksPerformed = 0;
+			outerLoop : for (int i = 0; i < clusters.size() && checksPerformed < maxChecks; i++) {
+				for (int j = i + 1; j < clusters.size() && checksPerformed < maxChecks; j++) {
 					double sim = interGroupSimilarity(clusters.get(i), clusters.get(j));
 					if (sim > bestSim) {
 						bestSim = sim;
 						bestI = i;
 						bestJ = j;
+					}
+					checksPerformed++;
+					if (bestI >= 0 && checksPerformed > 50) {
+						break outerLoop;
 					}
 				}
 			}

@@ -75,9 +75,11 @@ public class TestOrderPlugin implements Plugin<Project> {
      * Stores active IndexCollectorServer instances keyed by task path.
      * Uses a static map to avoid calling task.getExtensions() at execution time,
      * which is incompatible with the Gradle configuration cache (Gradle 9+).
+     * Bounded at 128 entries to prevent unbounded growth in long-running daemons.
      */
     private static final java.util.concurrent.ConcurrentHashMap<String, me.bechberger.testorder.IndexCollectorServer>
             COLLECTOR_REGISTRY = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int MAX_COLLECTOR_ENTRIES = 128;
 
     /** Wraps a Gradle {@link org.gradle.api.logging.Logger} as a {@link PluginLog}. */
     private static PluginLog wrapLog(Project project) {
@@ -735,6 +737,9 @@ public class TestOrderPlugin implements Plugin<Project> {
                             new me.bechberger.testorder.IndexCollectorServer(indexFilePath);
                     testTask.systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
+                    if (COLLECTOR_REGISTRY.size() >= MAX_COLLECTOR_ENTRIES) {
+                        pruneCollectorRegistry();
+                    }
                     COLLECTOR_REGISTRY.put(testTask.getPath(), collector);
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
                             collector.getPort());
@@ -4043,6 +4048,22 @@ public class TestOrderPlugin implements Plugin<Project> {
                 .findUnknownKeys(project.getProperties().keySet());
         for (String w : projWarnings) {
             project.getLogger().warn("[test-order] " + w);
+        }
+    }
+
+    private static void pruneCollectorRegistry() {
+        if (COLLECTOR_REGISTRY.size() > MAX_COLLECTOR_ENTRIES * 1.5) {
+            java.util.List<String> keys = new java.util.ArrayList<>(COLLECTOR_REGISTRY.keySet());
+            int removeCount = keys.size() - MAX_COLLECTOR_ENTRIES;
+            for (int i = 0; i < removeCount && i < keys.size(); i++) {
+                me.bechberger.testorder.IndexCollectorServer removed = COLLECTOR_REGISTRY.remove(keys.get(i));
+                if (removed != null) {
+                    try {
+                        removed.stopAndMerge();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
         }
     }
 }

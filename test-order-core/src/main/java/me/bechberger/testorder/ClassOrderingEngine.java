@@ -24,9 +24,9 @@ public final class ClassOrderingEngine {
 
 	/**
 	 * Tracks already-logged state load failures to avoid 12x duplication across
-	 * forks.
+	 * forks. Bounded at 100 entries to prevent memory accumulation.
 	 */
-	private static final Set<String> LOGGED_STATE_ERRORS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private static final Set<String> LOGGED_STATE_ERRORS = java.util.concurrent.ConcurrentHashMap.newKeySet(100);
 
 	/** Result of the setup phase — everything needed to score and sort classes. */
 	public record SetupResult(DependencyMap depMap, TestOrderState state,
@@ -70,7 +70,7 @@ public final class ClassOrderingEngine {
 					: new TestOrderState();
 		} catch (IOException | RuntimeException e) {
 			String msg = e.getClass().getName() + ": " + e.getMessage();
-			if (LOGGED_STATE_ERRORS.add(msg)) {
+			if (LOGGED_STATE_ERRORS.size() < 100 && LOGGED_STATE_ERRORS.add(msg)) {
 				TestOrderLogger.error("Failed to load state: {} — falling back to defaults.", e.getMessage());
 			}
 			state = new TestOrderState();

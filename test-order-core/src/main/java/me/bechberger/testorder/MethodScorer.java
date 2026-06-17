@@ -193,7 +193,7 @@ public class MethodScorer {
 		}
 		if (intersectionSize == 0)
 			return 0.0;
-		double normalized = intersectionSize / Math.sqrt(methodDeps.size());
+		double normalized = intersectionSize / Math.sqrt(Math.max(methodDeps.size(), TestScorer.MIN_DEPS_DENOMINATOR));
 		return Math.min(normalized * weights.depOverlap(), weights.depOverlap());
 	}
 
