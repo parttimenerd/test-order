@@ -45,6 +45,30 @@ public final class ClassOrderingEngine {
 	 * @return setup result, or {@code null} if the index path is missing/invalid
 	 */
 	public static SetupResult setup(TestOrderConfigResolver config) {
+		DependencyMap depMap = setupIO(config);
+		if (depMap == null) {
+			return null;
+		}
+
+		TestOrderState state = setupState(config);
+		Set<String> changedClasses = config.resolveChangedClasses();
+		Set<String> changedTestClasses = config.resolveChangedTestClasses();
+		TestOrderState.ScoringWeights effectiveWeights = config.resolveEffectiveWeights(config.loadBaseWeights(state));
+		boolean debug = config.getConfigBool(TestOrderConfig.DEBUG, false);
+		String statePath = config.getConfig(TestOrderConfig.STATE_PATH);
+
+		var analysis = setupAnalysis(config, debug);
+		var changeComplexity = setupComplexity(config, changedClasses, analysis);
+
+		return new SetupResult(depMap, state, effectiveWeights, changedClasses, changedTestClasses,
+				analysis.changedMembers(), analysis.diffs(), changeComplexity, debug, statePath);
+	}
+
+	/**
+	 * Loads the dependency index file. Returns null if index path is missing or
+	 * file does not exist.
+	 */
+	private static DependencyMap setupIO(TestOrderConfigResolver config) {
 		String indexPath = config.getConfig(TestOrderConfig.INDEX_PATH);
 		if (indexPath == null || indexPath.isEmpty()) {
 			return null;
@@ -54,84 +78,106 @@ public final class ClassOrderingEngine {
 			return null;
 		}
 
-		DependencyMap depMap;
 		try {
-			depMap = DependencyMap.load(idx);
+			return DependencyMap.load(idx);
 		} catch (IOException | RuntimeException e) {
 			TestOrderLogger.error("Failed to load dependency index: {}", e.getMessage());
 			return null;
 		}
+	}
 
+	/**
+	 * Loads or creates the test-order state file. Returns a fresh state if load
+	 * fails, with deduplication of repeated error messages.
+	 */
+	private static TestOrderState setupState(TestOrderConfigResolver config) {
 		String statePath = config.getConfig(TestOrderConfig.STATE_PATH);
-		TestOrderState state;
 		try {
-			state = (statePath != null && !statePath.isEmpty() && Files.exists(Path.of(statePath)))
-					? TestOrderState.load(Path.of(statePath))
-					: new TestOrderState();
+			if (statePath != null && !statePath.isEmpty() && Files.exists(Path.of(statePath))) {
+				return TestOrderState.load(Path.of(statePath));
+			}
 		} catch (IOException | RuntimeException e) {
 			String msg = e.getClass().getName() + ": " + e.getMessage();
 			if (LOGGED_STATE_ERRORS.size() < 100 && LOGGED_STATE_ERRORS.add(msg)) {
 				TestOrderLogger.error("Failed to load state: {} — falling back to defaults.", e.getMessage());
 			}
-			state = new TestOrderState();
 		}
+		return new TestOrderState();
+	}
 
-		Set<String> changedClasses = config.resolveChangedClasses();
-		Set<String> changedTestClasses = config.resolveChangedTestClasses();
-		boolean debug = config.getConfigBool(TestOrderConfig.DEBUG, false);
+	/** Analysis result holder for structural analysis. */
+	private record AnalysisResult(ChangedMembers changedMembers, List<StructuralDiff.FileDiff> diffs) {
+	}
 
-		TestOrderState.ScoringWeights effectiveWeights = config.resolveEffectiveWeights(config.loadBaseWeights(state));
-
-		// Structural change analysis
-		ChangedMembers changedMembers = null;
-		List<StructuralDiff.FileDiff> structuralDiffs = null;
+	/**
+	 * Performs structural change analysis if enabled. Returns empty result if
+	 * disabled or analysis fails.
+	 */
+	private static AnalysisResult setupAnalysis(TestOrderConfigResolver config, boolean debug) {
 		String projectRootStr = config.getConfig(TestOrderConfig.PROJECT_ROOT);
 		boolean structuralEnabled = config.getConfigBool(TestOrderConfig.STRUCTURAL_DIFF_ENABLED, true);
-		if (structuralEnabled && projectRootStr != null && !projectRootStr.isEmpty()) {
-			try {
-				Path projectRoot = Path.of(projectRootStr);
-				String changeMode = config.getConfig(TestOrderConfig.CHANGE_MODE);
-				StructuralChangeAnalyzer.AnalysisResult analysis;
-				String normalizedMode = changeMode != null
-						? changeMode.replace('_', '-').toLowerCase(java.util.Locale.ROOT)
-						: "";
-				if ("since-last-commit".equals(normalizedMode)) {
-					analysis = StructuralChangeAnalyzer.analyzeSinceLastCommitFull(projectRoot);
-				} else {
-					analysis = StructuralChangeAnalyzer.analyzeUncommittedFull(projectRoot);
-				}
-				changedMembers = analysis.changedMembers();
-				structuralDiffs = analysis.diffs();
-				if (debug) {
-					TestOrderLogger.debug("[structural] {} classes with structural changes, {} changed members",
-							changedMembers.changedClasses().size(), changedMembers.changedMemberKeys().size());
-				}
-			} catch (IOException e) {
-				TestOrderLogger.debug("[structural] Failed to compute structural analysis: {}", e.getMessage());
-			}
+
+		if (!structuralEnabled || projectRootStr == null || projectRootStr.isEmpty()) {
+			return new AnalysisResult(null, null);
 		}
 
-		// Change complexity
-		Map<String, Double> changeComplexityMap = Map.of();
-		if (!changedClasses.isEmpty() && projectRootStr != null && !projectRootStr.isEmpty()) {
+		try {
 			Path projectRoot = Path.of(projectRootStr);
-			String srcRoot = config.getConfig(TestOrderConfig.SOURCE_ROOT);
-			List<Path> sourceRoots = new ArrayList<>();
-			if (srcRoot != null && !srcRoot.isBlank()) {
-				sourceRoots.add(Path.of(srcRoot));
-			} else {
-				sourceRoots.add(projectRoot.resolve("src/main/java"));
-				sourceRoots.add(projectRoot.resolve("src/main/kotlin"));
+			String changeMode = config.getConfig(TestOrderConfig.CHANGE_MODE);
+			String normalizedMode = changeMode != null
+					? changeMode.replace('_', '-').toLowerCase(java.util.Locale.ROOT)
+					: "";
+			StructuralChangeAnalyzer.AnalysisResult analysis = "since-last-commit".equals(normalizedMode)
+					? StructuralChangeAnalyzer.analyzeSinceLastCommitFull(projectRoot)
+					: StructuralChangeAnalyzer.analyzeUncommittedFull(projectRoot);
+			if (debug) {
+				TestOrderLogger.debug("[structural] {} classes with structural changes, {} changed members",
+						analysis.changedMembers().changedClasses().size(),
+						analysis.changedMembers().changedMemberKeys().size());
 			}
-			changeComplexityMap = ChangeComplexity.compute(changedClasses, sourceRoots, changedMembers,
-					structuralDiffs);
+			return new AnalysisResult(analysis.changedMembers(), analysis.diffs());
+		} catch (IOException e) {
+			TestOrderLogger.debug("[structural] Failed to compute structural analysis: {}", e.getMessage());
+			return new AnalysisResult(null, null);
 		}
-		if (changeComplexityMap.isEmpty()) {
-			changeComplexityMap = ChangeComplexity.deserialise(config.getConfig(TestOrderConfig.CHANGE_COMPLEXITY));
+	}
+
+	/**
+	 * Computes change complexity if changed classes are present. Returns empty map
+	 * if no analysis data available or complexity computation fails.
+	 */
+	private static Map<String, Double> setupComplexity(TestOrderConfigResolver config, Set<String> changedClasses,
+			AnalysisResult analysis) {
+		if (changedClasses.isEmpty()) {
+			return Map.of();
 		}
 
-		return new SetupResult(depMap, state, effectiveWeights, changedClasses, changedTestClasses, changedMembers,
-				structuralDiffs, changeComplexityMap, debug, statePath);
+		String projectRootStr = config.getConfig(TestOrderConfig.PROJECT_ROOT);
+		if (projectRootStr == null || projectRootStr.isEmpty()) {
+			Map<String, Double> deserialized = ChangeComplexity
+					.deserialise(config.getConfig(TestOrderConfig.CHANGE_COMPLEXITY));
+			return deserialized != null ? deserialized : Map.of();
+		}
+
+		Path projectRoot = Path.of(projectRootStr);
+		String srcRoot = config.getConfig(TestOrderConfig.SOURCE_ROOT);
+		List<Path> sourceRoots = new ArrayList<>();
+		if (srcRoot != null && !srcRoot.isBlank()) {
+			sourceRoots.add(Path.of(srcRoot));
+		} else {
+			sourceRoots.add(projectRoot.resolve("src/main/java"));
+			sourceRoots.add(projectRoot.resolve("src/main/kotlin"));
+		}
+
+		Map<String, Double> complexityMap = ChangeComplexity.compute(changedClasses, sourceRoots,
+				analysis.changedMembers(), analysis.diffs());
+		if (!complexityMap.isEmpty()) {
+			return complexityMap;
+		}
+
+		Map<String, Double> deserialized = ChangeComplexity
+				.deserialise(config.getConfig(TestOrderConfig.CHANGE_COMPLEXITY));
+		return deserialized != null ? deserialized : Map.of();
 	}
 
 	/**

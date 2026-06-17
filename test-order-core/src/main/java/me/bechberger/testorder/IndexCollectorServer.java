@@ -9,6 +9,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -37,6 +40,9 @@ public class IndexCollectorServer implements AutoCloseable {
 	/** v4: v1 string protocol + UTF-8 moduleId string after the version byte. */
 	private static final byte PROTOCOL_VERSION_V4 = 4;
 	private static final int MEMBER_ID_OFFSET = 8_000_000;
+
+	/** Max concurrent handler threads to prevent resource exhaustion. */
+	private static final int MAX_HANDLER_THREADS = 50;
 
 	/**
 	 * JVM-global registry of running servers keyed by port. Stored as a value in
@@ -94,6 +100,7 @@ public class IndexCollectorServer implements AutoCloseable {
 
 	private final ServerSocket serverSocket;
 	private final Thread acceptThread;
+	private final ExecutorService handlerExecutor;
 	private final AtomicBoolean running = new AtomicBoolean(true);
 	private final Path indexFile;
 	private final Path mappingFile; // ClassIdMapping file for v2 protocol
@@ -157,6 +164,9 @@ public class IndexCollectorServer implements AutoCloseable {
 			}
 			throw e;
 		}
+
+		handlerExecutor = Executors.newFixedThreadPool(MAX_HANDLER_THREADS,
+				r -> new Thread(r, "test-order-collector-handler"));
 
 		acceptThread = new Thread(this::acceptLoop, "test-order-index-collector");
 		acceptThread.setDaemon(true);
@@ -244,6 +254,9 @@ public class IndexCollectorServer implements AutoCloseable {
 		if (!running.compareAndSet(true, false)) {
 			return 0; // already stopped
 		}
+		// Remove from registry immediately before merge to prevent concurrent drain
+		// attempts
+		// from using stale state if merge fails partway through
 		jvmRegistry().remove(serverSocket.getLocalPort());
 		try {
 			acceptThread.join(5000);
@@ -417,6 +430,7 @@ public class IndexCollectorServer implements AutoCloseable {
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		}
+		handlerExecutor.shutdown();
 	}
 
 	private void unregisterShutdownHook() {
@@ -439,20 +453,25 @@ public class IndexCollectorServer implements AutoCloseable {
 			try {
 				Socket client = serverSocket.accept();
 				activeHandlers.incrementAndGet();
-				// Create a daemon thread for each client. Handler threads are short-lived
-				// (milliseconds), so thread allocation is not a concern. No pooling needed.
-				Thread handler = new Thread(() -> {
+				try {
+					handlerExecutor.execute(() -> {
+						try {
+							handleClient(client);
+						} catch (Throwable t) {
+							System.err.println("[test-order] Unhandled exception in client handler: " + t);
+						} finally {
+							READ_BUF.remove();
+							activeHandlers.decrementAndGet();
+						}
+					});
+				} catch (RejectedExecutionException e) {
+					activeHandlers.decrementAndGet();
 					try {
-						handleClient(client);
-					} catch (Throwable t) {
-						System.err.println("[test-order] Unhandled exception in client handler: " + t);
-					} finally {
-						READ_BUF.remove();
-						activeHandlers.decrementAndGet();
+						client.close();
+					} catch (IOException ignored) {
 					}
-				}, "test-order-collector-handler");
-				handler.setDaemon(true);
-				handler.start();
+					System.err.println("[test-order] Handler thread pool full, rejecting connection");
+				}
 			} catch (SocketTimeoutException e) {
 				// Normal: accept timed out, loop back to check running flag
 			} catch (IOException e) {

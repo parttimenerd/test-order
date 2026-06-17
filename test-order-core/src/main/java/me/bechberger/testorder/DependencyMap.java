@@ -195,8 +195,7 @@ public class DependencyMap {
 	 */
 	public void put(String testClass, Set<String> deps) {
 		dependencies.put(testClass, Collections.unmodifiableSet(new HashSet<>(deps)));
-		invertedIndex = null;
-		depFrequencies = null;
+		invalidateCaches();
 	}
 
 	/**
@@ -232,10 +231,18 @@ public class DependencyMap {
 
 	/**
 	 * Store deps directly without copying — for use by loadBinary where sets are
-	 * already constructed.
+	 * already constructed. Must call invalidateCaches() after all direct puts are
+	 * complete.
 	 */
 	void putDirect(String testClass, Set<String> deps) {
 		dependencies.put(testClass, deps);
+	}
+
+	/**
+	 * Invalidates cached views (invertedIndex, depFrequencies) after mutations.
+	 * Call this after batch operations like putDirect() or mergeWith().
+	 */
+	public void invalidateCaches() {
 		invertedIndex = null;
 		depFrequencies = null;
 	}
