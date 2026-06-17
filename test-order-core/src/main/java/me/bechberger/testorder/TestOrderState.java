@@ -543,18 +543,9 @@ public class TestOrderState {
 	private static final double MIN_ADAPTIVE_ALPHA_FACTOR = TestOrderState.DEFAULT_MIN_ADAPTIVE_ALPHA_FACTOR;
 
 	private final StateConfiguration config;
-	private ScoringWeights weights;
-	private MethodScoringWeights methodScoringWeights;
+	private final ScoringWeightManager scoringWeights;
 	private final TestMetricsTracker metrics;
 	private final RunHistoryManager runHistory;
-	/**
-	 * Per-test-class mutation kill rates, populated by the analyze-mutations goal.
-	 */
-	private Map<String, Double> killRates = new java.util.HashMap<>();
-	/** Total mutants from last PIT run (0 when not yet run). */
-	private int mutationTotalMutants = 0;
-	/** Total killed mutants from last PIT run (0 when not yet run). */
-	private int mutationTotalKilled = 0;
 	/**
 	 * True when addRunRecord was called since the last save — enables decay even on
 	 * all-pass runs. Protected by monitor lock during read in toPersistedRoot().
@@ -563,8 +554,7 @@ public class TestOrderState {
 
 	public TestOrderState() {
 		this.config = new StateConfiguration();
-		this.weights = ScoringWeights.DEFAULT;
-		this.methodScoringWeights = MethodScoringWeights.DEFAULT;
+		this.scoringWeights = new ScoringWeightManager();
 		this.metrics = new TestMetricsTracker(this.config);
 		this.runHistory = new RunHistoryManager();
 	}
@@ -572,32 +562,31 @@ public class TestOrderState {
 	// ── Weights ───────────────────────────────────────────────────────
 
 	public ScoringWeights weights() {
-		return weights;
+		return scoringWeights.weights();
 	}
 	public void setWeights(ScoringWeights w) {
-		this.weights = w;
+		scoringWeights.setWeights(w);
 	}
 
 	/** Returns an unmodifiable view of the per-test mutation kill rates. */
 	public Map<String, Double> getKillRates() {
-		return java.util.Collections.unmodifiableMap(killRates);
+		return scoringWeights.getKillRates();
 	}
 
 	/** Replaces the mutation kill rates (called by analyze-mutations). */
 	public void setKillRates(Map<String, Double> rates) {
-		this.killRates = new java.util.HashMap<>(rates);
+		scoringWeights.setKillRates(rates);
 	}
 
 	public int getMutationTotalMutants() {
-		return mutationTotalMutants;
+		return scoringWeights.getMutationTotalMutants();
 	}
 	public int getMutationTotalKilled() {
-		return mutationTotalKilled;
+		return scoringWeights.getMutationTotalKilled();
 	}
 
 	public void setMutationTotals(int totalMutants, int totalKilled) {
-		this.mutationTotalMutants = totalMutants;
-		this.mutationTotalKilled = totalKilled;
+		scoringWeights.setMutationTotals(totalMutants, totalKilled);
 	}
 
 	// ── Configuration ─────────────────────────────────────────────────
@@ -802,10 +791,10 @@ public class TestOrderState {
 	// ── Method-level weights ──────────────────────────────────────────
 
 	public MethodScoringWeights methodScoringWeights() {
-		return methodScoringWeights;
+		return scoringWeights.methodScoringWeights();
 	}
 	public void setMethodScoringWeights(MethodScoringWeights w) {
-		this.methodScoringWeights = w;
+		scoringWeights.setMethodScoringWeights(w);
 	}
 
 	// ── Run history ───────────────────────────────────────────────────
@@ -941,7 +930,7 @@ public class TestOrderState {
 		if (!configMap.isEmpty())
 			root.put("config", configMap);
 
-		root.put("weights", new LinkedHashMap<>(weights.toMap()));
+		root.put("weights", new LinkedHashMap<>(scoringWeights.weights().toMap()));
 
 		// run history (capped at MAX_HISTORY_RUNS, most recent entries)
 		List<RunRecord> persistedRuns = RunHistoryManager.thinRunHistory(runHistory.runs(), config.historyMaxRuns());
@@ -1045,15 +1034,15 @@ public class TestOrderState {
 		}
 
 		// method scoring weights (only persist non-default)
-		if (!methodScoringWeights.equals(MethodScoringWeights.DEFAULT)) {
-			root.put("methodWeights", new LinkedHashMap<>(methodScoringWeights.toMap()));
+		if (!scoringWeights.methodScoringWeights().equals(MethodScoringWeights.DEFAULT)) {
+			root.put("methodWeights", new LinkedHashMap<>(scoringWeights.methodScoringWeights().toMap()));
 		}
 
 		// mutation kill rates (only persist when present)
-		if (!killRates.isEmpty()) {
-			root.put("killRates", new LinkedHashMap<>(killRates));
-			root.put("mutationTotalMutants", mutationTotalMutants);
-			root.put("mutationTotalKilled", mutationTotalKilled);
+		if (!scoringWeights.killRatesRaw().isEmpty()) {
+			root.put("killRates", new LinkedHashMap<>(scoringWeights.killRatesRaw()));
+			root.put("mutationTotalMutants", scoringWeights.getMutationTotalMutants());
+			root.put("mutationTotalKilled", scoringWeights.getMutationTotalKilled());
 		}
 
 		persistedFailureScores = mergedFailures;
@@ -1178,7 +1167,7 @@ public class TestOrderState {
 				weightMap.put(e.getKey(),
 						safeInt(e.getValue(), weightMap.getOrDefault(e.getKey(), 0), "weights." + e.getKey()));
 			}
-			state.weights = ScoringWeights.fromMap(weightMap);
+			state.scoringWeights.setWeights(ScoringWeights.fromMap(weightMap));
 		}
 
 		// durations
@@ -1231,7 +1220,7 @@ public class TestOrderState {
 			for (var e : mwm.entrySet()) {
 				doubleMap.put(e.getKey(), safeDouble(e.getValue(), 0.0, "methodWeights." + e.getKey()));
 			}
-			state.methodScoringWeights = MethodScoringWeights.fromMap(doubleMap);
+			state.scoringWeights.setMethodScoringWeights(MethodScoringWeights.fromMap(doubleMap));
 		}
 
 		// method failure scores: map of "class#method"→score
@@ -1247,9 +1236,9 @@ public class TestOrderState {
 			for (var e : krMap.entrySet()) {
 				rates.put(e.getKey(), safeDouble(e.getValue(), 0.0, "killRates." + e.getKey()));
 			}
-			state.killRates = rates;
-			state.mutationTotalMutants = safeInt(root.get("mutationTotalMutants"), 0, "mutationTotalMutants");
-			state.mutationTotalKilled = safeInt(root.get("mutationTotalKilled"), 0, "mutationTotalKilled");
+			state.scoringWeights.replaceKillRatesRaw(rates);
+			state.scoringWeights.setMutationTotals(safeInt(root.get("mutationTotalMutants"), 0, "mutationTotalMutants"),
+					safeInt(root.get("mutationTotalKilled"), 0, "mutationTotalKilled"));
 		}
 
 		state.runHistory.trimToMax(state.config.historyMaxRuns());
@@ -1402,7 +1391,7 @@ public class TestOrderState {
 	 * @return optimised result, or {@code null} if insufficient data
 	 */
 	public OptimizeResult optimize(List<WeightDef> defs) {
-		return ScoringOptimizer.optimize(runHistory.runs(), metrics.durationTracker().classDurations(), defs, LOG);
+		return scoringWeights.optimize(runHistory.runs(), metrics.durationTracker().classDurations(), defs, LOG);
 	}
 
 }
