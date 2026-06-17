@@ -64,7 +64,11 @@ public final class AffectedOperation {
 					newCount, alwaysRunCount, fastCount);
 		}
 
-		/** Multi-line summary block prefixed with "[test-order] ". */
+		/**
+		 * Multi-line summary block prefixed with "[test-order] ". Defaults to Maven
+		 * format. Gradle callers should use {@link #format(PluginContext.BuildSystem)}
+		 * instead.
+		 */
 		public String format() {
 			return format(PluginContext.BuildSystem.MAVEN);
 		}
@@ -179,7 +183,7 @@ public final class AffectedOperation {
 			newCount = (int) selection.selected().stream()
 					.filter(t -> !config.depMap().testClasses().contains(t) && !config.alwaysRunClasses().contains(t))
 					.count();
-			scoredCount = selection.selected().size() - alwaysRunCount - newCount - fastCount;
+			scoredCount = Math.max(0, selection.selected().size() - alwaysRunCount - newCount - fastCount);
 		}
 		if (selection.selected().isEmpty() && selection.remaining().isEmpty()) {
 			// no tests in depMap — nothing to report

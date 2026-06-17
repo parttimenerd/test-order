@@ -3168,11 +3168,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			sourceRoots.add(mainKotlinDir.toAbsolutePath().toString());
 		}
 		// Access compileSourceRoots via reflection since setCompileSourceRoots is
-		// protected
+		// protected (no public API alternative: MavenProject does not expose a public
+		// setter for compileSourceRoots). This is an internal Maven API that has been
+		// stable across Maven 3.x, but may change in future versions.
 		try {
 			java.lang.reflect.Field field = MavenProject.class.getDeclaredField("compileSourceRoots");
 			field.setAccessible(true);
 			field.set(p, sourceRoots);
+		} catch (NoSuchFieldException e) {
+			getLog().warn(
+					"[test-order] Could not set compileSourceRoots via reflection (field not found in this Maven version) — module source root discovery may be incomplete: "
+							+ e.getMessage());
 		} catch (Exception e) {
 			getLog().debug("[test-order] Could not set compileSourceRoots: " + e.getMessage());
 		}

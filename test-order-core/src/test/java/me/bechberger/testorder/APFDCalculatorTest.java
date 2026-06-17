@@ -1,6 +1,7 @@
 package me.bechberger.testorder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -26,15 +27,15 @@ class APFDCalculatorTest {
 
 	@Test
 	void apfd_emptyList_returns1() {
-		// Vacuously perfect: no failures to miss.
-		assertEquals(1.0, APFDCalculator.computeAPFD(List.of()), DELTA);
+		// No tests, no failures — APFD is undefined (NaN), not 1.0.
+		assertTrue(Double.isNaN(APFDCalculator.computeAPFD(List.of())));
 	}
 
 	@Test
 	void apfd_noFailures_returns1() {
-		// No faults ⇒ perfect score (they are "all" caught immediately).
+		// No faults — APFD is undefined (NaN): there is nothing to detect.
 		List<TestOrderState.TestOutcome> outcomes = List.of(pass("A"), pass("B"), pass("C"));
-		assertEquals(1.0, APFDCalculator.computeAPFD(outcomes), DELTA);
+		assertTrue(Double.isNaN(APFDCalculator.computeAPFD(outcomes)));
 	}
 
 	@Test
@@ -84,13 +85,13 @@ class APFDCalculatorTest {
 
 	@Test
 	void apfdC_emptyList_returns1() {
-		assertEquals(1.0, APFDCalculator.computeAPFDc(List.of(), Map.of()), DELTA);
+		assertTrue(Double.isNaN(APFDCalculator.computeAPFDc(List.of(), Map.of())));
 	}
 
 	@Test
 	void apfdC_noFailures_returns1() {
 		List<TestOrderState.TestOutcome> outcomes = List.of(pass("A"), pass("B"));
-		assertEquals(1.0, APFDCalculator.computeAPFDc(outcomes, Map.of("A", 100L, "B", 200L)), DELTA);
+		assertTrue(Double.isNaN(APFDCalculator.computeAPFDc(outcomes, Map.of("A", 100L, "B", 200L))));
 	}
 
 	@Test
@@ -152,15 +153,15 @@ class APFDCalculatorTest {
 
 	@Test
 	void apfdWithWeights_emptyList_returns1() {
-		assertEquals(1.0, APFDCalculator.computeAPFDWithWeights(List.of(), TestOrderState.ScoringWeights.DEFAULT),
-				DELTA);
+		assertTrue(
+				Double.isNaN(APFDCalculator.computeAPFDWithWeights(List.of(), TestOrderState.ScoringWeights.DEFAULT)));
 	}
 
 	@Test
 	void apfdWithWeights_noFailures_returns1() {
 		List<TestOrderState.TestOutcome> outcomes = List.of(pass("A"), pass("B"));
-		assertEquals(1.0, APFDCalculator.computeAPFDWithWeights(outcomes, TestOrderState.ScoringWeights.DEFAULT),
-				DELTA);
+		assertTrue(
+				Double.isNaN(APFDCalculator.computeAPFDWithWeights(outcomes, TestOrderState.ScoringWeights.DEFAULT)));
 	}
 
 	@Test

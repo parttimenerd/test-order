@@ -71,7 +71,7 @@ public class FileHashStore {
 		}
 		Path tempFile = PersistenceSupport.temporarySibling(hashFile);
 		try (LZ4FrameOutputStream lz4os = LZ4Support.frameOutputStreamHC(Files.newOutputStream(tempFile));
-				PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os))) {
+				PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os, StandardCharsets.UTF_8))) {
 			// Sort entries for deterministic output
 			hashes.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
 				pw.print(entry.getKey());
@@ -89,7 +89,7 @@ public class FileHashStore {
 		Map<String, String> hashes = new HashMap<>();
 		Path loadPath = PersistenceSupport.resolveLoadPath(hashFile);
 		try (LZ4FrameInputStream lz4is = LZ4Support.frameInputStream(Files.newInputStream(loadPath));
-				BufferedReader br = new BufferedReader(new InputStreamReader(lz4is))) {
+				BufferedReader br = new BufferedReader(new InputStreamReader(lz4is, StandardCharsets.UTF_8))) {
 			String line;
 			while ((line = br.readLine()) != null) {
 				int tab = line.indexOf('\t');

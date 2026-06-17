@@ -51,7 +51,23 @@ public final class TelemetryPersistence {
 			Set<String> failedClassNames, Map<String, List<Long>> pendingMethodDurations,
 			Set<String> failedMethodNames) {
 		for (var entry : pendingDurations.entrySet()) {
-			entry.getValue().forEach(duration -> state.recordDuration(entry.getKey(), duration));
+			List<Long> durations = entry.getValue();
+			if (durations.isEmpty()) {
+				continue;
+			}
+			// Accumulate all per-method-invocation durations into a single per-run
+			// observation before applying the EMA, so one test run advances the EMA
+			// exactly once regardless of how many methods were timed. This prevents
+			// the EMA from being driven too low by repeated micro-observations.
+			if (durations.size() == 1) {
+				state.recordDuration(entry.getKey(), durations.get(0));
+			} else {
+				double sum = 0.0;
+				for (Long d : durations) {
+					sum += d.doubleValue();
+				}
+				state.recordDuration(entry.getKey(), Math.round(sum / durations.size()));
+			}
 		}
 		for (String failed : failedClassNames) {
 			state.recordFailure(failed);
@@ -142,6 +158,7 @@ public final class TelemetryPersistence {
 				return state;
 			});
 		} catch (Exception ignored) {
+			TestOrderLogger.warn("emergencySave failed (best-effort shutdown hook): {}", ignored.getMessage());
 			// Best-effort: shutdown hooks must not throw
 		}
 	}

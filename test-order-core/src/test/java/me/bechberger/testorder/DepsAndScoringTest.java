@@ -1017,7 +1017,7 @@ class DepsAndScoringTest {
 		List<TestOrderState.TestOutcome> outcomes = List.of(
 				new TestOrderState.TestOutcome("A", 10, false, false, 0, 0, 0.0, false, false, false, 0.0),
 				new TestOrderState.TestOutcome("B", 5, false, false, 0, 0, 0.0, false, false, false, 0.0));
-		assertEquals(1.0, APFDCalculator.computeAPFD(outcomes), 0.001);
+		assertTrue(Double.isNaN(APFDCalculator.computeAPFD(outcomes)));
 	}
 
 	@Test
@@ -1042,7 +1042,7 @@ class DepsAndScoringTest {
 
 	@Test
 	void apfdEmptyOutcomesIsOne() {
-		assertEquals(1.0, APFDCalculator.computeAPFD(List.of()), 0.001);
+		assertTrue(Double.isNaN(APFDCalculator.computeAPFD(List.of())));
 	}
 
 	@Test

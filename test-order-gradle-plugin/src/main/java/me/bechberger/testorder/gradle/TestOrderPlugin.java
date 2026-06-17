@@ -134,8 +134,18 @@ public class TestOrderPlugin implements Plugin<Project> {
         String projectPath = project.getPath(); // e.g. ":micronaut-core"
         for (String task : taskNames) {
             // Task names can be ":proj:taskName", "proj:taskName", "taskName" (root), etc.
-            if (task.startsWith(projectPath + ":") || (projectPath.length() > 1 && task.startsWith(projectPath.substring(1) + ":"))
-                    || (!task.contains(":") && project == project.getRootProject())) {
+            // Use exact project-path matching: extract everything before the last ':' and
+            // compare by equality, avoiding false-positive prefix matches.
+            int lastColon = task.lastIndexOf(':');
+            if (lastColon > 0) {
+                String taskProjectPath = task.substring(0, lastColon); // e.g. ":proj" or "proj"
+                // Normalise to leading-colon form for comparison
+                String normalised = taskProjectPath.startsWith(":") ? taskProjectPath : (":" + taskProjectPath);
+                if (normalised.equals(projectPath)) {
+                    return true;
+                }
+            } else if (!task.contains(":") && project == project.getRootProject()) {
+                // Unqualified task name — matches root project only
                 return true;
             }
         }
@@ -970,28 +980,35 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
         });
 
-        // doLast: restore original classes after tests complete
-        testTask.doLast("testOrderOfflineRestore", t -> {
-            Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
-            Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
-            try {
-                if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir)) {
-                    project.getLogger().lifecycle("[test-order] Restored original classes (instrumentation reverted).");
+        // Register a separate cleanup task and use finalizedBy so restore runs even
+        // when the test task fails (doLast is skipped on task failure).
+        String restoreTaskName = "testOrderOfflineRestore_" + testTask.getName();
+        project.getTasks().register(restoreTaskName, task -> {
+            task.setGroup("test-order");
+            task.setDescription("Restore offline-instrumented classes after " + testTask.getName());
+            task.doLast("testOrderOfflineRestore", t -> {
+                Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
+                Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
+                try {
+                    if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir)) {
+                        project.getLogger().lifecycle("[test-order] Restored original classes (instrumentation reverted).");
+                    }
+                } catch (IOException e) {
+                    project.getLogger().warn("[test-order] Failed to restore classes: {}", e.getMessage());
                 }
-            } catch (IOException e) {
-                project.getLogger().warn("[test-order] Failed to restore classes: {}", e.getMessage());
-            }
-            // Stop IndexCollectorServer and merge (if it was started)
-            me.bechberger.testorder.IndexCollectorServer collector =
-                    COLLECTOR_REGISTRY.remove(testTask.getPath());
-            if (collector != null) {
-                int merged = collector.stopAndMerge();
-                if (merged > 0) {
-                    project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
-                            merged);
+                // Stop IndexCollectorServer and merge (if it was started)
+                me.bechberger.testorder.IndexCollectorServer collector =
+                        COLLECTOR_REGISTRY.remove(testTask.getPath());
+                if (collector != null) {
+                    int merged = collector.stopAndMerge();
+                    if (merged > 0) {
+                        project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
+                                merged);
+                    }
                 }
-            }
+            });
         });
+        testTask.finalizedBy(restoreTaskName);
 
         // Add runtime jar to test classpath (UsageStore accessible without agent).
         // Use a per-task name so that multiple Test tasks in the same project each

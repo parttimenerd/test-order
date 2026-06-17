@@ -21,6 +21,10 @@ import me.bechberger.testorder.annotations.ThreadSafe;
 @ThreadSafe
 final class DurationTracker {
 
+	// Plain LinkedHashMaps are safe here: all access is guarded by synchronized
+	// methods on this instance (see @GuardedBy annotations above). No need for
+	// Collections.synchronizedMap — that would only add per-call locking without
+	// providing the compound-action atomicity that synchronized methods give.
 	@GuardedBy("this")
 	private final Map<String, Long> classDurations = new LinkedHashMap<>();
 	@GuardedBy("this")
@@ -48,8 +52,7 @@ final class DurationTracker {
 		double effectiveAlpha = adaptiveAlpha(alpha, previous.doubleValue(), variance, varianceThreshold,
 				minAdaptiveAlphaFactor);
 		double delta = measuredMs - previous;
-		long clamped = Math.max(0, Math.min(measuredMs, Long.MAX_VALUE));
-		classDurations.put(testClass, Math.round(effectiveAlpha * clamped + (1.0 - effectiveAlpha) * previous));
+		classDurations.put(testClass, Math.round(effectiveAlpha * measuredMs + (1.0 - effectiveAlpha) * previous));
 		classDurationVariances.put(testClass, updatedVariance(variance, delta, effectiveAlpha));
 	}
 
@@ -74,8 +77,8 @@ final class DurationTracker {
 		double variance = classVariances.getOrDefault(methodName, 0.0);
 		double effectiveAlpha = adaptiveAlpha(alpha, previous, variance, varianceThreshold, minAdaptiveAlphaFactor);
 		double delta = measuredMs - previous;
-		long clamped = Math.max(0, Math.min(measuredMs, Long.MAX_VALUE));
-		classMethods.put(methodName, (double) Math.round(effectiveAlpha * clamped + (1.0 - effectiveAlpha) * previous));
+		classMethods.put(methodName,
+				(double) Math.round(effectiveAlpha * measuredMs + (1.0 - effectiveAlpha) * previous));
 		classVariances.put(methodName, updatedVariance(variance, delta, effectiveAlpha));
 	}
 

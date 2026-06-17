@@ -54,8 +54,15 @@ final class ScoringOptimizer {
 		int minTrainSize = Math.max(2, (int) (withFailures.size() * MIN_TRAIN_FRACTION));
 		int numFolds = useExpandingWindow ? withFailures.size() - minTrainSize : 0;
 
-		List<IntegerChromosome> chromosomes = defs.stream().map(def -> IntegerChromosome.of(def.min(), def.max()))
-				.toList();
+		List<IntegerChromosome> chromosomes = defs.stream().map(def -> {
+			int min = def.min();
+			int max = def.max();
+			// Guard against invalid range (e.g. min/max both -1 when not set in TOML)
+			if (min > max) {
+				min = max;
+			}
+			return IntegerChromosome.of(min, max);
+		}).toList();
 		Factory<Genotype<IntegerGene>> genotypeFactory = Genotype.of(chromosomes);
 
 		Engine<IntegerGene, Double> engine = Engine.builder(genotype -> {
@@ -121,13 +128,18 @@ final class ScoringOptimizer {
 	static double evaluateWeights(int[] weights, List<TestOrderState.RunRecord> runs, Map<String, Long> durations) {
 		TestOrderState.ScoringWeights scoringWeights = TestOrderState.ScoringWeights.fromArray(weights);
 		double sum = 0;
+		int count = 0;
 		for (TestOrderState.RunRecord run : runs) {
 			var outcomes = run.outcomes();
 			if (outcomes != null) {
-				sum += APFDCalculator.computeAPFDcWithWeights(outcomes, scoringWeights, durations);
+				double score = APFDCalculator.computeAPFDcWithWeights(outcomes, scoringWeights, durations);
+				if (!Double.isNaN(score)) {
+					sum += score;
+					count++;
+				}
 			}
 		}
-		return runs.size() > 0 ? sum / runs.size() : 0.0;
+		return count > 0 ? sum / count : 0.0;
 	}
 
 	static double evaluateExpandingWindow(int[] weights, List<TestOrderState.RunRecord> runs,
@@ -153,8 +165,10 @@ final class ScoringOptimizer {
 			var outcomes = validationRun.outcomes();
 			if (outcomes != null) {
 				double foldScore = APFDCalculator.computeAPFDcWithWeights(outcomes, scoringWeights, durations);
-				weightedSum += foldScore * recencyWeight;
-				weightTotal += recencyWeight;
+				if (!Double.isNaN(foldScore)) {
+					weightedSum += foldScore * recencyWeight;
+					weightTotal += recencyWeight;
+				}
 			}
 			recencyWeight *= retainInv;
 		}
@@ -180,8 +194,10 @@ final class ScoringOptimizer {
 			var outcomes = runs.get(i).outcomes();
 			if (outcomes != null) {
 				double score = APFDCalculator.computeAPFDcWithWeights(outcomes, scoringWeights, durations);
-				weightedSum += score * recencyWeight;
-				weightTotal += recencyWeight;
+				if (!Double.isNaN(score)) {
+					weightedSum += score * recencyWeight;
+					weightTotal += recencyWeight;
+				}
 			}
 			recencyWeight *= retainInv;
 		}

@@ -29,6 +29,22 @@ public final class BytecodeDependencyAugmenter {
 	}
 
 	/**
+	 * Cache of the inverted call graph (callerClass → set of calleeClasses) keyed
+	 * by {@link StaticCallGraphAnalyzer.ScanResult} identity. Avoids rebuilding the
+	 * inversion on every {@link #computeAugmentation} call when the same scan
+	 * result is reused across multiple dependency maps.
+	 */
+	private static final IdentityHashMap<StaticCallGraphAnalyzer.ScanResult, Map<String, Set<String>>> INVERTED_CACHE = new IdentityHashMap<>();
+
+	/**
+	 * Invalidates the cached inverted graph for the given scan result. Call this
+	 * when a scan result is updated or discarded to free memory.
+	 */
+	public static void invalidateCache(StaticCallGraphAnalyzer.ScanResult testScan) {
+		INVERTED_CACHE.remove(testScan);
+	}
+
+	/**
 	 * Computes the augmenting test → prod-class edges by inverting
 	 * {@code testScan.reverseCallGraph()} into per-test outgoing edges and then
 	 * subtracting the edges already recorded in {@code depMap}.
@@ -48,44 +64,47 @@ public final class BytecodeDependencyAugmenter {
 		if (testClasses.isEmpty()) {
 			return Map.of();
 		}
-		Map<String, Set<String>> reverse = testScan.reverseCallGraph();
-		if (reverse.isEmpty()) {
+		if (testScan.reverseCallGraph().isEmpty()) {
 			return Map.of();
 		}
 
-		// Invert: callerKey → set of callee classes (strip member, keep FQCN only).
-		Map<String, Set<String>> testToCallees = new HashMap<>();
-		for (var entry : reverse.entrySet()) {
-			String calleeKey = entry.getKey();
-			String calleeClass = classOf(calleeKey);
-			if (calleeClass == null || ClassNameFilter.isLibraryType(calleeClass)) {
-				continue;
-			}
-			if (testClasses.contains(calleeClass)) {
-				continue; // test → test edges are not production deps
-			}
-			for (String callerKey : entry.getValue()) {
-				String callerClass = classOf(callerKey);
-				if (callerClass == null) {
+		// Invert: callerClass → set of calleeClasses (strip member, keep FQCN only).
+		// The inversion is cached by ScanResult identity to avoid rebuilding on every
+		// call when the same scan result is reused across multiple dependency maps.
+		// Note: the cache stores edges for all caller classes; test-class filtering
+		// happens below so the cached map can be shared across different depMaps.
+		Map<String, Set<String>> invertedGraph = INVERTED_CACHE.computeIfAbsent(testScan, scan -> {
+			Map<String, Set<String>> inverted = new HashMap<>();
+			for (var entry : scan.reverseCallGraph().entrySet()) {
+				String calleeKey = entry.getKey();
+				String calleeClass = classOf(calleeKey);
+				if (calleeClass == null || ClassNameFilter.isLibraryType(calleeClass)) {
 					continue;
 				}
-				if (callerClass.equals(calleeClass)) {
-					continue; // self-reference doesn't add information
+				for (String callerKey : entry.getValue()) {
+					String callerClass = classOf(callerKey);
+					if (callerClass == null || callerClass.equals(calleeClass)) {
+						continue; // skip self-references
+					}
+					inverted.computeIfAbsent(callerClass, k -> new HashSet<>()).add(calleeClass);
 				}
-				if (!testClasses.contains(callerClass)) {
-					continue; // we only augment edges for tests known to depMap
-				}
-				testToCallees.computeIfAbsent(callerClass, k -> new HashSet<>()).add(calleeClass);
 			}
-		}
+			return inverted;
+		});
 
 		Map<String, Set<String>> augmentation = new HashMap<>();
-		for (var entry : testToCallees.entrySet()) {
+		for (var entry : invertedGraph.entrySet()) {
 			String testClass = entry.getKey();
+			if (!testClasses.contains(testClass)) {
+				continue; // only augment edges for tests known to depMap
+			}
 			Set<String> bytecodeRefs = entry.getValue();
 			Set<String> existing = depMap.get(testClass);
 			Set<String> missing = null;
 			for (String ref : bytecodeRefs) {
+				if (testClasses.contains(ref)) {
+					continue; // test → test edges are not production deps
+				}
 				if (existing.contains(ref)) {
 					continue;
 				}

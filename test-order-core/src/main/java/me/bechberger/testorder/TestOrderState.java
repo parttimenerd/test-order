@@ -46,6 +46,8 @@ public class TestOrderState {
 	// Avoids re-parsing the state file for each CLI sub-command or repeated Maven
 	// module load within the same JVM. Invalidated whenever save() rewrites it.
 	// Callers that mutate the instance must call save() immediately after.
+	// WARNING: callers must not mutate cached instances — this cache holds live
+	// shared state
 	private record StateCacheKey(Path path, long mtime, long size) {
 	}
 	private static final ConcurrentHashMap<StateCacheKey, TestOrderState> STATE_LOAD_CACHE = new ConcurrentHashMap<>();
@@ -195,7 +197,7 @@ public class TestOrderState {
 				if (!table.contains("value"))
 					continue;
 				int value = ((Number) table.get("value")).intValue();
-				int min = -1, max = -1;
+				int min = -1, max = -1; // -1 = not set (will inherit from defaults)
 				if (table.contains("min"))
 					min = ((Number) table.get("min")).intValue();
 				if (table.contains("max"))
@@ -415,7 +417,7 @@ public class TestOrderState {
 				double methodFailureDecay, double durationAlpha, double methodDurationAlpha,
 				double failurePruneThreshold) {
 			this(weights, defs, failureDecay, methodFailureDecay, durationAlpha, methodDurationAlpha,
-					failurePruneThreshold, -1);
+					failurePruneThreshold, -1); // -1 = not set (key count unknown)
 		}
 	}
 
@@ -743,8 +745,6 @@ public class TestOrderState {
 					String outer = fqcn.substring(0, fqcn.indexOf('$'));
 					if (!retained.contains(outer)) {
 						pruned.add(fqcn); // prune orphaned inner-class entries too
-					} else {
-						retained.add(fqcn); // keep inner entries whose outer is live
 					}
 				}
 			}
@@ -896,7 +896,7 @@ public class TestOrderState {
 	public static RunRecord buildRunRecord(List<String> executionOrder, Set<String> failedClasses) {
 		Map<String, ScoreBreakdown> pendingBreakdowns = getPendingBreakdowns();
 		List<TestOutcome> outcomes = new ArrayList<>();
-		int firstFailPos = -1;
+		int firstFailPos = -1; // -1 = not set (no failure recorded yet)
 		int failureCount = 0;
 		for (int i = 0; i < executionOrder.size(); i++) {
 			String tc = executionOrder.get(i);
@@ -967,17 +967,17 @@ public class TestOrderState {
 
 		// config (only persist non-default values)
 		Map<String, Object> configMap = new LinkedHashMap<>();
-		if (config.failureDecay() != DEFAULT_FAILURE_DECAY)
+		if (Math.abs(config.failureDecay() - DEFAULT_FAILURE_DECAY) > 1e-9)
 			configMap.put("failureDecay", config.failureDecay());
-		if (config.methodFailureDecay() != DEFAULT_METHOD_FAILURE_DECAY)
+		if (Math.abs(config.methodFailureDecay() - DEFAULT_METHOD_FAILURE_DECAY) > 1e-9)
 			configMap.put("methodFailureDecay", config.methodFailureDecay());
-		if (config.durationAlpha() != DEFAULT_DURATION_ALPHA)
+		if (Math.abs(config.durationAlpha() - DEFAULT_DURATION_ALPHA) > 1e-9)
 			configMap.put("durationAlpha", config.durationAlpha());
-		if (config.methodDurationAlpha() != DEFAULT_METHOD_DURATION_ALPHA)
+		if (Math.abs(config.methodDurationAlpha() - DEFAULT_METHOD_DURATION_ALPHA) > 1e-9)
 			configMap.put("methodDurationAlpha", config.methodDurationAlpha());
-		if (config.failurePruneThreshold() != DEFAULT_FAILURE_PRUNE_THRESHOLD)
+		if (Math.abs(config.failurePruneThreshold() - DEFAULT_FAILURE_PRUNE_THRESHOLD) > 1e-9)
 			configMap.put("failurePruneThreshold", config.failurePruneThreshold());
-		if (config.emaVarianceThreshold() != DEFAULT_EMA_VARIANCE_THRESHOLD)
+		if (Math.abs(config.emaVarianceThreshold() - DEFAULT_EMA_VARIANCE_THRESHOLD) > 1e-9)
 			configMap.put("emaVarianceThreshold", config.emaVarianceThreshold());
 		if (config.historyMaxRuns() != MAX_HISTORY_RUNS)
 			configMap.put("historyMaxRuns", config.historyMaxRuns());
@@ -1133,7 +1133,10 @@ public class TestOrderState {
 		m.put("totalTests", r.totalTests());
 		m.put("totalFailures", r.totalFailures());
 		m.put("firstFailurePosition", r.firstFailurePosition());
-		m.put("apfd", r.apfd());
+		// apfd is NaN for all-pass runs (no failures); omit rather than serialise NaN
+		if (!Double.isNaN(r.apfd())) {
+			m.put("apfd", r.apfd());
+		}
 		// omit outcomes for runs without failures — they are unused by the optimizer
 		if (r.totalFailures() > 0) {
 			m.put("outcomes", r.outcomes().stream().map(StateRecordCodec::outcomeToCompact).toList());

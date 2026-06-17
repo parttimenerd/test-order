@@ -192,8 +192,6 @@ final class ReactorContext {
 		return project;
 	}
 	String moduleId() {
-		// Use groupId-artifactId to avoid collisions when different modules share
-		// the same artifactId (e.g. multiple modules named "api" across groups)
 		String gid = project.getGroupId();
 		return (gid == null || gid.isEmpty()) ? project.getArtifactId() : gid + "-" + project.getArtifactId();
 	}

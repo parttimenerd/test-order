@@ -97,6 +97,7 @@ final class FixedOrderSupport {
 	 */
 	static <D> void applyOrder(List<D> descriptors, Function<D, String> nameExtractor, Map<String, Integer> positionMap,
 			boolean nestedClassFallback) {
+		List<D> originalCopy = new ArrayList<>(descriptors);
 		List<D> sorted = new ArrayList<>(descriptors);
 		sorted.sort(Comparator.comparingInt(d -> {
 			String name = nameExtractor.apply(d);
@@ -114,6 +115,17 @@ final class FixedOrderSupport {
 			return Integer.MAX_VALUE;
 		}));
 		descriptors.clear();
-		descriptors.addAll(sorted);
+		try {
+			descriptors.addAll(sorted);
+		} catch (Exception e) {
+			// Restore original order to avoid silently dropping all descriptors.
+			try {
+				descriptors.clear();
+				descriptors.addAll(originalCopy);
+			} catch (Exception ignored) {
+			}
+			TestOrderLogger.warn("[test-order] applyOrder failed unexpectedly, original order restored: {}",
+					e.getMessage());
+		}
 	}
 }

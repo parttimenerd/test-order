@@ -223,7 +223,10 @@ public final class ExportJsonOperation {
 					runMap.put("totalTests", run.totalTests());
 					runMap.put("totalFailures", run.totalFailures());
 					runMap.put("firstFailurePosition", run.firstFailurePosition());
-					runMap.put("apfd", run.apfd());
+					// apfd is NaN for all-pass runs (no failures); omit in that case
+					if (!Double.isNaN(run.apfd())) {
+						runMap.put("apfd", run.apfd());
+					}
 					if (run.outcomes() != null && !run.outcomes().isEmpty()) {
 						List<Object> outcomeList = new ArrayList<>();
 						for (TestOutcome outcome : run.outcomes()) {

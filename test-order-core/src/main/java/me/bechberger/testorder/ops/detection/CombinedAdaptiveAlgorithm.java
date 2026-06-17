@@ -237,6 +237,7 @@ public class CombinedAdaptiveAlgorithm implements DetectionAlgorithm {
 			return 0;
 
 		List<String> minimal = DeltaDebugging.minimize(candidates, action.victim, ctx.countingRunner(), 15);
+		// approximate — tracks configured budget, not actual calls made
 		int runs = 15; // ddmin may use up to runBudget runs regardless of candidate count
 
 		if (!minimal.isEmpty()) {

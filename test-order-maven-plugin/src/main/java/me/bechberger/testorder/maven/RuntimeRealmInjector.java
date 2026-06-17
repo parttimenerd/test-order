@@ -2,8 +2,10 @@ package me.bechberger.testorder.maven;
 
 import java.net.URL;
 import java.net.URLConnection;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -140,10 +142,11 @@ public final class RuntimeRealmInjector extends AbstractExecutionListener {
 		if (world == null) {
 			return;
 		}
-		for (Object realmObj : world.getRealms()) {
-			if (!(realmObj instanceof ClassRealm realm)) {
-				continue;
-			}
+		// Take a snapshot of the realms collection before iterating to avoid
+		// ConcurrentModificationException if another thread adds a realm concurrently
+		// (world.getRealms() returns the live internal collection, not a copy).
+		List<ClassRealm> realms = new ArrayList<>(world.getRealms());
+		for (ClassRealm realm : realms) {
 			// Don't try to import a realm into itself.
 			if (realm == extensionRealm) {
 				continue;

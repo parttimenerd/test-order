@@ -198,8 +198,21 @@ final class SurefireHelper {
 		// property)
 		// or -Dtestorder.learn.allowParallel=true. Downgrade hard errors to warnings so
 		// third-party repos with class-level parallel can still be profiled.
-		boolean parallelOverridden = "none".equalsIgnoreCase(System.getProperty("parallel"))
-				|| "true".equalsIgnoreCase(System.getProperty("testorder.learn.allowParallel"));
+		// Preferred source: Maven project/session properties (set via -D on the Maven
+		// command line). Fall back to System.getProperty for non-Maven invocations.
+		java.util.Properties projectProps = project.getProperties();
+		String parallelProp = projectProps != null ? projectProps.getProperty("parallel") : null;
+		if (parallelProp == null) {
+			parallelProp = System.getProperty("parallel");
+		}
+		String allowParallelProp = projectProps != null
+				? projectProps.getProperty("testorder.learn.allowParallel")
+				: null;
+		if (allowParallelProp == null) {
+			allowParallelProp = System.getProperty("testorder.learn.allowParallel");
+		}
+		boolean parallelOverridden = "none".equalsIgnoreCase(parallelProp)
+				|| "true".equalsIgnoreCase(allowParallelProp);
 
 		String surefireParallel = childValue(config, "parallel");
 		if (isClassLevelSurefireParallel(surefireParallel)) {

@@ -1,12 +1,14 @@
 package me.bechberger.testorder;
 
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 final class PendingRunCoordinator {
 
 	private static final Object LOCK = new Object();
-	private static final ConcurrentHashMap<String, TestOrderState.ScoreBreakdown> PENDING_BREAKDOWNS = new ConcurrentHashMap<>();
+	// Plain HashMap is sufficient: every read and write is inside a
+	// synchronized(LOCK) block.
+	private static final HashMap<String, TestOrderState.ScoreBreakdown> PENDING_BREAKDOWNS = new HashMap<>();
 	private static volatile String PENDING_STATE_PATH = null;
 
 	private PendingRunCoordinator() {

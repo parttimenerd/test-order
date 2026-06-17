@@ -12,8 +12,6 @@ import me.bechberger.testorder.changes.ChangeDetector;
 import me.bechberger.testorder.changes.SelectiveLearnSupport;
 import me.bechberger.testorder.changes.UncertainClassesStore;
 import me.bechberger.testorder.ops.AggregateOperation;
-import me.bechberger.testorder.ops.ChangeDetectionOps;
-import me.bechberger.testorder.ops.HashSnapshotOperation;
 import me.bechberger.testorder.ops.PluginContext;
 
 /**
@@ -121,7 +119,11 @@ public final class LearnWorkflow {
 			}
 		}
 
-		List<String> jvmArgs = List.of("--enable-native-access=ALL-UNNAMED");
+		// --enable-native-access was introduced in Java 16; adding it on older JVMs
+		// causes an unrecognised-option error, so guard with a version check.
+		List<String> jvmArgs = Runtime.version().feature() >= 16
+				? List.of("--enable-native-access=ALL-UNNAMED")
+				: List.of();
 
 		if (effectiveInclude != null) {
 			ctx.log().info("[test-order] Instrumentation packages: " + effectiveInclude);
@@ -134,15 +136,16 @@ public final class LearnWorkflow {
 	/**
 	 * Snapshots source and test file hashes for future SINCE_LAST_RUN change
 	 * detection.
+	 *
+	 * <p>
+	 * Delegates source/method hash snapshotting to
+	 * {@link AutoWorkflow#snapshotHashes(PluginContext)} and additionally seeds the
+	 * bytecode hash baseline so the next change-detecting run can compute
+	 * method-level differences.
 	 */
 	public static void snapshotHashes(PluginContext ctx) {
-		HashSnapshotOperation.snapshot(ctx.sourceRoot(), ctx.hashFile(), ctx.testSourceRoot(), ctx.testHashFile(),
-				(label, path) -> ctx.log().info("[test-order] Saved " + label + " hash snapshot: " + path),
-				(label, msg) -> ctx.log().warn("[test-order] Failed to save " + label + " hash snapshot: " + msg));
-
-		if (ctx.methodOrderingEnabled() && ctx.methodHashFile() != null) {
-			ChangeDetectionOps.snapshotMethodHashes(ctx.testSourceRoot(), ctx.methodHashFile(), ctx.log());
-		}
+		// Reuse the shared source/method hash snapshot logic from AutoWorkflow
+		AutoWorkflow.snapshotHashes(ctx);
 
 		// Seed the bytecode hash baseline so the next change-detecting run (or
 		// diagnostic show-static-analysis) can compute method-level differences

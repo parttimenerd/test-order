@@ -98,7 +98,7 @@ public final class ClassOrderingEngine {
 			}
 		} catch (IOException | RuntimeException e) {
 			String msg = e.getClass().getName() + ": " + e.getMessage();
-			if (LOGGED_STATE_ERRORS.size() < 100 && LOGGED_STATE_ERRORS.add(msg)) {
+			if (LOGGED_STATE_ERRORS.add(msg)) {
 				TestOrderLogger.error("Failed to load state: {} — falling back to defaults.", e.getMessage());
 			}
 		}
@@ -220,70 +220,9 @@ public final class ClassOrderingEngine {
 	 */
 	public static List<String> orderByScoreAndDiversity(List<String> classNames, Map<String, Integer> scores,
 			DependencyMap depMap, TestOrderState state) {
-		TreeMap<Integer, List<String>> groups = new TreeMap<>(Comparator.reverseOrder());
-		for (String className : classNames) {
-			groups.computeIfAbsent(scores.getOrDefault(className, 0), k -> new ArrayList<>()).add(className);
-		}
-
-		// Pre-cache dependency sets to avoid repeated map lookups and wrapper creation
-		Map<String, Set<String>> depsCache = new HashMap<>(classNames.size());
-		for (String className : classNames) {
-			Set<String> d = depMap.get(className);
-			depsCache.put(className, d != null ? d : Set.of());
-		}
-
-		List<String> result = new ArrayList<>(classNames.size());
-		Set<String> coveredDeps = new HashSet<>();
-
-		for (var entry : groups.entrySet()) {
-			List<String> group = new ArrayList<>(entry.getValue());
-			// Singleton groups need no diversity sort
-			if (group.size() == 1) {
-				String single = group.get(0);
-				result.add(single);
-				Set<String> deps = depsCache.get(single);
-				if (deps != null)
-					coveredDeps.addAll(deps);
-				continue;
-			}
-			while (!group.isEmpty()) {
-				int bestIdx = -1;
-				double bestDistance = -1;
-				long bestDuration = Long.MAX_VALUE;
-				String bestName = null;
-
-				for (int i = 0; i < group.size(); i++) {
-					String name = group.get(i);
-					Set<String> deps = depsCache.get(name);
-					double distance = TestSelector.jaccardDistance(deps, coveredDeps);
-					if (distance > bestDistance) {
-						bestIdx = i;
-						bestDistance = distance;
-						bestDuration = state.getDuration(name, Long.MAX_VALUE);
-						bestName = name;
-					} else if (distance == bestDistance) {
-						long dur = state.getDuration(name, Long.MAX_VALUE);
-						if (dur < bestDuration
-								|| (dur == bestDuration && bestName != null && name.compareTo(bestName) < 0)) {
-							bestIdx = i;
-							bestDuration = dur;
-							bestName = name;
-						}
-					}
-				}
-
-				String best = group.get(bestIdx);
-				int last = group.size() - 1;
-				if (bestIdx != last) {
-					group.set(bestIdx, group.get(last));
-				}
-				group.remove(last);
-				result.add(best);
-				Set<String> bestDeps = depsCache.get(best);
-				if (bestDeps != null)
-					coveredDeps.addAll(bestDeps);
-			}
-		}
+		List<String> result = new ArrayList<>(classNames);
+		orderByScoreAndDiversity(result, (String name) -> scores.getOrDefault(name, 0), name -> name, depMap, state,
+				null);
 		return result;
 	}
 

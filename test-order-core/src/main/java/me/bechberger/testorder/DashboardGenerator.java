@@ -325,7 +325,10 @@ public class DashboardGenerator {
 			run.put("totalTests", rr.totalTests());
 			run.put("totalFailures", rr.totalFailures());
 			run.put("firstFailurePosition", rr.firstFailurePosition());
-			run.put("apfd", rr.apfd());
+			// apfd is NaN for all-pass runs (no failures); omit in that case
+			if (!Double.isNaN(rr.apfd())) {
+				run.put("apfd", rr.apfd());
+			}
 			List<Object> outcomes = new ArrayList<>();
 			for (TestOrderState.TestOutcome o : rr.outcomes()) {
 				Map<String, Object> oc = new LinkedHashMap<>();

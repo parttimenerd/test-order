@@ -74,6 +74,11 @@ public final class LZ4Support {
 
 	/**
 	 * Creates an LZ4 frame output stream using the safe (no-Unsafe) implementation.
+	 * <p>
+	 * Uses FAST compression intentionally for performance — this method is called
+	 * on write-heavy paths where speed matters more than file size. Use
+	 * {@link #frameOutputStream(OutputStream, Compression)} with
+	 * {@link Compression#MEDIUM} or {@link Compression#HC} for smaller output.
 	 */
 	public static LZ4FrameOutputStream frameOutputStream(OutputStream out) throws IOException {
 		return new LZ4FrameOutputStream(out, LZ4FrameOutputStream.BLOCKSIZE.SIZE_4MB, -1L, FACTORY.fastCompressor(),

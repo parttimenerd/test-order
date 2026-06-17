@@ -370,7 +370,8 @@ class TestOrderStateTest {
 		List<TestOrderState.TestOutcome> outcomes = List.of(
 				new TestOrderState.TestOutcome("A", 0, false, false, 0, 0, 0.0, false, false, false, 0.0),
 				new TestOrderState.TestOutcome("B", 0, false, false, 0, 0, 0.0, false, false, false, 0.0));
-		assertEquals(1.0, APFDCalculator.computeAPFD(outcomes));
+		// No failures: APFD is undefined (NaN).
+		assertTrue(Double.isNaN(APFDCalculator.computeAPFD(outcomes)));
 	}
 
 	@Test
@@ -393,17 +394,17 @@ class TestOrderStateTest {
 
 	@Test
 	void apfdEmptyOutcomesIsOne() {
-		// E7: computeAPFD with zero tests returns 1.0
-		assertEquals(1.0, APFDCalculator.computeAPFD(List.of()));
+		// No tests: APFD is undefined (NaN).
+		assertTrue(Double.isNaN(APFDCalculator.computeAPFD(List.of())));
 	}
 
 	@Test
 	void apfdNoFailuresIsOne() {
-		// E7: computeAPFD with m=0 (no failures) returns 1.0
+		// No failures: APFD is undefined (NaN).
 		List<TestOrderState.TestOutcome> outcomes = List.of(
 				new TestOrderState.TestOutcome("A", 0, false, false, 0, 0, 0.0, false, false, false, 0.0),
 				new TestOrderState.TestOutcome("B", 0, false, false, 0, 0, 0.0, false, false, false, 0.0));
-		assertEquals(1.0, APFDCalculator.computeAPFD(outcomes));
+		assertTrue(Double.isNaN(APFDCalculator.computeAPFD(outcomes)));
 	}
 
 	// --- Static coordination ---

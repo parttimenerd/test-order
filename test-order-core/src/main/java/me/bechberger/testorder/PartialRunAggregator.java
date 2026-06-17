@@ -1,6 +1,8 @@
 package me.bechberger.testorder;
 
 import java.io.*;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
@@ -72,7 +74,10 @@ public final class PartialRunAggregator {
 	}
 
 	private static String serializeOutcome(TestOrderState.TestOutcome o) {
-		return "testClass=" + o.testClass() + " failed=" + o.failed() + " score=" + o.totalScore() + " isNew="
+		// URL-encode testClass to safely handle names containing spaces or '='.
+		// All other fields are primitives and need no encoding.
+		String encodedClass = URLEncoder.encode(o.testClass(), StandardCharsets.UTF_8);
+		return "testClass=" + encodedClass + " failed=" + o.failed() + " score=" + o.totalScore() + " isNew="
 				+ o.isNew() + " isChanged=" + o.isChanged() + " depOverlap=" + o.depOverlap() + " depTotal="
 				+ o.depTotal() + " failScore=" + o.failScore() + " isFast=" + o.isFast() + " isSlow=" + o.isSlow()
 				+ " complexityOverlap=" + o.complexityOverlap() + " speedRatio=" + o.speedRatio()
@@ -256,10 +261,12 @@ public final class PartialRunAggregator {
 
 	private static TestOrderState.TestOutcome parseOutcomeLine(String line) {
 		Map<String, String> kv = parseKeyValues(line);
-		String testClass = kv.get("testClass");
-		if (testClass == null) {
+		String rawTestClass = kv.get("testClass");
+		if (rawTestClass == null) {
 			return null;
 		}
+		// URL-decode testClass to reverse the encoding applied in serializeOutcome.
+		String testClass = URLDecoder.decode(rawTestClass, StandardCharsets.UTF_8);
 		try {
 			boolean failed = "true".equals(kv.get("failed"));
 			int score = parseInt(kv.get("score"), 0);

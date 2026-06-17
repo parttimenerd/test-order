@@ -36,7 +36,7 @@ public class TestScorer {
 	private static final double SPEED_LOG_HALF_RANGE = 3.0;
 
 	/** Geometric decline factor for set-cover bonuses. */
-	private static final double SET_COVER_DECLINE = 0.8;
+	private static final double SET_COVER_DECLINE = ScoringConstants.SET_COVER_DECLINE;
 
 	/** Full result of scoring a single test class. */
 	public record ScoreResult(int score, int depOverlap, int depTotal, double failScore, boolean isNew,

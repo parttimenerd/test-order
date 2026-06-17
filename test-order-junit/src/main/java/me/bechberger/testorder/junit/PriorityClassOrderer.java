@@ -83,6 +83,23 @@ public class PriorityClassOrderer implements ClassOrderer {
 	/** Lock for one-time setup initialization. */
 	private final Object setupLock = new Object();
 
+	/**
+	 * Sentinel value used to represent "predictions file absent / ML disabled" in
+	 * the ML predictions cache, distinguishing it from "not yet loaded".
+	 */
+	private static final Map<String, Double> ML_PREDICTIONS_ABSENT = Map.of();
+
+	/**
+	 * Cached ML predictions. {@code null} means not yet loaded; the
+	 * {@link #ML_PREDICTIONS_ABSENT} sentinel means ML is disabled or the
+	 * predictions file was not found.
+	 */
+	private volatile Map<String, Double> cachedMLPredictions = null;
+	/** Modification time of the predictions file at cache-fill time, in millis. */
+	private volatile long cachedMLPredictionsModTime = -1;
+	/** Lock for one-time ML predictions initialization. */
+	private final Object mlLock = new Object();
+
 	@Override
 	public void orderClasses(ClassOrdererContext context) {
 		if (config == null) {
@@ -361,6 +378,8 @@ public class PriorityClassOrderer implements ClassOrderer {
 	/**
 	 * Loads ML failure predictions from the predictions file written by
 	 * PrepareMojo. Returns an empty map if ML is not enabled or the file is absent.
+	 * Results are cached; the cache is invalidated if the predictions file's
+	 * modification time changes.
 	 */
 	private Map<String, Double> loadMLPredictions() {
 		if (config == null) {
@@ -370,28 +389,57 @@ public class PriorityClassOrderer implements ClassOrderer {
 		if (!"true".equalsIgnoreCase(mlEnabled)) {
 			return Map.of();
 		}
-		// The predictions file is written to the runtime config dir which is on the
-		// classpath.
-		// Try to locate it via the classpath first, then fall back to the config
-		// property.
+
+		// Determine the predictions file path (used for mod-time check)
 		String predictionsPath = config.getConfig(TestOrderConfig.ML_PREDICTIONS_FILE);
+		long currentModTime = -1;
 		if (predictionsPath != null && !predictionsPath.isBlank()) {
 			try {
-				return MLPredictions.read(java.nio.file.Path.of(predictionsPath));
-			} catch (Exception e) {
-				TestOrderLogger.warn("[ml] Failed to load predictions from {}: {}", predictionsPath, e.getMessage());
+				currentModTime = java.nio.file.Files.getLastModifiedTime(java.nio.file.Path.of(predictionsPath))
+						.toMillis();
+			} catch (Exception ignored) {
 			}
 		}
-		// Try classpath: ml-predictions.properties is placed in the runtime config dir
-		try {
-			var url = getClass().getClassLoader().getResource("ml-predictions.properties");
-			if (url != null) {
-				return MLPredictions.read(java.nio.file.Path.of(url.toURI()));
-			}
-		} catch (Exception e) {
-			TestOrderLogger.debug("[ml] Could not load predictions from classpath: {}", e.getMessage());
+
+		// Return cached value if still fresh
+		final long modTimeSnapshot = currentModTime;
+		if (cachedMLPredictions != null && cachedMLPredictionsModTime == modTimeSnapshot) {
+			return cachedMLPredictions;
 		}
-		return Map.of();
+
+		synchronized (mlLock) {
+			// Double-checked locking
+			if (cachedMLPredictions != null && cachedMLPredictionsModTime == modTimeSnapshot) {
+				return cachedMLPredictions;
+			}
+
+			Map<String, Double> loaded = ML_PREDICTIONS_ABSENT;
+
+			if (predictionsPath != null && !predictionsPath.isBlank()) {
+				try {
+					loaded = MLPredictions.read(java.nio.file.Path.of(predictionsPath));
+				} catch (Exception e) {
+					TestOrderLogger.warn("[ml] Failed to load predictions from {}: {}", predictionsPath,
+							e.getMessage());
+				}
+			}
+
+			if (loaded == ML_PREDICTIONS_ABSENT) {
+				// Try classpath: ml-predictions.properties is placed in the runtime config dir
+				try {
+					var url = getClass().getClassLoader().getResource("ml-predictions.properties");
+					if (url != null) {
+						loaded = MLPredictions.read(java.nio.file.Path.of(url.toURI()));
+					}
+				} catch (Exception e) {
+					TestOrderLogger.debug("[ml] Could not load predictions from classpath: {}", e.getMessage());
+				}
+			}
+
+			cachedMLPredictions = loaded;
+			cachedMLPredictionsModTime = modTimeSnapshot;
+			return loaded;
+		}
 	}
 
 	/**

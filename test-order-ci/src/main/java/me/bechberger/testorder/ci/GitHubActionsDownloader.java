@@ -22,13 +22,22 @@ import okhttp3.Response;
 public class GitHubActionsDownloader implements DepDownloader {
 	private static final Logger logger = LoggerFactory.getLogger(GitHubActionsDownloader.class);
 	private static final String GH_API_BASE = "https://api.github.com";
+	/** Maximum JSON response size accepted from the GitHub API (10 MB). */
+	private static final long MAX_JSON_BYTES = 10L * 1024 * 1024;
+
+	/**
+	 * Shared HTTP client for all instances. OkHttpClient is heavyweight (thread
+	 * pools, connection pools) and safe for concurrent use, so a single instance is
+	 * reused across all GitHubActionsDownloader objects.
+	 */
+	private static final OkHttpClient DEFAULT_HTTP_CLIENT = CiHttpClientFactory.buildDefault();
 
 	private final CiConfig.GithubConfig config;
 	private final String token;
 	private final OkHttpClient httpClient;
 
 	public GitHubActionsDownloader(CiConfig.GithubConfig config, String token) {
-		this(config, token, CiHttpClientFactory.buildDefault());
+		this(config, token, DEFAULT_HTTP_CLIENT);
 	}
 
 	/**
@@ -158,6 +167,12 @@ public class GitHubActionsDownloader implements DepDownloader {
 
 			if (response.body() == null) {
 				throw new DepDownloadException("GitHub API response body is empty");
+			}
+
+			long contentLength = response.body().contentLength();
+			if (contentLength > MAX_JSON_BYTES) {
+				throw new DepDownloadException("GitHub API response too large: " + contentLength + " bytes exceeds "
+						+ MAX_JSON_BYTES + " limit");
 			}
 
 			String body = response.body().string();

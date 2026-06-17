@@ -9,10 +9,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Generic greedy set-cover computation with a priority queue and lazy count
  * updates.
+ *
+ * <p>
+ * The {@link #compute()} loop has O(N×U) worst-case complexity per iteration
+ * where N = number of items and U = size of the universe, giving O(N²×U)
+ * overall. A priority-queue with lazy recheck (as implemented here) gives the
+ * same asymptotic bound but reduces constants significantly for sparse inputs.
+ * A Fibonacci-heap approach would improve worst-case to O(N×log N×U), but the
+ * current implementation is correct and efficient for the typical input sizes
+ * encountered in this domain.
  */
 public final class SetCoverComputer<T, C> {
 
@@ -26,7 +36,11 @@ public final class SetCoverComputer<T, C> {
 	private final Set<C> universe;
 
 	public SetCoverComputer(Map<T, Set<C>> coverage, Collection<C> universe) {
-		this.coverage = new LinkedHashMap<>(coverage);
+		// Deep defensive copy: copy the outer map AND copy each inner Set so that
+		// external mutations to coverage or its value sets cannot corrupt the
+		// greedy set-cover computation.
+		this.coverage = coverage.entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey,
+				e -> new HashSet<>(e.getValue()), (a, b) -> a, LinkedHashMap::new));
 		this.universe = new HashSet<>(universe);
 	}
 

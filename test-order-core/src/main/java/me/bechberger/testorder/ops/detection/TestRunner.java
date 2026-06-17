@@ -97,7 +97,32 @@ public interface TestRunner {
 	/**
 	 * Result of a test run (class-level).
 	 */
-	record TestRunResult(List<String> executionOrder, Set<String> passedTests, Set<String> failedTests) {
+	final class TestRunResult {
+		private final List<String> executionOrder;
+		private final Set<String> passedTests;
+		private final Set<String> failedTests;
+		/**
+		 * Lazily built O(1) position lookup to replace O(n) indexOf in predecessorsOf.
+		 */
+		private java.util.Map<String, Integer> positionMap;
+
+		public TestRunResult(List<String> executionOrder, Set<String> passedTests, Set<String> failedTests) {
+			this.executionOrder = executionOrder;
+			this.passedTests = passedTests;
+			this.failedTests = failedTests;
+		}
+
+		public List<String> executionOrder() {
+			return executionOrder;
+		}
+
+		public Set<String> passedTests() {
+			return passedTests;
+		}
+
+		public Set<String> failedTests() {
+			return failedTests;
+		}
 
 		public boolean passed(String test) {
 			return passedTests.contains(test);
@@ -113,8 +138,14 @@ public interface TestRunner {
 
 		/** Get all tests that ran before the given test in this execution. */
 		public List<String> predecessorsOf(String test) {
-			int idx = executionOrder.indexOf(test);
-			if (idx <= 0)
+			if (positionMap == null) {
+				positionMap = new java.util.HashMap<>(executionOrder.size() * 2);
+				for (int i = 0; i < executionOrder.size(); i++) {
+					positionMap.put(executionOrder.get(i), i);
+				}
+			}
+			Integer idx = positionMap.get(test);
+			if (idx == null || idx <= 0)
 				return List.of();
 			return executionOrder.subList(0, idx);
 		}

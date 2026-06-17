@@ -42,7 +42,10 @@ final class RunHistoryManager {
 		if (sourceRuns.size() <= maxRuns) {
 			return new ArrayList<>(sourceRuns);
 		}
-		int recentKeep = Math.min(Math.max(1, maxRuns / 2), maxRuns);
+		// Keep ceil(N/2) recent entries and floor(N/2) historical entries.
+		// Using (maxRuns + 1) / 2 for recentKeep ensures the more recent half is
+		// favoured when maxRuns is odd (e.g. maxRuns=5 → 3 recent, 2 historical).
+		int recentKeep = Math.min(Math.max(1, (maxRuns + 1) / 2), maxRuns);
 		int historicalSlots = maxRuns - recentKeep;
 		int recentStart = Math.max(0, sourceRuns.size() - recentKeep);
 		List<TestOrderState.RunRecord> result = new ArrayList<>(maxRuns);

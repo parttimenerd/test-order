@@ -156,8 +156,10 @@ public class TestSplitAdvisor {
 			double bestSim = MERGE_THRESHOLD;
 			int bestI = -1, bestJ = -1;
 
-			// Limit iterations to prevent O(n^4) worst case: stop after inspecting N^2/4
-			// pairs
+			// Limit iterations to bound worst-case work: the naive all-pairs scan is
+			// O(K²×M²) where K = number of clusters and M = max cluster size. The
+			// early-exit at checksPerformed > 50 makes this a greedy approximation —
+			// it finds a good (but not globally optimal) merge candidate quickly.
 			int maxChecks = Math.max(100, (clusters.size() * clusters.size()) / 4);
 			int checksPerformed = 0;
 			outerLoop : for (int i = 0; i < clusters.size() && checksPerformed < maxChecks; i++) {

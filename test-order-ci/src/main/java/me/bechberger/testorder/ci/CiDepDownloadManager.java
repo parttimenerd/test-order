@@ -45,7 +45,9 @@ public class CiDepDownloadManager {
 	public CiDepDownloadManager(CiConfig config) {
 		this.config = config;
 		this.httpClient = buildHttpClient(config.getProxy());
-		this.githubToken = getEnv("GITHUB_TOKEN", "GH_TOKEN");
+		// Load the GitHub token only when a GitHub provider is actually configured,
+		// to avoid reading credentials that are not needed for the active provider.
+		this.githubToken = config.getGithub() != null ? getEnv("GITHUB_TOKEN", "GH_TOKEN") : null;
 		this.gitlabToken = config.getGitlab() != null ? getEnv(config.getGitlab().getTokenEnv()) : null;
 		this.httpToken = config.getHttp() != null ? getEnv(config.getHttp().getTokenEnv()) : null;
 		this.mavenToken = config.getMaven() != null && config.getMaven().getTokenEnv() != null

@@ -83,7 +83,9 @@ public class Agent {
 			return agent;
 		}
 		try {
-			for (String part : agentArgs.split(",")) {
+			// Split on unescaped commas only; use \\, in an arg value to embed a literal
+			// comma.
+			for (String part : agentArgs.split("(?<!\\\\),")) {
 				String kv = part.startsWith("--") ? part.substring(2) : part;
 				int eq = kv.indexOf('=');
 				if (eq < 0)
@@ -275,6 +277,10 @@ public class Agent {
 		} else {
 			jarPath = extractRuntimeJar(resourceLoader);
 		}
+		// appendToBootstrapClassLoaderSearch takes ownership of the JarFile (the JVM
+		// keeps it open for the lifetime of the class loader), so we intentionally do
+		// not close it here — wrapping it in try-with-resources would close it
+		// prematurely.
 		inst.appendToBootstrapClassLoaderSearch(new JarFile(jarPath.toFile()));
 		return jarPath;
 	}
@@ -292,6 +298,12 @@ public class Agent {
 		Path cachedJar = cacheDir.resolve("test-order-runtime-" + cacheKey + ".jar");
 
 		if (Files.exists(cachedJar) && Files.size(cachedJar) > 0) {
+			// TOCTOU note: there is an inherent race between this size check and the
+			// subsequent read — a concurrent process could replace the file between the
+			// two operations. The risk is low because (a) the cache key embeds the agent
+			// jar's size+mtime so a legitimate replacement is extremely unlikely in a
+			// single build, and (b) the JVM will raise a ZipException when it opens a
+			// corrupt jar, which surfaces the problem clearly.
 			return cachedJar.toAbsolutePath();
 		}
 

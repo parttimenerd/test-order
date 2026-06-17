@@ -50,11 +50,27 @@ import java.util.Set;
 public final class IndexCollectorClient {
 
 	static final int MAGIC = 0x54_4F_44_50; // "TODP"
+	/**
+	 * v1: string-based protocol. Sends dependency names as UTF-8 strings (class
+	 * deps, method deps, member deps, method-member deps). No moduleId.
+	 */
 	static final byte PROTOCOL_VERSION_V1 = 1;
+	/**
+	 * v2: binary-ID protocol. Sends raw long[] bitset words per tracker; the server
+	 * resolves IDs via ClassIdMapping. More compact than v1. No moduleId.
+	 */
 	static final byte PROTOCOL_VERSION_V2 = 2;
-	/** v3: v2 binary protocol + UTF-8 moduleId string after the version byte. */
+	/**
+	 * v3: binary-ID protocol + UTF-8 moduleId string after the version byte.
+	 * Extends v2 with multi-module support. <b>Current default for binary
+	 * sends.</b>
+	 */
 	static final byte PROTOCOL_VERSION_V3 = 3;
-	/** v4: v1 string protocol + UTF-8 moduleId string after the version byte. */
+	/**
+	 * v4: string-based protocol + UTF-8 moduleId string after the version byte.
+	 * Extends v1 with multi-module support. <b>Current default for string sends
+	 * (agent fallback mode).</b>
+	 */
 	static final byte PROTOCOL_VERSION_V4 = 4;
 
 	/**

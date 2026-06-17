@@ -20,7 +20,8 @@ final class APFDCalculator {
 			}
 		}
 		if (m == 0 || n == 0) {
-			return 1.0;
+			// No failures: APFD is undefined — callers should check Double.isNaN()
+			return Double.NaN;
 		}
 		return 1.0 - positionSum / ((double) n * m) + 1.0 / (2.0 * n);
 	}
@@ -28,7 +29,8 @@ final class APFDCalculator {
 	static double computeAPFDc(List<TestOrderState.TestOutcome> orderedOutcomes, Map<String, Long> durations) {
 		int n = orderedOutcomes.size();
 		if (n == 0) {
-			return 1.0;
+			// No tests: APFD is undefined — callers should check Double.isNaN()
+			return Double.NaN;
 		}
 
 		double[] costs = new double[n];
@@ -62,7 +64,8 @@ final class APFDCalculator {
 			}
 		}
 		if (failures == 0 || totalCost <= 0) {
-			return 1.0;
+			// No failures: APFD is undefined — callers should check Double.isNaN()
+			return Double.NaN;
 		}
 		return 1.0 - weightedSum / (totalCost * failures);
 	}
@@ -71,7 +74,7 @@ final class APFDCalculator {
 			TestOrderState.ScoringWeights weights) {
 		int n = outcomes.size();
 		if (n == 0)
-			return 1.0;
+			return Double.NaN;
 		int[] order = sortedIndicesByScore(outcomes, weights);
 		int m = 0;
 		double positionSum = 0;
@@ -82,7 +85,7 @@ final class APFDCalculator {
 			}
 		}
 		if (m == 0)
-			return 1.0;
+			return Double.NaN;
 		return 1.0 - positionSum / ((double) n * m) + 1.0 / (2.0 * n);
 	}
 
@@ -90,7 +93,7 @@ final class APFDCalculator {
 			TestOrderState.ScoringWeights weights, Map<String, Long> durations) {
 		int n = outcomes.size();
 		if (n == 0)
-			return 1.0;
+			return Double.NaN;
 		int[] order = sortedIndicesByScore(outcomes, weights);
 
 		double[] costs = new double[n];
@@ -115,7 +118,7 @@ final class APFDCalculator {
 				}
 			}
 			if (m == 0)
-				return 1.0;
+				return Double.NaN;
 			return 1.0 - positionSum / ((double) n * m) + 1.0 / (2.0 * n);
 		}
 
@@ -135,7 +138,7 @@ final class APFDCalculator {
 			}
 		}
 		if (failures == 0 || totalCost <= 0)
-			return 1.0;
+			return Double.NaN;
 		return 1.0 - weightedSum / (totalCost * failures);
 	}
 

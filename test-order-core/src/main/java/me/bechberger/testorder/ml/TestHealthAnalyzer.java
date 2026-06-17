@@ -214,7 +214,7 @@ public final class TestHealthAnalyzer {
 			for (double r : rates) {
 				variance += (r - meanRate) * (r - meanRate);
 			}
-			return Math.sqrt(variance / numWindows);
+			return numWindows > 0 ? Math.sqrt(variance / numWindows) : 0.0;
 		}
 	}
 }

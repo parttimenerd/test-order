@@ -60,7 +60,9 @@ public final class MethodOrderingEngine {
 
 		List<MethodScorer.MethodMetadata> metadata = new ArrayList<>(methodNames.size());
 		for (String methodName : methodNames) {
-			long duration = (long) state.getDurationMethod(className, methodName, -1.0);
+			double durationDouble = state.getDurationMethod(className, methodName, -1.0);
+			// Round rather than truncate so sub-millisecond values map to 1ms rather than 0
+			long duration = durationDouble < 0 ? (long) durationDouble : Math.max(1L, Math.round(durationDouble));
 			metadata.add(new MethodScorer.MethodMetadata(className, methodName, duration, null));
 		}
 
@@ -96,9 +98,11 @@ public final class MethodOrderingEngine {
 		MethodScorer scorer = new MethodScorer(weights, state, depMap, changedClasses, changedMethods);
 		List<MethodScorer.MethodScoreResult> scored = scorer.score(metadata);
 
-		// Sort by score descending, preserving original order for ties
+		// Sort by score descending, with method name as alphabetical tie-breaker for
+		// deterministic ordering when scores are equal.
 		List<MethodScorer.MethodScoreResult> sorted = new ArrayList<>(scored);
-		sorted.sort((a, b) -> Double.compare(b.score(), a.score()));
+		sorted.sort(Comparator.<MethodScorer.MethodScoreResult>comparingDouble(r -> -r.score())
+				.thenComparing(MethodScorer.MethodScoreResult::methodName));
 
 		List<OrderedMethod> ordered = new ArrayList<>(sorted.size());
 		for (MethodScorer.MethodScoreResult sr : sorted) {

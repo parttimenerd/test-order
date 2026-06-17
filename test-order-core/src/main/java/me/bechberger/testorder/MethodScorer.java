@@ -33,7 +33,7 @@ public class MethodScorer {
 	private static final double SPEED_LOG_HALF_RANGE = 3.0;
 
 	/** Geometric decline factor for set-cover bonuses. */
-	private static final double SET_COVER_DECLINE = 0.8;
+	private static final double SET_COVER_DECLINE = ScoringConstants.SET_COVER_DECLINE;
 
 	/** Result of scoring a single test method. */
 	public record MethodScoreResult(String className, String methodName, double score, double failureRecencyBonus,
@@ -164,7 +164,7 @@ public class MethodScorer {
 		SetCoverComputer.Result<String> result = new SetCoverComputer<>(coverage, changedClasses).compute();
 		for (String best : result.order()) {
 			bonuses.put(best, bonus);
-			bonus = Math.max(bonus * SET_COVER_DECLINE, 0.1);
+			bonus = Math.max(bonus * SET_COVER_DECLINE, ScoringConstants.SET_COVER_FLOOR);
 		}
 
 		return bonuses;

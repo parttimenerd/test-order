@@ -29,7 +29,8 @@ public class ConflictGraph {
 	}
 
 	public List<ConflictEdge> edgesFor(String test) {
-		return edgesByTest.getOrDefault(test, List.of());
+		List<ConflictEdge> list = edgesByTest.get(test);
+		return list != null ? Collections.unmodifiableList(list) : List.of();
 	}
 
 	public int edgeCount() {
