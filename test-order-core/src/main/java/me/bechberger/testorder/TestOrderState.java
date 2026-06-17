@@ -545,8 +545,7 @@ public class TestOrderState {
 	private final StateConfiguration config;
 	private ScoringWeights weights;
 	private MethodScoringWeights methodScoringWeights;
-	private final DurationTracker durationTracker;
-	private final FailureHistoryTracker failureHistory;
+	private final TestMetricsTracker metrics;
 	private final RunHistoryManager runHistory;
 	/**
 	 * Per-test-class mutation kill rates, populated by the analyze-mutations goal.
@@ -566,8 +565,7 @@ public class TestOrderState {
 		this.config = new StateConfiguration();
 		this.weights = ScoringWeights.DEFAULT;
 		this.methodScoringWeights = MethodScoringWeights.DEFAULT;
-		this.durationTracker = new DurationTracker();
-		this.failureHistory = new FailureHistoryTracker();
+		this.metrics = new TestMetricsTracker(this.config);
 		this.runHistory = new RunHistoryManager();
 	}
 
@@ -698,8 +696,7 @@ public class TestOrderState {
 		}
 		if (activeClasses.isEmpty())
 			return;
-		durationTracker.pruneToActiveClasses(activeClasses);
-		failureHistory.pruneToActiveClasses(activeClasses);
+		metrics.pruneToActiveClasses(activeClasses);
 	}
 
 	/**
@@ -714,59 +711,18 @@ public class TestOrderState {
 	 * @return set of FQCNs that were pruned (for logging), empty if nothing removed
 	 */
 	public Set<String> pruneDeletedTestClasses(Path testClassesDir) {
-		if (testClassesDir == null || !java.nio.file.Files.isDirectory(testClassesDir)) {
-			return Set.of();
-		}
-		// Collect all FQCNs tracked by the state (durations + failures, top-level only)
-		Set<String> tracked = new java.util.LinkedHashSet<>();
-		tracked.addAll(durationTracker.classDurations().keySet());
-		tracked.addAll(failureHistory.knownClasses());
-
-		Set<String> pruned = new java.util.LinkedHashSet<>();
-		for (String fqcn : tracked) {
-			if (fqcn.contains("$")) {
-				continue; // inner class suffix — skip
-			}
-			Path classFile = testClassesDir.resolve(fqcn.replace('.', '/') + ".class");
-			if (!java.nio.file.Files.exists(classFile)) {
-				pruned.add(fqcn);
-			}
-		}
-		if (!pruned.isEmpty()) {
-			// Build a retained set = tracked - pruned, then prune to it
-			Set<String> retained = new java.util.HashSet<>(durationTracker.classDurations().keySet());
-			retained.addAll(failureHistory.knownClasses());
-			retained.removeAll(pruned);
-			// Also keep inner classes whose outer class is retained
-			Set<String> allTracked = new java.util.HashSet<>(durationTracker.classDurations().keySet());
-			allTracked.addAll(failureHistory.knownClasses());
-			for (String fqcn : allTracked) {
-				if (fqcn.contains("$")) {
-					String outer = fqcn.substring(0, fqcn.indexOf('$'));
-					if (!retained.contains(outer)) {
-						pruned.add(fqcn); // prune orphaned inner-class entries too
-					}
-				}
-			}
-			// Build final retained set after inner-class fixup
-			Set<String> finalRetained = new java.util.HashSet<>(durationTracker.classDurations().keySet());
-			finalRetained.addAll(failureHistory.knownClasses());
-			finalRetained.removeAll(pruned);
-			durationTracker.pruneToActiveClasses(finalRetained);
-			failureHistory.pruneToActiveClasses(finalRetained);
-		}
-		return java.util.Collections.unmodifiableSet(pruned);
+		return metrics.pruneDeletedTestClasses(testClassesDir);
 	}
 
 	// ── Durations ─────────────────────────────────────────────────────
 
 	public long getDuration(String testClass, long defaultValue) {
-		return durationTracker.getClassDuration(testClass, defaultValue);
+		return metrics.getDuration(testClass, defaultValue);
 	}
 
 	/** Returns the class duration, or 0 if not recorded. */
 	public long classDuration(String testClass) {
-		return getDuration(testClass, 0L);
+		return metrics.classDuration(testClass);
 	}
 
 	/**
@@ -774,62 +730,59 @@ public class TestOrderState {
 	 * unknown.
 	 */
 	public double getDurationVariance(String testClass, double defaultValue) {
-		Double v = durationTracker.classDurationVariances().get(testClass);
-		return v != null ? v : defaultValue;
+		return metrics.getDurationVariance(testClass, defaultValue);
 	}
 
 	/** Returns all known class durations (EMA-smoothed, in ms). */
 	public Map<String, Long> getClassDurations() {
-		return durationTracker.classDurations();
+		return metrics.getClassDurations();
 	}
 
 	public void recordDuration(String testClass, long measuredMs) {
-		durationTracker.recordClassDuration(testClass, measuredMs, config.durationAlpha(),
-				config.emaVarianceThreshold(), MIN_ADAPTIVE_ALPHA_FACTOR);
+		metrics.recordDuration(testClass, measuredMs, MIN_ADAPTIVE_ALPHA_FACTOR);
 	}
 
 	// ── Failures (decayed moving average) ──────────────────────────────
 
 	public void recordFailure(String testClass) {
-		failureHistory.recordFailure(testClass);
+		metrics.recordFailure(testClass);
 	}
 
 	/** Returns the current failure score (historical + pending from this run). */
 	public double failureScore(String testClass) {
-		return failureHistory.failureScore(testClass);
+		return metrics.failureScore(testClass);
 	}
 
 	/**
 	 * Returns pre-computed decayed failure scores.
 	 */
 	public Map<String, Double> getFailureScores() {
-		return failureHistory.failureScores();
+		return metrics.getFailureScores();
 	}
 
 	// ── Method-level durations ────────────────────────────────────────
 
 	public double getDurationMethod(String className, String methodName, double defaultValue) {
-		return durationTracker.getMethodDuration(className, methodName, defaultValue);
+		return metrics.getDurationMethod(className, methodName, defaultValue);
 	}
 
 	public void recordMethodDuration(String className, String methodName, long measuredMs) {
-		durationTracker.recordMethodDuration(className, methodName, measuredMs, config.methodDurationAlpha(),
-				config.emaVarianceThreshold(), MIN_ADAPTIVE_ALPHA_FACTOR);
+		metrics.recordMethodDuration(className, methodName, measuredMs, MIN_ADAPTIVE_ALPHA_FACTOR);
 	}
 
 	public Map<String, Map<String, Double>> getMethodDurations() {
-		return durationTracker.methodDurations();
+		return metrics.getMethodDurations();
 	}
 
 	// ── Method-level failures (decayed moving average) ─────────────────
 
 	public void recordMethodFailure(String className, String methodName) {
-		failureHistory.recordMethodFailure(className, methodName);
+		metrics.recordMethodFailure(className, methodName);
 	}
 
 	/** Returns the current method-level failure score (historical + pending). */
 	public double methodFailureScore(String className, String methodName) {
-		return failureHistory.methodFailureScore(className, methodName);
+		return metrics.methodFailureScore(className, methodName);
 	}
 
 	/**
@@ -838,12 +791,12 @@ public class TestOrderState {
 	 * compatibility but ignored.
 	 */
 	public Map<String, Double> getMethodRecencyWeightedFailureScores(int windowDays) {
-		return failureHistory.methodFailureScores();
+		return metrics.getMethodFailureScores();
 	}
 
 	/** Returns an unmodifiable view of the raw method failure scores map. */
 	public Map<String, Double> getMethodFailureScores() {
-		return failureHistory.methodFailureScores();
+		return metrics.getMethodFailureScores();
 	}
 
 	// ── Method-level weights ──────────────────────────────────────────
@@ -1005,23 +958,23 @@ public class TestOrderState {
 				}
 			}
 		}
-		activeClasses.addAll(durationTracker.classDurations().keySet());
-		activeClasses.addAll(durationTracker.methodDurations().keySet());
-		activeClasses.addAll(failureHistory.knownClasses());
+		activeClasses.addAll(metrics.durationTracker().classDurations().keySet());
+		activeClasses.addAll(metrics.durationTracker().methodDurations().keySet());
+		activeClasses.addAll(metrics.failureHistory().knownClasses());
 
 		// Filter duration/failure maps for serialization WITHOUT mutating live state.
 		// Actual pruning is deferred to afterSave() so that a failed save does not
 		// lose in-memory data.
 		Map<String, Long> prunedDurations = new LinkedHashMap<>();
-		for (var e : durationTracker.classDurations().entrySet()) {
+		for (var e : metrics.durationTracker().classDurations().entrySet()) {
 			if (activeClasses.isEmpty() || DurationTracker.isActive(e.getKey(), activeClasses)) {
 				prunedDurations.put(e.getKey(), e.getValue());
 			}
 		}
 		root.put("durations", prunedDurations);
-		if (!durationTracker.classDurationVariances().isEmpty()) {
+		if (!metrics.durationTracker().classDurationVariances().isEmpty()) {
 			Map<String, Double> prunedVariances = new LinkedHashMap<>();
-			for (var e : durationTracker.classDurationVariances().entrySet()) {
+			for (var e : metrics.durationTracker().classDurationVariances().entrySet()) {
 				if (activeClasses.isEmpty() || DurationTracker.isActive(e.getKey(), activeClasses)) {
 					prunedVariances.put(e.getKey(), e.getValue());
 				}
@@ -1040,9 +993,9 @@ public class TestOrderState {
 		// Read pendingRunCompleted under synchronized to avoid torn read.
 		boolean hasRunData;
 		synchronized (this) {
-			hasRunData = applyDecay && (pendingRunCompleted || failureHistory.hasPendingData());
+			hasRunData = applyDecay && (pendingRunCompleted || metrics.failureHistory().hasPendingData());
 		}
-		FailureHistoryTracker.PersistedScores mergedFailureState = failureHistory.mergeForSave(hasRunData,
+		FailureHistoryTracker.PersistedScores mergedFailureState = metrics.failureHistory().mergeForSave(hasRunData,
 				config.failureDecay(), config.methodFailureDecay(), config.failurePruneThreshold(), LOG);
 		Map<String, Object> mergedFailures = mergedFailureState.failureScores();
 		root.put("failureScores", mergedFailures);
@@ -1053,9 +1006,9 @@ public class TestOrderState {
 		root.put("runs", runsList);
 
 		// method durations (class → method → EMA duration)
-		if (!durationTracker.methodDurations().isEmpty()) {
+		if (!metrics.durationTracker().methodDurations().isEmpty()) {
 			Map<String, Object> mdMap = new LinkedHashMap<>();
-			for (var classEntry : durationTracker.methodDurations().entrySet()) {
+			for (var classEntry : metrics.durationTracker().methodDurations().entrySet()) {
 				if (!activeClasses.isEmpty() && !DurationTracker.isActive(classEntry.getKey(), activeClasses))
 					continue;
 				Map<String, Object> methods = new LinkedHashMap<>();
@@ -1068,9 +1021,9 @@ public class TestOrderState {
 				root.put("methodDurations", mdMap);
 			}
 		}
-		if (!durationTracker.methodDurationVariances().isEmpty()) {
+		if (!metrics.durationTracker().methodDurationVariances().isEmpty()) {
 			Map<String, Object> mdvMap = new LinkedHashMap<>();
-			for (var classEntry : durationTracker.methodDurationVariances().entrySet()) {
+			for (var classEntry : metrics.durationTracker().methodDurationVariances().entrySet()) {
 				if (!activeClasses.isEmpty() && !DurationTracker.isActive(classEntry.getKey(), activeClasses))
 					continue;
 				Map<String, Object> methods = new LinkedHashMap<>();
@@ -1116,13 +1069,13 @@ public class TestOrderState {
 	private transient Set<String> persistedActiveClasses = Set.of();
 
 	void afterSave() {
-		failureHistory.applyPersisted(
+		metrics.failureHistory().applyPersisted(
 				new FailureHistoryTracker.PersistedScores(persistedFailureScores, persistedMethodFailureScores));
 		runHistory.replace(persistedRunsAfterSave);
 		// Prune stale entries now that the save succeeded — safe to mutate live state
 		if (!persistedActiveClasses.isEmpty()) {
-			durationTracker.pruneToActiveClasses(persistedActiveClasses);
-			failureHistory.pruneToActiveClasses(persistedActiveClasses);
+			metrics.durationTracker().pruneToActiveClasses(persistedActiveClasses);
+			metrics.failureHistory().pruneToActiveClasses(persistedActiveClasses);
 		}
 		pendingRunCompleted = false;
 	}
@@ -1230,16 +1183,17 @@ public class TestOrderState {
 
 		// durations
 		for (var e : safeMap(root.get("durations"), "durations").entrySet()) {
-			state.durationTracker.putClassDuration(e.getKey(), safeLong(e.getValue(), 0L, "durations." + e.getKey()));
+			state.metrics.durationTracker().putClassDuration(e.getKey(),
+					safeLong(e.getValue(), 0L, "durations." + e.getKey()));
 		}
 		for (var e : safeMap(root.get("durationVariances"), "durationVariances").entrySet()) {
-			state.durationTracker.putClassDurationVariance(e.getKey(),
+			state.metrics.durationTracker().putClassDurationVariance(e.getKey(),
 					safeDouble(e.getValue(), 0.0, "durationVariances." + e.getKey()));
 		}
 
 		// failure scores: map of class→score
 		for (var e : safeMap(root.get("failureScores"), "failureScores").entrySet()) {
-			state.failureHistory.loadFailureScore(e.getKey(),
+			state.metrics.failureHistory().loadFailureScore(e.getKey(),
 					safeDouble(e.getValue(), 0.0, "failureScores." + e.getKey()));
 		}
 
@@ -1255,7 +1209,7 @@ public class TestOrderState {
 		for (var classEntry : safeMap(root.get("methodDurations"), "methodDurations").entrySet()) {
 			Map<String, Object> methods = safeMap(classEntry.getValue(), "methodDurations." + classEntry.getKey());
 			for (var methodEntry : methods.entrySet()) {
-				state.durationTracker.putMethodDuration(classEntry.getKey(), methodEntry.getKey(),
+				state.metrics.durationTracker().putMethodDuration(classEntry.getKey(), methodEntry.getKey(),
 						safeDouble(methodEntry.getValue(), 0.0,
 								"methodDurations." + classEntry.getKey() + "." + methodEntry.getKey()));
 			}
@@ -1264,7 +1218,7 @@ public class TestOrderState {
 			Map<String, Object> methods = safeMap(classEntry.getValue(),
 					"methodDurationVariances." + classEntry.getKey());
 			for (var methodEntry : methods.entrySet()) {
-				state.durationTracker.putMethodDurationVariance(classEntry.getKey(), methodEntry.getKey(),
+				state.metrics.durationTracker().putMethodDurationVariance(classEntry.getKey(), methodEntry.getKey(),
 						safeDouble(methodEntry.getValue(), 0.0,
 								"methodDurationVariances." + classEntry.getKey() + "." + methodEntry.getKey()));
 			}
@@ -1282,7 +1236,7 @@ public class TestOrderState {
 
 		// method failure scores: map of "class#method"→score
 		for (var e : safeMap(root.get("methodFailureScores"), "methodFailureScores").entrySet()) {
-			state.failureHistory.loadMethodFailureScore(e.getKey(),
+			state.metrics.failureHistory().loadMethodFailureScore(e.getKey(),
 					safeDouble(e.getValue(), 0.0, "methodFailureScores." + e.getKey()));
 		}
 
@@ -1448,7 +1402,7 @@ public class TestOrderState {
 	 * @return optimised result, or {@code null} if insufficient data
 	 */
 	public OptimizeResult optimize(List<WeightDef> defs) {
-		return ScoringOptimizer.optimize(runHistory.runs(), durationTracker.classDurations(), defs, LOG);
+		return ScoringOptimizer.optimize(runHistory.runs(), metrics.durationTracker().classDurations(), defs, LOG);
 	}
 
 }
