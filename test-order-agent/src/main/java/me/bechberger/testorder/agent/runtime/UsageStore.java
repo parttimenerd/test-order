@@ -281,9 +281,11 @@ public class UsageStore {
 		}
 		BitsetTracker tracker = perTestTrackers.computeIfAbsent(testClass, k -> new BitsetTracker());
 		activeTrackers = new ActiveTrackers(testClass, tracker, null);
-		// Volatile stores last — act as release fence for worker threads.
-		activeClassTracker = tracker;
+		// Publish activeState before activeClassTracker so that the METHOD/MEMBER
+		// hot path activates first; the CLASS hot path activates last. This avoids
+		// a window where activeClassTracker is visible but activeState is still null.
 		activeState = new RecordingState(tracker, null);
+		activeClassTracker = tracker;
 		recording = true;
 	}
 

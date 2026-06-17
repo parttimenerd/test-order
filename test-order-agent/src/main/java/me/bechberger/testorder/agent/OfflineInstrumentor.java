@@ -128,8 +128,6 @@ public class OfflineInstrumentor {
 	public ClassIdMapping instrument(Path classesDir, Path backupDir) throws IOException {
 		transformedCount.set(0);
 		skippedCount.set(0);
-		maxClassId.set(0);
-		maxMemberId.set(0);
 		this.backupDir = backupDir;
 		this.classesDir = classesDir;
 
@@ -137,13 +135,10 @@ public class OfflineInstrumentor {
 			return ClassIdMapping.fromClassIdMap(classIdMap, 0, 0);
 		}
 
-		// Write marker BEFORE instrumenting so that if the process is killed
-		// mid-instrumentation, the next run will detect the marker and restore
-		// whatever was already backed up. Restore is idempotent (copying
-		// originals over originals is a no-op for un-modified files).
+		// Create backupDir early so parallel instrumentation threads can write backups.
+		// The .instrumented marker is written AFTER the loop completes (see below).
 		if (backupDir != null) {
 			Files.createDirectories(backupDir);
-			Files.writeString(backupDir.resolve(".instrumented"), classesDir.toAbsolutePath().toString());
 		}
 
 		// Collect class files first (sorted for deterministic ID assignment)
@@ -191,9 +186,11 @@ public class OfflineInstrumentor {
 			}
 		}
 
-		// If nothing was transformed, remove the marker (no restore needed)
-		if (backupDir != null && transformedCount.get() == 0) {
-			Files.deleteIfExists(backupDir.resolve(".instrumented"));
+		// Write marker only after the loop completes and at least one file was
+		// transformed. This avoids a crash window where the marker exists but no
+		// backups have been written yet.
+		if (backupDir != null && transformedCount.get() > 0) {
+			Files.writeString(backupDir.resolve(".instrumented"), classesDir.toAbsolutePath().toString());
 		}
 
 		return ClassIdMapping.fromClassIdMap(classIdMap, maxClassId.get(), maxMemberId.get());

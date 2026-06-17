@@ -593,14 +593,18 @@ public class IndexCollectorServer implements AutoCloseable {
 			Set<String> memberDeps = resolveMemberIds(memberWords, mn);
 			if (!classDeps.isEmpty()) {
 				mergedClassDeps.merge(key, classDeps, (existing, incoming) -> {
-					existing.addAll(incoming);
-					return existing;
+					Set<String> combined = new java.util.HashSet<>(existing.size() + incoming.size());
+					combined.addAll(existing);
+					combined.addAll(incoming);
+					return combined;
 				});
 			}
 			if (!memberDeps.isEmpty()) {
 				mergedMemberDeps.merge(key, memberDeps, (existing, incoming) -> {
-					existing.addAll(incoming);
-					return existing;
+					Set<String> combined = new java.util.HashSet<>(existing.size() + incoming.size());
+					combined.addAll(existing);
+					combined.addAll(incoming);
+					return combined;
 				});
 			}
 		}
@@ -618,14 +622,18 @@ public class IndexCollectorServer implements AutoCloseable {
 			Set<String> memberDeps = resolveMemberIds(memberWords, mn);
 			if (!classDeps.isEmpty()) {
 				mergedMethodDeps.merge(key, classDeps, (existing, incoming) -> {
-					existing.addAll(incoming);
-					return existing;
+					Set<String> combined = new java.util.HashSet<>(existing.size() + incoming.size());
+					combined.addAll(existing);
+					combined.addAll(incoming);
+					return combined;
 				});
 			}
 			if (!memberDeps.isEmpty()) {
 				mergedMethodMemberDeps.merge(key, memberDeps, (existing, incoming) -> {
-					existing.addAll(incoming);
-					return existing;
+					Set<String> combined = new java.util.HashSet<>(existing.size() + incoming.size());
+					combined.addAll(existing);
+					combined.addAll(incoming);
+					return combined;
 				});
 			}
 		}
@@ -759,8 +767,6 @@ public class IndexCollectorServer implements AutoCloseable {
 			for (int i = 0; i < classCount; i++) {
 				cn[i] = (String) getClassNameMethod.invoke(mapping, i);
 			}
-			classNames = cn;
-
 			var memberCountMethod = mappingClass.getMethod("memberCount");
 			int memberCount = (int) memberCountMethod.invoke(mapping);
 			var getMemberNameMethod = mappingClass.getMethod("getMemberName", int.class);
@@ -769,6 +775,7 @@ public class IndexCollectorServer implements AutoCloseable {
 				mn[i] = (String) getMemberNameMethod.invoke(mapping, i + MEMBER_ID_OFFSET);
 			}
 			memberNames = mn;
+			classNames = cn;
 		} catch (Exception e) {
 			System.err.println("[test-order] IndexCollectorServer: failed to load ClassIdMapping from " + mappingFile
 					+ ": " + e.getMessage());

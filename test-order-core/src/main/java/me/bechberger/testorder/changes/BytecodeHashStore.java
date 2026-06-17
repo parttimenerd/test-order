@@ -52,13 +52,14 @@ public class BytecodeHashStore {
 	private static final String FORMAT_HEADER = "#FORMAT:v2";
 
 	private static final HexFormat HEX_FORMAT = HexFormat.of();
-	private static final ThreadLocal<MessageDigest> SHA256 = ThreadLocal.withInitial(() -> {
+
+	private static MessageDigest newSha256() {
 		try {
 			return MessageDigest.getInstance("SHA-256");
 		} catch (NoSuchAlgorithmException e) {
 			throw new RuntimeException("SHA-256 not available", e);
 		}
-	});
+	}
 
 	private final Map<String, String> classHashes; // FQCN → hex SHA-256
 	private final Map<String, String> methodHashes; // fqcn#name+desc → hex SHA-256
@@ -157,8 +158,7 @@ public class BytecodeHashStore {
 				if (classNameHolder[0] == null || !MemberFilter.shouldTrack(access)) {
 					return downstream;
 				}
-				MessageDigest md = SHA256.get();
-				md.reset();
+				MessageDigest md = newSha256();
 				ByteArrayOutputStream baos = new ByteArrayOutputStream();
 				try (DataOutputStream dos = new DataOutputStream(baos)) {
 					dos.writeInt(access);
@@ -192,8 +192,7 @@ public class BytecodeHashStore {
 		cr.accept(stripper, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 
 		byte[] normalized = cw.toByteArray();
-		MessageDigest md = SHA256.get();
-		md.reset();
+		MessageDigest md = newSha256();
 		md.update(normalized);
 		String classHash = HEX_FORMAT.formatHex(md.digest());
 
@@ -409,8 +408,7 @@ public class BytecodeHashStore {
 			super(Opcodes.ASM9, downstream);
 			this.key = key;
 			this.sink = sink;
-			this.md = SHA256.get();
-			this.md.reset();
+			this.md = newSha256();
 			this.baos = new ByteArrayOutputStream();
 			this.dos = new DataOutputStream(baos);
 		}

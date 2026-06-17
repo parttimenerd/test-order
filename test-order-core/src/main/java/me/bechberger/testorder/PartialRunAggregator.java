@@ -178,10 +178,9 @@ public final class PartialRunAggregator {
 				state.incrementRunsSinceLearn();
 			}
 			state.save(stateFile);
+			deletePartFiles(partFiles);
 			return state;
 		});
-
-		deletePartFiles(partFiles);
 
 		TestOrderLogger.info("[run-aggregator] Merged {} per-fork records into one RunRecord: {} tests, {} failures",
 				partials.size(), totalTests, totalFailures);
