@@ -69,7 +69,7 @@ fi
 
 # Build the mvn command
 MVN_ARGS=(
-    "test-order:detect-dependencies"
+    "me.bechberger:test-order-maven-plugin:detect-dependencies"
     "-Dtestorder.detect.algorithm=${ALGORITHM}"
     "-Dtestorder.detect.timeBudget=${TIME_BUDGET}"
     "-Dtestorder.detect.failOnDetection=false"   # we handle exit code ourselves

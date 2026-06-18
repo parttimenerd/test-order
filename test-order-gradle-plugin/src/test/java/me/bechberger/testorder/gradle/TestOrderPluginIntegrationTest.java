@@ -188,6 +188,7 @@ class TestOrderPluginIntegrationTest {
 
     private GradleRunner runner(String... args) {
         return GradleRunner.create()
+                .withGradleVersion("8.14.3")
                 .withProjectDir(projectDir.toFile())
                 .withArguments(args)
                 .forwardOutput();
@@ -605,6 +606,7 @@ class TestOrderPluginIntegrationTest {
 
         Path initScript = projectDir.resolve("test-order-init.gradle");
         BuildResult result = GradleRunner.create()
+                .withGradleVersion("8.14.3")
                 .withProjectDir(projectDir.toFile())
                 .withArguments("test", "-Dtestorder.mode=learn",
                         "--init-script", initScript.toString())
@@ -624,6 +626,7 @@ class TestOrderPluginIntegrationTest {
 
         // Learn
         GradleRunner.create()
+                .withGradleVersion("8.14.3")
                 .withProjectDir(projectDir.toFile())
                 .withArguments("test", "-Dtestorder.mode=learn",
                         "--init-script", initScript.toString())
@@ -632,6 +635,7 @@ class TestOrderPluginIntegrationTest {
 
         // Order
         BuildResult result = GradleRunner.create()
+                .withGradleVersion("8.14.3")
                 .withProjectDir(projectDir.toFile())
                 .withArguments("clean", "test", "-Dtestorder.mode=order",
                         "--init-script", initScript.toString())
@@ -774,6 +778,7 @@ class TestOrderPluginIntegrationTest {
 
         // Run learn on both subprojects
         BuildResult result = GradleRunner.create()
+                .withGradleVersion("8.14.3")
                 .withProjectDir(projectDir.toFile())
                 .withArguments("test", "-Dtestorder.mode=learn")
                 .forwardOutput()
