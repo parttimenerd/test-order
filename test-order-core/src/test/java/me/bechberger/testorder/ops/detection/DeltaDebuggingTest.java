@@ -92,16 +92,27 @@ class DeltaDebuggingTest {
 	}
 
 	@Test
-	void respectsRunBudget() {
+	void returnsEmptyOnBudgetExhaustion() {
 		FakeRunner runner = new FakeRunner("Victim", "Polluter");
 		List<String> candidates = List.of("A", "B", "C", "D", "E", "F", "G", "Polluter");
 
-		// Very tight budget — should still return something, just not minimal
-		List<String> result = DeltaDebugging.minimize(candidates, "Victim", runner, 3);
+		// Budget 1: initial verification passes but leaves 0 for ddmin — exhausted
+		List<String> result = DeltaDebugging.minimize(candidates, "Victim", runner, 1);
 
-		// Should find something (may not be minimal with tight budget)
-		assertFalse(result.isEmpty());
-		assertTrue(result.contains("Polluter"));
+		// Budget exhausted before minimization — must return empty so callers don't
+		// record false polluters (M33)
+		assertTrue(result.isEmpty(), "Budget-exhausted minimize must return empty, not un-minimized candidates");
+	}
+
+	@Test
+	void findsPolluterWithSufficientBudget() {
+		FakeRunner runner = new FakeRunner("Victim", "Polluter");
+		List<String> candidates = List.of("A", "B", "C", "D", "E", "F", "G", "Polluter");
+
+		// Budget large enough to find the polluter
+		List<String> result = DeltaDebugging.minimize(candidates, "Victim", runner, 20);
+
+		assertTrue(result.contains("Polluter"), "Should find Polluter with sufficient budget");
 	}
 
 	@Test

@@ -27,7 +27,7 @@ public final class DeltaDebugging {
 	 *            test execution engine
 	 * @param runBudget
 	 *            maximum number of runs to spend
-	 * @return minimal polluter set, or empty if none found within budget
+	 * @return minimal polluter set, or empty if none found or budget exhausted
 	 */
 	public static List<String> minimize(List<String> candidates, String victim, TestRunner runner, int runBudget) {
 		if (candidates.isEmpty())
@@ -46,20 +46,25 @@ public final class DeltaDebugging {
 			return candidates;
 		}
 
-		return ddmin(candidates, victim, runner, 2, runBudget);
+		List<String> minimal = ddmin(candidates, victim, runner, 2, runBudget);
+		// null signals budget exhaustion — treat as "not found" so callers don't
+		// record false polluters (M33)
+		return minimal != null ? minimal : List.of();
 	}
 
+	/**
+	 * @return minimized list, or {@code null} if the run budget was exhausted
+	 *         before a minimal set could be confirmed
+	 */
 	private static List<String> ddmin(List<String> candidates, String victim, TestRunner runner, int partitions,
 			int runBudget) {
 		if (candidates.size() == 1) {
 			return candidates;
 		}
 		if (runBudget <= 0) {
-			// Budget exhausted — returning un-minimized list; caller cannot distinguish
-			// from success
 			TestOrderLogger
 					.warn("[ddmin] budget exhausted, returning un-minimized list of " + candidates.size() + " tests");
-			return candidates;
+			return null;
 		}
 
 		int chunkSize = Math.max(1, candidates.size() / partitions);
@@ -68,7 +73,7 @@ public final class DeltaDebugging {
 		// Try each chunk: does [chunk, victim] fail?
 		for (List<String> chunk : chunks) {
 			if (runBudget <= 0)
-				break;
+				return null;
 
 			List<String> order = new ArrayList<>(chunk);
 			order.add(victim);
@@ -86,7 +91,7 @@ public final class DeltaDebugging {
 		// No single chunk is sufficient — try complements
 		for (int i = 0; i < chunks.size(); i++) {
 			if (runBudget <= 0)
-				break;
+				return null;
 
 			List<String> complement = new ArrayList<>();
 			for (int j = 0; j < chunks.size(); j++) {
