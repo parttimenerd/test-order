@@ -21,6 +21,7 @@
     </properties>
 
     <modules>
+        <module>fixture-petclinic</module>
         <module>fixture-spring-boot-slices</module>
         <module>fixture-parameterized-tests</module>
         <module>fixture-jacoco</module>
