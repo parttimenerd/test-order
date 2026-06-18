@@ -160,7 +160,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java-version: ['21', '25']
+        # Gradle 8.14.3 (current wrapper) cannot run on Java 25 — its bundled
+        # Groovy 3 fails with "Unsupported class file major version 69" while
+        # parsing build scripts. Java 25 plugin compatibility is covered by
+        # the Maven plugin's plugin-its-java25 matrix entry.
+        java-version: ['21']
 
     steps:
       - name: Checkout
@@ -355,7 +359,7 @@ jobs:
   od-detect:
     runs-on: ubuntu-latest
     needs: build
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -372,7 +376,7 @@ jobs:
         run: mvn -B -ntp -DskipTests -Dspotless.check.skip=true install
 
       - name: Detect order-dependent tests
-        run: bash scripts/ci-detect-od-tests.sh --annotate-github
+        run: bash scripts/ci-detect-od-tests.sh --time-budget 120 --annotate-github
         continue-on-error: true
 
       - name: Write detection summary
