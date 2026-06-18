@@ -70,7 +70,11 @@ function buildFixtureDashboard() {
 		console.log(`[skip-fixture-build] reusing ${dashboard}`);
 		return dashboard;
 	}
-	// Quiet Maven build — produces a real dashboard with timings + scores.
+	// Run 1: learn mode — builds the class-id-map and dependency index from
+	// scratch. Required on a clean checkout where .test-order/ does not exist.
+	sh(`mvn -q -f ${join(FIXTURE, 'pom.xml')} test-order:learn test -DskipTests=false || true`);
+	// Run 2: auto mode — uses the freshly built index to score tests and
+	// produce a real dashboard with timings + scores.
 	sh(`mvn -q -f ${join(FIXTURE, 'pom.xml')} test-order:auto test test-order:dashboard -DskipTests=false || true`);
 	if (!existsSync(dashboard)) {
 		throw new Error(`dashboard not generated at ${dashboard}`);
