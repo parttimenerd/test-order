@@ -1,0 +1,14 @@
+score = (isNew ? newTestBonus : 0)                 // +15
+      + (isChanged ? changedTestBonus : 0)         //  +9
+      + min(ceil(failureDecay), maxFailureBonus)   //  +0..5
+      + speedBonus                                 //  +/-1
+      + overlapScore                               //  +0..5
+      + complexityScore                            //  +0..2
+      + packageProximityBonus                      //  +0..2
+      + (overlapsChangedStaticField ? sfBonus : 0)
+      + round(killRate * killRateBonus)            //  opt-in
+
+  speedRatio    = clamp(log2(duration / median) / 3, -1, 1)
+  overlapScore  = min(ceil(|deps ∩ changed| / sqrt(max(|deps|, 5))
+                          * depOverlap),
+                      depOverlap)

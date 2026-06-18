@@ -1,0 +1,12 @@
+$ mvn test-order:show
+
+ # │ Score │ Class                       │ Why
+───┼───────┼─────────────────────────────┼──────────────────────────
+ 1 │  14.0 │ com.shop.CartTest           │ overlap=5, changed-test=9
+ 2 │   7.0 │ com.shop.PriceTest          │ overlap=5, pkg-prox=2
+ 3 │   5.0 │ com.shop.InvoiceTest        │ overlap=5
+ 4 │   1.0 │ com.shop.UtilTest           │ speed-bonus=1
+ 5 │   0.0 │ com.shop.IntegrationTest    │ —
+
+[test-order] Run APFD: 92.9% (first failure at 1/12)
+[test-order] Estimated time saved: 21s

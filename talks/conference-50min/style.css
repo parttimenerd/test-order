@@ -1,0 +1,33 @@
+/* Readability — body text and headings */
+.slidev-layout h1 { font-size: 2.6rem; line-height: 1.15; }
+.slidev-layout h2 { font-size: 2.0rem; line-height: 1.2; }
+.slidev-layout h3 { font-size: 1.55rem; }
+.slidev-layout p,
+.slidev-layout li { font-size: 1.35rem; line-height: 1.5; }
+.slidev-layout table { font-size: 1.2rem; }
+.slidev-layout table th { font-size: 1.1rem; }
+
+/* Code blocks — bigger so they fill the slide canvas */
+.slidev-layout pre,
+.slidev-layout pre code,
+.slidev-layout .shiki { font-size: 1.45rem !important; line-height: 1.6 !important; }
+.slidev-layout pre { padding: 1.4rem 1.7rem !important; overflow-x: auto !important; }
+/* Prevent silent right-edge clipping on long code lines */
+.slidev-layout pre .line { white-space: pre !important; }
+
+/* Inline code */
+.slidev-layout :not(pre) > code { font-size: 1.05em; padding: 0.1em 0.35em; }
+
+/* Math — KaTeX */
+.katex { font-size: 1.15em !important; }
+.katex-display { margin: 0.6rem 0 !important; }
+.katex-display > .katex { font-size: 1.55rem !important; }
+
+/* Use the slide canvas — wider and tighter top padding */
+.slidev-layout { padding: 2.2rem 3rem !important; }
+.slidev-layout.cover,
+.slidev-layout.section,
+.slidev-layout.center,
+.slidev-layout.intro,
+.slidev-layout.fact { padding: 2rem !important; }
+

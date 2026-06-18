@@ -1,0 +1,11 @@
+# .github/workflows/ci.yml
+- name: Tier 1 — affected only (fail fast)
+  run: mvn test-order:tiered-select test
+
+- name: Tier 2 — top-scored remainder
+  if: success()
+  run: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2
+
+- name: Tier 3 — everything else
+  if: success()
+  run: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3

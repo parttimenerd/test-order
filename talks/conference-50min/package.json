@@ -1,0 +1,16 @@
+{
+  "name": "test-order-conference-50min",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "slidev --open",
+    "build": "slidev build",
+    "export": "slidev export",
+    "export-pdf": "slidev export slides.md --output ../test-order-talk.pdf"
+  },
+  "dependencies": {
+    "@slidev/cli": "^0.49.0",
+    "@slidev/theme-seriph": "^0.25.0",
+    "vue": "^3.4.0"
+  }
+}
