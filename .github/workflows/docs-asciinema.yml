@@ -1,0 +1,62 @@
+name: Re-record asciinema demos
+
+on:
+  schedule:
+    # Sunday at 04:17 UTC. Off-peak; not on the :00 hour to spread load.
+    - cron: '17 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: sapmachine
+          java-version: 17
+
+      - name: Install asciinema and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y asciinema jq
+
+      - name: Build test-order plugin (skip tests)
+        run: mvn -B -q install -DskipTests
+
+      - name: Re-record all demos
+        # Full pacing (DEMO_FAST=0) for the weekly published casts.
+        # Records directly into website/static/casts/ so the PR puts
+        # the right files in the right place.
+        env:
+          DEMO_FAST: "0"
+          TERM: xterm-256color
+        run: bash scripts/record-all-demos.sh website/static/casts
+
+      - name: Show resulting cast sizes
+        run: ls -lh website/static/casts/
+
+      - name: Open PR with refreshed casts
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/refresh-asciinema-casts
+          title: 'chore(docs): refresh asciinema demo casts'
+          commit-message: 'chore(docs): refresh asciinema demo casts'
+          body: |
+            Automated weekly refresh of the demo asciinema casts.
+
+            Each cast was recorded by `scripts/record-all-demos.sh` on a
+            fresh CI runner and post-processed through
+            `scripts/trim-cast-idle.sh` to compress idle gaps.
+
+            Please eyeball one or two casts (e.g. `asciinema play
+            website/static/casts/demo-hello-world.cast`) before merging —
+            a broken demo would land on the published landing page.
+          add-paths: website/static/casts/
+          delete-branch: true

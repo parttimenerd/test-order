@@ -1,0 +1,166 @@
+name: Docs site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'website/**'
+      - 'scripts/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'website/**'
+      - 'scripts/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history so the auto-commit step can push a screenshot
+          # diff back to main without a shallow-clone error.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: sapmachine
+          java-version: 17
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
+
+      - name: Install repo-root tooling (Playwright)
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build test-order plugin (skip tests, needed by fixture)
+        run: mvn -B -q install -DskipTests
+
+      - name: Capture dashboard screenshots
+        run: node scripts/capture-screenshots.mjs
+
+      - name: Commit refreshed screenshots back to main
+        if: github.event_name == 'push'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'docs(screenshots): auto-refresh dashboard screenshots'
+          file_pattern: 'docs/assets/screenshots/*.png'
+
+      - name: Install system tools (asciinema, jq, librsvg2)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y asciinema jq librsvg2-bin
+
+      - name: Record missing asciinema demos
+        # Records only casts absent from website/static/casts/.
+        # The weekly docs-asciinema workflow commits fresh full-pacing casts;
+        # this step is the fallback so the site always builds successfully.
+        # Individual demo failures are tolerated — the cast is skipped rather
+        # than failing the whole build.
+        env:
+          DEMO_FAST: "1"
+          TERM: xterm-256color
+        run: |
+          CAST_DIR="website/static/casts"
+          mkdir -p "$CAST_DIR"
+          DEMOS=(demo-hello-world demo-learn demo-tiered demo-dashboard demo-optimizer demo-diagnose demo-multi-module)
+          for name in "${DEMOS[@]}"; do
+            if [ -f "$CAST_DIR/$name.cast" ]; then
+              echo "[skip] $name.cast already exists"
+              continue
+            fi
+            echo "─── recording $name ───"
+            if asciinema rec \
+                --cols 120 --rows 32 \
+                --idle-time-limit 2 \
+                --overwrite \
+                --command "bash scripts/$name.sh" \
+                "$CAST_DIR/$name.cast" 2>&1; then
+              bash scripts/trim-cast-idle.sh "$CAST_DIR/$name.cast" 0.8
+            else
+              echo "::warning::Demo $name failed to record; skipping cast"
+              rm -f "$CAST_DIR/$name.cast"
+            fi
+          done
+          ls -lh "$CAST_DIR"
+
+      - name: Stage docs assets into website/static
+        run: |
+          mkdir -p website/static/img/screenshots
+          cp -f docs/assets/screenshots/*.png website/static/img/screenshots/ 2>/dev/null || true
+          # Fallback older committed dashboard PNGs from /docs.
+          for f in docs/dashboard-overview.png docs/dashboard-tests-tab.png \
+                   docs/dashboard-analytics-tab.png docs/dashboard-weights-tab.png; do
+            [ -f "$f" ] && cp -f "$f" website/static/img/screenshots/ || true
+          done
+
+      - name: Install website deps
+        working-directory: website
+        run: npm ci
+
+      - name: Regenerate OG image PNG from SVG
+        run: |
+          cd website
+          npm run regen-og
+
+      - name: Build site (strict — fails on broken links/anchors)
+        working-directory: website
+        run: npm run build:strict
+
+      - name: Verify site invariants (SEO, JSON-LD, content)
+        working-directory: website
+        run: npm run verify
+
+      - name: Check asciinema players render correctly
+        run: |
+          # Serve the built site using Docusaurus (correct baseUrl + content-types),
+          # run the player checker, then tear down.
+          cd website
+          npx docusaurus serve --port 4747 --no-open &
+          SERVER_PID=$!
+          cd ..
+          # Poll until the server responds (up to 30s)
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4747/test-order/ -o /dev/null && break
+            sleep 1
+          done
+          BASE_URL=http://localhost:4747/test-order node scripts/check-asciinema-players.mjs
+          EXIT=$?
+          kill $SERVER_PID 2>/dev/null || true
+          exit $EXIT
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/build
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
