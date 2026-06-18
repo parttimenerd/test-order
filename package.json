@@ -1,0 +1,12 @@
+{
+  "name": "test-order-tooling",
+  "private": true,
+  "scripts": {
+    "capture-screenshots": "node scripts/capture-screenshots.mjs",
+    "check-players": "node scripts/check-asciinema-players.mjs"
+  },
+  "dependencies": {
+    "@playwright/mcp": "^0.0.70",
+    "playwright": "^1.48.0"
+  }
+}

@@ -102,10 +102,6 @@ demo-spring-ai.cast
 demo/dkom-presentation/legacy-demo/.git
 demo/dkom-presentation/vibe-demo/.git
 
-# Root package.json (leftover from MCP testing)
-/package.json
-/package-lock.json
-
 # Playwright MCP tooling
 .playwright-cli/
 .playwright-mcp/
