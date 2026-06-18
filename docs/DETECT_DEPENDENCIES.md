@@ -79,10 +79,10 @@ mvn test-order:detect-dependencies \
 | Algorithm | Aliases | Description | Runs (N classes) |
 |-----------|---------|-------------|-----------------|
 | `combined` | `combined-adaptive` | **Recommended.** Adaptive multi-strategy: reverse, exclusion probes, random shuffling, edge-targeted probes. Highest detection rate. | ~2N–4N |
-| `reverse` | `reverse-order` | Reverses the reference order. Fast single-pass detection of victims. Based on iDFlakies [1]. | 1 |
+| `reverse` | `reverse-order` | Reverses the reference order. Fast single-pass detection of victims. Based on [iDFlakies \[1\]](#references). | 1 |
 | `pfast` | `pfast-exclusion` | Exclusion-based: runs with each test removed to find brittles. | N |
-| `random` | `random-reordering` | Random permutations within time budget. Broad coverage. Based on iDFlakies [1]. | time-bounded |
-| `tuscan` | `tuscan-systematic` | Systematic pair coverage via Tuscan squares. Guarantees all class-pair orderings covered. Based on Li et al. [3]. | N or N+1 |
+| `random` | `random-reordering` | Random permutations within time budget. Broad coverage. Based on [iDFlakies \[1\]](#references). | time-bounded |
+| `tuscan` | `tuscan-systematic` | Systematic pair coverage via Tuscan squares. Guarantees all class-pair orderings covered. Based on [Li et al. \[3\]](#references). | N or N+1 |
 | `iterative` | `iterative-refinement` | Iterative binary-search refinement after initial detection. | log₂(N) per finding |
 | `bounded` | `dependence-aware-bounded` | Uses conflict graph edges to bound the search space. Requires dependency index. | varies |
 | `history` | `history-mining` | Mines historical test run data for order-sensitive patterns. Requires state file. | 0 (analysis only) |
@@ -569,19 +569,19 @@ The detect-dependencies implementation draws on the following research:
 
 ### Core Techniques
 
-**iDFlakies** — Lam, W., Oei, R., Shi, A., Marinov, D., & Xie, T. (2019). "A Framework for Detecting and Partially Classifying Flaky Tests." *ICST '19*.
+**iDFlakies** — Lam, W., Oei, R., Shi, A., Marinov, D., & Xie, T. (2019). "A Framework for Detecting and Partially Classifying Flaky Tests." *ICST '19*. [DOI: 10.1109/ICST.2019.00038](https://doi.org/10.1109/ICST.2019.00038) · [IEEE](https://ieeexplore.ieee.org/abstract/document/8730188/)
 
 The foundation for OD test detection. Introduced the three-phase approach (Setup → Run → Check), the victim/brittle/NOD classification, and demonstrated that reversing the test order is an effective baseline strategy. The reverse-order strategy in our combined algorithm directly implements this approach.
 
-**DependTest** — Shi, A., Lam, W., Oei, R., Xie, T., & Marinov, D. (2020). "iFixFlakies: A Framework for Automatically Fixing Order-Dependent Flaky Tests." *ISSTA '20*.
+**iFixFlakies** — Shi, A., Lam, W., Oei, R., Xie, T., & Marinov, D. (2019). "iFixFlakies: A Framework for Automatically Fixing Order-Dependent Flaky Tests." *ESEC/FSE '19*. [DOI: 10.1145/3338906.3338925](https://doi.org/10.1145/3338906.3338925)
 
 Established the polluter/victim/cleaner taxonomy and demonstrated that static field dependencies account for 80–85% of OD bugs in Java. Our conflict graph construction and the focus on static field sharing as the primary signal are based on this finding.
 
-**Tuscan Intra-Class** — Li, C., Khosravi, M.M., Lam, W., & Shi, A. (2023). "Systematically Producing Test Orders to Detect Order-Dependent Flaky Tests." *ISSTA '23*.
+**Tuscan Intra-Class** — Li, C., Khosravi, M.M., Lam, W., & Shi, A. (2023). "Systematically Producing Test Orders to Detect Order-Dependent Flaky Tests." *ISSTA '23*. [DOI: 10.1145/3597926.3598083](https://doi.org/10.1145/3597926.3598083) · [ACM](https://dl.acm.org/doi/abs/10.1145/3597926.3598083)
 
 Demonstrated that systematic pair coverage via Tuscan squares achieves 97.2% OD detection with ~104.7 test orders, and that only ~3.3 "minimal essential" orders are needed on average. This insight motivates our adaptive strategy that prioritizes high-yield orderings early.
 
-**PRADET** — Gambi, A., Bell, J., & Zeller, A. (2018). "Practical Test Dependency Detection." *ASE '18*.
+**PRADET** — Gambi, A., Bell, J., & Zeller, A. (2018). "Practical Test Dependency Detection." *ICST '18*. [DOI: 10.1109/ICST.2018.00041](https://doi.org/10.1109/ICST.2018.00041) · [IEEE](https://ieeexplore.ieee.org/abstract/document/8367031/)
 
 Validated the two-phase architecture: (1) approximate data dependencies cheaply, then (2) confirm with targeted reruns. Our approach mirrors this — the conflict graph (built from the DependencyMap static index) serves as the cheap approximation phase, and binary-search pinpointing serves as the targeted confirmation phase. PRADET demonstrated 2.3×–130.5× speedup over exhaustive approaches.
 
@@ -628,10 +628,10 @@ Maven Surefire's `-Dtest=A,B,C` controls *which* tests run but not their *execut
 
 ## References
 
-1. Lam, W., Oei, R., Shi, A., Marinov, D., & Xie, T. (2019). "A Framework for Detecting and Partially Classifying Flaky Tests." *Proc. ICST '19*.
-2. Shi, A., Lam, W., Oei, R., Xie, T., & Marinov, D. (2020). "iFixFlakies: A Framework for Automatically Fixing Order-Dependent Flaky Tests." *Proc. ISSTA '20*.
-3. Li, C., Khosravi, M.M., Lam, W., & Shi, A. (2023). "Systematically Producing Test Orders to Detect Order-Dependent Flaky Tests." *Proc. ISSTA '23*.
-4. Gambi, A., Bell, J., & Zeller, A. (2018). "Practical Test Dependency Detection." *Proc. ASE '18*.
-5. Biagiola, M., Stocco, A., Mesbah, A., Ricca, F., & Tonella, P. (2019). "Web Test Dependency Detection." *Proc. ESEC/FSE '19*.
-6. Lin, S. (2023). "FlaKat: A Machine Learning-Based Categorization Framework for Flaky Tests." *MASc Thesis, University of Waterloo*.
-7. Malik, R. (2025). "Taming Test Flakiness." *Atlassian Engineering Blog*.
+1. Lam, W., Oei, R., Shi, A., Marinov, D., & Xie, T. (2019). "iDFlakies: A Framework for Detecting and Partially Classifying Flaky Tests." *Proc. ICST '19*. [DOI: 10.1109/ICST.2019.00038](https://doi.org/10.1109/ICST.2019.00038) · [IEEE](https://ieeexplore.ieee.org/abstract/document/8730188/)
+2. Shi, A., Lam, W., Oei, R., Xie, T., & Marinov, D. (2019). "iFixFlakies: A Framework for Automatically Fixing Order-Dependent Flaky Tests." *Proc. ESEC/FSE '19*. [DOI: 10.1145/3338906.3338925](https://doi.org/10.1145/3338906.3338925) · [ACM](https://dl.acm.org/doi/abs/10.1145/3338906.3338925)
+3. Li, C., Khosravi, M.M., Lam, W., & Shi, A. (2023). "Systematically Producing Test Orders to Detect Order-Dependent Flaky Tests." *Proc. ISSTA '23*. [DOI: 10.1145/3597926.3598083](https://doi.org/10.1145/3597926.3598083) · [ACM](https://dl.acm.org/doi/abs/10.1145/3597926.3598083)
+4. Gambi, A., Bell, J., & Zeller, A. (2018). "Practical Test Dependency Detection." *Proc. ICST '18*. [DOI: 10.1109/ICST.2018.00041](https://doi.org/10.1109/ICST.2018.00041) · [IEEE](https://ieeexplore.ieee.org/abstract/document/8367031/)
+5. Biagiola, M., Stocco, A., Mesbah, A., Ricca, F., & Tonella, P. (2019). "Web Test Dependency Detection." *Proc. ESEC/FSE '19*. [DOI: 10.1145/3338906.3338948](https://doi.org/10.1145/3338906.3338948) · [ACM](https://dl.acm.org/doi/abs/10.1145/3338906.3338948)
+6. Lin, S. (2023). "FlaKat: A Machine Learning-Based Categorization Framework for Flaky Tests." *MASc Thesis, University of Waterloo*. [UWSpace](https://uwspace.uwaterloo.ca/handle/10012/19362)
+7. Malik, R. et al. (2025). "Taming Test Flakiness: How We Built a Scalable Tool to Detect and Manage Flaky Tests." *Atlassian Engineering Blog*. [Blog post](https://www.atlassian.com/blog/atlassian-engineering/taming-test-flakiness-how-we-built-a-scalable-tool-to-detect-and-manage-flaky-tests)

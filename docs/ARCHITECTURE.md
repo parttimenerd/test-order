@@ -8,6 +8,36 @@ It intentionally avoids low-level implementation details.
 test-order improves feedback speed by running the tests most likely to fail first,
 based on code changes and historical run data.
 
+## Core Data Flow
+
+```mermaid
+flowchart TD
+    subgraph learn["Learn phase (first run / new tests)"]
+        A[Java instrumentation agent] -->|bytecode transform| B[AsmClassTransformer]
+        B -->|records class/member access per test| C[UsageStore\nthread-safe bit-sets]
+        C -->|end of session| D[("test-dependencies.lz4\ntestClass → Set&lt;sourceClasses&gt;")]
+    end
+
+    subgraph score["Score phase"]
+        E[ChangeDetector\nGit diff / file hashes] -->|changed source classes| F[TestScorer]
+        D -->|dependency lookup| F
+        G[("state.lz4\nrun history · failures · weights")] -->|failure recency · durations| F
+        F -->|priority score per test| H[ClassOrderingEngine]
+    end
+
+    subgraph execute["Execute phase"]
+        H -->|sorted test list| I[PriorityClassOrderer\nJUnit / TestNG]
+        I -->|tests run in order| J[TelemetryListener]
+        J -->|durations · results| G
+    end
+
+    learn --> score
+    score --> execute
+
+    classDef store fill:#e8f4fd,stroke:#2d6a9f,color:#1a3d5c
+    class D,G store
+```
+
 ## Core Flow
 
 1. Learn or load test-to-code dependency data.
@@ -54,6 +84,32 @@ based on code changes and historical run data.
 - `TestHealthAnalyzer` classifies tests as HEALTHY, DEGRADING, FLAKY, or FAILING.
 - Results surface in the `show` goal and dashboard (ML Health tab).
 - All computation is local — no external services.
+
+## Affected-Test Selection
+
+`mvn test-order:affected test` (or `./gradlew testOrderAffected`) skips tests
+that cannot be affected by recent changes, reducing suite execution to just the
+relevant subset.
+
+```mermaid
+flowchart TD
+    A[Git diff / file hashes] -->|changed source classes| B[DependencyMap\ninverted index]
+    B -->|sourceClass → Set of testClasses| C{Intersection\nnon-empty?}
+    C -->|yes| D[Candidate affected tests]
+    C -->|no| Z[Test skipped]
+    D --> E{MEMBER mode\nenabled?}
+    E -->|yes| F[Filter: test must use\na changed method or field]
+    E -->|no| G[All candidates pass]
+    F --> G
+    G --> H[TestSelector\ngreedy top-N + random-M]
+    H --> I[/"target/test-order-selected.txt"/]
+    H --> J[/"target/test-order-remaining.txt"/]
+
+    classDef output fill:#e8f4fd,stroke:#2d6a9f,color:#1a3d5c
+    class I,J output
+```
+
+See [CLI Reference → affected goal](./CLI_REFERENCE.md) for configuration options.
 
 ## Data Produced
 

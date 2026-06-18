@@ -42,5 +42,5 @@ mvn clean test-order:auto test
 
 ## Working Examples
 
-- [test-order-example-kotlin](../test-order-example/test-order-example-kotlin) — Kotlin Maven example
-- [fixture-kotest](../test-fixtures/fixture-kotest) — Kotest fixture tests
+- [test-order-example-kotlin](https://github.com/parttimenerd/test-order/tree/main/test-order-example/test-order-example-kotlin) — Kotlin Maven example
+- [fixture-kotest](https://github.com/parttimenerd/test-order/tree/main/test-fixtures/fixture-kotest) — Kotest fixture tests

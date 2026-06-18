@@ -290,7 +290,7 @@ The lifecycle extension can reorder Maven reactor modules at build startup so mo
 
 ### Dashboard
 
-The dashboard is an interactive HTML report with three tabs: **Tests** (ranked list, per-test score breakdown, run history), **Analytics** (APFD timeline, per-run drill-down, rank heatmap, failure correlation, and 15+ analysis panels), and **Weights** (interactive weight tuning with live rank preview). See [test-order-dashboard/README.md](../test-order-dashboard/README.md) for a full feature reference.
+The dashboard is an interactive HTML report with three tabs: **Tests** (ranked list, per-test score breakdown, run history), **Analytics** (APFD timeline, per-run drill-down, rank heatmap, failure correlation, and 15+ analysis panels), and **Weights** (interactive weight tuning with live rank preview). See [test-order-dashboard/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-dashboard/README.md) for a full feature reference.
 
 | Property | Default | Notes |
 |---|---|---|

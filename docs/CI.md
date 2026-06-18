@@ -6,7 +6,7 @@ test-order works out of the box in CI. This page covers caching, cache-key strat
 
 The fastest way to get value in CI is to add caching around your existing test job. No pipeline restructuring needed.
 
-> **Prerequisite:** Your `pom.xml` must declare the plugin with `<extensions>true</extensions>` — otherwise the index is written one build late (you'll see "Wrote fallback payloads" in the log). See the [Quick Start](../README.md#quick-start) for the full plugin snippet.
+> **Prerequisite:** Your `pom.xml` must declare the plugin with `<extensions>true</extensions>` — otherwise the index is written one build late (you'll see "Wrote fallback payloads" in the log). See the [Getting Started guide](GETTING_STARTED.md#step-1-add-the-plugin) for the full plugin snippet.
 
 ### Maven
 
@@ -56,7 +56,7 @@ The fastest way to get value in CI is to add caching around your existing test j
 
 On the first run the plugin auto-learns (slight overhead). On subsequent runs, tests affecting your changes are prioritised automatically.
 
-For three-tier pipelines (fastest feedback → broader → full) see [ci-examples/](ci-examples/).
+For three-tier pipelines (fastest feedback → broader → full) see [ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples).
 
 ---
 
@@ -192,7 +192,7 @@ trackingMode=CLASS
 |---|---|
 | Commit `.test-order/test-dependencies.lz4` | Shared monorepos, air-gapped CI, or teams that want instant cold-starts without CI setup |
 | Cache (CI cache) | Standard CI setups — easiest to maintain |
-| Download from previous CI run (`mvn test-order:download`) | Projects that already upload artifacts; see [test-order-ci/README.md](../test-order-ci/README.md) |
+| Download from previous CI run (`mvn test-order:download`) | Projects that already upload artifacts; see [test-order-ci/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-ci/README.md) |
 
 If you commit the index, add machine-local files to `.gitignore`:
 
@@ -231,11 +231,11 @@ If you commit the index, add machine-local files to `.gitignore`:
 
 ## Complete workflow examples
 
-See [ci-examples/](ci-examples/) for full pipeline configurations:
+See [ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples) for full pipeline configurations:
 
 | File | Platform | Build Tool |
 |------|----------|------------|
-| [github-actions-tiered-maven.yml](ci-examples/github-actions-tiered-maven.yml) | GitHub Actions | Maven |
-| [github-actions-tiered-gradle.yml](ci-examples/github-actions-tiered-gradle.yml) | GitHub Actions | Gradle |
-| [gitlab-ci-tiered.yml](ci-examples/gitlab-ci-tiered.yml) | GitLab CI | Maven + Gradle |
-| [azure-pipelines-tiered.yml](ci-examples/azure-pipelines-tiered.yml) | Azure Pipelines | Maven |
+| [github-actions-tiered-maven.yml](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/github-actions-tiered-maven.yml) | GitHub Actions | Maven |
+| [github-actions-tiered-gradle.yml](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/github-actions-tiered-gradle.yml) | GitHub Actions | Gradle |
+| [gitlab-ci-tiered.yml](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/gitlab-ci-tiered.yml) | GitLab CI | Maven + Gradle |
+| [azure-pipelines-tiered.yml](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/azure-pipelines-tiered.yml) | Azure Pipelines | Maven |

@@ -1,0 +1,54 @@
+---
+title: Demos
+sidebar_position: 3
+---
+
+# Demos
+
+Short feature-focused asciinema casts. Each one runs against a real fixture in
+`test-fixtures/` so the output is what you'd see locally — no stitching, no
+fake terminal recordings.
+
+import AsciinemaPlayer from '@site/src/components/AsciinemaPlayer';
+
+## Hello world — `prepare` + `auto`
+
+The full happy path in under 10 seconds.
+
+<AsciinemaPlayer src="/casts/demo-hello-world.cast" cols={120} rows={28} />
+
+## Learn mode — scores improving across runs
+
+Watch failure scores rise on the tests that catch real bugs.
+
+<AsciinemaPlayer src="/casts/demo-learn.cast" cols={120} rows={28} />
+
+## Tiered selection
+
+Three-tier output: must-run, should-run, can-skip.
+
+<AsciinemaPlayer src="/casts/demo-tiered.cast" cols={120} rows={28} />
+
+## Dashboard
+
+Open the HTML report in your browser, drill into a class.
+
+<AsciinemaPlayer src="/casts/demo-dashboard.cast" cols={120} rows={28} />
+
+## Optimizer — genetic weight tuning
+
+Five seeded runs, then `optimize` evolves the scoring weights.
+
+<AsciinemaPlayer src="/casts/demo-optimizer.cast" cols={120} rows={28} />
+
+## Diagnose — health report
+
+When something looks off, run `diagnose` first.
+
+<AsciinemaPlayer src="/casts/demo-diagnose.cast" cols={120} rows={28} />
+
+## Multi-module reactor
+
+`-pl` filtering and reactor-aware reordering across modules.
+
+<AsciinemaPlayer src="/casts/demo-multi-module.cast" cols={120} rows={28} />

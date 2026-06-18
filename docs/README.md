@@ -46,3 +46,7 @@ Pick the path that matches your role:
 ## Known limitations
 
 The dependency index cannot distinguish _how heavily_ a test exercises a class — only whether it touched it at all. For highly-transitive dependencies (e.g. Jackson's `ClassUtil`, which appears in 97% of tests), the selection signal is weak. TF-IDF scoring reduces the noise but does not eliminate it for classes with near-universal coverage. Use `-Dtestorder.deps.dropFrequencyThreshold=0.8` to filter out near-universal deps from the index entirely.
+
+---
+
+MIT licensed — see [LICENSE](https://github.com/parttimenerd/test-order/blob/main/LICENSE) · [GitHub](https://github.com/parttimenerd/test-order) · [Report an issue](https://github.com/parttimenerd/test-order/issues/new)

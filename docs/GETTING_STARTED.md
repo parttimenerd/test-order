@@ -6,12 +6,14 @@ This tutorial walks you through using test-order from scratch. By the end, you'l
 
 ## Prerequisites
 
-- **Java 17+** installed
-- **Maven 3.6+** or **Gradle 7.6+**
+- **Java 17–26** installed (tested on all LTS releases and Java 26)
+- **Maven 3.8+** or **Gradle 7.6+**
 - A **Git** repository (test-order uses Git to detect changes)
 - A project with **JUnit 5/6**, **TestNG 7.x+**, or **Kotest** tests
 
-> **Using TestNG?** The setup is the same — add the plugin and run `mvn test`. The TestNG integration module (`test-order-testng`) is included automatically. See [test-order-testng/README.md](../test-order-testng/README.md) for TestNG-specific behaviour, or [docs/FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) for a side-by-side comparison with JUnit 5.
+:::info Using TestNG?
+The setup is the same — add the plugin and run `mvn test`. The TestNG integration module (`test-order-testng`) is included automatically. See [test-order-testng/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-testng/README.md) for TestNG-specific behaviour, or [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) for a side-by-side comparison with JUnit 5.
+:::
 
 Quick check:
 ```bash
@@ -25,7 +27,26 @@ java -version && mvn --version && git --version
 
 ### Maven
 
-Add to your `pom.xml` inside `<build><plugins>`:
+First, add the Sonatype snapshot repository to your `pom.xml` so Maven can resolve the `0.0.1-SNAPSHOT` artifact:
+
+```xml
+<repositories>
+  <repository>
+    <id>ossrh-snapshots</id>
+    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+    <snapshots><enabled>true</enabled></snapshots>
+  </repository>
+</repositories>
+<pluginRepositories>
+  <pluginRepository>
+    <id>ossrh-snapshots</id>
+    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+    <snapshots><enabled>true</enabled></snapshots>
+  </pluginRepository>
+</pluginRepositories>
+```
+
+Then add the plugin inside `<build><plugins>`:
 
 ```xml
 <plugin>
@@ -44,9 +65,35 @@ Add to your `pom.xml` inside `<build><plugins>`:
 </plugin>
 ```
 
+:::tip One-time settings.xml change
+Add `me.bechberger` to `~/.m2/settings.xml` once to enable the short `mvn test-order:show` prefix instead of typing the full group ID every time:
+
+```xml
+<settings>
+  <pluginGroups>
+    <pluginGroup>me.bechberger</pluginGroup>
+  </pluginGroups>
+</settings>
+```
+:::
+
 ### Gradle
 
-Add to your `build.gradle`:
+Add the Sonatype snapshot repository to `settings.gradle` so Gradle can resolve the plugin:
+
+```groovy
+pluginManagement {
+    repositories {
+        maven {
+            url 'https://central.sonatype.com/repository/maven-snapshots/'
+            mavenContent { snapshotsOnly() }
+        }
+        gradlePluginPortal()
+    }
+}
+```
+
+Then add to your `build.gradle`:
 
 ```groovy
 plugins {
@@ -54,11 +101,9 @@ plugins {
 }
 ```
 
-> **Settings:** If using a SNAPSHOT or local build, add `mavenLocal()` to your `pluginManagement.repositories` in `settings.gradle`.
-
-> **Warning:** Adding `mavenLocal()` to project repositories can cause **"Failed to load JUnit Platform"** errors
-> when stale JUnit JARs in `~/.m2` shadow your project's versions. Prefer the **init script** approach below
-> to avoid this — it isolates `mavenLocal()` to the plugin classpath only.
+:::warning Gradle: snapshot repository placement
+Do not add the snapshot repository to your project's regular `repositories {}` block — only to `pluginManagement.repositories {}`. Adding it to project repositories can expose snapshot JARs for your dependencies and cause **"Failed to load JUnit Platform"** errors when stale JARs shadow your project's versions.
+:::
 
 <details>
 <summary><b>Alternative: Gradle init script (no build file changes)</b></summary>
@@ -68,8 +113,10 @@ If you want to try test-order without modifying any build files, save this as `t
 ```groovy
 initscript {
     repositories {
-        mavenLocal()
-        mavenCentral()
+        maven {
+            url 'https://central.sonatype.com/repository/maven-snapshots/'
+        }
+        gradlePluginPortal()
     }
     dependencies {
         classpath 'me.bechberger:test-order-gradle-plugin:0.0.1-SNAPSHOT'
@@ -117,9 +164,11 @@ mvn test
 
 After the learn run, the dependency index is written to `.test-order/test-dependencies.lz4`. You can gitignore this directory — the plugin auto-learns on the first run for any new checkout.
 
-> **Instrumentation modes:** The default is `offline` (pre-instrumented bytecode, no agent needed).
-> To use online agent-based instrumentation instead, pass `-Dtestorder.instrumentation=online`.
-> Online mode requires the agent JAR on the command line but avoids modifying bytecode on disk.
+:::note Instrumentation modes
+The default is `offline` (pre-instrumented bytecode, no agent needed).
+To use online agent-based instrumentation instead, pass `-Dtestorder.instrumentation=online`.
+Online mode requires the agent JAR on the command line but avoids modifying bytecode on disk.
+:::
 
 ---
 
@@ -153,9 +202,9 @@ Tests that exercise your changed code now run first. If something breaks, you'll
 
 ## Step 4: Inspect the prioritization
 
-> **Prerequisite:** `show` reads the dependency index, so it requires a prior
-> learn run to have happened. If you see "no index found", run `mvn test`
-> (or `mvn -Dtestorder.mode=learn test`) once first.
+:::note show requires a learn run first
+`show` reads the dependency index, so it requires a prior learn run to have happened. If you see "no index found", run `mvn test` (or `mvn -Dtestorder.mode=learn test`) once first.
+:::
 
 See exactly how tests are ranked:
 
@@ -211,7 +260,7 @@ The dashboard has three tabs:
 
 The **KPI bar** at the top shows APFD, latest failures, pass streak, clean-run count, at-risk tests, estimated time savings, and a suite health grade (A–F). The run history sparkline lets you browse past runs without leaving the page.
 
-Full feature reference: [../test-order-dashboard/README.md](../test-order-dashboard/README.md)
+Full feature reference: [test-order-dashboard/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-dashboard/README.md)
 
 ---
 
@@ -267,9 +316,9 @@ mvn test
 mvn test-order:dashboard
 ```
 
-> **Note:** The `-Dspotless.check.skip=true` flag is only needed when building
-> the test-order framework itself (it runs code formatting checks). The sample
-> projects don't need it.
+:::note
+The `-Dspotless.check.skip=true` flag is only needed when building the test-order framework itself (it runs code formatting checks). The sample projects don't need it.
+:::
 
 ---
 
@@ -283,7 +332,7 @@ mvn test-order:dashboard
 | All tests score 0, nothing reordered | Plugin running but no changed classes detected | Try `-Dtestorder.debug=true` to see what change detection reports; check `testorder.changeMode` setting |
 | No index despite running `mvn test` | Source packages not detected (groupId mismatch) | Set `-Dtestorder.includePackages=com.yourpackage` |
 | JaCoCo reports 0% coverage | Hardcoded `<argLine>` in Surefire | Replace with `@{argLine}` so JaCoCo and test-order chain correctly |
-| "Failed to load JUnit Platform" (Gradle) | Stale JUnit JARs in `~/.m2` shadow project versions | Don't add `mavenLocal()` to project repositories; use the init-script approach instead |
+| "Failed to load JUnit Platform" (Gradle) | Snapshot repo added to project `repositories {}` instead of `pluginManagement.repositories {}` | Move it to `pluginManagement.repositories {}` only — see Step 1 above |
 
 ---
 
@@ -292,7 +341,7 @@ mvn test-order:dashboard
 | Goal | Guide |
 |------|-------|
 | **Quick reference (bookmark this)** | [CHEAT_SHEET.md](CHEAT_SHEET.md) |
-| Set up CI with tiered testing | [docs/ci-examples/](ci-examples/) |
+| Set up CI with tiered testing | [docs/ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples) |
 | Configure multi-module projects | [docs/MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md) |
 | Tune scoring weights | [docs/SCORING.md](SCORING.md) |
 | Enable ML failure predictions | [docs/MAVEN_PLUGIN.md](MAVEN_PLUGIN.md) (ML section) |
@@ -311,3 +360,7 @@ test-order makes no permanent changes to your project. To remove it completely:
 3. Remove the `.test-order/` entry from `.gitignore` if you added one
 
 Your tests will immediately go back to their default execution order.
+
+---
+
+MIT licensed — see [LICENSE](https://github.com/parttimenerd/test-order/blob/main/LICENSE) · [GitHub](https://github.com/parttimenerd/test-order)

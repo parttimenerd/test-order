@@ -3,8 +3,8 @@
 test-order supports both JUnit 5 (and JUnit 4 via the Vintage engine) and TestNG 7.x+. The core ordering and telemetry logic is shared, but the two framework integrations differ in their extension points, capabilities, and limitations.
 
 For full details on each:
-- [test-order-junit/README.md](../test-order-junit/README.md)
-- [test-order-testng/README.md](../test-order-testng/README.md)
+- [test-order-junit/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-junit/README.md)
+- [test-order-testng/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-testng/README.md)
 
 ---
 

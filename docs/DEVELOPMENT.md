@@ -126,7 +126,7 @@ cd samples/sample-basic && mvn test-order:show -Dspotless.check.skip=true
 
 ## See also
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — PR guidelines, code style, release process
+- [CONTRIBUTING.md](https://github.com/parttimenerd/test-order/blob/main/CONTRIBUTING.md) — PR guidelines, code style, release process
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md) — system design and data flow
 
 ## Releasing a version

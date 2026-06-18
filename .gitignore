@@ -123,3 +123,11 @@ demo/dcom-presentation/slides/slide*.png
 demo/dcom-presentation/slides/style.css
 demo/dcom-presentation/.baked-history/
 demo/dcom-presentation/.dashboard-stash/
+
+# Docusaurus
+website/.docusaurus/
+website/build/
+website/.cache-loader/
+website/static/casts/
+website/static/img/screenshots/
+.playwright-mcp/

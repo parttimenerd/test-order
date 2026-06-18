@@ -1,115 +1,108 @@
 # Scoring System
 
-Each test class receives a score. Tests are sorted by descending score, with faster tests first among ties.
+Each test class receives a **priority score**. Tests run in descending score order; among ties, faster tests go first.
+
+## Scoring Formula
+
+$$
+\text{score}(t) =
+  \underbrace{[t\text{ is new}]\cdot w_{\text{new}}}_{\text{+15}}
++ \underbrace{[t\text{ source changed}]\cdot w_{\text{changed}}}_{\text{+9}}
++ \underbrace{\min\!\bigl(\lceil F(t)\rceil,\, w_{\text{fail}}\bigr)}_{\text{failure recency, 0..5}}
++ \underbrace{\text{overlap}(t)}_{\text{dep overlap, 0..5}}
++ \underbrace{\text{complexity}(t)}_{\text{change complexity, 0..2}}
++ \underbrace{[t\text{ same pkg}]\cdot w_{\text{pkg}}}_{\text{+2}}
++ \underbrace{\text{speed}(t)}_{\pm 1}
+$$
+
+**Sub-expressions:**
+
+$$
+F(t) = \sum_{i} e_i \cdot (1 - d)^{\,r_i}
+\qquad d = 0.3,\quad r_i = \text{runs since failure } i
+$$
+
+$$
+\text{overlap}(t) = \min\!\left(\left\lceil \frac{|\,\text{deps}(t)\cap\Delta\,|}{\sqrt{\max(|\text{deps}(t)|,\,5)}} \cdot w_{\text{overlap}} \right\rceil,\; w_{\text{overlap}}\right)
+\qquad \Delta = \text{changed classes}
+$$
+
+$$
+\text{speed}(t) = \operatorname{clamp}\!\left(\frac{\log_2(d_t / \tilde{d})}{3},\,-1,\,1\right)
+\qquad d_t = \text{test duration},\quad \tilde{d} = \text{suite median}
+$$
+
+Full speed bonus at $d_t \le \tilde{d}/8$; full penalty at $d_t \ge 8\tilde{d}$; zero at the median.
+
+:::info All weights are configurable
+Override any signal via system properties (`-Dtestorder.score.*=…`) or a [TOML weights file](#customizing-scores).
+:::
 
 ## Score Components
 
-<!-- BEGIN WEIGHTS TABLE -->
-| Component | Default | Config property | Description |
-|---|---|---|---|
-| **New test bonus** | 15 | `testorder.score.newTest` | Bonus for new test classes not in the dependency index |
-| **Changed test bonus** | 9 | `testorder.score.changedTest` | Bonus for changed test sources |
-| **Failure bonus** | 5 | `testorder.score.maxFailure` | Cap on failure-based bonus |
-| **Speed bonus** | 1 | `testorder.score.speed` | Bonus for fast tests (logarithmic scale: full bonus at 1/8× median, zero at median) |
-| **Speed penalty** | 1 | `testorder.score.speedPenalty` | Penalty for slow tests (logarithmic scale: full penalty at 8× median, zero at median) |
-| **Dependency overlap** | 5 (max) | `testorder.score.depOverlap` | Max score from dependency overlap (sqrt-normalized: overlap/√max(totalDeps,5) × weight). Disabled when `coverageBonus > 0`. |
-| **Change complexity** | 2 (max) | `testorder.score.changeComplexity` | Complexity-weighted overlap using Deflate-compressed file size as information-density proxy. Disabled when `coverageBonus > 0`. |
-| **Package proximity** | 2 | `testorder.score.packageProximityBonus` | Bonus when the test class package matches the package of any changed class. Encourages co-located tests to run before cross-package tests. |
-| **Static field bonus** | 0 | `testorder.score.staticFieldBonus` | Fixed bonus when a test directly overlaps a changed static field. Only applied with member-level (`MEMBER` mode) overlap data. |
-| **Coverage bonus** | 0 | `testorder.score.coverageBonus` | Greedy set-cover bonus: replaces `depOverlap` + `changeComplexity` with geometrically declining bonuses (×0.8) for tests that collectively cover all changed classes. Set to 0 (default) to use per-test scoring instead. |
-| **Kill-rate bonus** | 0 | `testorder.score.killRateBonus` | Bonus scaled by mutation kill rate (requires `analyze-mutations` data). Tests with a high kill rate also get a multiplier on dep-overlap: `depOverlapScore × (0.5 + killRate × 0.5)`. Default 0 — no effect until explicitly set. |
-<!-- END WEIGHTS TABLE -->
+| Signal | Default | Config key | Notes |
+|---|:---:|---|---|
+| **New test** | **15** | `testorder.score.newTest` | Any test not yet in the dependency index |
+| **Changed test** | **9** | `testorder.score.changedTest` | Test source file itself was modified |
+| **Failure recency** | **5** max | `testorder.score.maxFailure` | Exponential decay — see [below](#failure-scoring-exponential-decay) |
+| **Dep overlap** | **5** max | `testorder.score.depOverlap` | $\sqrt{}$-normalised count of changed classes the test exercises |
+| **Change complexity** | **2** max | `testorder.score.changeComplexity` | Deflate-entropy of changed files; disabled when `coverageBonus > 0` |
+| **Package proximity** | **2** | `testorder.score.packageProximityBonus` | Test package matches a changed class's package |
+| **Speed bonus** | **1** | `testorder.score.speed` | Logarithmic; full at $d_t \le \tilde{d}/8$ |
+| **Speed penalty** | **−1** | `testorder.score.speedPenalty` | Logarithmic; full at $d_t \ge 8\tilde{d}$ |
+| **Static field** | 0 | `testorder.score.staticFieldBonus` | Opt-in; requires `MEMBER` instrumentation mode |
+| **Coverage bonus** | 0 | `testorder.score.coverageBonus` | Opt-in; replaces dep overlap with greedy set-cover ($\times 0.8^{\,\text{rank}}$) |
+| **Kill-rate** | 0 | `testorder.score.killRateBonus` | Opt-in; scaled by PIT mutation kill rate |
 
-## Formula
-
-<!-- BEGIN WEIGHTS FORMULA -->
-```
-score = (isNew ? newTestBonus : 0)
-      + (isChanged ? changedTestBonus : 0)
-      + min(ceil(recencyWeightedFailures), maxFailureBonus)
-      + round(|speedRatio| × speedBonus)       # speedRatio ∈ [-1, 0] for fast tests
-      - round(|speedRatio| × speedPenalty)      # speedRatio ∈ (0, 1] for slow tests
-      + overlapScore                             # see below
-      + (overlapsChangedStaticField ? staticFieldBonus : 0)
-      + packageProximityBonus                    # testorder.score.packageProximityBonus (default 2)
-      + round(killRate × killRateBonus)          # 0 when killRateBonus = 0 (default)
-
-  where speedRatio = clamp(log₂(duration / median) / 3, -1, 1)
-        killRate ∈ [0, 1] from mutation testing; tests without data are unaffected
-        packageProximityBonus = weights.packageProximityBonus() when testPackage == changedClassPackage (or is a parent package)
-
-  overlapScore (when coverageBonus = 0, the default):
-      min(ceil(|dependencies ∩ changedClasses| / √max(|dependencies|, 5) × depOverlap × killMultiplier), depOverlap)
-    + min(ceil(Σ complexity(dep) / √max(|dependencies|, 5) × changeComplexity), changeComplexity)
-    where killMultiplier = killRate ≥ 0 ? (0.5 + killRate × 0.5) : 1.0
-    (denominator clamped to 5 to prevent over-scoring tests with very small dep sets)
-
-  overlapScore (when coverageBonus > 0):
-      greedy set-cover bonus: coverageBonus × 0.8^rank  (rank = 0-based position in set-cover order)
-```
-<!-- END WEIGHTS FORMULA -->
-
-Speed scoring uses a logarithmic scale: tests faster than the median receive a proportional bonus
-(full bonus at 1/8× median), and tests slower than the median receive a proportional penalty
-(full penalty at 8× median). At the median, the score contribution is zero.
+Set any bonus to `0` to disable that signal entirely.
 
 ## Change Complexity
 
-The change complexity component uses Deflate compression (JDK built-in) to
-estimate the information content of each changed source file. Larger compressed
-sizes indicate more complex / information-dense code, which is more likely to
-harbour subtle bugs after modification. Scores are normalised to [0.0, 1.0]
-relative to the largest changed file, then summed over overlapping dependencies
-and scaled by the weight.
+Uses Deflate compression (JDK built-in) as an entropy proxy: larger compressed sizes indicate denser, more bug-prone changes. Scores are normalised to $[0,1]$ relative to the largest changed file, summed over overlapping dependencies, then scaled by $w_{\text{changeComplexity}}$.
+
+Disabled automatically when `coverageBonus > 0`.
 
 ## Tie-breaking (Jaccard Diversity)
 
-Tests with equal scores are ordered using greedy Jaccard-distance selection:
-the next test is chosen to maximise the **Jaccard distance** between its
-dependency set and the set of dependencies already covered by previously
-selected tests. This ensures breadth-first coverage — tests exercising
-different parts of the codebase run before redundant ones.
+Equal-scored tests are ordered by **greedy Jaccard-distance selection**: each next test maximises the Jaccard distance between its dependency set and the union of dependencies already covered. This ensures breadth-first codebase coverage before redundant tests.
 
-Within a Jaccard tie, shorter historical duration wins, then alphabetical name.
+$$
+J_{\text{dist}}(A,B) = 1 - \frac{|A \cap B|}{|A \cup B|}
+$$
+
+Within a Jaccard tie: shorter historical duration wins, then alphabetical name.
 
 ## Failure Scoring (Exponential Decay)
 
-Failure history uses an exponential decay model. Each time the state file is
-saved **after a test run completes** (regardless of whether any tests failed):
+Each time the state file is saved after a completed test run:
 
-1. All historical failure scores are multiplied by `(1 − failureDecay)`
-   (default 0.3, so 70% of the score is retained per run).
-2. Failures from the current run are added at full weight (+1.0 each).
-3. Scores below `failurePruneThreshold` (default 0.01) are dropped.
+$$
+\text{score}_{\text{fail}}^{(n+1)}(t) = \text{score}_{\text{fail}}^{(n)}(t) \cdot (1 - d) + [\text{failed in run } n]
+\qquad d = 0.3
+$$
 
-If `save()` is called without a preceding test run (e.g. by the weight optimizer),
-scores are preserved unchanged — decay represents "one test run passed"
-and should not be applied spuriously.
+Entries below `failurePruneThreshold` (default 0.01) are dropped. The final bonus is $\min(\lceil \text{score}_{\text{fail}} \rceil,\, w_{\text{fail}})$.
 
-The scorer uses `min(ceil(score), maxFailure)` to convert the decayed score
-into an integer bonus, so a class that failed in the most recent run gets
-the full bonus while a class that failed several runs ago gradually loses
-priority.
+| Parameter | Config key | Default |
+|---|---|:---:|
+| Decay per run | `failureDecay` | 0.3 |
+| Method-level decay | `methodFailureDecay` | 0.3 |
+| Prune threshold | `failurePruneThreshold` | 0.01 |
 
-Separate decay rates are available for class-level and method-level failures:
+:::note
+Decay only applies when a test run completes. Calling `save()` without a preceding run (e.g. from the weight optimizer) preserves scores unchanged.
+:::
 
-| Parameter | Config key | Default | Description |
-|---|---|---|---|
-| Failure decay | `failureDecay` | 0.3 | Per-run decay for class-level failure scores |
-| Method failure decay | `methodFailureDecay` | 0.3 | Per-run decay for method-level failure scores |
-| Prune threshold | `failurePruneThreshold` | 0.01 | Scores below this are dropped on save |
+## Duration Smoothing (EMA)
 
-## Duration Smoothing
+Durations are smoothed with an exponential moving average to dampen outliers:
 
-Test durations use exponential moving average (EMA) with separate alpha values
-for class-level and method-level:
+$$
+d_t^{(n+1)} = \alpha \cdot d_t^{\text{measured}} + (1-\alpha) \cdot d_t^{(n)}
+\qquad \alpha = 0.85
+$$
 
-- **Class-level:** `durationAlpha` = 0.85 → `stored = 0.85 × measured + 0.15 × previous`
-- **Method-level:** `methodDurationAlpha` = 0.85 → same formula per method
-
-Higher alpha means more weight on the most recent measurement. This dampens
-outliers while tracking trends. Both alphas are configurable in the weights
-file or state file `[config]` section.
+Both class-level (`durationAlpha`) and method-level (`methodDurationAlpha`) default to 0.85. Higher $\alpha$ tracks recent measurements more aggressively.
 
 ## Customizing Scores
 
@@ -233,47 +226,39 @@ Re-run periodically as your project's failure patterns evolve.
 
 ## Instrumentation Modes
 
-| Mode | What it records | Precision | Typical overhead* | Pros | Cons |
-|---|---|---|---|---|---|
-| `CLASS` | Method/constructor entries + foreign static-field accesses | High — class-level method/constructor/shared-state usage | Lower than full foreign-field weaving | Lighter learn runs; richer signal than method-entry with less runtime drag | No per-test-method or member-level granularity |
-| `METHOD` | `CLASS` + per-test-method dependency tracking | Higher — enables method-level overlap scoring | Slightly above `CLASS` | Ordering can consider which test method touches what | Slightly larger index; setup/teardown deps excluded |
-| `MEMBER` *(default)* | `METHOD` + member-level deps (`class#method`, `class#field`) | Highest — precise method/field impact scoring | ~121% | If a test never calls the changed method, it won't be scored | Roughly 2× the overhead of other modes; largest index |
+Three modes trade index precision against learn-run overhead:
 
-\* Historical overhead numbers were measured on the [femtocli](https://github.com/parttimenerd/femtocli) test suite (307 unit tests, baseline ~1.1 s). A second benchmark on `spring-petclinic` is recorded below.
+| Mode | Records | Overhead† | Notes |
+|---|---|:---:|---|
+| `CLASS` | Method/constructor entries + foreign static-field accesses | ~13% | Lighter learns; good starting point |
+| `METHOD` | `CLASS` + per-test-method dependency tracking | ~11% | Enables method-level overlap scoring |
+| **`MEMBER` (default)** | `METHOD` + exact method/field access per test | ~13% | Highest precision; ~2× index size |
 
-### Spring Petclinic Benchmark
+†Overhead on `spring-petclinic` learn runs (baseline 4.93 s, 5 runs each):
 
-Measured learn-run timings on `spring-petclinic` (5 measured runs per mode, baseline = pure `surefire:test` without `test-order:prepare`, `-Dcheckstyle.skip=true`, `-Dspring-javaformat.skip=true`, excluding `*IntegrationTests`, `MySqlIntegrationTests`, `PostgresIntegrationTests`, and `MysqlTestApplication`):
+| Mode | Mean | Median | Std dev |
+|---|---:|---:|---:|
+| none | 4.93 s | 4.97 s | 0.21 s |
+| `CLASS` | 5.55 s | 5.67 s | 0.19 s |
+| `METHOD` | 5.47 s | 5.44 s | 0.11 s |
+| `MEMBER` | 5.57 s | 5.45 s | 0.28 s |
 
-| Mode | Avg time | Median | Std dev | Overhead vs none |
-|---|---:|---:|---:|---:|
-| none | 4.926 s | 4.974 s | 0.212 s | 0.0% |
-| `CLASS` | 5.553 s | 5.670 s | 0.187 s | 12.7% |
-| `METHOD` | 5.473 s | 5.443 s | 0.109 s | 11.1% |
-| `MEMBER` | 5.572 s | 5.445 s | 0.284 s | 13.1% |
-
-`MEMBER` is the default — it produces the most accurate dependency data by tracking exactly which fields and methods each test touches. Switch to `CLASS` if learn runs are too slow or the index grows too large.
-
-> **Note:** This overhead only applies during **learn** runs — normal test execution (order mode) adds no instrumentation cost.
-> You don't need to re-learn on every build. The dependency index stays valid until the relationship between tests and production code changes significantly (new tests, refactored call graphs, moved classes, etc.).
-> The more code and test changes that accumulate since the last learn run, the less accurate the ordering becomes — the index may reference stale dependencies or miss new ones.
-> This is a trade-off: frequent re-learns keep the ordering optimal but add overhead to those runs; infrequent re-learns are cheaper overall but gradually degrade ordering quality.
-> A practical cadence is to re-learn after major refactors or dependency changes, and on a regular schedule (e.g. weekly or per-sprint) in CI.
+:::tip Overhead only applies to learn runs
+Normal ordered test execution (`auto` mode) adds **no** instrumentation cost. Re-learn after major refactors or on a weekly CI schedule — not every build.
+:::
 
 ## Change Detection Modes
 
-| Mode | Default use case | Source of truth |
+| Mode | When to use | Source of truth |
 |---|---|---|
-| `since-last-run` | Local iteration without relying on git history | LZ4 hash snapshots — updated during **learn** runs only (`.test-order/hashes.lz4`) |
-| `since-last-commit` | CI or branch workflows comparing against latest commit | `git diff HEAD~1..HEAD` plus uncommitted overlay |
-| `uncommitted` | Run tests for current workspace edits | staged + unstaged + untracked files |
-| `explicit` | Scripted/manual targeting | `-Dtestorder.changed.classes=...` |
+| `uncommitted` *(default)* | Local iteration — catch your current edits | Staged + unstaged + untracked files |
+| `since-last-run` | Local iteration without git | LZ4 hash snapshots (`.test-order/hashes.lz4`) |
+| `since-last-commit` | CI / branch workflows | `git diff HEAD~1..HEAD` + uncommitted overlay |
+| `explicit` | Scripted targeting | `-Dtestorder.changed.classes=pkg.Foo,pkg.Bar` |
 
-Default mode is `uncommitted`, which detects staged, unstaged, and untracked file changes in your working tree.
-You can override this with `-Dtestorder.changeMode=<mode>` or configure `auto` to fall back through:
-- `explicit` when `testorder.changed.classes` is provided
-- `since-last-run` if snapshots exist
-- `since-last-commit` otherwise
+`auto` falls back through: `explicit` → `since-last-run` (if snapshots exist) → `since-last-commit`.
+
+Override with `-Dtestorder.changeMode=<mode>`.
 
 ## Package Detection
 
@@ -298,51 +283,22 @@ When no source directories exist (e.g. a BOM-only project) and
 
 ## Method-level Scoring
 
-Within each test class, methods can be reordered to surface failing methods
-earlier. This is opt-in via:
+Opt-in reordering of test methods within each class. Enable with `-Dtestorder.methodOrder.enabled=true` or `<methodOrder>true</methodOrder>` in plugin config.
 
-```bash
-mvn test -Dtestorder.methodOrder.enabled=true
-```
+The method score uses the same exponential-decay failure model as class scoring, with class-local speed medians:
 
-Or in plugin config:
+| Signal | Default weight |
+|---|:---:|
+| New method (no telemetry history) | **5.0** |
+| Changed method | **3.0** |
+| Failure recency | **3.0** |
+| Dep overlap | 2.0 |
+| Speed bonus | 1.0 |
+| Speed penalty | −1.0 |
 
-```xml
-<configuration>
-  <methodOrder>true</methodOrder>
-</configuration>
-```
+Speed thresholds are **class-local** — each method's duration is compared to the median of all methods within its own class.
 
-Method scoring considers:
-
-| Component | Default weight | Description |
-|---|---|---|
-| **Failure recency** | 3.0 | Methods that failed recently run first |
-| **New method** | 5.0 | Methods with no telemetry history (untested = risky) |
-| **Changed method** | 3.0 | Methods whose source code changed |
-| **Speed (fast)** | 1.0 | Fast methods get proportional bonus (logarithmic, class-local median) |
-| **Speed (slow)** | 1.0 | Slow methods get proportional penalty (logarithmic, class-local median) |
-| **Dep overlap** | 2.0 | Per-method dependency overlap with changed classes |
-
-Speed thresholds are **class-local** — a method's duration is compared against
-the median of all methods within its class, not a global median.
-
-If no method-level telemetry is available (first run or no failures), methods
-keep their source order.
-
-### Method-level Scoring Overrides
-
-When method-level ordering is enabled, individual method scoring components can be tuned:
-
-| Property | Description |
-|---|---|
-| `testorder.method.score.failureRecency` | Method failure recency weight |
-| `testorder.method.score.newMethod` | New method bonus |
-| `testorder.method.score.changedMethod` | Changed method bonus |
-| `testorder.method.score.fast` | Fast method bonus |
-| `testorder.method.score.slow` | Slow method penalty |
-| `testorder.method.score.depOverlap` | Per-method dependency overlap |
-| `testorder.method.score.coverageBonus` | Per-method coverage bonus |
+Fine-tune individual weights via `testorder.method.score.<signal>` (e.g. `testorder.method.score.failureRecency=5`).
 
 ## ML-Enhanced Scoring
 

@@ -232,6 +232,16 @@ Override configuration in individual modules if needed:
 ### 1. Root `settings.gradle`
 
 ```gradle
+pluginManagement {
+    repositories {
+        maven {
+            url 'https://central.sonatype.com/repository/maven-snapshots/'
+            mavenContent { snapshotsOnly() }
+        }
+        gradlePluginPortal()
+    }
+}
+
 rootProject.name = 'app-root'
 
 includeBuild 'module-a'
@@ -261,7 +271,6 @@ subprojects {
     }
 
     repositories {
-        mavenLocal()
         mavenCentral()
     }
 

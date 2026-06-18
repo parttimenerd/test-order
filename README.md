@@ -59,7 +59,26 @@ git --version   # Any recent version
 
 ### Maven
 
-**1. Add the plugin** to your `pom.xml` inside `<build><plugins>`:
+**1. Add the Sonatype snapshot repository** to your `pom.xml` (needed while on `0.0.1-SNAPSHOT`):
+
+```xml
+<repositories>
+  <repository>
+    <id>ossrh-snapshots</id>
+    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+    <snapshots><enabled>true</enabled></snapshots>
+  </repository>
+</repositories>
+<pluginRepositories>
+  <pluginRepository>
+    <id>ossrh-snapshots</id>
+    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+    <snapshots><enabled>true</enabled></snapshots>
+  </pluginRepository>
+</pluginRepositories>
+```
+
+**2. Add the plugin** to your `pom.xml` inside `<build><plugins>`:
 
 ```xml
 <plugin>
@@ -110,7 +129,10 @@ mvn test -Dtestorder.skip=true  # Skip the plugin entirely
 // settings.gradle
 pluginManagement {
     repositories {
-        mavenLocal()       // needed until published to Gradle Plugin Portal
+        maven {
+            url 'https://central.sonatype.com/repository/maven-snapshots/'
+            mavenContent { snapshotsOnly() }
+        }
         gradlePluginPortal()
     }
 }
@@ -577,7 +599,7 @@ Run `mvn test-order:diagnose` first — it checks everything automatically.
 | No index despite running learn | Source packages not detected — set `-Dtestorder.includePackages=com.yourcompany` |
 | `Could not resolve artifact` | Plugin not yet published to Maven Central — build from source (see [Development](#development)) |
 | Agent attachment warning on Java 21+ | Add `--add-opens` flags to the Surefire `<argLine>` |
-| "Failed to load JUnit Platform" (Gradle) | Stale JARs in `~/.m2` — don't add `mavenLocal()` to project repositories; use an init script instead |
+| "Failed to load JUnit Platform" (Gradle) | Snapshot repo added to project `repositories {}` instead of `pluginManagement.repositories {}` | Move it to `pluginManagement.repositories {}` only — see Gradle setup above |
 | Tests skip unexpectedly on first run | No index yet — `affected` and tiered goals fall back to running all tests on cold start |
 
 Nuclear option: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`

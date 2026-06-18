@@ -532,7 +532,7 @@ mvn test-order:auto test && mvn test-order:run-remaining test
 - run: git add .test-order/ && git commit -m "update test-order index" && git push
 ```
 
-For full three-tier pipeline examples: [ci-examples/](ci-examples/)
+For full three-tier pipeline examples: [ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples)
 
 ## Plugin Parameters
 
@@ -802,7 +802,7 @@ The tiered workflow splits the test suite into three groups for progressive CI p
   run: mvn test-order:aggregate
 ```
 
-Full examples (GitHub Actions, GitLab CI, Azure Pipelines): [`docs/ci-examples/`](ci-examples/)
+Full examples (GitHub Actions, GitLab CI, Azure Pipelines): [`docs/ci-examples/`](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples)
 
 ### Sharding (parallel matrix jobs)
 

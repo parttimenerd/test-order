@@ -7,7 +7,17 @@ Quick reference for the most common commands. For full details see the
 
 ## Plugin setup (Maven)
 
+Add the Sonatype snapshot repository and plugin to your `pom.xml`:
+
 ```xml
+<pluginRepositories>
+  <pluginRepository>
+    <id>ossrh-snapshots</id>
+    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+    <snapshots><enabled>true</enabled></snapshots>
+  </pluginRepository>
+</pluginRepositories>
+
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
@@ -36,7 +46,13 @@ Add to `~/.m2/settings.xml` once so `test-order:` prefix works:
 ```groovy
 // settings.gradle
 pluginManagement {
-    repositories { mavenLocal(); gradlePluginPortal() }
+    repositories {
+        maven {
+            url 'https://central.sonatype.com/repository/maven-snapshots/'
+            mavenContent { snapshotsOnly() }
+        }
+        gradlePluginPortal()
+    }
 }
 
 // build.gradle
@@ -107,7 +123,7 @@ mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2
 mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3
 ```
 
-For full YAML examples: [ci-examples/](ci-examples/)
+For full YAML examples: [ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples)
 
 ---
 
@@ -142,6 +158,8 @@ It checks index health, permissions, package filters, and prints actionable fix 
 | `Failed to execute auto workflow` | Run `mvn test-order:diagnose`; check permissions on `.test-order/` |
 | Tests skipped unexpectedly | Cold-start without index — `affected`/tiered goals fall back to all tests; run `mvn test` first |
 
-Nuclear reset: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
+**Nuclear reset:** `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 
-Nuclear option: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
+---
+
+MIT licensed — see [LICENSE](https://github.com/parttimenerd/test-order/blob/main/LICENSE)
