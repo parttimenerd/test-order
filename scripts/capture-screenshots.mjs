@@ -70,9 +70,12 @@ function buildFixtureDashboard() {
 		console.log(`[skip-fixture-build] reusing ${dashboard}`);
 		return dashboard;
 	}
-	// Run 1: learn mode — builds the class-id-map and dependency index from
-	// scratch. Required on a clean checkout where .test-order/ does not exist.
-	sh(`mvn -q -f ${join(FIXTURE, 'pom.xml')} test-order:learn test -DskipTests=false || true`);
+	// Run 1: learn mode — compile, then instrument and run tests to build the
+	// class-id-map and dependency index. `test-compile` before `test-order:learn`
+	// ensures classes exist when the mojo runs (direct goal invocation skips the
+	// lifecycle, so without `test-compile` the classes dir is absent and the mojo
+	// defers instrumentation — leaving class-id-map.bin unwritten).
+	sh(`mvn -q -f ${join(FIXTURE, 'pom.xml')} test-compile test-order:learn test -DskipTests=false || true`);
 	// Run 2: auto mode — uses the freshly built index to score tests and
 	// produce a real dashboard with timings + scores.
 	sh(`mvn -q -f ${join(FIXTURE, 'pom.xml')} test-order:auto test test-order:dashboard -DskipTests=false || true`);
