@@ -840,7 +840,6 @@ public class TestOrderPlugin implements Plugin<Project> {
      */
     private void configureOfflineLearnMode(Project project, TestOrderExtension ext,
                                            Test testTask, String instrMode) {
-        // Resolve source packages
         String includePackages = ext.getIncludePackages().get();
         if (includePackages.isEmpty()) {
             Path sourceRoot = resolveMainSourceRoot(project);
@@ -982,35 +981,13 @@ public class TestOrderPlugin implements Plugin<Project> {
             }
         });
 
-        // Register a separate cleanup task and use finalizedBy so restore runs even
-        // when the test task fails (doLast is skipped on task failure).
-        String restoreTaskName = "testOrderOfflineRestore_" + testTask.getName();
-        project.getTasks().register(restoreTaskName, task -> {
-            task.setGroup("test-order");
-            task.setDescription("Restore offline-instrumented classes after " + testTask.getName());
-            task.doLast("testOrderOfflineRestore", t -> {
-                Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
-                Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
-                try {
-                    if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir)) {
-                        project.getLogger().lifecycle("[test-order] Restored original classes (instrumentation reverted).");
-                    }
-                } catch (IOException e) {
-                    project.getLogger().warn("[test-order] Failed to restore classes: {}", e.getMessage());
-                }
-                // Stop IndexCollectorServer and merge (if it was started)
-                me.bechberger.testorder.IndexCollectorServer collector =
-                        COLLECTOR_REGISTRY.remove(testTask.getPath());
-                if (collector != null) {
-                    int merged = collector.stopAndMerge();
-                    if (merged > 0) {
-                        project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
-                                merged);
-                    }
-                }
-            });
-        });
-        testTask.finalizedBy(restoreTaskName);
+        // Wire the shared offline restore task as finalizer so restore runs even when tests fail.
+        // The task itself is registered in registerTasks() at plugin apply time, outside any
+        // forbidden context (Gradle 8.14+ forbids tasks.register() inside configureEach/register
+        // actions). The shared task is project-level: it restores any backed-up classes and
+        // stops/merges every IndexCollectorServer in the registry, regardless of which test
+        // task triggered it.
+        testTask.finalizedBy("testOrderOfflineRestore");
 
         // Add runtime jar to test classpath (UsageStore accessible without agent).
         // Use a per-task name so that multiple Test tasks in the same project each
@@ -1300,6 +1277,49 @@ public class TestOrderPlugin implements Plugin<Project> {
             if (task.getName().startsWith("testOrder")) {
                 task.onlyIf("testorder.skip is not set", t -> !shouldSkip(project, ext));
             }
+        });
+
+        // Shared offline-restore task. Pre-registered here (outside any configureEach/register
+        // action) because Gradle 8.14+ forbids tasks.register() from inside such actions.
+        // Wired as finalizer for any test task that runs in offline learn mode — restores
+        // backed-up classes and stops every IndexCollectorServer in the registry.
+        // finalizedBy ensures restore runs even if the test task fails.
+        project.getTasks().register("testOrderOfflineRestore", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Restore offline-instrumented classes (project-level finalizer for learn-mode test tasks)");
+            task.doLast("testOrderOfflineRestore", t -> {
+                Path buildDir = project.getLayout().getBuildDirectory().get().getAsFile().toPath();
+                Path backupDir = buildDir.resolve(".test-order").resolve("classes-backup");
+                try {
+                    if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir)) {
+                        project.getLogger().lifecycle(
+                                "[test-order] Restored original classes (instrumentation reverted).");
+                    }
+                } catch (IOException e) {
+                    project.getLogger().warn("[test-order] Failed to restore classes: {}", e.getMessage());
+                }
+                // Drain every collector for this project so socket-based deps are merged
+                // regardless of which test task triggered the finalizer.
+                java.util.Iterator<java.util.Map.Entry<String, me.bechberger.testorder.IndexCollectorServer>> it =
+                        COLLECTOR_REGISTRY.entrySet().iterator();
+                while (it.hasNext()) {
+                    java.util.Map.Entry<String, me.bechberger.testorder.IndexCollectorServer> entry = it.next();
+                    String taskPath = entry.getKey();
+                    if (!taskPath.startsWith(project.getPath() + ":")
+                            && !taskPath.equals(project.getPath())) {
+                        continue;
+                    }
+                    me.bechberger.testorder.IndexCollectorServer collector = entry.getValue();
+                    it.remove();
+                    int merged = collector.stopAndMerge();
+                    if (merged > 0) {
+                        project.getLogger().lifecycle(
+                                "[test-order] IndexCollectorServer merged {} test classes via socket (task {})",
+                                merged, taskPath);
+                    }
+                }
+            });
         });
 
         project.getTasks().register("testOrderDownload", task -> {
@@ -2460,7 +2480,9 @@ public class TestOrderPlugin implements Plugin<Project> {
             configureDerivedTestTask(project, ext, task);
             task.setGroup("test-order");
             task.setDescription("Run tests in learn mode (always instruments, regardless of current mode)");
-            // Configure learn mode directly (no afterEvaluate to avoid mutation-guard errors)
+            // Configure learn mode directly (no afterEvaluate to avoid mutation-guard errors).
+            // configureLearnMode → configureOfflineLearnMode wires finalizedBy to the shared
+            // testOrderOfflineRestore task (pre-registered above), avoiding nested register().
             TestOrderPlugin.this.configureLearnMode(project, ext, task, agentConf);
         });
 
