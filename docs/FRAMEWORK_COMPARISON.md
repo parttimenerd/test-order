@@ -1,6 +1,6 @@
 # JUnit 5 vs TestNG: Framework Comparison
 
-test-order supports both JUnit 5 (and JUnit 4 via the Vintage engine) and TestNG 7.x+. The core ordering and telemetry logic is shared, but the two framework integrations differ in their extension points, capabilities, and limitations.
+test-order supports JUnit 5/6 (plus Vintage for JUnit 4 migration) and TestNG 7.x+. The core ordering and telemetry logic is shared, but the two framework integrations differ in their extension points, capabilities, and limitations.
 
 For full details on each:
 - [test-order-junit/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-junit/README.md)
@@ -22,7 +22,7 @@ For full details on each:
 | `@TestOrder` / `@AlwaysRun` | Class and method level | Class level only |
 | JUnit `@Order` support | Yes | No equivalent |
 | `dependsOnMethods` constraints | N/A | Enforced by post-score fixup |
-| JUnit 4 (Vintage) | Via Vintage engine | N/A |
+| Vintage (JUnit 4) | Via Vintage engine | N/A |
 | Kotest | Via JUnit Platform runner | N/A |
 | Auto-discovery | `META-INF/services/` (JUnit Platform) | `META-INF/services/` (TestNG) |
 

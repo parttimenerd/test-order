@@ -37,8 +37,12 @@ const COMPARISON = [
   },
   {
     label: 'Hand-tuned @Order or test groups',
-    body:
-      'Works for tiny suites, rots fast. Nobody updates it after the third refactor.',
+    body: (
+      <>
+        Works for tiny suites, rots fast. Nobody updates it after the third refactor.{' '}
+        <Link to="https://junit.org/junit5/docs/current/user-guide/#writing-tests-test-execution-order" target="_blank" rel="noopener">@Order docs →</Link>
+      </>
+    ),
     bad: true,
   },
   {

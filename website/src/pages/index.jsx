@@ -16,27 +16,6 @@ import AsciinemaPlayer from '../components/AsciinemaPlayer';
 
 import styles from './index.module.css';
 
-const HOW_STEPS = [
-  {
-    n: 1,
-    title: 'Learn once',
-    code: 'mvn test',
-    note: 'First run records which source classes each test exercises.',
-  },
-  {
-    n: 2,
-    title: 'Make a change',
-    code: '# edit any source file',
-    note: 'test-order detects what changed via git diff.',
-  },
-  {
-    n: 3,
-    title: 'Run affected tests first',
-    code: 'mvn test-order:auto test',
-    note: 'Affected tests run first. Failures surface in seconds, not minutes.',
-  },
-];
-
 export default function Home() {
   const structuredData = {
     '@context': 'https://schema.org',
@@ -115,19 +94,39 @@ export default function Home() {
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>How it works</h2>
           <p className={styles.sectionLede}>
-            One learn run. Then affected tests always go first.
+            Two commands. Every run after the first gets faster feedback.
           </p>
-          <div className={styles.howGrid}>
-            {HOW_STEPS.map((s) => (
-              <div key={s.n} className={styles.howStep}>
-                <span className={styles.howStepNum}>{s.n}</span>
-                <h3 className={styles.featureTitle}>{s.title}</h3>
-                <CodeBlock language="bash">{s.code}</CodeBlock>
-                <p className={styles.featureBody} style={{ marginTop: '0.6rem' }}>
-                  {s.note}
-                </p>
+          <div className={styles.howFlow}>
+            <div className={styles.howStep}>
+              <span className={styles.howStepNum}>1</span>
+              <h3 className={styles.featureTitle}>Learn once</h3>
+              <CodeBlock language="bash">mvn test</CodeBlock>
+              <p className={styles.featureBody} style={{ marginTop: '0.6rem' }}>
+                Records which source classes each test actually exercises.
+                Stored in <code>.test-order/</code> — happens automatically on first run.
+              </p>
+            </div>
+
+            <div className={styles.howFlowArrow}>→</div>
+
+            <div className={styles.howStep}>
+              <span className={styles.howStepNum}>2</span>
+              <h3 className={styles.featureTitle}>Run — affected tests first</h3>
+              <CodeBlock language="bash">mvn test-order:auto test</CodeBlock>
+              <p className={styles.featureBody} style={{ marginTop: '0.6rem' }}>
+                Detects what changed via git diff, scores every test, and splits the run:
+              </p>
+              <div className={styles.howTiers}>
+                <div className={styles.howTierAffected}>
+                  <span className={styles.howTierLabel}>Affected</span>
+                  <span className={styles.howTierDesc}>Touch changed code → run first</span>
+                </div>
+                <div className={styles.howTierRest}>
+                  <span className={styles.howTierLabel}>Rest</span>
+                  <span className={styles.howTierDesc}>Unrelated → run after</span>
+                </div>
               </div>
-            ))}
+            </div>
           </div>
         </section>
 

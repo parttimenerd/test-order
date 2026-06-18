@@ -129,9 +129,9 @@ const config = {
       footer: {
         style: 'dark',
         copyright:
-          'An experimental tool by the <a href="https://sapmachine.io/" target="_blank" rel="noopener">SapMachine team</a>. ' +
+          'An experimental tool by the <a href="https://sapmachine.io/" target="_blank" rel="noopener" style="color:#a8c8f8;text-decoration:underline">SapMachine team</a> · ' +
           SLOGAN +
-          ' — MIT licensed. Built with Docusaurus.',
+          ' · MIT licensed · Built with Docusaurus.',
         links: [
           {
             title: 'Docs',
