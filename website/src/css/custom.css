@@ -1,0 +1,36 @@
+/**
+ * Brand colors + landing-page utility styles.
+ * Docusaurus uses Infima — these CSS variables propagate to dark mode
+ * automatically when prefixed with --ifm-color-*.
+ */
+
+:root {
+  --ifm-color-primary: #2255aa;
+  --ifm-color-primary-dark: #1e4d99;
+  --ifm-color-primary-darker: #1c4990;
+  --ifm-color-primary-darkest: #173b77;
+  --ifm-color-primary-light: #2660bc;
+  --ifm-color-primary-lighter: #2864c5;
+  --ifm-color-primary-lightest: #2f74e0;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.08);
+
+  --to-hero-grad-start: #f5f8ff;
+  --to-hero-grad-end: #e9efff;
+  --to-hero-text: #122347;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #6b9bff;
+  --ifm-color-primary-dark: #4a82ff;
+  --ifm-color-primary-darker: #3a76ff;
+  --ifm-color-primary-darkest: #1259ff;
+  --ifm-color-primary-light: #8cb4ff;
+  --ifm-color-primary-lighter: #9cbeff;
+  --ifm-color-primary-lightest: #c8dcff;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+
+  --to-hero-grad-start: #131726;
+  --to-hero-grad-end: #1c2240;
+  --to-hero-text: #eaf0ff;
+}
