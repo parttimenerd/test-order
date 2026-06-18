@@ -602,7 +602,7 @@ final class SurefireHelper {
 		// Match --add-exports/--add-opens/--add-reads flags: format is
 		// --add-exports module/package=target or --add-opens module/package=target
 		java.util.regex.Pattern p = java.util.regex.Pattern
-				.compile("--(?:add-exports|add-opens)\\s+[\\w.]+/[\\w.]+=(\\S+)");
+				.compile("--(?:add-exports|add-opens)\\s+[\\w.-]+/[\\w.-]+=(\\S+)");
 		java.util.regex.Matcher m = p.matcher(argLine);
 		while (m.find()) {
 			String target = m.group(1);
