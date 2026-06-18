@@ -94,9 +94,10 @@ export default function Home() {
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>How it works</h2>
           <p className={styles.sectionLede}>
-            Two commands. Every run after the first gets faster feedback.
+            Four steps. The first two are things you already do.
           </p>
           <div className={styles.howFlow}>
+
             <div className={styles.howStep}>
               <span className={styles.howStepNum}>1</span>
               <h3 className={styles.featureTitle}>Learn once</h3>
@@ -111,22 +112,44 @@ export default function Home() {
 
             <div className={styles.howStep}>
               <span className={styles.howStepNum}>2</span>
-              <h3 className={styles.featureTitle}>Run — affected tests first</h3>
-              <CodeBlock language="bash">mvn test-order:auto test</CodeBlock>
-              <p className={styles.featureBody} style={{ marginTop: '0.6rem' }}>
-                Detects what changed via git diff, scores every test, and splits the run:
-              </p>
+              <h3 className={styles.featureTitle}>Make a change</h3>
+              <CodeBlock language="bash">{`# edit a source file\n# or add a new test`}</CodeBlock>
+            </div>
+
+            <div className={styles.howFlowArrow}>→</div>
+
+            <div className={styles.howStep}>
+              <span className={styles.howStepNum}>3</span>
+              <h3 className={styles.featureTitle}>Run affected tests</h3>
+              <CodeBlock language="bash">mvn test-order:affected test</CodeBlock>
               <div className={styles.howTiers}>
                 <div className={styles.howTierAffected}>
                   <span className={styles.howTierLabel}>Affected</span>
                   <span className={styles.howTierDesc}>Touch changed code → run first</span>
                 </div>
+              </div>
+            </div>
+
+            <div className={styles.howFlowArrow}>→</div>
+
+            <div className={styles.howStep}>
+              <span className={styles.howStepNum}>4</span>
+              <h3 className={styles.featureTitle}>Run remaining</h3>
+              <CodeBlock language="bash">mvn test-order:run-remaining test</CodeBlock>
+              <div className={styles.howTiers}>
                 <div className={styles.howTierRest}>
                   <span className={styles.howTierLabel}>Rest</span>
-                  <span className={styles.howTierDesc}>Unrelated → run after</span>
+                  <span className={styles.howTierDesc}>Only if step 3 succeeds</span>
                 </div>
               </div>
             </div>
+
+          </div>
+
+          <div className={styles.howAutoNote}>
+            <strong>Prefer one command?</strong>{' '}
+            <code>mvn test-order:auto test</code> combines all of the above —
+            learns on first run, then runs affected tests first and the rest after, automatically.
           </div>
         </section>
 

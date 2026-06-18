@@ -291,15 +291,15 @@
   display: flex;
   align-items: flex-start;
   gap: 0;
-  max-width: 900px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
 .howFlowArrow {
   font-size: 1.75rem;
   color: var(--ifm-color-primary);
-  padding: 0 1rem;
-  margin-top: 3.5rem;
+  padding: 0 0.75rem;
+  margin-top: 2.8rem;
   flex-shrink: 0;
 }
 
@@ -348,6 +348,19 @@
 .howTierDesc {
   opacity: 0.8;
   line-height: 1.35;
+}
+
+.howAutoNote {
+  max-width: 1200px;
+  margin: 1.5rem auto 0;
+  padding: 0.75rem 1.25rem;
+  background: var(--ifm-color-emphasis-100);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--ifm-color-emphasis-700);
 }
 
 @media (max-width: 640px) {

@@ -6,7 +6,7 @@ import styles from '../pages/index.module.css';
 const BADGES = [
   { label: 'Maven plugin', to: '/docs/MAVEN_PLUGIN' },
   { label: 'Gradle plugin', to: '/docs/GETTING_STARTED#gradle' },
-  { label: 'JUnit 6 / 5 / 4 / Vintage', to: '/docs/FRAMEWORK_COMPARISON' },
+  { label: 'JUnit 6 / 5 / Vintage', to: '/docs/FRAMEWORK_COMPARISON' },
   { label: 'TestNG', to: '/docs/FRAMEWORK_COMPARISON' },
   { label: 'Spring Boot ready', to: '/docs/FRAMEWORK_COMPARISON#spring-context-grouping' },
 ];
@@ -37,9 +37,9 @@ export default function HomepageHero() {
         </Link>
         <a
           className={clsx('button', 'button--outline', 'button--lg')}
-          href="#hero-cast"
+          href="#all-features"
         >
-          ▶ Watch the demo
+          Batteries included ↓
         </a>
       </div>
 

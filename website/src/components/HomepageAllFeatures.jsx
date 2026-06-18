@@ -68,7 +68,7 @@ const FEATURE_GROUPS = [
 
 export default function HomepageAllFeatures() {
   return (
-    <section className={styles.allFeaturesSection}>
+    <section id="all-features" className={styles.allFeaturesSection}>
       <div className={styles.allFeaturesInner}>
         <h2 className={styles.sectionTitle}>Everything that ships in the box</h2>
         <p className={styles.sectionLede}>
