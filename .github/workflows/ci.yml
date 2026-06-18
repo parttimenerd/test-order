@@ -449,11 +449,16 @@ jobs:
         working-directory: samples/sample-basic
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          # Inject snapshot repo and override version so sample uses the just-published artifact
+          # Inject snapshot repo and override version so sample uses the just-published artifact.
+          # sample-basic intentionally contains failing tests (timeout, missing-resource) to
+          # demonstrate test-order's failure tracking — we use -Dmaven.test.failure.ignore=true
+          # so the smoke test verifies the plugin loads and runs against a real Sonatype-published
+          # snapshot, not whether the sample's tests pass.
           mvn -B -ntp -s ~/.m2/ossrh-smoke-settings.xml \
             -Dtest-order.version="${VERSION}" \
+            -Dmaven.test.failure.ignore=true \
             test
-          echo "✓ sample-basic tests passed with SNAPSHOT ${VERSION} from Sonatype"
+          echo "✓ sample-basic tests ran with SNAPSHOT ${VERSION} from Sonatype"
 
       - name: Write job summary
         if: always()
