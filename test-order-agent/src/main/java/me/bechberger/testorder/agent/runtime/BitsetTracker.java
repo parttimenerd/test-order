@@ -81,6 +81,13 @@ public class BitsetTracker {
 				if ((w[index] & mask) != 0)
 					return; // already set — most common case
 				LONG_ARRAY.getAndBitwiseOr(w, index, mask);
+				// If a concurrent grow published a new array between the snap and the OR,
+				// our write landed on a now-orphaned array — replay against the live ref.
+				// Grow is monotone so this terminates after at most one retry per grow.
+				if (words != w) {
+					record(index, mask);
+					return;
+				}
 				advanceHighWater(index);
 				return;
 			}
@@ -112,11 +119,13 @@ public class BitsetTracker {
 		}
 
 		int count() {
+			// Snap words first, then highWater, so a concurrent grow can't make the
+			// limit exceed the snapshot's array length.
+			long[] w = words;
 			int hw = highWater;
 			if (hw < 0)
 				return 0;
 			int n = 0;
-			long[] w = words;
 			int limit = Math.min(hw + 1, w.length);
 			for (int i = 0; i < limit; i++)
 				n += Long.bitCount(w[i]);
@@ -161,17 +170,24 @@ public class BitsetTracker {
 	 * Derives class bits from recorded member bits. For each set member bit, looks
 	 * up the owning classId and sets it in classWords. Called at flush time so the
 	 * hot path only needs to record memberIds.
+	 *
+	 * <p>
+	 * <b>Precondition:</b> recording must be quiesced before calling. The reads of
+	 * {@code mw.highWater} and {@code mw.words} are not atomic, so a concurrent
+	 * grow can leave bits past {@code highWater} unobserved.
 	 */
 	public void deriveClassBitsFromMembers() {
 		WordArray mw = memberWords;
 		if (mw == null)
 			return;
+		// Snap words first, then highWater: if a grow races, we keep an under-estimate
+		// of valid range (limit clamps to w.length) instead of indexing past the end.
+		long[] w = mw.words;
 		int hw = mw.highWater;
 		if (hw < 0)
 			return;
-		ClassIdMap classIdMap = ClassIdMap.getInstance();
-		long[] w = mw.words;
 		int limit = Math.min(hw + 1, w.length);
+		ClassIdMap classIdMap = ClassIdMap.getInstance();
 		for (int wi = 0; wi < limit; wi++) {
 			long word = w[wi];
 			if (word == 0)
@@ -301,15 +317,20 @@ public class BitsetTracker {
 			dst.growAndRecord(limit - 1, 0L);
 			dstW = dst.words;
 		}
+		// Atomic OR + replay-on-grow keeps merge correct even if a future caller
+		// violates the "recording stopped" precondition (P3-M1 defence-in-depth).
 		for (int i = 0; i < limit; i++) {
 			long bits = srcW[i];
-			if (bits != 0)
-				dstW[i] |= bits; // plain OR — safe since recording is stopped
+			if (bits == 0)
+				continue;
+			LONG_ARRAY.getAndBitwiseOr(dstW, i, bits);
+			if (dst.words != dstW) {
+				dstW = dst.words;
+				LONG_ARRAY.getAndBitwiseOr(dstW, i, bits);
+			}
 		}
-		// advance dst highWater
-		int dstHw = dst.highWater;
-		if (hw > dstHw)
-			dst.highWater = hw;
+		// advance dst highWater via CAS so the merge is also safe under racy writers
+		dst.advanceHighWater(hw);
 	}
 
 	// ── Raw bitset access (for binary protocol) ──────────────────────
@@ -319,10 +340,12 @@ public class BitsetTracker {
 	 * nothing recorded. For sending raw bitset data over the wire.
 	 */
 	public long[] getClassWordsRaw() {
+		// Snap words first, then highWater — guarantees limit ≤ w.length even under
+		// a concurrent grow.
+		long[] w = classWords.words;
 		int hw = classWords.highWater;
 		if (hw < 0)
 			return EMPTY_LONGS;
-		long[] w = classWords.words;
 		int limit = Math.min(hw + 1, w.length);
 		// If the live array is already the right size, return it directly
 		// (safe at flush time when recording is stopped).
@@ -331,14 +354,20 @@ public class BitsetTracker {
 
 	/** Effective length of class words (highWater + 1), or 0 if empty. */
 	public int getClassWordsLength() {
+		long[] w = classWords.words;
 		int hw = classWords.highWater;
 		if (hw < 0)
 			return 0;
-		return Math.min(hw + 1, classWords.words.length);
+		return Math.min(hw + 1, w.length);
 	}
 
 	/**
 	 * Direct reference to the class words backing array. Use only at flush time.
+	 *
+	 * <p>
+	 * <b>Warning:</b> not paired with a length read — concurrent grows can leave
+	 * this reference and {@link #getClassWordsLength()} pointing to different
+	 * arrays. Prefer {@link #getClassWordsRaw()} which atomically clamps both.
 	 */
 	public long[] getClassWordsArray() {
 		return classWords.words;
@@ -352,10 +381,11 @@ public class BitsetTracker {
 		WordArray mw = memberWords;
 		if (mw == null)
 			return EMPTY_LONGS;
+		// Snap words first, then highWater — see getClassWordsRaw().
+		long[] w = mw.words;
 		int hw = mw.highWater;
 		if (hw < 0)
 			return EMPTY_LONGS;
-		long[] w = mw.words;
 		int limit = Math.min(hw + 1, w.length);
 		return (w.length == limit) ? w : Arrays.copyOf(w, limit);
 	}
@@ -365,14 +395,20 @@ public class BitsetTracker {
 		WordArray mw = memberWords;
 		if (mw == null)
 			return 0;
+		long[] w = mw.words;
 		int hw = mw.highWater;
 		if (hw < 0)
 			return 0;
-		return Math.min(hw + 1, mw.words.length);
+		return Math.min(hw + 1, w.length);
 	}
 
 	/**
 	 * Direct reference to the member words backing array. Use only at flush time.
+	 *
+	 * <p>
+	 * <b>Warning:</b> not paired with a length read — concurrent grows can leave
+	 * this reference and {@link #getMemberWordsLength()} pointing to different
+	 * arrays. Prefer {@link #getMemberWordsRaw()} which atomically clamps both.
 	 */
 	public long[] getMemberWordsArray() {
 		WordArray mw = memberWords;

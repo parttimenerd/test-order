@@ -508,3 +508,58 @@ Builds `retained`, `allTracked`, then `finalRetained` — three nearly-identical
 ---
 
 *Pass 2 totals: 1 Critical (P2-C1), 4 Major (P2-M1–4), 1 Minor (P2-D1) — 6 new issues.*
+
+---
+
+## Pass 3 — Agent runtime concurrency (2026-06-18)
+
+> Targeted re-audit of the lock-free `BitsetTracker` and the `IndexCollectorClient` wire path —
+> the highest-traffic, lowest-test-coverage code in the project.
+
+### P3-C1. `BitsetTracker.WordArray.record`: lost bit when grow races a fast-path write
+**File:** `test-order-agent/.../runtime/BitsetTracker.java:76-88`
+The fast path reads `words` once into local `w`, checks `index < w.length`, then issues `LONG_ARRAY.getAndBitwiseOr(w, index, mask)`. If thread T2 enters `growAndRecord` between the length check and the OR, T2 publishes a brand-new array via `words = grown` (line 109). T1's atomic OR still targets the **old** `w` reference — a now-orphaned array that nothing else reads from. The bit is set on a dead array; `count()`, `toClassNames()`, `getClassWordsRaw()` all subsequently read `classWords.words` (the new array) and miss the write.
+
+This is rare in practice (grow only fires when `index >= w.length`, and the racing T1 by definition has `index < w.length` so it hits a slot that already exists in the new array too — `Arrays.copyOf` preserves existing contents). But the orphaning is real: any concurrent writer that completes its OR after `growAndRecord` already copied the source array but before it published is writing to a stale view, and the new array's copy of that slot doesn't include the bit. Severity: silent loss of dependency data for the affected class/member.
+
+Fix: after `getAndBitwiseOr`, re-read `words` and replay if a grow happened: `if (words != w) record(index, mask);` (tail-recursive, terminates because grow is monotone — eventually `words` stabilises with `index < length`).
+
+### P3-C2. `IndexCollectorClient.writeTrackerMap`: ArrayIndexOutOfBoundsException can drop entire tracker payload
+**File:** `test-order-agent/.../runtime/IndexCollectorClient.java:153-160`
+```java
+long[] cwArr = bt.getClassWordsArray();   // racy snapshot of words ref
+int    cwLen = bt.getClassWordsLength();   // separately racy: hw + 1
+out.writeInt(cwLen);
+writeLongsBulk(out, cwArr, cwLen);          // arr[i] for i < cwLen
+```
+The two reads are not atomic. Between them, another thread can call `record(...)` that triggers `growAndRecord` — `cwArr` then points to the old (smaller) array while `cwLen` reflects the new high-water mark on the bigger one. `writeLongsBulk` then does `arr[i]` for `i = cwLen-1`, throwing `ArrayIndexOutOfBoundsException`. The exception escapes `writeTrackerMap`, kills the whole `sendBinary` socket session, server NACKs, retry hits the same race. Worst case: **all dependency data for that test JVM is lost**.
+
+This is a regression of the carefully-protected `getClassWordsRaw()`/`getMemberWordsRaw()` paths, which apply `Math.min(hw + 1, w.length)` against a single locally-snapped `w` reference. Fix: switch `writeTrackerMap` to use the `…Raw()` methods.
+
+### P3-M1. `BitsetTracker.mergeWordArrays`: plain `|=` racy under speculative recording
+**File:** `test-order-agent/.../runtime/BitsetTracker.java:291-313`
+Doc-comment claims "Not thread-safe — call only when recording is stopped." (line 271). Production callers respect this. But the merge does plain `dstW[i] |= bits` (line 307) followed by a plain `dst.highWater = hw` write (line 312) — not even a release. If a future caller violates the precondition, bits silently disappear because plain `|=` is not atomic and the `highWater` advance has no happens-before relationship with the OR.
+
+Fix (low-cost defence-in-depth): use `LONG_ARRAY.getAndBitwiseOr(dstW, i, bits)` to keep merge correct under any usage; advance `highWater` via the same CAS loop `WordArray.advanceHighWater` uses.
+
+### P3-M2. `BitsetTracker.deriveClassBitsFromMembers`: read-then-iterate without snapshot
+**File:** `test-order-agent/.../runtime/BitsetTracker.java:165-188`
+```java
+int hw = mw.highWater;
+...
+long[] w = mw.words;
+int limit = Math.min(hw + 1, w.length);
+```
+Reads `highWater` and `words` separately. If `recordMember` triggers a grow between the two reads, `hw` was sampled against the old array but `w` points to the new one — `limit` is fine here (clamped by `w.length`). But the symmetric race exists in `WordArray.count()` (line 119-120) and `getClassWordsRaw()` (line 322-326) — all rely on the invariant that `highWater` only ever grows and arrays only ever grow. That invariant holds, so out-of-bounds is impossible, but **bits with wordIndex above the captured `hw` are silently skipped**: a concurrent `record(hw+5, mask)` lands at `mw.words[hw+5]` (new array, in bounds) but `limit = hw+1` excludes it.
+
+This is acceptable for `deriveClassBitsFromMembers` only because callers stop recording first (see the C1 test-end barrier in `RuntimeBridge.flushDeps`). Make the precondition a hard contract: assert `highWater` after the iterate matches the one we sampled, and document caller responsibility prominently. Currently the contract is implicit and one rogue caller corrupts dep data silently.
+
+Fix: add explicit `assert mw.highWater == hw : "recording must be quiesced before derive"` (asserts off in prod but trip in tests), and fold the snapshot into a single helper `WordArray.snapshot()` that returns `(words, limit)` as a record so all readers go through one chokepoint.
+
+### P3-D1. `BitsetTracker` doesn't expose a "stop recording" barrier for its own invariants
+**File:** `test-order-agent/.../runtime/BitsetTracker.java`
+The class has at least four call sites (`mergeFrom`, `deriveClassBitsFromMembers`, `getClassWordsRaw`, `getMemberWordsRaw`) whose correctness depends on recording having stopped, but offers no method to enforce or signal that. New maintainers can add a fifth caller and not realise. Minor — design issue; track as cleanup.
+
+---
+
+*Pass 3 totals: 2 Critical (P3-C1, P3-C2), 2 Major (P3-M1, P3-M2), 1 Minor (P3-D1) — 5 new issues.*

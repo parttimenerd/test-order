@@ -148,16 +148,15 @@ public final class IndexCollectorClient {
 			writeString(out, entry.getKey());
 			BitsetTracker bt = entry.getValue();
 			// Bulk-write: convert longs to byte[] and write in one call.
-			// Avoids per-element writeLong() which does 8 individual writes through
-			// BufferedOutputStream's bounds-check path.
-			long[] cwArr = bt.getClassWordsArray();
-			int cwLen = bt.getClassWordsLength();
-			out.writeInt(cwLen);
-			writeLongsBulk(out, cwArr, cwLen);
-			long[] mwArr = bt.getMemberWordsArray();
-			int mwLen = bt.getMemberWordsLength();
-			out.writeInt(mwLen);
-			writeLongsBulk(out, mwArr, mwLen);
+			// Use the *Raw() accessors, which atomically clamp length against the
+			// snapped array reference — bare getXxxArray() + getXxxLength() can race
+			// with a concurrent grow and throw AIOOBE, dropping the entire payload.
+			long[] cwArr = bt.getClassWordsRaw();
+			out.writeInt(cwArr.length);
+			writeLongsBulk(out, cwArr, cwArr.length);
+			long[] mwArr = bt.getMemberWordsRaw();
+			out.writeInt(mwArr.length);
+			writeLongsBulk(out, mwArr, mwArr.length);
 		}
 	}
 
