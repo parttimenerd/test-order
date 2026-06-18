@@ -725,13 +725,6 @@ public class DependencyMap {
 		Set<String> affected = new LinkedHashSet<>();
 		if (changedClasses.isEmpty())
 			return affected;
-		// Ubiquitous dep changed → all tests depend on it
-		if (!ubiquitousDeps.isEmpty()) {
-			for (String changed : changedClasses) {
-				if (ubiquitousDeps.contains(changed))
-					return new LinkedHashSet<>(dependencies.keySet());
-			}
-		}
 		Map<String, Set<String>> idx = getInvertedIndex();
 		for (String changed : changedClasses) {
 			Set<String> tests = idx.get(changed);
@@ -1429,6 +1422,10 @@ public class DependencyMap {
 			// ubiquitous-dep presence data: depName → bitmap of test indices that reference
 			// it. Populated by SECTION_UBIQUITOUS_DEPS; applied by SECTION_DEP_GROUPS.
 			Map<String, RoaringBitmap> ubiqPresenceByDep = null;
+			// Track DEP_GROUPS having been read so a late SECTION_UBIQUITOUS_DEPS is
+			// caught — silently accepting reverse order would yield wrong dep sets
+			// (P2-M1).
+			boolean depGroupsSeen = false;
 
 			for (int si = 0; si < sectionCount; si++) {
 				short sectionType = in.readShort();
@@ -1533,6 +1530,7 @@ public class DependencyMap {
 						for (int i = 0; i < testNames.length; i++) {
 							map.putDirect(testNames[i], depSets[i] != null ? depSets[i] : Collections.emptySet());
 						}
+						depGroupsSeen = true;
 					}
 					case SECTION_METHOD_DEPS -> {
 						byte[] payload = new byte[sectionLength];
@@ -1639,6 +1637,11 @@ public class DependencyMap {
 						byte[] payload = new byte[sectionLength];
 						in.readFully(payload);
 						Objects.requireNonNull(trie, "TRIE section must precede UBIQUITOUS_DEPS");
+						if (depGroupsSeen) {
+							throw new IOException("SECTION_UBIQUITOUS_DEPS must precede SECTION_DEP_GROUPS in "
+									+ indexFile + " (P2-M1: late section 9 would silently corrupt dep sets)");
+						}
+						int testCount = testNames != null ? testNames.length : -1;
 						DataInputStream s = new DataInputStream(new ByteArrayInputStream(payload));
 						int ubiqCount = s.readInt();
 						validateCount(ubiqCount, "ubiqCount");
@@ -1655,11 +1658,20 @@ public class DependencyMap {
 								s.readFully(absentBytes);
 								absent.deserialize(new DataInputStream(new ByteArrayInputStream(absentBytes)));
 							}
-							if (depId >= 0 && depId < finalTrie.size()) {
-								String depName = finalTrie.getName(depId);
-								ubiqs.add(depName);
-								ubiqPresenceByDep.put(depName, absent); // reuse as "absent" for now
+							if (depId < 0 || depId >= finalTrie.size()) {
+								throw new IOException("Ubiquitous dep id " + depId + " out of range [0, "
+										+ finalTrie.size() + ") in " + indexFile);
 							}
+							if (testCount >= 0 && !absent.isEmpty()) {
+								int max = (int) absent.last();
+								if (max >= testCount) {
+									throw new IOException("Ubiquitous absent bitmap references test index " + max
+											+ " >= test count " + testCount + " in " + indexFile);
+								}
+							}
+							String depName = finalTrie.getName(depId);
+							ubiqs.add(depName);
+							ubiqPresenceByDep.put(depName, absent); // stored as "absent" set
 						}
 						map.ubiquitousDeps = Collections.unmodifiableSet(ubiqs);
 					}

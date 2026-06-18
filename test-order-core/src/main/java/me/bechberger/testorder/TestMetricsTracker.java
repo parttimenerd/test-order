@@ -3,7 +3,6 @@ package me.bechberger.testorder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -137,33 +136,28 @@ final class TestMetricsTracker {
 
 		Set<String> pruned = new LinkedHashSet<>();
 		for (String fqcn : tracked) {
-			if (fqcn.contains("$")) {
-				continue;
-			}
 			Path classFile = testClassesDir.resolve(fqcn.replace('.', '/') + ".class");
 			if (!Files.exists(classFile)) {
 				pruned.add(fqcn);
 			}
 		}
-		if (!pruned.isEmpty()) {
-			Set<String> retained = new HashSet<>(durationTracker.classDurations().keySet());
-			retained.addAll(failureHistory.knownClasses());
-			retained.removeAll(pruned);
-			Set<String> allTracked = new HashSet<>(durationTracker.classDurations().keySet());
-			allTracked.addAll(failureHistory.knownClasses());
-			for (String fqcn : allTracked) {
-				if (fqcn.contains("$")) {
-					String outer = fqcn.substring(0, fqcn.indexOf('$'));
-					if (!retained.contains(outer)) {
-						pruned.add(fqcn);
-					}
+
+		// Sweep up inner-class entries whose outer was pruned above. Catches the
+		// case where Files.exists() reported the inner-class file as present but
+		// its outer is gone — keeping the inner alone makes no sense.
+		for (String fqcn : tracked) {
+			int dollar = fqcn.indexOf('$');
+			if (dollar > 0) {
+				String outer = fqcn.substring(0, dollar);
+				if (pruned.contains(outer)) {
+					pruned.add(fqcn);
 				}
 			}
-			Set<String> finalRetained = new HashSet<>(durationTracker.classDurations().keySet());
-			finalRetained.addAll(failureHistory.knownClasses());
-			finalRetained.removeAll(pruned);
-			durationTracker.pruneToActiveClasses(finalRetained);
-			failureHistory.pruneToActiveClasses(finalRetained);
+		}
+
+		if (!pruned.isEmpty()) {
+			durationTracker.removeClasses(pruned);
+			failureHistory.removeClasses(pruned);
 		}
 		return Collections.unmodifiableSet(pruned);
 	}

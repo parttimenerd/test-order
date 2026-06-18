@@ -130,6 +130,21 @@ final class DurationTracker {
 	}
 
 	/**
+	 * Removes the listed classes (and their methods) outright, without the
+	 * outer-class fallback {@link #pruneToActiveClasses} applies. Used by
+	 * {@link TestMetricsTracker#pruneDeletedTestClasses} to reap zombie inner
+	 * classes whose own .class file is gone.
+	 */
+	synchronized void removeClasses(Set<String> classesToRemove) {
+		if (classesToRemove.isEmpty())
+			return;
+		classDurations.keySet().removeAll(classesToRemove);
+		classDurationVariances.keySet().removeAll(classesToRemove);
+		methodDurations.keySet().removeAll(classesToRemove);
+		methodDurationVariances.keySet().removeAll(classesToRemove);
+	}
+
+	/**
 	 * Returns true if the class is active, or if its top-level enclosing class is
 	 * active.
 	 */

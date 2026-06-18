@@ -84,23 +84,54 @@ class UsabilityIssuesTest {
 	@Test
 	void pruneDeletedTestClasses_doesNotPruneInnerClasses() throws IOException {
 		TestOrderState state = new TestOrderState();
-		// Record a top-level test class AND an inner class
+		// Record an outer test class AND an inner class — both with .class files
+		// on disk. The prune must keep both: it should only prune entries whose
+		// .class file is genuinely absent.
 		state.recordDuration("com.example.OuterTest", 100);
 		state.recordDuration("com.example.OuterTest$Inner", 50);
 
 		Path testClassesDir = tempDir.resolve("test-classes");
-		// Only the outer class has a .class file; inner is implicit
 		Path outerFile = testClassesDir.resolve("com/example/OuterTest.class");
+		Path innerFile = testClassesDir.resolve("com/example/OuterTest$Inner.class");
 		Files.createDirectories(outerFile.getParent());
 		Files.writeString(outerFile, "fake");
+		Files.writeString(innerFile, "fake");
 
 		Set<String> pruned = state.pruneDeletedTestClasses(testClassesDir);
 
-		// The inner class ($ in name) should NOT be counted as a pruned top-level class
+		assertFalse(pruned.contains("com.example.OuterTest"),
+				"Outer class with present .class file must not be pruned");
 		assertFalse(pruned.contains("com.example.OuterTest$Inner"),
-				"Inner class entries must not be directly pruned as top-level classes");
+				"Inner class with present .class file must not be pruned");
 		assertTrue(state.getClassDurations().containsKey("com.example.OuterTest"),
 				"Outer class must be retained because its .class file exists");
+		assertTrue(state.getClassDurations().containsKey("com.example.OuterTest$Inner"),
+				"Inner class must be retained because its .class file exists");
+	}
+
+	@Test
+	void pruneDeletedTestClasses_prunesZombieInnerWhenInnerFileAbsent() throws IOException {
+		TestOrderState state = new TestOrderState();
+		// Outer survives, but the inner's .class file was deleted (e.g. an
+		// @Nested class was removed from source). The zombie inner entry must
+		// be reaped — keeping it forever is the P2-M3 bug.
+		state.recordDuration("com.example.OuterTest", 100);
+		state.recordDuration("com.example.OuterTest$DeletedInner", 50);
+
+		Path testClassesDir = tempDir.resolve("test-classes");
+		Path outerFile = testClassesDir.resolve("com/example/OuterTest.class");
+		Files.createDirectories(outerFile.getParent());
+		Files.writeString(outerFile, "fake");
+		// Inner .class deliberately absent
+
+		Set<String> pruned = state.pruneDeletedTestClasses(testClassesDir);
+
+		assertTrue(pruned.contains("com.example.OuterTest$DeletedInner"),
+				"Inner class entry must be pruned when its own .class file is absent");
+		assertFalse(state.getClassDurations().containsKey("com.example.OuterTest$DeletedInner"),
+				"Pruned inner class must no longer be tracked");
+		assertTrue(state.getClassDurations().containsKey("com.example.OuterTest"),
+				"Outer class with present .class file must still be retained");
 	}
 
 	@Test

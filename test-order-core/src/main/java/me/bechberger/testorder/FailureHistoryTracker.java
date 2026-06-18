@@ -74,6 +74,23 @@ final class FailureHistoryTracker {
 		});
 	}
 
+	/**
+	 * Removes the listed classes (and their methods) outright, without the
+	 * outer-class fallback {@link #pruneToActiveClasses} applies. Used by
+	 * {@link TestMetricsTracker#pruneDeletedTestClasses} to reap zombie inner
+	 * classes whose own .class file is gone.
+	 */
+	void removeClasses(Set<String> classesToRemove) {
+		if (classesToRemove.isEmpty())
+			return;
+		failureScores.keySet().removeAll(classesToRemove);
+		pendingFailureScores.keySet().removeAll(classesToRemove);
+		methodFailureScores.keySet().removeIf(k -> {
+			int hash = k.indexOf('#');
+			return hash >= 0 && classesToRemove.contains(k.substring(0, hash));
+		});
+	}
+
 	/** Returns true if the class is active, or its top-level enclosing class is. */
 	private static boolean isActive(String className, Set<String> activeClasses) {
 		if (activeClasses.contains(className)) {

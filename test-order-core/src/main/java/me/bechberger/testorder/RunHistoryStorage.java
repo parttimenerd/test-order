@@ -55,7 +55,7 @@ final class RunHistoryStorage {
 		return config.historyMaxRuns();
 	}
 
-	void setHistoryMaxRuns(int maxRuns) {
+	synchronized void setHistoryMaxRuns(int maxRuns) {
 		config.setHistoryMaxRuns(maxRuns);
 		runHistory.trimToMax(config.historyMaxRuns());
 	}
