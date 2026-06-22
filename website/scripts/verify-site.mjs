@@ -91,7 +91,7 @@ check('sitemap includes homepage', () => {
 
 // ── Homepage content invariants ─────────────────────────────────────
 check('hero slogan present', () => home.includes('Stop running tests that will never fail'));
-check('reassurance line present', () => home.includes('30-second install'));
+check('reassurance line present', () => home.includes('One-block install'));
 check('JUnit 6 badge present', () => /JUnit\s*6\s*\/\s*5\s*\/\s*4/.test(home));
 check('install section heading present', () => /Add it to your project/i.test(home));
 check('affected section heading present', () => /Skip the tests your change/i.test(home));
