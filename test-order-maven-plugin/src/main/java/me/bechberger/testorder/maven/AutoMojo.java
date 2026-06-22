@@ -192,10 +192,20 @@ public class AutoMojo extends AbstractTestOrderMojo {
 
 			writeOrdererConfig(os.changedClasses(), os.changedTests(), os.changedMethods(), buildScoreOverrides());
 
-			int totalInIndex = os.selection().selected().size() + os.selection().remaining().size();
+			if (!os.selection().cached().isEmpty()) {
+				getLog().info("[test-order] Cache: skipped " + os.selection().cached().size()
+						+ " unchanged test(s) with sufficient pass streak.");
+			}
+
+			int totalInIndex = os.selection().selected().size() + os.selection().remaining().size()
+					+ os.selection().cached().size();
+			Path resolvedStateFile = ctx.resolveStateFile(stateFile);
+			Path stateDir = resolvedStateFile.getParent();
+			CiSummaryWriter.RuntimeExtras extras = new CiSummaryWriter.RuntimeExtras(os.selection().cached(), 0L,
+					stateDir);
 			CiSummaryWriter.writeSummary(new CiSummaryWriter.SummaryInput(totalInIndex, os.selection().selected(),
 					os.selection().remaining(), os.changedClasses(), os.changedTests(), java.util.List.of(), "auto", 0,
-					Path.of(project.getBuild().getDirectory())), pluginLog());
+					Path.of(project.getBuild().getDirectory())), extras, pluginLog());
 
 			// Pre-test summary — Maven doesn't re-enter the mojo after Surefire, so we
 			// log selection-time stats. Pass/fail data is in Surefire's own summary.

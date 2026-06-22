@@ -25,8 +25,52 @@ public class TestSelector {
 		public static final Config DEFAULT = new Config(10, 5, null);
 	}
 
+	/**
+	 * Configuration for skip-if-unchanged caching.
+	 *
+	 * @param enabled
+	 *            when {@code true}, eligible tests are omitted from both
+	 *            {@code selected} and {@code remaining} (i.e. not run at all)
+	 * @param minPassStreak
+	 *            minimum consecutive passing runs before a test becomes
+	 *            cache-eligible (typical default: {@code 3})
+	 * @param maxSkipFraction
+	 *            safety cap: never skip more than this fraction of the suite
+	 *            (typical default: {@code 0.9}). Set to {@code 1.0} to disable.
+	 * @param quarantinedTests
+	 *            tests currently in flaky-quarantine. These are never cache-skipped
+	 *            even if their pass-streak qualifies them, because quarantine
+	 *            downgrades failures to {@code ABORTED} which leaves the streak
+	 *            artificially intact — caching such a test would mask it
+	 *            permanently.
+	 */
+	public record CacheConfig(boolean enabled, int minPassStreak, double maxSkipFraction,
+			Set<String> quarantinedTests) {
+		public static final CacheConfig DISABLED = new CacheConfig(false, 3, 0.9, Set.of());
+
+		public CacheConfig {
+			if (minPassStreak < 1) {
+				minPassStreak = 1;
+			}
+			if (Double.isNaN(maxSkipFraction) || maxSkipFraction < 0.0) {
+				maxSkipFraction = 0.0;
+			} else if (maxSkipFraction > 1.0) {
+				maxSkipFraction = 1.0;
+			}
+			quarantinedTests = quarantinedTests == null ? Set.of() : Set.copyOf(quarantinedTests);
+		}
+
+		public CacheConfig(boolean enabled, int minPassStreak, double maxSkipFraction) {
+			this(enabled, minPassStreak, maxSkipFraction, Set.of());
+		}
+	}
+
 	/** Result of the selection algorithm. */
-	public record Selection(List<String> selected, List<String> remaining, int randomFastCount) {
+	public record Selection(List<String> selected, List<String> remaining, int randomFastCount, List<String> cached) {
+		/** Backward-compat constructor: no cached entries. */
+		public Selection(List<String> selected, List<String> remaining, int randomFastCount) {
+			this(selected, remaining, randomFastCount, List.of());
+		}
 	}
 
 	/** A test class with its computed score and metadata. */
@@ -41,21 +85,31 @@ public class TestSelector {
 	private final Config config;
 	private final Set<String> alwaysRunClasses;
 	private final Map<String, Double> changeComplexity;
+	private final CacheConfig cacheConfig;
 
 	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config) {
-		this(depMap, state, changedClasses, changedTestClasses, weights, config, Set.of(), Map.of());
+		this(depMap, state, changedClasses, changedTestClasses, weights, config, Set.of(), Map.of(),
+				CacheConfig.DISABLED);
 	}
 
 	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
 			Set<String> alwaysRunClasses) {
-		this(depMap, state, changedClasses, changedTestClasses, weights, config, alwaysRunClasses, Map.of());
+		this(depMap, state, changedClasses, changedTestClasses, weights, config, alwaysRunClasses, Map.of(),
+				CacheConfig.DISABLED);
 	}
 
 	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
 			Set<String> alwaysRunClasses, Map<String, Double> changeComplexity) {
+		this(depMap, state, changedClasses, changedTestClasses, weights, config, alwaysRunClasses, changeComplexity,
+				CacheConfig.DISABLED);
+	}
+
+	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
+			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
+			Set<String> alwaysRunClasses, Map<String, Double> changeComplexity, CacheConfig cacheConfig) {
 		this.depMap = depMap;
 		this.state = state;
 		this.changedClasses = changedClasses;
@@ -64,11 +118,12 @@ public class TestSelector {
 		this.config = config;
 		this.alwaysRunClasses = alwaysRunClasses != null ? alwaysRunClasses : Set.of();
 		this.changeComplexity = changeComplexity != null ? changeComplexity : Map.of();
+		this.cacheConfig = cacheConfig != null ? cacheConfig : CacheConfig.DISABLED;
 	}
 
 	/**
 	 * Runs the full selection algorithm: score → sort → pick new → pick top-N →
-	 * pick diverse fast.
+	 * pick diverse fast → (optionally) apply skip-if-unchanged cache.
 	 */
 	public Selection select() {
 		List<ScoredTest> scored = scoreAndSort();
@@ -86,7 +141,9 @@ public class TestSelector {
 			if (!selected.contains(s.name()))
 				remaining.add(s.name());
 		}
-		return new Selection(new ArrayList<>(selected), remaining, randomActual);
+
+		List<String> cached = applyCacheSkip(scored, selected, remaining);
+		return new Selection(new ArrayList<>(selected), remaining, randomActual, cached);
 	}
 
 	// ── Scoring ───────────────────────────────────────────────────────
@@ -238,6 +295,65 @@ public class TestSelector {
 				fastCandidates.remove(last);
 			}
 		}
+	}
+
+	/**
+	 * Phase 4 (optional): skip-if-unchanged cache. A test is cache-skippable iff
+	 * (1) it is not in {@code alwaysRunClasses}, (2) it is not affected by the
+	 * change set via {@link DependencyMap#getAffectedTests(Set)} and was not itself
+	 * changed, and (3) its consecutive pass streak in
+	 * {@link TestOrderState#passStreak(String)} is at least
+	 * {@link CacheConfig#minPassStreak()}. The total number of skipped tests is
+	 * capped at {@code floor(maxSkipFraction * totalCandidates)}. When the cap
+	 * binds, slower tests (by EMA duration) are preferred for skipping so that
+	 * skipping saves the most wall-clock time.
+	 * <p>
+	 * Cached tests are removed from both {@code selected} and {@code remaining} (in
+	 * place). The returned list is sorted by name for deterministic output.
+	 */
+	private List<String> applyCacheSkip(List<ScoredTest> scored, Set<String> selected, List<String> remaining) {
+		if (!cacheConfig.enabled()) {
+			return List.of();
+		}
+		Set<String> affectedByDeps = depMap.getAffectedTests(changedClasses);
+		Set<String> quarantined = cacheConfig.quarantinedTests();
+		List<ScoredTest> eligible = new ArrayList<>();
+		for (ScoredTest s : scored) {
+			if (alwaysRunClasses.contains(s.name()))
+				continue;
+			if (affectedByDeps.contains(s.name()) || changedTestClasses.contains(s.name()))
+				continue;
+			if (s.isNew())
+				continue;
+			if (quarantined.contains(s.name()))
+				continue;
+			if (state.passStreak(s.name()) < cacheConfig.minPassStreak())
+				continue;
+			eligible.add(s);
+		}
+
+		int totalCandidates = scored.size();
+		int cap = (int) Math.floor(cacheConfig.maxSkipFraction() * totalCandidates);
+		if (cap <= 0) {
+			return List.of();
+		}
+		if (eligible.size() > cap) {
+			// Prefer slower tests for skipping (greater wall-clock savings).
+			// Unknown durations (Long.MAX_VALUE) sort to the top — also good to skip.
+			eligible.sort(Comparator.comparingLong(ScoredTest::duration).reversed().thenComparing(ScoredTest::name));
+			eligible = new ArrayList<>(eligible.subList(0, cap));
+		}
+
+		List<String> cached = new ArrayList<>(eligible.size());
+		for (ScoredTest s : eligible) {
+			cached.add(s.name());
+		}
+		Set<String> cachedSet = new HashSet<>(cached);
+		selected.removeIf(cachedSet::contains);
+		remaining.removeIf(cachedSet::contains);
+
+		Collections.sort(cached);
+		return cached;
 	}
 
 	// ── File I/O utilities ────────────────────────────────────────────

@@ -34,6 +34,16 @@ final class StateRecordCodec {
 				o.speedRatio(), o.totalScore());
 	}
 
+	/**
+	 * Slim variant for all-pass runs: only testClass + zero flags. Sufficient for
+	 * {@code passStreak()} (skip-if-unchanged cache) to detect that the test ran
+	 * and passed; the score/breakdown fields are unused by the optimizer when no
+	 * failures are present in the run.
+	 */
+	static List<Object> outcomeToSlimCompact(TestOrderState.TestOutcome o) {
+		return List.of(o.testClass(), 0);
+	}
+
 	static TestOrderState.TestOutcome compactToOutcome(Object obj, Logger log) {
 		if (!(obj instanceof List<?>)) {
 			log.fine("Skipping non-list outcome entry (legacy format): "

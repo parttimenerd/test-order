@@ -156,6 +156,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			getLog().debug("[test-order] Skipping prepare — POM module.");
 			return;
 		}
+		warnIfExtensionsMissing();
 		if (hasCliWorkflowGoal()) {
 			// Still perform deferred offline instrumentation if needed
 			if ("true".equals(project.getProperties().getProperty("testorder.offline.pending"))) {
@@ -1001,6 +1002,43 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		} catch (IOException e) {
 			getLog().warn("[test-order][ml] ML prediction generation failed (ordering continues without ML): "
 					+ e.getMessage());
+		}
+	}
+
+	/**
+	 * Warns once per session when {@code <extensions>true</extensions>} is absent
+	 * from the test-order plugin declaration. Without it the Maven lifecycle
+	 * extension ({@link CollectorLifecycleParticipant}) is never registered, so the
+	 * dependency index is never written and learn mode silently does nothing (the
+	 * "Wrote fallback payloads" symptom).
+	 */
+	private void warnIfExtensionsMissing() {
+		boolean extensionActive = session != null && session.getUserProperties() != null
+				&& "true".equals(session.getUserProperties().getProperty("testorder.extensionActive"));
+		if (extensionActive) {
+			return;
+		}
+		boolean declared = project.getBuildPlugins().stream()
+				.anyMatch(p -> "test-order-maven-plugin".equals(p.getArtifactId())
+						&& "me.bechberger".equals(p.getGroupId()) && p.isExtensions());
+		if (!declared) {
+			String msg = "[test-order] CONFIGURATION ERROR: <extensions>true</extensions> is missing from the"
+					+ " test-order-maven-plugin declaration in your pom.xml."
+					+ " Without it the lifecycle extension is not registered and learn mode cannot write the"
+					+ " dependency index — tests will always run in default order."
+					+ "\nFix: add <extensions>true</extensions> inside the <plugin> block."
+					+ " See docs/GETTING_STARTED.md.";
+			// Only print once per session (multi-module builds run prepare per module)
+			java.util.Properties props = session != null ? session.getUserProperties() : null;
+			if (props != null) {
+				String key = "testorder.warnedMissingExtensions";
+				if (props.getProperty(key) == null) {
+					props.setProperty(key, "true");
+					getLog().error(msg);
+				}
+			} else {
+				getLog().error(msg);
+			}
 		}
 	}
 }

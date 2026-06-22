@@ -152,18 +152,20 @@ public final class AutoWorkflow {
 		var alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
 
 		AffectedOperation.SelectResult selectResult;
-		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0 && ctx.randomM() == 0) {
+		me.bechberger.testorder.TestSelector.CacheConfig cacheConfig = readCacheConfig(ctx.stateFile());
+		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0 && ctx.randomM() == 0
+				&& !cacheConfig.enabled()) {
 			var allTests = new ArrayList<>(a.depMap().testClasses());
 			selectResult = AffectedOperation.SelectResult
 					.of(new TestSelector.Selection(allTests, java.util.List.of(), 0), true);
 			ctx.log().info("[test-order] No changed classes detected — running tests in default order.");
 		} else {
-			if (a.changedClasses().isEmpty() && a.changedTests().isEmpty()) {
+			if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && (ctx.topN() >= 0 || ctx.randomM() > 0)) {
 				ctx.log().info("[test-order] No changed classes detected — applying topN/randomM selection only.");
 			}
 			selectResult = AffectedOperation.select(new AffectedOperation.SelectConfig(a.depMap(), a.state(),
 					a.changedClasses(), a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(), alwaysRun,
-					ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
+					ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity(), cacheConfig));
 			// G3: Warn if selection yields no tests in auto mode, but only when the depMap
 			// has tests — modules with no test classes legitimately select nothing.
 			if (selectResult.selection().selected().isEmpty() && !a.depMap().testClasses().isEmpty()
@@ -193,8 +195,34 @@ public final class AutoWorkflow {
 		// ── 4. Snapshot hashes for next run ─────────────────────────
 		snapshotHashes(ctx);
 
+		// ── 5. Persist cache-runtime.txt so the dashboard can surface the
+		// skip-if-unchanged set. Reading the duration from state at write time
+		// avoids changing the autoLoadExtras signature.
+		writeCacheRuntime(ctx, a.state(), selectResult.selection().cached());
+
 		return new Result.OrderSelect(selectResult, configMap, a.changedClasses(), a.changedTests(), a.changedMethods(),
 				a.weights(), ctx.alwaysLearn());
+	}
+
+	private static void writeCacheRuntime(PluginContext ctx, TestOrderState state, java.util.List<String> cached) {
+		Path stateFile = ctx.stateFile();
+		if (stateFile == null) {
+			return;
+		}
+		Path stateDir = stateFile.getParent();
+		if (stateDir == null) {
+			return;
+		}
+		Path target = stateDir.resolve(me.bechberger.testorder.ml.CacheRuntimeReport.DEFAULT_FILENAME);
+		java.util.Map<String, Long> durations = new java.util.LinkedHashMap<>();
+		for (String name : cached) {
+			durations.put(name, state.getDuration(name, 0L));
+		}
+		try {
+			me.bechberger.testorder.ml.CacheRuntimeReport.write(target, durations);
+		} catch (java.io.IOException e) {
+			ctx.log().warn("[test-order] Failed to write cache-runtime report: " + e.getMessage());
+		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════
@@ -259,6 +287,47 @@ public final class AutoWorkflow {
 				(label, msg) -> ctx.log().warn("[test-order] Failed to save " + label + " hash snapshot: " + msg));
 		if (ctx.methodOrderingEnabled() && ctx.methodHashFile() != null) {
 			ChangeDetectionOps.snapshotMethodHashes(ctx.testSourceRoot(), ctx.methodHashFile(), ctx.log());
+		}
+	}
+
+	private static me.bechberger.testorder.TestSelector.CacheConfig readCacheConfig(java.nio.file.Path stateFile) {
+		boolean enabled = Boolean.parseBoolean(
+				System.getProperty(me.bechberger.testorder.TestOrderConfig.CACHE_SKIP_UNCHANGED, "false"));
+		if (!enabled)
+			return me.bechberger.testorder.TestSelector.CacheConfig.DISABLED;
+		int minStreak = parseIntOr(System.getProperty(me.bechberger.testorder.TestOrderConfig.CACHE_MIN_PASS_STREAK),
+				3);
+		double maxFrac = parseDoubleOr(
+				System.getProperty(me.bechberger.testorder.TestOrderConfig.CACHE_MAX_SKIP_FRACTION), 0.9);
+		java.util.Set<String> quarantined = java.util.Set.of();
+		if (stateFile != null) {
+			java.nio.file.Path stateDir = stateFile.toAbsolutePath().getParent();
+			if (stateDir != null) {
+				java.nio.file.Path reportFile = stateDir
+						.resolve(me.bechberger.testorder.ml.FlakyRuntimeReport.DEFAULT_FILENAME);
+				me.bechberger.testorder.ml.FlakyRuntimeReport report = me.bechberger.testorder.ml.FlakyRuntimeReport
+						.load(reportFile);
+				if (!report.isEmpty()) {
+					quarantined = report.quarantined();
+				}
+			}
+		}
+		return new me.bechberger.testorder.TestSelector.CacheConfig(true, minStreak, maxFrac, quarantined);
+	}
+
+	private static int parseIntOr(String s, int fallback) {
+		try {
+			return s == null ? fallback : Integer.parseInt(s.trim());
+		} catch (NumberFormatException e) {
+			return fallback;
+		}
+	}
+
+	private static double parseDoubleOr(String s, double fallback) {
+		try {
+			return s == null ? fallback : Double.parseDouble(s.trim());
+		} catch (NumberFormatException e) {
+			return fallback;
 		}
 	}
 }

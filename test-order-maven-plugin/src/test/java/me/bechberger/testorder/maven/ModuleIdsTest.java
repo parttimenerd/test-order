@@ -69,4 +69,29 @@ class ModuleIdsTest {
 		assertEquals("", ModuleIds.of("", ""));
 		assertEquals("", ModuleIds.of(null, null));
 	}
+
+	/**
+	 * IDs are formed as {@code groupId + "-" + artifactId}. Projects whose
+	 * coordinates straddle the separator differently can collide:
+	 * {@code ("g", "a-b")} and {@code ("g-a", "b")} both produce {@code "g-a-b"}.
+	 * This test documents the known collision rather than hiding it — callers must
+	 * use fully-qualified coordinates that don't share this ambiguity.
+	 */
+	@Test
+	void of_separatorCollision_isDocumented() {
+		String id1 = ModuleIds.of("g", "a-b");
+		String id2 = ModuleIds.of("g-a", "b");
+		// Both resolve to the same string — this is a known limitation.
+		assertEquals(id1, id2, "coordinates that straddle the '-' separator produce the same ID");
+	}
+
+	@Test
+	void of_strings_nullArtifact_returnsGroupWithTrailingDash() {
+		assertEquals("com.example-", ModuleIds.of("com.example", null));
+	}
+
+	@Test
+	void of_strings_bothNull_returnsEmpty() {
+		assertEquals("", ModuleIds.of(null, null));
+	}
 }

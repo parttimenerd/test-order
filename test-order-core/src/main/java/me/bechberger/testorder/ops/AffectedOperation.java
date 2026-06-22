@@ -24,7 +24,14 @@ public final class AffectedOperation {
 	public record SelectConfig(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTests, TestOrderState.ScoringWeights weights, int topN, int randomM, Long seed,
 			Set<String> alwaysRunClasses, Path selectedFile, Path remainingFile, PluginLog log,
-			Map<String, Double> changeComplexity) {
+			Map<String, Double> changeComplexity, TestSelector.CacheConfig cacheConfig) {
+		public SelectConfig(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
+				Set<String> changedTests, TestOrderState.ScoringWeights weights, int topN, int randomM, Long seed,
+				Set<String> alwaysRunClasses, Path selectedFile, Path remainingFile, PluginLog log,
+				Map<String, Double> changeComplexity) {
+			this(depMap, state, changedClasses, changedTests, weights, topN, randomM, seed, alwaysRunClasses,
+					selectedFile, remainingFile, log, changeComplexity, TestSelector.CacheConfig.DISABLED);
+		}
 	}
 
 	/** Result of test selection. */
@@ -44,11 +51,13 @@ public final class AffectedOperation {
 	 * plugins log {@link #format()} so the end-of-run summary is consistent.
 	 */
 	public record SelectionSummary(int selectedCount, int deferredCount, String topScorerName, int scoredCount,
-			int newCount, int alwaysRunCount, int fastCount) {
+			int newCount, int alwaysRunCount, int fastCount, int cachedCount) {
 
-		/** Total tests in the index for this selection (selected + deferred). */
+		/**
+		 * Total tests in the index for this selection (selected + deferred + cached).
+		 */
 		public int totalCount() {
-			return selectedCount + deferredCount;
+			return selectedCount + deferredCount + cachedCount;
 		}
 
 		/** Percentage of tests selected (0 when total is 0). */
@@ -61,7 +70,7 @@ public final class AffectedOperation {
 				int alwaysRunCount, int fastCount) {
 			String top = selection.selected().isEmpty() ? null : selection.selected().get(0);
 			return new SelectionSummary(selection.selected().size(), selection.remaining().size(), top, scoredCount,
-					newCount, alwaysRunCount, fastCount);
+					newCount, alwaysRunCount, fastCount, selection.cached().size());
 		}
 
 		/**
@@ -84,6 +93,8 @@ public final class AffectedOperation {
 				sb.append("\n[test-order] Top: ").append(topScorerName);
 			if (deferredCount > 0)
 				sb.append("\n[test-order] ").append(deferredCount).append(" deferred — see remaining-file");
+			if (cachedCount > 0)
+				sb.append("\n[test-order] ").append(cachedCount).append(" cached (skipped — unchanged + pass streak)");
 			sb.append("\n[test-order] Run `").append(buildSystem.showCommand()).append("` for the full ranking, or `")
 					.append(buildSystem.dashboardCommand()).append("` for HTML.");
 			return sb.toString();
@@ -121,7 +132,8 @@ public final class AffectedOperation {
 		TestSelector.Selection selection = new TestSelector(config.depMap(), config.state(), config.changedClasses(),
 				config.changedTests(), config.weights(),
 				new TestSelector.Config(config.topN(), config.randomM(), effectiveSeed), config.alwaysRunClasses(),
-				config.changeComplexity()).select();
+				config.changeComplexity(),
+				config.cacheConfig() != null ? config.cacheConfig() : TestSelector.CacheConfig.DISABLED).select();
 
 		// Warn when changed classes appear in deps of >50% of all tests: the scorer
 		// can't discriminate and the selection is essentially a random subset.
@@ -172,7 +184,7 @@ public final class AffectedOperation {
 			}
 		}
 
-		boolean allSelected = selection.remaining().isEmpty();
+		boolean allSelected = selection.remaining().isEmpty() && selection.cached().isEmpty();
 		int alwaysRunCount = 0;
 		int newCount = 0;
 		int fastCount = selection.randomFastCount();

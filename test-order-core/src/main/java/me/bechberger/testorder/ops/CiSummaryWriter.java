@@ -66,6 +66,26 @@ public final class CiSummaryWriter {
 	}
 
 	/**
+	 * Optional extras for the new opt-in features (skip-if-unchanged cache, flaky
+	 * retry, flaky quarantine). Reads {@code .test-order/flaky-runtime.txt} for
+	 * runtime retry/quarantine data when {@code stateDir} is provided.
+	 *
+	 * @param cachedTests
+	 *            tests skipped entirely by the
+	 *            {@code testorder.cache.skipUnchanged} feature (omitted from both
+	 *            selected and deferred lists)
+	 * @param cachedTimeSavedMs
+	 *            estimated wall-clock time saved by skipping the cached tests (sum
+	 *            of their EMA durations); {@code 0} if unknown
+	 * @param stateDir
+	 *            location of the {@code .test-order} state directory; used to
+	 *            locate the FlakyRuntimeReport
+	 */
+	public record RuntimeExtras(List<String> cachedTests, long cachedTimeSavedMs, Path stateDir) {
+		public static final RuntimeExtras EMPTY = new RuntimeExtras(List.of(), 0L, null);
+	}
+
+	/**
 	 * Writes all enabled summary formats.
 	 *
 	 * @param input
@@ -74,13 +94,23 @@ public final class CiSummaryWriter {
 	 *            plugin log for warnings
 	 */
 	public static void writeSummary(SummaryInput input, PluginLog log) {
+		writeSummary(input, RuntimeExtras.EMPTY, log);
+	}
+
+	/**
+	 * Writes all enabled summary formats, including the optional skip-cache /
+	 * flaky-retry / flaky-quarantine sections supplied via {@code extras}.
+	 */
+	public static void writeSummary(SummaryInput input, RuntimeExtras extras, PluginLog log) {
 		if (!isEnabled()) {
 			return;
 		}
+		RuntimeExtras effective = extras != null ? extras : RuntimeExtras.EMPTY;
+		me.bechberger.testorder.ml.FlakyRuntimeReport flaky = loadFlakyReport(effective.stateDir());
 		try {
-			Path md = writeMd(input);
-			writeJson(input);
-			writeJUnitXml(input);
+			Path md = writeMd(input, effective, flaky);
+			writeJson(input, effective, flaky);
+			writeJUnitXml(input, effective, flaky);
 			if (isGithubStepSummaryEnabled()) {
 				appendToGithubStepSummary(md, log);
 			}
@@ -92,6 +122,14 @@ public final class CiSummaryWriter {
 					+ ". Check disk space and write permissions on the build directory."
 					+ " CI reporting is disabled for this run.");
 		}
+	}
+
+	private static me.bechberger.testorder.ml.FlakyRuntimeReport loadFlakyReport(Path stateDir) {
+		if (stateDir == null) {
+			return me.bechberger.testorder.ml.FlakyRuntimeReport.empty();
+		}
+		return me.bechberger.testorder.ml.FlakyRuntimeReport
+				.load(stateDir.resolve(me.bechberger.testorder.ml.FlakyRuntimeReport.DEFAULT_FILENAME));
 	}
 
 	// ── Property checks ──────────────────────────────────────────────────────
@@ -110,8 +148,9 @@ public final class CiSummaryWriter {
 
 	// ── Markdown ─────────────────────────────────────────────────────────────
 
-	private static Path writeMd(SummaryInput input) throws IOException {
-		String md = buildMd(input);
+	private static Path writeMd(SummaryInput input, RuntimeExtras extras,
+			me.bechberger.testorder.ml.FlakyRuntimeReport flaky) throws IOException {
+		String md = buildMd(input, extras, flaky);
 		Path out = input.buildDir().resolve("test-order-summary.md");
 		Files.createDirectories(out.getParent());
 		Path temp = me.bechberger.testorder.PersistenceSupport.temporarySibling(out);
@@ -120,16 +159,25 @@ public final class CiSummaryWriter {
 		return out;
 	}
 
+	/** Test-only overload kept for backward-compatible golden-file tests. */
 	static String buildMd(SummaryInput input) {
+		return buildMd(input, RuntimeExtras.EMPTY, me.bechberger.testorder.ml.FlakyRuntimeReport.empty());
+	}
+
+	static String buildMd(SummaryInput input, RuntimeExtras extras,
+			me.bechberger.testorder.ml.FlakyRuntimeReport flaky) {
 		StringBuilder sb = new StringBuilder();
 		sb.append("## test-order run summary\n\n");
-		appendStatsTable(sb, input);
+		appendStatsTable(sb, input, extras, flaky);
 		appendChangedClasses(sb, input);
 		appendTopDrivers(sb, input);
+		appendCachedTests(sb, extras);
+		appendFlakyDetails(sb, flaky);
 		return sb.toString();
 	}
 
-	private static void appendStatsTable(StringBuilder sb, SummaryInput input) {
+	private static void appendStatsTable(StringBuilder sb, SummaryInput input, RuntimeExtras extras,
+			me.bechberger.testorder.ml.FlakyRuntimeReport flaky) {
 		int selected = input.selectedTests().size();
 		int deferred = input.deferredTests().size();
 		int total = input.totalTestsInIndex();
@@ -140,6 +188,21 @@ public final class CiSummaryWriter {
 				.append(") |\n");
 		if (deferred > 0) {
 			sb.append("| **Deferred** | ").append(deferred).append(" |\n");
+		}
+		if (!extras.cachedTests().isEmpty()) {
+			sb.append("| **Cached (skipped, unchanged)** | ").append(extras.cachedTests().size());
+			if (extras.cachedTimeSavedMs() > 0) {
+				sb.append(" (saved ~").append(formatDuration(extras.cachedTimeSavedMs())).append(")");
+			}
+			sb.append(" |\n");
+		}
+		int retriedCount = flaky.retryCounts().size();
+		if (retriedCount > 0) {
+			sb.append("| **Retried (flaky)** | ").append(retriedCount).append(" |\n");
+		}
+		int quarantinedCount = flaky.quarantined().size();
+		if (quarantinedCount > 0) {
+			sb.append("| **Quarantined** | ").append(quarantinedCount).append(" |\n");
 		}
 		if (!input.changedClasses().isEmpty()) {
 			sb.append("| **Changed source classes** | ").append(input.changedClasses().size()).append(" |\n");
@@ -180,9 +243,52 @@ public final class CiSummaryWriter {
 		return input.mode();
 	}
 
+	private static void appendCachedTests(StringBuilder sb, RuntimeExtras extras) {
+		if (extras.cachedTests().isEmpty()) {
+			return;
+		}
+		sb.append("<details><summary>Cached tests (").append(extras.cachedTests().size())
+				.append(", skipped: deps unchanged + pass streak)</summary>\n\n");
+		for (String t : sorted(extras.cachedTests())) {
+			sb.append("- `").append(t).append("`\n");
+		}
+		sb.append("</details>\n\n");
+	}
+
+	private static void appendFlakyDetails(StringBuilder sb, me.bechberger.testorder.ml.FlakyRuntimeReport flaky) {
+		if (flaky.isEmpty()) {
+			return;
+		}
+		if (!flaky.retryCounts().isEmpty()) {
+			sb.append("<details><summary>Flaky retries (").append(flaky.retryCounts().size()).append(")</summary>\n\n");
+			flaky.retryCounts().entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(e -> sb
+					.append("- `").append(e.getKey()).append("` — attempts: ").append(e.getValue()).append("\n"));
+			sb.append("</details>\n\n");
+		}
+		if (!flaky.quarantined().isEmpty()) {
+			sb.append("<details><summary>Quarantined flaky tests (").append(flaky.quarantined().size())
+					.append(")</summary>\n\n");
+			for (String t : sorted(flaky.quarantined())) {
+				sb.append("- `").append(t).append("`\n");
+			}
+			sb.append("</details>\n\n");
+		}
+	}
+
+	private static String formatDuration(long ms) {
+		if (ms < 1000)
+			return ms + "ms";
+		if (ms < 60_000)
+			return String.format(java.util.Locale.ROOT, "%.1fs", ms / 1000.0);
+		long min = ms / 60_000;
+		long sec = (ms % 60_000) / 1000;
+		return min + "m" + sec + "s";
+	}
+
 	// ── JSON ─────────────────────────────────────────────────────────────────
 
-	private static void writeJson(SummaryInput input) throws IOException {
+	private static void writeJson(SummaryInput input, RuntimeExtras extras,
+			me.bechberger.testorder.ml.FlakyRuntimeReport flaky) throws IOException {
 		StringBuilder sb = new StringBuilder();
 		sb.append("{\n");
 		sb.append("  \"mode\": ").append(jsonString(input.mode())).append(",\n");
@@ -190,6 +296,12 @@ public final class CiSummaryWriter {
 		sb.append("  \"totalTestsInIndex\": ").append(input.totalTestsInIndex()).append(",\n");
 		sb.append("  \"selectedCount\": ").append(input.selectedTests().size()).append(",\n");
 		sb.append("  \"deferredCount\": ").append(input.deferredTests().size()).append(",\n");
+		sb.append("  \"cachedCount\": ").append(extras.cachedTests().size()).append(",\n");
+		sb.append("  \"cachedTimeSavedMs\": ").append(extras.cachedTimeSavedMs()).append(",\n");
+		sb.append("  \"cachedTests\": ").append(jsonStringArray(extras.cachedTests())).append(",\n");
+		sb.append("  \"retriedCount\": ").append(flaky.retryCounts().size()).append(",\n");
+		sb.append("  \"quarantinedCount\": ").append(flaky.quarantined().size()).append(",\n");
+		sb.append("  \"quarantinedTests\": ").append(jsonStringArray(flaky.quarantined())).append(",\n");
 		sb.append("  \"changedSourceClasses\": ").append(jsonStringArray(input.changedClasses())).append(",\n");
 		sb.append("  \"changedTestClasses\": ").append(jsonStringArray(input.changedTests())).append(",\n");
 		sb.append("  \"topChangedDrivers\": ").append(jsonStringArray(input.topChangedDrivers())).append("\n");
@@ -203,24 +315,37 @@ public final class CiSummaryWriter {
 
 	// ── JUnit-XML selection report ────────────────────────────────────────────
 
-	private static void writeJUnitXml(SummaryInput input) throws IOException {
+	private static void writeJUnitXml(SummaryInput input, RuntimeExtras extras,
+			me.bechberger.testorder.ml.FlakyRuntimeReport flaky) throws IOException {
 		int selected = input.selectedTests().size();
 		int deferred = input.deferredTests().size();
-		int total = selected + deferred;
+		int cached = extras.cachedTests().size();
+		int quarantined = flaky.quarantined().size();
+		int total = selected + deferred + cached + quarantined;
+		int skipped = deferred + cached + quarantined;
 		StringBuilder sb = new StringBuilder();
 		sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
 		sb.append("<testsuites name=\"test-order-selection\" tests=\"").append(total).append("\" skipped=\"")
-				.append(deferred).append("\" failures=\"0\" errors=\"0\">\n");
-		sb.append("  <testsuite name=\"selection\" tests=\"").append(total).append("\" skipped=\"").append(deferred)
+				.append(skipped).append("\" failures=\"0\" errors=\"0\">\n");
+		sb.append("  <testsuite name=\"selection\" tests=\"").append(total).append("\" skipped=\"").append(skipped)
 				.append("\" failures=\"0\" errors=\"0\">\n");
-		// Selected tests — reported as passed (they will run)
 		for (String t : input.selectedTests()) {
 			sb.append("    <testcase classname=\"selection\" name=\"").append(xmlEscape(t)).append("\" time=\"0\"/>\n");
 		}
-		// Deferred tests — reported as skipped (won't run this invocation)
 		for (String t : input.deferredTests()) {
 			sb.append("    <testcase classname=\"deferred\" name=\"").append(xmlEscape(t)).append("\" time=\"0\">\n");
 			sb.append("      <skipped message=\"deferred by test-order\"/>\n");
+			sb.append("    </testcase>\n");
+		}
+		for (String t : extras.cachedTests()) {
+			sb.append("    <testcase classname=\"cached\" name=\"").append(xmlEscape(t)).append("\" time=\"0\">\n");
+			sb.append("      <skipped message=\"cached: deps unchanged + pass streak\"/>\n");
+			sb.append("    </testcase>\n");
+		}
+		for (String t : flaky.quarantined()) {
+			sb.append("    <testcase classname=\"quarantined\" name=\"").append(xmlEscape(t))
+					.append("\" time=\"0\">\n");
+			sb.append("      <skipped message=\"quarantined: flaky test failed after retries\"/>\n");
 			sb.append("    </testcase>\n");
 		}
 		sb.append("  </testsuite>\n");

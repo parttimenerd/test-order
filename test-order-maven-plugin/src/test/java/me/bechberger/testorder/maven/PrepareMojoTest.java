@@ -292,6 +292,106 @@ class PrepareMojoTest {
 				"Should reject class-level parallel in learn mode, got: " + ex.getMessage());
 	}
 
+	private static Plugin testOrderPlugin(boolean extensions) {
+		Plugin p = new Plugin();
+		p.setGroupId("me.bechberger");
+		p.setArtifactId("test-order-maven-plugin");
+		p.setExtensions(extensions);
+		return p;
+	}
+
+	@Test
+	void missingExtensionsTrueLogsError() throws Exception {
+		// Plugin declared WITHOUT <extensions>true</extensions> and no session signal
+		when(project.getBuildPlugins()).thenReturn(List.of(testOrderPlugin(false)));
+
+		Properties userProps = new Properties(); // no extensionActive
+		MavenSession session = mock(MavenSession.class);
+		when(session.getProjects()).thenReturn(List.of(project));
+		when(session.getTopLevelProject()).thenReturn(project);
+		when(session.getGoals()).thenReturn(List.of("test"));
+		when(session.getUserProperties()).thenReturn(userProps);
+		inject(mojo, "session", session);
+
+		List<String> errors = new java.util.ArrayList<>();
+		mojo.setLog(new org.apache.maven.plugin.logging.SystemStreamLog() {
+			@Override
+			public void error(CharSequence msg) {
+				errors.add(msg.toString());
+			}
+		});
+
+		// execute() will exit early (no index, no test classes) — that's fine,
+		// the warning fires before that decision
+		try {
+			mojo.execute();
+		} catch (Exception ignored) {
+		}
+
+		assertFalse(errors.isEmpty(), "Expected an error about missing <extensions>true</extensions>");
+		assertTrue(errors.stream().anyMatch(e -> e.contains("CONFIGURATION ERROR") && e.contains("extensions")),
+				"Error should mention CONFIGURATION ERROR and extensions, got: " + errors);
+	}
+
+	@Test
+	void extensionActiveSignalSuppressesWarning() throws Exception {
+		when(project.getBuildPlugins()).thenReturn(List.of(testOrderPlugin(false)));
+
+		Properties userProps = new Properties();
+		userProps.setProperty("testorder.extensionActive", "true"); // extension loaded
+		MavenSession session = mock(MavenSession.class);
+		when(session.getProjects()).thenReturn(List.of(project));
+		when(session.getTopLevelProject()).thenReturn(project);
+		when(session.getGoals()).thenReturn(List.of("test"));
+		when(session.getUserProperties()).thenReturn(userProps);
+		inject(mojo, "session", session);
+
+		List<String> errors = new java.util.ArrayList<>();
+		mojo.setLog(new org.apache.maven.plugin.logging.SystemStreamLog() {
+			@Override
+			public void error(CharSequence msg) {
+				errors.add(msg.toString());
+			}
+		});
+
+		try {
+			mojo.execute();
+		} catch (Exception ignored) {
+		}
+
+		assertTrue(errors.stream().noneMatch(e -> e.contains("CONFIGURATION ERROR") && e.contains("extensions")),
+				"No extensions warning expected when extension is active, got: " + errors);
+	}
+
+	@Test
+	void extensionsTrueInPluginSuppressesWarning() throws Exception {
+		when(project.getBuildPlugins()).thenReturn(List.of(testOrderPlugin(true)));
+
+		Properties userProps = new Properties(); // no extensionActive signal
+		MavenSession session = mock(MavenSession.class);
+		when(session.getProjects()).thenReturn(List.of(project));
+		when(session.getTopLevelProject()).thenReturn(project);
+		when(session.getGoals()).thenReturn(List.of("test"));
+		when(session.getUserProperties()).thenReturn(userProps);
+		inject(mojo, "session", session);
+
+		List<String> errors = new java.util.ArrayList<>();
+		mojo.setLog(new org.apache.maven.plugin.logging.SystemStreamLog() {
+			@Override
+			public void error(CharSequence msg) {
+				errors.add(msg.toString());
+			}
+		});
+
+		try {
+			mojo.execute();
+		} catch (Exception ignored) {
+		}
+
+		assertTrue(errors.stream().noneMatch(e -> e.contains("CONFIGURATION ERROR") && e.contains("extensions")),
+				"No extensions warning expected when <extensions>true</extensions> is present, got: " + errors);
+	}
+
 	private static void inject(Object target, String fieldName, Object value) throws Exception {
 		Class<?> clazz = target.getClass();
 		while (clazz != null) {

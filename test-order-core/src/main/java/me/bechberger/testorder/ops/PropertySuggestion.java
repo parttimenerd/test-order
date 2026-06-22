@@ -75,7 +75,11 @@ public final class PropertySuggestion {
 			"testorder.bytecodeChangeDetection.enabled", "testorder.bytecodeAugmentDependencyMap.enabled",
 			"testorder.bytecodeHashFile",
 			// toolchain override: resets JDK<17 launcher on test tasks (Gradle only)
-			"testorder.overrideToolchain");
+			"testorder.overrideToolchain",
+			// flaky-test auto-retry / quarantine (FlakyRetryExtension)
+			"testorder.flaky.retries", "testorder.flaky.report.path", "testorder.flaky.quarantine",
+			// skip-if-unchanged cache (TestSelector)
+			"testorder.cache.skipUnchanged", "testorder.cache.minPassStreak", "testorder.cache.maxSkipFraction");
 
 	/**
 	 * Find the closest known key to the given unknown key using case-insensitive

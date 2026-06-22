@@ -295,4 +295,90 @@ class CiSummaryWriterTest {
 		String md = CiSummaryWriter.buildMd(in);
 		assertFalse(md.isBlank());
 	}
+
+	// ── RuntimeExtras: cache / retry / quarantine sections ────────────────────
+
+	@Test
+	void buildMd_cachedTests_addsRowAndDetails() {
+		CiSummaryWriter.SummaryInput in = input(5, List.of("A"), List.of(), Set.of(), Set.of(), List.of(), "auto", 0);
+		CiSummaryWriter.RuntimeExtras extras = new CiSummaryWriter.RuntimeExtras(
+				List.of("com.SlowTest", "com.OtherTest"), 12_345L, null);
+		String md = CiSummaryWriter.buildMd(in, extras, me.bechberger.testorder.ml.FlakyRuntimeReport.empty());
+		assertTrue(md.contains("Cached (skipped, unchanged)"), "stats row present");
+		assertTrue(md.contains("12.3s"), "time-saved formatted as seconds");
+		assertTrue(md.contains("Cached tests (2"), "details section present");
+		assertTrue(md.contains("com.SlowTest"));
+	}
+
+	@Test
+	void buildMd_cachedRowAbsentWhenEmpty() {
+		CiSummaryWriter.SummaryInput in = input(5, List.of("A"), List.of(), Set.of(), Set.of(), List.of(), "auto", 0);
+		String md = CiSummaryWriter.buildMd(in, CiSummaryWriter.RuntimeExtras.EMPTY,
+				me.bechberger.testorder.ml.FlakyRuntimeReport.empty());
+		assertFalse(md.contains("Cached"));
+	}
+
+	@Test
+	void buildMd_retryAndQuarantineRows() {
+		CiSummaryWriter.SummaryInput in = input(5, List.of("A"), List.of(), Set.of(), Set.of(), List.of(), "auto", 0);
+		me.bechberger.testorder.ml.FlakyRuntimeReport flaky = new me.bechberger.testorder.ml.FlakyRuntimeReport(
+				java.util.Map.of("com.Flaky1", 2, "com.Flaky2", 1), Set.of("com.Quarantined1"));
+		String md = CiSummaryWriter.buildMd(in, CiSummaryWriter.RuntimeExtras.EMPTY, flaky);
+		assertTrue(md.contains("Retried (flaky)"), "retry stats row");
+		assertTrue(md.contains("Quarantined"), "quarantine stats row");
+		assertTrue(md.contains("com.Flaky1"), "retry detail listed");
+		assertTrue(md.contains("attempts: 2"));
+		assertTrue(md.contains("com.Quarantined1"), "quarantine detail listed");
+	}
+
+	@Test
+	void writeSummary_jsonIncludesCacheAndFlakyFields() throws IOException {
+		System.setProperty("testorder.ci.summary", "true");
+		CiSummaryWriter.SummaryInput in = input(5, List.of("Test1"), List.of("Test2"), Set.of(), Set.of(), List.of(),
+				"auto", 0);
+		CiSummaryWriter.RuntimeExtras extras = new CiSummaryWriter.RuntimeExtras(List.of("com.Cached"), 5_000L, null);
+		CiSummaryWriter.writeSummary(in, extras, PluginLog.NOOP);
+		String json = Files.readString(buildDir.resolve("test-order-summary.json"));
+		assertTrue(json.contains("\"cachedCount\": 1"));
+		assertTrue(json.contains("\"cachedTests\""));
+		assertTrue(json.contains("com.Cached"));
+		assertTrue(json.contains("\"retriedCount\": 0"));
+		assertTrue(json.contains("\"quarantinedCount\": 0"));
+	}
+
+	@Test
+	void writeSummary_xmlIncludesCachedAsSkipped() throws IOException {
+		System.setProperty("testorder.ci.summary", "true");
+		CiSummaryWriter.SummaryInput in = input(5, List.of("Test1"), List.of("Test2"), Set.of(), Set.of(), List.of(),
+				"auto", 0);
+		CiSummaryWriter.RuntimeExtras extras = new CiSummaryWriter.RuntimeExtras(List.of("com.Cached"), 1000L, null);
+		CiSummaryWriter.writeSummary(in, extras, PluginLog.NOOP);
+		String xml = Files.readString(buildDir.resolve("test-order-selection-report.xml"));
+		assertTrue(xml.contains("classname=\"cached\""), "cached testcase present");
+		assertTrue(xml.contains("name=\"com.Cached\""));
+		assertTrue(xml.contains("skipped message=\"cached:"));
+	}
+
+	@Test
+	void writeSummary_xmlIncludesQuarantinedFromStateDir() throws IOException {
+		System.setProperty("testorder.ci.summary", "true");
+		// Write a flaky-runtime.txt next to a state dir; writer should pick it up.
+		Path stateDir = buildDir.resolve(".test-order");
+		Files.createDirectories(stateDir);
+		me.bechberger.testorder.ml.FlakyRuntimeReport.write(
+				stateDir.resolve(me.bechberger.testorder.ml.FlakyRuntimeReport.DEFAULT_FILENAME),
+				java.util.Map.of("com.Flaky", 2), Set.of("com.Q"));
+
+		CiSummaryWriter.SummaryInput in = input(5, List.of("Test1"), List.of(), Set.of(), Set.of(), List.of(), "auto",
+				0);
+		CiSummaryWriter.RuntimeExtras extras = new CiSummaryWriter.RuntimeExtras(List.of(), 0L, stateDir);
+		CiSummaryWriter.writeSummary(in, extras, PluginLog.NOOP);
+
+		String xml = Files.readString(buildDir.resolve("test-order-selection-report.xml"));
+		assertTrue(xml.contains("classname=\"quarantined\""));
+		assertTrue(xml.contains("name=\"com.Q\""));
+		String md = Files.readString(buildDir.resolve("test-order-summary.md"));
+		assertTrue(md.contains("Retried (flaky)"));
+		assertTrue(md.contains("Quarantined"));
+	}
 }
