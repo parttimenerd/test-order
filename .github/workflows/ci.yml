@@ -5,6 +5,8 @@ on:
     branches:
       - main
   pull_request:
+  pull_request_review:
+    types: [submitted]
   schedule:
     # Weekly full suite every Sunday at 03:17 UTC
     - cron: '17 3 * * 0'
@@ -19,10 +21,16 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Shared flag: 'true' for weekly schedule and full-suite dispatches, 'false' otherwise.
+# Shared flag: 'true' for weekly schedule, full-suite dispatches, or a PR review
+# that contains the magic phrase "/full-test" in the review body.
 # Used by jobs below to gate slow tests.
 env:
-  FULL_SUITE: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full-suite == true) }}
+  FULL_SUITE: >-
+    ${{
+      github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && inputs.full-suite == true)
+      || (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/full-test'))
+    }}
 
 jobs:
   build:
@@ -50,8 +58,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Fast: JDK 17 + 21 only.  Full: also 25 + 26.
-        java-version: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full-suite == true)) && fromJSON('["17","21","25","26"]') || fromJSON('["17","21"]') }}
+        # Fast (push/PR): JDK 17 only.  Full (schedule/dispatch): 17 + 21 + 25 + 26.
+        java-version: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full-suite == true)) && fromJSON('["17","21","25","26"]') || fromJSON('["17"]') }}
 
     steps:
       - name: Checkout
