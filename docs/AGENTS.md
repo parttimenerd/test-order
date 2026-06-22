@@ -2,7 +2,7 @@
 
 This file is for LLM agents driving test-order on a user's project. For human-oriented docs see [README.md](README.md), [GETTING_STARTED.md](GETTING_STARTED.md), and [CLI_REFERENCE.md](CLI_REFERENCE.md).
 
-> **Using Claude Code?** Install the bundled skill at [`skills/test-order/SKILL.md`](../skills/test-order/SKILL.md) so Claude loads this guide automatically. See the [README](../README.md#install-the-claude-code-skill) for one-line install instructions.
+> **Using Claude Code?** Install the bundled skill at [`skills/test-order/SKILL.md`](https://github.com/parttimenerd/test-order/blob/main/skills/test-order/SKILL.md) so Claude loads this guide automatically. See the [README](https://github.com/parttimenerd/test-order/blob/main/README.md#install-the-claude-code-skill) for one-line install instructions.
 
 ## What test-order does
 
