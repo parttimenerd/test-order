@@ -15,6 +15,7 @@
 | [MAVEN_PLUGIN.md](MAVEN_PLUGIN.md) | Maven plugin detailed reference: goals, ML predictions, show command, CI setup |
 | [MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md) | Multi-module project setup and aggregation |
 | [SCORING.md](SCORING.md) | Scoring formula, weights, ML-enhanced scoring, and automatic tuning |
+| [FLAKY_AND_CACHING.md](FLAKY_AND_CACHING.md) | Auto-retry FLAKY tests, quarantine mode, and skip-if-unchanged caching |
 
 ## Quick Links
 

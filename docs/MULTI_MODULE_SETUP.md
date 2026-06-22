@@ -45,7 +45,6 @@ project-root/
 ├── .test-order/                    ← Shared (root level)
 │   ├── test-dependencies.lz4       ← Index (ALL modules' dependencies)
 │   ├── state.lz4                   ← Shared state (run history, weights, failures)
-│   ├── deps/                       ← Shared deps directory
 │   ├── hashes/
 │   │   ├── com.app-module-a-hashes.lz4
 │   │   ├── com.app-module-a-test-hashes.lz4
@@ -54,24 +53,17 @@ project-root/
 │   └── (other files...)
 │
 ├── module-a/
-│   └── pom.xml (or build.gradle)
+│   └── target/test-order-deps/     ← Per-module .deps files (Maven only)
 │
 ├── module-b/
-│   └── pom.xml (or build.gradle)
-│
-├── module-c/                       ← Sub-module
-│   └── pom.xml (or build.gradle)
+│   └── target/test-order-deps/
 │
 └── pom.xml (root) or settings.gradle
-
-Legend:
-  🔴 RED   = Shared (one copy for all modules)
-  🟡 YELLOW = Per-module (each module has its own, stored in hashes/)
 ```
 
 ### Why This Design?
 
-**Shared Index**: All modules contribute `.deps` files during learn mode. After `testOrderAggregate`, you have a **single dependency graph** showing which tests cover which classes across **all modules**. This enables:
+**Shared Index**: All modules write `.deps` files to `target/test-order-deps/` during learn mode. The lifecycle extension aggregates these into a **single dependency graph** showing which tests cover which classes across **all modules** at the end of the build. This enables:
 - Running only affected test modules
 - Detecting inter-module dependencies
 - Global test prioritization
@@ -186,14 +178,11 @@ Legend:
 ### 3. Build Commands
 
 ```bash
-# Learn mode: collect dependencies from all modules
-mvn clean install -Dtestorder.mode=learn
+# Learn mode: run tests across all modules to collect dependency data
+mvn test -Dtestorder.mode=learn
 
-# After collecting deps, aggregate into shared index
-mvn test-order:aggregate
-
-# Order mode: run tests in optimized order
-mvn clean test
+# Order mode: run tests in optimized order (auto-detects after first learn)
+mvn test
 
 # View test execution plan (before running)
 mvn test-order:show
@@ -208,6 +197,8 @@ mvn test-order:diagnose
 mvn test-order:clean
 ```
 
+> **Note:** With `<extensions>true</extensions>` set, the dependency index is written directly during the learn run — no separate `mvn test-order:aggregate` step is needed. The `aggregate` goal is only useful if you are collecting `.deps` files from runs that did not use the lifecycle extension (e.g., older setups or detached CI jobs).
+
 ### 4. Module-Specific Overrides
 
 Override configuration in individual modules if needed:
@@ -219,7 +210,7 @@ Override configuration in individual modules if needed:
     <artifactId>test-order-maven-plugin</artifactId>
     <configuration>
         <changeMode>since-last-commit</changeMode>
-        <scoreSpeed>150</scoreSpeed>
+        <scoreNewTest>20</scoreNewTest>
         <!-- Override from root config for this module only -->
     </configuration>
 </plugin>
@@ -313,7 +304,7 @@ test {
 // Optional: override global testOrder config for this module
 testOrder {
     changeMode = 'since-last-commit'
-    scoreSpeed = 150
+    scoreNewTest = 20
 }
 ```
 
@@ -321,13 +312,10 @@ testOrder {
 
 ```bash
 # Learn mode: collect from all subprojects
-./gradlew clean build -Dtestorder.mode=learn
-
-# Aggregate deps into shared index
-./gradlew testOrderAggregate
+./gradlew test -Dtestorder.mode=learn
 
 # Order mode: optimized execution
-./gradlew clean test
+./gradlew test
 
 # Show predicted order and scores (unified view)
 ./gradlew testOrderShow
@@ -355,11 +343,11 @@ testOrder {
 
 ```bash
 # Run modules in parallel (up to N threads)
-mvn clean test -T 1C
+mvn test -T 1C
 # -T 1C = 1 thread per CPU core
 
 # With test-order optimization
-mvn clean test -T 1C -DfailIfNoTests=false
+mvn test -T 1C -DfailIfNoTests=false
 
 # Note: test-order automatically handles state isolation
 # (each module locks only its own state.lz4)
@@ -566,7 +554,7 @@ mvn clean install -DskipTests
 mvn test-order:analyze-mutations
 
 # 3. Enable kill-rate bonus in scoring
-mvn test -DscoreKillRateBonus=50
+mvn test -Dtestorder.score.killRateBonus=50
 ```
 
 **Per-module scope:** Use `-Dtestorder.mutations.targetClasses` to limit mutation to one module:
@@ -597,7 +585,7 @@ Once kill rates are stored in `state.lz4`, every subsequent order/select run inc
 Or from the command line:
 
 ```bash
-mvn test -DscoreKillRateBonus=50
+mvn test -Dtestorder.score.killRateBonus=50
 ```
 
 Kill rates decay over time as the code changes — after a re-run of `analyze-mutations`, the rates are refreshed. The state file stores them per-test and they persist across builds until explicitly cleared.
@@ -629,23 +617,15 @@ If PIT is not on the classpath, `analyze-mutations` fails with a clear error mes
 
 ### 1. **Initial Setup Checklist**
 
-- [ ] Root project has test-order plugin configured
+- [ ] Root project has test-order plugin configured with `<extensions>true</extensions>`
 - [ ] All subprojects inherit via `pluginManagement` (Maven) or `subprojects` block (Gradle)
 - [ ] First run: Use `learn` mode to collect dependencies
   ```bash
   # Maven
-  mvn clean install -Dtestorder.mode=learn
+  mvn test -Dtestorder.mode=learn
   
   # Gradle
-  ./gradlew clean build -Dtestorder.mode=learn
-  ```
-- [ ] Aggregate dependencies
-  ```bash
-  # Maven
-  mvn test-order:aggregate
-  
-  # Gradle
-  ./gradlew testOrderAggregate
+  ./gradlew test -Dtestorder.mode=learn
   ```
 - [ ] Verify index was created
   ```bash
@@ -656,13 +636,11 @@ If PIT is not on the classpath, `analyze-mutations` fails with a clear error mes
 
 ```bash
 # Option 1: Auto mode (recommended)
-mvn clean test          # Maven auto-learns when needed
-./gradlew clean test    # Gradle auto-learns when needed
+mvn test          # Maven auto-learns when needed
+./gradlew test    # Gradle auto-learns when needed
 
-# Option 2: Explicit aggregation (for CI/CD)
-mvn clean test -Dtestorder.mode=learn
-mvn test-order:aggregate
-mvn test-order:prepare -Dtestorder.mode=order
+# Option 2: Force a fresh learn pass (e.g. after a major refactor)
+mvn test -Dtestorder.mode=learn
 
 # Option 3: Skip reordering when debugging specific tests
 mvn test -Dtest=MyTest -Dtestorder.skip=true
@@ -688,14 +666,10 @@ jobs:
       
       - name: Learn (first run or after major changes)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: mvn clean install -Dtestorder.mode=learn
-      
-      - name: Aggregate
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: mvn test-order:aggregate
+        run: mvn test -Dtestorder.mode=learn
       
       - name: Test (order mode)
-        run: mvn clean test
+        run: mvn test
       
       - name: Export metrics
         run: ls -lh target/test-order-metrics.json && cat target/test-order-metrics.json
@@ -715,11 +689,11 @@ jobs:
 mvn test -Dtest=FlakyTest -Dtestorder.skip=true
 
 # Or exclude from ordering and run separately
-mvn clean test -Dtestorder.skip=true -Dtest=FlakyTest
-mvn clean test -DexcludedGroups=flaky
+mvn test -Dtestorder.skip=true -Dtest=FlakyTest
+mvn test -DexcludedGroups=flaky
 
 # After fixing, re-learn
-mvn clean install -Dtestorder.mode=learn && mvn test-order:aggregate
+mvn test -Dtestorder.mode=learn
 ```
 
 ### 5. **Module Dependencies**
@@ -750,19 +724,17 @@ Test-order detects this during learn mode and schedules Module A tests first.
 
 **Causes**:
 1. Tests weren't collected in learn mode
-2. Aggregation didn't run
+2. `<extensions>true</extensions>` missing from plugin declaration (Maven) or lifecycle not active (Gradle)
 3. Tests aren't named `*Test.java` or `*Tests.java`
 
 **Solution**:
 ```bash
-# Maven
-mvn clean install -Dtestorder.mode=learn -X 2>&1 | grep -i "deps\|test"
-mvn test-order:aggregate
+# Maven — run with debug output to check dependency collection
+mvn test -Dtestorder.mode=learn -X 2>&1 | grep -i "deps\|test"
 mvn test-order:diagnose
 
 # Gradle
-./gradlew clean build -Dtestorder.mode=learn --debug 2>&1 | grep -i "deps\|test"
-./gradlew testOrderAggregate
+./gradlew test -Dtestorder.mode=learn --debug 2>&1 | grep -i "deps\|test"
 ./gradlew testOrderDiagnose
 ```
 
@@ -810,7 +782,7 @@ mvn test-order:diagnose  # Shows resolved paths
 
 # Reset to defaults
 rm -rf .test-order
-mvn clean install -Dtestorder.mode=learn
+mvn test -Dtestorder.mode=learn
 ```
 
 ### Problem: Changed detection misses cross-module impacts
@@ -821,13 +793,12 @@ mvn clean install -Dtestorder.mode=learn
 
 **Solution**:
 1. Learn mode must collect full dependency graph (all modules)
-2. Index must be aggregated after all modules contribute
+2. Ensure `<extensions>true</extensions>` is set so the lifecycle participant writes the shared index
 3. Use `testOrderDiagnose` to verify coverage
 
 ```bash
 # Ensure full learn cycle
-mvn clean install -Dtestorder.mode=learn
-mvn test-order:aggregate
+mvn test -Dtestorder.mode=learn
 mvn test-order:show  # Verify Module B tests are included
 
 # If still missing, check package structure
@@ -883,9 +854,8 @@ See `samples/sample-multi/` for a complete working example:
 
 ```bash
 cd samples/sample-multi
-mvn clean install -Dtestorder.mode=learn
-mvn test-order:aggregate
-mvn clean test
+mvn test -Dtestorder.mode=learn
+mvn test
 mvn test-order:dashboard
 ```
 

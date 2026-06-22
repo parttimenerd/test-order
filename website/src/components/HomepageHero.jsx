@@ -19,7 +19,7 @@ export default function HomepageHero() {
         Run <em>only the tests affected by your change</em> — and the ones most
         likely to fail — <em>first</em>.
         <br />
-        Feedback in seconds, not minutes. Same coverage. Lower CI bills.
+        Feedback in seconds, not minutes. Full suite still runs. Lower CI bills.
       </p>
 
       <div className={styles.ctaRow}>
@@ -44,7 +44,7 @@ export default function HomepageHero() {
       </div>
 
       <p className={styles.reassurance}>
-        30-second install · MIT licensed · Java 17–26 · No CI changes
+        One-block install · MIT licensed · Java 17–26 · No code changes needed
       </p>
 
       <div className={styles.badgeRow}>

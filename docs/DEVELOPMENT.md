@@ -4,7 +4,7 @@ This guide helps you build test-order from source and use the `0.0.1-SNAPSHOT` i
 
 ## Prerequisites
 
-- Java 17 or newer (17–24 supported; 25+ experimental)
+- Java 17 or newer (17–26 tested in CI)
 - Maven 3.9+
 - Git
 - Optional: Gradle 7.6+ (for Gradle plugin development)

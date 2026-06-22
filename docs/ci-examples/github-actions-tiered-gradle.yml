@@ -50,10 +50,6 @@ jobs:
         if: success()
         run: ./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=3
 
-      - name: Aggregate results
-        if: always()
-        run: ./gradlew testOrderAggregate
-
       - name: Save test-order data
         if: always()
         uses: actions/cache/save@v4

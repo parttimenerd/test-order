@@ -11,9 +11,7 @@ This tutorial walks you through using test-order from scratch. By the end, you'l
 - A **Git** repository (test-order uses Git to detect changes)
 - A project with **JUnit 5/6**, **TestNG 7.x+**, or **Kotest** tests
 
-:::info Using TestNG?
-The setup is the same — add the plugin and run `mvn test`. The TestNG integration module (`test-order-testng`) is included automatically. See [test-order-testng/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-testng/README.md) for TestNG-specific behaviour, or [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) for a side-by-side comparison with JUnit 5.
-:::
+> **Using TestNG?** The setup is the same — add the plugin and run `mvn test`. The TestNG integration module (`test-order-testng`) is included automatically. See [test-order-testng/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-testng/README.md) for TestNG-specific behaviour, or [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) for a side-by-side comparison with JUnit 5.
 
 Quick check:
 ```bash
@@ -65,17 +63,15 @@ Then add the plugin inside `<build><plugins>`:
 </plugin>
 ```
 
-:::tip One-time settings.xml change
-Add `me.bechberger` to `~/.m2/settings.xml` once to enable the short `mvn test-order:show` prefix instead of typing the full group ID every time:
-
-```xml
-<settings>
-  <pluginGroups>
-    <pluginGroup>me.bechberger</pluginGroup>
-  </pluginGroups>
-</settings>
-```
-:::
+> **Tip — one-time settings.xml change:** Add `me.bechberger` to `~/.m2/settings.xml` once to enable the short `mvn test-order:show` prefix instead of typing the full group ID every time:
+>
+> ```xml
+> <settings>
+>   <pluginGroups>
+>     <pluginGroup>me.bechberger</pluginGroup>
+>   </pluginGroups>
+> </settings>
+> ```
 
 ### Gradle
 
@@ -101,9 +97,7 @@ plugins {
 }
 ```
 
-:::warning Gradle: snapshot repository placement
-Do not add the snapshot repository to your project's regular `repositories {}` block — only to `pluginManagement.repositories {}`. Adding it to project repositories can expose snapshot JARs for your dependencies and cause **"Failed to load JUnit Platform"** errors when stale JARs shadow your project's versions.
-:::
+> **Warning — Gradle snapshot repository placement:** Do not add the snapshot repository to your project's regular `repositories {}` block — only to `pluginManagement.repositories {}`. Adding it to project repositories can expose snapshot JARs for your dependencies and cause **"Failed to load JUnit Platform"** errors when stale JARs shadow your project's versions.
 
 <details>
 <summary><b>Alternative: Gradle init script (no build file changes)</b></summary>
@@ -141,7 +135,7 @@ Then run any Gradle command with `--init-script path/to/test-order-init.gradle`.
 
 ## Step 2: Run tests (learn mode)
 
-On the first run, the plugin automatically enters **learn mode** — it pre-instruments your compiled classes (offline MEMBER instrumentation, the default) so that each test's application-class dependencies are recorded without needing a Java agent attached at runtime.
+On the first run, the plugin automatically enters **learn mode**. In the default `offline` instrumentation mode, the plugin modifies your compiled classes at build time to record which source classes each test exercises. A lightweight collector server receives these recordings during the test run and writes the dependency index.
 
 ```bash
 # Maven
@@ -156,7 +150,7 @@ mvn test
 ```
 [INFO] [test-order] Auto-instrumenting classes for offline learn mode: .../target/classes
 [INFO] [test-order] Instrumented 42 classes (skipped 0)
-[INFO] [test-order] Offline learn mode (MEMBER): no agent, using pre-instrumented classes
+[INFO] [test-order] Offline learn mode (MEMBER): using pre-instrumented classes
 [INFO] [test-order] IndexCollectorServer started on port 54321 (v2 binary protocol enabled)
 [INFO] [test-order] IndexCollectorServer merged 8 test classes via socket
 [INFO] BUILD SUCCESS
@@ -164,11 +158,10 @@ mvn test
 
 After the learn run, the dependency index is written to `.test-order/test-dependencies.lz4`. You can gitignore this directory — the plugin auto-learns on the first run for any new checkout.
 
-:::note Instrumentation modes
-The default is `offline` (pre-instrumented bytecode, no agent needed).
-To use online agent-based instrumentation instead, pass `-Dtestorder.instrumentation=online`.
-Online mode requires the agent JAR on the command line but avoids modifying bytecode on disk.
-:::
+> **Instrumentation modes:** The default is `offline` (build-time bytecode instrumentation — the plugin modifies compiled classes before tests run, no `-javaagent` flag needed on the test JVM).
+> To use online instrumentation instead (agent attached at runtime via `-javaagent`), pass `-Dtestorder.instrumentation=online`.
+> Online mode avoids modifying bytecode on disk but requires the agent JAR to be locatable on the classpath.
+> Both modes report dependency data through the same `IndexCollectorServer`.
 
 ---
 
@@ -202,9 +195,7 @@ Tests that exercise your changed code now run first. If something breaks, you'll
 
 ## Step 4: Inspect the prioritization
 
-:::note show requires a learn run first
-`show` reads the dependency index, so it requires a prior learn run to have happened. If you see "no index found", run `mvn test` (or `mvn -Dtestorder.mode=learn test`) once first.
-:::
+> **Note — `show` requires a learn run first:** `show` reads the dependency index, so it requires a prior learn run to have happened. If you see "no index found", run `mvn test` (or `mvn -Dtestorder.mode=learn test`) once first.
 
 See exactly how tests are ranked:
 
@@ -316,9 +307,7 @@ mvn test
 mvn test-order:dashboard
 ```
 
-:::note
-The `-Dspotless.check.skip=true` flag is only needed when building the test-order framework itself (it runs code formatting checks). The sample projects don't need it.
-:::
+> **Note:** The `-Dspotless.check.skip=true` flag is only needed when building the test-order framework itself (it runs code formatting checks). The sample projects don't need it.
 
 ---
 

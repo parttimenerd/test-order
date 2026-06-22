@@ -175,15 +175,16 @@ The dependency index (`.test-order/test-dependencies.lz4`) grows with the number
 Switch to `CLASS` mode if the index grows beyond ~50 MB or learn runs are slow:
 
 ```xml
-<!-- pom.xml -->
+<!-- pom.xml plugin configuration -->
 <configuration>
-  <trackingMode>CLASS</trackingMode>
+  <instrumentationMode>CLASS</instrumentationMode>
 </configuration>
 ```
 
-```properties
-# .test-order/config.properties
-trackingMode=CLASS
+Or pass it on the command line:
+
+```bash
+mvn test -Dtestorder.mode=learn -Dtestorder.instrumentation.mode=CLASS
 ```
 
 ### Committing vs caching the index

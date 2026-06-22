@@ -22,7 +22,7 @@ export default function Home() {
     '@type': 'SoftwareApplication',
     name: 'test-order',
     description:
-      'test-order learns which of your tests actually catch bugs and runs those first. Maven and Gradle plugin for JUnit and TestNG that prioritizes tests by failure history, code churn, and coverage to give faster CI feedback.',
+      'test-order detects which tests cover your changed code and runs those first. Maven and Gradle plugin for JUnit and TestNG. No cloud, no annotations, no infrastructure.',
     applicationCategory: 'DeveloperApplication',
     operatingSystem: 'Cross-platform (JVM)',
     url: 'https://parttimenerd.github.io/test-order/',
@@ -46,7 +46,7 @@ export default function Home() {
   return (
     <Layout
       title="test-order — Stop running tests that will never fail"
-      description="test-order learns which of your tests actually catch bugs — and runs those first. Maven & Gradle plugin for JUnit / TestNG. 20+ real bugs caught across 30+ OSS projects."
+      description="test-order detects which tests cover your changed code and runs those first. Maven & Gradle plugin for JUnit / TestNG. No cloud, no annotations, no infrastructure."
     >
       <Head>
         <link rel="canonical" href="https://parttimenerd.github.io/test-order/" />
@@ -75,7 +75,7 @@ export default function Home() {
           <p className={styles.heroCastCaption}>
             <Link to="/docs/DEMOS">More demos →</Link>{' '}
             ·{' '}
-            <Link to="/docs/GETTING_STARTED">Run this yourself in 30 seconds →</Link>
+            <Link to="/docs/GETTING_STARTED">Try it in your project →</Link>
           </p>
         </section>
 

@@ -20,7 +20,7 @@
           </div>
           <div class="flex items-start gap-3">
             <span class="text-emerald-400 font-bold text-xl mt-0.5">✓</span>
-            <span class="text-gray-100 text-xl">Tighter feedback loop — for developers and AI agents</span>
+            <span class="text-gray-100 text-xl">Tighter feedback loop</span>
           </div>
           <div class="flex items-start gap-3">
             <span class="text-emerald-400 font-bold text-xl mt-0.5">✓</span>

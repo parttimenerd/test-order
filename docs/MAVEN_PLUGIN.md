@@ -19,23 +19,6 @@ Detected changes include:
 
 The fingerprint is stored in the state file (`.test-order/state.lz4`) and only compared against the previous run's classpath.
 
-## Always-on Instrumentation
-
-Instead of periodic learn runs, keep the agent attached on every test run:
-
-```xml
-<configuration>
-  <mode>learn</mode>
-</configuration>
-```
-
-**Trade-offs:**
-- **5–30% overhead** from the Java agent recording test dependencies on every run (varies by instrumentation mode; MEMBER mode, the default, is ~10–30%)
-- **Potential behaviour differences** with timing-sensitive tests or other bytecode transformers
-- **Agent conflicts** possible with JaCoCo, MockitoAgent — test your specific setup
-
-For most projects, periodic learn mode on CI is simpler.
-
 ## Instrumentation Filtering
 
 The Java agent supports configurable filtering strategies:
@@ -391,6 +374,62 @@ dashboard:
         path: target/test-order-dashboard/
 ```
 
+## Flaky-Test Handling and Skip-if-Unchanged Cache
+
+Three opt-in features close the gap to commercial "predictive test selection"
+tooling. See the dedicated [FLAKY_AND_CACHING.md](FLAKY_AND_CACHING.md) guide for
+the full design and decision matrix.
+
+### Properties
+
+| Property | Default | Description |
+|---|---|---|
+| `testorder.flaky.retries` | `0` | Max retries per FLAKY-classified test (recommended: `2`) |
+| `testorder.flaky.report.path` | `.test-order/ml-report.txt` | ML report consulted to identify FLAKY tests |
+| `testorder.flaky.quarantine` | `false` | When `true`, FLAKY-test failures are reported as **aborted** (skipped) after retries are exhausted |
+| `testorder.cache.skipUnchanged` | `false` | Skip tests whose deps are unchanged **and** that passed the last *N* runs |
+| `testorder.cache.minPassStreak` | `3` | Required consecutive passing runs before cache eligibility |
+| `testorder.cache.maxSkipFraction` | `0.9` | Safety cap on the fraction of the suite that can be cached in a single run |
+
+### Maven configuration
+
+The recommended way to enable these is per-CI-job via `-D` flags:
+
+```bash
+# Auto-retry flaky tests, with quarantine for the rollout window
+mvn verify \
+  -Dtestorder.flaky.retries=2 \
+  -Dtestorder.flaky.quarantine=true \
+  -Djunit.jupiter.extensions.autodetection.enabled=true
+
+# Skip unchanged + green tests for maximum CI speed
+mvn verify \
+  -Dtestorder.cache.skipUnchanged=true \
+  -Dtestorder.cache.minPassStreak=3
+```
+
+Or pin them in `pom.xml` via `<properties>` if you want them always-on:
+
+```xml
+<properties>
+  <testorder.flaky.retries>2</testorder.flaky.retries>
+  <testorder.cache.skipUnchanged>true</testorder.cache.skipUnchanged>
+</properties>
+```
+
+The JUnit Jupiter extension that performs retries is auto-registered via
+service-loader and activates only when `junit.jupiter.extensions.autodetection.enabled=true`.
+Add this to `src/test/resources/junit-platform.properties`:
+
+```
+junit.jupiter.extensions.autodetection.enabled=true
+```
+
+Runtime retry/quarantine outcomes are persisted to `.test-order/flaky-runtime.txt`
+and surface automatically in the CI summary
+(`target/test-order-summary.{md,json}`, `target/test-order-selection-report.xml`)
+and the **ML Health** + **Cache** tabs of the dashboard.
+
 ## Index Compaction
 
 The dependency index (`.test-order/test-dependencies.lz4`) grows over time as learn
@@ -428,10 +467,35 @@ When the same setting is provided in multiple places, priority is:
 4. Persisted state file values (`.test-order/state.lz4`) such as optimized weights and run history
 5. Internal defaults
 
-## Auto Mode (default)
+## Auto Mode
 
-If `testorder.mode` is `auto` (the default), the plugin checks for a `testorder.learn` system property.
-In order mode it falls back through: explicit classes → hash-based → git-based change detection.
+### `testorder.mode=auto` (default behaviour)
+
+If `testorder.mode` is `auto` (the default), the plugin checks for an existing dependency index on startup. If no index is found it enters learn mode; otherwise it enters order mode. In order mode it falls back through: explicit classes → hash-based → git-based change detection.
+
+### `test-order:auto` goal (combined workflow)
+
+The `test-order:auto` goal handles the full workflow in a single invocation:
+
+1. No dependency index → learns
+2. `runsSinceLearn >= autoLearnRunThreshold` (default `10`) → re-learns
+3. Otherwise → selects a fast subset and configures Surefire
+
+```bash
+mvn test-order:auto test
+```
+
+| Parameter | Property | Default | Description |
+|---|---|---|---|
+| `runRemaining` | `testorder.auto.runRemaining` | `true` | Automatically run remaining tests after the selected subset |
+| `optimizeEvery` | `testorder.auto.optimizeEvery` | `10` | Optimise weights every N runs (0 = never) |
+| `autoLearnRunThreshold` | `testorder.autoLearnRunThreshold` | `10` | Force a full learn pass every N runs (0 = disable) |
+
+Then run the deferred tests only when the first command succeeds:
+
+```bash
+mvn test-order:auto test && mvn test-order:run-remaining test
+```
 
 ## Affected Mode (Two-phase CI Workflow)
 
@@ -464,30 +528,6 @@ All other classes go to `target/test-order-remaining.txt`.
 | `seed` | `testorder.affected.seed` | — | Random seed for reproducible selection |
 | `remainingFile` | `testorder.affected.remainingFile` | `target/test-order-remaining.txt` | File for deferred test classes |
 | `selectedFile` | `testorder.affected.selectedFile` | `target/test-order-selected.txt` | File for selected test classes |
-
-## Auto Mode (Combined Goal)
-
-A single goal that handles the full workflow automatically:
-
-1. No dependency index → learns
-2. `runsSinceLearn >= autoLearnRunThreshold` (default `10`) → re-learns
-3. Otherwise → selects a fast subset and configures Surefire
-
-```bash
-mvn test-order:auto test
-```
-
-| Parameter | Property | Default | Description |
-|---|---|---|---|
-| `runRemaining` | `testorder.auto.runRemaining` | `true` | Automatically run remaining tests after the selected subset |
-| `optimizeEvery` | `testorder.auto.optimizeEvery` | `10` | Optimise weights every N runs (0 = never) |
-| `autoLearnRunThreshold` | `testorder.autoLearnRunThreshold` | `10` | Force a full learn pass every N runs (0 = disable) |
-
-Then run the deferred tests only when the first command succeeds:
-
-```bash
-mvn test-order:auto test && mvn test-order:run-remaining test
-```
 
 ## Recommended CI Setup
 
@@ -796,10 +836,6 @@ The tiered workflow splits the test suite into three groups for progressive CI p
 - name: "Tier 3: full coverage"
   if: success()
   run: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3 -Dsurefire.failIfNoSpecifiedTests=false
-
-- name: Aggregate results
-  if: always()
-  run: mvn test-order:aggregate
 ```
 
 Full examples (GitHub Actions, GitLab CI, Azure Pipelines): [`docs/ci-examples/`](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples)
@@ -916,3 +952,22 @@ java -jar test-order-core-jar-with-dependencies.jar <command>
 - `run <indexFile>` — detect changes and print affected tests
 - `struct-diff` — structural diff of Java files (types, methods, fields) against git
 - `advise <indexFile>` — analyse per-method dependency overlap and suggest test classes to split
+
+---
+
+## Advanced: Always-on Instrumentation
+
+Instead of periodic learn runs, you can keep learn mode active on every test run:
+
+```xml
+<configuration>
+  <mode>learn</mode>
+</configuration>
+```
+
+**Trade-offs:**
+- **5–30% overhead** from recording test dependencies on every run (varies by instrumentation mode; MEMBER mode, the default, is ~10–30%)
+- **Potential behaviour differences** with timing-sensitive tests or other bytecode transformers
+- **Agent conflicts** possible with JaCoCo, MockitoAgent — test your specific setup
+
+For most projects, periodic learn mode on CI is simpler and has lower overhead.

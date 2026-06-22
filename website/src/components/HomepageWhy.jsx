@@ -85,7 +85,7 @@ export default function HomepageWhy() {
 
       <p className={styles.statsCaveat}>
         Numbers from a 30-project third-party validation run (June 2026) and a
-        sample APFD report. Plus three free-bies: <strong>0</strong> config to add,
+        sample APFD report. Plus three freebies: <strong>0</strong> config to add,
         <strong> 100%</strong> of the original coverage preserved, runs on{' '}
         <strong>existing</strong> JUnit / TestNG suites.
       </p>

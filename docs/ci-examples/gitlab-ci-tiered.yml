@@ -9,7 +9,6 @@ stages:
   - tier-1
   - tier-2
   - tier-3
-  - post
 
 variables:
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
@@ -54,13 +53,6 @@ tier-3:maven:
         -Dtestorder.tiered.currentTier=3
         -Dsurefire.failIfNoSpecifiedTests=false
 
-aggregate:maven:
-  stage: post
-  image: eclipse-temurin:17
-  when: always
-  script:
-    - mvn test-order:aggregate
-
 # ── Gradle ───────────────────────────────────────────────────────────────────
 
 # tier-1:gradle:
@@ -88,10 +80,3 @@ aggregate:maven:
 #   needs: [tier-2:gradle]
 #   script:
 #     - ./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=3
-
-# aggregate:gradle:
-#   stage: post
-#   image: eclipse-temurin:17
-#   when: always
-#   script:
-#     - ./gradlew testOrderAggregate

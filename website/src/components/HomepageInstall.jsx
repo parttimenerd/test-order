@@ -79,7 +79,7 @@ export default function HomepageInstall() {
       <div className={styles.installInner}>
         <h2 className={styles.sectionTitle}>Add it to your project.</h2>
         <p className={styles.sectionLede}>
-          One block in your build file. No code changes. No CI changes.
+          One block in your build file. No code changes. No annotations.
         </p>
 
         <div className={styles.installTabs}>

@@ -94,7 +94,7 @@ git --version   # Any recent version
 </plugin>
 ```
 
-**2. Run your tests twice:**
+**3. Run your tests twice:**
 
 ```bash
 mvn test          # First run: learns which tests cover which code
@@ -103,7 +103,7 @@ mvn test          # Second run: reorders — affected tests run first
 
 That's it. The plugin auto-switches between learn and order mode. No configuration needed.
 
-**3. Explore (optional):**
+**4. Explore (optional):**
 
 ```bash
 mvn test-order:show           # See how tests are ranked and why

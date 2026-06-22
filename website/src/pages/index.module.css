@@ -291,7 +291,7 @@
   display: flex;
   align-items: flex-start;
   gap: 0;
-  max-width: 1200px;
+  max-width: 1500px;
   margin: 0 auto;
 }
 
@@ -304,7 +304,8 @@
 }
 
 .howFlow .howStep {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .howTiers {
@@ -376,7 +377,7 @@
 }
 
 .howStep {
-  padding: 1.25rem;
+  padding: 1rem 0.5rem;
   background: var(--ifm-background-color);
   border: 1px solid var(--ifm-color-emphasis-200);
   border-radius: 10px;
@@ -397,6 +398,11 @@
 
 .howStep pre {
   margin: 0.6rem 0 0;
+  overflow-x: auto;
+}
+
+.howStep pre code {
+  font-size: 0.82rem;
 }
 
 .whySection {

@@ -55,6 +55,16 @@ const FEATURE_GROUPS = [
     ],
   },
   {
+    heading: 'Flaky-test handling & caching',
+    items: [
+      { label: 'Auto-retry FLAKY-classified tests (testorder.flaky.retries)', to: '/docs/FLAKY_AND_CACHING' },
+      { label: 'Quarantine mode — green builds while you fix flakes', to: '/docs/FLAKY_AND_CACHING#feature-2--quarantine-flaky-failures' },
+      { label: 'Skip-if-unchanged caching (predictive test selection)', to: '/docs/FLAKY_AND_CACHING#feature-3--skip-if-unchanged-cache' },
+      { label: 'Safety cap on cache (never skip more than 90%)', to: '/docs/FLAKY_AND_CACHING#safety-cap-maxskipfraction' },
+      { label: 'CI summary & dashboard tabs for retries / quarantine / cache', to: '/docs/FLAKY_AND_CACHING#ci-summary-integration' },
+    ],
+  },
+  {
     heading: 'Framework & language support',
     items: [
       { label: 'JUnit 6 / 5 / 4 / Vintage', to: '/docs/FRAMEWORK_COMPARISON' },

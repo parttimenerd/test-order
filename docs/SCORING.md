@@ -34,9 +34,7 @@ $$
 
 Full speed bonus at $d_t \le \tilde{d}/8$; full penalty at $d_t \ge 8\tilde{d}$; zero at the median.
 
-:::info All weights are configurable
-Override any signal via system properties (`-Dtestorder.score.*=…`) or a [TOML weights file](#customizing-scores).
-:::
+> **All weights are configurable.** Override any signal via system properties (`-Dtestorder.score.*=…`) or a [TOML weights file](#customizing-scores).
 
 ## Score Components
 
@@ -89,9 +87,7 @@ Entries below `failurePruneThreshold` (default 0.01) are dropped. The final bonu
 | Method-level decay | `methodFailureDecay` | 0.3 |
 | Prune threshold | `failurePruneThreshold` | 0.01 |
 
-:::note
-Decay only applies when a test run completes. Calling `save()` without a preceding run (e.g. from the weight optimizer) preserves scores unchanged.
-:::
+> **Note:** Decay only applies when a test run completes. Calling `save()` without a preceding run (e.g. from the weight optimizer) preserves scores unchanged.
 
 ## Duration Smoothing (EMA)
 
@@ -243,9 +239,7 @@ Three modes trade index precision against learn-run overhead:
 | `METHOD` | 5.47 s | 5.44 s | 0.11 s |
 | `MEMBER` | 5.57 s | 5.45 s | 0.28 s |
 
-:::tip Overhead only applies to learn runs
-Normal ordered test execution (`auto` mode) adds **no** instrumentation cost. Re-learn after major refactors or on a weekly CI schedule — not every build.
-:::
+> **Overhead only applies to learn runs.** Normal ordered test execution (`auto` mode) adds **no** instrumentation cost. Re-learn after major refactors or on a weekly CI schedule — not every build.
 
 ## Change Detection Modes
 

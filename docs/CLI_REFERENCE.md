@@ -366,6 +366,21 @@ ML data is shown in:
 - `mvn test-order:show` (auto-detected when history exists)
 - `mvn test-order:dashboard` (ML Health tab + P(fail) column)
 
+### Flaky-test Handling and Skip-if-unchanged Cache
+
+All three features below are opt-in and independent of each other. See [FLAKY_AND_CACHING.md](FLAKY_AND_CACHING.md) for the full guide.
+
+| Property | Default | Notes |
+|---|---|---|
+| `testorder.flaky.retries` | `0` | Max retries per `FLAKY`-classified test method (0 disables). Recommended: `2`. Requires JUnit Jupiter auto-detection (`junit.jupiter.extensions.autodetection.enabled=true`). |
+| `testorder.flaky.report.path` | `.test-order/ml-report.txt` | Path to the ML health report consumed by the runtime extension. |
+| `testorder.flaky.quarantine` | `false` | When `true`, persistent `FLAKY`-test failures are reported as **aborted** (skipped) rather than failed. |
+| `testorder.cache.skipUnchanged` | `false` | Skip tests whose dependencies are unchanged **and** which have passed the last *N* runs. The plugin omits them from both selected and remaining lists. |
+| `testorder.cache.minPassStreak` | `3` | Minimum consecutive passing runs before a test becomes cache-eligible. |
+| `testorder.cache.maxSkipFraction` | `0.9` | Safety cap: never skip more than this fraction of the suite. When the cap binds, slower tests are preferred for skipping. |
+
+Cache-eligible tests are excluded from the run entirely; retried/quarantined tests are recorded in `.test-order/flaky-runtime.txt` and surfaced in the CI summary and dashboard.
+
 ### Scoring Overrides
 
 | Property | Default | Description |
@@ -385,7 +400,7 @@ ML data is shown in:
 
 ### Method-Level Scoring Overrides
 
-When method-level ordering is active (the default for JUnit 5/6), these per-component weights tune how individual test methods are ranked within a class. Method scores combine the same change/coverage/speed signals as class scores, but at method granularity using telemetry from `MEMBER`-mode instrumentation.
+When method-level ordering is active (`testorder.methodOrder.enabled=true`), these per-component weights tune how individual test methods are ranked within a class. Method scores combine the same change/coverage/speed signals as class scores, but at method granularity using telemetry from `MEMBER`-mode instrumentation.
 
 > **Note:** These properties apply to JUnit 5/6 (`PriorityMethodOrderer`) and to TestNG's `TestNGPriorityInterceptor` when `testorder.methodOrder.enabled=true`. They have no effect with the Vintage engine, which has no method-ordering API.
 

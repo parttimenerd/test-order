@@ -18,7 +18,7 @@ const FEATURES = [
   {
     icon: '🔌',
     title: 'Fits your build',
-    body: 'Drop-in Maven and Gradle plugins. No CI changes. Works on existing JUnit 6 / 5 / 4 and TestNG suites.',
+    body: 'Drop-in Maven and Gradle plugins. No annotations, no source changes, no CI infrastructure. Works on existing JUnit 6 / 5 / 4 and TestNG suites.',
     to: '/docs/CI',
   },
 ];

@@ -49,7 +49,3 @@ steps:
         -Dsurefire.failIfNoSpecifiedTests=false
     displayName: "Tier 3: Full coverage"
     condition: succeeded()
-
-  - script: mvn test-order:aggregate
-    displayName: Aggregate test-order data
-    condition: always()
