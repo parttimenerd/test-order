@@ -132,7 +132,7 @@ public final class ChangeAnalysis {
 		Path indexPath = ctx.indexFile();
 		if (!Files.exists(indexPath)) {
 			throw new IOException(
-					"[test-order] Index file not found: " + indexPath + ". Run tests in learn mode first.");
+					"[test-order] Index file not found: " + indexPath + "\nRun: mvn test -Dtestorder.mode=learn");
 		}
 
 		DependencyMap depMap;
@@ -140,7 +140,7 @@ public final class ChangeAnalysis {
 			depMap = DependencyMap.load(indexPath);
 		} catch (IOException e) {
 			throw new IOException("[test-order] Failed to load dependency index: " + indexPath
-					+ " — the file may be corrupt. Run tests in learn mode to regenerate it.", e);
+					+ " — the file may be corrupt." + "\nRun: mvn test -Dtestorder.mode=learn", e);
 		}
 		if (opts.filterToModule() && ctx.currentModuleId() != null && !ctx.currentModuleId().isEmpty()
 				&& depMap.hasModuleMap()) {
@@ -175,8 +175,7 @@ public final class ChangeAnalysis {
 						ctx.log()
 								.warn("[test-order] This module has " + compiledCount
 										+ " compiled test class(es) not yet in the dependency index."
-										+ " Run learn mode to include them: " + ctx.learnCommand()
-										+ " (showing all indexed tests as fallback)");
+										+ " (showing all indexed tests as fallback)" + "\nRun: " + ctx.learnCommand());
 					}
 				}
 			}
@@ -458,8 +457,7 @@ public final class ChangeAnalysis {
 				ctx.log()
 						.warn("[test-order] static analysis: " + report.reason() + " AND "
 								+ String.format("%.0f%%", affectedFraction * 100)
-								+ " of tests already touch the changed classes. " + "Consider re-running learn mode (`"
-								+ ctx.learnCommand() + "`) to refresh the dependency index.");
+								+ " of tests already touch the changed classes." + "\nRun: " + ctx.learnCommand());
 			} else if (report.degraded()) {
 				ctx.log()
 						.debug("[test-order] static analysis ratio threshold tripped (" + report.reason()

@@ -132,7 +132,7 @@ public final class DiagnosticOperation {
 			if (!Files.exists(config.indexFile())) {
 				return DiagnosticResult.info(ErrorCode.NOT_INITIALIZED_INDEX,
 						"No dependency index found — this is expected before the first learn run",
-						List.of("Run learn mode to build the index: mvn test -Dtestorder.mode=learn",
+						List.of("Run: mvn test -Dtestorder.mode=learn",
 								"The index is created automatically at the end of a learn run"));
 			}
 
@@ -140,8 +140,7 @@ public final class DiagnosticOperation {
 			if (size < 100) {
 				return DiagnosticResult.error(ErrorCode.INDEX_EMPTY,
 						"Index file is suspiciously small (" + size + " bytes)",
-						List.of("Run tests in learn mode to collect test dependencies: mvn test -Dtestorder.mode=learn",
-								"Then run 'mvn test-order:aggregate' to merge .deps files into the index"));
+						List.of("Run: mvn test -Dtestorder.mode=learn", "Run: mvn test-order:aggregate"));
 			}
 
 			// Try to load it
@@ -157,7 +156,8 @@ public final class DiagnosticOperation {
 				if (indexAge > 86400) { // 24 hours
 					return DiagnosticResult.info(ErrorCode.INDEX_NEEDS_REBUILD,
 							"Index is " + (indexAge / 3600) + " hours old",
-							List.of("Consider re-running learn mode to pick up recent changes: mvn test -Dtestorder.mode=learn",
+							List.of("Consider re-running learn mode to pick up recent changes",
+									"Run: mvn test -Dtestorder.mode=learn",
 									"Or verify that your build hasn't changed significantly"));
 				}
 
@@ -167,30 +167,31 @@ public final class DiagnosticOperation {
 					return DiagnosticResult.error(ErrorCode.INDEX_EMPTY,
 							"Index has 0 test classes — learn mode ran but recorded no dependencies",
 							List.of("Most likely cause: the package filter excludes all your test classes.",
-									"Fix: add the package filter explicitly:",
-									"  mvn test -Dtestorder.mode=learn -Dtestorder.includePackages=com.yourcompany",
+									"Fix: add the package filter explicitly.",
+									"Run: mvn test -Dtestorder.mode=learn -Dtestorder.includePackages=com.yourcompany",
 									"Or check that your source packages match the project groupId (used as fallback filter)",
-									"Run 'mvn test-order:diagnose' for further analysis"));
+									"Run: mvn test-order:diagnose"));
 				}
 				int actualCount = countTestClasses(config.testClassesDir());
 				if (actualCount > 0 && indexedCount * 10 < actualCount) {
 					return DiagnosticResult.error(ErrorCode.INDEX_EMPTY,
 							"Index covers only " + indexedCount + " of ~" + actualCount
 									+ " test classes (<10%) — learn mode likely did not complete successfully",
-							List.of("Re-run learn mode: mvn test -Dtestorder.mode=learn",
+							List.of("Run: mvn test -Dtestorder.mode=learn",
 									"If using reuseForks=false, ensure each forked JVM can write to .test-order/",
-									"If your source packages don't match the project's groupId, set the filter explicitly:",
-									"  -Dtestorder.includePackages=com.yourcompany",
+									"If your source packages don't match the project's groupId, set the filter explicitly.",
+									"Run: mvn test -Dtestorder.mode=learn -Dtestorder.includePackages=com.yourcompany",
 									"Check for errors in the previous learn run output"));
 				}
 
 				return DiagnosticResult.success("Index file is valid (" + map.size() + " test classes)");
 			} catch (IOException e) {
 				return DiagnosticResult.error(ErrorCode.INDEX_CORRUPTED, "Index file is corrupted: " + e.getMessage(),
-						List.of("Recovery steps:", "  1. Clean up: mvn test-order:clean (or Gradle: testOrderClean)",
-								"  2. If .deps files exist: mvn test-order:compact (or Gradle: testOrderCompact)",
-								"  3. Otherwise re-learn: mvn test -Dtestorder.mode=learn",
-								"  4. Verify fix: mvn test-order:diagnose",
+						List.of("Recovery steps (Maven):", "Run: mvn test-order:clean", "Run: mvn test-order:compact",
+								"Run: mvn test -Dtestorder.mode=learn", "Run: mvn test-order:diagnose",
+								"Recovery steps (Gradle):", "Run: ./gradlew testOrderClean",
+								"Run: ./gradlew testOrderCompact", "Run: ./gradlew test -Dtestorder.mode=learn",
+								"Run: ./gradlew testOrderDiagnose",
 								"Possible causes: disk full during write, incompatible version, or file is not LZ4"));
 			}
 		} catch (IOException e) {
@@ -204,7 +205,7 @@ public final class DiagnosticOperation {
 			if (!Files.exists(config.stateFile())) {
 				return DiagnosticResult.info(ErrorCode.NOT_INITIALIZED_STATE,
 						"No state file found — this is expected before the first learn run",
-						List.of("Run learn mode to start collecting test history: mvn test -Dtestorder.mode=learn"));
+						List.of("Run: mvn test -Dtestorder.mode=learn"));
 			}
 
 			long size = Files.size(config.stateFile());
@@ -238,8 +239,8 @@ public final class DiagnosticOperation {
 			return DiagnosticResult.info(ErrorCode.HASH_FILE_STALE,
 					"Hash snapshot files missing: " + String.join(", ", missing),
 					List.of("Hash snapshots track file changes between runs (since-last-run mode)",
-							"They are created automatically during learn mode runs",
-							"To create manually: mvn test-order:snapshot (or Gradle: testOrderSnapshot)",
+							"They are created automatically during learn mode runs", "To create manually:",
+							"Run: mvn test-order:snapshot", "Run: ./gradlew testOrderSnapshot",
 							"If using git-based change detection, these files are optional"));
 		}
 
@@ -363,7 +364,7 @@ public final class DiagnosticOperation {
 		try {
 			if (!Files.exists(config.depsDir())) {
 				return DiagnosticResult.info(ErrorCode.DEPS_NOT_FOUND, "No .deps directory found",
-						List.of("Run learn mode to collect per-test dependency data: mvn test -Dtestorder.mode=learn",
+						List.of("Run: mvn test -Dtestorder.mode=learn",
 								"The .deps directory is created automatically on the first learn run"));
 			}
 
@@ -374,7 +375,7 @@ public final class DiagnosticOperation {
 
 			if (fileCount == 0) {
 				return DiagnosticResult.info(ErrorCode.DEPS_NOT_FOUND, ".deps directory exists but is empty",
-						List.of("Run tests in learn mode to populate .deps files: mvn test -Dtestorder.mode=learn"));
+						List.of("Run: mvn test -Dtestorder.mode=learn"));
 			}
 
 			return DiagnosticResult.success(".deps directory contains " + fileCount + " dependency files");

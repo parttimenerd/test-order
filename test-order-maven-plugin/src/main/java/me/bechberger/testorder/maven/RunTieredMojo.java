@@ -129,7 +129,7 @@ public class RunTieredMojo extends AbstractTestOrderMojo {
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
 				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'run-tiered' goal configures Surefire but does not execute tests."
-					+ " Include the test phase: mvn test-order:run-tiered test");
+					+ "\nRun: mvn test-order:run-tiered test");
 		}
 
 		if ("explicit".equalsIgnoreCase(changeMode)) {

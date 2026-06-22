@@ -91,7 +91,7 @@ public class Tool implements Runnable {
 	private static boolean checkIndexExists(Path indexFile) {
 		if (!Files.exists(indexFile)) {
 			System.err.println("Error: dependency index not found: " + indexFile);
-			System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
+			System.err.println("Run: mvn test -Dtestorder.mode=learn");
 			return false;
 		}
 		return true;
@@ -137,7 +137,7 @@ public class Tool implements Runnable {
 			try {
 				if (!Files.isDirectory(depsDir)) {
 					System.err.println("Error: deps directory does not exist or is not a directory: " + depsDir);
-					System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
+					System.err.println("Run: mvn test -Dtestorder.mode=learn");
 					return 1;
 				}
 				DependencyMap map = DependencyMap.aggregate(depsDir);
@@ -148,7 +148,7 @@ public class Tool implements Runnable {
 						return 1;
 					} else {
 						System.err.println("No .deps files found — no index to write.");
-						System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
+						System.err.println("Run: mvn test -Dtestorder.mode=learn");
 						return 1;
 					}
 				}
@@ -157,7 +157,7 @@ public class Tool implements Runnable {
 				return 0;
 			} catch (IOException e) {
 				return reportError("aggregate", "Failed to aggregate .deps files",
-						"Run mvn test-order:diagnose, or check write permissions on the deps directory and output path",
+						"Check write permissions on the deps directory and output path.\nRun: mvn test-order:diagnose",
 						e);
 			}
 		}
@@ -187,7 +187,7 @@ public class Tool implements Runnable {
 				return 0;
 			} catch (IOException e) {
 				return reportError("affected", "Failed to load index or compute affected tests",
-						"Run mvn test-order:diagnose. The index may be missing or corrupted; re-run learn mode to rebuild it",
+						"The index may be missing or corrupted.\nRun: mvn test-order:diagnose\nRun: mvn test-order:clean\nRun: mvn test -Dtestorder.mode=learn",
 						e);
 			}
 		}
@@ -210,7 +210,7 @@ public class Tool implements Runnable {
 				return 0;
 			} catch (IOException e) {
 				return reportError("stats", "Failed to load dependency index",
-						"Run mvn test-order:diagnose to check index health, or re-run learn mode if the file is corrupted",
+						"The file may be corrupted.\nRun: mvn test-order:diagnose\nRun: mvn test-order:clean\nRun: mvn test -Dtestorder.mode=learn",
 						e);
 			}
 		}
@@ -370,7 +370,7 @@ public class Tool implements Runnable {
 				DependencyMap map = DependencyMap.load(indexFile);
 				if (map.size() == 0) {
 					System.err.println("Dependency index is empty: " + indexFile);
-					System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
+					System.err.println("Run: mvn test -Dtestorder.mode=learn");
 					return 1;
 				}
 				if (output != null) {
@@ -570,7 +570,7 @@ public class Tool implements Runnable {
 			try {
 				if (!java.nio.file.Files.exists(indexFile)) {
 					System.err.println("Error: dependency index not found: " + indexFile);
-					System.err.println("Run learn mode first: mvn test -Dtestorder.mode=learn");
+					System.err.println("Run: mvn test -Dtestorder.mode=learn");
 					return 1;
 				}
 				DependencyMap depMap = DependencyMap.load(indexFile);
@@ -604,7 +604,7 @@ public class Tool implements Runnable {
 				return 0;
 			} catch (IOException e) {
 				return reportError("select", "Failed to load index/state or write test lists",
-						"Did you run learn mode first? mvn test -Dtestorder.mode=learn", e);
+						"Run: mvn test -Dtestorder.mode=learn", e);
 			}
 		}
 	}
@@ -716,7 +716,7 @@ public class Tool implements Runnable {
 				return 0;
 			} catch (IOException e) {
 				return reportError("advise", "Failed to load index or compute method-level advice",
-						"Per-method advice requires method-level instrumentation: mvn test -Dtestorder.instrumentationMode=METHOD -Dtestorder.mode=learn",
+						"Per-method advice requires method-level instrumentation.\nRun: mvn test -Dtestorder.instrumentationMode=METHOD -Dtestorder.mode=learn",
 						e);
 			}
 		}

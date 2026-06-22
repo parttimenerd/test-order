@@ -924,4 +924,197 @@ class TestOrderPluginIntegrationTest {
         // mode may not produce an index on all platforms — that is a known limitation.
         assertEquals(SUCCESS, result.task(":test").getOutcome());
     }
+
+    @Test
+    @DisplayName("Learn mode applies cleanly under Gradle 8.14+ strict mutation guard")
+    void learnModeAppliesCleanlyUnderStrictMutationGuard() throws IOException {
+        // Regression guard for commit 162642c0. Gradle 8.14+ rejects tasks.register()
+        // calls made from inside configureEach/register actions with the message
+        // "DefaultTaskContainer#register(...) cannot be executed in the current context".
+        // Before the fix, every learn-mode build emitted that error during configuration.
+        scaffoldProject();
+
+        BuildResult result = runner("test", "-Dtestorder.mode=learn").build();
+
+        assertEquals(SUCCESS, result.task(":test").getOutcome());
+        assertFalse(result.getOutput().contains("cannot be executed in the current context"),
+                "Build output must not contain Gradle's mutation-guard rejection — that means "
+                        + "register() is being called from inside configureEach again");
+    }
+
+    @Test
+    @DisplayName("Learn mode with separate :test and :integrationTest tasks")
+    void learnModeWithSeparateUnitAndIntegrationTestTasks() throws IOException {
+        // The shared testOrderOfflineRestore task replaced N per-test-task restore tasks
+        // in 162642c0. With two Test tasks (the standard :test plus a registered
+        // :integrationTest) we exercise the design's biggest unknown: whether the
+        // shared-finalizer model still leaves the project in a clean state.
+        //
+        // Note on the restore mechanism: the primary restore path is TelemetryListener
+        // running inside the forked test JVM at end-of-suite (it invokes
+        // OfflineInstrumentor.restore via reflection using the testorder.offline.backupDir
+        // system property). The shared testOrderOfflineRestore Gradle task is a safety
+        // net for cases where the JUnit listener doesn't run (test-JVM crash, etc.) —
+        // so its restore() typically returns false in normal multi-test-task runs and
+        // the "Restored original classes" lifecycle line is not expected here. We
+        // assert end-state (classes un-instrumented, both tasks indexed) instead.
+        writeFile("settings.gradle", """
+                pluginManagement {
+                    repositories {
+                        mavenLocal()
+                        gradlePluginPortal()
+                        mavenCentral()
+                    }
+                }
+                rootProject.name = 'multi-test-task-project'
+                """);
+
+        writeFile("build.gradle", """
+                plugins {
+                    id 'java'
+                    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
+                }
+                group = 'com.example'
+                version = '1.0.0'
+                repositories {
+                    mavenLocal()
+                    mavenCentral()
+                }
+
+                sourceSets {
+                    integrationTest {
+                        java.srcDir 'src/integrationTest/java'
+                        resources.srcDir 'src/integrationTest/resources'
+                        compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+                        runtimeClasspath += output + compileClasspath
+                    }
+                }
+
+                configurations {
+                    integrationTestImplementation.extendsFrom testImplementation
+                    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+                }
+
+                dependencies {
+                    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+                    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+                }
+
+                tasks.named('test') { useJUnitPlatform() }
+
+                tasks.register('integrationTest', Test) {
+                    description = 'Runs integration tests'
+                    group = 'verification'
+                    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+                    classpath = sourceSets.integrationTest.runtimeClasspath
+                    useJUnitPlatform()
+                }
+                """);
+
+        // Production code
+        writeFile("src/main/java/com/example/app/Calculator.java", """
+                package com.example.app;
+                public class Calculator {
+                    public int add(int a, int b) { return a + b; }
+                }
+                """);
+        writeFile("src/main/java/com/example/app/StringUtils.java", """
+                package com.example.app;
+                public class StringUtils {
+                    public static String reverse(String s) {
+                        return new StringBuilder(s).reverse().toString();
+                    }
+                }
+                """);
+
+        // Unit test
+        writeFile("src/test/java/com/example/app/CalculatorTest.java", """
+                package com.example.app;
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.*;
+                class CalculatorTest {
+                    @Test void testAdd() { assertEquals(5, new Calculator().add(2, 3)); }
+                }
+                """);
+
+        // Integration test
+        writeFile("src/integrationTest/java/com/example/app/StringUtilsIT.java", """
+                package com.example.app;
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.*;
+                class StringUtilsIT {
+                    @Test void testReverse() { assertEquals("cba", StringUtils.reverse("abc")); }
+                }
+                """);
+
+        BuildResult result = runner("test", "integrationTest", "-Dtestorder.mode=learn").build();
+
+        assertEquals(SUCCESS, result.task(":test").getOutcome(),
+                "Unit test task should succeed");
+        assertEquals(SUCCESS, result.task(":integrationTest").getOutcome(),
+                "Integration test task should succeed");
+
+        // Shared restore finalizer must be wired and must execute (even if its restore()
+        // is a no-op because the in-JVM TelemetryListener already restored).
+        assertNotNull(result.task(":testOrderOfflineRestore"),
+                "testOrderOfflineRestore must be wired as a finalizer");
+        assertEquals(SUCCESS, result.task(":testOrderOfflineRestore").getOutcome(),
+                "testOrderOfflineRestore must run successfully");
+
+        // Backup directory must be cleaned up — proves restore completed end-to-end via
+        // some path (TelemetryListener in-JVM, or the Gradle finalizer as fallback).
+        Path backupDir = projectDir.resolve("build/.test-order/classes-backup");
+        assertFalse(Files.exists(backupDir),
+                "Offline backup directory should be cleaned up after restore: " + backupDir);
+
+        // No class file under build/classes should still carry the OfflineInstrumentor
+        // marker. We scan for "TestOrderInstrumented" as a byte sequence — its presence
+        // in any .class constant pool means that class is still instrumented.
+        Path classesRoot = projectDir.resolve("build/classes");
+        if (Files.exists(classesRoot)) {
+            byte[] markerBytes = "TestOrderInstrumented".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            try (var stream = Files.walk(classesRoot)) {
+                List<Path> instrumented = stream
+                        .filter(p -> p.toString().endsWith(".class"))
+                        .filter(p -> {
+                            try {
+                                byte[] data = Files.readAllBytes(p);
+                                return indexOfBytes(data, markerBytes) >= 0;
+                            } catch (IOException e) {
+                                return false;
+                            }
+                        })
+                        .toList();
+                assertTrue(instrumented.isEmpty(),
+                        "No class file should still carry the TestOrderInstrumented marker after "
+                                + "restore, but found: " + instrumented);
+            }
+        }
+
+        // Both test tasks must have produced an index entry. The index file is shared at
+        // the project level; both Test tasks merge into it.
+        Path indexFile = projectDir.resolve(".test-order/test-dependencies.lz4");
+        assertTrue(Files.exists(indexFile),
+                "Shared dependency index should be created at " + indexFile);
+        // Cross-check via build output that BOTH tasks ran offline learn instrumentation
+        // (so both contributed to the index — distinct from the case where only :test ran).
+        long instrumentLines = result.getOutput().lines()
+                .filter(l -> l.contains("Offline learn mode: no agent, using build-time instrumentation"))
+                .count();
+        assertEquals(2, instrumentLines,
+                ":test and :integrationTest should each instrument once. Output:\n"
+                        + result.getOutput());
+    }
+
+    private static int indexOfBytes(byte[] haystack, byte[] needle) {
+        if (needle.length == 0) return 0;
+        outer:
+        for (int i = 0; i <= haystack.length - needle.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
+    }
 }

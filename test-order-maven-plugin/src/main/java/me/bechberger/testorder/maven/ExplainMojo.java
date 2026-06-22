@@ -65,7 +65,8 @@ public class ExplainMojo extends AbstractTestOrderMojo {
 			ShowOrderResult result = ShowOrderWorkflow.compute(pctx);
 
 			if (result.ranked().isEmpty()) {
-				getLog().warn("[test-order] No tests found in dependency index. Run learn first.");
+				getLog().warn(
+						"[test-order] No tests found in dependency index." + "\nRun: mvn test -Dtestorder.mode=learn");
 				return;
 			}
 
@@ -81,6 +82,8 @@ public class ExplainMojo extends AbstractTestOrderMojo {
 				if (rank > result.ranked().size()) {
 					getLog().warn("[test-order] Test '" + explainTest + "' not found in ranked list."
 							+ " It may not be in the dependency index or test output directory.");
+					getLog().warn("Run: mvn test -Dtestorder.mode=learn");
+					getLog().warn("Run: mvn test-order:show");
 					return;
 				}
 				ExplainEntry entry = result.scorer().explain(explainTest, rank);

@@ -79,7 +79,66 @@ public class TestOrderPlugin implements Plugin<Project> {
      */
     private static final java.util.concurrent.ConcurrentHashMap<String, me.bechberger.testorder.IndexCollectorServer>
             COLLECTOR_REGISTRY = new java.util.concurrent.ConcurrentHashMap<>();
+    /**
+     * Per-collector compression level. Looked up at stopAndMerge time and
+     * applied via a scoped System.setProperty/clearProperty pair so the
+     * Gradle daemon JVM doesn't keep a leaked global property between builds.
+     */
+    private static final java.util.concurrent.ConcurrentHashMap<String, String>
+            COLLECTOR_COMPRESSION = new java.util.concurrent.ConcurrentHashMap<>();
     private static final int MAX_COLLECTOR_ENTRIES = 128;
+
+    /**
+     * Build the absolute path to the {@code java} executable inside the given
+     * {@code java.home}, appending {@code .exe} on Windows.
+     */
+    private static String javaExecutable(String javaHome) {
+        boolean windows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows");
+        return javaHome + java.io.File.separator + "bin"
+                + java.io.File.separator + (windows ? "java.exe" : "java");
+    }
+
+    /**
+     * Print the bundled agent manifest (every task with description, stability,
+     * and JSON-output capability) to stdout. Used by {@code testOrderHelp} when
+     * {@code testorder.help.format=json} is set.
+     */
+    private static void emitAgentManifest() {
+        try (java.io.InputStream in = TestOrderPlugin.class.getResourceAsStream("/agent-manifest.json")) {
+            if (in == null) {
+                throw new GradleException(
+                        "[test-order] agent-manifest.json not found on the plugin classpath");
+            }
+            System.out.write(in.readAllBytes());
+            System.out.write('\n');
+            System.out.flush();
+        } catch (java.io.IOException e) {
+            throw new GradleException("[test-order] Failed to read agent-manifest.json", e);
+        }
+    }
+
+    /**
+     * Run the supplied action with {@code testorder.compression} temporarily
+     * set to {@code level} (or unchanged when {@code level} is null), then
+     * restore the previous value. Prevents the daemon from carrying a stale
+     * compression setting across builds.
+     */
+    private static int withScopedCompression(String level, java.util.function.IntSupplier action) {
+        if (level == null) {
+            return action.getAsInt();
+        }
+        String previous = System.getProperty("testorder.compression");
+        System.setProperty("testorder.compression", level);
+        try {
+            return action.getAsInt();
+        } finally {
+            if (previous == null) {
+                System.clearProperty("testorder.compression");
+            } else {
+                System.setProperty("testorder.compression", previous);
+            }
+        }
+    }
 
     /** Wraps a Gradle {@link org.gradle.api.logging.Logger} as a {@link PluginLog}. */
     private static PluginLog wrapLog(Project project) {
@@ -242,7 +301,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                         }
                         plog.warn("[test-order] No .deps files found in any subproject. "
                                 + "Checked: " + (checkedProjects.isEmpty() ? "(none with test-order applied)" : String.join(", ", checkedProjects))
-                                + ". Run tests in learn mode first: ./gradlew test -Dtestorder.mode=learn");
+                                + "\nRun: ./gradlew test -Dtestorder.mode=learn");
                     }
                 });
             });
@@ -556,8 +615,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                                 return;
                             }
                             testTask.doFirst("testOrderOverrideJvm", t -> {
-                                String javaExe = javaHome + java.io.File.separator + "bin"
-                                        + java.io.File.separator + "java";
+                                String javaExe = javaExecutable(javaHome);
                                 ((Test) t).setExecutable(javaExe);
                                 project.getLogger().info(
                                         "[test-order] Task '{}' in project '{}': overriding JVM executable to {}",
@@ -734,14 +792,15 @@ public class TestOrderPlugin implements Plugin<Project> {
                     // Stop any stale collector from a previous run in this daemon
                     // (can happen when tests fail and doLast doesn't execute).
                     me.bechberger.testorder.IndexCollectorServer stale = COLLECTOR_REGISTRY.remove(testTask.getPath());
+                    String staleCompression = COLLECTOR_COMPRESSION.remove(testTask.getPath());
                     if (stale != null) {
-                        stale.stopAndMerge();
+                        final me.bechberger.testorder.IndexCollectorServer s = stale;
+                        withScopedCompression(staleCompression, () -> s.stopAndMerge());
                     }
 
-                    // Set compression level in the Gradle daemon JVM so IndexCollectorServer
-                    // (which runs in this daemon) picks it up via System.getProperty.
+                    // Stash compression level for scoped use during stopAndMerge,
+                    // instead of leaking it as a daemon-wide System property.
                     String compressionLevel = ext.getCompression().getOrElse("medium");
-                    System.setProperty("testorder.compression", compressionLevel);
 
                     java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
                     me.bechberger.testorder.IndexCollectorServer collector =
@@ -752,6 +811,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                         pruneCollectorRegistry();
                     }
                     COLLECTOR_REGISTRY.put(testTask.getPath(), collector);
+                    COLLECTOR_COMPRESSION.put(testTask.getPath(), compressionLevel);
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
                             collector.getPort());
                 } catch (java.io.IOException ex) {
@@ -823,8 +883,10 @@ public class TestOrderPlugin implements Plugin<Project> {
             // Stop IndexCollectorServer if running (agent mode)
             me.bechberger.testorder.IndexCollectorServer collector =
                     COLLECTOR_REGISTRY.remove(testTask.getPath());
+            String compression = COLLECTOR_COMPRESSION.remove(testTask.getPath());
             if (collector != null) {
-                int merged = collector.stopAndMerge();
+                final me.bechberger.testorder.IndexCollectorServer c = collector;
+                int merged = withScopedCompression(compression, () -> c.stopAndMerge());
                 if (merged > 0) {
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
                             merged);
@@ -959,10 +1021,9 @@ public class TestOrderPlugin implements Plugin<Project> {
                         stale.stopAndMerge();
                     }
 
-                    // Set compression level in the Gradle daemon JVM so IndexCollectorServer
-                    // (which runs in this daemon) picks it up via System.getProperty.
+                    // Stash compression level for scoped use during stopAndMerge,
+                    // instead of leaking it as a daemon-wide System property.
                     String compressionLevel = ext.getCompression().getOrElse("medium");
-                    System.setProperty("testorder.compression", compressionLevel);
 
                     java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
                     me.bechberger.testorder.IndexCollectorServer collector =
@@ -970,6 +1031,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     testTask.systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
                     COLLECTOR_REGISTRY.put(testTask.getPath(), collector);
+                    COLLECTOR_COMPRESSION.put(testTask.getPath(), compressionLevel);
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
                             collector.getPort());
                 } catch (IOException ex) {
@@ -1074,8 +1136,9 @@ public class TestOrderPlugin implements Plugin<Project> {
             // should not fail — it just skips ordering so users can still run tests normally.
             if (!project.getExtensions().getExtraProperties().has("testorder.indexMissingWarned")) {
                 project.getExtensions().getExtraProperties().set("testorder.indexMissingWarned", Boolean.TRUE);
-                project.getLogger().warn("[test-order] Index file {} not found — skipping order mode. "
-                        + "Run with -Dtestorder.mode=learn first, or run: ./gradlew testOrderDiagnose", indexFile);
+                project.getLogger().warn("[test-order] Index file {} not found — skipping order mode."
+                        + "\nRun: ./gradlew test -Dtestorder.mode=learn"
+                        + "\nRun: ./gradlew testOrderDiagnose", indexFile);
             }
             return;
         }
@@ -1212,7 +1275,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                 Path statePath = ext.getStateFile().get().getAsFile().toPath();
                 throw new GradleException("[test-order] Failed to load state file at " + statePath
                         + ": " + e.getMessage()
-                        + ". If the file is corrupt, delete it and re-run tests: rm " + statePath, e);
+                        + "\nRun: rm " + statePath
+                        + "\nRun: ./gradlew test -Dtestorder.mode=learn", e);
             }
 
             // Auto-compact: rebuild index from .deps periodically to remove stale entries
@@ -1301,18 +1365,25 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
                 // Drain every collector for this project so socket-based deps are merged
                 // regardless of which test task triggered the finalizer.
+                // Root project's path is ":", so its tasks are ":foo" — a plain
+                // ":foo".startsWith(":" + ":") is false. Build the prefix explicitly so
+                // root-project tasks aren't excluded.
+                String projectPath = project.getPath();
+                String childPrefix = projectPath.equals(":") ? ":" : projectPath + ":";
                 java.util.Iterator<java.util.Map.Entry<String, me.bechberger.testorder.IndexCollectorServer>> it =
                         COLLECTOR_REGISTRY.entrySet().iterator();
                 while (it.hasNext()) {
                     java.util.Map.Entry<String, me.bechberger.testorder.IndexCollectorServer> entry = it.next();
                     String taskPath = entry.getKey();
-                    if (!taskPath.startsWith(project.getPath() + ":")
-                            && !taskPath.equals(project.getPath())) {
+                    if (!taskPath.startsWith(childPrefix)
+                            && !taskPath.equals(projectPath)) {
                         continue;
                     }
                     me.bechberger.testorder.IndexCollectorServer collector = entry.getValue();
                     it.remove();
-                    int merged = collector.stopAndMerge();
+                    String compression = COLLECTOR_COMPRESSION.remove(taskPath);
+                    final me.bechberger.testorder.IndexCollectorServer c = collector;
+                    int merged = withScopedCompression(compression, () -> c.stopAndMerge());
                     if (merged > 0) {
                         project.getLogger().lifecycle(
                                 "[test-order] IndexCollectorServer merged {} test classes via socket (task {})",
@@ -1366,7 +1437,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
                 if (!Files.exists(indexFile)) {
                     throw new GradleException("[test-order] Index file not found: " + indexFile
-                            + ". Run tests in learn mode first.");
+                            + "\nRun: ./gradlew test -Dtestorder.mode=learn");
                 }
                 String outputFile = ext.getDumpOutputFile().get();
                 String propOutput = gradleOrSystemProperty(project, "testorder.dump.output");
@@ -1392,7 +1463,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
                 if (!Files.exists(indexFile)) {
                     throw new GradleException("[test-order] Index file not found: " + indexFile
-                            + ". Run tests in learn mode first.");
+                            + "\nRun: ./gradlew test -Dtestorder.mode=learn");
                 }
                 Path statePath = ext.getStateFile().get().getAsFile().toPath();
                 if (!Files.exists(statePath)) {
@@ -1419,7 +1490,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
                 if (!Files.exists(indexFile)) {
                     throw new GradleException("[test-order] Index file not found: " + indexFile
-                            + ". Run tests in learn mode first.");
+                            + "\nRun: ./gradlew test -Dtestorder.mode=learn");
                 }
                 Path stateFile = ext.getStateFile().get().getAsFile().toPath();
                 String outputFileStr = gradleOrSystemProperty(project, "testorder.mutations.outputFile");
@@ -1580,7 +1651,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 Path statePath = ext.getStateFile().get().getAsFile().toPath();
                 if (!Files.exists(statePath)) {
                     throw new GradleException("[test-order] State file not found: " + statePath
-                            + ". Run some test-order test runs first.");
+                            + "\nRun: ./gradlew test -Dtestorder.mode=learn");
                 }
                 // Validate state file is readable before attempting optimization
                 try {
@@ -1588,7 +1659,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                 } catch (IOException e) {
                     throw new GradleException("[test-order] State file at " + statePath
                             + " is corrupt or unreadable: " + e.getMessage()
-                            + ". Delete it and re-run tests to regenerate.", e);
+                            + "\nRun: rm " + statePath
+                            + "\nRun: ./gradlew test -Dtestorder.mode=learn", e);
                 }
                 try {
                     OptimizeOperation.Result result = OptimizeOperation.run(
@@ -1741,8 +1813,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             project.getLogger().warn(
                                     "[test-order] {} tests were NOT selected and will NOT run.",
                                     selection.remaining().size());
-                            project.getLogger().warn(
-                                    "[test-order] To run them: ./gradlew testOrderRunRemaining");
+                            project.getLogger().warn("Run: ./gradlew testOrderRunRemaining");
                             project.getLogger().warn(
                                     "[test-order] To always run remaining, set testOrder '{ autoRunRemaining = true }'"
                                     + " or -Dtestorder.auto.runRemaining=true");
@@ -1756,11 +1827,13 @@ public class TestOrderPlugin implements Plugin<Project> {
                     } else if (result instanceof AutoWorkflow.Result.Skip skipResult) {
                         throw new GradleException("[test-order] Select requires an index/dependency baseline before it can"
                                 + " prioritize tests. " + skipResult.reason()
-                                + " Run testOrderLearn first (or run tests with -Dtestorder.mode=learn).");
+                                + " Run: ./gradlew testOrderLearn"
+                                + "\nRun: ./gradlew test -Dtestorder.mode=learn");
                     } else if (result instanceof AutoWorkflow.Result.Learn learnResult) {
                         throw new GradleException("[test-order] Select cannot proceed in learn mode. "
                                 + learnResult.reason()
-                                + " Run testOrderLearn first, then rerun testOrderAffected.");
+                                + "\nRun: ./gradlew testOrderLearn"
+                                + "\nRun: ./gradlew testOrderAffected");
                     } else {
                         throw new GradleException("[test-order] Select expected order mode but got: "
                                 + result.getClass().getSimpleName());
@@ -1802,6 +1875,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 if (!Files.exists(remainingFile)) {
                     project.getLogger().warn("[test-order] No remaining-tests file found at {} — nothing to run.",
                             remainingFile);
+                    project.getLogger().warn("Run: ./gradlew testOrderAffected");
                     applySelectedTests((Test) t, List.of());
                     return;
                 }
@@ -1939,7 +2013,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                         clearTierFile(tier3File, project);
                     } else {
                         applySelectedTests((Test) t, List.of());
-                        project.getLogger().warn("[test-order] No tests to run (all tiers empty). Run in learn mode first: ./gradlew test -Dtestorder.mode=learn");
+                        project.getLogger().warn("[test-order] No tests to run (all tiers empty).\nRun: ./gradlew test -Dtestorder.mode=learn");
                     }
 
                     // Apply orderer config as system properties (R7-1: inject ordering config)
@@ -1997,8 +2071,8 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.doFirst("testOrderRunTierPrepare", t -> {
                 String tierProp = gradleOrSystemProperty(project, "testorder.tiered.currentTier");
                 if (tierProp == null || tierProp.isBlank()) {
-                    throw new GradleException("[test-order] testorder.tiered.currentTier must be set to 2 or 3. "
-                            + "Use: ./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=2");
+                    throw new GradleException("[test-order] testorder.tiered.currentTier must be set to 2 or 3."
+                            + "\nRun: ./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=2");
                 }
                 int currentTier;
                 try {
@@ -2015,7 +2089,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                         : ext.getTieredTier3File().get().getAsFile().toPath();
 
                 if (!Files.exists(tierFile)) {
-                    project.getLogger().warn("[test-order] No tests to run (tier-{} file not found at {}). Re-run: ./gradlew testOrderTieredSelect test",
+                    project.getLogger().warn("[test-order] No tests to run (tier-{} file not found at {}).\nRun: ./gradlew testOrderTieredSelect",
                             currentTier, tierFile);
                     applySelectedTests((Test) t, List.of());
                     return;
@@ -2024,7 +2098,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 try {
                     List<String> tests = TestSelector.readTestList(tierFile);
                     if (tests.isEmpty()) {
-                        project.getLogger().warn("[test-order] No tests to run (tier-{} list is empty). Re-run: ./gradlew testOrderTieredSelect test", currentTier);
+                        project.getLogger().warn("[test-order] No tests to run (tier-{} list is empty).\nRun: ./gradlew testOrderTieredSelect", currentTier);
                         applySelectedTests((Test) t, List.of());
                     } else {
                         // Apply sharding for tier-3
@@ -2494,7 +2568,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 Path indexFile = ext.getIndexFile().get().getAsFile().toPath();
                 if (!Files.exists(indexFile)) {
                     throw new GradleException("[test-order] No dependency index found at " + indexFile
-                            + " — run tests in learn mode first.");
+                            + ".\nRun: ./gradlew test -Dtestorder.mode=learn");
                 }
                 int threshold = ext.getCoverageThreshold().get();
                 String propThreshold = gradleOrSystemProperty(project, "testorder.coverage.threshold");
@@ -2624,7 +2698,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                         me.bechberger.testorder.ops.MetricsWorkflow.generate(
                                 project.getName(), indexFile, statePath, testClassesDir,
                                 pctx,
-                                "Run ./gradlew test -Dtestorder.mode=learn",
+                                "Run: ./gradlew test -Dtestorder.mode=learn",
                                 plog);
 
                 String propOutput = gradleOrSystemProperty(project, "testorder.metrics.output");
@@ -2644,6 +2718,15 @@ public class TestOrderPlugin implements Plugin<Project> {
             task.setGroup("test-order");
             task.setDescription("Display available test-order tasks and configuration options");
             task.doLast(t -> {
+                String format = gradleOrSystemProperty(project, "testorder.help.format");
+                if (format != null && format.equalsIgnoreCase("json")) {
+                    emitAgentManifest();
+                    return;
+                }
+                if (format != null && !format.equalsIgnoreCase("text")) {
+                    throw new GradleException(
+                            "[test-order] Invalid testorder.help.format='" + format + "'. Supported: text, json");
+                }
                 var log = project.getLogger();
                 log.lifecycle("");
                 log.lifecycle("═══════════════════════════════════════════════════════════");
@@ -2766,7 +2849,7 @@ public class TestOrderPlugin implements Plugin<Project> {
         } catch (IOException e) {
             String detail = e.getMessage() != null ? e.getMessage() : "unknown error";
             throw new GradleException("[test-order] Dashboard generation failed: " + detail
-                    + ". Run ./gradlew test first to learn dependencies.", e);
+                    + "\nRun: ./gradlew test -Dtestorder.mode=learn", e);
         }
     }
 
@@ -3223,7 +3306,7 @@ public class TestOrderPlugin implements Plugin<Project> {
         if (!Files.isDirectory(depsDir)) {
             if (failIfMissing) {
                 throw new GradleException("[test-order] No deps directory at " + depsDir
-                        + ". Run tests in learn mode first.");
+                        + "\nRun: ./gradlew test -Dtestorder.mode=learn");
             }
             project.getLogger().info("[test-order] No deps directory at {}, skipping aggregation", depsDir);
             return false;
@@ -3428,7 +3511,8 @@ public class TestOrderPlugin implements Plugin<Project> {
         }
         if (!Files.exists(idxPath)) {
             throw new GradleException("[test-order] No dependency index found at " + idxPath
-                    + ". Run ./gradlew testOrderLearn (or ./gradlew test -Dtestorder.mode=learn) first.");
+                    + "\nRun: ./gradlew test -Dtestorder.mode=learn"
+                    + "\nRun: ./gradlew testOrderDiagnose");
         }
 
         Path statePath = ext.getStateFile().get().getAsFile().toPath();
@@ -3583,8 +3667,8 @@ public class TestOrderPlugin implements Plugin<Project> {
         if (!Files.exists(idxPath)) {
             System.out.println("─── test-order static call-graph analysis ───");
             System.out.println("(no dependency index found at " + idxPath + ")");
-            System.out.println("Run `./gradlew test` (auto-detects learn mode) or"
-                    + " `./gradlew test -Dtestorder.mode=learn` first, then re-run this task.");
+            System.out.println("Run: ./gradlew test");
+            System.out.println("Run: ./gradlew test -Dtestorder.mode=learn");
             return;
         }
 
@@ -3850,8 +3934,7 @@ public class TestOrderPlugin implements Plugin<Project> {
             final String javaHome = System.getProperty("java.home");
             if (javaHome != null) {
                 task.doFirst("testOrderOverrideJvm", t -> {
-                    String javaExe = javaHome + java.io.File.separator + "bin"
-                            + java.io.File.separator + "java";
+                    String javaExe = javaExecutable(javaHome);
                     ((Test) t).setExecutable(javaExe);
                 });
             }
@@ -4097,10 +4180,13 @@ public class TestOrderPlugin implements Plugin<Project> {
             java.util.List<String> keys = new java.util.ArrayList<>(COLLECTOR_REGISTRY.keySet());
             int removeCount = keys.size() - MAX_COLLECTOR_ENTRIES;
             for (int i = 0; i < removeCount && i < keys.size(); i++) {
-                me.bechberger.testorder.IndexCollectorServer removed = COLLECTOR_REGISTRY.remove(keys.get(i));
+                String key = keys.get(i);
+                me.bechberger.testorder.IndexCollectorServer removed = COLLECTOR_REGISTRY.remove(key);
+                String removedCompression = COLLECTOR_COMPRESSION.remove(key);
                 if (removed != null) {
                     try {
-                        removed.stopAndMerge();
+                        final me.bechberger.testorder.IndexCollectorServer r = removed;
+                        withScopedCompression(removedCompression, () -> r.stopAndMerge());
                     } catch (Exception ignored) {
                     }
                 }

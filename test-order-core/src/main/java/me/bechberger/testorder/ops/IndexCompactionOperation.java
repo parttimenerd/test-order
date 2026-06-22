@@ -31,7 +31,7 @@ public final class IndexCompactionOperation {
 	 */
 	public static CompactionResult compact(Path depsDir, Path outputFile, PluginLog log) throws IOException {
 		if (!Files.exists(depsDir)) {
-			log.warn("Deps directory not found: " + depsDir);
+			log.warn("Deps directory not found: " + depsDir + "\nRun: mvn test -Dtestorder.mode=learn");
 			return new CompactionResult(0, 0, 0, "No .deps directory");
 		}
 
@@ -43,6 +43,7 @@ public final class IndexCompactionOperation {
 
 		if (depsFileCount == 0) {
 			log.info("No .deps files found in " + depsDir);
+			log.info("Run: mvn test -Dtestorder.mode=learn");
 			return new CompactionResult(0, 0, 0, "No .deps files");
 		}
 

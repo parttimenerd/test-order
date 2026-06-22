@@ -97,7 +97,7 @@ public final class CumulativeTestCountListener extends AbstractExecutionListener
 				p.getProperties().setProperty("skipTests", "true");
 				skipped++;
 			}
-			System.out.println("[test-order] reactor early-exit: cumulative tests=" + cumulative + " >= threshold="
+			System.err.println("[test-order] reactor early-exit: cumulative tests=" + cumulative + " >= threshold="
 					+ threshold + "; set skipTests=true on " + skipped + " remaining module(s)");
 		}
 	}

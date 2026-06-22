@@ -33,7 +33,7 @@ public class TestOrderMojoException extends MojoExecutionException {
 	}
 
 	private static String formatMessage(ErrorCode code, String detail) {
-		return String.format("[test-order] [%s %d] %s: %s\n  For more details: mvn test-order:diagnose",
+		return String.format("[test-order] [%s %d] %s: %s\nRun: mvn test-order:diagnose",
 				code.isError() ? "ERROR" : "WARN", code.getCode(), code.getMessage(), detail);
 	}
 }

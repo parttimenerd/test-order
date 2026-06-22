@@ -225,7 +225,8 @@ public final class DashboardServerOperation {
 				return r;
 			});
 			if (result == null) {
-				sendJson(exchange, "{\"error\":\"Not enough failure runs for optimization (need at least 3)\"}");
+				sendJson(exchange, "{\"error\":\"Not enough failure runs for optimization (need at least "
+						+ me.bechberger.testorder.OptimizationDefaults.MIN_RUNS_FOR_OPTIMISATION + ")\"}");
 				return;
 			}
 			TestOrderState.ScoringWeights w = result.weights();

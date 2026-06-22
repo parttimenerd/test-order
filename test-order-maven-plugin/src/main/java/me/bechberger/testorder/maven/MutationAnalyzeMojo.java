@@ -77,9 +77,8 @@ public class MutationAnalyzeMojo extends AbstractTestOrderMojo {
 
 		Path idxPath = resolveIndexPath();
 		if (!Files.exists(idxPath)) {
-			throw new MojoExecutionException("Dependency index not found at " + idxPath
-					+ ". Run learn mode first: mvn test -Dtestorder.mode=learn"
-					+ "\n  For more details: mvn test-order:diagnose");
+			throw new MojoExecutionException("Dependency index not found at " + idxPath + "."
+					+ "\nRun: mvn test -Dtestorder.mode=learn" + "\nRun: mvn test-order:diagnose");
 		}
 
 		Path projectRoot = project.getBasedir().toPath().toAbsolutePath();

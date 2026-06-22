@@ -33,7 +33,8 @@ public class DumpMojo extends AbstractTestOrderMojo {
 		// aggregator goal runs at verify phase.
 		drainAllActiveCollectors();
 		if (!Files.exists(idxPath)) {
-			throw new MojoExecutionException("Dependency index not found: " + idxPath);
+			throw new MojoExecutionException(
+					"Dependency index not found: " + idxPath + "\nRun: mvn test -Dtestorder.mode=learn");
 		}
 
 		try {

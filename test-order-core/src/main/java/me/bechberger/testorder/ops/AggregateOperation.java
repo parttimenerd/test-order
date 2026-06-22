@@ -65,6 +65,7 @@ public final class AggregateOperation {
 		if (incremental) {
 			if (depsFileCount == 0) {
 				log.info("[test-order] No .deps files found — nothing to merge into existing index.");
+				log.info("Run: mvn test -Dtestorder.mode=learn");
 				return new Result(0, 0, false);
 			}
 			// Load existing index as base and merge new .deps files into it.
@@ -81,6 +82,7 @@ public final class AggregateOperation {
 				log.warn("[test-order] No .deps files found — refusing to overwrite existing index at " + indexPath);
 			} else {
 				log.warn("[test-order] No .deps files found — no index to write.");
+				log.warn("Run: mvn test -Dtestorder.mode=learn");
 			}
 			return new Result(0, 0, false);
 		}

@@ -215,7 +215,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			Files.createDirectories(sharedDir);
 			ClassIdMapping mapping = ClassIdMapping.fromClassIdMap(map, map.getNextClassId(), map.getNextMemberId());
 			mapping.save(mappingFile);
-			System.out.println("[test-order] Reactor class-id map: pre-allocated " + registered + " class IDs across "
+			System.err.println("[test-order] Reactor class-id map: pre-allocated " + registered + " class IDs across "
 					+ session.getProjects().size() + " module(s) → " + mappingFile);
 		} catch (IOException e) {
 			System.err.println("[test-order] reactor class-id map: save failed: " + e.getMessage());
@@ -350,7 +350,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 				for (PluginExecution exec : p.getExecutions()) {
 					if ("validate".equals(exec.getPhase())) {
 						exec.setPhase("none");
-						System.out.println("[test-order] Disabled " + p.getArtifactId() + ":" + exec.getId()
+						System.err.println("[test-order] Disabled " + p.getArtifactId() + ":" + exec.getId()
 								+ " validate-phase execution (testorder.disableValidatePlugins=true)");
 					}
 				}
@@ -378,11 +378,11 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		if (!Files.exists(indexFile)) {
 			boolean explicitlyRequested = readProp(session, PROP_REORDER) != null;
 			if (explicitlyRequested) {
-				System.out.println("[test-order] reactor reorder requested but no shared index at " + indexFile
-						+ " — skipping. Run learn first.");
+				System.err.println("[test-order] reactor reorder requested but no shared index at " + indexFile
+						+ " — skipping.\nRun: mvn test -Dtestorder.mode=learn");
 			} else {
-				System.out.println("[test-order] reactor reorder skipped: no learn data at " + indexFile
-						+ " — run `mvn test-order:learn test` once to populate it.");
+				System.err.println("[test-order] reactor reorder skipped: no learn data at " + indexFile
+						+ ".\nRun: mvn test-order:learn test");
 			}
 			return;
 		}
@@ -425,20 +425,20 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		Integer topN = parseIntProp(session, PROP_TOPN);
 		ReactorReorderer.ReorderResult reorder = ReactorReorderer.reorder(session.getProjects(), scoreById, topN);
 
-		System.out.println("[test-order] reactor reorder: " + reorder.activeModules() + " active module(s), "
+		System.err.println("[test-order] reactor reorder: " + reorder.activeModules() + " active module(s), "
 				+ reorder.deferredModules() + " deferred (cumulative affected tests = " + reorder.cumulativeAffected()
 				+ (topN != null ? ", topN=" + topN : "") + ")");
 
 		boolean dryRun = boolProp(session, PROP_DRYRUN);
 		if (dryRun) {
-			System.out.println("[test-order] reactor reorder (dry-run): would reorder reactor; first 10 modules:");
+			System.err.println("[test-order] reactor reorder (dry-run): would reorder reactor; first 10 modules:");
 			int i = 0;
 			for (MavenProject p : reorder.ordered()) {
 				if (i++ >= 10)
 					break;
 				ModuleScore s = scoreById.get(ModuleIds.of(p));
 				int affected = s != null ? s.affectedTestCount() : 0;
-				System.out.println("  " + p.getArtifactId() + " (affected=" + affected
+				System.err.println("  " + p.getArtifactId() + " (affected=" + affected
 						+ (reorder.deferred().contains(p) ? ", deferred" : "") + ")");
 			}
 			return;
@@ -476,16 +476,16 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			});
 			int topToShow = Math.min(3, byPriority.size());
 			if (topToShow > 0) {
-				System.out.println("[test-order] highest-priority modules (by affected test count)" + optOutHint + ":");
+				System.err.println("[test-order] highest-priority modules (by affected test count)" + optOutHint + ":");
 				for (int i = 0; i < topToShow; i++) {
 					ModuleScore s = byPriority.get(i);
-					System.out.println(String.format("  %2d.  %-50s  affected=%d  sum=%d", i + 1,
+					System.err.println(String.format("  %2d.  %-50s  affected=%d  sum=%d", i + 1,
 							me.bechberger.testorder.ops.workflows.ShowWorkflow.shortenModuleId(s.moduleId()),
 							s.affectedTestCount(), s.sumTestScores()));
 				}
 			}
 
-			System.out.println("[test-order] reactor build order (DAG-respecting; priority breaks ties):");
+			System.err.println("[test-order] reactor build order (DAG-respecting; priority breaks ties):");
 			int shown = 0;
 			for (MavenProject p : reorder.ordered()) {
 				ModuleScore s = scoreById.get(ModuleIds.of(p));
@@ -493,14 +493,14 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 					continue;
 				}
 				if (shown++ >= 10) {
-					System.out.println("  … " + (reorder.activeModules() - 10) + " more active module(s)");
+					System.err.println("  … " + (reorder.activeModules() - 10) + " more active module(s)");
 					break;
 				}
-				System.out.println(String.format("  %2d.  %-50s  affected=%d  sum=%d", shown, p.getArtifactId(),
+				System.err.println(String.format("  %2d.  %-50s  affected=%d  sum=%d", shown, p.getArtifactId(),
 						s.affectedTestCount(), s.sumTestScores()));
 			}
 			if (reorder.deferredModules() > 0) {
-				System.out.println("[test-order] " + reorder.deferredModules()
+				System.err.println("[test-order] " + reorder.deferredModules()
 						+ " module(s) with no affected tests run last in declaration order.");
 			}
 		}
@@ -522,7 +522,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 				skipped++;
 			}
 			if (skipped > 0) {
-				System.out.println(
+				System.err.println(
 						"[test-order] reactor reorder: set skipTests=true on " + skipped + " deferred module(s)");
 			}
 
@@ -671,12 +671,12 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	private static final class SystemOutPluginLog implements PluginLog {
 		@Override
 		public void info(String message) {
-			System.out.println("[test-order] " + message);
+			System.err.println("[test-order] " + message);
 		}
 
 		@Override
 		public void warn(String message) {
-			System.out.println("[test-order] WARN " + message);
+			System.err.println("[test-order] WARN " + message);
 		}
 
 		@Override
@@ -733,7 +733,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 						try {
 							int merged = collector.stopAndMerge();
 							if (merged > 0) {
-								System.out.println("[test-order] IndexCollectorServer merged " + merged
+								System.err.println("[test-order] IndexCollectorServer merged " + merged
 										+ " test classes (session end)");
 							}
 							continue;
@@ -775,7 +775,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			try {
 				int merged = collector.stopAndMerge();
 				if (merged > 0) {
-					System.out.println(
+					System.err.println(
 							"[test-order] IndexCollectorServer merged " + merged + " test classes (session end)");
 				}
 			} catch (Exception | NoClassDefFoundError e) {
@@ -804,7 +804,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 				boolean merged = me.bechberger.testorder.PartialRunAggregator.mergeAndApply(agg.pendingRunsDir(),
 						buildId, agg.stateFile());
 				if (merged) {
-					System.out.println("[test-order] Aggregated per-fork run records into one RunRecord for build "
+					System.err.println("[test-order] Aggregated per-fork run records into one RunRecord for build "
 							+ (buildId.length() > 8 ? buildId.substring(0, 8) + "..." : buildId));
 				}
 			} catch (Exception e) {
@@ -853,7 +853,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 						last.totalFailures(), outcomes);
 				java.nio.file.Files.createDirectories(mlh.historyFile().getParent());
 				me.bechberger.testorder.ml.MLHistoryPersistence.append(mlh.historyFile(), mlRun, 200);
-				System.out.println("[test-order][ml] Appended run record to ML history: " + last.totalTests()
+				System.err.println("[test-order][ml] Appended run record to ML history: " + last.totalTests()
 						+ " tests, " + last.totalFailures() + " failures -> " + mlh.historyFile());
 			} catch (Exception e) {
 				System.err.println("[test-order][ml] Failed to append ML history for " + mlh.historyFile() + ": "

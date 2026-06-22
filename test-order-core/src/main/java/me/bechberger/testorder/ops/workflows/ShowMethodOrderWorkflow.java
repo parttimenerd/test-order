@@ -66,7 +66,8 @@ public final class ShowMethodOrderWorkflow {
 		ShowMethodOrderResult result = compute(ctx);
 
 		if (result.classOrders().isEmpty()) {
-			ctx.log().info("[test-order] No method telemetry found. Run tests with method ordering enabled first.");
+			ctx.log().info("[test-order] No method telemetry found.");
+			ctx.log().info("Run: " + ctx.learnCommand() + " -Dtestorder.method.ordering=true");
 			return result;
 		}
 

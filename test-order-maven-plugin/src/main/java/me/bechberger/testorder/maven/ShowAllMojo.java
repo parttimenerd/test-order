@@ -100,12 +100,14 @@ public class ShowAllMojo extends AbstractTestOrderMojo {
 		try {
 			me.bechberger.testorder.DependencyMap depMap = me.bechberger.testorder.DependencyMap.load(idxPath);
 			if (depMap.testClasses().isEmpty()) {
-				getLog().info("[test-order] No dependency index found — run `mvn test` "
-						+ "(auto-detects learn mode) or `mvn -Dtestorder.mode=learn test` first.");
+				getLog().info("[test-order] No dependency index found." + "\nRun: mvn test -Dtestorder.mode=learn");
 				return;
 			}
 		} catch (IOException e) {
-			throw new MojoExecutionException("Failed to read dependency index at " + idxPath, e);
+			throw new MojoExecutionException(
+					"Failed to read dependency index at " + idxPath + " (the file may be corrupted)."
+							+ "\nRun: mvn test-order:clean" + "\nRun: mvn test -Dtestorder.mode=learn",
+					e);
 		}
 
 		boolean effectiveExplain = explain

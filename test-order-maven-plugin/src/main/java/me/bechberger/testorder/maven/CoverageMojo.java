@@ -58,18 +58,18 @@ public class CoverageMojo extends AbstractTestOrderMojo {
 						map.save(indexPath);
 						getLog().info("[test-order] Auto-aggregated " + map.size() + " test classes → " + indexPath);
 					} else {
-						getLog().warn("[test-order] No dependency index found at " + indexPath
-								+ " — run 'mvn test' (learn mode) first.");
+						getLog().warn("[test-order] No dependency index found at " + indexPath);
+						getLog().warn("Run: mvn test -Dtestorder.mode=learn");
 						return;
 					}
 				} catch (IOException e) {
 					getLog().warn("[test-order] Failed to auto-aggregate from " + depsDirPath + ": " + e.getMessage());
-					getLog().warn("[test-order] No dependency index found — run 'mvn test' first.");
+					getLog().warn("Run: mvn test -Dtestorder.mode=learn");
 					return;
 				}
 			} else {
-				getLog().warn("[test-order] No dependency index found at " + indexPath
-						+ " — run 'mvn test' (learn mode) first.");
+				getLog().warn("[test-order] No dependency index found at " + indexPath);
+				getLog().warn("Run: mvn test -Dtestorder.mode=learn");
 				return;
 			}
 		}

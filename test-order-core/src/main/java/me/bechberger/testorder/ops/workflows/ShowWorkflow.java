@@ -311,10 +311,7 @@ public final class ShowWorkflow {
 			}
 		} else if (opts.classes()) {
 			out.println("[test-order] Class order unavailable: no learned dependency index data found.");
-			out.println("[test-order] Next step: run tests once in learn mode, then run show again.");
-			if (ctx != null) {
-				out.println("[test-order] Example: " + ctx.learnCommand());
-			}
+			out.println("Run: " + (ctx != null ? ctx.learnCommand() : "mvn test -Dtestorder.mode=learn"));
 		}
 
 		// ── Method order section ─────────────────────────────────────

@@ -109,7 +109,7 @@ public class AffectedMojo extends AbstractTestOrderMojo {
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
 				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'affected' goal configures Surefire but does not execute tests."
-					+ " Include the test phase: mvn test-order:affected test");
+					+ "\nRun: mvn test-order:affected test");
 		}
 		SurefireHelper.validateNoClassLevelParallel(project, getLog());
 
@@ -180,8 +180,8 @@ public class AffectedMojo extends AbstractTestOrderMojo {
 			String remainingPath = Path.of(remainingFile).toAbsolutePath().toString();
 			project.getProperties().setProperty(MavenPluginConfigKeys.SELECT_REMAINING_FILE, remainingPath);
 			project.getProperties().setProperty("testorder.remaining.file", remainingPath);
-			getLog().info("[test-order] Remaining tests written to " + remainingFile + ". Run deferred tests with:"
-					+ " mvn test-order:run-remaining test");
+			getLog().info("[test-order] Remaining tests written to " + remainingFile + ".");
+			getLog().info("Run: mvn test-order:run-remaining test");
 		} else if (!runRemaining && !selection.remaining().isEmpty()) {
 			// R15-6: Suppress alarming warning when run-remaining is also in the goal list
 			boolean runRemainingInGoals = session != null && session.getGoals() != null
@@ -192,8 +192,8 @@ public class AffectedMojo extends AbstractTestOrderMojo {
 			} else {
 				getLog().warn(
 						"[test-order] " + selection.remaining().size() + " tests were NOT selected and will NOT run.");
-				getLog().warn("[test-order] To run them: mvn test-order:run-remaining test"
-						+ " -Dtestorder.affected.remainingFile=target/test-order-remaining.txt");
+				getLog().warn(
+						"Run: mvn test-order:run-remaining test -Dtestorder.affected.remainingFile=target/test-order-remaining.txt");
 				getLog().warn("[test-order] To always run remaining automatically, add"
 						+ " -Dtestorder.auto.runRemaining=true or set <runRemaining>true</runRemaining> in plugin config.");
 			}

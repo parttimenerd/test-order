@@ -55,7 +55,7 @@ class OptimizeMojoTest {
 	void missingStateFileThrowsHelpfulException() {
 		MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
 		assertTrue(ex.getMessage().contains("No state file found"));
-		assertTrue(ex.getMessage().contains("Run some test-order test runs first"));
+		assertTrue(ex.getMessage().contains("Run: mvn test -Dtestorder.mode=learn"));
 	}
 
 	@Test

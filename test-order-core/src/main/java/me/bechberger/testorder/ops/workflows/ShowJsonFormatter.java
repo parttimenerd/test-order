@@ -156,22 +156,21 @@ public final class ShowJsonFormatter {
 			sectionsShown.add("classOrder");
 		} else {
 			sectionsSkipped.add(skipped("classOrder", "no class-order data"));
-			guidanceHints
-					.add("Run tests in learn mode to build dependency index: run tests with -Dtestorder.mode=learn");
+			guidanceHints.add("Run: mvn test -Dtestorder.mode=learn");
 		}
 
 		if (result.methodOrder() != null) {
 			sectionsShown.add("methodOrder");
 		} else {
 			sectionsSkipped.add(skipped("methodOrder", "no method telemetry data"));
-			guidanceHints.add("Enable method ordering and run tests to collect per-method telemetry");
+			guidanceHints.add("Run: mvn test -Dtestorder.method.ordering=true -Dtestorder.mode=learn");
 		}
 
 		if (result.healthReport() != null) {
 			sectionsShown.add("ml");
 		} else {
 			sectionsSkipped.add(skipped("ml", "no ML history found"));
-			guidanceHints.add("Enable ML with -Dtestorder.ml.enabled=true and collect multiple runs");
+			guidanceHints.add("Run: mvn test -Dtestorder.ml.enabled=true -Dtestorder.mode=learn");
 		}
 
 		meta.put("filter", filterGlob == null || filterGlob.isBlank() ? null : filterGlob);

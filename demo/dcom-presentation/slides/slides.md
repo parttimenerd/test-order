@@ -62,11 +62,19 @@ layout: full
 <!--
 [slide shows three checkmarks + QR code + github.com/parttimenerd/test-order]
 
-"Stop running tests that never fail."
+"That's not just faster local development.
+ It's less waiting. Less CI time. Lower infrastructure cost.
+ And a much tighter feedback loop for developers — and increasingly,
+ for AI agents generating code continuously."
+
+[pause]
+
+"Your build already knows which code changed.
+ Your tests already know which code they execute."
+
 [pause — 2 seconds, let the line land]
 
-"Run only the tests that hit your change. Keep your agent loop moving.
- Catch bugs in seconds, not overnight."
+"So stop running tests that will never fail."
 
 [gesture to QR]
 "Scan it. Try it on your repo this week."

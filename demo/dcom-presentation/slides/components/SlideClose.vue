@@ -16,15 +16,15 @@
         <div class="flex-1 flex flex-col gap-6">
           <div class="flex items-start gap-3">
             <span class="text-emerald-400 font-bold text-xl mt-0.5">✓</span>
-            <span class="text-gray-100 text-xl">Only run tests that hit the change</span>
+            <span class="text-gray-100 text-xl">Less waiting. Less CI time. Lower infra cost.</span>
           </div>
           <div class="flex items-start gap-3">
             <span class="text-emerald-400 font-bold text-xl mt-0.5">✓</span>
-            <span class="text-gray-100 text-xl">Agentic loops that don't stall</span>
+            <span class="text-gray-100 text-xl">Tighter feedback loop — for developers and AI agents</span>
           </div>
           <div class="flex items-start gap-3">
             <span class="text-emerald-400 font-bold text-xl mt-0.5">✓</span>
-            <span class="text-gray-100 text-xl">Bugs in seconds, not overnight</span>
+            <span class="text-gray-100 text-xl">Your build and tests already know what changed</span>
           </div>
         </div>
 

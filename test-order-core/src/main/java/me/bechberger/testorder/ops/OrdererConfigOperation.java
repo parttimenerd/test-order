@@ -42,8 +42,8 @@ public final class OrdererConfigOperation {
 	 */
 	public static Map<String, String> buildConfig(OrdererInput input) {
 		if (input.indexPath() == null || input.indexPath().isBlank()) {
-			throw new IllegalStateException("[test-order] Cannot build orderer config: indexPath is null. "
-					+ "Was the dependency index created? Run in learn mode first.");
+			throw new IllegalStateException("[test-order] Cannot build orderer config: indexPath is null."
+					+ "\nRun: mvn test -Dtestorder.mode=learn");
 		}
 		Map<String, String> config = new LinkedHashMap<>();
 

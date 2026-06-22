@@ -267,8 +267,8 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				switchToLearnMode();
 			} else {
 				getLog().warn(
-						"[test-order] No dependency index found but mode is 'order' — tests will run in default order. "
-								+ "Run in learn mode first to build the dependency index: mvn test -Dtestorder.mode=learn");
+						"[test-order] No dependency index found but mode is 'order' — tests will run in default order."
+								+ "\nRun: mvn test -Dtestorder.mode=learn");
 			}
 			return;
 		}
@@ -320,8 +320,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				return true;
 			}
 			getLog().warn("[test-order] New test class(es) not yet in the dependency index: " + names);
-			getLog().warn("[test-order] Run 'mvn test -D" + MavenPluginConfigKeys.MODE
-					+ "=learn' to index them for accurate ordering.");
+			getLog().warn("Run: mvn test -D" + MavenPluginConfigKeys.MODE + "=learn");
 		}
 
 		if (!"auto".equals(mode)) {

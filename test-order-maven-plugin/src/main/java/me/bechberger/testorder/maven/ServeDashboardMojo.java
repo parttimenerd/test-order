@@ -114,9 +114,9 @@ public class ServeDashboardMojo extends DashboardMojo {
 				openBrowser = savedOpenBrowser;
 			}
 		} else if (!Files.exists(htmlPath)) {
-			throw new MojoExecutionException("[test-order] Dashboard not found at " + htmlPath
-					+ " — run 'mvn test-order:dashboard' first, or set " + MavenPluginConfigKeys.DASHBOARD_REGENERATE
-					+ "=auto");
+			throw new MojoExecutionException(
+					"[test-order] Dashboard not found at " + htmlPath + ".\nRun: mvn test-order:dashboard\n" + "Or set "
+							+ MavenPluginConfigKeys.DASHBOARD_REGENERATE + "=auto");
 		}
 
 		try {

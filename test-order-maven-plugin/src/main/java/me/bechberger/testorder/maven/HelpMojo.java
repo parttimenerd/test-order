@@ -1,10 +1,13 @@
 package me.bechberger.testorder.maven;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Map;
 
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
 
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.TestOrderState.WeightDef;
@@ -17,6 +20,15 @@ import me.bechberger.testorder.TestOrderState.WeightDef;
  */
 @Mojo(name = "help", requiresProject = false)
 public class HelpMojo extends AbstractMojo {
+
+	/**
+	 * Output format. {@code text} (default) prints a human-readable help message to
+	 * the Maven log. {@code json} prints the agent manifest (every goal with its
+	 * description, stability, and JSON-output capability) to stdout — intended for
+	 * LLM agents discovering the plugin's surface.
+	 */
+	@Parameter(property = "testorder.help.format", defaultValue = "text")
+	private String format;
 
 	/** Property name mapping for score weights (weight name → description). */
 	private static final Map<String, String> SCORE_DESCRIPTIONS = Map.ofEntries(
@@ -33,6 +45,14 @@ public class HelpMojo extends AbstractMojo {
 
 	@Override
 	public void execute() throws MojoExecutionException {
+		String fmt = format == null || format.isBlank() ? "text" : format;
+		if ("json".equalsIgnoreCase(fmt)) {
+			emitAgentManifest();
+			return;
+		}
+		if (!"text".equalsIgnoreCase(fmt)) {
+			throw new MojoExecutionException("Invalid format '" + format + "'. Supported: text, json");
+		}
 		StringBuilder sb = new StringBuilder();
 		sb.append("\ntest-order-maven-plugin — Test prioritisation and selection for Maven\n\n");
 		sb.append("Goals:\n");
@@ -147,5 +167,18 @@ public class HelpMojo extends AbstractMojo {
 				"  Explain:     mvn test-order:explain -Dtestorder.explain.test=com.example.MyTest  (score explanation)\n");
 
 		getLog().info(sb.toString());
+	}
+
+	private void emitAgentManifest() throws MojoExecutionException {
+		try (InputStream in = HelpMojo.class.getResourceAsStream("/agent-manifest.json")) {
+			if (in == null) {
+				throw new MojoExecutionException("agent-manifest.json not found on the plugin classpath");
+			}
+			System.out.write(in.readAllBytes());
+			System.out.write('\n');
+			System.out.flush();
+		} catch (IOException e) {
+			throw new MojoExecutionException("Failed to read agent-manifest.json", e);
+		}
 	}
 }

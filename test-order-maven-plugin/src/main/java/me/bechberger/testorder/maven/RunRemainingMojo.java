@@ -39,7 +39,7 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
 				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'run-remaining' goal configures Surefire but does not execute tests."
-					+ " Include the test phase: mvn test-order:run-remaining test");
+					+ "\nRun: mvn test-order:run-remaining test");
 		}
 		// Prevent a POM-bound auto goal from overriding the test selection
 		project.getProperties().setProperty("testorder.auto.active", "true");
@@ -54,6 +54,7 @@ public class RunRemainingMojo extends AbstractTestOrderMojo {
 						+ remaining.getFileName() + " to replay them.");
 			} else {
 				getLog().info("[test-order] No remaining-tests file found at " + remaining + " — nothing to run.");
+				getLog().info("Run: mvn test-order:affected");
 			}
 			project.getProperties().setProperty("skipTests", "true");
 			return;

@@ -67,7 +67,7 @@ class ShowWorkflowTest {
 		String text = buffer.toString();
 		assertTrue(text.contains("Showing: none"));
 		assertTrue(text.contains("Class order unavailable"));
-		assertTrue(text.contains("run tests once in learn mode"));
+		assertTrue(text.contains("Run: "));
 		assertTrue(text.contains("Method order unavailable"));
 		assertTrue(text.contains("ML health unavailable"));
 		assertTrue(text.contains("-Dtestorder.ml.enabled=true"));

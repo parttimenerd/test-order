@@ -50,8 +50,7 @@ public class ShowStaticAnalysisMojo extends AbstractTestOrderMojo {
 		if (!Files.exists(idxPath)) {
 			System.out.println("─── test-order static call-graph analysis ───");
 			System.out.println("(no dependency index found at " + idxPath + ")");
-			System.out.println("Run `mvn test` (auto-detects learn mode) or "
-					+ "`mvn -Dtestorder.mode=learn test` first, then re-run this goal.");
+			System.out.println("Run: mvn test -Dtestorder.mode=learn");
 			return;
 		}
 

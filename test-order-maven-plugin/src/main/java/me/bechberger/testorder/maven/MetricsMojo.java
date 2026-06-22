@@ -38,7 +38,7 @@ public class MetricsMojo extends AbstractTestOrderMojo {
 		Path testClassesDir = resolveTestClassesDir();
 
 		TestMetricsExport metrics = MetricsWorkflow.generate(project.getArtifactId(), idxPath, statePath,
-				testClassesDir, buildPluginContext(), "Run mvn test -Dtestorder.mode=learn",
+				testClassesDir, buildPluginContext(), "Run: mvn test -Dtestorder.mode=learn",
 				MavenPluginLog.wrap(getLog()));
 
 		Path output = Path.of(outputFile);

@@ -26,7 +26,7 @@ public class LearnMojo extends AutoMojo {
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
 				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'learn' goal configures the agent but does not execute tests."
-					+ " Include the test phase: mvn test-order:learn test");
+					+ "\nRun: mvn test-order:learn test");
 		}
 		super.execute();
 	}

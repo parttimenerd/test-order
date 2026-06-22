@@ -122,6 +122,25 @@ class TestOrderPluginTaskRegistrationTest {
     }
 
     @Test
+    void offlineRestoreTaskRegisteredEagerlyAtApplyTime() {
+        // Regression guard for commit 162642c0: testOrderOfflineRestore must be registered
+        // up-front in registerTasks(), not lazily inside configureOfflineLearnMode (which
+        // runs from configureEach). Gradle 8.14+ forbids tasks.register() from inside
+        // configureEach/register actions; if a future change moves the registration back
+        // there, ProjectBuilder will still apply the plugin successfully but the task
+        // won't exist until a Test task is configured — this test fails fast on that.
+        Project project = ProjectBuilder.builder().build();
+        project.getPluginManager().apply("java");
+
+        new TestOrderPlugin().apply(project);
+
+        var restore = project.getTasks().findByName("testOrderOfflineRestore");
+        assertNotNull(restore, "testOrderOfflineRestore must be registered eagerly in registerTasks()");
+        assertTrue("test-order".equals(restore.getGroup()),
+                "testOrderOfflineRestore should be in 'test-order' group");
+    }
+
+    @Test
     void unifiedShowTaskDescriptionHighlightsCombinedView() {
         Project project = ProjectBuilder.builder().build();
         project.getPluginManager().apply("java");

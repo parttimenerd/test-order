@@ -98,7 +98,7 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
 				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'auto' goal configures Surefire but does not execute tests."
-					+ " Include the test phase: mvn test-order:auto test");
+					+ "\nRun: mvn test-order:auto test");
 		}
 
 		// R16-4 (auto parity): When user filters to specific tests via -Dtest,
@@ -224,8 +224,8 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			}
 
 			if (!runRemaining && !selection.remaining().isEmpty()) {
-				getLog().info("[test-order] Remaining tests written to " + remainingFile + ". Run deferred tests with:"
-						+ " mvn test-order:run-remaining test");
+				getLog().info("[test-order] Remaining tests written to " + remainingFile + ".");
+				getLog().info("Run: mvn test-order:run-remaining test");
 			}
 		}
 	}

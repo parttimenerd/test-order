@@ -46,7 +46,7 @@ public class AnalyzeMojo extends AbstractTestOrderMojo {
 
 		if (!Files.exists(historyFile)) {
 			getLog().warn("[test-order] No ML history found at " + historyFile);
-			getLog().warn("[test-order] Run tests with -Dtestorder.ml.enabled=true to collect ML history first.");
+			getLog().warn("Run: mvn test -Dtestorder.ml.enabled=true -Dtestorder.mode=learn");
 			return;
 		}
 

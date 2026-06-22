@@ -144,8 +144,8 @@ public class DetectDependenciesMojo extends AbstractTestOrderMojo {
 				}
 				int exitCode = proc.waitFor();
 				if (exitCode != 0) {
-					throw new MojoExecutionException("[test-order] Reactor install failed (exit code " + exitCode
-							+ "). " + "Try running 'mvn install -DskipTests' manually first.");
+					throw new MojoExecutionException("[test-order] Reactor install failed (exit code " + exitCode + ")."
+							+ "\nRun: mvn install -DskipTests");
 				}
 				getLog().info("[test-order] Reactor install complete.");
 			} catch (InterruptedException e) {

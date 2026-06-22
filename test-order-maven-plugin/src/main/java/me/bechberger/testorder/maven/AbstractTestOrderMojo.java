@@ -688,9 +688,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						+ " — deleting it and falling back to learn mode.");
 				return true;
 			}
-			throw new MojoExecutionException("[test-order] Dependency index is unreadable at " + idxPath
-					+ ". Run 'mvn test-order:clean' or 'mvn test -Dtestorder.mode=learn' to regenerate it."
-					+ "\n  For more details: mvn test-order:diagnose", e);
+			throw new MojoExecutionException(
+					"[test-order] Dependency index is unreadable at " + idxPath + "." + "\nRun: mvn test-order:clean"
+							+ "\nRun: mvn test -Dtestorder.mode=learn" + "\nRun: mvn test-order:diagnose",
+					e);
 		}
 	}
 
@@ -1292,8 +1293,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			getLog().info("[test-order] Auto-aggregated " + finalMap.size() + " test classes → " + idxPath);
 			warnIfNoDeps(finalMap);
 		} catch (IOException e) {
-			throw new MojoExecutionException(
-					"Failed to auto-aggregate deps" + "\n  For more details: mvn test-order:diagnose", e);
+			throw new MojoExecutionException("Failed to auto-aggregate deps\nRun: mvn test-order:diagnose", e);
 		}
 	}
 
@@ -1441,12 +1441,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				throw new MojoExecutionException("Dependency .deps files exist in " + depsDirPath
 						+ " but contain no test dependencies — the index could not be created. "
 						+ "Check your instrumentation filter: -D" + MavenPluginConfigKeys.INCLUDE_PACKAGES
-						+ "=<package>" + "\n  For more details: mvn test-order:diagnose");
+						+ "=<package>" + "\nRun: mvn test-order:diagnose");
 			}
 		} else {
 			throw new MojoExecutionException("No dependency index at " + idxPath + " and no .deps files found in "
-					+ depsDirPath + ". Run learn mode first: mvn test -Dtestorder.mode=learn"
-					+ "\n  For more details: mvn test-order:diagnose");
+					+ depsDirPath + "."
+					+ "\nIf you've already run learn mode and nothing changed, the plugin may not be wired into Surefire."
+					+ " Add <plugin><groupId>me.bechberger</groupId><artifactId>test-order-maven-plugin</artifactId></plugin>"
+					+ " to your pom.xml's <build><plugins> section, or use 'test-order:prepare test' which configures Surefire on the fly."
+					+ "\nRun: mvn test-order:prepare test -Dtestorder.mode=learn"
+					+ "\nRun: mvn test -Dtestorder.mode=learn"
+					+ "\nRun: mvn test-order:diagnose");
 		}
 	}
 

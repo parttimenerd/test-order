@@ -70,7 +70,8 @@ public final class DiagnosticReportPrinter {
 		log.info("");
 
 		if (report.isFreshProject()) {
-			log.info("[test-order] Not yet set up — run learn mode to start: mvn test -Dtestorder.mode=learn");
+			log.info("[test-order] Not yet set up — run learn mode to start.");
+			log.info("Run: mvn test -Dtestorder.mode=learn");
 		} else if (!report.isHealthy()) {
 			log.warn("[test-order] Diagnostic detected issues. Review above and take action if needed.");
 		} else {

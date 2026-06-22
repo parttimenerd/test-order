@@ -59,7 +59,7 @@ class ShowOrderMojoTest {
 	void noIndexAndNoDepsFailsWithHelpfulMessage() {
 		MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
 		assertTrue(ex.getMessage().contains("No dependency index"));
-		assertTrue(ex.getMessage().contains("Run learn mode first"));
+		assertTrue(ex.getMessage().contains("Run: mvn test -Dtestorder.mode=learn"));
 	}
 
 	@Test

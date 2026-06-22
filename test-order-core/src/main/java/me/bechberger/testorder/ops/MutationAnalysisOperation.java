@@ -128,8 +128,8 @@ public final class MutationAnalysisOperation {
 		PluginLog log = config.log();
 
 		if (!Files.exists(config.indexFile())) {
-			throw new IOException("Dependency index not found: " + config.indexFile()
-					+ ". Run learn mode first: mvn test -Dtestorder.mode=learn");
+			throw new IOException(
+					"Dependency index not found: " + config.indexFile() + "\nRun: mvn test -Dtestorder.mode=learn");
 		}
 
 		log.info("[test-order] Loading dependency index from " + config.indexFile());
@@ -148,7 +148,8 @@ public final class MutationAnalysisOperation {
 		if (productionClasses.isEmpty()) {
 			log.warn("[test-order] No production classes found to mutate — "
 					+ "all dependencies point to test classes, or the dependency index is incomplete. "
-					+ "Run learn mode first and ensure production source packages match the index filter.");
+					+ "Ensure production source packages match the index filter."
+					+ "\nRun: mvn test -Dtestorder.mode=learn");
 			return new Result(Map.of(), 0, 0, config.outputFile(), System.currentTimeMillis() - start);
 		}
 

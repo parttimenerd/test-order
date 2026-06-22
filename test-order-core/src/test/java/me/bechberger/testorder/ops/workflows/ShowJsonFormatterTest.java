@@ -33,8 +33,11 @@ class ShowJsonFormatterTest {
 
 		List<String> hints = asStringList(meta.get("guidanceHints"));
 		assertEquals(3, hints.size());
-		assertTrue(hints.stream().anyMatch(h -> h.contains("learn mode")));
-		assertTrue(hints.stream().anyMatch(h -> h.contains("method ordering")));
+		// All hints must use the agentic "Run: <cmd>" convention so an LLM can grep
+		// ^Run:
+		assertTrue(hints.stream().allMatch(h -> h.startsWith("Run: ")));
+		assertTrue(hints.stream().anyMatch(h -> h.contains("testorder.mode=learn")));
+		assertTrue(hints.stream().anyMatch(h -> h.contains("testorder.method.ordering")));
 		assertTrue(hints.stream().anyMatch(h -> h.contains("testorder.ml.enabled")));
 	}
 

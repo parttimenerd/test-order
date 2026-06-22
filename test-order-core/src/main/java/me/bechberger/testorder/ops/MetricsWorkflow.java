@@ -34,7 +34,7 @@ public final class MetricsWorkflow {
 	 *            plugin context (for change detection); may be null to skip change
 	 *            detection
 	 * @param noIndexHint
-	 *            message to show when no index found (e.g., "Run mvn test
+	 *            message to show when no index found (e.g., "Run: mvn test
 	 *            -Dtestorder.mode=learn")
 	 * @param log
 	 *            plugin logger

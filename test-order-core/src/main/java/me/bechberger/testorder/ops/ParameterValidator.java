@@ -246,12 +246,12 @@ public final class ParameterValidator {
 			log.warn("[test-order] The following explicitly changed classes are not in the dependency index: "
 					+ String.join(", ", unknown)
 					+ ". The class may exist in source but have no test coverage yet, or the index"
-					+ " may be out of date (re-run learn mode).");
+					+ " may be out of date.\nRun: mvn test -Dtestorder.mode=learn");
 			if (unknown.size() == changed.size()) {
 				throw new IllegalArgumentException(
 						"[test-order] None of the explicitly specified changed classes exist in the "
-								+ "dependency index. Check for typos or run learn mode first. " + "Changed classes: "
-								+ String.join(", ", changed));
+								+ "dependency index. Check for typos. Changed classes: " + String.join(", ", changed)
+								+ "\nRun: mvn test -Dtestorder.mode=learn");
 			}
 		}
 	}

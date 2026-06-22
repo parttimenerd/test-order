@@ -744,6 +744,36 @@ Change detection: `-Dtestorder.changeMode=since-last-commit` for CI,
 
 </details>
 
+### Driving test-order from an LLM agent
+
+For agents that invoke the plugin programmatically (Claude Code, Cursor, Aider, custom orchestrators), test-order ships first-class agentic affordances:
+
+- **[`docs/AGENTS.md`](docs/AGENTS.md)** — the agent-facing guide: how to invoke, error recovery, stability tiers.
+- **[`docs/agent-manifest.json`](docs/agent-manifest.json)** — machine-readable task inventory (every goal/task with stability, JSON-output capability, example invocation). Bundled into both plugin JARs as a classpath resource so an agent can fetch it from the project under test:
+
+  ```bash
+  mvn -B -ntp -q test-order:help -Dtestorder.help.format=json     # Maven
+  ./gradlew --quiet testOrderHelp -Dtestorder.help.format=json    # Gradle
+  ```
+
+  Both print the manifest as parseable JSON to **stdout**.
+- **`Run:` lines in error messages** — recoverable errors append literal `Run: <command>` lines. An agent greps for `^Run: ` and executes the suggested command. Example: a missing index produces `Run: mvn test -Dtestorder.mode=learn` followed by `Run: mvn test-order:diagnose`.
+
+#### Install the Claude Code skill
+
+The repo includes a [Claude Code skill](https://docs.claude.com/en/docs/claude-code/skills) that teaches Claude how to drive test-order — JSON manifest discovery, the `Run:`-line recovery convention, and which tasks emit parseable JSON. Install it once and Claude will load it automatically when you ask it to run, prioritise, or debug tests in any project that uses test-order.
+
+```bash
+# Personal install (all your projects)
+mkdir -p ~/.claude/skills
+cp -R skills/test-order ~/.claude/skills/
+
+# or, to track upstream changes:
+ln -s "$PWD/skills/test-order" ~/.claude/skills/test-order
+```
+
+After install, Claude picks it up automatically based on the skill's `description`. To invoke it explicitly, type `/test-order` in your Claude Code session. The skill source lives at [`skills/test-order/SKILL.md`](skills/test-order/SKILL.md) — copy or adapt it for other agents that support the [Agent Skills](https://agentskills.io) standard.
+
 ## Documentation
 
 | Guide | Description |
@@ -757,6 +787,7 @@ Change detection: `-Dtestorder.changeMode=since-last-commit` for CI,
 | **[CI Examples](docs/ci-examples/)** | Ready-to-use GitHub Actions, GitLab CI, Azure configs |
 | **[Detect Dependencies](docs/DETECT_DEPENDENCIES.md)** | Order-dependent (flaky) test detection |
 | **[Kotest](docs/KOTEST.md)** | Kotlin & Kotest integration |
+| **[For LLM agents](docs/AGENTS.md)** | Driving test-order from an agent — manifest discovery, error recovery |
 | **[Architecture](docs/ARCHITECTURE.md)** | System design and contribution guidance |
 | **[Samples](samples/README.md)** | Example projects to experiment with |
 

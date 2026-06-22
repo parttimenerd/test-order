@@ -31,7 +31,7 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 		Path primaryState = ctx.resolveStateFile(stateFile);
 		if (!Files.exists(primaryState)) {
 			throw new MojoExecutionException(
-					"No state file found at " + primaryState + ". Run some test-order test runs first.");
+					"No state file found at " + primaryState + "\nRun: mvn test -Dtestorder.mode=learn");
 		}
 		java.util.List<Path> statePaths = java.util.List.of(primaryState);
 
@@ -43,7 +43,9 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 				OptimizeOperation.Result result = OptimizeOperation.run(statePath, msg -> getLog().info(msg));
 				if (result == null) {
 					getLog().info("[test-order] Skipped " + statePath
-							+ " — insufficient failure history for meaningful optimization (need >= 3 failure runs).");
+							+ " — insufficient failure history for meaningful optimization (need >= "
+							+ me.bechberger.testorder.OptimizationDefaults.MIN_RUNS_FOR_OPTIMISATION
+							+ " failure runs).");
 				} else if (result.overfit()) {
 					getLog().warn("[test-order] Overfitting detected for " + statePath + " — default weights used.");
 				} else {
@@ -57,6 +59,7 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 
 		if (optimized == 0) {
 			getLog().warn("[test-order] No state files were optimised — insufficient failure data in all state files.");
+			getLog().warn("Run: mvn test -Dtestorder.mode=learn");
 			return;
 		}
 		getLog().info("[test-order] Optimised " + optimized + " state file(s).");
@@ -81,8 +84,7 @@ public class OptimizeMojo extends AbstractTestOrderMojo {
 			}
 		} catch (Exception e) {
 			throw new MojoExecutionException("Failed to load state file: " + statePath + ". " + e.getMessage()
-					+ ". To recover, delete the corrupt file and re-run tests: rm " + statePath
-					+ " && mvn test -Dtestorder.mode=learn", e);
+					+ "\nRun: rm " + statePath + "\nRun: mvn test -Dtestorder.mode=learn", e);
 		}
 	}
 

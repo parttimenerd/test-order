@@ -81,7 +81,7 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")
 				|| g.equals("verify") || g.equals("install") || g.equals("package") || g.equals("deploy"))) {
 			getLog().warn("[test-order] The 'run-tier' goal configures Surefire but does not execute tests."
-					+ " Include the test phase: mvn test-order:run-tier test");
+					+ "\nRun: mvn test-order:run-tier test");
 		}
 		// Prevent a POM-bound auto goal from overriding the test selection
 		project.getProperties().setProperty("testorder.auto.active", "true");
@@ -99,16 +99,17 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 		}
 
 		if (currentTier != 2 && currentTier != 3) {
-			throw new MojoExecutionException(
-					"[test-order] testorder.tiered.currentTier must be 2 or 3, got: " + currentTier);
+			throw new MojoExecutionException("[test-order] testorder.tiered.currentTier must be 2 or 3, got: "
+					+ currentTier + "\nRun: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=2"
+					+ "\nRun: mvn test-order:run-tier test -Dtestorder.tiered.currentTier=3");
 		}
 
 		Path tierFile = currentTier == 2 ? Path.of(tier2File) : Path.of(tier3File);
 
 		if (!Files.exists(tierFile)) {
 			getLog().info("[test-order] No tier-" + currentTier + " file found at " + tierFile
-					+ " — skipping (no tests assigned to this tier)."
-					+ " If unexpected, run 'mvn test-order:tiered-select test' first to create tier files.");
+					+ " — skipping (no tests assigned to this tier)." + " If unexpected, create tier files first.\n"
+					+ "Run: mvn test-order:tiered-select test");
 			project.getProperties().setProperty("skipTests", "true");
 			return;
 		}
@@ -138,8 +139,8 @@ public class RunTierMojo extends AbstractTestOrderMojo {
 				if (unresolvable.size() == tests.size()) {
 					getLog().warn("[test-order] None of the tier-" + currentTier
 							+ " test classes exist in target/test-classes. "
-							+ "The tier file may be stale (from a previous tiered-select run). "
-							+ "Re-run: mvn test-order:tiered-select test");
+							+ "The tier file may be stale (from a previous tiered-select run).\n"
+							+ "Run: mvn test-order:tiered-select test");
 					project.getProperties().setProperty("skipTests", "true");
 					return;
 				}

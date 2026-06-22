@@ -82,7 +82,7 @@ public class DownloadMojo extends AbstractTestOrderMojo {
 					+ "      github:\n" + "        owner: your-org\n" + "        repo: your-repo\n"
 					+ "        workflow: ci.yml\n" + "        artifact-name: test-order-deps\n"
 					+ "  Required env vars: GITHUB_TOKEN (or GITLAB_TOKEN for GitLab).\n"
-					+ "  See docs/CI.md for full configuration reference.");
+					+ "  See docs/CI.md for full configuration reference.\n" + "Run: mvn test -Dtestorder.mode=learn");
 		}
 
 		getLog().info("[test-order] Downloading CI dependency index to " + indexTarget);
@@ -104,7 +104,7 @@ public class DownloadMojo extends AbstractTestOrderMojo {
 					+ "  Check:\n" + "    • Is GITHUB_TOKEN / GITLAB_TOKEN set in the environment?\n"
 					+ "    • Does the workflow/artifact exist? (run `gh run list` to verify)\n"
 					+ "    • Is the config in .test-order/download-config.yml correct?\n"
-					+ "  Run with -X for debug logging.");
+					+ "  Run with -X for debug logging.\n" + "Run: mvn test -Dtestorder.mode=learn");
 		}
 	}
 
