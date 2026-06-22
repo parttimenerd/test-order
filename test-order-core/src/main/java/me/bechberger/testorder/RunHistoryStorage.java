@@ -19,11 +19,11 @@ import me.bechberger.testorder.annotations.ThreadSafe;
  * ({@link #manager()}) so the orchestrator can reach through.
  *
  * <p>
- * Thread-safety: {@link #addRunRecord(RunRecord)} and the access to
- * {@code pendingRunCompleted} are synchronised on this instance — preserves the
- * single-monitor semantics that {@link TestOrderState#addRunRecord} and the
- * persistence read in {@link TestOrderState#toPersistedRoot(boolean)}
- * previously held.
+ * Thread-safety: all mutating and reading operations are synchronised on this
+ * instance so that an iteration of the run list cannot race a concurrent
+ * {@link #addRunRecord(RunRecord)} or {@link #setHistoryMaxRuns(int)} call.
+ * {@link #runs()} returns a snapshot (defensive copy) rather than a live view,
+ * so callers may iterate it outside the monitor.
  */
 @ThreadSafe
 final class RunHistoryStorage {
@@ -42,8 +42,8 @@ final class RunHistoryStorage {
 		return runHistory;
 	}
 
-	List<RunRecord> runs() {
-		return runHistory.runs();
+	synchronized List<RunRecord> runs() {
+		return List.copyOf(runHistory.runs());
 	}
 
 	synchronized void addRunRecord(RunRecord record) {

@@ -118,6 +118,16 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     /**
+     * Lock guarding {@link #withScopedCompression}'s mutation of the global
+     * {@code testorder.compression} property. Without this, two test tasks
+     * finishing concurrently under {@code --parallel} can interleave their
+     * save / set / restore steps and one of the merges sees the wrong
+     * compression level (or the property leaks past the end of both
+     * scopes).
+     */
+    private static final Object COMPRESSION_PROPERTY_LOCK = new Object();
+
+    /**
      * Run the supplied action with {@code testorder.compression} temporarily
      * set to {@code level} (or unchanged when {@code level} is null), then
      * restore the previous value. Prevents the daemon from carrying a stale
@@ -127,15 +137,17 @@ public class TestOrderPlugin implements Plugin<Project> {
         if (level == null) {
             return action.getAsInt();
         }
-        String previous = System.getProperty("testorder.compression");
-        System.setProperty("testorder.compression", level);
-        try {
-            return action.getAsInt();
-        } finally {
-            if (previous == null) {
-                System.clearProperty("testorder.compression");
-            } else {
-                System.setProperty("testorder.compression", previous);
+        synchronized (COMPRESSION_PROPERTY_LOCK) {
+            String previous = System.getProperty("testorder.compression");
+            System.setProperty("testorder.compression", level);
+            try {
+                return action.getAsInt();
+            } finally {
+                if (previous == null) {
+                    System.clearProperty("testorder.compression");
+                } else {
+                    System.setProperty("testorder.compression", previous);
+                }
             }
         }
     }
@@ -1817,6 +1829,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                             project.getLogger().warn(
                                     "[test-order] To always run remaining, set testOrder '{ autoRunRemaining = true }'"
                                     + " or -Dtestorder.auto.runRemaining=true");
+                        }
+
+                        if (!selection.cached().isEmpty()) {
+                            project.getLogger().lifecycle(
+                                    "[test-order] Cache: skipped {} unchanged test(s) with sufficient pass streak.",
+                                    selection.cached().size());
                         }
 
                         // Apply orderer config as system properties
