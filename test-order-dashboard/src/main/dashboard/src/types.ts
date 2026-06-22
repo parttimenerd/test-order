@@ -124,6 +124,8 @@ export interface MLHealthEntry {
   failRate: number
   recentTrend: string
   runsAnalyzed: number
+  retries?: number
+  quarantined?: boolean
 }
 
 export interface MLSummary {
@@ -133,12 +135,32 @@ export interface MLSummary {
   failing: number
 }
 
+export interface MLRuntimeData {
+  retriedCount: number
+  quarantinedCount: number
+  quarantined: string[]
+}
+
 export interface MLData {
   enabled: boolean
-  runsAnalyzed: number
-  summary: MLSummary
+  runsAnalyzed?: number
+  summary?: MLSummary
   tests: MLHealthEntry[]
-  hasPredictions: boolean
+  hasPredictions?: boolean
+  runtime?: MLRuntimeData
+}
+
+export interface CacheEntry {
+  testClass: string
+  passStreak: number
+  durationMs: number
+}
+
+export interface CacheData {
+  enabled: boolean
+  skippedCount: number
+  timeSavedMs: number
+  tests: CacheEntry[]
 }
 
 export interface MutationEntry {
@@ -230,6 +252,7 @@ export interface DashboardData {
   coverage: CoverageData | null
   ml: MLData | null
   mutation: MutationData | null
+  cache?: CacheData | null
   staticAnalysis: StaticAnalysisData | null
   /** class→module map for cross-module dep coloring; absent for single-module projects */
   classToModule?: Record<string, string>

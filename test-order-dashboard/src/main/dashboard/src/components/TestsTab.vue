@@ -1053,7 +1053,7 @@ function previewScoreBars(t: TestEntry) {
               <td v-if="d.runs.length >= 3" class="td--history" :title="d.testRankHistoryMap.value.has(t.name) ? 'Rank trend over ' + d.testRankHistoryMap.value.get(t.name)!.length + ' runs: ' + d.testRankHistoryMap.value.get(t.name)!.join(' → ') : 'No trend data'">
                 <span v-if="rankSparkSvg(t.name)" v-html="rankSparkSvg(t.name)"></span>
               </td>
-              <td v-if="d.runs.length >= 3" class="td--history" :title="scoreHistoryMap.value.get(t.name) ? 'Score history (oldest→newest): ' + scoreHistoryMap.value.get(t.name)!.join(' → ') : 'No score history'">
+              <td v-if="d.runs.length >= 3" class="td--history" :title="scoreHistoryMap.get(t.name) ? 'Score history (oldest→newest): ' + scoreHistoryMap.get(t.name)!.join(' → ') : 'No score history'">
                 <span v-if="scoreSparkSvg(t.name)" v-html="scoreSparkSvg(t.name)"></span>
               </td>
               <td v-if="d.runs.length >= 3" class="td--right td--conf"

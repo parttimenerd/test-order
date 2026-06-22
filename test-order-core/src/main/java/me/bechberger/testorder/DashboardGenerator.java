@@ -8,6 +8,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+import me.bechberger.testorder.ml.FlakyRuntimeReport;
 import me.bechberger.testorder.ml.TestHealthReport;
 import me.bechberger.util.json.PrettyPrinter;
 
@@ -123,6 +124,45 @@ public class DashboardGenerator {
 			TestOrderState state, TestOrderState.ScoringWeights sw, DependencyMap depMap, long medianDuration,
 			List<TestOrderState.WeightDef> weightDefs, Map<String, Double> mlPredictions,
 			TestHealthReport healthReport) {
+		return buildData(scored, changed, changedTests, state, sw, depMap, medianDuration, weightDefs, mlPredictions,
+				healthReport, RuntimeExtras.EMPTY);
+	}
+
+	/**
+	 * Optional run-time extras surfaced by the dashboard: skip-if-unchanged cache
+	 * results and FLAKY-test retry/quarantine outcomes. Pass {@link #EMPTY} when
+	 * the corresponding features are off.
+	 *
+	 * @param cachedTests
+	 *            test classes skipped by the unchanged-deps cache this run
+	 * @param cachedTimeSavedMs
+	 *            wall-clock time saved by the cache (sum of EMA durations)
+	 * @param flaky
+	 *            runtime flaky report (retries + quarantines); never null — use
+	 *            {@link FlakyRuntimeReport#empty()} when absent
+	 */
+	public record RuntimeExtras(List<String> cachedTests, long cachedTimeSavedMs, FlakyRuntimeReport flaky) {
+		public static final RuntimeExtras EMPTY = new RuntimeExtras(List.of(), 0L, FlakyRuntimeReport.empty());
+
+		public RuntimeExtras {
+			cachedTests = cachedTests == null ? List.of() : List.copyOf(cachedTests);
+			if (flaky == null) {
+				flaky = FlakyRuntimeReport.empty();
+			}
+		}
+	}
+
+	/**
+	 * Full overload including ML data and run-time extras (cache + flaky retry).
+	 */
+	public Map<String, Object> buildData(List<ScoredTest> scored, Set<String> changed, Set<String> changedTests,
+			TestOrderState state, TestOrderState.ScoringWeights sw, DependencyMap depMap, long medianDuration,
+			List<TestOrderState.WeightDef> weightDefs, Map<String, Double> mlPredictions, TestHealthReport healthReport,
+			RuntimeExtras extras) {
+
+		if (extras == null) {
+			extras = RuntimeExtras.EMPTY;
+		}
 
 		Map<String, Object> root = new LinkedHashMap<>();
 		root.put("project", buildProjectInfo());
@@ -150,9 +190,14 @@ public class DashboardGenerator {
 		root.put("runs", buildRunHistory(state));
 		root.put("coverage", depMap != null ? buildCoverageData(depMap) : null);
 
-		Map<String, Object> ml = buildMlSection(healthReport, mlPredictions);
+		Map<String, Object> ml = buildMlSection(healthReport, mlPredictions, extras.flaky());
 		if (ml != null) {
 			root.put("ml", ml);
+		}
+
+		Map<String, Object> cache = buildCacheSection(extras, state);
+		if (cache != null) {
+			root.put("cache", cache);
 		}
 
 		Map<String, Object> mutation = buildMutationSection(state, killRates);
@@ -354,41 +399,116 @@ public class DashboardGenerator {
 	}
 
 	/** Returns null if no health report is available; caller skips the section. */
-	private static Map<String, Object> buildMlSection(TestHealthReport healthReport,
-			Map<String, Double> mlPredictions) {
-		if (healthReport == null) {
+	private static Map<String, Object> buildMlSection(TestHealthReport healthReport, Map<String, Double> mlPredictions,
+			FlakyRuntimeReport flaky) {
+		Map<String, Integer> retryCounts = flaky == null ? Map.of() : flaky.retryCounts();
+		Set<String> quarantined = flaky == null ? Set.of() : flaky.quarantined();
+		boolean hasRuntime = !retryCounts.isEmpty() || !quarantined.isEmpty();
+		if (healthReport == null && !hasRuntime) {
 			return null;
 		}
 		Map<String, Object> ml = new LinkedHashMap<>();
 		ml.put("enabled", true);
-		ml.put("runsAnalyzed", healthReport.runsAnalyzed());
+		if (healthReport != null) {
+			ml.put("runsAnalyzed", healthReport.runsAnalyzed());
 
-		Map<String, Object> summary = new LinkedHashMap<>();
-		summary.put("healthy", healthReport.byStatus(TestHealthReport.HealthStatus.HEALTHY).size());
-		summary.put("degrading", healthReport.byStatus(TestHealthReport.HealthStatus.DEGRADING).size());
-		summary.put("flaky", healthReport.byStatus(TestHealthReport.HealthStatus.FLAKY).size());
-		summary.put("failing", healthReport.byStatus(TestHealthReport.HealthStatus.FAILING).size());
-		ml.put("summary", summary);
+			Map<String, Object> summary = new LinkedHashMap<>();
+			summary.put("healthy", healthReport.byStatus(TestHealthReport.HealthStatus.HEALTHY).size());
+			summary.put("degrading", healthReport.byStatus(TestHealthReport.HealthStatus.DEGRADING).size());
+			summary.put("flaky", healthReport.byStatus(TestHealthReport.HealthStatus.FLAKY).size());
+			summary.put("failing", healthReport.byStatus(TestHealthReport.HealthStatus.FAILING).size());
+			ml.put("summary", summary);
+		}
 
 		List<Object> health = new ArrayList<>();
-		for (var entry : healthReport.tests().values()) {
+		if (healthReport != null) {
+			for (var entry : healthReport.tests().values()) {
+				Map<String, Object> h = new LinkedHashMap<>();
+				h.put("testClass", entry.testClass());
+				h.put("status", entry.status().name());
+				h.put("failRate", Math.round(entry.recentFailureRate() * 10000.0) / 10000.0);
+				h.put("recentTrend",
+						entry.degradationTrend() > 0.05
+								? "DEGRADING"
+								: entry.degradationTrend() < -0.05 ? "IMPROVING" : "STABLE");
+				h.put("runsAnalyzed", entry.totalRuns());
+				Integer r = retryCounts.get(entry.testClass());
+				h.put("retries", r == null ? 0 : r);
+				h.put("quarantined", quarantined.contains(entry.testClass()));
+				health.add(h);
+			}
+		}
+		// Surface retry/quarantine-only tests (no health entry) as bare rows so the
+		// dashboard ML tab can still display them. Without this they vanish when ML
+		// history is unavailable.
+		Set<String> healthClasses = new HashSet<>();
+		for (Object h : health) {
+			@SuppressWarnings("unchecked")
+			Map<String, Object> hm = (Map<String, Object>) h;
+			healthClasses.add((String) hm.get("testClass"));
+		}
+		Set<String> runtimeOnly = new TreeSet<>();
+		runtimeOnly.addAll(retryCounts.keySet());
+		runtimeOnly.addAll(quarantined);
+		runtimeOnly.removeAll(healthClasses);
+		for (String tc : runtimeOnly) {
 			Map<String, Object> h = new LinkedHashMap<>();
-			h.put("testClass", entry.testClass());
-			h.put("status", entry.status().name());
-			h.put("flakinessScore", Math.round(entry.flakinessScore() * 10000.0) / 10000.0);
-			h.put("degradationTrend", Math.round(entry.degradationTrend() * 10000.0) / 10000.0);
-			h.put("recentFailureRate", Math.round(entry.recentFailureRate() * 10000.0) / 10000.0);
-			h.put("volatility", Math.round(entry.volatility() * 10000.0) / 10000.0);
-			h.put("totalRuns", entry.totalRuns());
-			h.put("totalFailures", entry.totalFailures());
+			h.put("testClass", tc);
+			h.put("status", "UNKNOWN");
+			h.put("failRate", 0.0);
+			h.put("recentTrend", "STABLE");
+			h.put("runsAnalyzed", 0);
+			Integer r = retryCounts.get(tc);
+			h.put("retries", r == null ? 0 : r);
+			h.put("quarantined", quarantined.contains(tc));
 			health.add(h);
 		}
-		ml.put("health", health);
+		ml.put("tests", health);
+
+		Map<String, Object> runtime = new LinkedHashMap<>();
+		runtime.put("retriedCount", retryCounts.size());
+		runtime.put("quarantinedCount", quarantined.size());
+		runtime.put("quarantined", new ArrayList<>(new TreeSet<>(quarantined)));
+		ml.put("runtime", runtime);
 
 		if (mlPredictions != null && !mlPredictions.isEmpty()) {
 			ml.put("hasPredictions", true);
 		}
 		return ml;
+	}
+
+	/**
+	 * Builds the cache section describing tests skipped by the skip-if-unchanged
+	 * cache this run. Returns null when no tests were cached.
+	 */
+	private static Map<String, Object> buildCacheSection(RuntimeExtras extras, TestOrderState state) {
+		boolean configuredOn = "true"
+				.equalsIgnoreCase(System.getProperty(TestOrderConfig.CACHE_SKIP_UNCHANGED, "false"));
+		boolean noCachedTests = extras == null || extras.cachedTests().isEmpty();
+		if (noCachedTests && !configuredOn) {
+			return null;
+		}
+		Map<String, Object> cache = new LinkedHashMap<>();
+		cache.put("enabled", true);
+		if (noCachedTests) {
+			cache.put("skippedCount", 0);
+			cache.put("timeSavedMs", 0L);
+			cache.put("tests", new ArrayList<>());
+			return cache;
+		}
+		cache.put("skippedCount", extras.cachedTests().size());
+		cache.put("timeSavedMs", extras.cachedTimeSavedMs());
+
+		List<Map<String, Object>> tests = new ArrayList<>();
+		for (String name : extras.cachedTests()) {
+			Map<String, Object> t = new LinkedHashMap<>();
+			t.put("testClass", name);
+			t.put("passStreak", state.passStreak(name));
+			t.put("durationMs", state.getDuration(name, 0L));
+			tests.add(t);
+		}
+		cache.put("tests", tests);
+		return cache;
 	}
 
 	/** Returns null if no kill-rate data is available; caller skips the section. */

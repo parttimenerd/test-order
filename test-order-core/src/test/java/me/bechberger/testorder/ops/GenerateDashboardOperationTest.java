@@ -14,6 +14,8 @@ import me.bechberger.testorder.DashboardGenerator;
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.TestScorer;
+import me.bechberger.testorder.ml.CacheRuntimeReport;
+import me.bechberger.testorder.ml.FlakyRuntimeReport;
 
 class GenerateDashboardOperationTest {
 
@@ -189,5 +191,39 @@ class GenerateDashboardOperationTest {
 		long lo = Long.MAX_VALUE - 2;
 		// sorted: [lo, hi] → lo + (hi - lo) / 2 = lo + 1
 		assertEquals(lo + 1, DashboardGenerator.computeMedian(new long[]{hi, lo}));
+	}
+
+	@Test
+	void autoLoadExtras_returnsEmpty_whenStateDirNull() {
+		assertSame(DashboardGenerator.RuntimeExtras.EMPTY, GenerateDashboardOperation.autoLoadExtras(null));
+	}
+
+	@Test
+	void autoLoadExtras_returnsEmpty_whenNoReports() {
+		assertSame(DashboardGenerator.RuntimeExtras.EMPTY, GenerateDashboardOperation.autoLoadExtras(tempDir));
+	}
+
+	@Test
+	void autoLoadExtras_populatesCachedTests_whenCacheReportExists() throws IOException {
+		Path cacheReport = tempDir.resolve(CacheRuntimeReport.DEFAULT_FILENAME);
+		CacheRuntimeReport.write(cacheReport, Map.of("com.A", 100L, "com.B", 250L));
+
+		DashboardGenerator.RuntimeExtras extras = GenerateDashboardOperation.autoLoadExtras(tempDir);
+
+		assertNotSame(DashboardGenerator.RuntimeExtras.EMPTY, extras);
+		assertEquals(Set.of("com.A", "com.B"), new HashSet<>(extras.cachedTests()));
+		assertEquals(350L, extras.cachedTimeSavedMs());
+	}
+
+	@Test
+	void autoLoadExtras_carriesFlakyDataThrough() throws IOException {
+		Path flakyReport = tempDir.resolve(FlakyRuntimeReport.DEFAULT_FILENAME);
+		FlakyRuntimeReport.write(flakyReport, Map.of("com.Retried", 2), Set.of("com.Quarantined"));
+
+		DashboardGenerator.RuntimeExtras extras = GenerateDashboardOperation.autoLoadExtras(tempDir);
+
+		assertNotSame(DashboardGenerator.RuntimeExtras.EMPTY, extras);
+		assertEquals(2, extras.flaky().retryCounts().get("com.Retried"));
+		assertEquals(Set.of("com.Quarantined"), extras.flaky().quarantined());
 	}
 }

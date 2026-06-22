@@ -13,6 +13,7 @@ import AnalyticsTab from './components/AnalyticsTab.vue'
 import WeightsTab from './components/WeightsTab.vue'
 import MLTab from './components/MLTab.vue'
 import MutationTab from './components/MutationTab.vue'
+import CacheTab from './components/CacheTab.vue'
 import StaticAnalysisTab from './components/StaticAnalysisTab.vue'
 import AppFooter from './components/AppFooter.vue'
 import CommandPalette from './components/CommandPalette.vue'
@@ -150,6 +151,7 @@ function onKeydown(e: KeyboardEvent) {
     case '3': dashboard.setTab('weights'); break
     case '4': dashboard.setTab('ml'); break
     case '5': dashboard.setTab('mutation'); break
+    case '6': dashboard.setTab('cache'); break
     case 'g':
       dashboard.setTab('tests')
       dashboard.setGraphMode('focus')
@@ -257,6 +259,7 @@ function startResize(e: MouseEvent) {
         <WeightsTab />
         <MLTab />
         <MutationTab />
+        <CacheTab />
         <StaticAnalysisTab />
       </main>
     </div>

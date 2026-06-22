@@ -63,6 +63,7 @@ export function normalizeDashboardData(raw: DashboardData | null): DashboardData
     ml: raw.ml ?? null,
     mutation: raw.mutation ?? null,
     staticAnalysis: raw.staticAnalysis ?? null,
+    cache: raw.cache ?? null,
     classToModule: raw.classToModule,
     memberDict: raw.memberDict,
     depDict: raw.depDict,

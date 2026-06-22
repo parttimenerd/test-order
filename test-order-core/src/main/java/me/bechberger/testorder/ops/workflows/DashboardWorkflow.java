@@ -72,7 +72,8 @@ public final class DashboardWorkflow {
 				a.changedTests(), a.depMap(), ctx.projectName(),
 				ctx.stateFile() != null ? relativize(ctx.projectRoot(), ctx.stateFile()) : "",
 				ctx.indexFile() != null ? relativize(ctx.projectRoot(), ctx.indexFile()) : "", ctx.pluginVersion(),
-				a.loadedWeights().defs(), mlPredictions, healthReport, ctx.depsDir(), htmlTemplate, outputFile,
+				a.loadedWeights().defs(), mlPredictions, healthReport, ctx.depsDir(),
+				GenerateDashboardOperation.autoLoadExtras(stateDirOf(ctx.stateFile())), htmlTemplate, outputFile,
 				ctx.log());
 
 		return outputFile;
@@ -101,5 +102,12 @@ public final class DashboardWorkflow {
 		} catch (IllegalArgumentException e) {
 			return target.getFileName().toString();
 		}
+	}
+
+	private static Path stateDirOf(Path stateFile) {
+		if (stateFile == null) {
+			return null;
+		}
+		return stateFile.toAbsolutePath().getParent();
 	}
 }

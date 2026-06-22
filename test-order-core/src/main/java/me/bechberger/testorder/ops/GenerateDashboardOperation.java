@@ -14,6 +14,8 @@ import me.bechberger.testorder.DashboardGenerator.ScoredTest;
 import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.TestScorer;
+import me.bechberger.testorder.ml.CacheRuntimeReport;
+import me.bechberger.testorder.ml.FlakyRuntimeReport;
 import me.bechberger.testorder.ml.TestHealthReport;
 
 /**
@@ -109,20 +111,33 @@ public final class GenerateDashboardOperation {
 			String projectName, String stateFileLabel, String indexFileLabel, String pluginVersion,
 			List<TestOrderState.WeightDef> weightDefs, Map<String, Double> mlPredictions, TestHealthReport healthReport,
 			Path depsDir, String htmlTemplate, Path outputPath, PluginLog log) throws IOException {
+		return generate(allTests, scorer, state, weights, changed, changedTests, depMap, projectName, stateFileLabel,
+				indexFileLabel, pluginVersion, weightDefs, mlPredictions, healthReport, depsDir,
+				DashboardGenerator.RuntimeExtras.EMPTY, htmlTemplate, outputPath, log);
+	}
+
+	/**
+	 * Generates the dashboard HTML with optional ML data, depsDir, and runtime
+	 * extras (cache + flaky retry/quarantine outcomes).
+	 */
+	public static Path generate(Collection<String> allTests, TestScorer scorer, TestOrderState state,
+			TestOrderState.ScoringWeights weights, Set<String> changed, Set<String> changedTests, DependencyMap depMap,
+			String projectName, String stateFileLabel, String indexFileLabel, String pluginVersion,
+			List<TestOrderState.WeightDef> weightDefs, Map<String, Double> mlPredictions, TestHealthReport healthReport,
+			Path depsDir, DashboardGenerator.RuntimeExtras extras, String htmlTemplate, Path outputPath, PluginLog log)
+			throws IOException {
 
 		List<ScoredTest> scored = DashboardOperation.scoreAndSort(allTests, scorer, state);
 		long medianDuration = DashboardOperation.computeMedianDuration(scored);
 
 		DashboardGenerator gen = new DashboardGenerator(projectName, stateFileLabel, indexFileLabel, pluginVersion,
 				depsDir);
-		Map<String, Object> data;
-		if (weightDefs != null) {
-			data = gen.buildData(scored, changed, changedTests, state, weights, depMap, medianDuration, weightDefs,
-					mlPredictions, healthReport);
-		} else {
-			data = gen.buildData(scored, changed, changedTests, state, weights, depMap, medianDuration,
-					TestOrderState.WEIGHT_DEFS, mlPredictions, healthReport);
-		}
+		DashboardGenerator.RuntimeExtras effectiveExtras = extras != null
+				? extras
+				: DashboardGenerator.RuntimeExtras.EMPTY;
+		List<TestOrderState.WeightDef> defs = weightDefs != null ? weightDefs : TestOrderState.WEIGHT_DEFS;
+		Map<String, Object> data = gen.buildData(scored, changed, changedTests, state, weights, depMap, medianDuration,
+				defs, mlPredictions, healthReport, effectiveExtras);
 
 		String html = gen.injectIntoTemplate(htmlTemplate, data);
 
@@ -138,5 +153,24 @@ public final class GenerateDashboardOperation {
 		log.info("[test-order] To open automatically: add -Dtestorder.dashboard.open=true");
 
 		return outputPath;
+	}
+
+	/**
+	 * Loads {@code flaky-runtime.txt} and {@code cache-runtime.txt} from
+	 * {@code stateDir} (if present) and wraps them in a
+	 * {@link DashboardGenerator.RuntimeExtras}. Returns
+	 * {@link DashboardGenerator.RuntimeExtras#EMPTY} when {@code stateDir} is null
+	 * or both files are missing/empty.
+	 */
+	public static DashboardGenerator.RuntimeExtras autoLoadExtras(Path stateDir) {
+		if (stateDir == null) {
+			return DashboardGenerator.RuntimeExtras.EMPTY;
+		}
+		FlakyRuntimeReport flaky = FlakyRuntimeReport.load(stateDir.resolve(FlakyRuntimeReport.DEFAULT_FILENAME));
+		CacheRuntimeReport cache = CacheRuntimeReport.load(stateDir.resolve(CacheRuntimeReport.DEFAULT_FILENAME));
+		if (flaky.isEmpty() && cache.isEmpty()) {
+			return DashboardGenerator.RuntimeExtras.EMPTY;
+		}
+		return new DashboardGenerator.RuntimeExtras(cache.classes(), cache.totalDurationMs(), flaky);
 	}
 }

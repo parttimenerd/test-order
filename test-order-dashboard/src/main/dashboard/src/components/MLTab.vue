@@ -8,6 +8,11 @@ const d = inject<DashboardState>('dashboard')!
 const ml = computed(() => d.dd.ml)
 const tests = computed(() => ml.value?.tests ?? [])
 const summary = computed(() => ml.value?.summary ?? { healthy: 0, degrading: 0, flaky: 0, failing: 0 })
+const runtime = computed(() => ml.value?.runtime ?? null)
+const hasRuntime = computed(() => {
+  const r = runtime.value
+  return !!(r && (r.retriedCount > 0 || r.quarantinedCount > 0))
+})
 
 function statusColor(status: string): string {
   switch (status) {
@@ -47,6 +52,14 @@ function statusColor(status: string): string {
         <div class="ml-card__value">{{ ml?.runsAnalyzed ?? 0 }}</div>
         <div class="ml-card__label">Runs analyzed</div>
       </div>
+      <div v-if="hasRuntime" class="ml-card ml-card--retried" title="Number of FLAKY-classified tests that were auto-retried this run (testorder.flaky.retries).">
+        <div class="ml-card__value">{{ runtime?.retriedCount ?? 0 }}</div>
+        <div class="ml-card__label">Retried</div>
+      </div>
+      <div v-if="hasRuntime" class="ml-card ml-card--quarantined" title="FLAKY tests whose final failure was downgraded to 'aborted' by quarantine mode (testorder.flaky.quarantine).">
+        <div class="ml-card__value">{{ runtime?.quarantinedCount ?? 0 }}</div>
+        <div class="ml-card__label">Quarantined</div>
+      </div>
     </div>
 
     <!-- Per-test health table -->
@@ -59,6 +72,8 @@ function statusColor(status: string): string {
             <th class="th--right" title="Fraction of analyzed runs where this test failed. >50% = likely broken; 10-50% = flaky; <10% = occasional.">Fail rate</th>
             <th class="th--left" title="Recent trend direction based on comparing first-half vs second-half of recorded runs. IMPROVING = getting more stable; DEGRADING = getting less stable.">Trend</th>
             <th class="th--right" title="Number of runs in which this test appeared and was analyzed.">Runs</th>
+            <th v-if="hasRuntime" class="th--right" title="Number of retry attempts performed for this FLAKY test this run.">Retries</th>
+            <th v-if="hasRuntime" class="th--left" title="True when this test's final failure was quarantined (reported as aborted instead of failed).">Quarantined</th>
           </tr>
         </thead>
         <tbody>
@@ -68,6 +83,8 @@ function statusColor(status: string): string {
             <td class="td--right" :style="{ color: t.failRate > 0.5 ? 'var(--red)' : t.failRate > 0.2 ? 'var(--yellow, orange)' : 'var(--text-muted)' }" :title="(t.failRate * 100).toFixed(1) + '% of ' + t.runsAnalyzed + ' runs failed'">{{ (t.failRate * 100).toFixed(1) }}%</td>
             <td style="font-size:.75rem" :title="'Recent trend: ' + t.recentTrend">{{ t.recentTrend }}</td>
             <td class="td--right td--dim" :title="t.runsAnalyzed + ' runs analyzed for this test'">{{ t.runsAnalyzed }}</td>
+            <td v-if="hasRuntime" class="td--right" :style="{ color: (t.retries ?? 0) > 0 ? 'var(--yellow, orange)' : 'var(--text-muted)' }">{{ t.retries ?? 0 }}</td>
+            <td v-if="hasRuntime" :style="{ color: t.quarantined ? 'var(--red, #ef4444)' : 'var(--text-muted)', fontSize: '.75rem' }">{{ t.quarantined ? 'yes' : '—' }}</td>
           </tr>
         </tbody>
       </table>
@@ -94,4 +111,6 @@ function statusColor(status: string): string {
 .ml-card--degrading .ml-card__value { color: var(--yellow, orange); }
 .ml-card--flaky .ml-card__value { color: var(--yellow, orange); }
 .ml-card--failing .ml-card__value { color: var(--red, #ef4444); }
+.ml-card--retried .ml-card__value { color: var(--blue, #3b82f6); }
+.ml-card--quarantined .ml-card__value { color: var(--red, #ef4444); }
 </style>

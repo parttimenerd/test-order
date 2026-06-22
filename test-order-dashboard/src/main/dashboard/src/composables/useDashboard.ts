@@ -16,6 +16,7 @@ export interface DashboardState {
   hasML: boolean
   hasMutation: boolean
   hasStaticAnalysis: boolean
+  hasCache: boolean
 
   // Reactive UI state
   selectedTest: Ref<TestEntry | null>
@@ -148,6 +149,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   const hasML = !!(dd.ml && dd.ml.enabled)
   const hasMutation = !!(dd.mutation && dd.mutation.enabled)
   const hasStaticAnalysis = !!(dd.staticAnalysis && dd.staticAnalysis.enabled)
+  const hasCache = !!(dd.cache && dd.cache.enabled)
 
   const selectedTest = ref<TestEntry | null>(null)
   const selectedTests = ref<Set<string>>(new Set())
@@ -247,6 +249,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     ]
     if (hasML) tabs.push({ id: 'ml', label: 'ML Health' })
     if (hasMutation) tabs.push({ id: 'mutation', label: 'Mutations' })
+    if (hasCache) tabs.push({ id: 'cache', label: 'Cache' })
     if (hasStaticAnalysis) tabs.push({ id: 'staticanalysis', label: 'Static Analysis' })
     return tabs
   })
@@ -841,7 +844,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       const params = new URLSearchParams(h)
       if (params.has('tab')) {
         const tab = params.get('tab')!
-        if (['tests', 'analytics', 'weights', 'ml', 'mutation', 'staticanalysis'].includes(tab)) activeTab.value = tab
+        if (['tests', 'analytics', 'weights', 'ml', 'mutation', 'cache', 'staticanalysis'].includes(tab)) activeTab.value = tab
       }
       if (params.has('test')) {
         const tName = params.get('test')!
@@ -1099,7 +1102,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
   }
 
   return {
-    dd, parseError, hasData, hasCoverage, hasML, hasMutation, hasStaticAnalysis,
+    dd, parseError, hasData, hasCoverage, hasML, hasMutation, hasStaticAnalysis, hasCache,
     selectedTest, selectedTests, activeTab, lw, searchQ, sortKey, sortDir,
     graphMode, covSelectedClass, selectedMethod, selectedMethods,
     nameMode, commonPrefix,
