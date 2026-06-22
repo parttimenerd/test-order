@@ -28,7 +28,7 @@ public final class ReactorReorderer {
 	}
 
 	public record ReorderResult(List<MavenProject> ordered, Set<MavenProject> deferred, int cumulativeAffected,
-			int activeModules, int deferredModules) {
+			int activeModules, int deferredModules, Set<MavenProject> active, Map<String, MavenProject> projectsById) {
 	}
 
 	/**
@@ -43,7 +43,7 @@ public final class ReactorReorderer {
 	 */
 	public static ReorderResult reorder(List<MavenProject> original, Map<String, ModuleScore> scoreById, Integer topN) {
 		if (original == null || original.isEmpty()) {
-			return new ReorderResult(List.of(), Set.of(), 0, 0, 0);
+			return new ReorderResult(List.of(), Set.of(), 0, 0, 0, Set.of(), Map.of());
 		}
 
 		Map<String, MavenProject> projectsById = new HashMap<>();
@@ -157,21 +157,47 @@ public final class ReactorReorderer {
 		// already validated the reactor DAG), fall back to original order.
 		if (ordered.size() != original.size()) {
 			return new ReorderResult(new ArrayList<>(original), Set.of(), cumulative, active.size(),
-					original.size() - active.size());
+					original.size() - active.size(), Collections.unmodifiableSet(active),
+					Collections.unmodifiableMap(projectsById));
 		}
 
 		Set<MavenProject> deferred = new HashSet<>(original);
 		deferred.removeAll(active);
 
 		return new ReorderResult(Collections.unmodifiableList(ordered), Collections.unmodifiableSet(deferred),
-				cumulative, active.size(), deferred.size());
+				cumulative, active.size(), deferred.size(), Collections.unmodifiableSet(active),
+				Collections.unmodifiableMap(projectsById));
 	}
 
 	private static ModuleScore score(ModuleScore s) {
 		return s != null ? s : new ModuleScore("", 0, 0L, 0, 0, List.of());
 	}
 
-	private static Map<MavenProject, Set<MavenProject>> buildPredecessors(List<MavenProject> reactor,
+	/**
+	 * Returns the set of reactor projects that are transitively required by any
+	 * project in {@code active}: i.e., active projects themselves plus all their
+	 * transitive compile-time predecessors. Any project NOT in the returned set can
+	 * have its entire build (compile, test-compile, enforcer, etc.) skipped without
+	 * breaking the active modules.
+	 */
+	static Set<MavenProject> transitiveRequired(Set<MavenProject> active, List<MavenProject> reactor,
+			Map<String, MavenProject> byId) {
+		Map<MavenProject, Set<MavenProject>> preds = buildPredecessors(reactor, byId);
+		Set<MavenProject> required = new HashSet<>(active);
+		java.util.ArrayDeque<MavenProject> queue = new java.util.ArrayDeque<>(active);
+		while (!queue.isEmpty()) {
+			MavenProject p = queue.poll();
+			for (MavenProject dep : preds.getOrDefault(p, Set.of())) {
+				if (required.add(dep)) {
+					queue.add(dep);
+				}
+			}
+		}
+		return required;
+	}
+
+	// Package-private for unit testing.
+	static Map<MavenProject, Set<MavenProject>> buildPredecessors(List<MavenProject> reactor,
 			Map<String, MavenProject> byId) {
 		Map<MavenProject, Set<MavenProject>> map = new HashMap<>();
 		for (MavenProject p : reactor) {

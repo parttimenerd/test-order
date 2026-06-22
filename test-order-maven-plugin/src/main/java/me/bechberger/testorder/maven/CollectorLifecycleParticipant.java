@@ -50,6 +50,7 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 	private static final String PROP_REORDER = "testorder.reactorReorder";
 	private static final String PROP_TOPN = "testorder.reactorTopN";
 	private static final String PROP_DRYRUN = "testorder.reactorReorder.dryRun";
+	private static final String PROP_SKIP_INACTIVE = "testorder.skipInactiveModules";
 
 	@Override
 	public void afterProjectsRead(MavenSession session) {
@@ -446,6 +447,41 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 
 		session.setProjects(reorder.ordered());
 
+		// Skip the entire build (compile, enforcer, formatter, etc.) for modules that
+		// neither have affected tests NOR are transitively required by any such module.
+		// Only active when the 'affected' goal is present (default-on) or when
+		// testorder.skipInactiveModules=true is set explicitly.
+		if (skipInactiveModulesEnabled(session) && reorder.activeModules() > 0) {
+			Set<MavenProject> required = ReactorReorderer.transitiveRequired(reorder.active(), session.getProjects(),
+					reorder.projectsById());
+			int fullySkipped = 0;
+			for (MavenProject p : session.getProjects()) {
+				if ("pom".equals(p.getPackaging())) {
+					continue;
+				}
+				if (!required.contains(p)) {
+					ModuleScore ms = scoreById.get(ModuleIds.of(p));
+					if (ms == null || ms.totalTestCount() == 0) {
+						// No score, or the index doesn't cover this module's tests (newly added
+						// module, or test-classes not compiled this run). We have no evidence
+						// the module is unaffected — must not suppress.
+						continue;
+					}
+					p.getProperties().setProperty("maven.main.skip", "true");
+					p.getProperties().setProperty("maven.test.skip", "true");
+					p.getProperties().setProperty("skipTests", "true");
+					p.getProperties().setProperty("enforcer.skip", "true");
+					p.getProperties().setProperty("skipFormatting", "true");
+					fullySkipped++;
+				}
+			}
+			if (fullySkipped > 0) {
+				System.err.println("[test-order] reactor skip: set maven.main.skip+skipTests on " + fullySkipped
+						+ " module(s) with no affected tests and not transitively required by any active module"
+						+ " (set -Dtestorder.skipInactiveModules=false to opt out)");
+			}
+		}
+
 		// Print the chosen ranking so the reorder is auditable and reversible.
 		// Only the top 10 active modules are listed to keep CI logs readable.
 		// The listing follows the reactor's DAG-respecting execution order, so a
@@ -531,6 +567,15 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			ExecutionListener prev = session.getRequest().getExecutionListener();
 			session.getRequest().setExecutionListener(new CumulativeTestCountListener(prev, topN));
 		}
+	}
+
+	private boolean skipInactiveModulesEnabled(MavenSession session) {
+		String explicit = readProp(session, PROP_SKIP_INACTIVE);
+		if (explicit != null) {
+			return explicit.isEmpty() || "true".equalsIgnoreCase(explicit);
+		}
+		// Default-on when the 'affected' goal is present (same condition as reorder).
+		return goalsTriggerReorder(session);
 	}
 
 	// Package-private for unit testing.
