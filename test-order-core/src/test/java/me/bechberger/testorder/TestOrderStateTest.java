@@ -244,7 +244,8 @@ class TestOrderStateTest {
 		List<TestOrderState.TestOutcome> withFail = List
 				.of(new TestOrderState.TestOutcome("com.A", 5, true, false, 1, 0, 0.5, true, false, true, 0.0));
 		state.addRunRecord(new TestOrderState.RunRecord(1L, 1, 1, 0, 0.75, withFail));
-		// Run without failures — outcomes should be dropped on save
+		// Run without failures — outcomes are persisted in slim form (testClass + zero
+		// flags) so passStreak() can drive the skip-if-unchanged cache.
 		List<TestOrderState.TestOutcome> noFail = List
 				.of(new TestOrderState.TestOutcome("com.B", 3, false, true, 0, 0, 0.0, false, false, false, 0.0));
 		state.addRunRecord(new TestOrderState.RunRecord(2L, 1, 0, -1, 1.0, noFail));
@@ -257,8 +258,12 @@ class TestOrderStateTest {
 		// run with failures keeps outcomes (scoring fields only, testClass/totalScore
 		// dropped)
 		assertEquals(1, loaded.runs().get(0).outcomes().size());
-		// run without failures has empty outcomes
-		assertTrue(loaded.runs().get(1).outcomes().isEmpty());
+		// run without failures has slim outcomes (testClass + cleared flags) so
+		// passStreak() sees them.
+		assertEquals(1, loaded.runs().get(1).outcomes().size());
+		TestOrderState.TestOutcome slim = loaded.runs().get(1).outcomes().get(0);
+		assertEquals("com.B", slim.testClass());
+		assertEquals(false, slim.failed());
 	}
 
 	@Test
@@ -501,6 +506,66 @@ class TestOrderStateTest {
 		assertEquals(2, record.outcomes().size());
 		assertTrue(record.outcomes().get(1).failed());
 		assertFalse(record.outcomes().get(0).failed());
+	}
+
+	@Test
+	void buildRunRecord_excludesQuarantinedClasses_neutralForPassStreak() {
+		TestOrderState.resetPending();
+		List<String> order = List.of("com.A", "com.B");
+		Set<String> failed = Set.of();
+		Set<String> quarantined = Set.of("com.A");
+
+		TestOrderState.RunRecord record = TestOrderState.buildRunRecord(order, failed, quarantined);
+
+		assertEquals(1, record.outcomes().size(), "quarantined class excluded from outcomes");
+		assertEquals("com.B", record.outcomes().get(0).testClass());
+		assertEquals(1, record.totalTests(), "totalTests reflects filtered outcome count");
+		assertEquals(0, record.totalFailures());
+
+		TestOrderState state = new TestOrderState();
+		state.addRunRecord(record);
+		state.addRunRecord(TestOrderState.buildRunRecord(order, failed, quarantined));
+
+		assertEquals(0, state.passStreak("com.A"),
+				"quarantined class never appears in outcomes → passStreak stays neutral (0)");
+		assertEquals(2, state.passStreak("com.B"), "non-quarantined class accrues pass streak");
+	}
+
+	@Test
+	void buildRunRecord_twoArgOverload_delegatesWithNullQuarantine() {
+		TestOrderState.resetPending();
+		List<String> order = List.of("com.X");
+		TestOrderState.RunRecord record = TestOrderState.buildRunRecord(order, Set.of());
+		assertEquals(1, record.outcomes().size(), "2-arg overload should include all classes");
+	}
+
+	@Test
+	void buildRunRecord_classInBothQuarantinedAndFailed_excludedFromOutcomes() {
+		TestOrderState.resetPending();
+		List<String> order = List.of("com.A");
+		Set<String> failed = Set.of("com.A");
+		Set<String> quarantined = Set.of("com.A");
+
+		TestOrderState.RunRecord record = TestOrderState.buildRunRecord(order, failed, quarantined);
+
+		assertEquals(0, record.outcomes().size(), "quarantine filter wins over failure check");
+		assertEquals(0, record.totalTests());
+		assertEquals(0, record.totalFailures());
+		assertEquals(-1, record.firstFailurePosition(), "no failure recorded when class is quarantined");
+	}
+
+	@Test
+	void buildRunRecord_emptyExecutionOrder_withFailed_producesEmptyRecord() {
+		TestOrderState.resetPending();
+		List<String> order = List.of();
+		Set<String> failed = Set.of("com.A");
+
+		TestOrderState.RunRecord record = TestOrderState.buildRunRecord(order, failed, Set.of());
+
+		assertEquals(0, record.outcomes().size(), "empty execution order → empty outcomes");
+		assertEquals(0, record.totalTests());
+		assertEquals(0, record.totalFailures());
+		assertEquals(-1, record.firstFailurePosition());
 	}
 
 	// --- Weights from state file ---

@@ -1,0 +1,8 @@
+# Test Order Health Report
+# Analyzed: 2026-06-22T17:00:00Z
+# Runs analyzed: 10
+# Format: class|status|flakiness|trend|failRate|volatility|runs|failures
+#
+com.example.FlakyServiceTest|FLAKY|0.800|+0.1000|0.400|0.500|10|4
+com.example.PriceServiceTest|HEALTHY|0.000|+0.0000|0.000|0.000|10|0
+com.example.GreetingTest|HEALTHY|0.000|+0.0000|0.000|0.000|10|0

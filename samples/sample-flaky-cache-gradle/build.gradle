@@ -1,0 +1,42 @@
+plugins {
+    id 'java'
+    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.4'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+testOrder {
+    mode = 'auto'
+}
+
+test {
+    useJUnitPlatform()
+    // Forward sample- and feature-controlling system properties into the test JVM.
+    ['sample.flaky.failUntil',
+     'sample.flaky.counter',
+     'testorder.flaky.retries',
+     'testorder.flaky.quarantine',
+     'testorder.flaky.report.path',
+     'testorder.cache.skipUnchanged',
+     'testorder.cache.minPassStreak',
+     'testorder.cache.maxSkipFraction',
+     'testorder.auto.runRemaining'].each { key ->
+        def v = System.getProperty(key)
+        if (v != null) systemProperty key, v
+    }
+}

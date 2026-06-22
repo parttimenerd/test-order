@@ -801,6 +801,48 @@ public class TestOrderState {
 		runHistory.addRunRecord(record);
 	}
 
+	/**
+	 * Returns the number of most-recent consecutive runs in which {@code testClass}
+	 * appeared and did <em>not</em> fail. Returns {@code 0} for a test that has no
+	 * history, that failed in the most recent run, or that has never run.
+	 * <p>
+	 * Iterates the run history from newest to oldest. A run that does not include
+	 * {@code testClass} (e.g. selective tier where it was skipped) is treated as
+	 * neutral — it does <em>not</em> break the streak, but it also does not extend
+	 * it. The first run where the test appears AND failed terminates the count.
+	 *
+	 * @param testClass
+	 *            fully qualified test class name
+	 * @return the number of consecutive most-recent passing runs for the test
+	 */
+	public int passStreak(String testClass) {
+		if (testClass == null) {
+			return 0;
+		}
+		int streak = 0;
+		List<RunRecord> history = runHistory.runs();
+		for (int i = history.size() - 1; i >= 0; i--) {
+			RunRecord run = history.get(i);
+			boolean appeared = false;
+			boolean failed = false;
+			for (TestOutcome outcome : run.outcomes()) {
+				if (testClass.equals(outcome.testClass())) {
+					appeared = true;
+					failed = outcome.failed();
+					break;
+				}
+			}
+			if (!appeared) {
+				continue; // neutral — test was not part of this run
+			}
+			if (failed) {
+				return streak;
+			}
+			streak++;
+		}
+		return streak;
+	}
+
 	// ── Static coordination (PriorityClassOrderer → TelemetryListener) ──
 
 	public static void recordBreakdown(String testClass, ScoreBreakdown breakdown) {
@@ -829,12 +871,31 @@ public class TestOrderState {
 
 	/** Build a RunRecord from pending breakdowns and actual outcomes. */
 	public static RunRecord buildRunRecord(List<String> executionOrder, Set<String> failedClasses) {
+		return buildRunRecord(executionOrder, failedClasses, null);
+	}
+
+	/**
+	 * Build a RunRecord, excluding classes in {@code quarantinedClasses} from the
+	 * outcomes list entirely. Quarantined tests throw {@code TestAbortedException}
+	 * (status ABORTED, not FAILED), so they would otherwise appear as clean passes
+	 * here — inflating {@code passStreak()} and tricking the skip-if-unchanged
+	 * cache into permanently masking still-flaky tests once the ML reclassifies
+	 * them HEALTHY. Treating quarantined classes as "did not appear in this run"
+	 * matches the cache-skip path's existing neutrality contract.
+	 */
+	public static RunRecord buildRunRecord(List<String> executionOrder, Set<String> failedClasses,
+			Set<String> quarantinedClasses) {
 		Map<String, ScoreBreakdown> pendingBreakdowns = getPendingBreakdowns();
+		Set<String> quarantined = quarantinedClasses == null ? Set.of() : quarantinedClasses;
 		List<TestOutcome> outcomes = new ArrayList<>();
 		int firstFailPos = -1; // -1 = not set (no failure recorded yet)
 		int failureCount = 0;
+		int recordedPosition = 0;
 		for (int i = 0; i < executionOrder.size(); i++) {
 			String tc = executionOrder.get(i);
+			if (quarantined.contains(tc)) {
+				continue;
+			}
 			boolean failed = failedClasses.contains(tc);
 			ScoreBreakdown bd = pendingBreakdowns.getOrDefault(tc,
 					new ScoreBreakdown(0, false, false, 0, 0, 0.0, false, false, 0.0));
@@ -842,10 +903,11 @@ public class TestOrderState {
 			if (failed) {
 				failureCount++;
 				if (firstFailPos < 0)
-					firstFailPos = i;
+					firstFailPos = recordedPosition;
 			}
+			recordedPosition++;
 		}
-		return new RunRecord(System.currentTimeMillis(), executionOrder.size(), failureCount, firstFailPos,
+		return new RunRecord(System.currentTimeMillis(), outcomes.size(), failureCount, firstFailPos,
 				APFDCalculator.computeAPFD(outcomes), outcomes);
 	}
 
@@ -1070,9 +1132,13 @@ public class TestOrderState {
 		if (!Double.isNaN(r.apfd())) {
 			m.put("apfd", r.apfd());
 		}
-		// omit outcomes for runs without failures — they are unused by the optimizer
+		// outcomes are needed by passStreak() for the skip-if-unchanged cache, so
+		// they are always serialised. For all-pass runs we emit a slim form
+		// (testClass + zero-flags only) since the breakdown fields are unused.
 		if (r.totalFailures() > 0) {
 			m.put("outcomes", r.outcomes().stream().map(StateRecordCodec::outcomeToCompact).toList());
+		} else if (!r.outcomes().isEmpty()) {
+			m.put("outcomes", r.outcomes().stream().map(StateRecordCodec::outcomeToSlimCompact).toList());
 		}
 		return m;
 	}

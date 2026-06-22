@@ -86,6 +86,18 @@ public class TelemetryListener implements TestExecutionListener {
 
 	@Override
 	public void testPlanExecutionStarted(TestPlan testPlan) {
+		// Clear any static state left in FlakyRetryExtension by a previous test
+		// plan in the same JVM (Gradle daemon reuses the JVM across builds). The
+		// extension caches the FLAKY set, retry/quarantine counts, and parsed
+		// system properties — all must reset per plan so module B doesn't see
+		// module A's data.
+		try {
+			FlakyRetryExtension.resetForTesting();
+		} catch (NoClassDefFoundError ignored) {
+			// FlakyRetryExtension is in the same artifact, so this should never
+			// happen — defensive against repackaging.
+		}
+
 		learnMode = "true".equals(System.getProperty(TestOrderConfig.LEARN));
 		String instrumentationMode = System.getProperty(TestOrderConfig.INSTRUMENTATION_MODE);
 		fullMethodMode = "METHOD".equalsIgnoreCase(instrumentationMode)
@@ -424,7 +436,8 @@ public class TelemetryListener implements TestExecutionListener {
 					// from concurrent testFinished writes during iteration in buildRunRecord.
 					TestOrderState.RunRecord record;
 					synchronized (executionOrder) {
-						record = TestOrderState.buildRunRecord(executionOrder, failedClassNames);
+						record = TestOrderState.buildRunRecord(executionOrder, failedClassNames,
+								FlakyRetryExtension.quarantined());
 					}
 					try {
 						PartialRunAggregator.writePartial(Path.of(pendingRunsDir), buildId, record, isLearnRun);
@@ -455,7 +468,7 @@ public class TelemetryListener implements TestExecutionListener {
 						synchronized (executionOrder) {
 							if (!executionOrder.isEmpty()) {
 								TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder,
-										failedClassNames);
+										failedClassNames, FlakyRetryExtension.quarantined());
 								lockedState.addRunRecord(record);
 								if (!isLearnRun) {
 									lockedState.incrementRunsSinceLearn();
@@ -518,6 +531,9 @@ public class TelemetryListener implements TestExecutionListener {
 			} catch (IllegalStateException ignored) {
 				/* JVM already shutting down */ }
 		}
+		// Persist any retry/quarantine activity recorded by FlakyRetryExtension
+		// so the Maven/Gradle plugin can surface it in the CI summary and dashboard.
+		persistFlakyRuntimeReport(effectiveStatePath);
 		// Set finishedNormally=true AFTER all IO and map clearing is done.
 		// The shutdown hook reads this flag and returns early, so setting it last
 		// ensures it cannot observe an empty/partially-cleared snapshot.
@@ -526,6 +542,66 @@ public class TelemetryListener implements TestExecutionListener {
 		// Offline mode: restore original (uninstrumented) class files from backup
 		// so that subsequent builds/tools don't encounter instrumented bytecode.
 		restoreOfflineBackupIfPresent();
+	}
+
+	/**
+	 * Snapshots {@link FlakyRetryExtension}'s runtime retry/quarantine maps and
+	 * persists them next to the state file as {@code flaky-runtime.txt}, so the
+	 * Maven/Gradle plugin can surface the data in the CI summary and dashboard.
+	 * No-op when no retries/quarantines happened.
+	 */
+	private void persistFlakyRuntimeReport(String effectiveStatePath) {
+		try {
+			Map<String, Integer> retries;
+			Set<String> quarantined;
+			try {
+				retries = FlakyRetryExtension.retryCounts();
+				quarantined = FlakyRetryExtension.quarantined();
+			} catch (NoClassDefFoundError ignored) {
+				return; // extension JAR absent (shouldn't normally happen)
+			}
+			Path target = resolveFlakyRuntimePath(effectiveStatePath);
+			if (target == null) {
+				return;
+			}
+			Set<String> currentFlaky = currentFlakyClasses();
+			if (retries.isEmpty() && quarantined.isEmpty() && currentFlaky == null) {
+				return;
+			}
+			me.bechberger.testorder.ml.FlakyRuntimeReport.write(target, retries, quarantined, currentFlaky);
+		} catch (IOException e) {
+			TestOrderLogger.warn("[telemetry] Failed to write flaky-runtime report: {}", e.getMessage());
+		}
+	}
+
+	/**
+	 * Loads the current FLAKY classification from the ML report so the rewritten
+	 * flaky-runtime.txt can drop entries that no longer apply. Returns null when
+	 * the ML report is missing (no filtering should happen — leave the file as the
+	 * union of historical entries).
+	 */
+	private static Set<String> currentFlakyClasses() {
+		String pathProp = System.getProperty(TestOrderConfig.FLAKY_REPORT_PATH, ".test-order/ml-report.txt");
+		Path reportPath = Path.of(pathProp);
+		if (!java.nio.file.Files.exists(reportPath)) {
+			return null;
+		}
+		return me.bechberger.testorder.ml.FlakyReportLoader.loadFlakyClasses(reportPath);
+	}
+
+	/**
+	 * Picks {@code <stateDir>/flaky-runtime.txt} (or
+	 * {@code .test-order/flaky-runtime.txt} as fallback).
+	 */
+	private static Path resolveFlakyRuntimePath(String effectiveStatePath) {
+		if (effectiveStatePath != null && !effectiveStatePath.isEmpty()) {
+			Path stateFile = Path.of(effectiveStatePath);
+			Path parent = stateFile.getParent();
+			if (parent != null) {
+				return parent.resolve(me.bechberger.testorder.ml.FlakyRuntimeReport.DEFAULT_FILENAME);
+			}
+		}
+		return Path.of(".test-order", me.bechberger.testorder.ml.FlakyRuntimeReport.DEFAULT_FILENAME);
 	}
 
 	/**

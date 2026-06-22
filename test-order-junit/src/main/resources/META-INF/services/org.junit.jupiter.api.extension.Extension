@@ -1,1 +1,2 @@
 me.bechberger.testorder.junit.TddEnforcementExtension
+me.bechberger.testorder.junit.FlakyRetryExtension

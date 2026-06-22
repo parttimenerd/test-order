@@ -123,6 +123,35 @@ public final class TestOrderConfig {
 	public static final String ML_HISTORY_MAX_RUNS = "testorder.ml.history.maxRuns";
 	public static final String ML_PREDICTIONS_FILE = "testorder.ml.predictions.file";
 
+	// Flaky-test handling (opt-in). Reads the ML health report to identify FLAKY
+	// tests.
+	/**
+	 * Max retries per FLAKY-classified test method ({@code 0} disables retries).
+	 */
+	public static final String FLAKY_RETRIES = "testorder.flaky.retries";
+	/**
+	 * Path to the ML health report consumed by the runtime retry/quarantine
+	 * extension.
+	 */
+	public static final String FLAKY_REPORT_PATH = "testorder.flaky.report.path";
+	/**
+	 * When {@code true}, final failures of FLAKY-classified tests are reported as
+	 * aborted (via {@code TestAbortedException}) rather than failed, so they don't
+	 * break the build.
+	 */
+	public static final String FLAKY_QUARANTINE = "testorder.flaky.quarantine";
+
+	// Skip-if-unchanged caching (opt-in).
+	/** When {@code true}, eligible tests are omitted from the run entirely. */
+	public static final String CACHE_SKIP_UNCHANGED = "testorder.cache.skipUnchanged";
+	/** Minimum consecutive passing runs before a test becomes cache-eligible. */
+	public static final String CACHE_MIN_PASS_STREAK = "testorder.cache.minPassStreak";
+	/**
+	 * Safety cap: never skip more than this fraction of the suite, even if
+	 * eligible.
+	 */
+	public static final String CACHE_MAX_SKIP_FRACTION = "testorder.cache.maxSkipFraction";
+
 	// Legacy aliases kept for backward compatibility in Maven user properties
 	public static final String LEGACY_INDEX = "testorder.index";
 	public static final String LEGACY_STATE_FILE = "testorder.stateFile";
