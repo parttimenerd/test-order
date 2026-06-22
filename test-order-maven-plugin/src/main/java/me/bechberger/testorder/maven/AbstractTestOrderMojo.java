@@ -1450,8 +1450,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					+ " Add <plugin><groupId>me.bechberger</groupId><artifactId>test-order-maven-plugin</artifactId></plugin>"
 					+ " to your pom.xml's <build><plugins> section, or use 'test-order:prepare test' which configures Surefire on the fly."
 					+ "\nRun: mvn test-order:prepare test -Dtestorder.mode=learn"
-					+ "\nRun: mvn test -Dtestorder.mode=learn"
-					+ "\nRun: mvn test-order:diagnose");
+					+ "\nRun: mvn test -Dtestorder.mode=learn" + "\nRun: mvn test-order:diagnose");
 		}
 	}
 
