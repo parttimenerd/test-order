@@ -1,5 +1,8 @@
 # OS
 .DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
 
 # IDE
 .idea/
@@ -11,6 +14,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.venv/
+venv/
 
 # Java/Maven/Gradle build output
 **/target/
@@ -54,7 +59,6 @@ test-order-dashboard/src/main/dashboard/node/
 # Screenshot testing artifacts (Playwright, manual test screenshots)
 *.png
 !docs/*.png
-!demo/**/*.png
 *.out
 
 # External repos cloned for demos and benchmarks
@@ -64,12 +68,8 @@ femtojar/
 # Release script temp files
 .release-notes.md
 
-# System and cache files
-.DS_Store
-.AppleDouble
-.LSOverride
-Thumbs.db
-node_modules
+# Node modules (root-level, e.g. from scripts)
+node_modules/
 
 # Root-level debug / build-output artefacts
 *.exit
@@ -89,12 +89,13 @@ terminal_check.txt
 testng-compile.out
 README\ improvements
 
-# Planning / audit docs (local-only)
+# Planning / audit docs and local scratch files
 AUDIT_FINDINGS.md
 FIX.md
 IMPROVEMENT_PLAN.md
 PHASE_1_3_COMPLETE.md
 plan-*.prompt.md
+prompt.md
 
 # Asciinema demo recordings (large binary)
 demo-spring-ai.cast
@@ -112,4 +113,3 @@ website/build/
 website/.cache-loader/
 website/static/casts/
 website/static/img/screenshots/
-.playwright-mcp/
