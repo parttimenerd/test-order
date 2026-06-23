@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -61,6 +62,40 @@ public final class TestOrderConfigResolver {
 			}
 		}
 		return defaultValue;
+	}
+
+	/**
+	 * Index from weight name → WeightDef, built once from
+	 * TestOrderState.WEIGHT_DEFS.
+	 */
+	private static final Map<String, TestOrderState.WeightDef> WEIGHT_DEF_BY_NAME;
+
+	static {
+		Map<String, TestOrderState.WeightDef> m = new java.util.LinkedHashMap<>();
+		for (TestOrderState.WeightDef d : TestOrderState.WEIGHT_DEFS)
+			m.put(d.name(), d);
+		WEIGHT_DEF_BY_NAME = Map.copyOf(m);
+	}
+
+	/**
+	 * Like {@link #getConfigInt} but clamps the resolved value to the optimizer
+	 * range declared in {@link TestOrderState#WEIGHT_DEFS} for the given weight.
+	 * The weight name is derived from the property key suffix after the last
+	 * {@code '.'} (e.g., {@code "testorder.score.newTest"} → {@code "newTest"}). If
+	 * no matching WeightDef is found the value is returned unclamped.
+	 */
+	private int getWeightInt(String key, int defaultValue) {
+		int raw = getConfigInt(key, defaultValue);
+		String name = key.substring(key.lastIndexOf('.') + 1);
+		TestOrderState.WeightDef def = WEIGHT_DEF_BY_NAME.get(name);
+		if (def == null)
+			return raw;
+		int clamped = Math.max(def.min(), Math.min(def.max(), raw));
+		if (clamped != raw) {
+			TestOrderLogger.warn("[test-order] Weight '{}' value {} is outside valid range [{}, {}]; clamping to {}",
+					name, raw, def.min(), def.max(), clamped);
+		}
+		return clamped;
 	}
 
 	public double getConfigDouble(String key, double defaultValue) {
@@ -150,17 +185,17 @@ public final class TestOrderConfigResolver {
 	 * weights (typically loaded from state/file).
 	 */
 	public TestOrderState.ScoringWeights resolveEffectiveWeights(TestOrderState.ScoringWeights base) {
-		return new TestOrderState.ScoringWeights(getConfigInt(TestOrderConfig.SCORE_NEW_TEST, base.newTest()),
-				getConfigInt(TestOrderConfig.SCORE_CHANGED_TEST, base.changedTest()),
-				getConfigInt(TestOrderConfig.SCORE_MAX_FAILURE, base.maxFailure()),
-				getConfigInt(TestOrderConfig.SCORE_SPEED, base.speed()),
-				getConfigInt(TestOrderConfig.SCORE_SPEED_PENALTY, base.speedPenalty()),
-				getConfigInt(TestOrderConfig.SCORE_DEP_OVERLAP, base.depOverlap()),
-				getConfigInt(TestOrderConfig.SCORE_CHANGE_COMPLEXITY, base.changeComplexity()),
-				getConfigInt(TestOrderConfig.SCORE_STATIC_FIELD_BONUS, base.staticFieldBonus()),
-				getConfigInt(TestOrderConfig.SCORE_COVERAGE_BONUS, base.coverageBonus()),
-				getConfigInt(TestOrderConfig.SCORE_KILL_RATE_BONUS, base.killRateBonus()),
-				getConfigInt(TestOrderConfig.SCORE_PACKAGE_PROXIMITY_BONUS, base.packageProximityBonus()));
+		return new TestOrderState.ScoringWeights(getWeightInt(TestOrderConfig.SCORE_NEW_TEST, base.newTest()),
+				getWeightInt(TestOrderConfig.SCORE_CHANGED_TEST, base.changedTest()),
+				getWeightInt(TestOrderConfig.SCORE_MAX_FAILURE, base.maxFailure()),
+				getWeightInt(TestOrderConfig.SCORE_SPEED, base.speed()),
+				getWeightInt(TestOrderConfig.SCORE_SPEED_PENALTY, base.speedPenalty()),
+				getWeightInt(TestOrderConfig.SCORE_DEP_OVERLAP, base.depOverlap()),
+				getWeightInt(TestOrderConfig.SCORE_CHANGE_COMPLEXITY, base.changeComplexity()),
+				getWeightInt(TestOrderConfig.SCORE_STATIC_FIELD_BONUS, base.staticFieldBonus()),
+				getWeightInt(TestOrderConfig.SCORE_COVERAGE_BONUS, base.coverageBonus()),
+				getWeightInt(TestOrderConfig.SCORE_KILL_RATE_BONUS, base.killRateBonus()),
+				getWeightInt(TestOrderConfig.SCORE_PACKAGE_PROXIMITY_BONUS, base.packageProximityBonus()));
 	}
 
 	/**

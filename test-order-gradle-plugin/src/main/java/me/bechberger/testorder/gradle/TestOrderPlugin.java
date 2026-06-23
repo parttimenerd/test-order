@@ -815,7 +815,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
                     me.bechberger.testorder.IndexCollectorServer collector =
                             new me.bechberger.testorder.IndexCollectorServer(indexFilePath);
-                    testTask.systemProperty("testorder.collector.port",
+                    ((Test) t).systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
                     if (COLLECTOR_REGISTRY.size() >= MAX_COLLECTOR_ENTRIES) {
                         pruneCollectorRegistry();
@@ -862,7 +862,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                                     me.bechberger.testorder.changes.UncertainClassesStore.save(uncertainFile, uncertainClasses);
                                     me.bechberger.testorder.changes.StaticAnalysisDataStore.save(
                                             me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(uncertainFile), saData);
-                                    testTask.systemProperty("testorder.learn.uncertainClassesFile",
+                                    ((Test) t).systemProperty("testorder.learn.uncertainClassesFile",
                                             uncertainFile.toAbsolutePath().toString());
                                     if (!uncertainClasses.isEmpty()) {
                                         project.getLogger().lifecycle("[test-order] Selective learn: instrumenting {} uncertain class(es)",
@@ -1013,12 +1013,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                         instrumentor.getTransformedCount(), instrumentor.getSkippedCount(), mappingFile);
 
                 // Set system properties for the forked test JVM
-                testTask.systemProperty("testorder.offline.mapping", mappingFile.toAbsolutePath().toString());
-                testTask.systemProperty("testorder.offline.output",
+                ((Test) t).systemProperty("testorder.offline.mapping", mappingFile.toAbsolutePath().toString());
+                ((Test) t).systemProperty("testorder.offline.output",
                         ext.getDepsDir().get().getAsFile().getAbsolutePath());
-                testTask.systemProperty("testorder.offline.indexFile",
+                ((Test) t).systemProperty("testorder.offline.indexFile",
                         ext.getIndexFile().get().getAsFile().getAbsolutePath());
-                testTask.systemProperty("testorder.offline.backupDir", backupDir.toAbsolutePath().toString());
+                ((Test) t).systemProperty("testorder.offline.backupDir", backupDir.toAbsolutePath().toString());
 
                 // Start IndexCollectorServer for socket-based dep collection
                 try {
@@ -1036,7 +1036,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
                     me.bechberger.testorder.IndexCollectorServer collector =
                             new me.bechberger.testorder.IndexCollectorServer(indexFilePath, mappingFile);
-                    testTask.systemProperty("testorder.collector.port",
+                    ((Test) t).systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
                     COLLECTOR_REGISTRY.put(testTask.getPath(), new CollectorEntry(collector, compressionLevel));
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
@@ -1372,18 +1372,26 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
                 // Drain every collector for this project so socket-based deps are merged
                 // regardless of which test task triggered the finalizer.
-                // Root project's path is ":", so its tasks are ":foo" — a plain
-                // ":foo".startsWith(":" + ":") is false. Build the prefix explicitly so
-                // root-project tasks aren't excluded.
+                // Root-project tasks have the form ":taskName" (a single leading colon,
+                // no further colons). Subproject tasks have the form ":sub:taskName".
+                // Using childPrefix ":" for the root would match *everything*, so we
+                // special-case root: keep only paths that contain no second colon.
                 String projectPath = project.getPath();
-                String childPrefix = projectPath.equals(":") ? ":" : projectPath + ":";
+                final boolean isRoot = projectPath.equals(":");
+                String childPrefix = isRoot ? null : projectPath + ":";
                 java.util.Iterator<java.util.Map.Entry<String, CollectorEntry>> it =
                         COLLECTOR_REGISTRY.entrySet().iterator();
                 while (it.hasNext()) {
                     java.util.Map.Entry<String, CollectorEntry> entry = it.next();
                     String taskPath = entry.getKey();
-                    if (!taskPath.startsWith(childPrefix)
-                            && !taskPath.equals(projectPath)) {
+                    boolean belongs;
+                    if (isRoot) {
+                        // Root-project task paths: ":taskName" — exactly one colon (at index 0)
+                        belongs = taskPath.startsWith(":") && taskPath.indexOf(':', 1) < 0;
+                    } else {
+                        belongs = taskPath.startsWith(childPrefix) || taskPath.equals(projectPath);
+                    }
+                    if (!belongs) {
                         continue;
                     }
                     CollectorEntry ce = entry.getValue();

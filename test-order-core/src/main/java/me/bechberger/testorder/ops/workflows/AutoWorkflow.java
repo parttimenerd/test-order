@@ -32,8 +32,6 @@ import me.bechberger.testorder.ops.PluginLog;
  */
 public final class AutoWorkflow {
 
-	private static final Set<String> VALID_MODES = Set.of("auto", "learn", "order", "skip");
-
 	private final PluginContext ctx;
 	private final String requestedMode;
 	private final Runnable ciDownloadCallback;
@@ -43,8 +41,8 @@ public final class AutoWorkflow {
 	 * @param ctx
 	 *            fully-configured plugin context
 	 * @param requestedMode
-	 *            raw mode string (auto/learn/order/skip); {@code null} or blank
-	 *            defaults to "auto"
+	 *            raw mode string (auto/learn/order/optimize/skip); {@code null} or
+	 *            blank defaults to "auto"
 	 * @param ciDownloadCallback
 	 *            optional callback to download CI index
 	 * @param depsDir
@@ -54,18 +52,16 @@ public final class AutoWorkflow {
 	 */
 	public AutoWorkflow(PluginContext ctx, String requestedMode, Runnable ciDownloadCallback, Path depsDir) {
 		this.ctx = ctx;
-		this.requestedMode = normalizeMode(requestedMode);
+		// Validate early by delegating to ModeResolverOperation — single source of
+		// truth
+		// for accepted mode strings. Store the original (non-null, trimmed) string so
+		// ModeResolverOperation.normalizeMode() can apply its own mapping downstream.
+		ModeResolverOperation.normalizeMode(requestedMode); // throws on invalid input
+		this.requestedMode = (requestedMode == null || requestedMode.isBlank())
+				? "auto"
+				: requestedMode.trim().toLowerCase(Locale.ROOT);
 		this.ciDownloadCallback = ciDownloadCallback;
 		this.depsDir = depsDir;
-	}
-
-	private static String normalizeMode(String mode) {
-		String m = (mode == null || mode.isBlank()) ? "auto" : mode.trim().toLowerCase(Locale.ROOT);
-		if (!VALID_MODES.contains(m)) {
-			throw new IllegalArgumentException(
-					"[test-order] Invalid mode '" + mode + "'. Valid values: auto, learn, order, skip");
-		}
-		return m;
 	}
 
 	// ═══════════════════════════════════════════════════════════════
@@ -237,8 +233,6 @@ public final class AutoWorkflow {
 	public static ModeResolverOperation.ModeDecision resolveMode(PluginContext ctx, String requestedMode,
 			Runnable ciDownloadCallback, Path depsDir) {
 
-		String mode = normalizeMode(requestedMode);
-
 		Supplier<Set<String>> changedClassesSupplier = () -> ChangeDetectionOps.detectChangedClasses(ctx.changeMode(),
 				ctx.projectRoot(), ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log());
 
@@ -252,10 +246,10 @@ public final class AutoWorkflow {
 						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log())
 				: null;
 
-		ModeResolverOperation.ModeConfig modeConfig = new ModeResolverOperation.ModeConfig(mode, ctx.indexFile(),
-				ctx.stateFile(), ctx.autoLearnRunThreshold(), ctx.autoLearnDiffThreshold(), changedClassesSupplier,
-				ciDownloadCallback, depsDir, ctx.testClassesDir(), ctx.testSourceRoot(), changedTestsSupplier,
-				ctx.dependencyFingerprintSupplier(), ctx.log(), ctx.buildSystem());
+		ModeResolverOperation.ModeConfig modeConfig = new ModeResolverOperation.ModeConfig(requestedMode,
+				ctx.indexFile(), ctx.stateFile(), ctx.autoLearnRunThreshold(), ctx.autoLearnDiffThreshold(),
+				changedClassesSupplier, ciDownloadCallback, depsDir, ctx.testClassesDir(), ctx.testSourceRoot(),
+				changedTestsSupplier, ctx.dependencyFingerprintSupplier(), ctx.log(), ctx.buildSystem());
 
 		ModeResolverOperation.ModeDecision decision = ModeResolverOperation.resolve(modeConfig);
 		ctx.log().debug("[test-order] Mode decision: " + decision.effectiveMode() + " (" + decision.reason() + ")");
