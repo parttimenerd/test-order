@@ -669,10 +669,11 @@ public class TestOrderState {
 	 * and waste disk space.
 	 */
 	public void pruneStaleEntries() {
-		if (runHistory.runs().isEmpty())
+		List<RunRecord> runs = runHistory.runs(); // single snapshot
+		if (runs.isEmpty())
 			return;
 		Set<String> activeClasses = new java.util.HashSet<>();
-		for (RunRecord run : runHistory.runs()) {
+		for (RunRecord run : runs) {
 			if (run.outcomes() != null) {
 				for (TestOutcome outcome : run.outcomes()) {
 					activeClasses.add(outcome.testClass());

@@ -177,8 +177,9 @@ public final class PartialRunAggregator {
 
 		// Apply to state under file lock; delete part files OUTSIDE the lock so that
 		// a file-system error on delete doesn't prevent the merged record from being
-		// visible. If deletion fails the files will be re-processed on the next build
-		// (harmless — the RunRecord is idempotent via timestamp dedup in addRunRecord).
+		// visible. If deletion fails the files will be re-processed on the next build,
+		// adding a duplicate RunRecord (addRunRecord has no timestamp dedup — duplicate
+		// runs are an acceptable edge case that resolves on the next clean build).
 		PersistenceSupport.withFileLock(stateFile, () -> {
 			TestOrderState state = TelemetryPersistence.loadStateOrEmpty(stateFile);
 			TelemetryPersistence.applyHistoryMaxRuns(state);

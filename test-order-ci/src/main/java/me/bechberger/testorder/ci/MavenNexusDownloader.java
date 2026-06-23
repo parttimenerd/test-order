@@ -3,11 +3,7 @@ package me.bechberger.testorder.ci;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.Path;
-import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,8 +43,6 @@ public class MavenNexusDownloader implements DepDownloader {
 	/** Maximum download size: 500 MB. */
 	private static final long MAX_DOWNLOAD_BYTES = 500L * 1024 * 1024;
 
-	private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
-
 	private final CiConfig.MavenConfig config;
 	private final String token;
 	private final OkHttpClient httpClient;
@@ -82,30 +76,9 @@ public class MavenNexusDownloader implements DepDownloader {
 	}
 
 	static void validateUrl(String url) throws DepDownloadException {
-		URI uri;
-		try {
-			uri = new URI(url);
-		} catch (URISyntaxException e) {
-			throw new DepDownloadException("Invalid Maven repository URL: " + url, e);
-		}
-		String scheme = uri.getScheme();
-		if (scheme == null || !ALLOWED_SCHEMES.contains(scheme.toLowerCase())) {
-			throw new DepDownloadException(
-					"URL scheme '" + scheme + "' is not allowed. Only http and https supported.");
-		}
-		String host = uri.getHost();
-		if (host == null || host.isEmpty()) {
-			throw new DepDownloadException("URL has no host: " + url);
-		}
-		try {
-			InetAddress addr = InetAddress.getByName(host);
-			if (addr.isLoopbackAddress() || addr.isLinkLocalAddress() || addr.isSiteLocalAddress()) {
-				throw new DepDownloadException(
-						"URL targets a private or localhost address which is not allowed: " + host);
-			}
-		} catch (java.net.UnknownHostException ignored) {
-			// DNS not available at validation time — allow
-		}
+		// Delegate to HttpDownloader for consistent SSRF prevention (handles localhost
+		// name checks, private-IP ranges, decimal/hex IP encoding bypass, etc.)
+		HttpDownloader.validateUrl(url);
 	}
 
 	@Override

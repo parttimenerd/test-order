@@ -477,8 +477,10 @@ public class Tool implements Runnable {
 					String date = java.time.Instant.ofEpochMilli(r.timestamp()).atZone(java.time.ZoneId.systemDefault())
 							.toLocalDateTime().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
 					if (r.totalFailures() > 0) {
-						System.out.printf(Locale.US, "  %s  tests=%d  failures=%d  first-fail@%d  APFD=%.1f%%%n", date,
-								r.totalTests(), r.totalFailures(), r.firstFailurePosition() + 1, r.apfd() * 100);
+						double apfd = r.apfd();
+						String apfdStr = Double.isNaN(apfd) ? "N/A" : String.format(Locale.US, "%.1f%%", apfd * 100);
+						System.out.printf(Locale.US, "  %s  tests=%d  failures=%d  first-fail@%d  APFD=%s%n", date,
+								r.totalTests(), r.totalFailures(), r.firstFailurePosition() + 1, apfdStr);
 					} else {
 						System.out.printf("  %s  tests=%d  all passed%n", date, r.totalTests());
 					}
