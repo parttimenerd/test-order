@@ -192,4 +192,4 @@ python release.py --snapshot
 
 ### CI release workflow
 
-Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds and deploys to Maven Central with GPG signing. Required secrets: `OSSRH_USERNAME`, `OSSRH_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`.
+Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds and deploys to Maven Central with GPG signing. Required secrets: `OSSRH_USERNAME`, `OSSRH_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`. Optional: `SAMPLE_REPO_TOKEN` — a PAT with `repo` scope on `parttimenerd/sample-ci-test-order`; when set, CI triggers a rebuild of that repo after each snapshot/release deploy. Omit it if you don't have that repo.

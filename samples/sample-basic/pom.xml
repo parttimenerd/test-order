@@ -12,6 +12,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <test-order.version>0.0.1-SNAPSHOT</test-order.version>
     </properties>
 
     <dependencies>
@@ -36,7 +37,7 @@
         <dependency>
             <groupId>me.bechberger</groupId>
             <artifactId>test-order-junit</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${test-order.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -46,7 +47,7 @@
             <plugin>
                 <groupId>me.bechberger</groupId>
                 <artifactId>test-order-maven-plugin</artifactId>
-                <version>0.0.1-SNAPSHOT</version>
+                <version>${test-order.version}</version>
                 <extensions>true</extensions>
                 <executions>
                     <execution>

@@ -30,7 +30,7 @@ fonts:
 </div>
 
 <!--
-Open warmly. Personal intro under 30 seconds: who I am, what I work on, why this exists — internal SAP project, then OSS.
+Open warmly. Personal intro under 30 seconds: who I am, what I work on, why this exists — started as a side project, now OSS.
 Don't preview the agenda yet. The hero claim is on slide 6: "Add one plugin. Run mvn test twice. Failures surface in the first 5–10% of the suite."
 Every slide between here and there is setup for that claim.
 QR code on the title slide goes to the GitHub repo — encourage photos.
@@ -842,7 +842,7 @@ Model: logistic regression over 26 features per test — recency of last failure
 Predicts P(fail) per test for the upcoming run. Tests with high P(fail) get a score multiplier.
 Health classifier sits alongside: tests are HEALTHY (low P(fail), stable), DEGRADING (rising P(fail)), FLAKY (P(fail) volatile), or FAILING (consistently P(fail) ≈ 1).
 All training is local — no cloud, no data leaves your network. Model artifacts persist alongside the dependency index in `.test-order/ml/`.
-No live demo here because the model needs history to be meaningful. Screenshot is from a long-running internal project where the model has 200+ runs of training data.
+No live demo here because the model needs history to be meaningful. Screenshot is from a project with 200+ runs of training data.
 -->
 
 

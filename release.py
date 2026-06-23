@@ -280,6 +280,7 @@ class ReleaseManager:
 
         release_header = f"## [{new_version}] - {date.today().isoformat()}"
         unreleased_template = "\n".join([
+            "### Breaking",
             "### Added",
             "### Changed",
             "### Deprecated",
@@ -645,13 +646,14 @@ def main() -> None:
         manager.git_commit_tag(new)
         created_git_release_state = True
 
-        if not args.no_deploy:
-            manager.deploy()
-
         manager.bump_to_next_snapshot(new)
 
         if not args.no_push:
             manager.git_push()
+
+        if not args.no_deploy:
+            manager.deploy()
+
         if not args.no_github_release:
             manager.create_github_release(new)
 

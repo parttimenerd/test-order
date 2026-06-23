@@ -59,7 +59,7 @@ git --version   # Any recent version
 
 ### Maven
 
-**1. Add the Sonatype snapshot repository** to your `pom.xml` (needed while on `0.0.1-SNAPSHOT`):
+**1. Add the Sonatype snapshot repository** to your `pom.xml` (needed while using a SNAPSHOT version):
 
 ```xml
 <repositories>
@@ -115,7 +115,7 @@ mvn test -Dtestorder.skip=true  # Skip the plugin entirely
 
 > **Want to try without modifying your POM?** Run directly with the fully-qualified goal:
 > ```bash
-> mvn me.bechberger:test-order-maven-plugin:0.0.1-SNAPSHOT:auto test
+> mvn me.bechberger:test-order-maven-plugin:${version}:auto test
 > ```
 > Or add the `<execution>` block above and use the short prefix `test-order:auto test`.
 
@@ -589,7 +589,7 @@ Run `mvn test-order:diagnose` first — it checks everything automatically.
 
 | Symptom | Fix |
 |---|---|
-| `No plugin found for prefix 'test-order'` | Add `me.bechberger` to `<pluginGroups>` in `~/.m2/settings.xml` (see [Quick Start](#quick-start)), or use the fully-qualified goal: `mvn me.bechberger:test-order-maven-plugin:0.0.1-SNAPSHOT:auto test` |
+| `No plugin found for prefix 'test-order'` | Add `me.bechberger` to `<pluginGroups>` in `~/.m2/settings.xml` (see [Quick Start](#quick-start)), or use the fully-qualified goal: `mvn me.bechberger:test-order-maven-plugin:${version}:auto test` |
 | "Wrote fallback payloads" every run | Add `<extensions>true</extensions>` to the plugin declaration in `pom.xml` (see FAQ below) |
 | Tests always run in default order | The first learn run may not have completed. Check `.test-order/test-dependencies.lz4` exists. If not, re-run `mvn test`. |
 | All test scores are 0, no reordering | Run with `-Dtestorder.debug=true` — likely no changed classes were detected. Check `testorder.changeMode`. |

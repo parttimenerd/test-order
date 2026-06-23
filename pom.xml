@@ -292,7 +292,7 @@
                                 <configuration>
                                     <configLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/checkstyle.xml</configLocation>
                                     <includeTestSourceDirectory>true</includeTestSourceDirectory>
-                                    <!-- TODO: Flip to true after baseline cleanup to enforce style in CI. -->
+                                    <!-- Violations reported but do not break the build — run with -P quality to audit. -->
                                     <failOnViolation>false</failOnViolation>
                                     <consoleOutput>true</consoleOutput>
                                 </configuration>
@@ -313,7 +313,7 @@
                                 <configuration>
                                     <effort>Max</effort>
                                     <threshold>Low</threshold>
-                                    <!-- TODO: Flip to true after initial findings are triaged/fixed. -->
+                                    <!-- Findings reported but do not break the build — run with -P quality to audit. -->
                                     <failOnError>false</failOnError>
                                 </configuration>
                             </execution>
