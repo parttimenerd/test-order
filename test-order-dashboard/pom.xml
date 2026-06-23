@@ -23,7 +23,7 @@
             <plugin>
                 <groupId>com.github.eirslett</groupId>
                 <artifactId>frontend-maven-plugin</artifactId>
-                <version>1.15.1</version>
+                <version>2.0.1</version>
                 <configuration>
                     <workingDirectory>src/main/dashboard</workingDirectory>
                     <nodeVersion>v20.18.3</nodeVersion>
