@@ -52,11 +52,12 @@ public class TelemetryListener implements TestExecutionListener {
 	private UsageStoreReflectionBridge bridge;
 
 	// state tracking (active when state path is set)
-	private TestOrderState state;
-	private String statePath;
+	// Volatile: written on engine thread, read by shutdown hook thread.
+	private volatile TestOrderState state;
+	private volatile String statePath;
 	// build-session aggregation: when set, per-fork records go to pending-runs dir
-	private String buildId;
-	private String pendingRunsDir;
+	private volatile String buildId;
+	private volatile String pendingRunsDir;
 	private final Map<String, Long> classStartTimes = new ConcurrentHashMap<>();
 	private final Map<String, Long> methodStartTimes = new ConcurrentHashMap<>();
 
@@ -82,7 +83,10 @@ public class TelemetryListener implements TestExecutionListener {
 	 * avoid double-save.
 	 */
 	private volatile boolean finishedNormally;
-	private Thread shutdownHook;
+	// Volatile: written by testPlanExecutionStarted, read by
+	// testPlanExecutionFinished
+	// which may run on a different thread under JUnit parallel execution.
+	private volatile Thread shutdownHook;
 
 	@Override
 	public void testPlanExecutionStarted(TestPlan testPlan) {

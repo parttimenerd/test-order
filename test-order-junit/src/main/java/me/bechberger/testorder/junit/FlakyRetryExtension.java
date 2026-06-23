@@ -72,7 +72,9 @@ public class FlakyRetryExtension implements InvocationInterceptor {
 	private static volatile Set<String> flakySet;
 	/** Cached config — recomputed on each test plan (cheap). */
 	private static final AtomicInteger MAX_RETRIES = new AtomicInteger(-1);
-	private static volatile Boolean quarantineEnabled;
+	// AtomicReference matching MAX_RETRIES pattern for consistent idempotent init.
+	private static final java.util.concurrent.atomic.AtomicReference<Boolean> QUARANTINE_ENABLED = new java.util.concurrent.atomic.AtomicReference<>(
+			null);
 
 	private static final ConcurrentHashMap<String, Integer> RETRY_COUNTS = new ConcurrentHashMap<>();
 	private static final Set<String> QUARANTINED = ConcurrentHashMap.newKeySet();
@@ -153,13 +155,13 @@ public class FlakyRetryExtension implements InvocationInterceptor {
 	}
 
 	private static boolean quarantineEnabled() {
-		Boolean cached = quarantineEnabled;
+		Boolean cached = QUARANTINE_ENABLED.get();
 		if (cached != null) {
 			return cached;
 		}
 		boolean enabled = "true".equalsIgnoreCase(System.getProperty(TestOrderConfig.FLAKY_QUARANTINE, "false"));
-		quarantineEnabled = enabled;
-		return enabled;
+		QUARANTINE_ENABLED.compareAndSet(null, enabled); // idempotent under concurrent callers
+		return QUARANTINE_ENABLED.get();
 	}
 
 	private static Set<String> flakySet() {
@@ -197,7 +199,7 @@ public class FlakyRetryExtension implements InvocationInterceptor {
 	public static void resetForTesting() {
 		flakySet = null;
 		MAX_RETRIES.set(-1);
-		quarantineEnabled = null;
+		QUARANTINE_ENABLED.set(null);
 		RETRY_COUNTS.clear();
 		QUARANTINED.clear();
 	}

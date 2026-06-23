@@ -67,11 +67,13 @@ public class AgentLogger {
 	}
 
 	public static void warn(String message) {
+		// Always print warnings to stderr so fallback/degraded-mode paths are visible
+		// even when verbose file logging is not configured.
+		System.err.println("[test-order] WARN: " + message);
 		if (!enabled) {
 			return;
 		}
 		write(writer -> writer.println("[WARN] " + message));
-		System.err.println("[test-order] " + message);
 	}
 
 	public static void error(String message, Throwable throwable) {

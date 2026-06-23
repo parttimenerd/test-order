@@ -316,9 +316,14 @@ public class UsageStore {
 		}
 		String methodKey = testClass + "#" + methodName;
 		BitsetTracker tracker = perMethodTrackers.computeIfAbsent(methodKey, k -> new BitsetTracker());
-		activeTrackers = activeTrackers.createMethodTracker(tracker);
-		// Atomic swap: new RecordingState pairs classTracker with methodTracker
-		activeState = new RecordingState(activeTrackers.test, tracker);
+		// Capture current class tracker before updating activeTrackers, so activeState
+		// is built from a stable snapshot rather than re-reading the field after write.
+		ActiveTrackers current = activeTrackers;
+		ActiveTrackers updated = current.createMethodTracker(tracker);
+		activeTrackers = updated;
+		// Publish activeState after activeTrackers so the hot path always sees a
+		// consistent (classTracker, methodTracker) pair from the same transition.
+		activeState = new RecordingState(updated.test, tracker);
 	}
 
 	/** Called when a test method finishes execution. */
@@ -326,9 +331,13 @@ public class UsageStore {
 		if (!methodLevelRecordingEnabled) {
 			return;
 		}
-		// Atomic swap: methodTracker goes back to null
-		activeState = new RecordingState(activeTrackers.test, null);
-		activeTrackers = activeTrackers.createMethodTracker(null);
+		// Update activeTrackers first, then publish activeState — mirrors the ordering
+		// in startTestClass/startTestMethod so the hot path never observes a state
+		// where activeTrackers.methodTracker is non-null but activeState.methodTracker
+		// is already null (or vice versa).
+		ActiveTrackers updated = activeTrackers.createMethodTracker(null);
+		activeTrackers = updated;
+		activeState = new RecordingState(updated.test, null);
 	}
 
 	// ── Recording ─────────────────────────────────────────────────────

@@ -298,30 +298,56 @@ public final class IndexCollectorServer implements AutoCloseable {
 				break;
 			}
 		}
-		closeServerSocket();
-		unregisterShutdownHook();
+		int remainingHandlers = activeHandlers.get();
+		if (remainingHandlers > 0) {
+			System.err.println("[test-order] WARN: stopAndMerge: " + remainingHandlers
+					+ " handler thread(s) still active after 3s drain — taking a snapshot of current deps to prevent data race");
+		}
+		// Snapshot the live maps so any concurrent handler writes do not corrupt the
+		// merge. Without a snapshot, applyFrequencyThreshold and mergeFromAgent would
+		// iterate a ConcurrentHashMap that is still being written by handler threads.
+		Map<String, Set<String>> classDepsSnapshot = new java.util.HashMap<>(mergedClassDeps);
+		Map<String, Set<String>> memberDepsSnapshot = new java.util.HashMap<>(mergedMemberDeps);
+		Map<String, Set<String>> methodDepsSnapshot = new java.util.HashMap<>(mergedMethodDeps);
+		Map<String, Set<String>> methodMemberDepsSnapshot = new java.util.HashMap<>(mergedMethodMemberDeps);
+		Map<String, String> testToModuleSnapshot = new java.util.HashMap<>(mergedTestToModule);
 
-		if (mergedClassDeps.isEmpty()) {
+		// Shut down the handler thread pool — non-daemon threads leak otherwise.
+		// This is safe here: the accept loop has exited (acceptThread.join above),
+		// and we've drained or given up on in-progress handlers.
+		handlerExecutor.shutdown();
+
+		closeServerSocket();
+		// Unregister the shutdown hook AFTER the merge completes (below), not here.
+		// If the JVM starts shutting down in the merge window and we've already
+		// unregistered, neither the hook nor the merge path would run — silent data
+		// loss. The hook checks running.get() (already false) and is a no-op, so
+		// leaving it registered during the merge is safe.
+
+		if (classDepsSnapshot.isEmpty()) {
+			unregisterShutdownHook();
 			return 0;
 		}
 
-		Map<String, Set<String>> classDepsToWrite = applyFrequencyThreshold(mergedClassDeps);
-		Map<String, Set<String>> memberDepsToWrite = classDepsToWrite == mergedClassDeps
-				? mergedMemberDeps
-				: filterMemberDeps(mergedMemberDeps, classDepsToWrite);
-		Map<String, Set<String>> methodMemberDepsToWrite = classDepsToWrite == mergedClassDeps
-				? mergedMethodMemberDeps
-				: filterMemberDeps(mergedMethodMemberDeps, classDepsToWrite);
+		Map<String, Set<String>> classDepsToWrite = applyFrequencyThreshold(classDepsSnapshot);
+		Map<String, Set<String>> memberDepsToWrite = classDepsToWrite == classDepsSnapshot
+				? memberDepsSnapshot
+				: filterMemberDeps(memberDepsSnapshot, classDepsToWrite);
+		Map<String, Set<String>> methodMemberDepsToWrite = classDepsToWrite == classDepsSnapshot
+				? methodMemberDepsSnapshot
+				: filterMemberDeps(methodMemberDepsSnapshot, classDepsToWrite);
 
 		// Write the already-merged index
 		try {
-			DependencyMap.mergeFromAgent(targetIndexFile, classDepsToWrite, mergedMethodDeps, memberDepsToWrite,
-					methodMemberDepsToWrite, mergedTestToModule);
+			DependencyMap.mergeFromAgent(targetIndexFile, classDepsToWrite, methodDepsSnapshot, memberDepsToWrite,
+					methodMemberDepsToWrite, testToModuleSnapshot);
 		} catch (IOException e) {
 			System.err.println("[test-order] IndexCollectorServer: failed to write index: " + e.getMessage());
+			unregisterShutdownHook();
 			return 0;
 		}
 		logIndexSize(targetIndexFile, classDepsToWrite.size());
+		unregisterShutdownHook();
 		return classDepsToWrite.size();
 	}
 

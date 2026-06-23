@@ -47,8 +47,8 @@ class ReactorReordererSortKeyTest {
 		Map<String, ModuleScore> scores = new HashMap<>();
 		// b has higher sum & max but fewer affected tests — affected wins under the new
 		// key
-		scores.put("g-a", score("g-a", 10, 100, 20));
-		scores.put("g-b", score("g-b", 5, 999, 99));
+		scores.put("g:a", score("g:a", 10, 100, 20));
+		scores.put("g:b", score("g:b", 5, 999, 99));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertSame(a, r.ordered().get(0), "module with higher affectedTestCount must come first");
@@ -62,8 +62,8 @@ class ReactorReordererSortKeyTest {
 
 		Map<String, ModuleScore> scores = new HashMap<>();
 		// Equal affected count; b has higher sum
-		scores.put("g-a", score("g-a", 5, 100, 99));
-		scores.put("g-b", score("g-b", 5, 200, 50));
+		scores.put("g:a", score("g:a", 5, 100, 99));
+		scores.put("g:b", score("g:b", 5, 200, 50));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertSame(b, r.ordered().get(0), "module with higher sum must come first when affected counts tie");
@@ -77,8 +77,8 @@ class ReactorReordererSortKeyTest {
 
 		Map<String, ModuleScore> scores = new HashMap<>();
 		// Equal affected and equal sum; b has higher max
-		scores.put("g-a", score("g-a", 5, 200, 50));
-		scores.put("g-b", score("g-b", 5, 200, 80));
+		scores.put("g:a", score("g:a", 5, 200, 50));
+		scores.put("g:b", score("g:b", 5, 200, 80));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertSame(b, r.ordered().get(0), "module with higher max must come first when affected and sum tie");
@@ -96,8 +96,8 @@ class ReactorReordererSortKeyTest {
 		List<MavenProject> orig = List.of(a, b);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 1, 10, 5));
-		scores.put("g-b", score("g-b", 100, 999, 99));
+		scores.put("g:a", score("g:a", 1, 10, 5));
+		scores.put("g:b", score("g:b", 100, 999, 99));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertEquals(List.of(a, b), r.ordered(), "dependency order must be preserved regardless of score");

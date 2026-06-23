@@ -81,7 +81,8 @@ public final class PartialRunAggregator {
 				+ o.isNew() + " isChanged=" + o.isChanged() + " depOverlap=" + o.depOverlap() + " depTotal="
 				+ o.depTotal() + " failScore=" + o.failScore() + " isFast=" + o.isFast() + " isSlow=" + o.isSlow()
 				+ " complexityOverlap=" + o.complexityOverlap() + " speedRatio=" + o.speedRatio()
-				+ " hasStaticFieldOverlap=" + o.hasStaticFieldOverlap();
+				+ " hasStaticFieldOverlap=" + o.hasStaticFieldOverlap() + " weightedDepOverlap="
+				+ o.weightedDepOverlap();
 	}
 
 	/**
@@ -236,7 +237,17 @@ public final class PartialRunAggregator {
 		List<TestOrderState.TestOutcome> outcomes = new ArrayList<>();
 
 		for (String line : lines) {
-			if (line.startsWith("buildId=")) {
+			if (line.startsWith("version=")) {
+				try {
+					int fileVersion = Integer.parseInt(line.substring("version=".length()).trim());
+					if (fileVersion > PARTIAL_FILE_VERSION) {
+						// File was written by a newer plugin version — skip rather than
+						// misparse fields that may have shifted position or changed meaning.
+						return null;
+					}
+				} catch (NumberFormatException ignored) {
+				}
+			} else if (line.startsWith("buildId=")) {
 				buildId = line.substring("buildId=".length());
 			} else if (line.startsWith("timestamp=")) {
 				try {
@@ -280,8 +291,10 @@ public final class PartialRunAggregator {
 			double complexityOverlap = parseDouble(kv.get("complexityOverlap"), 0.0);
 			double speedRatio = parseDouble(kv.get("speedRatio"), 0.0);
 			boolean hasStaticFieldOverlap = "true".equals(kv.get("hasStaticFieldOverlap"));
+			double weightedDepOverlap = parseDouble(kv.get("weightedDepOverlap"), depOverlap);
 			TestOrderState.ScoreBreakdown bd = new TestOrderState.ScoreBreakdown(score, isNew, isChanged, depOverlap,
-					depTotal, failScore, isFast, isSlow, complexityOverlap, speedRatio, hasStaticFieldOverlap);
+					depTotal, failScore, isFast, isSlow, complexityOverlap, speedRatio, hasStaticFieldOverlap,
+					weightedDepOverlap);
 			return new TestOrderState.TestOutcome(testClass, bd, failed);
 		} catch (Exception e) {
 			return null;

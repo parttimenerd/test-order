@@ -32,14 +32,23 @@ final class StateSerializer {
 				Files.createDirectories(parent);
 			}
 			Path tempFile = PersistenceSupport.temporarySibling(file);
-			try (var writer = new java.io.OutputStreamWriter(LZ4Support.blockOutputStream(
-					Files.newOutputStream(tempFile), 1 << 16, LZ4Support.highCompressor(9)), StandardCharsets.UTF_8)) {
-				writer.write(PrettyPrinter.compactPrint(state.toPersistedRoot(applyDecay)));
+			try {
+				try (var writer = new java.io.OutputStreamWriter(LZ4Support.blockOutputStream(
+						Files.newOutputStream(tempFile), 1 << 16, LZ4Support.highCompressor(9)), StandardCharsets.UTF_8)) {
+					writer.write(PrettyPrinter.compactPrint(state.toPersistedRoot(applyDecay)));
+				}
+				PersistenceSupport.moveIntoPlace(tempFile, file);
+			} catch (IOException | RuntimeException e) {
+				try { Files.deleteIfExists(tempFile); } catch (IOException ignored) {}
+				throw e;
 			}
-			PersistenceSupport.moveIntoPlace(tempFile, file);
-			state.afterSave();
 			return null;
 		});
+		// afterSave() is intentionally outside the file lock: it does in-memory
+		// housekeeping on the successfully-persisted state. Inside the lock it would
+		// cause double-decay if a RuntimeException from afterSave() made the caller
+		// think the save failed and retry — the file was already written.
+		state.afterSave();
 	}
 
 	static TestOrderState load(Path file) throws IOException {
@@ -53,10 +62,12 @@ final class StateSerializer {
 		}
 		byte[] raw = readRaw(file, loadPath);
 		if (raw.length == 0) {
+			LOG.warning("State file " + loadPath + " is empty (possibly a crash mid-write) — starting fresh.");
 			return new TestOrderState();
 		}
 		String json = decode(raw);
 		if (json.isEmpty()) {
+			LOG.warning("State file " + loadPath + " decoded to empty content — starting fresh.");
 			return new TestOrderState();
 		}
 		try {

@@ -68,7 +68,12 @@ final class FailureHistoryTracker {
 
 	void pruneToActiveClasses(Set<String> activeClasses) {
 		failureScores.keySet().removeIf(key -> !isActive(key, activeClasses));
+		pendingFailureScores.keySet().removeIf(key -> !isActive(key, activeClasses));
 		methodFailureScores.keySet().removeIf(k -> {
+			int hash = k.indexOf('#');
+			return hash >= 0 && !isActive(k.substring(0, hash), activeClasses);
+		});
+		pendingMethodFailureScores.keySet().removeIf(k -> {
 			int hash = k.indexOf('#');
 			return hash >= 0 && !isActive(k.substring(0, hash), activeClasses);
 		});

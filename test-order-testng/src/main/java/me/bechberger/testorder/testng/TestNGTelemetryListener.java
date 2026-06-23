@@ -55,6 +55,12 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 	 * Classes whose learn-mode boundary has already been closed via onAfterClass.
 	 */
 	private final Set<String> closedLearnClasses = ConcurrentHashMap.newKeySet();
+	/**
+	 * Methods for which callStartTestMethod was issued — used to guard the
+	 * matching callEndTestMethod call in onTestSkipped so we never emit an
+	 * unbalanced "end" for a method whose "start" was never sent.
+	 */
+	private final Set<String> activeLearnMethods = ConcurrentHashMap.newKeySet();
 
 	/** Per-class start times for parallel-safe class boundary tracking. */
 	private final Map<String, Long> classStartTimes = new ConcurrentHashMap<>();
@@ -104,15 +110,25 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 		Runtime.getRuntime().addShutdownHook(shutdownHook);
 	}
 
+	/** Maps top-level class name → first-seen raw class name (for learn-mode bridge calls). */
+	private final Map<String, String> topLevelToRawClassName = new ConcurrentHashMap<>();
+
 	@Override
 	public void onTestStart(ITestResult result) {
 		String className = result.getTestClass().getRealClass().getName();
+		// Normalize to top-level class so executionOrder matches failedClassNames
+		// (which is also normalized). Without this, inner-class failures like
+		// "Outer$Inner" are never found in executionOrder and APFD is wrong.
+		String topLevelClassName = TestOrderConfigResolver.toTopLevelClassName(className);
 		// computeIfAbsent is atomic: exactly one thread performs the first-seen action
 		// per class, preventing the add+callStart race under parallel="methods".
 		long startTime = debugMode ? 0L : System.nanoTime();
-		boolean firstSeen = executionOrderSet.putIfAbsent(className, startTime) == null;
+		boolean firstSeen = executionOrderSet.putIfAbsent(topLevelClassName, startTime) == null;
 		if (firstSeen) {
-			executionOrder.add(className);
+			executionOrder.add(topLevelClassName);
+			// Keep raw name for duration math (pendingMethodDurations keys use raw name)
+			// and for learn-mode bridge calls which need the actual class name.
+			topLevelToRawClassName.put(topLevelClassName, className);
 			if (!debugMode) {
 				classStartTimes.put(className, startTime);
 			}
@@ -123,6 +139,8 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 
 		// Method-level tracking
 		if (fullMethodMode && learnMode && bridge.isAvailable()) {
+			String methodKey = className + "#" + result.getMethod().getMethodName();
+			activeLearnMethods.add(methodKey);
 			bridge.callStartTestMethod(className, result.getMethod().getMethodName());
 		}
 	}
@@ -143,13 +161,18 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 
 	@Override
 	public void onTestSkipped(ITestResult result) {
-		// End method tracking if we were in learn mode
-		if (fullMethodMode && learnMode && bridge.isAvailable()) {
-			bridge.callEndTestMethod();
-		}
-		// Record method duration even for skipped tests (will be ~0ms)
 		String className = result.getTestClass().getRealClass().getName();
 		String methodName = result.getMethod().getMethodName();
+		// Only end method tracking if we actually started it — onTestSkipped can fire
+		// without a prior onTestStart (e.g. @Test(dependsOnMethods=...) dependency
+		// failure), and an unbalanced callEndTestMethod corrupts agent boundary tracking.
+		if (fullMethodMode && learnMode && bridge.isAvailable()) {
+			String methodKey = className + "#" + methodName;
+			if (activeLearnMethods.remove(methodKey)) {
+				bridge.callEndTestMethod();
+			}
+		}
+		// Record method duration even for skipped tests (will be ~0ms)
 		long durationMs = result.getEndMillis() - result.getStartMillis();
 		if (durationMs > 0) {
 			pendingMethodDurations
@@ -172,9 +195,13 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 	public void onAfterClass(org.testng.ITestClass testClass) {
 		// Close the learn-mode tracking window for this class as soon as its tests
 		// complete, matching the per-class boundary semantics of the JUnit listener.
+		// Guard on executionOrderSet membership so we never emit callEndTestClass for
+		// a class that never had callStartTestClass (e.g. all methods were skipped due
+		// to a @BeforeClass dependency failure — onTestStart never fired for it).
 		if (learnMode && bridge.isAvailable()) {
 			String className = testClass.getRealClass().getName();
-			if (closedLearnClasses.add(className)) {
+			String topLevelClassName = TestOrderConfigResolver.toTopLevelClassName(className);
+			if (executionOrderSet.containsKey(topLevelClassName) && closedLearnClasses.add(topLevelClassName)) {
 				bridge.callEndTestClass(className);
 			}
 		}
@@ -219,9 +246,11 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 		// End learn-mode tracking for any classes that missed onAfterClass (e.g.
 		// on test frameworks that don't fire IClassListener for all classes).
 		if (learnMode && bridge.isAvailable()) {
-			for (String className : executionOrderSet.keySet()) {
-				if (closedLearnClasses.add(className)) {
-					bridge.callEndTestClass(className);
+			for (String topLevelClassName : executionOrderSet.keySet()) {
+				if (closedLearnClasses.add(topLevelClassName)) {
+					// Use the raw class name for the bridge call (needed for inner classes)
+					String rawName = topLevelToRawClassName.getOrDefault(topLevelClassName, topLevelClassName);
+					bridge.callEndTestClass(rawName);
 				}
 			}
 		}
@@ -254,6 +283,8 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 
 		// End method-level tracking
 		if (fullMethodMode && learnMode && bridge.isAvailable()) {
+			String methodKey = className + "#" + methodName;
+			activeLearnMethods.remove(methodKey);
 			bridge.callEndTestMethod();
 		}
 
@@ -331,8 +362,14 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 	private void emergencySave() {
 		if (finishedNormally || !initialized.get())
 			return;
-		TelemetryPersistence.emergencySave(statePath, pendingDurations, failedClassNames, pendingMethodDurations,
-				failedMethodNames, false);
+		// Snapshot all collections before passing to emergencySave — a concurrent
+		// persistState() may be clearing these maps while the shutdown hook runs.
+		// Passing live references risks a partial save on abnormal exit.
+		Map<String, List<Long>> durSnap = new java.util.HashMap<>(pendingDurations);
+		Set<String> failSnap = new java.util.HashSet<>(failedClassNames);
+		Map<String, List<Long>> methodDurSnap = new java.util.HashMap<>(pendingMethodDurations);
+		Set<String> methodFailSnap = new java.util.HashSet<>(failedMethodNames);
+		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methodDurSnap, methodFailSnap, false);
 	}
 
 	/**

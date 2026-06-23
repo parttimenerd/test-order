@@ -1321,7 +1321,9 @@ public class TestOrderState {
 		return new RunRecord(safeLong(rm.get("timestamp"), 0L, "runs[].timestamp"),
 				safeInt(rm.get("totalTests"), 0, "runs[].totalTests"),
 				safeInt(rm.get("totalFailures"), 0, "runs[].totalFailures"), firstFailPos,
-				safeDouble(rm.get("apfd"), 0.0, "runs[].apfd"), outcomes);
+				// apfd is omitted for all-pass runs (NaN); default to NaN not 0.0 so the
+				// optimizer does not treat missing runs as "worst possible ordering".
+				safeDouble(rm.get("apfd"), Double.NaN, "runs[].apfd"), outcomes);
 	}
 
 	static Map<String, Object> safeMap(Object value, String label) {

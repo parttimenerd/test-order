@@ -151,6 +151,15 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		}
 		if (skip)
 			return;
+		// Short-circuit when Maven's own skipTests flag is active: the lifecycle
+		// extension may have set it on deferred modules, and starting a collector
+		// or performing instrumentation for a module whose tests will never run
+		// wastes resources and leaks an IndexCollectorServer.
+		if (isMavenTestSkipped()) {
+			getLog().debug(
+					"[test-order] Skipping prepare — tests are skipped for this module (skipTests/maven.test.skip).");
+			return;
+		}
 		// POM-packaging modules (reactor parents) have no tests — skip silently
 		if ("pom".equals(project.getPackaging())) {
 			getLog().debug("[test-order] Skipping prepare — POM module.");
@@ -816,17 +825,34 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		return false;
 	}
 
-	private boolean hasCliWorkflowGoal() {
-		if (session == null || session.getGoals() == null) {
-			return false;
+	/**
+	 * Returns true when Maven's skipTests or maven.test.skip flag is active for
+	 * this module.
+	 */
+	private boolean isMavenTestSkipped() {
+		if ("true".equalsIgnoreCase(project.getProperties().getProperty("skipTests"))) {
+			return true;
 		}
-		return session.getGoals().stream()
-				.anyMatch(goal -> isGoal(goal, "affected") || isGoal(goal, "auto") || isGoal(goal, "learn")
-						|| isGoal(goal, "run-remaining") || isGoal(goal, "run-tier") || isGoal(goal, "tiered-select"));
+		if ("true".equalsIgnoreCase(project.getProperties().getProperty("maven.test.skip"))) {
+			return true;
+		}
+		if (session != null && session.getUserProperties() != null) {
+			if ("true".equalsIgnoreCase(session.getUserProperties().getProperty("skipTests"))) {
+				return true;
+			}
+			if ("true".equalsIgnoreCase(session.getUserProperties().getProperty("maven.test.skip"))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
-	/** Returns true when 'test-order:learn' is explicitly on the CLI. */
+	/** Returns true when 'test-order:learn' is explicitly on the CLI or offline learn is active. */
 	private boolean isLearnCliGoal() {
+		return hasCliWorkflowGoal();
+	}
+
+	private boolean hasCliWorkflowGoal() {
 		if (session == null || session.getGoals() == null) {
 			return false;
 		}

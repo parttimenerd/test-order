@@ -72,20 +72,19 @@ public class TestOrderPlugin implements Plugin<Project> {
     static final String VERSION = "0.0.1-SNAPSHOT";
 
     /**
-     * Stores active IndexCollectorServer instances keyed by task path.
+     * Stores active IndexCollectorServer instances keyed by task path, paired
+     * with their compression level. A single ConcurrentHashMap entry keeps the
+     * two values atomically associated — a split-map design would allow the
+     * compression level to be missing if a concurrent prune races the removal.
      * Uses a static map to avoid calling task.getExtensions() at execution time,
      * which is incompatible with the Gradle configuration cache (Gradle 9+).
      * Bounded at 128 entries to prevent unbounded growth in long-running daemons.
      */
-    private static final java.util.concurrent.ConcurrentHashMap<String, me.bechberger.testorder.IndexCollectorServer>
+    private record CollectorEntry(me.bechberger.testorder.IndexCollectorServer collector, String compression) {
+    }
+
+    private static final java.util.concurrent.ConcurrentHashMap<String, CollectorEntry>
             COLLECTOR_REGISTRY = new java.util.concurrent.ConcurrentHashMap<>();
-    /**
-     * Per-collector compression level. Looked up at stopAndMerge time and
-     * applied via a scoped System.setProperty/clearProperty pair so the
-     * Gradle daemon JVM doesn't keep a leaked global property between builds.
-     */
-    private static final java.util.concurrent.ConcurrentHashMap<String, String>
-            COLLECTOR_COMPRESSION = new java.util.concurrent.ConcurrentHashMap<>();
     private static final int MAX_COLLECTOR_ENTRIES = 128;
 
     /**
@@ -803,11 +802,10 @@ public class TestOrderPlugin implements Plugin<Project> {
                 try {
                     // Stop any stale collector from a previous run in this daemon
                     // (can happen when tests fail and doLast doesn't execute).
-                    me.bechberger.testorder.IndexCollectorServer stale = COLLECTOR_REGISTRY.remove(testTask.getPath());
-                    String staleCompression = COLLECTOR_COMPRESSION.remove(testTask.getPath());
+                    CollectorEntry stale = COLLECTOR_REGISTRY.remove(testTask.getPath());
                     if (stale != null) {
-                        final me.bechberger.testorder.IndexCollectorServer s = stale;
-                        withScopedCompression(staleCompression, () -> s.stopAndMerge());
+                        final CollectorEntry s = stale;
+                        withScopedCompression(s.compression(), () -> s.collector().stopAndMerge());
                     }
 
                     // Stash compression level for scoped use during stopAndMerge,
@@ -822,8 +820,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                     if (COLLECTOR_REGISTRY.size() >= MAX_COLLECTOR_ENTRIES) {
                         pruneCollectorRegistry();
                     }
-                    COLLECTOR_REGISTRY.put(testTask.getPath(), collector);
-                    COLLECTOR_COMPRESSION.put(testTask.getPath(), compressionLevel);
+                    COLLECTOR_REGISTRY.put(testTask.getPath(), new CollectorEntry(collector, compressionLevel));
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
                             collector.getPort());
                 } catch (java.io.IOException ex) {
@@ -893,12 +890,10 @@ public class TestOrderPlugin implements Plugin<Project> {
         });
         testTask.doLast("aggregateDeps", t -> {
             // Stop IndexCollectorServer if running (agent mode)
-            me.bechberger.testorder.IndexCollectorServer collector =
-                    COLLECTOR_REGISTRY.remove(testTask.getPath());
-            String compression = COLLECTOR_COMPRESSION.remove(testTask.getPath());
-            if (collector != null) {
-                final me.bechberger.testorder.IndexCollectorServer c = collector;
-                int merged = withScopedCompression(compression, () -> c.stopAndMerge());
+            CollectorEntry entry = COLLECTOR_REGISTRY.remove(testTask.getPath());
+            if (entry != null) {
+                final CollectorEntry e = entry;
+                int merged = withScopedCompression(e.compression(), () -> e.collector().stopAndMerge());
                 if (merged > 0) {
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
                             merged);
@@ -1028,9 +1023,10 @@ public class TestOrderPlugin implements Plugin<Project> {
                 // Start IndexCollectorServer for socket-based dep collection
                 try {
                     // Stop any stale collector from a previous daemon run
-                    me.bechberger.testorder.IndexCollectorServer stale = COLLECTOR_REGISTRY.remove(testTask.getPath());
+                    CollectorEntry stale = COLLECTOR_REGISTRY.remove(testTask.getPath());
                     if (stale != null) {
-                        stale.stopAndMerge();
+                        final CollectorEntry s = stale;
+                        withScopedCompression(s.compression(), () -> s.collector().stopAndMerge());
                     }
 
                     // Stash compression level for scoped use during stopAndMerge,
@@ -1042,8 +1038,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             new me.bechberger.testorder.IndexCollectorServer(indexFilePath, mappingFile);
                     testTask.systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
-                    COLLECTOR_REGISTRY.put(testTask.getPath(), collector);
-                    COLLECTOR_COMPRESSION.put(testTask.getPath(), compressionLevel);
+                    COLLECTOR_REGISTRY.put(testTask.getPath(), new CollectorEntry(collector, compressionLevel));
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
                             collector.getPort());
                 } catch (IOException ex) {
@@ -1382,20 +1377,19 @@ public class TestOrderPlugin implements Plugin<Project> {
                 // root-project tasks aren't excluded.
                 String projectPath = project.getPath();
                 String childPrefix = projectPath.equals(":") ? ":" : projectPath + ":";
-                java.util.Iterator<java.util.Map.Entry<String, me.bechberger.testorder.IndexCollectorServer>> it =
+                java.util.Iterator<java.util.Map.Entry<String, CollectorEntry>> it =
                         COLLECTOR_REGISTRY.entrySet().iterator();
                 while (it.hasNext()) {
-                    java.util.Map.Entry<String, me.bechberger.testorder.IndexCollectorServer> entry = it.next();
+                    java.util.Map.Entry<String, CollectorEntry> entry = it.next();
                     String taskPath = entry.getKey();
                     if (!taskPath.startsWith(childPrefix)
                             && !taskPath.equals(projectPath)) {
                         continue;
                     }
-                    me.bechberger.testorder.IndexCollectorServer collector = entry.getValue();
+                    CollectorEntry ce = entry.getValue();
                     it.remove();
-                    String compression = COLLECTOR_COMPRESSION.remove(taskPath);
-                    final me.bechberger.testorder.IndexCollectorServer c = collector;
-                    int merged = withScopedCompression(compression, () -> c.stopAndMerge());
+                    final CollectorEntry c = ce;
+                    int merged = withScopedCompression(c.compression(), () -> c.collector().stopAndMerge());
                     if (merged > 0) {
                         project.getLogger().lifecycle(
                                 "[test-order] IndexCollectorServer merged {} test classes via socket (task {})",
@@ -4003,10 +3997,11 @@ public class TestOrderPlugin implements Plugin<Project> {
      * {@code AffectedMojo}'s {@code -Dtest} skip-selection guard.
      */
     private static boolean hasUserTestFilter(Project project, Test task) {
-        // In Gradle, users use --tests to filter tests, which targets the `test` task
-        // directly — not testOrderAffected. So there is no equivalent of Maven's -Dtest=...
-        // guard here. We keep the method for future extensibility but always return false.
-        return false;
+        // When the user passes --tests on the command line, Gradle populates the task's
+        // include patterns. If any patterns are set, honour the user's filter and skip
+        // test selection — applying test-order selection on top of an explicit --tests
+        // filter would silently drop tests the user asked for.
+        return !task.getFilter().getIncludePatterns().isEmpty();
     }
 
     /**
@@ -4199,12 +4194,11 @@ public class TestOrderPlugin implements Plugin<Project> {
             int removeCount = keys.size() - MAX_COLLECTOR_ENTRIES;
             for (int i = 0; i < removeCount && i < keys.size(); i++) {
                 String key = keys.get(i);
-                me.bechberger.testorder.IndexCollectorServer removed = COLLECTOR_REGISTRY.remove(key);
-                String removedCompression = COLLECTOR_COMPRESSION.remove(key);
+                CollectorEntry removed = COLLECTOR_REGISTRY.remove(key);
                 if (removed != null) {
                     try {
-                        final me.bechberger.testorder.IndexCollectorServer r = removed;
-                        withScopedCompression(removedCompression, () -> r.stopAndMerge());
+                        final CollectorEntry r = removed;
+                        withScopedCompression(r.compression(), () -> r.collector().stopAndMerge());
                     } catch (Exception ignored) {
                     }
                 }

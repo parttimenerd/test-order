@@ -686,16 +686,19 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		}
 		for (MavenProject p : session.getProjects()) {
 			List<String> roots = p.getCompileSourceRoots();
-			Path src = (roots != null && !roots.isEmpty())
-					? Path.of(roots.get(0))
-					: p.getBasedir().toPath().resolve("src/main/java");
-			if (!Files.isDirectory(src))
-				continue;
-			try {
-				result.addAll(
-						ChangeDetectionOps.detectChangedClasses("uncommitted", gitRoot, src, null, null, true, log));
-			} catch (Exception ignored) {
-				// best-effort
+			if (roots == null || roots.isEmpty()) {
+				roots = List.of(p.getBasedir().toPath().resolve("src/main/java").toString());
+			}
+			for (String rootStr : roots) {
+				Path src = Path.of(rootStr);
+				if (!Files.isDirectory(src))
+					continue;
+				try {
+					result.addAll(ChangeDetectionOps.detectChangedClasses("uncommitted", gitRoot, src, null, null, true,
+							log));
+				} catch (Exception ignored) {
+					// best-effort
+				}
 			}
 		}
 		return result;
@@ -716,16 +719,19 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			if ("pom".equals(p.getPackaging()))
 				continue;
 			List<String> roots = p.getTestCompileSourceRoots();
-			Path testRoot = (roots != null && !roots.isEmpty())
-					? Path.of(roots.get(0))
-					: p.getBasedir().toPath().resolve("src/test/java");
-			if (!Files.isDirectory(testRoot))
-				continue;
-			try {
-				result.addAll(ChangeDetectionOps.detectChangedTestClasses("uncommitted", gitRoot, testRoot, null, null,
-						true, log));
-			} catch (Exception ignored) {
-				// best-effort
+			if (roots == null || roots.isEmpty()) {
+				roots = List.of(p.getBasedir().toPath().resolve("src/test/java").toString());
+			}
+			for (String rootStr : roots) {
+				Path testRoot = Path.of(rootStr);
+				if (!Files.isDirectory(testRoot))
+					continue;
+				try {
+					result.addAll(ChangeDetectionOps.detectChangedTestClasses("uncommitted", gitRoot, testRoot, null,
+							null, true, log));
+				} catch (Exception ignored) {
+					// best-effort
+				}
 			}
 		}
 		return result;

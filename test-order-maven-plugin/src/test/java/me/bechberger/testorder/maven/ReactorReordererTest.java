@@ -66,7 +66,7 @@ class ReactorReordererTest {
 		List<MavenProject> orig = List.of(a, b, c);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-c", score("g-c", 10));
+		scores.put("g:c", score("g:c", 10));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertSame(c, r.ordered().get(0), "highest-score module should run first");
@@ -86,7 +86,7 @@ class ReactorReordererTest {
 		List<MavenProject> orig = List.of(a, b, c);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-c", score("g-c", 10)); // would want c first, but a,b must precede
+		scores.put("g:c", score("g:c", 10)); // would want c first, but a,b must precede
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertEquals(List.of(a, b, c), r.ordered(), "deps must be honored");
@@ -100,9 +100,9 @@ class ReactorReordererTest {
 		List<MavenProject> orig = List.of(a, b, c);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 1));
-		scores.put("g-b", score("g-b", 5));
-		scores.put("g-c", score("g-c", 3));
+		scores.put("g:a", score("g:a", 1));
+		scores.put("g:b", score("g:b", 5));
+		scores.put("g:c", score("g:c", 3));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertEquals(List.of(b, c, a), r.ordered());
@@ -119,9 +119,9 @@ class ReactorReordererTest {
 		List<MavenProject> orig = List.of(a, b, c);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 4));
-		scores.put("g-b", score("g-b", 4));
-		scores.put("g-c", score("g-c", 4));
+		scores.put("g:a", score("g:a", 4));
+		scores.put("g:b", score("g:b", 4));
+		scores.put("g:c", score("g:c", 4));
 
 		// topN=5 → after first module (4) we still have budget; second pushes to 8 ≥ 5
 		// → only first picked
@@ -140,8 +140,8 @@ class ReactorReordererTest {
 		List<MavenProject> orig = List.of(a, b);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 0));
-		scores.put("g-b", score("g-b", 0));
+		scores.put("g:a", score("g:a", 0));
+		scores.put("g:b", score("g:b", 0));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertEquals(0, r.activeModules());
@@ -165,7 +165,7 @@ class ReactorReordererTest {
 		List<MavenProject> orig = List.of(parent, child);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-child", score("g-child", 100));
+		scores.put("g:child", score("g:child", 100));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertEquals(List.of(parent, child), r.ordered(),
@@ -185,7 +185,7 @@ class ReactorReordererTest {
 		List<MavenProject> orig = List.of(a, b);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-b", score("g-b", 5));
+		scores.put("g:b", score("g:b", 5));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertSame(b, r.ordered().get(0), "b should run first; non-reactor dep is irrelevant");
@@ -200,9 +200,9 @@ class ReactorReordererTest {
 
 		Map<String, ModuleScore> scores = new HashMap<>();
 		// All identical scores → original order should be preserved among them
-		scores.put("g-a", score("g-a", 3));
-		scores.put("g-b", score("g-b", 3));
-		scores.put("g-c", score("g-c", 3));
+		scores.put("g:a", score("g:a", 3));
+		scores.put("g:b", score("g:b", 3));
+		scores.put("g:c", score("g:c", 3));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertEquals(List.of(a, b, c), r.ordered(), "tied scores must keep original order");
@@ -215,8 +215,8 @@ class ReactorReordererTest {
 		List<MavenProject> orig = List.of(a, b);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 5));
-		scores.put("g-b", score("g-b", 5));
+		scores.put("g:a", score("g:a", 5));
+		scores.put("g:b", score("g:b", 5));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, 0);
 		assertEquals(2, r.activeModules(), "topN<=0 should be treated as uncapped");
@@ -239,7 +239,7 @@ class ReactorReordererTest {
 		MavenProject a = project("g", "a");
 		List<MavenProject> orig = List.of(a);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 1));
+		scores.put("g:a", score("g:a", 1));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		assertThrows(UnsupportedOperationException.class, () -> r.ordered().add(a));
@@ -260,7 +260,7 @@ class ReactorReordererTest {
 		List<MavenProject> orig = List.of(a, b, c, d);
 
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-d", score("g-d", 100)); // d wants to be first, but everything must precede it
+		scores.put("g:d", score("g:d", 100)); // d wants to be first, but everything must precede it
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 		List<MavenProject> ord = r.ordered();
@@ -395,21 +395,21 @@ class ReactorReordererTest {
 		MavenProject b = project("g", "b");
 		List<MavenProject> orig = List.of(a, b);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 5));
+		scores.put("g:a", score("g:a", 5));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 
 		assertTrue(r.active().contains(a), "a must be in the active set");
 		assertFalse(r.active().contains(b), "b has no score and must not be active");
-		assertEquals("g", r.projectsById().get("g-a").getGroupId());
-		assertEquals("g", r.projectsById().get("g-b").getGroupId());
+		assertEquals("g", r.projectsById().get("g:a").getGroupId());
+		assertEquals("g", r.projectsById().get("g:b").getGroupId());
 	}
 
 	@Test
 	void reorderResult_activeSetIsImmutable() {
 		MavenProject a = project("g", "a");
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 1));
+		scores.put("g:a", score("g:a", 1));
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(List.of(a), scores, null);
 		assertThrows(UnsupportedOperationException.class, () -> r.active().add(a));
 		assertThrows(UnsupportedOperationException.class, () -> r.projectsById().put("x", a));
@@ -422,7 +422,7 @@ class ReactorReordererTest {
 		MavenProject c = project("g", "c");
 		List<MavenProject> orig = List.of(a, b, c);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-b", score("g-b", 5));
+		scores.put("g:b", score("g:b", 5));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, null);
 
@@ -443,8 +443,8 @@ class ReactorReordererTest {
 		MavenProject b = project("g", "b");
 		List<MavenProject> orig = List.of(a, b);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 5));
-		scores.put("g-b", score("g-b", 3));
+		scores.put("g:a", score("g:a", 5));
+		scores.put("g:b", score("g:b", 3));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, 5);
 		assertEquals(1, r.activeModules(), "first module exactly fills the cap → only it is active");
@@ -460,8 +460,8 @@ class ReactorReordererTest {
 		MavenProject b = project("g", "b");
 		List<MavenProject> orig = List.of(a, b);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 10));
-		scores.put("g-b", score("g-b", 10));
+		scores.put("g:a", score("g:a", 10));
+		scores.put("g:b", score("g:b", 10));
 
 		ReactorReorderer.ReorderResult r = ReactorReorderer.reorder(orig, scores, 1);
 		assertEquals(1, r.activeModules(), "cap=1 should allow at most one module in");

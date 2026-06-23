@@ -61,7 +61,7 @@ final class RunHistoryStorage {
 		runHistory.trimToMax(maxRuns);
 	}
 
-	int historyMaxRuns() {
+	synchronized int historyMaxRuns() {
 		return config.historyMaxRuns();
 	}
 

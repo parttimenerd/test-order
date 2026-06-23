@@ -201,7 +201,8 @@ class DashboardMojoTest {
 		writeMinimalIndex();
 
 		TestOrderState state = new TestOrderState();
-		state.addRunRecord(TestOrderState.buildRunRecord(List.of("com.example.MyTest"), Set.of()));
+		// Use a run with a failure so APFD is well-defined (NaN is omitted for all-pass runs)
+		state.addRunRecord(TestOrderState.buildRunRecord(List.of("com.example.MyTest"), Set.of("com.example.MyTest")));
 		state.save(tempDir.resolve(".test-order-state"));
 		mojo.overrideState = state;
 
@@ -210,7 +211,7 @@ class DashboardMojoTest {
 		assertTrue(json.contains("\"timestamp\""), "run entry must have 'timestamp'");
 		assertTrue(json.contains("\"totalTests\""), "run entry must have 'totalTests'");
 		assertTrue(json.contains("\"totalFailures\""), "run entry must have 'totalFailures'");
-		assertTrue(json.contains("\"apfd\""), "run entry must have 'apfd'");
+		assertTrue(json.contains("\"apfd\""), "run entry must have 'apfd' when there are failures");
 	}
 
 	@Test

@@ -155,8 +155,8 @@ class SkipInactiveModulesTest {
 		MavenProject b = project("g", "b");
 		List<MavenProject> reactor = List.of(a, b);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 3));
-		scores.put("g-b", score("g-b", 3));
+		scores.put("g:a", score("g:a", 3));
+		scores.put("g:b", score("g:b", 3));
 		applySkipInactive(reactor, scores);
 		assertFalse(isSkipped(a));
 		assertFalse(isSkipped(b));
@@ -169,9 +169,9 @@ class SkipInactiveModulesTest {
 		MavenProject c = project("g", "c");
 		List<MavenProject> reactor = List.of(a, b, c);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", observedUnaffected("g-a", 4));
-		scores.put("g-b", score("g-b", 5)); // only b is active
-		scores.put("g-c", observedUnaffected("g-c", 2));
+		scores.put("g:a", observedUnaffected("g:a", 4));
+		scores.put("g:b", score("g:b", 5)); // only b is active
+		scores.put("g:c", observedUnaffected("g:c", 2));
 		applySkipInactive(reactor, scores);
 		assertTrue(isSkipped(a), "a has indexed tests but none affected and doesn't feed b → must be skipped");
 		assertFalse(isSkipped(b), "b is active → must not be skipped");
@@ -188,7 +188,7 @@ class SkipInactiveModulesTest {
 		addDep(c, b);
 		List<MavenProject> reactor = List.of(a, b, c);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-c", score("g-c", 5));
+		scores.put("g:c", score("g:c", 5));
 		applySkipInactive(reactor, scores);
 		assertFalse(isSkipped(a), "a is a transitive dep of active c → must compile");
 		assertFalse(isSkipped(b), "b is a transitive dep of active c → must compile");
@@ -201,7 +201,7 @@ class SkipInactiveModulesTest {
 		MavenProject leaf = project("g", "leaf");
 		List<MavenProject> reactor = List.of(pom, leaf);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-leaf", score("g-leaf", 5));
+		scores.put("g:leaf", score("g:leaf", 5));
 		applySkipInactive(reactor, scores);
 		assertFalse(isSkipped(pom), "POM-packaging modules must never receive skip flags");
 	}
@@ -212,8 +212,8 @@ class SkipInactiveModulesTest {
 		MavenProject b = project("g", "b");
 		List<MavenProject> reactor = List.of(a, b);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", observedUnaffected("g-a", 3));
-		scores.put("g-b", score("g-b", 1));
+		scores.put("g:a", observedUnaffected("g:a", 3));
+		scores.put("g:b", score("g:b", 1));
 		applySkipInactive(reactor, scores);
 		Properties props = a.getProperties();
 		assertEquals("true", props.getProperty("maven.main.skip"));
@@ -228,7 +228,7 @@ class SkipInactiveModulesTest {
 		MavenProject a = project("g", "a");
 		List<MavenProject> reactor = List.of(a);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 3));
+		scores.put("g:a", score("g:a", 3));
 		applySkipInactive(reactor, scores);
 		Properties props = a.getProperties();
 		assertNull(props.getProperty("maven.main.skip"));
@@ -250,8 +250,8 @@ class SkipInactiveModulesTest {
 		addDep(d, c);
 		List<MavenProject> reactor = List.of(a, b, c, d, unrelated);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-d", score("g-d", 10));
-		scores.put("g-unrelated", observedUnaffected("g-unrelated", 5));
+		scores.put("g:d", score("g:d", 10));
+		scores.put("g:unrelated", observedUnaffected("g:unrelated", 5));
 		applySkipInactive(reactor, scores);
 		assertFalse(isSkipped(a));
 		assertFalse(isSkipped(b));
@@ -272,9 +272,9 @@ class SkipInactiveModulesTest {
 		addDep(d, c);
 		List<MavenProject> reactor = List.of(a, b, c, d, e);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-b", score("g-b", 3));
-		scores.put("g-d", score("g-d", 4));
-		scores.put("g-e", observedUnaffected("g-e", 2));
+		scores.put("g:b", score("g:b", 3));
+		scores.put("g:d", score("g:d", 4));
+		scores.put("g:e", observedUnaffected("g:e", 2));
 		applySkipInactive(reactor, scores);
 		assertFalse(isSkipped(a), "a feeds active b → required");
 		assertFalse(isSkipped(b), "b is active");
@@ -288,7 +288,7 @@ class SkipInactiveModulesTest {
 		MavenProject a = project("g", "a");
 		List<MavenProject> reactor = List.of(a);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-a", score("g-a", 1));
+		scores.put("g:a", score("g:a", 1));
 		applySkipInactive(reactor, scores);
 		assertFalse(isSkipped(a));
 	}
@@ -306,8 +306,8 @@ class SkipInactiveModulesTest {
 		addDep(c, b);
 		List<MavenProject> reactor = List.of(a, b, c);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-c", score("g-c", 20)); // highest score → picked by topN=1
-		scores.put("g-b", score("g-b", 5));
+		scores.put("g:c", score("g:c", 20)); // highest score → picked by topN=1
+		scores.put("g:b", score("g:b", 5));
 		ReactorReorderer.ReorderResult reorder = ReactorReorderer.reorder(reactor, scores, 1);
 		assertEquals(1, reorder.activeModules(), "topN=1 should select exactly one module");
 		assertTrue(reorder.active().contains(c), "c has the highest score and must be the active module");
@@ -327,7 +327,7 @@ class SkipInactiveModulesTest {
 		MavenProject b = project("g", "b");
 		List<MavenProject> reactor = List.of(a, b);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-b", score("g-b", 3));
+		scores.put("g:b", score("g:b", 3));
 		applySkipInactive(reactor, scores);
 		assertEquals("true", a.getProperties().getProperty("maven.main.skip"),
 				"pre-existing true skip must not be disturbed");
@@ -355,7 +355,7 @@ class SkipInactiveModulesTest {
 		addDep(b, a);
 		List<MavenProject> reactor = List.of(a, b);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-b", score("g-b", 5));
+		scores.put("g:b", score("g:b", 5));
 		applySkipInactive(reactor, scores);
 		Properties props = a.getProperties();
 		assertNull(props.getProperty("maven.main.skip"), "required module must not have maven.main.skip set");
@@ -375,11 +375,11 @@ class SkipInactiveModulesTest {
 			reactor.add(project("g", "m" + i));
 		}
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-m10", score("g-m10", 7));
+		scores.put("g:m10", score("g:m10", 7));
 		for (int i = 0; i < 20; i++) {
 			if (i == 10)
 				continue;
-			scores.put("g-m" + i, observedUnaffected("g-m" + i, 2));
+			scores.put("g:m" + i, observedUnaffected("g:m" + i, 2));
 		}
 		applySkipInactive(reactor, scores);
 
@@ -403,7 +403,7 @@ class SkipInactiveModulesTest {
 		// no addDep — modules are independent
 		List<MavenProject> reactor = List.of(active, unindexed);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-active", score("g-active", 5));
+		scores.put("g:active", score("g:active", 5));
 		// note: NO entry for g-unindexed → ms == null in production
 		applySkipInactive(reactor, scores);
 		assertFalse(isSkipped(unindexed),
@@ -421,8 +421,8 @@ class SkipInactiveModulesTest {
 		MavenProject empty = project("g", "empty");
 		List<MavenProject> reactor = List.of(active, empty);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-active", score("g-active", 5));
-		scores.put("g-empty", new ModuleScore("g-empty", 0, 0L, 0, 0, List.of()));
+		scores.put("g:active", score("g:active", 5));
+		scores.put("g:empty", new ModuleScore("g:empty", 0, 0L, 0, 0, List.of()));
 		applySkipInactive(reactor, scores);
 		assertFalse(isSkipped(empty), "module with totalTestCount=0 means we have no index signal — must not skip");
 	}
@@ -435,8 +435,8 @@ class SkipInactiveModulesTest {
 		MavenProject pomIntermediate = pomProject("g", "intermediate");
 		List<MavenProject> reactor = List.of(pomParent, libA, libB, pomIntermediate);
 		Map<String, ModuleScore> scores = new HashMap<>();
-		scores.put("g-lib-a", observedUnaffected("g-lib-a", 3));
-		scores.put("g-lib-b", score("g-lib-b", 4));
+		scores.put("g:lib-a", observedUnaffected("g:lib-a", 3));
+		scores.put("g:lib-b", score("g:lib-b", 4));
 		applySkipInactive(reactor, scores);
 
 		assertFalse(isSkipped(pomParent), "POM parent must never be skipped");
