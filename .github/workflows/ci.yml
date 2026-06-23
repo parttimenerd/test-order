@@ -168,12 +168,9 @@ jobs:
           -Dtest="ParameterizedTestOrderingIT,ChangeDetectionEdgeCasesIT,ParallelExecutionIT,JaCoCoCoexistenceIT"
           -DfailIfNoTests=false -Dspotless.check.skip=true
 
-      - name: ${{ matrix.step }} (fast — core ITs only)
+      - name: ${{ matrix.step }} (skipped in fast mode)
         if: matrix.name == 'plugin-its-java25' && env.FULL_SUITE != 'true'
-        run: >
-          mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
-          -Dit.test="MavenPluginIT,EndToEndJUnit5IT,EndToEndJUnit6IT,ExportJsonMojoIT,TieredWorkflowIT"
-          -Dspotless.check.skip=true
+        run: echo "Skipping plugin-its-java25 in fast mode (push/PR). Runs on full suite only."
 
       - name: ${{ matrix.step }} (full — all ITs)
         if: (matrix.name == 'plugin-its' || matrix.name == 'plugin-its-java25' || matrix.name == 'fixture-its') && env.FULL_SUITE == 'true'
