@@ -1261,10 +1261,8 @@ layout: default
 
 # Demo 9 — SAP Cloud SDK for Java (65 modules)
 
-<DemoCard id="D9" duration="3 min" :cmd="`cd demo/dcom-presentation
-./reset.sh
-./add-test-order.sh && ./make-change.sh
-cd cloud-sdk-java
+<DemoCard id="D9" duration="3 min" :cmd="`bash scripts/setup-bench-repos.sh
+cd third-party/cloud-sdk-java
 mvn test-order:affected test`">
   <template #title>cloud-sdk-java — pain → magic → diagnose</template>
   <template #watch><strong>Pain:</strong> mvn clean test → kill at 90 s, no test ran. <br/><strong>Magic:</strong> mvn test-order:affected test → ~55 s, RED build with the relevant failure.</template>

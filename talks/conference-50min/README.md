@@ -17,16 +17,12 @@ Presenter mode: <http://localhost:3030/presenter>
 **T-30 min**
 
 ```bash
-cd demo/dcom-presentation
-./prepare.sh      # ~15 min first time, no-op after
+bash scripts/setup-bench-repos.sh   # clones third-party/cloud-sdk-java (D9)
 ```
 
 **T-10 min**
 
-```bash
-cd demo/dcom-presentation
-./reset.sh        # clean state for the live demo
-```
+Reset any leftover state in `samples/` before going on stage.
 
 **T-5 min** — open seven iTerm2 tabs (font 22pt+):
 
@@ -38,7 +34,7 @@ cd demo/dcom-presentation
 | 4 | D4 dashboard launcher | `samples/sample-shop` |
 | 5 | D5 multi-module | `samples/sample-multi` |
 | 6 | D6 OD-bug detector | `samples/sample-od-bugs` |
-| 7 | D9 cloud-sdk-java | `demo/dcom-presentation/cloud-sdk-java` |
+| 7 | D9 cloud-sdk-java | `third-party/cloud-sdk-java` |
 
 Pre-warm the dashboard: `mvn test-order:dashboard` once in tab 4 — leave the tab open in the browser.
 

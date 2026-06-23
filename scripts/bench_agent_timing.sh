@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="${SCRIPT_DIR}/.."
-DEMO_DIR="${PROJECT_ROOT}/demo/dcom-presentation/cloud-sdk-java"
+DEMO_DIR="${PROJECT_ROOT}/third-party/cloud-sdk-java"
 AGENT_JAR="${PROJECT_ROOT}/test-order-agent/target/test-order-agent.jar"
 
 MODULE="${1:-cloudplatform/caching}"

@@ -25,15 +25,15 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Set up demo repositories
-        run: bash demo/dcom-presentation/setup-ci.sh
+      - name: Set up benchmark repositories
+        run: bash scripts/setup-bench-repos.sh
 
       - name: Build and install test-order plugin
         run: mvn -B -ntp -DskipTests install
 
       - name: Build cloud-sdk-java (skip tests)
         run: mvn -B -ntp -DskipTests -DskipFormatting install
-        working-directory: demo/dcom-presentation/cloud-sdk-java
+        working-directory: third-party/cloud-sdk-java
 
       - name: Run benchmark (--quick)
         run: bash scripts/bench_learn_modes_multiproject.sh --quick 2>&1 | tee bench-output.txt

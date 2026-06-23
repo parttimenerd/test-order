@@ -47,41 +47,41 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Set up demo repositories
-        run: bash demo/dcom-presentation/setup-ci.sh
+      - name: Set up benchmark repositories
+        run: bash scripts/setup-bench-repos.sh
 
       - name: Build and install test-order plugin
         run: mvn -B -ntp -DskipTests install
 
       - name: Build cloud-sdk-java (skip tests)
         run: mvn -B -ntp -DskipTests -DskipFormatting install
-        working-directory: demo/dcom-presentation/cloud-sdk-java
+        working-directory: third-party/cloud-sdk-java
 
       - name: Run learn pass for connectivity-destination-service
         run: |
           mvn -B -ntp test \
             -pl cloudplatform/connectivity-destination-service \
             -Dtestorder.mode=learn
-        working-directory: demo/dcom-presentation/cloud-sdk-java
+        working-directory: third-party/cloud-sdk-java
 
       - name: Run mutation analysis
         run: |
           mvn -B -ntp test-order:analyze-mutations \
             -pl cloudplatform/connectivity-destination-service
-        working-directory: demo/dcom-presentation/cloud-sdk-java
+        working-directory: third-party/cloud-sdk-java
 
       - name: Upload mutation report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mutation-report-${{ github.run_number }}
-          path: demo/dcom-presentation/cloud-sdk-java/**/target/test-mutation-results.json
+          path: third-party/cloud-sdk-java/**/target/test-mutation-results.json
           retention-days: 30
 
       - name: Print kill rate summary
         if: always()
         run: |
-          REPORT=$(find demo/dcom-presentation/cloud-sdk-java -name "test-mutation-results.json" | head -1)
+          REPORT=$(find third-party/cloud-sdk-java -name "test-mutation-results.json" | head -1)
           if [ -f "$REPORT" ]; then
             echo "=== Mutation Kill Rate Summary ==="
             python3 -c "

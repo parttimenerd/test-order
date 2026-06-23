@@ -40,7 +40,7 @@ PROJECT_ROOT="${SCRIPT_DIR}/.."
 # java_sdk is the SDKMAN identifier (e.g. "21-sapmchn", "25-sapmchn")
 declare -a PROJECTS=()
 
-CLOUD_SDK_DIR="${PROJECT_ROOT}/demo/dcom-presentation/cloud-sdk-java"
+CLOUD_SDK_DIR="${PROJECT_ROOT}/third-party/cloud-sdk-java"
 JACKSON_DIR="${PROJECT_ROOT}/third-party/jackson-databind"
 COMMONS_LANG_DIR="${PROJECT_ROOT}/third-party/commons-lang"
 COMMONS_COLLECTIONS_DIR="${PROJECT_ROOT}/third-party/commons-collections"

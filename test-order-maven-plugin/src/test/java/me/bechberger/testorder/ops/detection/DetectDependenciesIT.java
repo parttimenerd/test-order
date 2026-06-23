@@ -274,16 +274,16 @@ public class DetectDependenciesIT {
 	}
 
 	private static Path findSampleDir() {
-		// Try relative from project root
 		Path cwd = Path.of("").toAbsolutePath();
 		Path candidate = cwd.resolve("samples/sample-od-bugs");
 		if (Files.exists(candidate))
 			return candidate;
-		// Try from test-order-maven-plugin module
 		candidate = cwd.getParent().resolve("samples/sample-od-bugs");
 		if (Files.exists(candidate))
 			return candidate;
-		// Absolute fallback
-		return Path.of("/Users/i560383_1/code/experiments/test-order/samples/sample-od-bugs");
+		throw new IllegalStateException(
+				"Could not locate samples/sample-od-bugs relative to "
+						+ cwd
+						+ ". Run this test from the project root or the test-order-maven-plugin module.");
 	}
 }

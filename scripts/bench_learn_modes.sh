@@ -21,7 +21,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="${SCRIPT_DIR}/.."
-DEMO_DIR="${PROJECT_ROOT}/demo/dcom-presentation/cloud-sdk-java"
+DEMO_DIR="${PROJECT_ROOT}/third-party/cloud-sdk-java"
 
 # Parse arguments
 NO_WARMUP=false
@@ -48,7 +48,7 @@ done
 
 if [[ ! -d "$DEMO_DIR" ]]; then
     echo "Error: demo project not found at $DEMO_DIR"
-    echo "Run: git clone ... into demo/dcom-presentation/cloud-sdk-java"
+    echo "Run: bash scripts/setup-bench-repos.sh"
     exit 1
 fi
 

@@ -23,6 +23,7 @@ __pycache__/
 dependency-reduced-pom.xml
 pom.xml.releaseBackup
 release.properties
+**/effective-pom.xml
 
 # Gradle
 .gradle/
@@ -98,27 +99,12 @@ plan-*.prompt.md
 # Asciinema demo recordings (large binary)
 demo-spring-ai.cast
 
-# Demo project nested git repos and state (created by setup-all.sh)
-demo/dkom-presentation/legacy-demo/.git
-demo/dkom-presentation/vibe-demo/.git
-
 # Playwright MCP tooling
 .playwright-cli/
 .playwright-mcp/
 
 # Claude Code config
 .claude/
-
-# Demo rehearsal artifacts (local-only screenshots and HTML rehearsal pages)
-demo/dcom-presentation/rehearse*.png
-demo/dcom-presentation/rehearse.html
-demo/dcom-presentation/slide*.png
-demo/dcom-presentation/slides/dist/
-demo/dcom-presentation/slides/setup/
-demo/dcom-presentation/slides/slide*.png
-demo/dcom-presentation/slides/style.css
-demo/dcom-presentation/.baked-history/
-demo/dcom-presentation/.dashboard-stash/
 
 # Docusaurus
 website/.docusaurus/
