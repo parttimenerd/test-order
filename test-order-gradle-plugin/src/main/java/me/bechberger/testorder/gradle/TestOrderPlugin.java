@@ -817,10 +817,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             new me.bechberger.testorder.IndexCollectorServer(indexFilePath);
                     ((Test) t).systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
-                    if (COLLECTOR_REGISTRY.size() >= MAX_COLLECTOR_ENTRIES) {
-                        pruneCollectorRegistry();
-                    }
-                    COLLECTOR_REGISTRY.put(testTask.getPath(), new CollectorEntry(collector, compressionLevel));
+                    registerCollector(testTask.getPath(), new CollectorEntry(collector, compressionLevel));
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
                             collector.getPort());
                 } catch (java.io.IOException ex) {
@@ -1038,7 +1035,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             new me.bechberger.testorder.IndexCollectorServer(indexFilePath, mappingFile);
                     ((Test) t).systemProperty("testorder.collector.port",
                             String.valueOf(collector.getPort()));
-                    COLLECTOR_REGISTRY.put(testTask.getPath(), new CollectorEntry(collector, compressionLevel));
+                    registerCollector(testTask.getPath(), new CollectorEntry(collector, compressionLevel));
                     project.getLogger().lifecycle("[test-order] IndexCollectorServer started on port {}",
                             collector.getPort());
                 } catch (IOException ex) {
@@ -4009,7 +4006,9 @@ public class TestOrderPlugin implements Plugin<Project> {
         // include patterns. If any patterns are set, honour the user's filter and skip
         // test selection — applying test-order selection on top of an explicit --tests
         // filter would silently drop tests the user asked for.
-        return !task.getFilter().getIncludePatterns().isEmpty();
+        // Also check task.getIncludes(): build conventions often set include patterns via
+        // test.include("**/*Spec.class") which populates this set (not getFilter()).
+        return !task.getFilter().getIncludePatterns().isEmpty() || !task.getIncludes().isEmpty();
     }
 
     /**
@@ -4194,6 +4193,14 @@ public class TestOrderPlugin implements Plugin<Project> {
         for (String w : projWarnings) {
             project.getLogger().warn("[test-order] " + w);
         }
+    }
+
+    /** Atomically prune-if-needed then register a collector. */
+    private static synchronized void registerCollector(String taskPath, CollectorEntry entry) {
+        if (COLLECTOR_REGISTRY.size() >= MAX_COLLECTOR_ENTRIES) {
+            pruneCollectorRegistry();
+        }
+        COLLECTOR_REGISTRY.put(taskPath, entry);
     }
 
     private static void pruneCollectorRegistry() {

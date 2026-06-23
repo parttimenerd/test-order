@@ -500,7 +500,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	private static boolean addToSessionWarnedSet(java.util.Properties props, String message) {
-		String key = Integer.toHexString(message.hashCode());
+		String key = message;
 		String existing = props.getProperty(SESSION_WARNED_PROPERTIES_KEY, "");
 		if (existing.contains("|" + key + "|")) {
 			return false;
