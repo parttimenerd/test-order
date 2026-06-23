@@ -847,7 +847,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		return false;
 	}
 
-	/** Returns true when 'test-order:learn' is explicitly on the CLI or offline learn is active. */
+	/**
+	 * Returns true when 'test-order:learn' is explicitly on the CLI or offline
+	 * learn is active.
+	 */
 	private boolean isLearnCliGoal() {
 		return hasCliWorkflowGoal();
 	}

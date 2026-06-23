@@ -307,8 +307,8 @@ class MavenTestRunner implements TestRunner {
 
 	/**
 	 * Resolves the Maven executable, preferring MAVEN_HOME/M2_HOME over the bare
-	 * {@code mvn} on PATH. Falls back to {@code mvn} (or {@code mvn.cmd} on Windows)
-	 * if neither env var is set.
+	 * {@code mvn} on PATH. Falls back to {@code mvn} (or {@code mvn.cmd} on
+	 * Windows) if neither env var is set.
 	 */
 	static String findMavenExecutable() {
 		boolean isWindows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("win");

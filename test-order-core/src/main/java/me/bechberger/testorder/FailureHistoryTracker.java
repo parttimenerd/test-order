@@ -94,6 +94,10 @@ final class FailureHistoryTracker {
 			int hash = k.indexOf('#');
 			return hash >= 0 && classesToRemove.contains(k.substring(0, hash));
 		});
+		pendingMethodFailureScores.keySet().removeIf(k -> {
+			int hash = k.indexOf('#');
+			return hash >= 0 && classesToRemove.contains(k.substring(0, hash));
+		});
 	}
 
 	/** Returns true if the class is active, or its top-level enclosing class is. */

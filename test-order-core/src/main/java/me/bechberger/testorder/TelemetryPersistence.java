@@ -57,8 +57,10 @@ public final class TelemetryPersistence {
 			}
 			// Accumulate all per-method-invocation durations into a single per-run
 			// observation before applying the EMA, so one test run advances the EMA
-			// exactly once regardless of how many methods were timed. This prevents
-			// the EMA from being driven too low by repeated micro-observations.
+			// exactly once regardless of how many methods were timed.
+			// Use the SUM (not average) so the class duration reflects total wall-clock
+			// time consumed — averaging systematically underestimates slow classes with
+			// many parameterized invocations.
 			if (durations.size() == 1) {
 				state.recordDuration(entry.getKey(), durations.get(0));
 			} else {
@@ -66,7 +68,7 @@ public final class TelemetryPersistence {
 				for (Long d : durations) {
 					sum += d.doubleValue();
 				}
-				state.recordDuration(entry.getKey(), Math.round(sum / durations.size()));
+				state.recordDuration(entry.getKey(), Math.round(sum));
 			}
 		}
 		for (String failed : failedClassNames) {

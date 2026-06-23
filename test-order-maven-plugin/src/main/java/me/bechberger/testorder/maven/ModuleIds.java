@@ -13,7 +13,8 @@ public final class ModuleIds {
 		if (gid == null || gid.isEmpty()) {
 			return aid != null ? aid : "";
 		}
-		// Use ":" as separator — it is illegal in Maven groupId/artifactId and therefore
+		// Use ":" as separator — it is illegal in Maven groupId/artifactId and
+		// therefore
 		// unambiguous. A "-" separator collides when groupId ends with a segment that
 		// mirrors the start of artifactId (e.g. "g-a" + "b" == "g" + "a-b" == "g-a-b").
 		return gid + ":" + (aid != null ? aid : "");

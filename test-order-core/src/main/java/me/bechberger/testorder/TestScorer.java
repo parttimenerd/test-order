@@ -437,12 +437,15 @@ public class TestScorer {
 			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(testClassName) : null;
 			OverlapData overlap = resolveOverlap(testClassName, deps, memberDeps);
 			depOverlap = overlap.overlapClasses.size();
+			// Always capture weightedDepOverlap as ground truth for stored outcomes/replay.
+			// Without this, set-cover mode leaves it 0, corrupting optimizer replays that
+			// re-score using outcome.weightedDepOverlap().
+			weightedDepOverlap = overlap.weightedDepOverlap;
 
 			if (!setCoverBonuses.isEmpty()) {
 				int rawSetCover = setCoverBonuses.getOrDefault(testClassName, 0);
 				score += (int) Math.round(rawSetCover * killMultiplier);
 			} else {
-				weightedDepOverlap = overlap.weightedDepOverlap;
 				int rawDepOverlap = depOverlapScore(weightedDepOverlap, depTotal, weights.depOverlap());
 				score += (int) Math.round(rawDepOverlap * killMultiplier);
 			}
@@ -493,7 +496,7 @@ public class TestScorer {
 		boolean isFast = false;
 		boolean isSlow = false;
 		double sRatio = 0.0;
-		if (medianDuration > 0 && dur >= 0) {
+		if (medianDuration > 0 && dur > 0) {
 			sRatio = speedRatio(dur, medianDuration);
 			int speedScore = speedBucketScore(dur, medianDuration, weights.speed(), weights.speedPenalty());
 			score += speedScore;
@@ -609,7 +612,7 @@ public class TestScorer {
 		long dur = state.getDuration(testClassName, -1);
 		double sRatio = 0.0;
 		int speedPts = 0;
-		if (medianDuration > 0 && dur >= 0) {
+		if (medianDuration > 0 && dur > 0) {
 			sRatio = speedRatio(dur, medianDuration);
 			speedPts = speedBucketScore(dur, medianDuration, weights.speed(), weights.speedPenalty());
 			totalScore += speedPts;

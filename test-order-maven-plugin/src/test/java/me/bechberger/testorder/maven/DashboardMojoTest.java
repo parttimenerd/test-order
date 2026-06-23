@@ -201,7 +201,8 @@ class DashboardMojoTest {
 		writeMinimalIndex();
 
 		TestOrderState state = new TestOrderState();
-		// Use a run with a failure so APFD is well-defined (NaN is omitted for all-pass runs)
+		// Use a run with a failure so APFD is well-defined (NaN is omitted for all-pass
+		// runs)
 		state.addRunRecord(TestOrderState.buildRunRecord(List.of("com.example.MyTest"), Set.of("com.example.MyTest")));
 		state.save(tempDir.resolve(".test-order-state"));
 		mojo.overrideState = state;

@@ -192,8 +192,7 @@ final class ReactorContext {
 		return project;
 	}
 	String moduleId() {
-		String gid = project.getGroupId();
-		return (gid == null || gid.isEmpty()) ? project.getArtifactId() : gid + "-" + project.getArtifactId();
+		return ModuleIds.of(project);
 	}
 
 	/**

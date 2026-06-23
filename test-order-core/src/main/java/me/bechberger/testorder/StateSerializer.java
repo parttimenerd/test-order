@@ -9,6 +9,8 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 import me.bechberger.util.json.JSONParser;
@@ -17,6 +19,14 @@ import me.bechberger.util.json.PrettyPrinter;
 final class StateSerializer {
 
 	private static final Logger LOG = Logger.getLogger(StateSerializer.class.getName());
+
+	/**
+	 * Tracks canonical paths of state files that have already had a
+	 * corrupt/downgrade backup created in this JVM session. Prevents a backup storm
+	 * when many Surefire forks all encounter the same corrupt file and each try to
+	 * create their own copy.
+	 */
+	private static final Set<String> BACKUP_CREATED = ConcurrentHashMap.newKeySet();
 
 	private StateSerializer() {
 	}
@@ -33,13 +43,17 @@ final class StateSerializer {
 			}
 			Path tempFile = PersistenceSupport.temporarySibling(file);
 			try {
-				try (var writer = new java.io.OutputStreamWriter(LZ4Support.blockOutputStream(
-						Files.newOutputStream(tempFile), 1 << 16, LZ4Support.highCompressor(9)), StandardCharsets.UTF_8)) {
+				try (var writer = new java.io.OutputStreamWriter(LZ4Support
+						.blockOutputStream(Files.newOutputStream(tempFile), 1 << 16, LZ4Support.highCompressor(9)),
+						StandardCharsets.UTF_8)) {
 					writer.write(PrettyPrinter.compactPrint(state.toPersistedRoot(applyDecay)));
 				}
 				PersistenceSupport.moveIntoPlace(tempFile, file);
 			} catch (IOException | RuntimeException e) {
-				try { Files.deleteIfExists(tempFile); } catch (IOException ignored) {}
+				try {
+					Files.deleteIfExists(tempFile);
+				} catch (IOException ignored) {
+				}
 				throw e;
 			}
 			return null;
@@ -153,9 +167,22 @@ final class StateSerializer {
 
 	/**
 	 * Creates a timestamped backup of the state file so users can recover after a
-	 * plugin downgrade (R10-4) or corrupt file.
+	 * plugin downgrade (R10-4) or corrupt file. At most one backup per canonical
+	 * path per JVM session — prevents a backup storm when many Surefire forks all
+	 * encounter the same corrupt file.
 	 */
 	private static Path createTimestampedBackup(Path stateFile, String kind) throws IOException {
+		String canonical;
+		try {
+			canonical = stateFile.toRealPath().toString();
+		} catch (IOException e) {
+			canonical = stateFile.toAbsolutePath().normalize().toString();
+		}
+		String dedupKey = canonical + ":" + kind;
+		if (!BACKUP_CREATED.add(dedupKey)) {
+			// Another fork already created the backup for this file this session.
+			return stateFile.resolveSibling(stateFile.getFileName() + "." + kind + "-already-backed-up");
+		}
 		String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
 		String fileName = stateFile.getFileName().toString();
 		Path backup = stateFile.resolveSibling(fileName + "." + kind + "-" + timestamp);

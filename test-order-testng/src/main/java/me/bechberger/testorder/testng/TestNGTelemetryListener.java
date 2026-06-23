@@ -56,9 +56,9 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 	 */
 	private final Set<String> closedLearnClasses = ConcurrentHashMap.newKeySet();
 	/**
-	 * Methods for which callStartTestMethod was issued — used to guard the
-	 * matching callEndTestMethod call in onTestSkipped so we never emit an
-	 * unbalanced "end" for a method whose "start" was never sent.
+	 * Methods for which callStartTestMethod was issued — used to guard the matching
+	 * callEndTestMethod call in onTestSkipped so we never emit an unbalanced "end"
+	 * for a method whose "start" was never sent.
 	 */
 	private final Set<String> activeLearnMethods = ConcurrentHashMap.newKeySet();
 
@@ -110,7 +110,10 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 		Runtime.getRuntime().addShutdownHook(shutdownHook);
 	}
 
-	/** Maps top-level class name → first-seen raw class name (for learn-mode bridge calls). */
+	/**
+	 * Maps top-level class name → first-seen raw class name (for learn-mode bridge
+	 * calls).
+	 */
 	private final Map<String, String> topLevelToRawClassName = new ConcurrentHashMap<>();
 
 	@Override
@@ -165,7 +168,8 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 		String methodName = result.getMethod().getMethodName();
 		// Only end method tracking if we actually started it — onTestSkipped can fire
 		// without a prior onTestStart (e.g. @Test(dependsOnMethods=...) dependency
-		// failure), and an unbalanced callEndTestMethod corrupts agent boundary tracking.
+		// failure), and an unbalanced callEndTestMethod corrupts agent boundary
+		// tracking.
 		if (fullMethodMode && learnMode && bridge.isAvailable()) {
 			String methodKey = className + "#" + methodName;
 			if (activeLearnMethods.remove(methodKey)) {

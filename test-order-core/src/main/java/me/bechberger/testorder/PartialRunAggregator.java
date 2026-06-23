@@ -175,7 +175,10 @@ public final class PartialRunAggregator {
 		TestOrderState.RunRecord merged = new TestOrderState.RunRecord(timestamp, totalTests, totalFailures,
 				firstFailPos, apfd, allOutcomes);
 
-		// Apply to state under file lock
+		// Apply to state under file lock; delete part files OUTSIDE the lock so that
+		// a file-system error on delete doesn't prevent the merged record from being
+		// visible. If deletion fails the files will be re-processed on the next build
+		// (harmless — the RunRecord is idempotent via timestamp dedup in addRunRecord).
 		PersistenceSupport.withFileLock(stateFile, () -> {
 			TestOrderState state = TelemetryPersistence.loadStateOrEmpty(stateFile);
 			TelemetryPersistence.applyHistoryMaxRuns(state);
@@ -184,9 +187,9 @@ public final class PartialRunAggregator {
 				state.incrementRunsSinceLearn();
 			}
 			state.save(stateFile);
-			deletePartFiles(partFiles);
 			return state;
 		});
+		deletePartFiles(partFiles);
 
 		TestOrderLogger.info("[run-aggregator] Merged {} per-fork records into one RunRecord: {} tests, {} failures",
 				partials.size(), totalTests, totalFailures);
