@@ -301,7 +301,7 @@ class PrepareMojoTest {
 	}
 
 	@Test
-	void missingExtensionsTrueLogsError() throws Exception {
+	void missingExtensionsTrueLogsWarning() throws Exception {
 		// Plugin declared WITHOUT <extensions>true</extensions> and no session signal
 		when(project.getBuildPlugins()).thenReturn(List.of(testOrderPlugin(false)));
 
@@ -313,11 +313,11 @@ class PrepareMojoTest {
 		when(session.getUserProperties()).thenReturn(userProps);
 		inject(mojo, "session", session);
 
-		List<String> errors = new java.util.ArrayList<>();
+		List<String> warnings = new java.util.ArrayList<>();
 		mojo.setLog(new org.apache.maven.plugin.logging.SystemStreamLog() {
 			@Override
-			public void error(CharSequence msg) {
-				errors.add(msg.toString());
+			public void warn(CharSequence msg) {
+				warnings.add(msg.toString());
 			}
 		});
 
@@ -328,9 +328,9 @@ class PrepareMojoTest {
 		} catch (Exception ignored) {
 		}
 
-		assertFalse(errors.isEmpty(), "Expected an error about missing <extensions>true</extensions>");
-		assertTrue(errors.stream().anyMatch(e -> e.contains("CONFIGURATION ERROR") && e.contains("extensions")),
-				"Error should mention CONFIGURATION ERROR and extensions, got: " + errors);
+		assertFalse(warnings.isEmpty(), "Expected a warning about missing <extensions>true</extensions>");
+		assertTrue(warnings.stream().anyMatch(e -> e.contains("CONFIGURATION WARNING") && e.contains("extensions")),
+				"Warning should mention CONFIGURATION WARNING and extensions, got: " + warnings);
 	}
 
 	@Test
@@ -346,11 +346,11 @@ class PrepareMojoTest {
 		when(session.getUserProperties()).thenReturn(userProps);
 		inject(mojo, "session", session);
 
-		List<String> errors = new java.util.ArrayList<>();
+		List<String> warnings = new java.util.ArrayList<>();
 		mojo.setLog(new org.apache.maven.plugin.logging.SystemStreamLog() {
 			@Override
-			public void error(CharSequence msg) {
-				errors.add(msg.toString());
+			public void warn(CharSequence msg) {
+				warnings.add(msg.toString());
 			}
 		});
 
@@ -359,8 +359,8 @@ class PrepareMojoTest {
 		} catch (Exception ignored) {
 		}
 
-		assertTrue(errors.stream().noneMatch(e -> e.contains("CONFIGURATION ERROR") && e.contains("extensions")),
-				"No extensions warning expected when extension is active, got: " + errors);
+		assertTrue(warnings.stream().noneMatch(e -> e.contains("CONFIGURATION WARNING") && e.contains("extensions")),
+				"No extensions warning expected when extension is active, got: " + warnings);
 	}
 
 	@Test
@@ -375,11 +375,11 @@ class PrepareMojoTest {
 		when(session.getUserProperties()).thenReturn(userProps);
 		inject(mojo, "session", session);
 
-		List<String> errors = new java.util.ArrayList<>();
+		List<String> warnings = new java.util.ArrayList<>();
 		mojo.setLog(new org.apache.maven.plugin.logging.SystemStreamLog() {
 			@Override
-			public void error(CharSequence msg) {
-				errors.add(msg.toString());
+			public void warn(CharSequence msg) {
+				warnings.add(msg.toString());
 			}
 		});
 
@@ -388,8 +388,8 @@ class PrepareMojoTest {
 		} catch (Exception ignored) {
 		}
 
-		assertTrue(errors.stream().noneMatch(e -> e.contains("CONFIGURATION ERROR") && e.contains("extensions")),
-				"No extensions warning expected when <extensions>true</extensions> is present, got: " + errors);
+		assertTrue(warnings.stream().noneMatch(e -> e.contains("CONFIGURATION WARNING") && e.contains("extensions")),
+				"No extensions warning expected when <extensions>true</extensions> is present, got: " + warnings);
 	}
 
 	private static void inject(Object target, String fieldName, Object value) throws Exception {
