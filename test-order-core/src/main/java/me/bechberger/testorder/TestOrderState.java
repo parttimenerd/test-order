@@ -45,9 +45,11 @@ public class TestOrderState {
 	// ── H16: per-JVM load cache keyed by (absolutePath, mtime, size) ─────────
 	// Avoids re-parsing the state file for each CLI sub-command or repeated Maven
 	// module load within the same JVM. Invalidated whenever save() rewrites it.
-	// Callers that mutate the instance must call save() immediately after.
-	// WARNING: callers must not mutate cached instances — this cache holds live
-	// shared state
+	// INVARIANT: callers that mutate the loaded state MUST call save() before
+	// any concurrent load() can observe the mutation. The cache returns the same
+	// object reference; two concurrent writers on the same file path are
+	// serialized by withFileLock in save(), so the last writer wins and
+	// invalidates the cache key (mtime+size change), forcing a fresh load.
 	private record StateCacheKey(Path path, long mtime, long size) {
 	}
 	private static final ConcurrentHashMap<StateCacheKey, TestOrderState> STATE_LOAD_CACHE = new ConcurrentHashMap<>();
@@ -1162,8 +1164,11 @@ public class TestOrderState {
 			return cached;
 		}
 		TestOrderState result = StateSerializer.load(file);
-		STATE_LOAD_CACHE.put(key, result);
-		return result;
+		// putIfAbsent ensures all concurrent callers share the same instance.
+		// A racing caller that already parsed a fresh copy loses and its parse is
+		// discarded; this is safe because both parses are equivalent (same file).
+		TestOrderState winner = STATE_LOAD_CACHE.putIfAbsent(key, result);
+		return winner != null ? winner : result;
 	}
 
 	@SuppressWarnings("unchecked")

@@ -130,9 +130,6 @@ public final class PersistenceSupport {
 		if (JVM_LOCKS.size() > MAX_JVM_LOCKS) {
 			LOGGER.warning("[test-order] JVM_LOCKS has " + JVM_LOCKS.size()
 					+ " entries — possible leak in a long-running daemon process. Consider restarting.");
-			if (JVM_LOCKS.size() > MAX_JVM_LOCKS * 2) {
-				pruneLocks();
-			}
 		}
 		synchronized (jvmLock) {
 			Path parent = lockFile.getParent();
@@ -240,17 +237,4 @@ public final class PersistenceSupport {
 		}
 	}
 
-	/**
-	 * Prunes old lock entries to prevent unbounded growth. Keep recent ones only.
-	 */
-	private static void pruneLocks() {
-		if (JVM_LOCKS.size() <= MAX_JVM_LOCKS) {
-			return;
-		}
-		// Use removeIf on entrySet() — ConcurrentHashMap.entrySet().removeIf() is
-		// atomic per-entry and avoids the check-then-remove race of the snapshot
-		// approach. Remove entries whose path is not currently held by any thread.
-		java.util.Set<Path> held = HELD_LOCKS.get();
-		JVM_LOCKS.entrySet().removeIf(e -> JVM_LOCKS.size() > MAX_JVM_LOCKS && !held.contains(e.getKey()));
-	}
 }

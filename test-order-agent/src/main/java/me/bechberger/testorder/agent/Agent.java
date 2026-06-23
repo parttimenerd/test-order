@@ -7,6 +7,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.*;
 import java.util.jar.JarFile;
 
@@ -315,11 +317,27 @@ public class Agent {
 			byte[] jarContent = in.readAllBytes();
 
 			// Atomic write: write to temp file then rename to prevent parallel forks
-			// from reading a partially-written jar ("zip file is empty" errors)
-			Path tempFile = Files.createTempFile(cacheDir, "test-order-runtime-", ".tmp");
+			// from reading a partially-written jar ("zip file is empty" errors).
+			// Create with owner-only permissions so no other OS user can replace the
+			// file between our existence check and the JVM loading it.
+			Path tempFile;
+			try {
+				tempFile = Files.createTempFile(cacheDir, "test-order-runtime-", ".tmp",
+						PosixFilePermissions.asFileAttribute(
+								PosixFilePermissions.fromString("rw-------")));
+			} catch (UnsupportedOperationException ignored) {
+				// Non-POSIX filesystem (Windows) — fall back to default permissions
+				tempFile = Files.createTempFile(cacheDir, "test-order-runtime-", ".tmp");
+			}
 			try {
 				Files.write(tempFile, jarContent);
 				Files.move(tempFile, cachedJar, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+				// Best-effort: restrict permissions on the final cached file too
+				try {
+					Files.setPosixFilePermissions(cachedJar,
+							PosixFilePermissions.fromString("r--------"));
+				} catch (UnsupportedOperationException | IOException ignored) {
+				}
 			} catch (IOException e) {
 				// Another fork may have beaten us to it — that's fine
 				Files.deleteIfExists(tempFile);
