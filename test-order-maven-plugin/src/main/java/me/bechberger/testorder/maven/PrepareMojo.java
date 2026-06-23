@@ -1022,7 +1022,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				.anyMatch(p -> "test-order-maven-plugin".equals(p.getArtifactId())
 						&& "me.bechberger".equals(p.getGroupId()) && p.isExtensions());
 		if (!declared) {
-			String msg = "[test-order] CONFIGURATION ERROR: <extensions>true</extensions> is missing from the"
+			String msg = "[test-order] CONFIGURATION WARNING: <extensions>true</extensions> is missing from the"
 					+ " test-order-maven-plugin declaration in your pom.xml."
 					+ " Without it the lifecycle extension is not registered and learn mode cannot write the"
 					+ " dependency index — tests will always run in default order."
@@ -1034,10 +1034,10 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 				String key = "testorder.warnedMissingExtensions";
 				if (props.getProperty(key) == null) {
 					props.setProperty(key, "true");
-					getLog().error(msg);
+					getLog().warn(msg);
 				}
 			} else {
-				getLog().error(msg);
+				getLog().warn(msg);
 			}
 		}
 	}
