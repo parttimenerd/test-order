@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/parttimenerd/test-order/blob/main/docs/README.md
+    about: Read the docs first — Getting Started, Troubleshooting, and CLI Reference are all there.
+  - name: Diagnose your setup
+    url: https://github.com/parttimenerd/test-order/blob/main/docs/GETTING_STARTED.md#troubleshooting
+    about: Run "mvn test-order:diagnose" for an automated check of the most common problems.

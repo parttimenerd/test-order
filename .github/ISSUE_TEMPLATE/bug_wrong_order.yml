@@ -1,0 +1,82 @@
+name: "Bug: Tests not reordered / wrong order"
+description: Tests run in the wrong order or changed tests are not prioritized.
+labels: ["bug", "test-ordering"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, run `mvn test-order:diagnose` and paste the output below — it catches the most common root causes automatically.
+
+  - type: textarea
+    id: diagnose
+    attributes:
+      label: Diagnose output
+      description: Output of `mvn test-order:diagnose`
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened
+      description: Which tests did you expect to move, and what order did you actually see?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build-tool
+    attributes:
+      label: Build tool
+      options:
+        - Maven
+        - Gradle
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: "e.g. 0.5.0-SNAPSHOT"
+    validations:
+      required: true
+
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+      placeholder: "e.g. 17.0.11"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode in use
+      options:
+        - auto (test-order:auto)
+        - learn then order manually
+        - tiered
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: plugin-config
+    attributes:
+      label: Plugin configuration (pom.xml / build.gradle snippet)
+      render: xml
+
+  - type: textarea
+    id: learn-output
+    attributes:
+      label: Learn-mode output (mvn test-order:learn test)
+      description: Paste the relevant lines — especially "Wrote index" or any warnings.
+      render: text
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Multi-module project? CI environment? Specific test framework version?

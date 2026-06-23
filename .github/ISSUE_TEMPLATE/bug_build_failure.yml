@@ -1,0 +1,76 @@
+name: "Bug: Plugin causes build failure or exception"
+description: The test-order plugin throws an exception or breaks the Maven/Gradle build.
+labels: ["bug", "crash"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please include the full stack trace. Run with `-e` (Maven) or `--stacktrace` (Gradle) to get it.
+
+  - type: textarea
+    id: stack-trace
+    attributes:
+      label: Stack trace / error output
+      description: Full output of `mvn -e test` or `gradle --stacktrace test`
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What were you doing when it broke
+      description: Which goal/task, first occurrence or regression, reproducible every time?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build-tool
+    attributes:
+      label: Build tool
+      options:
+        - Maven
+        - Gradle
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: "e.g. 0.5.0"
+    validations:
+      required: true
+
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+      placeholder: "e.g. 21.0.3"
+    validations:
+      required: true
+
+  - type: textarea
+    id: plugin-config
+    attributes:
+      label: Plugin configuration (pom.xml / build.gradle snippet)
+      render: xml
+    validations:
+      required: true
+
+  - type: dropdown
+    id: project-type
+    attributes:
+      label: Project layout
+      options:
+        - Single module
+        - Multi-module
+        - Multi-module with aggregator (no tests in root)
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Reproducible in a fresh checkout? Started after a version upgrade?

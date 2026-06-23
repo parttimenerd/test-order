@@ -1,0 +1,67 @@
+name: "Bug: Flaky detection / quarantine / cache not working"
+description: Flaky retries, quarantine, or the skip-if-unchanged cache behave unexpectedly.
+labels: ["bug", "flaky-cache"]
+body:
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Which feature is affected?
+      options:
+        - Flaky retries (testorder.flaky.retries)
+        - Quarantine (testorder.flaky.quarantine)
+        - Skip-if-unchanged cache (testorder.cache.enabled)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened vs. what you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant system properties / plugin config
+      description: Which testorder.* properties are set and how?
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: "e.g. 0.5.0"
+    validations:
+      required: true
+
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+      placeholder: "e.g. 17.0.11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: state-dir
+    attributes:
+      label: Contents of .test-order/ directory (if available)
+      description: |
+        Run `ls -la .test-order/` and paste the output. The files there tell us what the plugin recorded.
+      render: text
+
+  - type: textarea
+    id: ci-summary
+    attributes:
+      label: CI summary or log excerpt
+      description: The "[test-order]" lines printed at the end of the test run are especially useful.
+      render: text
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
