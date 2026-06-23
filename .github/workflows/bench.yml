@@ -2,7 +2,7 @@ name: Performance Bench
 
 on:
   schedule:
-    - cron: '23 5 * * *'   # daily 05:23 UTC
+    - cron: '23 5 1 * *'   # monthly, 1st of the month, 05:23 UTC
   workflow_dispatch:
 
 concurrency:
