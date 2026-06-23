@@ -2,6 +2,8 @@
 
 > **Just want to build and try the development version?** See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for a quickstart.
 
+By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md). To report a security vulnerability, please follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
+
 ## Requirements
 
 - Java 17 or higher

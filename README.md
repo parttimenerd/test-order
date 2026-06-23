@@ -802,11 +802,11 @@ This installs the SNAPSHOT to your local Maven repository. Full build instructio
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for PR guidelines, code style, and release process. For building from source, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for PR guidelines, code style, and release process. For building from source, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). All contributors are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Support & Feedback
 
-Bug reports, feature requests, and contributions are welcome via [GitHub issues](https://github.com/parttimenerd/test-order/issues).
+Bug reports and feature requests: please use [GitHub issues](https://github.com/parttimenerd/test-order/issues). For security vulnerabilities, follow [SECURITY.md](SECURITY.md) — please do not open a public issue.
 
 ## License
 
