@@ -1692,14 +1692,12 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		try {
 			Files.createDirectories(runtimeDir);
-			Path propsFile = runtimeDir.resolve("junit-platform.properties");
-			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
-				pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.junit.PriorityClassOrderer");
-				if (methodOrderingEnabled) {
-					pw.println(
-							"junit.jupiter.testmethod.order.default=me.bechberger.testorder.junit.PriorityMethodOrderer");
-				}
-			}
+			// Write test-order's JUnit Platform properties by merging into
+			// target/test-classes/junit-platform.properties so that JUnit finds a single
+			// file. Writing to a separate runtimeDir/ file is unreliable: JUnit only reads
+			// the first junit-platform.properties on the classpath, and target/test-classes
+			// is always earlier than runtimeDir.
+			mergeJunitPlatformProperties(runtimeDir);
 
 			Path configFile = runtimeDir.resolve("testorder-config.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
@@ -1781,14 +1779,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 
 		try {
 			Files.createDirectories(runtimeDir);
-			Path propsFile = runtimeDir.resolve("junit-platform.properties");
-			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(propsFile))) {
-				pw.println("junit.jupiter.testclass.order.default=me.bechberger.testorder.junit.PriorityClassOrderer");
-				if ("true".equals(configMap.get(me.bechberger.testorder.TestOrderConfig.METHOD_ORDER_ENABLED))) {
-					pw.println(
-							"junit.jupiter.testmethod.order.default=me.bechberger.testorder.junit.PriorityMethodOrderer");
-				}
-			}
+			mergeJunitPlatformProperties(runtimeDir);
 			Path configFile = runtimeDir.resolve("testorder-config.properties");
 			try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(configFile))) {
 				for (var entry : configMap.entrySet()) {
@@ -2920,20 +2911,38 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (testClassesDir == null || testClassesDir.isBlank())
 			return;
 		Path testClasses = Path.of(testClassesDir);
-		for (String name : new String[]{"testorder-config.properties", "junit-platform.properties"}) {
-			Path stale = testClasses.resolve(name);
-			if (!Files.exists(stale))
-				continue;
+		// testorder-config.properties is always test-order-generated — safe to delete
+		Path staleConfig = testClasses.resolve("testorder-config.properties");
+		if (Files.exists(staleConfig)) {
 			try {
-				String contents = Files.readString(stale);
-				// Only delete if this looks like a test-order-generated file
-				if (contents.contains("testorder.index.path") || contents.contains("testorder.state.path")
-						|| contents.contains("PriorityClassOrderer")) {
-					Files.delete(stale);
-					getLog().debug("[test-order] Removed stale config from test-classes: " + stale);
+				Files.delete(staleConfig);
+				getLog().debug("[test-order] Removed stale config from test-classes: " + staleConfig);
+			} catch (IOException e) {
+				getLog().warn("[test-order] Could not remove stale config " + staleConfig + ": " + e.getMessage());
+			}
+		}
+		// junit-platform.properties may also contain user content — strip only
+		// test-order lines rather than deleting the whole file
+		Path propsFile = testClasses.resolve("junit-platform.properties");
+		if (Files.exists(propsFile)) {
+			try {
+				List<String> lines = Files.readAllLines(propsFile, java.nio.charset.StandardCharsets.UTF_8);
+				List<String> stripped = lines.stream()
+						.filter(l -> !l.startsWith("junit.jupiter.testclass.order.default=me.bechberger.testorder")
+								&& !l.startsWith("junit.jupiter.testmethod.order.default=me.bechberger.testorder"))
+						.toList();
+				if (stripped.size() < lines.size()) {
+					if (stripped.isEmpty() || stripped.stream().allMatch(String::isBlank)) {
+						Files.delete(propsFile);
+					} else {
+						Files.writeString(propsFile,
+								String.join(System.lineSeparator(), stripped) + System.lineSeparator(),
+								java.nio.charset.StandardCharsets.UTF_8);
+					}
+					getLog().debug("[test-order] Stripped stale orderer config from: " + propsFile);
 				}
 			} catch (IOException e) {
-				getLog().warn("[test-order] Could not remove stale config " + stale + ": " + e.getMessage());
+				getLog().warn("[test-order] Could not clean up " + propsFile + ": " + e.getMessage());
 			}
 		}
 	}
@@ -2944,6 +2953,59 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			return project.getBasedir().toPath().resolve("target").resolve("test-order-runtime");
 		}
 		return Path.of(buildDir).resolve("test-order-runtime");
+	}
+
+	/**
+	 * Merges test-order's {@code junit-platform.properties} entries into
+	 * {@code target/test-classes/junit-platform.properties}. This ensures JUnit
+	 * always finds a single file regardless of classpath ordering, rather than
+	 * silently ignoring test-order's orderer when the project has its own file.
+	 *
+	 * <p>
+	 * Lines are only appended if they are not already present. The runtimeDir file
+	 * is also written for backward-compatibility with any direct classpath
+	 * injection that depends on it.
+	 */
+	protected void mergeJunitPlatformProperties(Path runtimeDir) throws IOException {
+		List<String> toAdd = new java.util.ArrayList<>();
+		toAdd.add("junit.jupiter.testclass.order.default=me.bechberger.testorder.junit.PriorityClassOrderer");
+		if (methodOrderingEnabled) {
+			toAdd.add("junit.jupiter.testmethod.order.default=me.bechberger.testorder.junit.PriorityMethodOrderer");
+		}
+
+		// Also write to runtimeDir for backward compatibility (agents/tools that scan it)
+		Path runtimeProps = runtimeDir.resolve("junit-platform.properties");
+		try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(runtimeProps, java.nio.charset.StandardCharsets.UTF_8))) {
+			for (String line : toAdd) {
+				pw.println(line);
+			}
+		}
+
+		// Merge into target/test-classes/junit-platform.properties
+		String testOutputDir = project.getBuild().getTestOutputDirectory();
+		if (testOutputDir == null || testOutputDir.isBlank())
+			return;
+		Path testClasses = Path.of(testOutputDir);
+		if (!Files.isDirectory(testClasses))
+			return;
+		Path propsFile = testClasses.resolve("junit-platform.properties");
+		List<String> existing = Files.exists(propsFile)
+				? Files.readAllLines(propsFile, java.nio.charset.StandardCharsets.UTF_8)
+				: new java.util.ArrayList<>();
+		boolean changed = false;
+		for (String line : toAdd) {
+			String key = line.split("=")[0];
+			boolean alreadyPresent = existing.stream().anyMatch(l -> l.startsWith(key));
+			if (!alreadyPresent) {
+				existing.add(line);
+				changed = true;
+			}
+		}
+		if (changed) {
+			Files.createDirectories(propsFile.getParent());
+			Files.writeString(propsFile, String.join(System.lineSeparator(), existing) + System.lineSeparator(),
+					java.nio.charset.StandardCharsets.UTF_8);
+		}
 	}
 
 	/**
