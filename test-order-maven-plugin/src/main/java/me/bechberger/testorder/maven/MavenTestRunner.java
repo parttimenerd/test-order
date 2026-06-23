@@ -67,7 +67,7 @@ class MavenTestRunner implements TestRunner {
 		log.info("[test-order] Running learn phase with instrumentation mode: " + instrumentationMode);
 
 		List<String> command = new ArrayList<>(
-				List.of(findMavenExecutable(), "me.bechberger:test-order-maven-plugin:learn", "test",
+				List.of(findMavenExecutableForProject(), "me.bechberger:test-order-maven-plugin:learn", "test",
 						"-Dtestorder.instrumentation.mode=" + instrumentationMode, "-Dspotless.check.skip=true",
 						"--batch-mode"));
 		if (targetIndexFile != null) {
@@ -141,8 +141,9 @@ class MavenTestRunner implements TestRunner {
 			// plugins (JaCoCo etc.) can set @{argLine} before Surefire runs.
 			// Pass the order file path as a Surefire system property (not via argLine)
 			// so we don't overwrite the @{argLine} value set by JaCoCo etc.
-			List<String> command = new ArrayList<>(List.of(findMavenExecutable(), "initialize", "surefire:test",
-					"-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
+			List<String> command = new ArrayList<>(List.of(findMavenExecutableForProject(), "initialize",
+					"surefire:test", "-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false",
+					"-Dspotless.check.skip=true",
 					// Pass the order file as a forked-JVM system property (not via argLine,
 					// which would lose JaCoCo's --add-opens flags)
 					"-Dtestorder.fixed.order.file=" + orderFile.toAbsolutePath(),
@@ -214,9 +215,9 @@ class MavenTestRunner implements TestRunner {
 			// plugins (JaCoCo etc.) can set @{argLine} before Surefire runs.
 			// Pass the method order file as a user property (forwarded to forked JVM)
 			// instead of via -DargLine to preserve @{argLine} (JaCoCo --add-opens etc.)
-			List<String> command = new ArrayList<>(List.of(findMavenExecutable(), "initialize", "surefire:test",
-					"-Dtest=" + testClass, "-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false",
-					"-Dspotless.check.skip=true",
+			List<String> command = new ArrayList<>(List.of(findMavenExecutableForProject(), "initialize",
+					"surefire:test", "-Dtest=" + testClass, "-DfailIfNoTests=false",
+					"-Dsurefire.failIfNoSpecifiedTests=false", "-Dspotless.check.skip=true",
 					"-Dtestorder.fixed.method.order.file=" + methodOrderFile.toAbsolutePath(),
 					"-Dmaven.test.additionalClasspath=" + buildAdditionalClasspath(), "--batch-mode", "--quiet"));
 			command.addAll(PLUGIN_SKIP_FLAGS);
@@ -303,6 +304,28 @@ class MavenTestRunner implements TestRunner {
 			sb.append(',').append(extra);
 		}
 		return sb.toString();
+	}
+
+	/**
+	 * Resolves the Maven executable. Lookup order:
+	 * <ol>
+	 * <li>{@code MAVEN_HOME/bin/mvn[.cmd]} — explicit installation</li>
+	 * <li>{@code ./mvnw[.cmd]} in the working directory — Maven Wrapper (common in
+	 * CI environments that ship only the wrapper)</li>
+	 * <li>{@code mvn[.cmd]} on PATH — bare fallback</li>
+	 * </ol>
+	 */
+	private String findMavenExecutableForProject() {
+		String exe = findMavenExecutable();
+		if (!exe.startsWith("mvn"))
+			return exe; // MAVEN_HOME found
+		// Check for mvnw in the project working directory
+		boolean isWindows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("win");
+		String wrapperName = isWindows ? "mvnw.cmd" : "mvnw";
+		Path wrapper = resolveWorkDir().toPath().resolve(wrapperName);
+		if (wrapper.toFile().canExecute())
+			return wrapper.toAbsolutePath().toString();
+		return exe;
 	}
 
 	/**

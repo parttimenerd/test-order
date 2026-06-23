@@ -924,6 +924,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		// Validate index file parent
 		Path idxParent = ctx.resolveIndexFile(indexFile).getParent();
 		validateDirectoryWritable(idxParent, "indexFile parent");
+		// Validate state file parent (only meaningful when a non-default path is set,
+		// since the default resolves inside baseDir which is already checked above).
+		Path stateParent = ctx.resolveStateFile(stateFile).getParent();
+		validateDirectoryWritable(stateParent, "stateFile parent");
 	}
 
 	private void validateDirectoryWritable(Path dir, String label) throws MojoExecutionException {

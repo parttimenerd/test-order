@@ -170,12 +170,29 @@ public class GitHubActionsDownloader implements DepDownloader {
 			}
 
 			long contentLength = response.body().contentLength();
+			// contentLength is -1 when HTTP/2 or when the server omits Content-Length.
+			// Guard against both: explicit size check when known, streaming byte-count
+			// otherwise so an arbitrarily large body cannot OOM the build JVM.
 			if (contentLength > MAX_JSON_BYTES) {
 				throw new DepDownloadException("GitHub API response too large: " + contentLength + " bytes exceeds "
 						+ MAX_JSON_BYTES + " limit");
 			}
 
-			String body = response.body().string();
+			byte[] bodyBytes;
+			try (InputStream is = response.body().byteStream()) {
+				ByteArrayOutputStream buf = new ByteArrayOutputStream(8192);
+				byte[] chunk = new byte[8192];
+				int n;
+				while ((n = is.read(chunk)) >= 0) {
+					if (buf.size() + n > MAX_JSON_BYTES) {
+						throw new DepDownloadException(
+								"GitHub API response exceeded " + MAX_JSON_BYTES + " byte limit during streaming");
+					}
+					buf.write(chunk, 0, n);
+				}
+				bodyBytes = buf.toByteArray();
+			}
+			String body = new String(bodyBytes, StandardCharsets.UTF_8);
 			Object parsed = JSONParser.parse(body);
 			if (!(parsed instanceof Map)) {
 				throw new DepDownloadException("GitHub API returned unexpected JSON structure (expected object)");
