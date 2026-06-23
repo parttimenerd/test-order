@@ -65,16 +65,22 @@ public final class TestOrderConfigResolver {
 	}
 
 	/**
-	 * Index from weight name → WeightDef, built once from
-	 * TestOrderState.WEIGHT_DEFS.
+	 * Lazy holder so that {@link TestOrderState} is not loaded during
+	 * {@code TestOrderConfigResolver} class initialisation. In the surefire forked
+	 * JVM the unshaded jar may be on the classpath and {@link TestOrderState}'s
+	 * static initialiser needs {@code nightconfig} classes that are only present in
+	 * the shaded jar — loading it eagerly would cause a
+	 * {@link NoClassDefFoundError}.
 	 */
-	private static final Map<String, TestOrderState.WeightDef> WEIGHT_DEF_BY_NAME;
+	private static final class WeightDefIndex {
+		static final Map<String, TestOrderState.WeightDef> MAP;
 
-	static {
-		Map<String, TestOrderState.WeightDef> m = new java.util.LinkedHashMap<>();
-		for (TestOrderState.WeightDef d : TestOrderState.WEIGHT_DEFS)
-			m.put(d.name(), d);
-		WEIGHT_DEF_BY_NAME = Map.copyOf(m);
+		static {
+			Map<String, TestOrderState.WeightDef> m = new java.util.LinkedHashMap<>();
+			for (TestOrderState.WeightDef d : TestOrderState.WEIGHT_DEFS)
+				m.put(d.name(), d);
+			MAP = Map.copyOf(m);
+		}
 	}
 
 	/**
@@ -87,7 +93,7 @@ public final class TestOrderConfigResolver {
 	private int getWeightInt(String key, int defaultValue) {
 		int raw = getConfigInt(key, defaultValue);
 		String name = key.substring(key.lastIndexOf('.') + 1);
-		TestOrderState.WeightDef def = WEIGHT_DEF_BY_NAME.get(name);
+		TestOrderState.WeightDef def = WeightDefIndex.MAP.get(name);
 		if (def == null)
 			return raw;
 		int clamped = Math.max(def.min(), Math.min(def.max(), raw));

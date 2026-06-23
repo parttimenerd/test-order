@@ -1,7 +1,6 @@
 package me.bechberger.testorder.maven;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.apache.maven.plugin.MojoExecutionException;
@@ -32,10 +31,11 @@ public class DumpMojo extends AbstractTestOrderMojo {
 		// module's collector would otherwise only drain at session end, AFTER this
 		// aggregator goal runs at verify phase.
 		drainAllActiveCollectors();
-		if (!Files.exists(idxPath)) {
-			throw new MojoExecutionException(
-					"Dependency index not found: " + idxPath + "\nRun: mvn test -Dtestorder.mode=learn");
-		}
+		// In offline learn mode the instrumented classes write .deps files instead of
+		// sending data via the socket collector. autoAggregateOrFail aggregates those
+		// files into the index (or finds a parent/child index) — matching the same
+		// fallback logic used by show, affected, explain, and other read-only goals.
+		autoAggregateOrFail(idxPath);
 
 		try {
 			if (outputFile != null && !outputFile.isBlank()) {
