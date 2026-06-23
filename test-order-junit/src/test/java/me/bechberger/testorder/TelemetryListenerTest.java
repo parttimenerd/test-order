@@ -223,9 +223,11 @@ class TelemetryListenerTest {
 
 		TestOrderState state = TestOrderState.load(stateFile);
 		long duration = state.getDuration("com.example.RepeatedDurationTest", -1);
-		assertTrue(duration >= 150 && duration <= 320,
-				"Duration should reflect a single run, not cumulative timing across repeated executions. Got: "
-						+ duration + " ms");
+		// With alpha=1.0 and two 220ms method invocations in one run, the aggregated
+		// class duration should be the SUM (~440ms) — not the average and not
+		// a value from a prior run.
+		assertTrue(duration >= 300 && duration <= 600,
+				"Duration should be the sum of both method invocations (~440ms). Got: " + duration + " ms");
 	}
 
 	@Test

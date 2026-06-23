@@ -528,6 +528,11 @@ public class TelemetryListener implements TestExecutionListener {
 			executionOrder.clear();
 		}
 		executionOrderSet.clear();
+		// Set finishedNormally=true BEFORE removeShutdownHook so that if
+		// removeShutdownHook throws IllegalStateException (JVM already shutting
+		// down, hook already executing), the hook will see the flag and return
+		// early rather than re-applying telemetry that was already saved above.
+		finishedNormally = true;
 		if (shutdownHook != null) {
 			try {
 				Runtime.getRuntime().removeShutdownHook(shutdownHook);
@@ -537,10 +542,6 @@ public class TelemetryListener implements TestExecutionListener {
 		// Persist any retry/quarantine activity recorded by FlakyRetryExtension
 		// so the Maven/Gradle plugin can surface it in the CI summary and dashboard.
 		persistFlakyRuntimeReport(effectiveStatePath);
-		// Set finishedNormally=true AFTER all IO and map clearing is done.
-		// The shutdown hook reads this flag and returns early, so setting it last
-		// ensures it cannot observe an empty/partially-cleared snapshot.
-		finishedNormally = true;
 
 		// Offline mode: restore original (uninstrumented) class files from backup
 		// so that subsequent builds/tools don't encounter instrumented bytecode.

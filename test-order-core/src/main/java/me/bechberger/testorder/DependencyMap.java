@@ -1685,6 +1685,10 @@ public class DependencyMap {
 			if (testNames == null) {
 				throw new IOException("Missing required TEST_CLASSES section in " + indexFile);
 			}
+			if (!depGroupsSeen && testNames.length > 0) {
+				throw new IOException(
+						"Missing required DEP_GROUPS section in " + indexFile + " — index may be truncated or corrupt");
+			}
 
 			return map;
 		}
