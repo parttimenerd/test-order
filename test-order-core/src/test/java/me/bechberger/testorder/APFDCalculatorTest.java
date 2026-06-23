@@ -26,13 +26,13 @@ class APFDCalculatorTest {
 	// ── computeAPFD ───────────────────────────────────────────────────────────
 
 	@Test
-	void apfd_emptyList_returns1() {
+	void apfd_emptyList_returnsNaN() {
 		// No tests, no failures — APFD is undefined (NaN), not 1.0.
 		assertTrue(Double.isNaN(APFDCalculator.computeAPFD(List.of())));
 	}
 
 	@Test
-	void apfd_noFailures_returns1() {
+	void apfd_noFailures_returnsNaN() {
 		// No faults — APFD is undefined (NaN): there is nothing to detect.
 		List<TestOrderState.TestOutcome> outcomes = List.of(pass("A"), pass("B"), pass("C"));
 		assertTrue(Double.isNaN(APFDCalculator.computeAPFD(outcomes)));
