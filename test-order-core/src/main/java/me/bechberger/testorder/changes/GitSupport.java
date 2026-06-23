@@ -3,6 +3,7 @@ package me.bechberger.testorder.changes;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,7 +45,7 @@ final class GitSupport {
 		// lock).
 		List<String> lines = new CopyOnWriteArrayList<>();
 		Thread drainer = new Thread(() -> {
-			try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+			try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
 				String line;
 				while ((line = reader.readLine()) != null) {
 					String trimmed = line.stripTrailing();

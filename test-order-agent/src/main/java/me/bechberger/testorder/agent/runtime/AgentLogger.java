@@ -1,7 +1,9 @@
 package me.bechberger.testorder.agent.runtime;
 
-import java.io.FileWriter;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.function.Consumer;
 
 /**
@@ -27,7 +29,7 @@ public class AgentLogger {
 	public static synchronized void setVerboseFile(String path) {
 		closeWriter();
 		try {
-			writer = new PrintWriter(new FileWriter(path, true), true);
+			writer = new PrintWriter(new OutputStreamWriter(Files.newOutputStream(java.nio.file.Path.of(path), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND), StandardCharsets.UTF_8), true);
 			enabled = true;
 			writer.println("[test-order] Verbose logging enabled → " + path);
 		} catch (Exception e) {

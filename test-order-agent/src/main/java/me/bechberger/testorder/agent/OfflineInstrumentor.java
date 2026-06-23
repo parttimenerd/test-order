@@ -50,7 +50,7 @@ public class OfflineInstrumentor {
 	private final AtomicInteger maxMemberId = new AtomicInteger();
 	private Path backupDir;
 	private Path classesDir;
-	private boolean ignoreMarker;
+	private volatile boolean ignoreMarker;
 
 	/**
 	 * Create an offline instrumentor.

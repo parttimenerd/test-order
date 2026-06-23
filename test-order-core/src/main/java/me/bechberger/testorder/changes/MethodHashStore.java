@@ -208,7 +208,7 @@ public class MethodHashStore {
 		}
 		Path tempFile = PersistenceSupport.temporarySibling(hashFile);
 		try (LZ4FrameOutputStream lz4os = LZ4Support.frameOutputStreamHC(Files.newOutputStream(tempFile));
-				PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os))) {
+				PrintWriter pw = new PrintWriter(new OutputStreamWriter(lz4os, StandardCharsets.UTF_8))) {
 			// Write file fingerprints first (prefixed with #FILE:)
 			for (var entry : fileFingerprints.entrySet()) {
 				pw.print("#FILE:");
@@ -231,7 +231,7 @@ public class MethodHashStore {
 		Map<String, String> fingerprints = new TreeMap<>();
 		Path loadPath = PersistenceSupport.resolveLoadPath(hashFile);
 		try (LZ4FrameInputStream lz4is = LZ4Support.frameInputStream(Files.newInputStream(loadPath));
-				BufferedReader br = new BufferedReader(new InputStreamReader(lz4is))) {
+				BufferedReader br = new BufferedReader(new InputStreamReader(lz4is, StandardCharsets.UTF_8))) {
 			String line;
 			while ((line = br.readLine()) != null) {
 				if (line.startsWith("#FILE:")) {

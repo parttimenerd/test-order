@@ -97,12 +97,11 @@ public class ChangeComplexity {
 				}
 			}
 			if (maxMembers > 0) {
-				for (String fqcn : result.keySet()) {
-					Set<String> members = changedMembers.membersByClass().get(fqcn);
+				for (var entry : result.entrySet()) {
+					Set<String> members = changedMembers.membersByClass().get(entry.getKey());
 					double memberRatio = (members != null) ? (double) members.size() / maxMembers : 0.0;
 					// Blend: 50% file complexity + 50% member change breadth
-					double fileScore = result.get(fqcn);
-					result.put(fqcn, (fileScore + memberRatio) / 2.0);
+					entry.setValue((entry.getValue() + memberRatio) / 2.0);
 				}
 			}
 		}

@@ -38,8 +38,8 @@ import me.bechberger.testorder.UsageStoreReflectionBridge;
  */
 public class TestNGTelemetryListener implements ITestListener, IClassListener {
 
-	private boolean learnMode;
-	private boolean fullMethodMode;
+	private volatile boolean learnMode;
+	private volatile boolean fullMethodMode;
 	private UsageStoreReflectionBridge bridge;
 
 	private String statePath;

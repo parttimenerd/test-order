@@ -1398,6 +1398,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					getLog().info("[test-order] No root index found — aggregated " + childrenWithIndex.size()
 							+ " child module index(es) (" + depCount + " test classes): "
 							+ String.join(", ", mergedNames));
+					if (merged == null) {
+						getLog().warn("[test-order] No child indexes could be loaded — skipping aggregation");
+						return;
+					}
 					Files.createDirectories(idxPath.getParent());
 					merged.save(idxPath);
 					return;

@@ -79,7 +79,11 @@ public final class PropertySuggestion {
 			// flaky-test auto-retry / quarantine (FlakyRetryExtension)
 			"testorder.flaky.retries", "testorder.flaky.report.path", "testorder.flaky.quarantine",
 			// skip-if-unchanged cache (TestSelector)
-			"testorder.cache.skipUnchanged", "testorder.cache.minPassStreak", "testorder.cache.maxSkipFraction");
+			"testorder.cache.skipUnchanged", "testorder.cache.minPassStreak", "testorder.cache.maxSkipFraction",
+			// multi-module lifecycle control
+			"testorder.skipInactiveModules",
+			// selective learn (agent-side properties)
+			"testorder.learn.selective", "testorder.learn.uncertainClassesFile");
 
 	/**
 	 * Find the closest known key to the given unknown key using case-insensitive

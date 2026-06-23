@@ -45,10 +45,10 @@ import me.bechberger.testorder.UsageStoreReflectionBridge;
  */
 public class TelemetryListener implements TestExecutionListener {
 
-	private boolean learnMode;
-	private boolean fullMethodMode;
-	private boolean dryRunMode;
-	private boolean debugMode;
+	private volatile boolean learnMode;
+	private volatile boolean fullMethodMode;
+	private volatile boolean dryRunMode;
+	private volatile boolean debugMode;
 	private UsageStoreReflectionBridge bridge;
 
 	// state tracking (active when state path is set)
@@ -437,7 +437,7 @@ public class TelemetryListener implements TestExecutionListener {
 					TestOrderState.RunRecord record;
 					synchronized (executionOrder) {
 						record = TestOrderState.buildRunRecord(executionOrder, failedClassNames,
-								FlakyRetryExtension.quarantined());
+								safeGetQuarantined());
 					}
 					try {
 						PartialRunAggregator.writePartial(Path.of(pendingRunsDir), buildId, record, isLearnRun);
@@ -468,7 +468,7 @@ public class TelemetryListener implements TestExecutionListener {
 						synchronized (executionOrder) {
 							if (!executionOrder.isEmpty()) {
 								TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder,
-										failedClassNames, FlakyRetryExtension.quarantined());
+										failedClassNames, safeGetQuarantined());
 								lockedState.addRunRecord(record);
 								if (!isLearnRun) {
 									lockedState.incrementRunsSinceLearn();
@@ -803,5 +803,18 @@ public class TelemetryListener implements TestExecutionListener {
 			timeStr = String.format(java.util.Locale.US, "%dm %ds", savedMs / 60_000, (savedMs % 60_000) / 1000);
 		}
 		return "~" + timeStr + " faster than default order";
+	}
+
+	/**
+	 * Returns the set of quarantined class names from {@link FlakyRetryExtension},
+	 * guarding against {@link NoClassDefFoundError} in JUnit 4 / Vintage-only
+	 * projects where {@code junit-jupiter-api} is absent from the classpath.
+	 */
+	private static java.util.Set<String> safeGetQuarantined() {
+		try {
+			return FlakyRetryExtension.quarantined();
+		} catch (NoClassDefFoundError ignored) {
+			return java.util.Set.of();
+		}
 	}
 }
