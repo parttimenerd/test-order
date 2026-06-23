@@ -131,18 +131,19 @@ public final class PersistenceSupport {
 			LOGGER.warning("[test-order] JVM_LOCKS has " + JVM_LOCKS.size()
 					+ " entries — possible leak in a long-running daemon process. Consider restarting.");
 		}
-		synchronized (jvmLock) {
-			Path parent = lockFile.getParent();
-			if (parent != null) {
-				Files.createDirectories(parent);
-			}
-			// Retry on OverlappingFileLockException: another thread/fork in the same
-			// JVM is mid-lock on this file. Synchronized(jvmLock) serializes our own
-			// threads, but mvnd's parallel reactor + surefire's class-loader sharing
-			// can leave a stray channel lock visible to the JDK across module builds.
-			IOException lastIo = null;
-			java.nio.channels.OverlappingFileLockException lastOverlap = null;
-			for (int attempt = 0; attempt < 50; attempt++) {
+		// Retry loop is outside the synchronized block so Thread.sleep() does not hold
+		// the JVM monitor (SWL_SLEEP_WITH_LOCK_HELD). The synchronized block is acquired
+		// fresh on each attempt: serializes per-path access while allowing unrelated
+		// paths to proceed during the inter-attempt sleep.
+		IOException lastIo = null;
+		java.nio.channels.OverlappingFileLockException lastOverlap = null;
+		for (int attempt = 0; attempt < 50; attempt++) {
+			boolean overlapping = false;
+			synchronized (jvmLock) {
+				Path parent = lockFile.getParent();
+				if (parent != null) {
+					Files.createDirectories(parent);
+				}
 				try (FileChannel channel = FileChannel.open(lockFile, StandardOpenOption.CREATE,
 						StandardOpenOption.WRITE); FileLock ignored = channel.lock()) {
 					setOwnerOnlyPermissions(lockFile);
@@ -154,24 +155,26 @@ public final class PersistenceSupport {
 					}
 				} catch (java.nio.channels.OverlappingFileLockException ofle) {
 					lastOverlap = ofle;
-					try {
-						Thread.sleep(20L + attempt * 10L);
-					} catch (InterruptedException ie) {
-						Thread.currentThread().interrupt();
-						throw new IOException("Interrupted while waiting for lock on " + lockFile, ie);
-					}
+					overlapping = true;
 				} catch (IOException io) {
 					lastIo = io;
-					break;
 				}
 			}
 			if (lastIo != null)
 				throw lastIo;
-			IOException ex = new IOException("Could not acquire lock on " + lockFile + " after 50 attempts");
-			if (lastOverlap != null)
-				ex.initCause(lastOverlap);
-			throw ex;
+			if (!overlapping)
+				break;
+			try {
+				Thread.sleep(20L + attempt * 10L);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while waiting for lock on " + lockFile, ie);
+			}
 		}
+		IOException ex = new IOException("Could not acquire lock on " + lockFile + " after 50 attempts");
+		if (lastOverlap != null)
+			ex.initCause(lastOverlap);
+		throw ex;
 	}
 
 	private static final java.util.logging.Logger LOGGER = java.util.logging.Logger
