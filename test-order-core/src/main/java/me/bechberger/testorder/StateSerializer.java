@@ -68,6 +68,14 @@ final class StateSerializer {
 					+ ". Starting fresh. " + "To recover, upgrade the plugin or restore the backup.");
 			return new TestOrderState();
 		} catch (IOException | RuntimeException primaryFailure) {
+			// Corrupt primary: create a backup so users can hand-recover, then try temp
+			try {
+				Path backup = createTimestampedBackup(loadPath, "corrupt");
+				LOG.warning(
+						"[test-order] Corrupt state file backed up at " + backup + " — will attempt temp fallback.");
+			} catch (IOException ignored) {
+				// Best-effort backup — if it fails we still try to recover from temp
+			}
 			Path tempFile = PersistenceSupport.temporarySibling(file);
 			if (!loadPath.equals(tempFile) && Files.exists(tempFile)) {
 				try {
@@ -122,7 +130,7 @@ final class StateSerializer {
 		}
 		try (var reader = new java.io.InputStreamReader(LZ4Support.blockInputStream(new ByteArrayInputStream(raw)),
 				StandardCharsets.UTF_8)) {
-			StringBuilder sb = new StringBuilder(raw.length * 3);
+			StringBuilder sb = new StringBuilder(8192);
 			char[] buf = new char[8192];
 			int n;
 			while ((n = reader.read(buf)) >= 0) {
@@ -134,13 +142,17 @@ final class StateSerializer {
 
 	/**
 	 * Creates a timestamped backup of the state file so users can recover after a
-	 * plugin downgrade (R10-4).
+	 * plugin downgrade (R10-4) or corrupt file.
 	 */
-	private static Path createTimestampedBackup(Path stateFile) throws IOException {
+	private static Path createTimestampedBackup(Path stateFile, String kind) throws IOException {
 		String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
 		String fileName = stateFile.getFileName().toString();
-		Path backup = stateFile.resolveSibling(fileName + ".backup-" + timestamp);
+		Path backup = stateFile.resolveSibling(fileName + "." + kind + "-" + timestamp);
 		Files.copy(stateFile, backup, StandardCopyOption.REPLACE_EXISTING);
 		return backup;
+	}
+
+	private static Path createTimestampedBackup(Path stateFile) throws IOException {
+		return createTimestampedBackup(stateFile, "backup");
 	}
 }

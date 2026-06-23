@@ -157,9 +157,14 @@ public final class TelemetryPersistence {
 				}
 				return state;
 			});
-		} catch (Exception ignored) {
-			TestOrderLogger.warn("emergencySave failed (best-effort shutdown hook): {}", ignored.getMessage());
-			// Best-effort: shutdown hooks must not throw
+		} catch (Throwable t) {
+			// Best-effort: shutdown hooks must not throw. Avoid calling the logger here
+			// because slf4j may already be torn down during JVM shutdown.
+			try {
+				System.err.println("[test-order] emergencySave failed: " + t.getMessage());
+			} catch (Throwable ignored) {
+				// last resort: truly silent
+			}
 		}
 	}
 }

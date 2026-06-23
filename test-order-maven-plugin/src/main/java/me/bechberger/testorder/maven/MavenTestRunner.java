@@ -82,7 +82,8 @@ class MavenTestRunner implements TestRunner {
 		try {
 			Process proc = pb.start();
 			try {
-				try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
+				try (BufferedReader reader = new BufferedReader(
+						new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
 					String line;
 					while ((line = reader.readLine()) != null) {
 						log.debug(line);
@@ -165,7 +166,8 @@ class MavenTestRunner implements TestRunner {
 			// Capture output — keep last N lines for diagnostics
 			int exitCode;
 			try {
-				try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
+				try (BufferedReader reader = new BufferedReader(
+						new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
 					String line;
 					while ((line = reader.readLine()) != null) {
 						support.captureOutputLine(line);
@@ -231,7 +233,8 @@ class MavenTestRunner implements TestRunner {
 
 			Process proc = pb.start();
 			try {
-				try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
+				try (BufferedReader reader = new BufferedReader(
+						new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
 					String line;
 					while ((line = reader.readLine()) != null) {
 						support.captureOutputLine(line);

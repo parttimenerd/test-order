@@ -1612,8 +1612,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	/**
-	 * Wraps a -D value in double-quotes when it contains spaces, preventing the
-	 * JVM argument parser from splitting a path at a space boundary.
+	 * Wraps a -D value in double-quotes when it contains spaces, preventing the JVM
+	 * argument parser from splitting a path at a space boundary.
 	 */
 	static String quoteDArg(String value) {
 		if (value.contains(" ")) {
@@ -1875,7 +1875,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (buildId != null) {
 			Path pendingRunsDir = ctx.resolveBaseDir().resolve("pending-runs");
 			sysProps += " -D" + me.bechberger.testorder.TestOrderConfig.BUILD_ID + "=" + buildId + " -D"
-					+ me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR + "=" + quoteDArg(pendingRunsDir.toAbsolutePath().toString());
+					+ me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR + "="
+					+ quoteDArg(pendingRunsDir.toAbsolutePath().toString());
 		}
 
 		// Selective learn: compute uncertain classes and pass to the agent so it only
@@ -1905,7 +1906,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						me.bechberger.testorder.changes.StaticAnalysisDataStore.save(
 								me.bechberger.testorder.changes.StaticAnalysisDataStore.sidecarPath(uncertainFile),
 								saData);
-						sysProps += " -Dtestorder.learn.uncertainClassesFile=" + quoteDArg(uncertainFile.toAbsolutePath().toString());
+						sysProps += " -Dtestorder.learn.uncertainClassesFile="
+								+ quoteDArg(uncertainFile.toAbsolutePath().toString());
 						if (uncertainClasses.isEmpty()) {
 							getLog().info(
 									"[test-order] Selective learn: no source changes detected; no classes will be instrumented");
@@ -2091,14 +2093,18 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		String buildId = getOrCreateBuildId();
 		String sysProps = " -D" + MavenPluginConfigKeys.LEARN + "=true" + " -D"
 				+ MavenPluginConfigKeys.INSTRUMENTATION_MODE + "=" + instrumentationMode.toUpperCase() + " -D"
-				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_MAPPING + "=" + quoteDArg(mappingFile.toAbsolutePath().toString()) + " -D"
-				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_OUTPUT + "=" + quoteDArg(depsDir.toAbsolutePath().toString()) + " -D"
-				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_INDEX_FILE + "=" + quoteDArg(indexFile.toAbsolutePath().toString()) + " -D"
-				+ MavenPluginConfigKeys.STATE_PATH + "=" + quoteDArg(statPathStr) + collectorPortProp;
+				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_MAPPING + "="
+				+ quoteDArg(mappingFile.toAbsolutePath().toString()) + " -D"
+				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_OUTPUT + "="
+				+ quoteDArg(depsDir.toAbsolutePath().toString()) + " -D"
+				+ me.bechberger.testorder.TestOrderConfig.OFFLINE_INDEX_FILE + "="
+				+ quoteDArg(indexFile.toAbsolutePath().toString()) + " -D" + MavenPluginConfigKeys.STATE_PATH + "="
+				+ quoteDArg(statPathStr) + collectorPortProp;
 		if (buildId != null) {
 			Path pendingRunsDir = ctx.resolveBaseDir().resolve("pending-runs");
 			sysProps += " -D" + me.bechberger.testorder.TestOrderConfig.BUILD_ID + "=" + buildId + " -D"
-					+ me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR + "=" + quoteDArg(pendingRunsDir.toAbsolutePath().toString());
+					+ me.bechberger.testorder.TestOrderConfig.PENDING_RUNS_DIR + "="
+					+ quoteDArg(pendingRunsDir.toAbsolutePath().toString());
 		}
 		String mid = computeCurrentModuleId();
 		if (mid != null && !mid.isEmpty()) {
@@ -2973,9 +2979,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			toAdd.add("junit.jupiter.testmethod.order.default=me.bechberger.testorder.junit.PriorityMethodOrderer");
 		}
 
-		// Also write to runtimeDir for backward compatibility (agents/tools that scan it)
+		// Also write to runtimeDir for backward compatibility (agents/tools that scan
+		// it)
 		Path runtimeProps = runtimeDir.resolve("junit-platform.properties");
-		try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(runtimeProps, java.nio.charset.StandardCharsets.UTF_8))) {
+		try (PrintWriter pw = new PrintWriter(
+				Files.newBufferedWriter(runtimeProps, java.nio.charset.StandardCharsets.UTF_8))) {
 			for (String line : toAdd) {
 				pw.println(line);
 			}

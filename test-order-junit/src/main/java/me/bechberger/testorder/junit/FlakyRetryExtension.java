@@ -148,8 +148,8 @@ public class FlakyRetryExtension implements InvocationInterceptor {
 		} catch (NumberFormatException e) {
 			parsed = 0;
 		}
-		MAX_RETRIES.set(parsed);
-		return parsed;
+		MAX_RETRIES.compareAndSet(-1, parsed); // idempotent under concurrent callers
+		return MAX_RETRIES.get();
 	}
 
 	private static boolean quarantineEnabled() {
@@ -170,8 +170,10 @@ public class FlakyRetryExtension implements InvocationInterceptor {
 		String pathProp = System.getProperty(TestOrderConfig.FLAKY_REPORT_PATH, DEFAULT_REPORT_PATH);
 		Path reportPath = Paths.get(pathProp);
 		Set<String> loaded = FlakyReportLoader.loadFlakyClasses(reportPath);
-		flakySet = loaded;
-		return loaded;
+		// Cache as empty set if null so repeated load attempts don't re-read a missing
+		// file
+		flakySet = (loaded != null) ? loaded : Set.of();
+		return flakySet;
 	}
 
 	/** Snapshot of {testClass -> max attempt number that succeeded or was used}. */

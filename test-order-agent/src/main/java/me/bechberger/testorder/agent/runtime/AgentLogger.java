@@ -29,7 +29,9 @@ public class AgentLogger {
 	public static synchronized void setVerboseFile(String path) {
 		closeWriter();
 		try {
-			writer = new PrintWriter(new OutputStreamWriter(Files.newOutputStream(java.nio.file.Path.of(path), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND), StandardCharsets.UTF_8), true);
+			writer = new PrintWriter(new OutputStreamWriter(Files.newOutputStream(java.nio.file.Path.of(path),
+					java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND),
+					StandardCharsets.UTF_8), true);
 			enabled = true;
 			writer.println("[test-order] Verbose logging enabled → " + path);
 		} catch (Exception e) {

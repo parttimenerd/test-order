@@ -28,6 +28,12 @@ public final class ClassOrderingEngine {
 	 */
 	private static final Set<String> LOGGED_STATE_ERRORS = java.util.concurrent.ConcurrentHashMap.newKeySet(100);
 
+	/**
+	 * Tracks index-load error messages already reported to avoid log spam when the
+	 * same corrupt index is read once per test class.
+	 */
+	private static final Set<String> LOGGED_INDEX_ERRORS = java.util.concurrent.ConcurrentHashMap.newKeySet(100);
+
 	/** Result of the setup phase — everything needed to score and sort classes. */
 	public record SetupResult(DependencyMap depMap, TestOrderState state,
 			TestOrderState.ScoringWeights effectiveWeights, Set<String> changedClasses, Set<String> changedTestClasses,
@@ -81,7 +87,10 @@ public final class ClassOrderingEngine {
 		try {
 			return DependencyMap.load(idx);
 		} catch (IOException | RuntimeException e) {
-			TestOrderLogger.error("Failed to load dependency index: {}", e.getMessage());
+			String msg = e.getClass().getName() + ": " + e.getMessage();
+			if (LOGGED_INDEX_ERRORS.add(msg)) {
+				TestOrderLogger.error("Failed to load dependency index: {}", e.getMessage());
+			}
 			return null;
 		}
 	}

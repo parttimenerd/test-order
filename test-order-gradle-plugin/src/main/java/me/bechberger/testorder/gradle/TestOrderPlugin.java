@@ -386,28 +386,28 @@ public class TestOrderPlugin implements Plugin<Project> {
      */
     static boolean isTestNGOnTestClasspath(Project project) {
         return project.getConfigurations().stream()
-                .filter(c -> c.getName().toLowerCase().contains("test"))
+                .filter(c -> c.getName().toLowerCase(java.util.Locale.ROOT).contains("test"))
                 .flatMap(c -> c.getDependencies().stream())
                 .anyMatch(d -> "org.testng".equals(d.getGroup()) && "testng".equals(d.getName()));
     }
 
     static boolean isJUnit4OnTestClasspath(Project project) {
         return project.getConfigurations().stream()
-                .filter(c -> c.getName().toLowerCase().contains("test"))
+                .filter(c -> c.getName().toLowerCase(java.util.Locale.ROOT).contains("test"))
                 .flatMap(c -> c.getDependencies().stream())
                 .anyMatch(d -> "junit".equals(d.getGroup()) && "junit".equals(d.getName()));
     }
 
     static boolean isJUnit5OnTestClasspath(Project project) {
         return project.getConfigurations().stream()
-                .filter(c -> c.getName().toLowerCase().contains("test"))
+                .filter(c -> c.getName().toLowerCase(java.util.Locale.ROOT).contains("test"))
                 .flatMap(c -> c.getDependencies().stream())
                 .anyMatch(d -> "org.junit.jupiter".equals(d.getGroup()));
     }
 
     static boolean isJUnitVintageOnTestClasspath(Project project) {
         return project.getConfigurations().stream()
-                .filter(c -> c.getName().toLowerCase().contains("test"))
+                .filter(c -> c.getName().toLowerCase(java.util.Locale.ROOT).contains("test"))
                 .flatMap(c -> c.getDependencies().stream())
                 .anyMatch(d -> "org.junit.vintage".equals(d.getGroup())
                         && "junit-vintage-engine".equals(d.getName()));
@@ -484,7 +484,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
     private static boolean hasSpringTestDependency(Project project) {
         return project.getConfigurations().stream()
-                .filter(c -> c.getName().toLowerCase().contains("test"))
+                .filter(c -> c.getName().toLowerCase(java.util.Locale.ROOT).contains("test"))
                 .flatMap(c -> c.getDependencies().stream())
                 .anyMatch(d -> ("org.springframework.boot".equals(d.getGroup())
                         && "spring-boot-test".equals(d.getName()))
@@ -812,7 +812,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
                     // Stash compression level for scoped use during stopAndMerge,
                     // instead of leaking it as a daemon-wide System property.
-                    String compressionLevel = ext.getCompression().getOrElse("medium");
+                    String compressionLevel = ext.getCompression().getOrElse("fast");
 
                     java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
                     me.bechberger.testorder.IndexCollectorServer collector =
@@ -1035,7 +1035,7 @@ public class TestOrderPlugin implements Plugin<Project> {
 
                     // Stash compression level for scoped use during stopAndMerge,
                     // instead of leaking it as a daemon-wide System property.
-                    String compressionLevel = ext.getCompression().getOrElse("medium");
+                    String compressionLevel = ext.getCompression().getOrElse("fast");
 
                     java.nio.file.Path indexFilePath = ext.getIndexFile().get().getAsFile().toPath();
                     me.bechberger.testorder.IndexCollectorServer collector =
@@ -2811,7 +2811,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 log.lifecycle("  alwaysLearn             Attach learn agent on every ordered run (default: false)");
                 log.lifecycle("  tdd                     Fail new tests that pass without having failed first (default: false)");
                 log.lifecycle("  instrumentation         offline (default) | online — build-time vs agent instrumentation");
-                log.lifecycle("  compression             medium (default) | fast | hc — LZ4 compression level for index/state");
+                log.lifecycle("  compression             fast (default) | hc — LZ4 compression level for index/state");
                 log.lifecycle("  staticAnalysisEnabled   Enable static call-graph expansion during change detection (default: true)");
                 log.lifecycle("  staticAnalysisDepth     Depth of static call-graph expansion, 0–4 (default: 2)");
                 log.lifecycle("  sourceRoot              Override main source root directory (default: auto-detected)");
@@ -4194,7 +4194,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     private static void pruneCollectorRegistry() {
-        if (COLLECTOR_REGISTRY.size() > MAX_COLLECTOR_ENTRIES * 1.5) {
+        if (COLLECTOR_REGISTRY.size() >= MAX_COLLECTOR_ENTRIES) {
             java.util.List<String> keys = new java.util.ArrayList<>(COLLECTOR_REGISTRY.keySet());
             int removeCount = keys.size() - MAX_COLLECTOR_ENTRIES;
             for (int i = 0; i < removeCount && i < keys.size(); i++) {

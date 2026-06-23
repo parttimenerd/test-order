@@ -128,10 +128,12 @@ public class UsageStore {
 		}
 	}
 
-	// Plain field — tests never execute in parallel within the same JVM
-	// process, so no ThreadLocal or volatile is needed. Using a plain field
-	// gives the hot path exactly one field read instead of a ThreadLocal lookup.
-	private ActiveTrackers activeTrackers = ActiveTrackers.IDLE;
+	// Volatile so that startTestClass/endTestClass/startTestMethod/endTestMethod
+	// writes are visible to any thread that reads via recordUsageId or
+	// recordMemberUsageId (e.g. JUnit 5 parallel, TestNG parallel, or application
+	// worker threads). The static hot path (recordUsageIdFast et al.) uses
+	// activeState instead; this field serves the instance-method path.
+	private volatile ActiveTrackers activeTrackers = ActiveTrackers.IDLE;
 
 	// Only used in lifecycle methods (not hot path).
 	private volatile boolean methodLevelRecordingEnabled;
@@ -145,9 +147,8 @@ public class UsageStore {
 		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
 			try {
 				flush();
-			} catch (NoClassDefFoundError ignored) {
-				// Classloader already torn down during JVM shutdown — deps were
-				// already sent via the in-process listener path; nothing to do.
+			} catch (Throwable ignored) {
+				// Classloader may be torn down during JVM shutdown — best effort.
 			}
 		}));
 	}
@@ -274,9 +275,9 @@ public class UsageStore {
 	public void startTestClass(String testClass) {
 		if (firstTestClassSeen.compareAndSet(false, true)) {
 			Runnable cb = onFirstTestClassCallback;
+			onFirstTestClassCallback = null; // null out before invoking to avoid memory leak on throw
 			if (cb != null) {
 				cb.run();
-				onFirstTestClassCallback = null;
 			}
 		}
 		BitsetTracker tracker = perTestTrackers.computeIfAbsent(testClass, k -> new BitsetTracker());
@@ -334,30 +335,32 @@ public class UsageStore {
 
 	/**
 	 * Records class usage by pre-resolved integer ID (injected at instrumentation
-	 * time). Hot path: one volatile read of {@code active}, then two plain field
-	 * reads.
+	 * time). Safe under parallel JUnit: reads the volatile {@code activeState} once
+	 * to get an atomic snapshot of (classTracker, methodTracker).
 	 */
 	public void recordUsageId(int classId) {
-		BitsetTracker t = activeTrackers.test;
-		if (t != null)
-			t.recordClass(classId);
-		BitsetTracker m = activeTrackers.method;
-		if (m != null)
-			m.recordClass(classId);
+		RecordingState s = activeState; // single volatile read — safe across threads
+		if (s == null)
+			return;
+		if (s.classTracker != null)
+			s.classTracker.recordClass(classId);
+		if (s.methodTracker != null)
+			s.methodTracker.recordClass(classId);
 	}
 
 	/**
 	 * Records member usage by pre-resolved integer ID (injected at instrumentation
-	 * time). Hot path: one volatile read of {@code active}, then two plain field
-	 * reads.
+	 * time). Safe under parallel JUnit: reads the volatile {@code activeState} once
+	 * to get an atomic snapshot of (classTracker, methodTracker).
 	 */
 	public void recordMemberUsageId(int memberId) {
-		BitsetTracker t = activeTrackers.test;
-		if (t != null)
-			t.recordMember(memberId);
-		BitsetTracker m = activeTrackers.method;
-		if (m != null)
-			m.recordMember(memberId);
+		RecordingState s = activeState; // single volatile read — safe across threads
+		if (s == null)
+			return;
+		if (s.classTracker != null)
+			s.classTracker.recordMember(memberId);
+		if (s.methodTracker != null)
+			s.methodTracker.recordMember(memberId);
 	}
 
 	// ── Flush on shutdown ─────────────────────────────────────────────

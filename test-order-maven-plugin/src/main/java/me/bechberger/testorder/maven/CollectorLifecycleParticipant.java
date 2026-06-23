@@ -371,7 +371,12 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		if (top == null || top.getBasedir() == null) {
 			return;
 		}
-		Path reactorRoot = top.getBasedir().toPath();
+		Path reactorRoot;
+		try {
+			reactorRoot = ReactorContext.resolveReactorRoot(session, top).root;
+		} catch (RuntimeException e) {
+			reactorRoot = top.getBasedir().toPath().normalize();
+		}
 		Path sharedDir = reactorRoot.resolve(SHARED_DIR_NAME);
 		Path indexFile = sharedDir.resolve(INDEX_FILE);
 		Path stateFile = sharedDir.resolve(STATE_FILE);
@@ -396,6 +401,9 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		Map<String, MavenProject> projectsById = new HashMap<>();
 		for (MavenProject p : session.getProjects()) {
 			if ("pom".equals(p.getPackaging())) {
+				continue;
+			}
+			if (p.getBuild() == null) {
 				continue;
 			}
 			String dir = p.getBuild().getTestOutputDirectory();
@@ -670,7 +678,12 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		MavenProject top = session.getTopLevelProject();
 		if (top == null)
 			return result;
-		Path gitRoot = top.getBasedir().toPath();
+		Path gitRoot;
+		try {
+			gitRoot = ReactorContext.resolveReactorRoot(session, top).root;
+		} catch (RuntimeException e) {
+			gitRoot = top.getBasedir().toPath().normalize();
+		}
 		for (MavenProject p : session.getProjects()) {
 			List<String> roots = p.getCompileSourceRoots();
 			Path src = (roots != null && !roots.isEmpty())
@@ -693,7 +706,12 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		MavenProject top = session.getTopLevelProject();
 		if (top == null)
 			return result;
-		Path gitRoot = top.getBasedir().toPath();
+		Path gitRoot;
+		try {
+			gitRoot = ReactorContext.resolveReactorRoot(session, top).root;
+		} catch (RuntimeException e) {
+			gitRoot = top.getBasedir().toPath().normalize();
+		}
 		for (MavenProject p : session.getProjects()) {
 			if ("pom".equals(p.getPackaging()))
 				continue;

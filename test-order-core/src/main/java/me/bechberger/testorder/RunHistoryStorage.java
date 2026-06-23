@@ -37,11 +37,6 @@ final class RunHistoryStorage {
 		this.runHistory = new RunHistoryManager();
 	}
 
-	/** Package-private accessor for persistence orchestration. */
-	RunHistoryManager manager() {
-		return runHistory;
-	}
-
 	synchronized List<RunRecord> runs() {
 		return List.copyOf(runHistory.runs());
 	}
@@ -49,6 +44,21 @@ final class RunHistoryStorage {
 	synchronized void addRunRecord(RunRecord record) {
 		runHistory.add(record, config.historyMaxRuns());
 		pendingRunCompleted = true;
+	}
+
+	/** Replaces the entire run list atomically under the monitor. */
+	synchronized void replaceRuns(List<RunRecord> updatedRuns) {
+		runHistory.replace(updatedRuns);
+	}
+
+	/** Appends a raw record without capping (used during deserialization). */
+	synchronized void addRaw(RunRecord record) {
+		runHistory.addRaw(record);
+	}
+
+	/** Trims history to the configured maximum, under the monitor. */
+	synchronized void trimToMax(int maxRuns) {
+		runHistory.trimToMax(maxRuns);
 	}
 
 	int historyMaxRuns() {

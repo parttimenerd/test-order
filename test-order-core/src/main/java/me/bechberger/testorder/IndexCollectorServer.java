@@ -39,7 +39,7 @@ import me.bechberger.testorder.annotations.ThreadSafe;
  * dictionary load is protected by {@code synchronized(this)} double-check.
  */
 @ThreadSafe
-public class IndexCollectorServer implements AutoCloseable {
+public final class IndexCollectorServer implements AutoCloseable {
 
 	private static final int MAGIC = 0x54_4F_44_50; // "TODP"
 	private static final byte PROTOCOL_VERSION_V1 = 1;
@@ -191,12 +191,25 @@ public class IndexCollectorServer implements AutoCloseable {
 		// processFallbackFile(). Using only JDK classes here avoids
 		// NoClassDefFoundError from classloader teardown that affects RoaringBitmap
 		// / LZ4 serialization.
-		shutdownHook = new Thread(() -> {
-			if (running.get()) {
-				writeFallbackPayloads();
+		try {
+			shutdownHook = new Thread(() -> {
+				if (running.get()) {
+					writeFallbackPayloads();
+				}
+			}, "test-order-collector-shutdown");
+			Runtime.getRuntime().addShutdownHook(shutdownHook);
+		} catch (RuntimeException e) {
+			// If shutdown-hook registration fails (e.g. JVM already shutting down),
+			// clean up what we've started so we don't leak the thread, port, or registry.
+			jvmRegistry().remove(serverSocket.getLocalPort());
+			running.set(false);
+			acceptThread.interrupt();
+			try {
+				serverSocket.close();
+			} catch (IOException ignored) {
 			}
-		}, "test-order-collector-shutdown");
-		Runtime.getRuntime().addShutdownHook(shutdownHook);
+			throw new IOException("Failed to register shutdown hook for IndexCollectorServer", e);
+		}
 	}
 
 	/**

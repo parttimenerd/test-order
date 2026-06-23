@@ -281,9 +281,7 @@ public class DetectDependenciesIT {
 		candidate = cwd.getParent().resolve("samples/sample-od-bugs");
 		if (Files.exists(candidate))
 			return candidate;
-		throw new IllegalStateException(
-				"Could not locate samples/sample-od-bugs relative to "
-						+ cwd
-						+ ". Run this test from the project root or the test-order-maven-plugin module.");
+		throw new IllegalStateException("Could not locate samples/sample-od-bugs relative to " + cwd
+				+ ". Run this test from the project root or the test-order-maven-plugin module.");
 	}
 }

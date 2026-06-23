@@ -215,7 +215,14 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			// classes against instrumented hashes and falsely reports all 196+ classes as
 			// changed).
 			if (Files.exists(idxPath)) {
-				executeOrderMode();
+				try {
+					executeOrderMode();
+				} catch (MojoExecutionException e) {
+					// A corrupt or unreadable index must not block learn mode — the whole
+					// point of running learn is to rebuild it. Log a warning and continue.
+					getLog().warn("[test-order] Could not apply ordering from existing index (it may be corrupt) — "
+							+ "proceeding with learn mode to rebuild it. Cause: " + e.getMessage());
+				}
 			}
 			switchToLearnMode();
 			return;

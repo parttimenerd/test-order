@@ -436,8 +436,7 @@ public class TelemetryListener implements TestExecutionListener {
 					// from concurrent testFinished writes during iteration in buildRunRecord.
 					TestOrderState.RunRecord record;
 					synchronized (executionOrder) {
-						record = TestOrderState.buildRunRecord(executionOrder, failedClassNames,
-								safeGetQuarantined());
+						record = TestOrderState.buildRunRecord(executionOrder, failedClassNames, safeGetQuarantined());
 					}
 					try {
 						PartialRunAggregator.writePartial(Path.of(pendingRunsDir), buildId, record, isLearnRun);

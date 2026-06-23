@@ -1115,7 +1115,7 @@ public class TestOrderState {
 	void afterSave() {
 		metrics.failureHistory().applyPersisted(
 				new FailureHistoryTracker.PersistedScores(persistedFailureScores, persistedMethodFailureScores));
-		runHistory.manager().replace(persistedRunsAfterSave);
+		runHistory.replaceRuns(persistedRunsAfterSave);
 		// Prune stale entries now that the save succeeded — safe to mutate live state
 		if (!persistedActiveClasses.isEmpty()) {
 			metrics.durationTracker().pruneToActiveClasses(persistedActiveClasses);
@@ -1254,7 +1254,7 @@ public class TestOrderState {
 		for (Object item : safeList(root.get("runs"), "runs")) {
 			Map<String, Object> runMap = safeMap(item, "runs[]");
 			if (!runMap.isEmpty()) {
-				state.runHistory.manager().addRaw(mapToRunRecord(runMap));
+				state.runHistory.addRaw(mapToRunRecord(runMap));
 			}
 		}
 
@@ -1305,7 +1305,7 @@ public class TestOrderState {
 					safeInt(root.get("mutationTotalKilled"), 0, "mutationTotalKilled"));
 		}
 
-		state.runHistory.manager().trimToMax(state.config.historyMaxRuns());
+		state.runHistory.trimToMax(state.config.historyMaxRuns());
 
 		return state;
 	}

@@ -132,7 +132,8 @@ public final class PersistenceSupport {
 					+ " entries — possible leak in a long-running daemon process. Consider restarting.");
 		}
 		// Retry loop is outside the synchronized block so Thread.sleep() does not hold
-		// the JVM monitor (SWL_SLEEP_WITH_LOCK_HELD). The synchronized block is acquired
+		// the JVM monitor (SWL_SLEEP_WITH_LOCK_HELD). The synchronized block is
+		// acquired
 		// fresh on each attempt: serializes per-path access while allowing unrelated
 		// paths to proceed during the inter-attempt sleep.
 		IOException lastIo = null;

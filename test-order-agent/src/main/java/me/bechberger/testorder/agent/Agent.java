@@ -323,8 +323,7 @@ public class Agent {
 			Path tempFile;
 			try {
 				tempFile = Files.createTempFile(cacheDir, "test-order-runtime-", ".tmp",
-						PosixFilePermissions.asFileAttribute(
-								PosixFilePermissions.fromString("rw-------")));
+						PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
 			} catch (UnsupportedOperationException ignored) {
 				// Non-POSIX filesystem (Windows) — fall back to default permissions
 				tempFile = Files.createTempFile(cacheDir, "test-order-runtime-", ".tmp");
@@ -334,8 +333,7 @@ public class Agent {
 				Files.move(tempFile, cachedJar, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
 				// Best-effort: restrict permissions on the final cached file too
 				try {
-					Files.setPosixFilePermissions(cachedJar,
-							PosixFilePermissions.fromString("r--------"));
+					Files.setPosixFilePermissions(cachedJar, PosixFilePermissions.fromString("r--------"));
 				} catch (UnsupportedOperationException | IOException ignored) {
 				}
 			} catch (IOException e) {
