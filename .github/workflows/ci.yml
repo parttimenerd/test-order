@@ -158,8 +158,15 @@ jobs:
         if: matrix.name == 'plugin-its' && env.FULL_SUITE != 'true'
         run: >-
           mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
-          -Dit.test="MavenPluginIT,EndToEndJUnit5IT,EndToEndJUnit6IT,ExportJsonMojoIT,TieredWorkflowIT,SkipInactiveModulesIT,MultiModuleWorkflowIT,NestedTieredWorkflowIT,OfflineInstrumentationIT,FieldsMethodsWorkflowIT"
+          -Dit.test="MavenPluginIT,EndToEndJUnit5IT,EndToEndJUnit6IT,ExportJsonMojoIT,TieredWorkflowIT,SkipInactiveModulesIT,MultiModuleWorkflowIT"
           -Dspotless.check.skip=true
+
+      - name: ${{ matrix.step }} (fast — core ITs only)
+        if: matrix.name == 'fixture-its' && env.FULL_SUITE != 'true'
+        run: >-
+          mvn -B -ntp test -pl test-order-junit
+          -Dtest="ParameterizedTestOrderingIT,ChangeDetectionEdgeCasesIT,ParallelExecutionIT,JaCoCoCoexistenceIT"
+          -DfailIfNoTests=false -Dspotless.check.skip=true
 
       - name: ${{ matrix.step }} (fast — core ITs only)
         if: matrix.name == 'plugin-its-java25' && env.FULL_SUITE != 'true'
@@ -169,11 +176,11 @@ jobs:
           -Dspotless.check.skip=true
 
       - name: ${{ matrix.step }} (full — all ITs)
-        if: (matrix.name == 'plugin-its' || matrix.name == 'plugin-its-java25') && env.FULL_SUITE == 'true'
+        if: (matrix.name == 'plugin-its' || matrix.name == 'plugin-its-java25' || matrix.name == 'fixture-its') && env.FULL_SUITE == 'true'
         run: ${{ matrix.cmd }}
 
       - name: ${{ matrix.step }}
-        if: matrix.name != 'plugin-its' && matrix.name != 'plugin-its-java25'
+        if: matrix.name != 'plugin-its' && matrix.name != 'plugin-its-java25' && matrix.name != 'fixture-its'
         run: ${{ matrix.cmd }}
 
       - name: Verify plugin integration tests ran
