@@ -55,7 +55,8 @@ class DumpMojoTest {
 	@Test
 	void missingIndexThrows() {
 		MojoExecutionException ex = assertThrows(MojoExecutionException.class, () -> mojo.execute());
-		assertTrue(ex.getMessage().contains("Dependency index not found"));
+		assertTrue(ex.getMessage().contains("No dependency index at") || ex.getMessage().contains("no .deps files"),
+				"Expected missing-index error but got: " + ex.getMessage());
 	}
 
 	@Test
