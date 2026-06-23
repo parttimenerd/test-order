@@ -219,6 +219,19 @@ class TelemetryListenerTest {
 		} catch (InterruptedException ignored) {
 		}
 		listener.executionFinished(secondRun, TestExecutionResult.successful());
+
+		// Verify both durations were accumulated before flushing to state
+		@SuppressWarnings("unchecked")
+		Map<String, java.util.List<Long>> pendingDurations;
+		try {
+			pendingDurations = (Map<String, java.util.List<Long>>) getPendingDurations(listener);
+		} catch (ReflectiveOperationException e) {
+			throw new RuntimeException("Could not access pendingDurations field", e);
+		}
+		java.util.List<Long> durations = pendingDurations.get("com.example.RepeatedDurationTest");
+		assertNotNull(durations, "Expected pendingDurations to contain RepeatedDurationTest");
+		assertEquals(2, durations.size(), "Expected 2 duration entries (one per run), got: " + durations);
+
 		listener.testPlanExecutionFinished(StubTestPlan.EMPTY);
 
 		TestOrderState state = TestOrderState.load(stateFile);
@@ -1613,5 +1626,13 @@ class TelemetryListenerTest {
 		public Optional<? extends TestDescriptor> findByUniqueId(UniqueId uniqueId) {
 			return Optional.empty();
 		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Object getPendingDurations(me.bechberger.testorder.junit.TelemetryListener listener)
+			throws ReflectiveOperationException {
+		var f = me.bechberger.testorder.junit.TelemetryListener.class.getDeclaredField("pendingDurations");
+		f.setAccessible(true);
+		return f.get(listener);
 	}
 }
