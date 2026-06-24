@@ -94,8 +94,11 @@ public class Agent {
 					continue;
 				String key = kv.substring(0, eq);
 				String value = kv.substring(eq + 1);
+				// Unescape \, back to , in values (paths may contain commas escaped by the
+				// builder)
+				String unescaped = value.replace("\\,", ",");
 				switch (key) {
-					case "outputDir" -> agent.outputDir = Path.of(value);
+					case "outputDir" -> agent.outputDir = Path.of(unescaped);
 					case "includePackages" -> agent.includePackages = splitList(value);
 					case "excludePackages" -> agent.excludePackages = splitList(value);
 					case "filterStrategy" ->
@@ -103,11 +106,11 @@ public class Agent {
 					case "skipTestClasses" -> agent.skipTestClasses = Boolean.parseBoolean(value);
 					case "useHeuristics" -> agent.useHeuristics = Boolean.parseBoolean(value);
 					case "autoDetectPackages" -> agent.autoDetectPackages = Boolean.parseBoolean(value);
-					case "projectRoot" -> agent.projectRoot = Path.of(value);
+					case "projectRoot" -> agent.projectRoot = Path.of(unescaped);
 					case "mode" -> agent.mode = InstrumentationMode.fromString(value);
-					case "indexFile" -> agent.indexFile = Path.of(value);
-					case "verboseFile" -> agent.verboseFile = Path.of(value);
-					case "runtimeJarPath" -> agent.runtimeJarPath = Path.of(value);
+					case "indexFile" -> agent.indexFile = Path.of(unescaped);
+					case "verboseFile" -> agent.verboseFile = Path.of(unescaped);
+					case "runtimeJarPath" -> agent.runtimeJarPath = Path.of(unescaped);
 					default -> {
 					} // ignore unknown keys for forward compatibility
 				}

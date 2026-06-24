@@ -89,24 +89,29 @@ public final class AgentArgsBuilder {
 	public static String buildArgs(Path outputDir, String instrumentationMode, Path indexFile, String includePackages,
 			String verboseFile, boolean instrumentTestClasses, Path runtimeJarPath) {
 		StringBuilder args = new StringBuilder();
-		args.append("outputDir=").append(outputDir.toAbsolutePath());
+		args.append("outputDir=").append(escapePath(outputDir.toAbsolutePath()));
 		args.append(",mode=").append(instrumentationMode.toUpperCase());
 		if (indexFile != null) {
-			args.append(",indexFile=").append(indexFile.toAbsolutePath());
+			args.append(",indexFile=").append(escapePath(indexFile.toAbsolutePath()));
 		}
 		if (includePackages != null && !includePackages.isEmpty()) {
 			args.append(",includePackages=").append(includePackages.replace(",", ";"));
 		}
 		if (verboseFile != null && !verboseFile.isEmpty()) {
-			args.append(",verboseFile=").append(Path.of(verboseFile).toAbsolutePath());
+			args.append(",verboseFile=").append(escapePath(Path.of(verboseFile).toAbsolutePath()));
 		}
 		if (instrumentTestClasses) {
 			args.append(",skipTestClasses=false");
 		}
 		if (runtimeJarPath != null) {
-			args.append(",runtimeJarPath=").append(runtimeJarPath.toAbsolutePath());
+			args.append(",runtimeJarPath=").append(escapePath(runtimeJarPath.toAbsolutePath()));
 		}
 		return args.toString();
+	}
+
+	/** Escapes commas in a path string so the agent arg parser splits correctly. */
+	private static String escapePath(Path path) {
+		return path.toString().replace("\\,", "\\\\,").replace(",", "\\,");
 	}
 
 	/**

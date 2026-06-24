@@ -537,6 +537,15 @@ public final class IndexCollectorServer implements AutoCloseable {
 			Thread.currentThread().interrupt();
 		}
 		handlerExecutor.shutdown();
+		try {
+			// Wait briefly for in-flight handlers to finish and release their sockets.
+			if (!handlerExecutor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
+				handlerExecutor.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			handlerExecutor.shutdownNow();
+			Thread.currentThread().interrupt();
+		}
 	}
 
 	private void unregisterShutdownHook() {

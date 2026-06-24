@@ -24,7 +24,7 @@ import me.bechberger.testorder.ops.workflows.AutoWorkflow;
 public class AutoMojo extends AbstractTestOrderMojo {
 
 	@Parameter(property = MavenPluginConfigKeys.MODE, defaultValue = "auto")
-	private String mode;
+	protected String mode;
 
 	@Parameter(property = MavenPluginConfigKeys.INCLUDE_PACKAGES)
 	private String includePackages;

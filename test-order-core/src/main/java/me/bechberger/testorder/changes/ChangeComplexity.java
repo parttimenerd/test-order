@@ -221,10 +221,14 @@ public class ChangeComplexity {
 		try {
 			deflater.setInput(data);
 			deflater.finish();
-			byte[] buf = new byte[data.length + 64];
+			// Worst-case DEFLATE expansion for incompressible data is data.length + ~6 +
+			// ceil(data.length/32767)*5 bytes. Using data.length*2 + 128 is safe for all
+			// inputs and avoids the infinite-loop when the buffer is too small for one
+			// pass.
+			byte[] buf = new byte[data.length * 2 + 128];
 			int totalOut = 0;
 			while (!deflater.finished()) {
-				totalOut += deflater.deflate(buf);
+				totalOut += deflater.deflate(buf, totalOut, buf.length - totalOut);
 			}
 			return totalOut;
 		} finally {

@@ -780,9 +780,19 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 		// AbstractTestOrderMojo.startCollector() stores "port:indexFilePath" entries
 		// in session user properties so this participant can find and drain them even
 		// though the extension and plugin classloaders each have separate static maps.
-		String activeEntry = session != null
-				? session.getUserProperties().getProperty(AbstractTestOrderMojo.SESSION_ACTIVE_COLLECTORS_KEY, "")
-				: "";
+		//
+		// Synchronize on userProperties to avoid a race where a late-registering module
+		// appends its entry between our getProperty and remove calls.
+		String activeEntry = "";
+		if (session != null) {
+			java.util.Properties props = session.getUserProperties();
+			synchronized (props) {
+				activeEntry = props.getProperty(AbstractTestOrderMojo.SESSION_ACTIVE_COLLECTORS_KEY, "");
+				if (!activeEntry.isBlank()) {
+					props.remove(AbstractTestOrderMojo.SESSION_ACTIVE_COLLECTORS_KEY);
+				}
+			}
+		}
 		if (!activeEntry.isBlank()) {
 			for (String entry : activeEntry.split("\\|")) {
 				if (entry.isBlank()) {
@@ -819,10 +829,6 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 					System.err.println("[test-order] CollectorLifecycleParticipant: drain entry error: " + e);
 				}
 			}
-			// Remove the session key only after all modules have been drained, so that
-			// parallel module builds that registered after we started draining are not
-			// lost.
-			session.getUserProperties().remove(AbstractTestOrderMojo.SESSION_ACTIVE_COLLECTORS_KEY);
 			// Fall through: drain any remaining static-map entries not covered by session
 			// properties (e.g. a module that registered before the session property was
 			// written, or a cross-realm registration that didn't match any entry above).

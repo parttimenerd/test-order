@@ -31,7 +31,7 @@ public final class TddEnforcementCore {
 
 	private static final Logger LOG = Logger.getLogger(TddEnforcementCore.class.getName());
 
-	private record CachedState(TestOrderState state) {
+	private record CachedState(TestOrderState state, String statePath) {
 	}
 
 	private static volatile CachedState cachedState;
@@ -82,9 +82,16 @@ public final class TddEnforcementCore {
 			// Rename detected — fall through to method-level check
 		}
 
-		// Nested class not directly in state (only top-level is) → new inner class
+		// Nested class not directly in state (only top-level is) → new inner class.
+		// A brand-new @Nested class has never run before, so there is no entry for it.
+		// Give it the same treatment as a brand-new top-level class: check for rename
+		// first, then enforce. Without this check a developer can never satisfy TDD for
+		// a freshly added @Nested class because it cannot be in state before it exists.
 		if (!className.equals(topLevel) && !classDurations.containsKey(className)) {
-			return formatViolation("New test CLASS passed without failing first", className, methodName);
+			if (!isLikelyRenamedClass(className, state)) {
+				return formatViolation("New test CLASS passed without failing first", className, methodName);
+			}
+			// Rename detected — fall through to method-level check
 		}
 
 		Map<String, Double> methodsForClass = state.getMethodDurations().get(className);
@@ -120,40 +127,40 @@ public final class TddEnforcementCore {
 	}
 
 	public static TestOrderState loadStateLazy(ClassLoader classLoader) {
+		TestOrderConfigResolver resolver = new TestOrderConfigResolver(classLoader);
+		String statePath = resolver.getConfig(TestOrderConfig.STATE_PATH);
+		if (statePath == null || statePath.isBlank()) {
+			LOG.fine("[test-order] TDD mode: no state path configured, skipping enforcement");
+			return null;
+		}
+
 		CachedState s = cachedState;
-		if (s != null) {
+		// Re-load if the state path changed (e.g. non-forked multi-module build).
+		if (s != null && s.statePath().equals(statePath)) {
 			return s.state();
 		}
 		synchronized (LOCK) {
 			s = cachedState;
-			if (s != null) {
+			if (s != null && s.statePath().equals(statePath)) {
 				return s.state();
-			}
-
-			TestOrderConfigResolver resolver = new TestOrderConfigResolver(classLoader);
-			String statePath = resolver.getConfig(TestOrderConfig.STATE_PATH);
-			if (statePath == null || statePath.isBlank()) {
-				LOG.fine("[test-order] TDD mode: no state path configured, skipping enforcement");
-				cachedState = new CachedState(null);
-				return null;
 			}
 
 			Path path = Path.of(statePath);
 			if (!Files.exists(path)) {
 				LOG.info("[test-order] TDD mode: state file not found (" + path + "), skipping (first run?)");
-				cachedState = new CachedState(null);
+				cachedState = new CachedState(null, statePath);
 				return null;
 			}
 
 			try {
 				TestOrderState loaded = TestOrderState.load(path);
-				cachedState = new CachedState(loaded);
+				cachedState = new CachedState(loaded, statePath);
 				LOG.info("[test-order] TDD mode: loaded state with " + loaded.getClassDurations().size()
 						+ " known test classes");
 				return loaded;
 			} catch (IOException e) {
 				LOG.log(Level.WARNING, "[test-order] TDD mode: failed to load state file, skipping enforcement", e);
-				cachedState = new CachedState(null);
+				cachedState = new CachedState(null, statePath);
 				return null;
 			}
 		}

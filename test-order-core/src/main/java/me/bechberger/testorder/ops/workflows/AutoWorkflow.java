@@ -141,6 +141,12 @@ public final class AutoWorkflow {
 		if ("learn".equals(decision.effectiveMode())) {
 			return new Result.Learn(decision.reason());
 		}
+		if ("optimize".equals(decision.effectiveMode())) {
+			// "optimize" mode was requested explicitly but the workflow always performs
+			// ordering. Weight optimization is handled by optimizeIfDue() below on every
+			// order run when the schedule is due. Log so the user knows it was seen.
+			ctx.log().info("[test-order] Mode 'optimize' resolved to order+select with weight optimisation.");
+		}
 
 		// ── 2. Order + select (single analysis pass) ──────────────────
 		ChangeAnalysis.Result a = ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.FOR_AUTO);
@@ -189,6 +195,10 @@ public final class AutoWorkflow {
 		optimizeIfDue(a.state(), ctx.stateFile(), ctx.optimizeEvery(), ctx.log());
 
 		// ── 4. Snapshot hashes for next run ─────────────────────────
+		// NOTE: Ideally this runs after tests complete so a mid-run crash does not
+		// advance the baseline. It is called here as a best-effort — the framework
+		// plugin should also call snapshotHashes(ctx) in a post-test hook when
+		// possible.
 		snapshotHashes(ctx);
 
 		// ── 5. Persist cache-runtime.txt so the dashboard can surface the

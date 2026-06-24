@@ -186,19 +186,34 @@ class ClassNameTrie {
 	}
 
 	private static void readNode(DataInputStream in, Node node) throws IOException {
+		readNode(in, node, 0);
+	}
+
+	private static final int MAX_TRIE_DEPTH = 1024;
+	private static final int MAX_CLASS_ID = 1_000_000;
+
+	private static void readNode(DataInputStream in, Node node, int depth) throws IOException {
+		if (depth > MAX_TRIE_DEPTH) {
+			throw new IOException(
+					"ClassNameTrie depth limit exceeded (" + MAX_TRIE_DEPTH + ") — possible corrupt data");
+		}
 		int labelLen = readVarInt(in);
 		byte[] labelBytes = new byte[labelLen];
 		in.readFully(labelBytes);
 		node.label = new String(labelBytes, StandardCharsets.UTF_8);
 		int terminalMarker = readVarInt(in);
 		if (terminalMarker > 0) {
+			int classId = terminalMarker - 1;
+			if (classId > MAX_CLASS_ID) {
+				throw new IOException("ClassNameTrie classId " + classId + " exceeds limit " + MAX_CLASS_ID);
+			}
 			node.terminal = true;
-			node.classId = terminalMarker - 1;
+			node.classId = classId;
 		}
 		int childCount = readVarInt(in);
 		for (int i = 0; i < childCount; i++) {
 			Node child = new Node("");
-			readNode(in, child);
+			readNode(in, child, depth + 1);
 			if (!child.label.isEmpty()) {
 				node.children.put(child.label.charAt(0), child);
 			}
