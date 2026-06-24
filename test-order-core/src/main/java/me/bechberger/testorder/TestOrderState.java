@@ -536,6 +536,9 @@ public class TestOrderState {
 
 	public record RunRecord(long timestamp, int totalTests, int totalFailures, int firstFailurePosition, double apfd,
 			List<TestOutcome> outcomes) {
+		public RunRecord {
+			outcomes = outcomes != null ? outcomes : List.of();
+		}
 	}
 
 	// ── Instance state ────────────────────────────────────────────────

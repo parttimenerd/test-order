@@ -338,19 +338,22 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 				TelemetryPersistence.applyPendingTelemetry(state, pendingDurations, failedClassNames,
 						pendingMethodDurations, failedMethodNames);
 
-				if (!executionOrder.isEmpty()) {
-					TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder, failedClassNames);
-					state.addRunRecord(record);
-					boolean isLearnRun = Boolean.parseBoolean(System.getProperty(TestOrderConfig.LEARN, "false"));
-					if (!isLearnRun) {
-						state.incrementRunsSinceLearn();
-					}
-					if (record.totalFailures() > 0) {
-						TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
-								String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
-								record.firstFailurePosition() + 1, record.totalTests());
+				synchronized (executionOrder) {
+					if (!executionOrder.isEmpty()) {
+						TestOrderState.RunRecord record = TestOrderState.buildRunRecord(executionOrder,
+								failedClassNames);
+						state.addRunRecord(record);
+						boolean isLearnRun = Boolean.parseBoolean(System.getProperty(TestOrderConfig.LEARN, "false"));
 						if (!isLearnRun) {
-							logTimeSaved(state, record);
+							state.incrementRunsSinceLearn();
+						}
+						if (record.totalFailures() > 0) {
+							TestOrderLogger.info("Run APFD: {}% (first failure at position {}/{})",
+									String.format(java.util.Locale.US, "%.1f", record.apfd() * 100),
+									record.firstFailurePosition() + 1, record.totalTests());
+							if (!isLearnRun) {
+								logTimeSaved(state, record);
+							}
 						}
 					}
 				}
@@ -369,17 +372,26 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 	private void emergencySave() {
 		if (finishedNormally || !initialized.get())
 			return;
-		// Snapshot all collections before passing to emergencySave — ongoing test
-		// callbacks may be adding to these maps concurrently while the shutdown hook
-		// runs, so passing live references risks a partial or concurrent-modification
-		// save.
-		// (Unlike the JUnit listener, TestNG's persistState() does not clear these
-		// maps.)
-		Map<String, List<Long>> durSnap = new java.util.HashMap<>(pendingDurations);
+		// Deep-copy all collections: ongoing test callbacks may be adding to the inner
+		// lists concurrently, so shallow copies leave live List<Long> references that
+		// TelemetryPersistence would iterate and could cause
+		// ConcurrentModificationException.
+		Map<String, List<Long>> durSnap = snapshotMapOfLists(pendingDurations);
 		Set<String> failSnap = new java.util.HashSet<>(failedClassNames);
-		Map<String, List<Long>> methodDurSnap = new java.util.HashMap<>(pendingMethodDurations);
+		Map<String, List<Long>> methodDurSnap = snapshotMapOfLists(pendingMethodDurations);
 		Set<String> methodFailSnap = new java.util.HashSet<>(failedMethodNames);
 		TelemetryPersistence.emergencySave(statePath, durSnap, failSnap, methodDurSnap, methodFailSnap, false);
+	}
+
+	private static Map<String, List<Long>> snapshotMapOfLists(Map<String, List<Long>> source) {
+		Map<String, List<Long>> snap = new java.util.HashMap<>();
+		for (var entry : source.entrySet()) {
+			List<Long> list = entry.getValue();
+			synchronized (list) {
+				snap.put(entry.getKey(), new java.util.ArrayList<>(list));
+			}
+		}
+		return snap;
 	}
 
 	/**

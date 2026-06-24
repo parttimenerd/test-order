@@ -61,6 +61,15 @@ public final class IndexCollectorServer implements AutoCloseable {
 	 */
 	private static final String JVM_REGISTRY_KEY = "testorder.IndexCollectorServer.registry";
 
+	/**
+	 * Guards scoped {@code testorder.compression} writes during
+	 * {@link #stopAndMerge}. Without this, parallel Maven module builds
+	 * ({@code -T N}) where each module has its own collector would race on the
+	 * global system property, causing one module to write the index with another
+	 * module's compression level.
+	 */
+	private static final Object COMPRESSION_PROPERTY_LOCK = new Object();
+
 	@SuppressWarnings("unchecked")
 	private static ConcurrentHashMap<Integer, Object> jvmRegistry() {
 		return (ConcurrentHashMap<Integer, Object>) System.getProperties().computeIfAbsent(JVM_REGISTRY_KEY,
@@ -120,6 +129,10 @@ public final class IndexCollectorServer implements AutoCloseable {
 	private volatile String[] sourcePackagePrefixes; // set via setIncludePackages
 	private volatile String[] classNames; // lazily loaded from mappingFile
 	private volatile String[] memberNames; // lazily loaded from mappingFile
+	/**
+	 * Compression level for the final index write; null means use system property.
+	 */
+	private volatile LZ4Support.Compression compression = null;
 	private final Thread shutdownHook;
 
 	// Shared maps for incremental merge — ConcurrentHashMap for lock-free access
@@ -174,8 +187,11 @@ public final class IndexCollectorServer implements AutoCloseable {
 			throw e;
 		}
 
-		handlerExecutor = Executors.newFixedThreadPool(MAX_HANDLER_THREADS,
-				r -> new Thread(r, "test-order-collector-handler"));
+		handlerExecutor = Executors.newFixedThreadPool(MAX_HANDLER_THREADS, r -> {
+			Thread t = new Thread(r, "test-order-collector-handler");
+			t.setDaemon(true); // daemon so the JVM can exit on abnormal shutdown
+			return t;
+		});
 
 		acceptThread = new Thread(this::acceptLoop, "test-order-index-collector");
 		acceptThread.setDaemon(true);
@@ -252,6 +268,18 @@ public final class IndexCollectorServer implements AutoCloseable {
 		} else {
 			this.sourcePackagePrefixes = java.util.Arrays.stream(includePackages.split("[,;]+"))
 					.map(p -> p.endsWith(".") ? p.substring(0, p.length() - 1) : p).toArray(String[]::new);
+		}
+	}
+
+	/**
+	 * Sets the LZ4 compression level used when writing the final index. Avoids the
+	 * global {@code System.setProperty("testorder.compression")} race in parallel
+	 * Maven builds ({@code -T N}). If not set, the system property is used as a
+	 * fallback.
+	 */
+	public void setCompression(String compressionValue) {
+		if (compressionValue != null && !compressionValue.isBlank()) {
+			this.compression = LZ4Support.Compression.fromString(compressionValue.strip());
 		}
 	}
 
@@ -337,10 +365,19 @@ public final class IndexCollectorServer implements AutoCloseable {
 				? methodMemberDepsSnapshot
 				: filterMemberDeps(methodMemberDepsSnapshot, classDepsToWrite);
 
-		// Write the already-merged index
+		// Write the already-merged index, with scoped compression to avoid races in
+		// parallel Maven builds where two collectors may have different compression
+		// levels
 		try {
-			DependencyMap.mergeFromAgent(targetIndexFile, classDepsToWrite, methodDepsSnapshot, memberDepsToWrite,
-					methodMemberDepsToWrite, testToModuleSnapshot);
+			if (compression != null) {
+				// Use instance-level compression with a scoped sysprop to keep DependencyMap's
+				// System.getProperty() read correct without leaking into parallel merges.
+				withScopedCompression(compression, () -> DependencyMap.mergeFromAgent(targetIndexFile, classDepsToWrite,
+						methodDepsSnapshot, memberDepsToWrite, methodMemberDepsToWrite, testToModuleSnapshot));
+			} else {
+				DependencyMap.mergeFromAgent(targetIndexFile, classDepsToWrite, methodDepsSnapshot, memberDepsToWrite,
+						methodMemberDepsToWrite, testToModuleSnapshot);
+			}
 		} catch (IOException e) {
 			System.err.println("[test-order] IndexCollectorServer: failed to write index: " + e.getMessage());
 			unregisterShutdownHook();
@@ -349,6 +386,27 @@ public final class IndexCollectorServer implements AutoCloseable {
 		logIndexSize(targetIndexFile, classDepsToWrite.size());
 		unregisterShutdownHook();
 		return classDepsToWrite.size();
+	}
+
+	@FunctionalInterface
+	private interface IoAction {
+		void run() throws IOException;
+	}
+
+	private static void withScopedCompression(LZ4Support.Compression level, IoAction action) throws IOException {
+		synchronized (COMPRESSION_PROPERTY_LOCK) {
+			String previous = System.getProperty("testorder.compression");
+			System.setProperty("testorder.compression", level.name().toLowerCase(java.util.Locale.ROOT));
+			try {
+				action.run();
+			} finally {
+				if (previous == null) {
+					System.clearProperty("testorder.compression");
+				} else {
+					System.setProperty("testorder.compression", previous);
+				}
+			}
+		}
 	}
 
 	/**
@@ -825,11 +883,14 @@ public final class IndexCollectorServer implements AutoCloseable {
 
 	/** Maximum number of entries allowed in a single map (safety limit). */
 	private static final int MAX_MAP_ENTRIES = 500_000;
+	/** Maximum total values across all entries in one readMap call. */
+	private static final int MAX_TOTAL_VALUES = 10_000_000;
 	/**
-	 * Maximum string length in the wire protocol (2 GB theoretical limit; practical
-	 * limit).
+	 * Maximum string length in the wire protocol. Class/method names never exceed a
+	 * few KB; this cap prevents a single malformed string from consuming large
+	 * heap.
 	 */
-	private static final int MAX_STRING_LENGTH = 64 * 1024 * 1024; // 64 MB
+	private static final int MAX_STRING_LENGTH = 8 * 1024; // 8 KB
 
 	private static Map<String, Set<String>> readMap(DataInputStream in) throws IOException {
 		int entryCount = in.readInt();
@@ -840,11 +901,16 @@ public final class IndexCollectorServer implements AutoCloseable {
 			throw new IOException("Invalid map entry count: " + entryCount);
 		}
 		Map<String, Set<String>> map = new HashMap<>(entryCount);
+		int totalValues = 0;
 		for (int i = 0; i < entryCount; i++) {
 			String key = readString(in);
 			int valueCount = in.readInt();
 			if (valueCount < 0 || valueCount > MAX_MAP_ENTRIES) {
 				throw new IOException("Invalid value set size: " + valueCount);
+			}
+			totalValues += valueCount;
+			if (totalValues > MAX_TOTAL_VALUES) {
+				throw new IOException("Total value count exceeds limit: " + totalValues);
 			}
 			Set<String> values = new HashSet<>(valueCount);
 			for (int j = 0; j < valueCount; j++) {

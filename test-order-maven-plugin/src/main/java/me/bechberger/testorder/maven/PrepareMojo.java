@@ -65,9 +65,9 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 	/**
 	 * LZ4 compression level for index writes: "fast" (10-50x faster writes, ~40-50%
 	 * larger files), "medium" (default — HC level 4, ~2-3x slower than fast, ~40%
-	 * smaller files), or "hc" (HC level 9, maximum compression). The setting is
-	 * passed as a system property so that the IndexCollectorServer in the build
-	 * process uses it when writing the final index.
+	 * smaller files), or "hc" (HC level 9, maximum compression). Passed to the
+	 * IndexCollectorServer instance so parallel Maven module builds do not race on
+	 * a global system property.
 	 */
 	@Parameter(property = MavenPluginConfigKeys.COMPRESSION, defaultValue = "medium")
 	private String compression;
@@ -570,9 +570,12 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		SurefireHelper.forceClasspathModeIfNeeded(project, getLog());
 		String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
 
-		// Set compression level as a system property for IndexCollectorServer merge
+		// Propagate per-module compression to the shared base field so
+		// configureLearnMode
+		// can pass it to the collector instance (avoids global System.setProperty race
+		// in -T N)
 		if (compression != null && !compression.isBlank()) {
-			System.setProperty(MavenPluginConfigKeys.COMPRESSION, compression.strip());
+			compressionLevel = compression.strip();
 		}
 
 		if ("offline".equalsIgnoreCase(instrumentation)) {
