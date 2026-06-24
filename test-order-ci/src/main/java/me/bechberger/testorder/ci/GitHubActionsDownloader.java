@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -203,6 +205,11 @@ public class GitHubActionsDownloader implements DepDownloader {
 
 	private static final long MAX_DOWNLOAD_BYTES = 500L * 1024 * 1024;
 
+	/**
+	 * Downloads the artifact ZIP from the GitHub API and extracts the first entry
+	 * whose name ends with {@code .lz4} (the dependency index). The GitHub
+	 * artifacts API always returns a ZIP archive, not the raw file.
+	 */
 	private boolean downloadFile(String downloadUrl, Path outputPath) throws IOException, DepDownloadException {
 		Request.Builder requestBuilder = new Request.Builder().url(downloadUrl);
 
@@ -212,7 +219,7 @@ public class GitHubActionsDownloader implements DepDownloader {
 
 		Request request = requestBuilder.build();
 
-		try (Response response = httpClient.newCall(request).execute()) {
+		try (okhttp3.Response response = httpClient.newCall(request).execute()) {
 			if (!response.isSuccessful()) {
 				throw new DepDownloadException(
 						String.format("Download failed: %d %s", response.code(), response.message()));
@@ -222,23 +229,41 @@ public class GitHubActionsDownloader implements DepDownloader {
 				throw new DepDownloadException("Download response body is empty");
 			}
 
-			try (InputStream input = response.body().byteStream();
-					java.io.OutputStream output = java.nio.file.Files.newOutputStream(outputPath)) {
-				byte[] buffer = new byte[8192];
-				int bytesRead;
-				long totalRead = 0;
-				while ((bytesRead = input.read(buffer)) != -1) {
-					totalRead += bytesRead;
-					if (totalRead > MAX_DOWNLOAD_BYTES) {
-						throw new DepDownloadException(
-								"Download too large: exceeds " + MAX_DOWNLOAD_BYTES + " bytes limit");
+			try (InputStream raw = response.body().byteStream();
+					ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
+				ZipEntry entry;
+				while ((entry = zip.getNextEntry()) != null) {
+					String name = entry.getName();
+					// Zip Slip guard: reject any entry whose canonical name would escape the
+					// target directory (e.g. entries with "../" path components).
+					if (name.contains("..") || name.startsWith("/") || name.startsWith("\\")) {
+						zip.closeEntry();
+						continue;
 					}
-					output.write(buffer, 0, bytesRead);
+					if (!name.endsWith(".lz4")) {
+						zip.closeEntry();
+						continue;
+					}
+					// Found the LZ4 index — write it directly to outputPath
+					try (OutputStream out = java.nio.file.Files.newOutputStream(outputPath)) {
+						byte[] buf = new byte[8192];
+						int n;
+						long totalRead = 0;
+						while ((n = zip.read(buf)) != -1) {
+							totalRead += n;
+							if (totalRead > MAX_DOWNLOAD_BYTES) {
+								throw new DepDownloadException(
+										"Artifact entry too large: exceeds " + MAX_DOWNLOAD_BYTES + " bytes");
+							}
+							out.write(buf, 0, n);
+						}
+					}
+					logger.info("Extracted {} from artifact ZIP to: {}", name, outputPath);
+					return true;
 				}
+				throw new DepDownloadException("No .lz4 file found inside the GitHub artifact ZIP. "
+						+ "Ensure the artifact was uploaded with the dependency index (test-dependencies.lz4).");
 			}
-
-			logger.info("Downloaded to: {}", outputPath);
-			return true;
 		}
 	}
 
