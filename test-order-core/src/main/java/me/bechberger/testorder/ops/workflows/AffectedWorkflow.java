@@ -74,9 +74,11 @@ public final class AffectedWorkflow {
 			});
 		}
 
-		AffectedOperation.SelectResult result = AffectedOperation.select(new AffectedOperation.SelectConfig(
-				effectiveDepMap, a.state(), a.changedClasses(), changedAndNew, a.weights(), ctx.topN(), ctx.randomM(),
-				ctx.seed(), alwaysRun, ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity()));
+		me.bechberger.testorder.TestSelector.CacheConfig cacheConfig = AutoWorkflow.readCacheConfig(ctx.stateFile());
+		AffectedOperation.SelectResult result = AffectedOperation
+				.select(new AffectedOperation.SelectConfig(effectiveDepMap, a.state(), a.changedClasses(),
+						changedAndNew, a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(), alwaysRun,
+						ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity(), cacheConfig));
 		return new SelectWithAnalysis(result, a);
 	}
 }
