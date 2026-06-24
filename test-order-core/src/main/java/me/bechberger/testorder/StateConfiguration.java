@@ -84,7 +84,7 @@ public class StateConfiguration {
 	 *             if d is not in [0, 1]
 	 */
 	public void setFailureDecay(double d) {
-		if (d < 0 || d > 1) {
+		if (Double.isNaN(d) || Double.isInfinite(d) || d < 0 || d > 1) {
 			throw new IllegalArgumentException("failureDecay must be in [0, 1]: " + d);
 		}
 		this.failureDecay = d;
@@ -108,7 +108,7 @@ public class StateConfiguration {
 	 *             if d is not in [0, 1]
 	 */
 	public void setMethodFailureDecay(double d) {
-		if (d < 0 || d > 1) {
+		if (Double.isNaN(d) || Double.isInfinite(d) || d < 0 || d > 1) {
 			throw new IllegalArgumentException("methodFailureDecay must be in [0, 1]: " + d);
 		}
 		this.methodFailureDecay = d;
@@ -138,7 +138,7 @@ public class StateConfiguration {
 	 *             if a is not in [0, 1]
 	 */
 	public void setDurationAlpha(double a) {
-		if (a < 0 || a > 1) {
+		if (Double.isNaN(a) || Double.isInfinite(a) || a < 0 || a > 1) {
 			throw new IllegalArgumentException("durationAlpha must be in [0, 1]: " + a);
 		}
 		this.durationAlpha = a;
@@ -162,7 +162,7 @@ public class StateConfiguration {
 	 *             if a is not in [0, 1]
 	 */
 	public void setMethodDurationAlpha(double a) {
-		if (a < 0 || a > 1) {
+		if (Double.isNaN(a) || Double.isInfinite(a) || a < 0 || a > 1) {
 			throw new IllegalArgumentException("methodDurationAlpha must be in [0, 1]: " + a);
 		}
 		this.methodDurationAlpha = a;

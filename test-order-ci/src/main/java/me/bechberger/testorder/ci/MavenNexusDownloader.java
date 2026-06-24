@@ -1,8 +1,9 @@
 package me.bechberger.testorder.ci;
 
-import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
 import org.slf4j.Logger;
@@ -42,6 +43,9 @@ public class MavenNexusDownloader implements DepDownloader {
 
 	/** Maximum download size: 500 MB. */
 	private static final long MAX_DOWNLOAD_BYTES = 500L * 1024 * 1024;
+
+	/** Maximum maven-metadata.xml response size: 1 MB. */
+	private static final long MAX_METADATA_BYTES = 1L * 1024 * 1024;
 
 	private final CiConfig.MavenConfig config;
 	private final String token;
@@ -111,7 +115,25 @@ public class MavenNexusDownloader implements DepDownloader {
 				throw new DepDownloadException(
 						"Failed to fetch maven-metadata.xml: HTTP " + resp.code() + " from " + metadataUrl);
 			}
-			String xml = resp.body().string();
+			long contentLength = resp.body().contentLength();
+			if (contentLength > MAX_METADATA_BYTES) {
+				throw new DepDownloadException("maven-metadata.xml response too large: " + contentLength + " bytes");
+			}
+			byte[] xmlBytes;
+			try (InputStream is = resp.body().byteStream()) {
+				ByteArrayOutputStream buf = new ByteArrayOutputStream(4096);
+				byte[] chunk = new byte[4096];
+				int n;
+				while ((n = is.read(chunk)) >= 0) {
+					if (buf.size() + n > MAX_METADATA_BYTES) {
+						throw new DepDownloadException(
+								"maven-metadata.xml response exceeded " + MAX_METADATA_BYTES + " byte limit");
+					}
+					buf.write(chunk, 0, n);
+				}
+				xmlBytes = buf.toByteArray();
+			}
+			String xml = new String(xmlBytes, StandardCharsets.UTF_8);
 			String version = extractXmlValue(xml, "release");
 			if (version == null) {
 				version = extractXmlValue(xml, "latest");
@@ -149,25 +171,24 @@ public class MavenNexusDownloader implements DepDownloader {
 				throw new DepDownloadException(String.format("Artifact too large: %d bytes exceeds limit of %d bytes",
 						contentLength, MAX_DOWNLOAD_BYTES));
 			}
+			boolean success = false;
 			try (InputStream in = resp.body().byteStream();
-					FileOutputStream out = new FileOutputStream(outputPath.toFile())) {
+					java.io.OutputStream out = java.nio.file.Files.newOutputStream(outputPath)) {
 				byte[] buf = new byte[8192];
 				int n;
 				long total = 0;
 				while ((n = in.read(buf)) != -1) {
 					total += n;
 					if (total > MAX_DOWNLOAD_BYTES) {
-						out.close();
-						java.nio.file.Files.deleteIfExists(outputPath);
 						throw new DepDownloadException("Artifact exceeded size limit during download");
 					}
 					out.write(buf, 0, n);
 				}
-			} catch (DepDownloadException e) {
-				throw e;
-			} catch (IOException e) {
-				java.nio.file.Files.deleteIfExists(outputPath);
-				throw e;
+				success = true;
+			} finally {
+				if (!success) {
+					java.nio.file.Files.deleteIfExists(outputPath);
+				}
 			}
 		}
 		logger.info("Downloaded artifact to: {}", outputPath);

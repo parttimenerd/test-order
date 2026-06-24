@@ -204,6 +204,7 @@ public class GitHubActionsDownloader implements DepDownloader {
 	}
 
 	private static final long MAX_DOWNLOAD_BYTES = 500L * 1024 * 1024;
+	private static final int MAX_ZIP_ENTRIES = 1_000;
 
 	/**
 	 * Downloads the artifact ZIP from the GitHub API and extracts the first entry
@@ -232,7 +233,12 @@ public class GitHubActionsDownloader implements DepDownloader {
 			try (InputStream raw = response.body().byteStream();
 					ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
 				ZipEntry entry;
+				int entryCount = 0;
 				while ((entry = zip.getNextEntry()) != null) {
+					if (++entryCount > MAX_ZIP_ENTRIES) {
+						throw new DepDownloadException(
+								"Artifact ZIP contains too many entries (limit: " + MAX_ZIP_ENTRIES + ")");
+					}
 					String name = entry.getName();
 					// Zip Slip guard: reject any entry whose canonical name would escape the
 					// target directory (e.g. entries with "../" path components).

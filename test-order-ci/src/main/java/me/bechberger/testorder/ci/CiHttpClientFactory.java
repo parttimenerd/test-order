@@ -45,14 +45,24 @@ final class CiHttpClientFactory {
 				throw new UnknownHostException(
 						"DNS resolved to private/localhost address for " + hostname + ": " + addr.getHostAddress());
 			}
+			byte[] raw = addr.getAddress();
 			// isSiteLocalAddress() does not cover IPv6 Unique Local Addresses (ULA):
 			// fc00::/7 (i.e. fc00::/8 and fd00::/8). Check the first byte explicitly.
-			byte[] raw = addr.getAddress();
 			if (raw.length == 16) {
 				int firstByte = raw[0] & 0xFF;
 				if (firstByte == 0xFC || firstByte == 0xFD) {
 					throw new UnknownHostException(
 							"DNS resolved to IPv6 ULA address for " + hostname + ": " + addr.getHostAddress());
+				}
+			}
+			// RFC 6598: 100.64.0.0/10 shared address space (CGNAT) — commonly routes to
+			// internal CI infrastructure on cloud VMs.
+			if (raw.length == 4) {
+				int b0 = raw[0] & 0xFF;
+				int b1 = raw[1] & 0xFF;
+				if (b0 == 100 && b1 >= 64 && b1 <= 127) {
+					throw new UnknownHostException(
+							"DNS resolved to CGNAT address for " + hostname + ": " + addr.getHostAddress());
 				}
 			}
 		}
