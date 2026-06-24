@@ -146,10 +146,14 @@ public class BitsetTracker {
 	// ── Recording ────────────────────────────────────────────────────
 
 	public void recordClass(int classId) {
+		if (classId < 0)
+			return;
 		classWords.record(classId >>> 6, 1L << classId);
 	}
 
 	public void recordMember(int memberId) {
+		if (memberId < 0)
+			return;
 		WordArray mw = memberWords;
 		if (mw == null) {
 			synchronized (this) {

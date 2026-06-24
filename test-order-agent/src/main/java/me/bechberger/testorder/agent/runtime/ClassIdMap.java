@@ -59,6 +59,10 @@ public class ClassIdMap {
 			return previous - 1;
 		}
 
+		public boolean compareAndSet(int expected, int update) {
+			return VALUE_HANDLE.compareAndSet(this, expected, update);
+		}
+
 		public int get() {
 			return value;
 		}
@@ -124,7 +128,10 @@ public class ClassIdMap {
 		Integer id = classToId.computeIfAbsent(className, k -> {
 			int newId = nextClassId.getAndIncrement();
 			if (newId >= MEMBER_ID_OFFSET) {
-				nextClassId.decrementAndGet();
+				// Peg the counter at the ceiling; never decrement — decrement would allow a
+				// concurrent thread to reuse the same overflow ID, creating duplicate entries
+				// that silently corrupt the reverse-lookup table.
+				nextClassId.compareAndSet(newId + 1, MEMBER_ID_OFFSET);
 				AgentLogger.log("[ClassIdMap] WARNING: Class ID capacity exceeded: " + k);
 				return null; // don't store; caller gets -1
 			}
@@ -178,7 +185,8 @@ public class ClassIdMap {
 		Integer id = map.computeIfAbsent(memberKey, k -> {
 			int newId = nextMemberId.getAndIncrement();
 			if (newId >= CAPACITY_LIMIT) {
-				nextMemberId.decrementAndGet();
+				// Peg the counter at the ceiling — same rationale as getOrRegisterClass.
+				nextMemberId.compareAndSet(newId + 1, CAPACITY_LIMIT);
 				AgentLogger.log("[ClassIdMap] WARNING: Member ID capacity exceeded: " + k);
 				return null;
 			}

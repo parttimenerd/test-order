@@ -61,8 +61,14 @@ public final class MethodOrderingEngine {
 		List<MethodScorer.MethodMetadata> metadata = new ArrayList<>(methodNames.size());
 		for (String methodName : methodNames) {
 			double durationDouble = state.getDurationMethod(className, methodName, -1.0);
-			// Round rather than truncate so sub-millisecond values map to 1ms rather than 0
-			long duration = durationDouble < 0 ? (long) durationDouble : Math.max(1L, Math.round(durationDouble));
+			// Round rather than truncate so sub-millisecond values map to 1ms rather than
+			// 0.
+			// Treat NaN the same as negative (unknown) — NaN passes durationDouble < 0
+			// check
+			// in IEEE 754 so we must guard explicitly.
+			long duration = (Double.isNaN(durationDouble) || durationDouble < 0)
+					? -1L
+					: Math.max(1L, Math.round(durationDouble));
 			metadata.add(new MethodScorer.MethodMetadata(className, methodName, duration, null));
 		}
 

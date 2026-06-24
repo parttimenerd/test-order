@@ -235,7 +235,7 @@ public class MethodScorer {
 	 */
 	private double computeFailureRecencyBonus(MethodMetadata m) {
 		double failScore = state.methodFailureScore(m.className(), m.methodName());
-		if (failScore <= 0)
+		if (!(failScore > 0))
 			return 0.0;
 		return Math.min(Math.ceil(failScore), weights.failureRecency());
 	}

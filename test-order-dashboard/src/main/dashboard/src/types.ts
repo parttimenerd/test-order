@@ -26,6 +26,7 @@ export interface ScoringWeights {
   staticFieldBonus: number
   coverageBonus: number
   killRateBonus: number
+  packageProximityBonus: number
 }
 
 export interface StateConfig {

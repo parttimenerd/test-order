@@ -311,7 +311,7 @@ public class StateConfiguration {
 	 * used during state file deserialization.
 	 */
 	void setRunsSinceLearn(int value) {
-		this.runsSinceLearn = value;
+		this.runsSinceLearn = Math.max(0, value);
 	}
 
 	// ── Dependency Fingerprint ────────────────────────────────────────

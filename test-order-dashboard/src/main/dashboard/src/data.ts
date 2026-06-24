@@ -2,7 +2,7 @@ import type { DashboardData, TestEntry, MethodEntry } from './types'
 
 const EMPTY: DashboardData = {
   project: { name: 'Unknown', generated: '', pluginVersion: '?', stateFilePath: '', indexFilePath: '' },
-  weights: { newTest: 0, changedTest: 0, maxFailure: 0, speed: 0, speedPenalty: 0, depOverlap: 0, changeComplexity: 0, staticFieldBonus: 0, coverageBonus: 0, killRateBonus: 0 },
+  weights: { newTest: 0, changedTest: 0, maxFailure: 0, speed: 0, speedPenalty: 0, depOverlap: 0, changeComplexity: 0, staticFieldBonus: 0, coverageBonus: 0, killRateBonus: 0, packageProximityBonus: 0 },
   weightDefs: [],
   config: { failureDecay: 0.3, durationAlpha: 0.85, failurePruneThreshold: 0.01, emaVarianceThreshold: 0.5, historyMaxRuns: 50 },
   medianDuration: 0,
