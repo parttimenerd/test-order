@@ -17,10 +17,10 @@ public class LearnMojo extends AutoMojo {
 
 	@Override
 	public void execute() throws MojoExecutionException {
-		// Force learn mode regardless of configuration
-		if (session != null && session.getUserProperties() != null) {
-			session.getUserProperties().setProperty(MavenPluginConfigKeys.MODE, "learn");
-		}
+		// Force learn mode by setting the inherited field directly.
+		// Do NOT set session.getUserProperties() — that is shared across all parallel
+		// modules and would force every sibling module into learn mode as well.
+		mode = "learn";
 		// Warn if 'test' phase is likely not going to run (standalone CLI goal
 		// invocation)
 		if (session != null && session.getGoals() != null && session.getGoals().stream().noneMatch(g -> g.equals("test")

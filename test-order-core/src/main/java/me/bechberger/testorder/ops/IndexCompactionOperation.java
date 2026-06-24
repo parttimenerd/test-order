@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import me.bechberger.testorder.DependencyMap;
+import me.bechberger.testorder.PersistenceSupport;
 
 /**
  * Index compaction operation to rebuild index from .deps files. Useful for
@@ -30,6 +31,10 @@ public final class IndexCompactionOperation {
 	 *             if read/write fails
 	 */
 	public static CompactionResult compact(Path depsDir, Path outputFile, PluginLog log) throws IOException {
+		return PersistenceSupport.withFileLock(outputFile, () -> compactUnderLock(depsDir, outputFile, log));
+	}
+
+	private static CompactionResult compactUnderLock(Path depsDir, Path outputFile, PluginLog log) throws IOException {
 		if (!Files.exists(depsDir)) {
 			log.warn("Deps directory not found: " + depsDir + "\nRun: mvn test -Dtestorder.mode=learn");
 			return new CompactionResult(0, 0, 0, "No .deps directory");

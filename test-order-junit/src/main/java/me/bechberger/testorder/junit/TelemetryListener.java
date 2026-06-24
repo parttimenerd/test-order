@@ -293,8 +293,14 @@ public class TelemetryListener implements TestExecutionListener {
 		}
 		if (learnMode && bridge.isAvailable()) {
 			testIdentifier.getSource().ifPresent(source -> {
-				if (source instanceof ClassSource) {
-					bridge.callEndTestClass(((ClassSource) source).getClassName());
+				if (source instanceof ClassSource cs) {
+					// Only call endTestClass for top-level class containers (no '$').
+					// @Nested inner classes are containers with ClassSource, but ending them
+					// early would silence recording for the remaining methods of the outer class.
+					String className = cs.getClassName();
+					if (!className.contains("$")) {
+						bridge.callEndTestClass(className);
+					}
 				}
 			});
 		}

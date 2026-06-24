@@ -131,13 +131,25 @@ final class StateSerializer {
 
 	private static byte[] readRaw(Path file, Path loadPath) throws IOException {
 		try {
+			checkStateFileSize(loadPath);
 			return Files.readAllBytes(loadPath);
 		} catch (IOException primaryFailure) {
 			Path tempFile = PersistenceSupport.temporarySibling(file);
 			if (!loadPath.equals(tempFile) && Files.exists(tempFile)) {
+				checkStateFileSize(tempFile);
 				return Files.readAllBytes(tempFile);
 			}
 			throw primaryFailure;
+		}
+	}
+
+	private static final long MAX_STATE_FILE_BYTES = 256L * 1024 * 1024; // 256 MB
+
+	private static void checkStateFileSize(Path path) throws IOException {
+		long size = Files.size(path);
+		if (size > MAX_STATE_FILE_BYTES) {
+			throw new IOException(
+					"State file too large (" + size + " bytes, limit " + MAX_STATE_FILE_BYTES + "): " + path);
 		}
 	}
 

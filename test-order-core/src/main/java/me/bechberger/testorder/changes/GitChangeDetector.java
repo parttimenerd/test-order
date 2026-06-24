@@ -164,19 +164,22 @@ public class GitChangeDetector {
 		List<String> command = List.of("git", "cat-file", "--batch");
 		ProcessBuilder pb = new ProcessBuilder(command);
 		pb.directory(projectRoot.toFile());
-		pb.redirectErrorStream(true);
+		// Do NOT merge stderr into stdout: git diagnostic messages on stderr would
+		// desynchronize the positional header reader and map content to wrong files.
+		pb.redirectError(ProcessBuilder.Redirect.DISCARD);
 		Process process = pb.start();
 
 		Map<String, String> results = new java.util.HashMap<>();
 		try {
 			try (var os = process.getOutputStream(); InputStream is = process.getInputStream()) {
-				// Write object names (commitRef:path) to stdin
-				var writer = new java.io.PrintWriter(os, true);
-				for (String filePath : filePaths) {
-					writer.println(commitRef + ":" + filePath);
-				}
-				writer.flush();
-				os.close(); // close stdin to signal EOF
+				// Write object names (commitRef:path) to stdin.
+				// Use OutputStreamWriter so IOExceptions are propagated (PrintWriter swallows
+				// them).
+				try (var writer = new java.io.OutputStreamWriter(os, StandardCharsets.UTF_8)) {
+					for (String filePath : filePaths) {
+						writer.write(commitRef + ":" + filePath + "\n");
+					}
+				} // closes os, signalling EOF to git
 
 				// Read output: header lines followed by object content.
 				// git cat-file --batch reports sizes in BYTES. We read everything as raw

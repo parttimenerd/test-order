@@ -76,6 +76,10 @@ public class ClassIdMap {
 
 	private static final int MEMBER_ID_OFFSET = 8_000_000; // members start at 8M
 	private static final int CAPACITY_LIMIT = 16_000_000; // total capacity: 8M classes + 8M members
+	// Sentinel stored in classToId/memberToId when capacity is exceeded. Must be
+	// negative
+	// so callers that check id >= 0 treat it as "not registered".
+	private static final int OVERFLOW_SENTINEL = Integer.MIN_VALUE;
 	// Medium project: ~2 000 instrumented application classes; 4 096 avoids any
 	// rehash below that.
 	private static final int INITIAL_CLASS_MAP_CAPACITY = 4_096 * 2;
@@ -133,12 +137,15 @@ public class ClassIdMap {
 				// that silently corrupt the reverse-lookup table.
 				nextClassId.compareAndSet(newId + 1, MEMBER_ID_OFFSET);
 				AgentLogger.log("[ClassIdMap] WARNING: Class ID capacity exceeded: " + k);
-				return null; // don't store; caller gets -1
+				// Store a sentinel so subsequent calls for this key don't re-enter the lambda
+				// and spam the log. OVERFLOW_SENTINEL < 0 so callers that check id >= 0 skip
+				// it.
+				return OVERFLOW_SENTINEL;
 			}
 			setReverseClass(newId, k);
 			return newId;
 		});
-		return id != null ? id : -1;
+		return (id != null && id != OVERFLOW_SENTINEL) ? id : -1;
 	}
 
 	private void setReverseClass(int id, String name) {
@@ -188,22 +195,27 @@ public class ClassIdMap {
 				// Peg the counter at the ceiling — same rationale as getOrRegisterClass.
 				nextMemberId.compareAndSet(newId + 1, CAPACITY_LIMIT);
 				AgentLogger.log("[ClassIdMap] WARNING: Member ID capacity exceeded: " + k);
-				return null;
+				// Store a sentinel to prevent re-entry and log spam on subsequent lookups.
+				return OVERFLOW_SENTINEL;
 			}
-			// Populate memberIdToClassId mapping
+			// Populate memberIdToClassId mapping inside the synchronized capacity call
+			// so the element write is visible to all threads (volatile array ref is not
+			// sufficient for element visibility on weak-memory architectures).
 			int hashIdx = k.indexOf('#');
 			if (hashIdx > 0) {
 				String className = k.substring(0, hashIdx);
 				int classId = getOrRegisterClass(className);
 				if (classId >= 0) {
-					ensureMemberToClassCapacity(newId - MEMBER_ID_OFFSET);
-					memberIdToClassId[newId - MEMBER_ID_OFFSET] = classId;
+					synchronized (ClassIdMap.this) {
+						ensureMemberToClassCapacity(newId - MEMBER_ID_OFFSET);
+						memberIdToClassId[newId - MEMBER_ID_OFFSET] = classId;
+					}
 				}
 			}
 			setReverseMember(newId - MEMBER_ID_OFFSET, k);
 			return newId;
 		});
-		return id != null ? id : -1;
+		return (id != null && id != OVERFLOW_SENTINEL) ? id : -1;
 	}
 
 	private synchronized void ensureMemberToClassCapacity(int index) {
