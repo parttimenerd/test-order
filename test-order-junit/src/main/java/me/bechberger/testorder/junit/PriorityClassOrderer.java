@@ -261,7 +261,7 @@ public class PriorityClassOrderer implements ClassOrderer {
 			}
 			if (s.debug() && (bonus != 0 || changeBonus != 0 || prio != TestOrder.Priority.NORMAL)) {
 				TestOrderLogger.debug("@TestOrder on {}: priority={}, scoreBonus={}, changeBonus={} (applied={})",
-						testClassName, prio, bonus, ann.changeBonus(), changeBonus);
+						testClassName, prio, bonus, ann != null ? ann.changeBonus() : 0, changeBonus);
 			}
 		}
 		// Remove pinned and @Order descriptors from main list before score-based sort.

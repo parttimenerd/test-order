@@ -140,7 +140,26 @@ public class GitLabCiDownloader implements DepDownloader {
 			if (response.body() == null) {
 				throw new DepDownloadException("GitLab API response body is empty");
 			}
-			Object parsed = JSONParser.parse(response.body().string());
+			long contentLength = response.body().contentLength();
+			if (contentLength > MAX_JSON_BYTES) {
+				throw new DepDownloadException("GitLab API response too large: " + contentLength + " bytes exceeds "
+						+ MAX_JSON_BYTES + " limit");
+			}
+			byte[] bodyBytes;
+			try (InputStream is = response.body().byteStream()) {
+				ByteArrayOutputStream buf = new ByteArrayOutputStream(8192);
+				byte[] chunk = new byte[8192];
+				int n;
+				while ((n = is.read(chunk)) >= 0) {
+					if (buf.size() + n > MAX_JSON_BYTES) {
+						throw new DepDownloadException(
+								"GitLab API response exceeded " + MAX_JSON_BYTES + " byte limit during streaming");
+					}
+					buf.write(chunk, 0, n);
+				}
+				bodyBytes = buf.toByteArray();
+			}
+			Object parsed = JSONParser.parse(new String(bodyBytes, StandardCharsets.UTF_8));
 			if (!(parsed instanceof List)) {
 				throw new DepDownloadException("GitLab API returned unexpected JSON structure (expected array)");
 			}
@@ -148,6 +167,7 @@ public class GitLabCiDownloader implements DepDownloader {
 		}
 	}
 
+	private static final long MAX_JSON_BYTES = 10L * 1024 * 1024;
 	private static final long MAX_DOWNLOAD_BYTES = 500L * 1024 * 1024;
 
 	private boolean downloadFile(String url, Path outputPath) throws IOException, DepDownloadException {

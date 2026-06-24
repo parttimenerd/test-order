@@ -331,10 +331,17 @@ public class UsageStore {
 		if (!methodLevelRecordingEnabled) {
 			return;
 		}
-		// Update activeTrackers first, then publish activeState — mirrors the ordering
-		// in startTestClass/startTestMethod so the hot path never observes a state
-		// where activeTrackers.methodTracker is non-null but activeState.methodTracker
-		// is already null (or vice versa).
+		// Guard against out-of-order calls (e.g. endTestClass before endTestMethod).
+		if (activeTrackers.test == null) {
+			activeState = null;
+			return;
+		}
+		// Publish activeState after updating activeTrackers — the hot path sees the
+		// method tracker as null only after both fields agree, avoiding a window where
+		// activeState.methodTracker is null but activeTrackers.methodTracker is not.
+		// The reverse window (activeTrackers.method=null before activeState is updated)
+		// is acceptable: it widens the method-tracker recording window by one volatile
+		// store, but the extra recordings are merged into the class tracker at flush.
 		ActiveTrackers updated = activeTrackers.createMethodTracker(null);
 		activeTrackers = updated;
 		activeState = new RecordingState(updated.test, null);

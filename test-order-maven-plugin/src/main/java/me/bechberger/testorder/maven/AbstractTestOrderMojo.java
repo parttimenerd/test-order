@@ -500,7 +500,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	}
 
 	private static boolean addToSessionWarnedSet(java.util.Properties props, String message) {
-		String key = message;
+		// Use a stable short hash so the accumulated property value stays bounded
+		// regardless of message length, and the contains() scan stays O(1) per key.
+		String key = toWarnKey(message);
 		String existing = props.getProperty(SESSION_WARNED_PROPERTIES_KEY, "");
 		if (existing.contains("|" + key + "|")) {
 			return false;
@@ -513,6 +515,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			props.setProperty(SESSION_WARNED_PROPERTIES_KEY, current + "|" + key + "|");
 		}
 		return true;
+	}
+
+	private static String toWarnKey(String message) {
+		try {
+			byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+					.digest(message.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			return java.util.HexFormat.of().formatHex(digest, 0, 8);
+		} catch (java.security.NoSuchAlgorithmException e) {
+			return Integer.toHexString(message.hashCode());
+		}
 	}
 
 	/**
@@ -1346,6 +1358,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * directory exists.
 	 */
 	protected void autoAggregateOrFail(Path idxPath) throws MojoExecutionException {
+		// Normalize to absolute so relative paths (e.g. on Windows) resolve correctly
+		// against the working directory rather than the JVM launch directory.
+		idxPath = idxPath.toAbsolutePath().normalize();
 		// Always check for fallback payload file written by IndexCollectorServer
 		// shutdown hook — this is the normal path for offline learn mode.
 		// Process unconditionally: even if index exists, the fallback carries data
@@ -1479,6 +1494,17 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 		candidate = candidate.getParent(); // parent of module
 		while (candidate != null) {
+			// Stop at a git repository root first — .git is the more reliable boundary
+			// than pom.xml (a monorepo may have nested pom.xml files for unrelated
+			// projects outside our Maven reactor)
+			if (Files.exists(candidate.resolve(".git"))) {
+				// Still check for an index at the git root itself before stopping
+				Path rootIdx = candidate.resolve(".test-order/test-dependencies.lz4");
+				if (Files.isReadable(rootIdx)) {
+					return rootIdx;
+				}
+				break;
+			}
 			// Stop if this directory is no longer part of a Maven reactor
 			if (!Files.exists(candidate.resolve("pom.xml"))) {
 				break;
@@ -1486,10 +1512,6 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			Path parentIdx = candidate.resolve(".test-order/test-dependencies.lz4");
 			if (Files.isReadable(parentIdx)) {
 				return parentIdx;
-			}
-			// Stop at a git repository root — anything above is a different project
-			if (Files.exists(candidate.resolve(".git"))) {
-				break;
 			}
 			candidate = candidate.getParent();
 		}

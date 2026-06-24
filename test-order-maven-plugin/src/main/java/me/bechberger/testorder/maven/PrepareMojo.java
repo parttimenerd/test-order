@@ -859,7 +859,11 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 		if (session == null || session.getGoals() == null) {
 			return false;
 		}
-		if (session.getGoals().stream().anyMatch(goal -> isGoal(goal, "learn"))) {
+		// These goals configure Surefire themselves; prepare must not do it too.
+		if (session.getGoals().stream()
+				.anyMatch(goal -> isGoal(goal, "learn") || isGoal(goal, "affected") || isGoal(goal, "auto")
+						|| isGoal(goal, "run-remaining") || isGoal(goal, "run-tier")
+						|| isGoal(goal, "tiered-select"))) {
 			return true;
 		}
 		// Also treat offline learn as active when AutoMojo has configured it:
