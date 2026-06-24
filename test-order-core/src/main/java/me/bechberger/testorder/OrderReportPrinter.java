@@ -174,6 +174,10 @@ public final class OrderReportPrinter {
 	private static String formatFailScore(double score) {
 		int whole = (int) score;
 		int frac = (int) Math.round((score - whole) * 10);
+		if (frac >= 10) {
+			whole++;
+			frac = 0;
+		}
 		return whole + "." + frac;
 	}
 

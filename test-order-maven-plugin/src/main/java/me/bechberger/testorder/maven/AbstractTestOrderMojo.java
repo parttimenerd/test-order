@@ -108,7 +108,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected ReactorContext ctx;
 
 	// Cache for resolved artifacts to avoid repeated filesystem lookups
-	private final Map<String, Path> resolvedArtifactCache = new java.util.HashMap<>();
+	private final Map<String, Path> resolvedArtifactCache = new ConcurrentHashMap<>();
 
 	/** Returns a {@link PluginLog} backed by Maven's logger. */
 	protected PluginLog pluginLog() {
@@ -1891,7 +1891,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		writeModuleIdSidecar(ctx.resolveDepsDir(depsDir));
 
 		String statPathStr = ctx.resolveStateFile(stateFile).toAbsolutePath().toString();
-		String agentString = "\"-javaagent:" + agentJar.toAbsolutePath() + "=" + agentArgs + "\"";
+		String agentString = "-javaagent:" + quoteDArg(agentJar.toAbsolutePath().toString()) + "=" + agentArgs;
 		// Pass system properties via -D flags; using <systemPropertyVariables> XML
 		// modifications to an already-planned MojoExecution are not picked up by
 		// Surefire.
@@ -2038,6 +2038,11 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 */
 	protected void configureOfflineLearnMode(String instrumentationMode, String includePackages)
 			throws MojoExecutionException {
+		// Guard against double configuration (e.g. auto + prepare both active)
+		if ("true".equals(project.getProperties().getProperty("testorder.offline.learnActive"))) {
+			getLog().info("[test-order] Offline learn mode already configured — skipping duplicate setup.");
+			return;
+		}
 		Path targetDir = Path.of(project.getBuild().getDirectory());
 		// Reactor-wide map (single ID space across all modules). Single-module
 		// builds: reactor root == project root, so still under <project>/.test-order/.
@@ -2556,11 +2561,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		}
 		String classpath = String.join(",", entries);
 		project.getProperties().setProperty("maven.test.additionalClasspath", classpath);
-		// Use session user properties (not System.setProperty) to ensure Surefire
-		// sees this for already-planned executions without leaking JVM-globally.
-		if (session != null && session.getUserProperties() != null) {
-			session.getUserProperties().setProperty("maven.test.additionalClasspath", classpath);
-		}
+		// Do NOT propagate to session.getUserProperties() — that Map is global across
+		// all reactor modules and would inject this module's classpath into siblings,
+		// causing NoClassDefFoundError or jar-shadowing in unrelated modules.
 	}
 
 	protected Path[] resolveOrdererClasspath() throws MojoExecutionException {
@@ -3042,7 +3045,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		boolean changed = false;
 		for (String line : toAdd) {
 			String key = line.split("=")[0];
-			boolean alreadyPresent = existing.stream().anyMatch(l -> l.startsWith(key));
+			boolean alreadyPresent = existing.stream()
+					.anyMatch(l -> l.startsWith(key + "=") || l.startsWith(key + " "));
 			if (!alreadyPresent) {
 				existing.add(line);
 				changed = true;

@@ -210,7 +210,8 @@ public final class DashboardServerOperation {
 		}
 		// CSRF protection: reject cross-origin POST requests
 		String origin = exchange.getRequestHeaders().getFirst("Origin");
-		if (origin != null && !origin.startsWith("http://localhost:") && !origin.startsWith("http://127.0.0.1:")) {
+		if (origin != null && !origin.startsWith("http://localhost:") && !origin.startsWith("http://127.0.0.1:")
+				&& !origin.startsWith("http://[::1]:")) {
 			exchange.sendResponseHeaders(403, -1);
 			return;
 		}
@@ -232,11 +233,12 @@ public final class DashboardServerOperation {
 			TestOrderState.ScoringWeights w = result.weights();
 			String json = String.format("{\"weights\":{\"newTest\":%d,\"changedTest\":%d,\"maxFailure\":%d,"
 					+ "\"speed\":%d,\"speedPenalty\":%d,\"depOverlap\":%d,"
-					+ "\"changeComplexity\":%d,\"staticFieldBonus\":%d,\"coverageBonus\":%d,\"killRateBonus\":%d},"
+					+ "\"changeComplexity\":%d,\"staticFieldBonus\":%d,\"coverageBonus\":%d,\"killRateBonus\":%d,"
+					+ "\"packageProximityBonus\":%d},"
 					+ "\"trainScore\":%.4f,\"validationScore\":%.4f,\"overfit\":%b,\"folds\":%d}", w.newTest(),
 					w.changedTest(), w.maxFailure(), w.speed(), w.speedPenalty(), w.depOverlap(), w.changeComplexity(),
-					w.staticFieldBonus(), w.coverageBonus(), w.killRateBonus(), result.trainScore(),
-					result.validationScore(), result.overfit(), result.folds());
+					w.staticFieldBonus(), w.coverageBonus(), w.killRateBonus(), w.packageProximityBonus(),
+					result.trainScore(), result.validationScore(), result.overfit(), result.folds());
 			sendJson(exchange, json);
 		} catch (Exception e) {
 			String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
@@ -323,13 +325,21 @@ public final class DashboardServerOperation {
 			return;
 		}
 		String origin = exchange.getRequestHeaders().getFirst("Origin");
-		if (origin != null && !origin.startsWith("http://localhost:") && !origin.startsWith("http://127.0.0.1:")) {
+		if (origin != null && !origin.startsWith("http://localhost:") && !origin.startsWith("http://127.0.0.1:")
+				&& !origin.startsWith("http://[::1]:")) {
 			exchange.sendResponseHeaders(403, -1);
 			return;
 		}
 		String body;
 		try {
-			body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).trim();
+			var in = exchange.getRequestBody();
+			// Cap at 1 MB to prevent OOM from crafted large requests
+			byte[] raw = in.readNBytes(1024 * 1024);
+			if (in.read() != -1) {
+				exchange.sendResponseHeaders(413, -1);
+				return;
+			}
+			body = new String(raw, StandardCharsets.UTF_8).trim();
 		} catch (IOException e) {
 			exchange.sendResponseHeaders(400, -1);
 			return;
@@ -542,7 +552,8 @@ public final class DashboardServerOperation {
 		exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
 		// Restrict CORS to localhost origins — server is loopback-only
 		String origin = exchange.getRequestHeaders().getFirst("Origin");
-		if (origin != null && (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:"))) {
+		if (origin != null && (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")
+				|| origin.startsWith("http://[::1]:"))) {
 			exchange.getResponseHeaders().set("Access-Control-Allow-Origin", origin);
 		}
 		exchange.sendResponseHeaders(200, body.length);

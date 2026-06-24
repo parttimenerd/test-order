@@ -113,13 +113,19 @@ public final class PartialRunAggregator {
 			return false;
 		}
 
-		// Parse all partial records
+		// Parse all partial records; track which files parsed successfully so we
+		// only delete those — unreadable/future-version files are left on disk for
+		// diagnostics and will be cleaned by cleanStalePartials on the next build.
 		List<ParsedPartial> partials = new ArrayList<>();
+		List<Path> parsedFiles = new ArrayList<>();
 		for (Path f : partFiles) {
 			try {
 				ParsedPartial p = readPartial(f);
 				if (p != null) {
 					partials.add(p);
+					parsedFiles.add(f);
+				} else {
+					TestOrderLogger.warn("[run-aggregator] Skipping unreadable/future-version partial: {}", f);
 				}
 			} catch (IOException e) {
 				TestOrderLogger.warn("[run-aggregator] Could not read partial record {}: {}", f, e.getMessage());
@@ -190,7 +196,7 @@ public final class PartialRunAggregator {
 			state.save(stateFile);
 			return state;
 		});
-		deletePartFiles(partFiles);
+		deletePartFiles(parsedFiles);
 
 		TestOrderLogger.info("[run-aggregator] Merged {} per-fork records into one RunRecord: {} tests, {} failures",
 				partials.size(), totalTests, totalFailures);
@@ -208,7 +214,10 @@ public final class PartialRunAggregator {
 		}
 		long cutoff = System.currentTimeMillis() - olderThanMs;
 		try (Stream<Path> stream = Files.list(pendingRunsDir)) {
-			stream.filter(p -> p.getFileName().toString().endsWith(".part")).forEach(p -> {
+			stream.filter(p -> {
+				String name = p.getFileName().toString();
+				return name.endsWith(".part") || name.endsWith(".part.tmp");
+			}).forEach(p -> {
 				try {
 					if (Files.getLastModifiedTime(p).toMillis() < cutoff) {
 						Files.deleteIfExists(p);
