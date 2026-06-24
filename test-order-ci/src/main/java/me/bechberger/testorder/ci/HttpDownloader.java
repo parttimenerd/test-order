@@ -146,8 +146,20 @@ public class HttpDownloader implements DepDownloader {
 		}
 		try {
 			InetAddress addr = InetAddress.getByName(host);
-			return addr.isLoopbackAddress() || addr.isLinkLocalAddress() || addr.isSiteLocalAddress()
-					|| addr.isAnyLocalAddress();
+			if (addr.isLoopbackAddress() || addr.isLinkLocalAddress() || addr.isSiteLocalAddress()
+					|| addr.isAnyLocalAddress()) {
+				return true;
+			}
+			// isSiteLocalAddress() does not cover IPv6 Unique Local Addresses (ULA):
+			// fc00::/7 (i.e. fc00::/8 and fd00::/8). Check the first byte explicitly.
+			byte[] raw = addr.getAddress();
+			if (raw.length == 16) {
+				int firstByte = raw[0] & 0xFF;
+				if (firstByte == 0xFC || firstByte == 0xFD) {
+					return true;
+				}
+			}
+			return false;
 		} catch (java.net.UnknownHostException e) {
 			// If we can't resolve, allow — DNS might not be available at validation time
 			return false;

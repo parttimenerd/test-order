@@ -45,6 +45,16 @@ final class CiHttpClientFactory {
 				throw new UnknownHostException(
 						"DNS resolved to private/localhost address for " + hostname + ": " + addr.getHostAddress());
 			}
+			// isSiteLocalAddress() does not cover IPv6 Unique Local Addresses (ULA):
+			// fc00::/7 (i.e. fc00::/8 and fd00::/8). Check the first byte explicitly.
+			byte[] raw = addr.getAddress();
+			if (raw.length == 16) {
+				int firstByte = raw[0] & 0xFF;
+				if (firstByte == 0xFC || firstByte == 0xFD) {
+					throw new UnknownHostException(
+							"DNS resolved to IPv6 ULA address for " + hostname + ": " + addr.getHostAddress());
+				}
+			}
 		}
 		return addresses;
 	};

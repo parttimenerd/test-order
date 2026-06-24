@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -170,6 +172,11 @@ public class GitLabCiDownloader implements DepDownloader {
 	private static final long MAX_JSON_BYTES = 10L * 1024 * 1024;
 	private static final long MAX_DOWNLOAD_BYTES = 500L * 1024 * 1024;
 
+	/**
+	 * Downloads the artifact ZIP from the GitLab API and extracts the first entry
+	 * whose name ends with {@code .lz4} (the dependency index). The GitLab
+	 * artifacts API always returns a ZIP archive, not the raw file.
+	 */
 	private boolean downloadFile(String url, Path outputPath) throws IOException, DepDownloadException {
 		try (Response response = httpClient.newCall(buildRequest(url)).execute()) {
 			if (!response.isSuccessful()) {
@@ -179,22 +186,41 @@ public class GitLabCiDownloader implements DepDownloader {
 			if (response.body() == null) {
 				throw new DepDownloadException("Artifact response body is empty");
 			}
-			try (InputStream in = response.body().byteStream();
-					java.io.OutputStream out = java.nio.file.Files.newOutputStream(outputPath)) {
-				byte[] buf = new byte[8192];
-				int n;
-				long totalRead = 0;
-				while ((n = in.read(buf)) != -1) {
-					totalRead += n;
-					if (totalRead > MAX_DOWNLOAD_BYTES) {
-						throw new DepDownloadException(
-								"Download too large: exceeds " + MAX_DOWNLOAD_BYTES + " bytes limit");
+			try (InputStream raw = response.body().byteStream();
+					ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
+				ZipEntry entry;
+				while ((entry = zip.getNextEntry()) != null) {
+					String name = entry.getName();
+					// Zip Slip guard: reject any entry whose canonical name would escape the
+					// target directory (e.g. entries with "../" path components).
+					if (name.contains("..") || name.startsWith("/") || name.startsWith("\\")) {
+						zip.closeEntry();
+						continue;
 					}
-					out.write(buf, 0, n);
+					if (!name.endsWith(".lz4")) {
+						zip.closeEntry();
+						continue;
+					}
+					// Found the LZ4 index — write it directly to outputPath
+					try (OutputStream out = java.nio.file.Files.newOutputStream(outputPath)) {
+						byte[] buf = new byte[8192];
+						int n;
+						long totalRead = 0;
+						while ((n = zip.read(buf)) != -1) {
+							totalRead += n;
+							if (totalRead > MAX_DOWNLOAD_BYTES) {
+								throw new DepDownloadException(
+										"Artifact entry too large: exceeds " + MAX_DOWNLOAD_BYTES + " bytes");
+							}
+							out.write(buf, 0, n);
+						}
+					}
+					logger.info("Extracted {} from artifact ZIP to: {}", name, outputPath);
+					return true;
 				}
+				throw new DepDownloadException("No .lz4 file found inside the GitLab artifact ZIP. "
+						+ "Ensure the artifact was uploaded with the dependency index (test-dependencies.lz4).");
 			}
-			logger.info("Downloaded artifact to: {}", outputPath);
-			return true;
 		}
 	}
 
