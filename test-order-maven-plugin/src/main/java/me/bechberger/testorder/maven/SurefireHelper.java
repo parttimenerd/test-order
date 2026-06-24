@@ -433,7 +433,11 @@ final class SurefireHelper {
 		String numPart = forkCount.trim().replaceAll("[Cc]$", "");
 		try {
 			double value = Double.parseDouble(numPart);
-			if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
+			if (value == 0) {
+				log.warn("[test-order] Surefire <forkCount>0</forkCount> — tests run in-process in the Maven JVM. "
+						+ "The test-order agent requires a forked JVM; no dependency data will be collected. "
+						+ "Set <forkCount>1</forkCount> (or higher) to enable learn mode.");
+			} else if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
 				log.debug("[test-order] Surefire <forkCount>" + forkCount
 						+ "</forkCount> — multiple forks active in learn mode. "
 						+ "Each fork streams data to the IndexCollectorServer; dependency tracking is unaffected.");
@@ -446,7 +450,8 @@ final class SurefireHelper {
 	/**
 	 * Warns when {@code forkCount > 1} in order mode. Each fork gets a separate
 	 * ClassOrderer instance, so class-level ordering within each fork is correct
-	 * but cross-fork ordering is not guaranteed.
+	 * but cross-fork ordering is not guaranteed. Warns when {@code forkCount=0}
+	 * since the agent is not attached to in-process test runs.
 	 */
 	static void warnForkCountInOrderMode(MavenProject project, Log log) {
 		Plugin surefire = findSurefirePlugin(project);
@@ -461,7 +466,11 @@ final class SurefireHelper {
 		String numPart = forkCount.trim().replaceAll("[Cc]$", "");
 		try {
 			double value = Double.parseDouble(numPart);
-			if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
+			if (value == 0) {
+				log.warn("[test-order] Surefire <forkCount>0</forkCount> — tests run in-process; "
+						+ "the ordering agent is not attached. Test ordering will not take effect. "
+						+ "Set <forkCount>1</forkCount> to enable ordering.");
+			} else if (value > 1 || (forkCount.trim().endsWith("C") && value > 0)) {
 				log.warn("[test-order] Surefire <forkCount>" + forkCount
 						+ "</forkCount> — each fork orders classes independently. "
 						+ "Global fail-first ordering is weakened across forks.");

@@ -127,6 +127,11 @@ final class ReactorContext {
 			if (Files.isRegularFile(dir.resolve("pom.xml")) && Files.isDirectory(dir.resolve(SHARED_DIR_NAME))) {
 				return dir.normalize();
 			}
+			// Stop at git boundaries to prevent accidentally adopting a .test-order/
+			// directory from an unrelated project higher in a monorepo tree.
+			if (Files.isDirectory(dir.resolve(".git"))) {
+				break;
+			}
 			dir = dir.getParent();
 		}
 		return null;

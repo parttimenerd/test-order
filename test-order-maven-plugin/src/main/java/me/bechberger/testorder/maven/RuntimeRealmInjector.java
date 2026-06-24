@@ -151,8 +151,25 @@ public final class RuntimeRealmInjector extends AbstractExecutionListener {
 			if (realm == extensionRealm) {
 				continue;
 			}
+			// Never import into Maven/Plexus core realms. Importing into ancestor
+			// realms (maven.core, plexus, maven.api) can create circular import chains
+			// that cause StackOverflowError on class lookup, or permanently mutate the
+			// core classloader's URL list for the remainder of the Maven session.
+			if (isCoreRealm(realm)) {
+				continue;
+			}
 			tryImport(realm);
 		}
+	}
+
+	/**
+	 * Returns true for Maven/Plexus internal realms that must never receive an
+	 * importFrom or addURL call from this extension.
+	 */
+	private static boolean isCoreRealm(ClassRealm realm) {
+		String id = safeRealmId(realm);
+		return id.startsWith("maven.core") || id.startsWith("plexus.core") || id.startsWith("maven.api")
+				|| id.equals("plexus") || id.startsWith("plexus.");
 	}
 
 	private static ClassWorld worldOf(ClassLoader loader) {

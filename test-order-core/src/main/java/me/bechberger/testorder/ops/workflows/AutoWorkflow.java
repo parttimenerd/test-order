@@ -294,7 +294,7 @@ public final class AutoWorkflow {
 		}
 	}
 
-	private static me.bechberger.testorder.TestSelector.CacheConfig readCacheConfig(java.nio.file.Path stateFile) {
+	static me.bechberger.testorder.TestSelector.CacheConfig readCacheConfig(java.nio.file.Path stateFile) {
 		boolean enabled = Boolean.parseBoolean(
 				System.getProperty(me.bechberger.testorder.TestOrderConfig.CACHE_SKIP_UNCHANGED, "false"));
 		if (!enabled)

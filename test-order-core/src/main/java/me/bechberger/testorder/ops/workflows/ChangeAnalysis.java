@@ -109,8 +109,14 @@ public final class ChangeAnalysis {
 		/** Change detection + weights only. Used by order mode. */
 		public static final Options CHANGES_ONLY = new Options(true, false, false, false);
 
-		/** Change detection + weights + module filtering. Used by select. */
-		public static final Options FOR_SELECTION = new Options(false, false, false, true);
+		/**
+		 * Change detection + weights + module filtering. Used by select.
+		 * <p>
+		 * readOnly=true: the :select goal is a pure pre-test filter — it must never
+		 * advance the bytecode baseline before tests run. A broken build would
+		 * otherwise look clean on the next invocation.
+		 */
+		public static final Options FOR_SELECTION = new Options(false, false, false, true, true);
 
 		/** Method changes + module filtering. Used by auto (combined select+order). */
 		public static final Options FOR_AUTO = new Options(true, false, false, true);
