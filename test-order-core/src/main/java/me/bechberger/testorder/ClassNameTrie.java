@@ -118,6 +118,10 @@ class ClassNameTrie {
 	}
 
 	String getName(int id) {
+		if (idToName == null || id < 0 || id >= idToName.length) {
+			throw new IllegalStateException(
+					"Trie id " + id + " out of range [0, " + (idToName == null ? 0 : idToName.length) + ")");
+		}
 		return idToName[id];
 	}
 

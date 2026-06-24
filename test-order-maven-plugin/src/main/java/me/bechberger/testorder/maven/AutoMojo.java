@@ -162,6 +162,7 @@ public class AutoMojo extends AbstractTestOrderMojo {
 			SurefireHelper.warnForkCountInLearnMode(project, getLog());
 			SurefireHelper.warnReuseForksFalseInLearnMode(project, getLog());
 			SurefireHelper.warnRerunFailingTestsInLearnMode(project, getLog());
+			SurefireHelper.rejectClassLevelParallelForLearn(project, getLog());
 			String effectiveInclude = resolveIncludePackages(includePackages, filterByGroupId, project, getLog());
 			if ("offline".equalsIgnoreCase(instrumentation)) {
 				configureOfflineLearnMode(instrumentationMode, effectiveInclude);

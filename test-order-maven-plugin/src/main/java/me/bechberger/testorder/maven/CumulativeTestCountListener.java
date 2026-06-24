@@ -3,9 +3,11 @@ package me.bechberger.testorder.maven;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.maven.execution.AbstractExecutionListener;
 import org.apache.maven.execution.ExecutionEvent;
@@ -31,9 +33,9 @@ public final class CumulativeTestCountListener extends AbstractExecutionListener
 
 	private final ExecutionListener delegate;
 	private final int threshold;
-	private final Set<MavenProject> finished = new HashSet<>();
-	private int cumulative = 0;
-	private boolean tripped = false;
+	private final Set<MavenProject> finished = ConcurrentHashMap.newKeySet();
+	private final AtomicInteger cumulative = new AtomicInteger(0);
+	private final AtomicBoolean tripped = new AtomicBoolean(false);
 
 	public CumulativeTestCountListener(ExecutionListener delegate, int threshold) {
 		this.delegate = delegate;
@@ -41,11 +43,11 @@ public final class CumulativeTestCountListener extends AbstractExecutionListener
 	}
 
 	int cumulative() {
-		return cumulative;
+		return cumulative.get();
 	}
 
 	boolean tripped() {
-		return tripped;
+		return tripped.get();
 	}
 
 	@Override
@@ -61,22 +63,20 @@ public final class CumulativeTestCountListener extends AbstractExecutionListener
 	}
 
 	private void countTests(ExecutionEvent event) {
-		if (tripped) {
+		if (tripped.get()) {
 			return;
 		}
 		if (!isSurefireTest(event)) {
 			return;
 		}
 		MavenProject project = event.getProject();
-		if (project == null || finished.contains(project)) {
+		if (project == null || !finished.add(project)) {
 			return;
 		}
-		finished.add(project);
 		Path reports = Path.of(project.getBuild().getDirectory(), "surefire-reports");
 		int count = countTestcases(reports);
-		cumulative += count;
-		if (cumulative >= threshold) {
-			tripped = true;
+		int newTotal = cumulative.addAndGet(count);
+		if (newTotal >= threshold && tripped.compareAndSet(false, true)) {
 			MavenSession session = event.getSession();
 			if (session == null) {
 				return;
@@ -85,19 +85,14 @@ public final class CumulativeTestCountListener extends AbstractExecutionListener
 			if (remaining == null) {
 				return;
 			}
-			boolean past = false;
 			int skipped = 0;
 			for (MavenProject p : remaining) {
-				if (!past) {
-					if (p == project) {
-						past = true;
-					}
-					continue;
+				if (!finished.contains(p)) {
+					p.getProperties().setProperty("skipTests", "true");
+					skipped++;
 				}
-				p.getProperties().setProperty("skipTests", "true");
-				skipped++;
 			}
-			System.err.println("[test-order] reactor early-exit: cumulative tests=" + cumulative + " >= threshold="
+			System.err.println("[test-order] reactor early-exit: cumulative tests=" + newTotal + " >= threshold="
 					+ threshold + "; set skipTests=true on " + skipped + " remaining module(s)");
 		}
 	}

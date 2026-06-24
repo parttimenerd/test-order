@@ -901,7 +901,7 @@ public final class IndexCollectorServer implements AutoCloseable {
 			throw new IOException("Invalid map entry count: " + entryCount);
 		}
 		Map<String, Set<String>> map = new HashMap<>(entryCount);
-		int totalValues = 0;
+		long totalValues = 0;
 		for (int i = 0; i < entryCount; i++) {
 			String key = readString(in);
 			int valueCount = in.readInt();

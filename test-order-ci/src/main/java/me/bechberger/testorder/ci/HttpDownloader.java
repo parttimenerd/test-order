@@ -78,15 +78,15 @@ public class HttpDownloader implements DepDownloader {
 	}
 
 	/**
-	 * Strips CR and LF characters from tokens to prevent HTTP header injection
-	 * (CWE-113).
+	 * Strips control characters (including CR, LF, and null bytes) from tokens to
+	 * prevent HTTP header injection (CWE-113).
 	 */
 	static String sanitizeToken(String token) {
 		if (token == null)
 			return null;
-		String sanitized = token.replaceAll("[\\r\\n]", "");
+		String sanitized = token.replaceAll("[\\x00-\\x1F\\x7F]", "");
 		if (!sanitized.equals(token)) {
-			logger.warn("Token contained illegal CR/LF characters which were removed");
+			logger.warn("Token contained illegal control characters which were removed");
 		}
 		return sanitized;
 	}
@@ -147,15 +147,24 @@ public class HttpDownloader implements DepDownloader {
 		try {
 			InetAddress addr = InetAddress.getByName(host);
 			if (addr.isLoopbackAddress() || addr.isLinkLocalAddress() || addr.isSiteLocalAddress()
-					|| addr.isAnyLocalAddress()) {
+					|| addr.isAnyLocalAddress() || addr.isMulticastAddress()) {
 				return true;
 			}
+			byte[] raw = addr.getAddress();
 			// isSiteLocalAddress() does not cover IPv6 Unique Local Addresses (ULA):
 			// fc00::/7 (i.e. fc00::/8 and fd00::/8). Check the first byte explicitly.
-			byte[] raw = addr.getAddress();
 			if (raw.length == 16) {
 				int firstByte = raw[0] & 0xFF;
 				if (firstByte == 0xFC || firstByte == 0xFD) {
+					return true;
+				}
+			}
+			// RFC 6598: 100.64.0.0/10 shared address space (CGNAT) — not covered by
+			// isSiteLocalAddress() but commonly routes to internal CI infrastructure.
+			if (raw.length == 4) {
+				int b0 = raw[0] & 0xFF;
+				int b1 = raw[1] & 0xFF;
+				if (b0 == 100 && b1 >= 64 && b1 <= 127) {
 					return true;
 				}
 			}
@@ -224,6 +233,7 @@ public class HttpDownloader implements DepDownloader {
 
 				MessageDigest digest = createSha256Digest();
 
+				boolean success = false;
 				try (InputStream input = response.body().byteStream();
 						java.io.OutputStream output = java.nio.file.Files.newOutputStream(outputPath)) {
 					byte[] buffer = new byte[8192];
@@ -238,6 +248,14 @@ public class HttpDownloader implements DepDownloader {
 						output.write(buffer, 0, bytesRead);
 						if (digest != null) {
 							digest.update(buffer, 0, bytesRead);
+						}
+					}
+					success = true;
+				} finally {
+					if (!success) {
+						try {
+							java.nio.file.Files.deleteIfExists(outputPath);
+						} catch (IOException ignored) {
 						}
 					}
 				}

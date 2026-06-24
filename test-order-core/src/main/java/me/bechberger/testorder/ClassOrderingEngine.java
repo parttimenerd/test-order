@@ -89,7 +89,7 @@ public final class ClassOrderingEngine {
 			return DependencyMap.load(idx);
 		} catch (IOException | RuntimeException e) {
 			String msg = e.getClass().getName() + ": " + e.getMessage();
-			if (LOGGED_INDEX_ERRORS.size() < 100 && LOGGED_INDEX_ERRORS.add(msg)) {
+			if (LOGGED_INDEX_ERRORS.add(msg)) {
 				TestOrderLogger.error("Failed to load dependency index: {}", e.getMessage());
 			}
 			return null;
@@ -108,7 +108,7 @@ public final class ClassOrderingEngine {
 			}
 		} catch (IOException | RuntimeException e) {
 			String msg = e.getClass().getName() + ": " + e.getMessage();
-			if (LOGGED_STATE_ERRORS.size() < 100 && LOGGED_STATE_ERRORS.add(msg)) {
+			if (LOGGED_STATE_ERRORS.add(msg)) {
 				TestOrderLogger.error("Failed to load state: {} — falling back to defaults.", e.getMessage());
 			}
 		}
