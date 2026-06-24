@@ -218,6 +218,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected String testSourceRoot;
 
 	/**
+	 * LZ4 compression level for dependency index writes. Set by PrepareMojo via its
+	 * own {@code @Parameter} binding; all other mojos use the default "medium".
+	 * Stored here so {@code configureLearnMode} can pass it to the collector
+	 * without a global {@code System.setProperty}.
+	 */
+	protected String compressionLevel = "medium";
+
+	/**
 	 * Change detection mode:
 	 * <ul>
 	 * <li><b>uncommitted</b> (default) — detects staged, unstaged, and untracked
@@ -1422,7 +1430,12 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 						return;
 					}
 					Files.createDirectories(idxPath.getParent());
-					merged.save(idxPath);
+					final DependencyMap finalMerged = merged;
+					final Path finalIdxPath = idxPath;
+					PersistenceSupport.withFileLock(idxPath, () -> {
+						finalMerged.save(finalIdxPath);
+						return null;
+					});
 					return;
 				} catch (IOException e) {
 					getLog().warn("[test-order] Failed to merge child module indexes: " + e.getMessage()
@@ -1887,6 +1900,7 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		me.bechberger.testorder.IndexCollectorServer collector = startCollector(indexFilePath);
 		if (collector != null) {
 			collector.setIncludePackages(includePackages);
+			collector.setCompression(compressionLevel);
 			collectorPortProp = " -D" + me.bechberger.testorder.TestOrderConfig.COLLECTOR_PORT + "="
 					+ collector.getPort();
 		}
@@ -2531,10 +2545,9 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		// config. Setting the maven.test.additionalClasspath property overrides
 		// the XML value, so we must merge them to avoid breaking projects that
 		// rely on XML-configured classpath entries (e.g., multi-release JARs).
-		if (entries.isEmpty()) {
-			for (String xmlEntry : SurefireHelper.extractAdditionalClasspathElements(project)) {
-				entries.add(xmlEntry);
-			}
+		// Always seed from XML first so entries are never lost on repeated calls.
+		for (String xmlEntry : SurefireHelper.extractAdditionalClasspathElements(project)) {
+			entries.add(xmlEntry);
 		}
 		for (Path jar : jars) {
 			if (jar != null) {

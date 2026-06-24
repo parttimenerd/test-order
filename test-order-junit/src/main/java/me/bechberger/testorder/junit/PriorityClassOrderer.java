@@ -223,6 +223,7 @@ public class PriorityClassOrderer implements ClassOrderer {
 		// Identity-based sets: ClassDescriptor does not override equals(), so identity
 		// equality is required to correctly track which descriptor objects are pinned.
 		Set<ClassDescriptor> pinFirstSet = Collections.newSetFromMap(new IdentityHashMap<>());
+		Set<ClassDescriptor> pinLastSet = Collections.newSetFromMap(new IdentityHashMap<>());
 		for (ClassDescriptor desc : mutableDescriptors) {
 			// JUnit's @Order: extract into a separate block sorted by @Order value,
 			// placed after FIRST-pinned but before score-ordered classes.
@@ -249,7 +250,8 @@ public class PriorityClassOrderer implements ClassOrderer {
 				if (pinFirstSet.add(desc))
 					pinFirst.add(desc);
 			} else if (prio == TestOrder.Priority.LAST) {
-				pinLast.add(desc);
+				if (pinLastSet.add(desc))
+					pinLast.add(desc);
 			} else {
 				int delta = bonus + changeBonus;
 				if (prio == TestOrder.Priority.HIGH)

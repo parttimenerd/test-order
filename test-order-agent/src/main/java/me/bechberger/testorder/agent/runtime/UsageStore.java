@@ -292,9 +292,12 @@ public class UsageStore {
 
 	/** Called when a test class finishes execution. */
 	public void endTestClass(String testClass) {
-		if (activeTrackers.test != null && testClass.equals(activeTrackers.testClassName)) {
+		if (activeTrackers.test != null) {
 			// Clear plain field first so instance-method hot path stops recording,
 			// then clear volatiles as a release fence for static hot-path callers.
+			// The name check is omitted: listeners always call start/end in pairs,
+			// and a name mismatch (e.g. display-name munging) would otherwise leave
+			// state permanently stuck, attributing all subsequent loads to a stale test.
 			activeTrackers = ActiveTrackers.IDLE;
 			activeState = null;
 			activeClassTracker = null;
@@ -314,11 +317,15 @@ public class UsageStore {
 		if (!methodLevelRecordingEnabled) {
 			return;
 		}
+		// Capture current trackers first; guard against a concurrent endTestClass
+		// resetting activeTrackers to IDLE between the snap and the publish.
+		ActiveTrackers current = activeTrackers;
+		if (current.test == null) {
+			// No active test class — method lifecycle event arrived out-of-order.
+			return;
+		}
 		String methodKey = testClass + "#" + methodName;
 		BitsetTracker tracker = perMethodTrackers.computeIfAbsent(methodKey, k -> new BitsetTracker());
-		// Capture current class tracker before updating activeTrackers, so activeState
-		// is built from a stable snapshot rather than re-reading the field after write.
-		ActiveTrackers current = activeTrackers;
 		ActiveTrackers updated = current.createMethodTracker(tracker);
 		activeTrackers = updated;
 		// Publish activeState after activeTrackers so the hot path always sees a

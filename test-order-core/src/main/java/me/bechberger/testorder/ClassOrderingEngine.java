@@ -24,13 +24,14 @@ public final class ClassOrderingEngine {
 
 	/**
 	 * Tracks already-logged state load failures to avoid 12x duplication across
-	 * forks. Bounded at 100 entries to prevent memory accumulation.
+	 * forks. Capped at 100 entries: once full, further unique messages are logged
+	 * without deduplication (acceptable — failure messages are infrequent).
 	 */
 	private static final Set<String> LOGGED_STATE_ERRORS = java.util.concurrent.ConcurrentHashMap.newKeySet(100);
 
 	/**
 	 * Tracks index-load error messages already reported to avoid log spam when the
-	 * same corrupt index is read once per test class.
+	 * same corrupt index is read once per test class. Capped at 100 entries.
 	 */
 	private static final Set<String> LOGGED_INDEX_ERRORS = java.util.concurrent.ConcurrentHashMap.newKeySet(100);
 
@@ -88,7 +89,7 @@ public final class ClassOrderingEngine {
 			return DependencyMap.load(idx);
 		} catch (IOException | RuntimeException e) {
 			String msg = e.getClass().getName() + ": " + e.getMessage();
-			if (LOGGED_INDEX_ERRORS.add(msg)) {
+			if (LOGGED_INDEX_ERRORS.size() < 100 && LOGGED_INDEX_ERRORS.add(msg)) {
 				TestOrderLogger.error("Failed to load dependency index: {}", e.getMessage());
 			}
 			return null;
@@ -107,7 +108,7 @@ public final class ClassOrderingEngine {
 			}
 		} catch (IOException | RuntimeException e) {
 			String msg = e.getClass().getName() + ": " + e.getMessage();
-			if (LOGGED_STATE_ERRORS.add(msg)) {
+			if (LOGGED_STATE_ERRORS.size() < 100 && LOGGED_STATE_ERRORS.add(msg)) {
 				TestOrderLogger.error("Failed to load state: {} — falling back to defaults.", e.getMessage());
 			}
 		}
