@@ -70,7 +70,7 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 	private volatile boolean finishedNormally;
 	private final AtomicBoolean initialized = new AtomicBoolean();
 	private final AtomicBoolean finished = new AtomicBoolean();
-	private Thread shutdownHook;
+	private volatile Thread shutdownHook;
 
 	@Override
 	public void onStart(ITestContext context) {
@@ -271,6 +271,9 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 			}
 		}
 
+		// Set finishedNormally before removing the hook so that if removeShutdownHook
+		// throws IllegalStateException (JVM already shutting down), emergencySave sees
+		// finishedNormally=true and skips re-applying already-persisted data.
 		finishedNormally = true;
 		if (shutdownHook != null) {
 			try {
@@ -366,9 +369,12 @@ public class TestNGTelemetryListener implements ITestListener, IClassListener {
 	private void emergencySave() {
 		if (finishedNormally || !initialized.get())
 			return;
-		// Snapshot all collections before passing to emergencySave — a concurrent
-		// persistState() may be clearing these maps while the shutdown hook runs.
-		// Passing live references risks a partial save on abnormal exit.
+		// Snapshot all collections before passing to emergencySave — ongoing test
+		// callbacks may be adding to these maps concurrently while the shutdown hook
+		// runs, so passing live references risks a partial or concurrent-modification
+		// save.
+		// (Unlike the JUnit listener, TestNG's persistState() does not clear these
+		// maps.)
 		Map<String, List<Long>> durSnap = new java.util.HashMap<>(pendingDurations);
 		Set<String> failSnap = new java.util.HashSet<>(failedClassNames);
 		Map<String, List<Long>> methodDurSnap = new java.util.HashMap<>(pendingMethodDurations);

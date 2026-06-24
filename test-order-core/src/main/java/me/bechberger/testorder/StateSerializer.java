@@ -89,15 +89,18 @@ final class StateSerializer {
 		} catch (StateDowngradeException downgrade) {
 			// R10-4: Create a timestamped backup so the user can recover by upgrading back
 			Path backup = createTimestampedBackup(loadPath);
-			LOG.warning("State file was written by a newer plugin version. " + "Created backup at " + backup
-					+ ". Starting fresh. " + "To recover, upgrade the plugin or restore the backup.");
+			String backupNote = backup != null ? "Created backup at " + backup + ". " : "";
+			LOG.warning("State file was written by a newer plugin version. " + backupNote + "Starting fresh. "
+					+ "To recover, upgrade the plugin or restore the backup.");
 			return new TestOrderState();
 		} catch (IOException | RuntimeException primaryFailure) {
 			// Corrupt primary: create a backup so users can hand-recover, then try temp
 			try {
 				Path backup = createTimestampedBackup(loadPath, "corrupt");
-				LOG.warning(
-						"[test-order] Corrupt state file backed up at " + backup + " — will attempt temp fallback.");
+				if (backup != null) {
+					LOG.warning("[test-order] Corrupt state file backed up at " + backup
+							+ " — will attempt temp fallback.");
+				}
 			} catch (IOException ignored) {
 				// Best-effort backup — if it fails we still try to recover from temp
 			}
@@ -108,8 +111,8 @@ final class StateSerializer {
 							TestOrderState.safeMap(JSONParser.parse(decode(Files.readAllBytes(tempFile))), "root"));
 				} catch (StateDowngradeException tempDowngrade) {
 					Path backup = createTimestampedBackup(tempFile);
-					LOG.warning(
-							"Temp state file was also from a newer version. Backup at " + backup + ". Starting fresh.");
+					String backupNote = backup != null ? "Backup at " + backup + ". " : "";
+					LOG.warning("Temp state file was also from a newer version. " + backupNote + "Starting fresh.");
 					return new TestOrderState();
 				} catch (IOException | RuntimeException tempFailure) {
 					tempFailure.addSuppressed(primaryFailure);
@@ -181,9 +184,10 @@ final class StateSerializer {
 		String dedupKey = canonical + ":" + kind;
 		if (!BACKUP_CREATED.add(dedupKey)) {
 			// Another fork already created the backup for this file this session.
-			return stateFile.resolveSibling(stateFile.getFileName() + "." + kind + "-already-backed-up");
+			LOG.fine("Backup already created for " + canonical + " (kind=" + kind + ") in this session — skipping.");
+			return null;
 		}
-		String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+		String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"));
 		String fileName = stateFile.getFileName().toString();
 		Path backup = stateFile.resolveSibling(fileName + "." + kind + "-" + timestamp);
 		Files.copy(stateFile, backup, StandardCopyOption.REPLACE_EXISTING);

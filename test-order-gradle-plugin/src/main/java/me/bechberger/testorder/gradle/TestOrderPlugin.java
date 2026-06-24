@@ -4206,7 +4206,8 @@ public class TestOrderPlugin implements Plugin<Project> {
     private static void pruneCollectorRegistry() {
         if (COLLECTOR_REGISTRY.size() >= MAX_COLLECTOR_ENTRIES) {
             java.util.List<String> keys = new java.util.ArrayList<>(COLLECTOR_REGISTRY.keySet());
-            int removeCount = keys.size() - MAX_COLLECTOR_ENTRIES;
+            // +1 so we free at least one slot before the caller adds the new entry
+            int removeCount = keys.size() - MAX_COLLECTOR_ENTRIES + 1;
             for (int i = 0; i < removeCount && i < keys.size(); i++) {
                 String key = keys.get(i);
                 CollectorEntry removed = COLLECTOR_REGISTRY.remove(key);

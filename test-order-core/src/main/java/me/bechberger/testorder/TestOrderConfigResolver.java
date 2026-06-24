@@ -21,7 +21,7 @@ public final class TestOrderConfigResolver {
 	private static final String CONFIG_RESOURCE = "testorder-config.properties";
 
 	private final ClassLoader classLoader;
-	private Properties configProps;
+	private volatile Properties configProps;
 
 	public TestOrderConfigResolver(ClassLoader classLoader) {
 		this.classLoader = classLoader;
@@ -35,12 +35,17 @@ public final class TestOrderConfigResolver {
 		if (val != null)
 			return val;
 		if (configProps == null) {
-			configProps = new Properties();
-			try (InputStream is = classLoader.getResourceAsStream(CONFIG_RESOURCE)) {
-				if (is != null)
-					configProps.load(is);
-			} catch (IOException e) {
-				TestOrderLogger.debug("Failed to load {}: {}", CONFIG_RESOURCE, e.getMessage());
+			synchronized (this) {
+				if (configProps == null) {
+					Properties p = new Properties();
+					try (InputStream is = classLoader.getResourceAsStream(CONFIG_RESOURCE)) {
+						if (is != null)
+							p.load(is);
+					} catch (IOException e) {
+						TestOrderLogger.debug("Failed to load {}: {}", CONFIG_RESOURCE, e.getMessage());
+					}
+					configProps = p;
+				}
 			}
 		}
 		return configProps.getProperty(key);

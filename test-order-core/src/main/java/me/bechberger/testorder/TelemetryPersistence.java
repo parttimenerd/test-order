@@ -83,13 +83,13 @@ public final class TelemetryPersistence {
 				} else {
 					// Multiple observations in one run (e.g. @ParameterizedTest invocations).
 					// Aggregate to a single observation to preserve cross-run EMA smoothing.
-					// Use double arithmetic to avoid integer division loss, then round.
+					// Use SUM (not average) so method duration reflects total invocation time —
+					// consistent with how class-level durations are aggregated above.
 					double sum = 0.0;
 					for (Long d : durations) {
 						sum += d.doubleValue();
 					}
-					long avg = Math.round(sum / durations.size());
-					state.recordMethodDuration(parts[0], parts[1], avg);
+					state.recordMethodDuration(parts[0], parts[1], Math.round(sum));
 				}
 			}
 		}
