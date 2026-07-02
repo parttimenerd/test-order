@@ -872,4 +872,26 @@ class DependencyMapTest {
 		Set<String> rare = loaded.getAffectedTests(Set.of("rare.Helper"));
 		assertEquals(5, rare.size(), "getAffectedTests for rare dep must return only the 5 tests that reference it");
 	}
+
+	@Test
+	void filterForModuleReturnsAllWhenNoMatchInLegacyDashSeparatedMap() {
+		// Dep maps built before the ":" separator change stamp tests with
+		// "groupId-artifactId" (dash). filterForModule returns empty when no test
+		// matches the new colon-separated module ID — the caller (AffectedWorkflow)
+		// checks for empty and falls back to the full map instead of silently
+		// producing an empty selection.
+		DependencyMap map = new DependencyMap();
+		map.put("com.example.FooTest", Set.of("com.example.Foo"));
+		map.put("com.example.BarTest", Set.of("com.example.Bar"));
+		// Simulate old dash-separator stamp for all tests
+		map.putModule("com.example.FooTest", "com.example-my-module");
+		map.putModule("com.example.BarTest", "com.example-my-module");
+
+		// New colon-separator module ID that the plugin now computes
+		DependencyMap filtered = map.filterForModule("com.example:my-module", null);
+
+		// Expected: empty — no tests have the new-format ID
+		assertEquals(0, filtered.testClasses().size(),
+				"filterForModule with mismatched module ID must return empty map");
+	}
 }
