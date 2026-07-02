@@ -4,11 +4,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import me.bechberger.testorder.DependencyMap;
 import me.bechberger.testorder.TestOrderState;
 import me.bechberger.testorder.TestSelector;
 import me.bechberger.testorder.ops.AffectedOperation;
@@ -19,6 +21,7 @@ import me.bechberger.testorder.ops.ModeResolverOperation;
 import me.bechberger.testorder.ops.OrdererConfigOperation;
 import me.bechberger.testorder.ops.PluginContext;
 import me.bechberger.testorder.ops.PluginLog;
+import me.bechberger.testorder.ops.ShowOrderOperation;
 
 /**
  * Complete auto-mode workflow shared by Maven and Gradle.
@@ -153,25 +156,52 @@ public final class AutoWorkflow {
 
 		var alwaysRun = AlwaysRunScanner.scanOrEmpty(ctx.testClassesDir());
 
+		// Augment changedTests with unindexed tests from testClassesDir (same logic as
+		// AffectedWorkflow). Handles modules whose tests haven't been learned yet.
+		Set<String> changedAndNew = new LinkedHashSet<>(a.changedTests());
+		Set<String> depMapTests = a.depMap().testClasses();
+		for (String t : ShowOrderOperation.collectAllTests(a.depMap(), a.changedTests(), ctx.testClassesDir())) {
+			if (!depMapTests.contains(t))
+				changedAndNew.add(t);
+		}
+
+		// Module filter: restrict dep map (and changedAndNew) to the current module so
+		// tests from sibling modules aren't passed to the wrong module's test runner.
+		DependencyMap effectiveDepMap = a.depMap();
+		String currentModule = ctx.currentModuleId();
+		if (currentModule != null && !currentModule.isEmpty() && a.depMap().hasModuleMap()) {
+			DependencyMap filtered = a.depMap().filterForModule(currentModule, ctx.log());
+			if (!filtered.testClasses().isEmpty()) {
+				effectiveDepMap = filtered;
+				changedAndNew.removeIf(t -> {
+					String m = a.depMap().getModule(t);
+					return m != null && !m.equals(currentModule);
+				});
+			} else {
+				ctx.log().debug("[test-order] Module filter for '" + currentModule
+						+ "' produced an empty dep map — skipping module filter to avoid empty selection.");
+			}
+		}
+
 		AffectedOperation.SelectResult selectResult;
 		me.bechberger.testorder.TestSelector.CacheConfig cacheConfig = readCacheConfig(ctx.stateFile());
-		if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && ctx.topN() < 0 && ctx.randomM() == 0
+		if (a.changedClasses().isEmpty() && changedAndNew.isEmpty() && ctx.topN() < 0 && ctx.randomM() == 0
 				&& !cacheConfig.enabled()) {
-			var allTests = new ArrayList<>(a.depMap().testClasses());
+			var allTests = new ArrayList<>(effectiveDepMap.testClasses());
 			selectResult = AffectedOperation.SelectResult
 					.of(new TestSelector.Selection(allTests, java.util.List.of(), 0), true);
 			ctx.log().info("[test-order] No changed classes detected — running tests in default order.");
 		} else {
-			if (a.changedClasses().isEmpty() && a.changedTests().isEmpty() && (ctx.topN() >= 0 || ctx.randomM() > 0)) {
+			if (a.changedClasses().isEmpty() && changedAndNew.isEmpty() && (ctx.topN() >= 0 || ctx.randomM() > 0)) {
 				ctx.log().info("[test-order] No changed classes detected — applying topN/randomM selection only.");
 			}
-			selectResult = AffectedOperation.select(new AffectedOperation.SelectConfig(a.depMap(), a.state(),
-					a.changedClasses(), a.changedTests(), a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(), alwaysRun,
+			selectResult = AffectedOperation.select(new AffectedOperation.SelectConfig(effectiveDepMap, a.state(),
+					a.changedClasses(), changedAndNew, a.weights(), ctx.topN(), ctx.randomM(), ctx.seed(), alwaysRun,
 					ctx.selectedFile(), ctx.remainingFile(), ctx.log(), a.changeComplexity(), cacheConfig));
 			// G3: Warn if selection yields no tests in auto mode, but only when the depMap
 			// has tests — modules with no test classes legitimately select nothing.
 			if (selectResult.selection().selected().isEmpty() && !a.depMap().testClasses().isEmpty()
-					&& (!a.changedClasses().isEmpty() || !a.changedTests().isEmpty())) {
+					&& (!a.changedClasses().isEmpty() || !changedAndNew.isEmpty())) {
 				ctx.log().warn("[test-order] Selection yielded 0 tests despite detected changes. "
 						+ "Check scoring weights or selectTopN/selectRandomM configuration.");
 			}
@@ -187,8 +217,8 @@ public final class AutoWorkflow {
 		if (!a.changedClasses().isEmpty()) {
 			ctx.log().info("[test-order] Detected " + a.changedClasses().size() + " changed classes");
 		}
-		if (!a.changedTests().isEmpty()) {
-			ctx.log().info("[test-order] Detected " + a.changedTests().size() + " changed test classes");
+		if (!changedAndNew.isEmpty()) {
+			ctx.log().info("[test-order] Detected " + changedAndNew.size() + " changed/new test classes");
 		}
 
 		// ── 3. Periodic weight optimisation ─────────────────────────
@@ -206,7 +236,7 @@ public final class AutoWorkflow {
 		// avoids changing the autoLoadExtras signature.
 		writeCacheRuntime(ctx, a.state(), selectResult.selection().cached());
 
-		return new Result.OrderSelect(selectResult, configMap, a.changedClasses(), a.changedTests(), a.changedMethods(),
+		return new Result.OrderSelect(selectResult, configMap, a.changedClasses(), changedAndNew, a.changedMethods(),
 				a.weights(), ctx.alwaysLearn());
 	}
 
