@@ -548,6 +548,18 @@ public final class CiSummaryWriter {
 							if (bodyValue.contains(COMMENT_MARKER)) {
 								bodyHasMarker = true;
 							}
+						} else if (i < n && json.charAt(i) == '"') {
+							// Unrecognized key at depth==1 with a string value — consume the
+							// value so the outer loop doesn't misparse it as a key.
+							i++; // skip opening '"'
+							while (i < n) {
+								char sc = json.charAt(i);
+								i++;
+								if (sc == '\\')
+									i++;
+								else if (sc == '"')
+									break;
+							}
 						}
 					} else {
 						// Non-top-level: skip the value (it was already consumed as part of

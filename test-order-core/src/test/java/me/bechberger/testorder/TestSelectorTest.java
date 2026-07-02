@@ -276,26 +276,46 @@ class TestSelectorTest {
 
 	@Test
 	void topNCountsAlreadySelectedNewTests() {
-		// Setup: 5 tests in depMap (C, D, E) plus 2 NEW tests NOT in depMap (A, B).
+		// Setup: 3 tests in depMap (C, D, E) plus 2 NEW tests NOT in depMap (A, B).
 		// New tests are always selected first. With topN=3, the 2 new tests
 		// should count towards the 3, so only 1 additional from topN is needed.
 		DependencyMap depMap = buildDepMap(
 				Map.of("com.C", Set.of("app.Z"), "com.D", Set.of("app.W"), "com.E", Set.of("app.V")));
 		TestOrderState state = stateWithDurations(Map.of("com.C", 100L, "com.D", 200L, "com.E", 300L));
-		// com.A and com.B are changed test classes NOT in depMap → "new"
+		// com.A and com.B are changed test classes NOT in depMap → "new" (no real
+		// changed production classes)
 		Set<String> changedTests = Set.of("com.A", "com.B");
 
 		TestSelector.Selection sel = new TestSelector(depMap, state, Set.of(), changedTests,
 				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(3, 0, 42L)).select();
 
-		// The 2 new tests are always selected. topN=3 should include at most 3
-		// tests total from the priority list (2 new + 1 more).
-		// Bug: currently new tests don't count towards topN, so we get 2 new + 3 topN =
-		// 5
+		// Phase 1 selects A and B (new). topN=3 should be a hard cap:
+		// 2 new already count → only 1 more from existing tests.
 		assertTrue(sel.selected().contains("com.A"), "new test A must be selected");
 		assertTrue(sel.selected().contains("com.B"), "new test B must be selected");
-		assertTrue(sel.selected().size() <= 3,
-				"topN=3 should yield at most 3 selected tests (new tests count towards topN), " + "but got "
-						+ sel.selected().size() + ": " + sel.selected());
+		assertEquals(3, sel.selected().size(),
+				"topN=3 should yield exactly 3 tests (2 new + 1 existing), got: " + sel.selected());
+	}
+
+	@Test
+	void onlyNewTestsWithNoChangedClasses_topNFillsFromExistingTests() {
+		// When changedTestClasses contains ONLY new (unindexed) tests and no
+		// production classes changed, the topN fallback should fill up to topN from
+		// existing tests. Previously, the new tests falsely triggered hasChangeSignal
+		// and only the new tests were selected (topN budget was wasted).
+		DependencyMap depMap = buildDepMap(
+				Map.of("com.X", Set.of("app.One"), "com.Y", Set.of("app.Two"), "com.Z", Set.of("app.Three")));
+		TestOrderState state = stateWithDurations(Map.of("com.X", 100L, "com.Y", 200L, "com.Z", 300L));
+		// com.NewTest is new (not in depMap), no production classes changed
+		Set<String> newTestOnly = Set.of("com.NewTest");
+
+		TestSelector.Selection sel = new TestSelector(depMap, state, Set.of(), newTestOnly,
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(3, 0, 42L)).select();
+
+		// New test is selected by Phase 1. topN=3 should fill up to 3 total from
+		// existing tests too — not just the 1 new test.
+		assertTrue(sel.selected().contains("com.NewTest"), "new test must be selected");
+		assertEquals(3, sel.selected().size(),
+				"topN=3 with 1 new test should yield 3 total (1 new + 2 existing), got: " + sel.selected());
 	}
 }

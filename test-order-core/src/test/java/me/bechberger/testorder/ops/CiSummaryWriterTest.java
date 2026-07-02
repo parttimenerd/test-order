@@ -285,6 +285,17 @@ class CiSummaryWriterTest {
 		assertEquals(12345L, CiSummaryWriter.findExistingCommentId(json));
 	}
 
+	@Test
+	void findExistingCommentId_stringFieldsBeforeId_parsedCorrectly() {
+		// GitHub API returns string fields (url, html_url, node_id) before "id".
+		// The parser must consume the string values so they don't get misread as keys.
+		String json = "[{\"url\": \"https://api.github.com/repos/foo/bar/issues/comments/99\","
+				+ " \"html_url\": \"https://github.com/foo/bar/issues/1#issuecomment-99\","
+				+ " \"node_id\": \"MDEyOklzc3VlQ29tbWVudDk5\"," + " \"id\": 99,"
+				+ " \"body\": \"<!-- test-order-summary -->\\nresults\"}]";
+		assertEquals(99L, CiSummaryWriter.findExistingCommentId(json));
+	}
+
 	// ── GITHUB_REF parsing regression (BUG-85) ───────────────────────────────
 
 	@Test
