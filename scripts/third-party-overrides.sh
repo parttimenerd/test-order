@@ -70,11 +70,13 @@ detect_extra_mvn_args() {
         # "Unable to determine the current version of java running" on Java 21.
         # maven.test.failure.ignore lets the build continue past this module;
         # our bug-injection check inspects "Tests run: ... Failures:" lines directly.
-        #
-        # logging-log4j2 log4j-core-test fails to compile on JDK 25 due to an
-        # annotation processor intentionally testing error handling (FakePluginPublicSetter).
-        # Exclude it; pre-existing test failures in log4j-api-test also require ignore.
-        javaparser) echo "-Dmaven.test.failure.ignore=true" ;;
+        # failIfNoSpecifiedTests=false: the affected tests for Range live in
+        # javaparser-symbol-solver-core, but test-order:affected runs per-module.
+        # Surefire in javaparser-core can't find symbol-solver tests; disable the
+        # hard failure so those modules still execute their own test files.
+        # javaparser-core-testing-bdd has failIfNoTests=true hardcoded in pom.xml and
+        # its BDD runner produces no tests in our context; exclude it to keep the reactor moving.
+        javaparser) echo "-Dmaven.test.failure.ignore=true -Dsurefire.failIfNoSpecifiedTests=false -pl '!javaparser-core-testing-bdd'" ;;
         # commons-lang has pre-existing test failures in FastDateParser_TimeZoneStrategyTest
         # (locale-dependent tests) and several StringUtils tests. Ignore so all steps run.
         commons-lang) echo "-Dmaven.test.failure.ignore=true" ;;
