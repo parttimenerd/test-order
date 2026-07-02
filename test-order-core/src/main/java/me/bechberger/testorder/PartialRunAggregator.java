@@ -56,21 +56,29 @@ public final class PartialRunAggregator {
 		// Write to a temp file first then atomically rename so concurrent readers
 		// (mergeAndApply) never see a partially-written .part file.
 		Path temp = pendingRunsDir.resolve(fileName + ".tmp");
-		try (BufferedWriter w = Files.newBufferedWriter(temp, StandardCharsets.UTF_8)) {
-			w.write("version=" + PARTIAL_FILE_VERSION);
-			w.newLine();
-			w.write("buildId=" + buildId);
-			w.newLine();
-			w.write("timestamp=" + record.timestamp());
-			w.newLine();
-			w.write("isLearnRun=" + isLearnRun);
-			w.newLine();
-			for (TestOrderState.TestOutcome outcome : record.outcomes()) {
-				w.write(serializeOutcome(outcome));
+		try {
+			try (BufferedWriter w = Files.newBufferedWriter(temp, StandardCharsets.UTF_8)) {
+				w.write("version=" + PARTIAL_FILE_VERSION);
 				w.newLine();
+				w.write("buildId=" + buildId);
+				w.newLine();
+				w.write("timestamp=" + record.timestamp());
+				w.newLine();
+				w.write("isLearnRun=" + isLearnRun);
+				w.newLine();
+				for (TestOrderState.TestOutcome outcome : record.outcomes()) {
+					w.write(serializeOutcome(outcome));
+					w.newLine();
+				}
 			}
+			PersistenceSupport.moveIntoPlace(temp, file);
+		} catch (IOException | RuntimeException e) {
+			try {
+				Files.deleteIfExists(temp);
+			} catch (IOException ignored) {
+			}
+			throw e;
 		}
-		PersistenceSupport.moveIntoPlace(temp, file);
 	}
 
 	private static String serializeOutcome(TestOrderState.TestOutcome o) {

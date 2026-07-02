@@ -204,6 +204,10 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     optimizeResult.value = null
     try {
       const resp = await fetch('/api/optimize', { method: 'POST' })
+      if (!resp.ok) {
+        optimizeError.value = `Server error: ${resp.status} ${resp.statusText}`
+        return
+      }
       const data = await resp.json()
       if (data.error) {
         optimizeError.value = data.error
@@ -506,7 +510,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     const effectiveDepOverlap = t.weightedDepOverlap != null ? t.weightedDepOverlap : t.depOverlap
     let depOv = 0, cmplx = 0, scBonus = 0
     if (w.coverageBonus > 0) {
-      scBonus = origSCB[t.name] || 0
+      scBonus = Math.round((origSCB[t.name] || 0) * killMultiplier)
     } else {
       depOv = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
         ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
@@ -517,7 +521,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     const isNew = t.isNew ? w.newTest : 0
     const spd = t.speedRatio < 0 ? Math.round(Math.abs(t.speedRatio) * w.speed) : 0
     const pen = t.speedRatio > 0 ? -Math.round(t.speedRatio * w.speedPenalty) : 0
-    const stf = t.hasStaticFieldOverlap ? w.staticFieldBonus : 0
+    const stf = t.hasStaticFieldOverlap ? Math.round(w.staticFieldBonus * killMultiplier) : 0
     const fail = t.failScore > 0 ? Math.min(Math.ceil(t.failScore), w.maxFailure) : 0
     return [
       { label: 'Set-cover', value: scBonus, color: '#10b981', explanation: 'Coverage bonus from greedy set-cover: this test was selected to cover the most uncovered changed classes in the fewest runs' },

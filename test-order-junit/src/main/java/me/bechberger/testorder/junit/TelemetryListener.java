@@ -429,7 +429,7 @@ public class TelemetryListener implements TestExecutionListener {
 		}
 
 		// L26: Warn when the test plan had classes but none actually executed
-		if (executionOrder.isEmpty() && pendingDurations.isEmpty()) {
+		if (executionOrder.isEmpty() && pendingDurations.isEmpty() && testPlan.containsTests()) {
 			TestOrderLogger.warn("[telemetry] No tests were executed — state will not be updated. "
 					+ "This may indicate all tests were filtered, disabled, or a DiscoveryIssue prevented execution.");
 		}

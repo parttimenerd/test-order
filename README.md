@@ -326,7 +326,7 @@ Cache `.test-order/` between CI runs so PRs inherit the existing index from thei
 | Workflow | Commands | When to use |
 |---|---|---|
 | **Simple** (all tests, reordered) | `mvn test` | No pipeline changes needed; any project |
-| **Two-phase** (affected first, rest later) | `mvn test-order:select test` then `mvn test-order:run-remaining test` | Fast feedback for PRs |
+| **Two-phase** (affected first, rest later) | `mvn test-order:affected test` then `mvn test-order:run-remaining test` | Fast feedback for PRs |
 | **Three-tier** (affected → top-scored → rest) | `mvn test-order:tiered-select test` + two `run-tier` steps | Structured CI with separate pass/fail gates |
 | **Single-invocation tiered** | `mvn test-order:run-tiered test` | All tiers in one Surefire run; good for local dev |
 | **Parallel sharding** (tier 3 across N runners) | `mvn test-order:run-tiered test -Dtestorder.tiered.shard=1/3` | Scale out tier-3 across parallel CI runners |

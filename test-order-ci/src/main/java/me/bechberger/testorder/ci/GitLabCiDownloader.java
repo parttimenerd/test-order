@@ -72,10 +72,11 @@ public class GitLabCiDownloader implements DepDownloader {
 		logger.info("Downloading from GitLab CI: {}/{}", config.getBaseUrl(), config.getProjectId());
 
 		// Step 1: find the latest successful pipeline on the configured branch
+		String baseUrl = config.getBaseUrl().replaceAll("/+$", "");
 		String encodedBranch = URLEncoder.encode(config.getBranch(), StandardCharsets.UTF_8);
 		String pipelinesUrl = String.format(
 				"%s/api/v4/projects/%s/pipelines?ref=%s&status=success&order_by=id&sort=desc&per_page=1",
-				config.getBaseUrl(), projectId, encodedBranch);
+				baseUrl, projectId, encodedBranch);
 
 		List<Object> pipelines = fetchJsonArray(pipelinesUrl);
 		if (pipelines.isEmpty()) {
@@ -95,7 +96,7 @@ public class GitLabCiDownloader implements DepDownloader {
 		// Step 2: find the job by name inside that pipeline — paginate since a
 		// pipeline can have more than 100 jobs and GitLab caps per_page at 100.
 		String jobsBaseUrl = String.format("%s/api/v4/projects/%s/pipelines/%d/jobs?scope[]=success&per_page=100",
-				config.getBaseUrl(), projectId, pipelineId);
+				baseUrl, projectId, pipelineId);
 
 		long jobId = -1;
 		outer : for (int page = 1;; page++) {
@@ -127,7 +128,7 @@ public class GitLabCiDownloader implements DepDownloader {
 		logger.info("Found job: {} (ID: {})", config.getJobName(), jobId);
 
 		// Step 3: download the artifact archive for that job
-		String artifactsUrl = String.format("%s/api/v4/projects/%s/jobs/%d/artifacts", config.getBaseUrl(), projectId,
+		String artifactsUrl = String.format("%s/api/v4/projects/%s/jobs/%d/artifacts", baseUrl, projectId,
 				jobId);
 		return downloadFile(artifactsUrl, outputPath);
 	}
