@@ -291,6 +291,10 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 				continue;
 			}
 			if (hasTestOrderPlugin(project)) {
+				// Plugin already declared — only inject the restore goal if not present.
+				// The prepare goal was added by the user; restore must be added here to
+				// guarantee bytecode is reverted before package/install creates JARs.
+				ensureRestoreGoalBound(project);
 				continue;
 			}
 			Plugin plugin = new Plugin();
@@ -304,7 +308,40 @@ public class CollectorLifecycleParticipant extends AbstractMavenLifecyclePartici
 			exec.setPhase("process-test-classes");
 			exec.getGoals().add("prepare");
 			plugin.getExecutions().add(exec);
+			// Restore instrumented bytecode before package/install so modules used as
+			// Maven plugins don't install instrumented JARs into the local repository.
+			// Without this, downstream plugin classloaders crash with
+			// NoClassDefFoundError: me/bechberger/testorder/agent/runtime/UsageStore.
+			PluginExecution restoreExec = new PluginExecution();
+			restoreExec.setId("test-order-restore-injected");
+			restoreExec.setPhase("prepare-package");
+			restoreExec.getGoals().add("restore-instrumentation");
+			plugin.getExecutions().add(restoreExec);
 			project.getBuild().getPlugins().add(plugin);
+		}
+	}
+
+	/**
+	 * Injects the {@code restore-instrumentation} goal at {@code prepare-package}
+	 * for a project that already has an explicit test-order plugin declaration.
+	 * Skips if any execution already uses that goal (idempotent).
+	 */
+	private void ensureRestoreGoalBound(MavenProject project) {
+		for (Plugin p : project.getBuildPlugins()) {
+			if (!"me.bechberger".equals(p.getGroupId()) || !"test-order-maven-plugin".equals(p.getArtifactId())) {
+				continue;
+			}
+			for (PluginExecution e : p.getExecutions()) {
+				if (e.getGoals().contains("restore-instrumentation")) {
+					return; // already present
+				}
+			}
+			PluginExecution restoreExec = new PluginExecution();
+			restoreExec.setId("test-order-restore-injected");
+			restoreExec.setPhase("prepare-package");
+			restoreExec.getGoals().add("restore-instrumentation");
+			p.getExecutions().add(restoreExec);
+			return;
 		}
 	}
 
