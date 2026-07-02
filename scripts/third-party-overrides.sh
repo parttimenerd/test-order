@@ -5,15 +5,25 @@
 #
 # Each function receives $repo as its first argument.
 
-# Resolve the JAVA_HOME for a given SDKMAN candidate identifier (e.g. "21-sapmchn").
-# Falls back to /usr/libexec/java_home -v X if SDKMAN is not available.
+# Resolve the JAVA_HOME for a given SDKMAN candidate identifier (e.g. "21.0.6-sapmchn").
+# Falls back to the same qualifier with just the major version (e.g. "21-sapmchn" when
+# "21.0.6-sapmchn" is missing), then to /usr/libexec/java_home -v X on macOS.
 _sdkman_java_home() {
     local candidate="$1"
-    local version="${candidate%%-*}"   # e.g. "21" from "21-sapmchn"
-    if [[ -d "${SDKMAN_DIR:-$HOME/.sdkman}/candidates/java/$candidate" ]]; then
-        echo "${SDKMAN_DIR:-$HOME/.sdkman}/candidates/java/$candidate"
+    # Extract major version: "21" from "21.0.6-sapmchn" or "21-sapmchn"
+    local major="${candidate%%.*}"
+    major="${major%%-*}"
+    # Extract qualifier suffix: "sapmchn" from "21.0.6-sapmchn" or "21-sapmchn"
+    local qualifier="${candidate##*-}"
+    local sdkman_dir="${SDKMAN_DIR:-$HOME/.sdkman}/candidates/java"
+    if [[ -d "$sdkman_dir/$candidate" ]]; then
+        echo "$sdkman_dir/$candidate"
+    elif [[ -d "$sdkman_dir/$major-$qualifier" ]]; then
+        # Fallback: try "21-sapmchn" when "21.0.6-sapmchn" is missing
+        echo "$sdkman_dir/$major-$qualifier"
     elif command -v /usr/libexec/java_home &>/dev/null; then
-        /usr/libexec/java_home -v "$version" 2>/dev/null || echo ""
+        # macOS: find the first JVM whose version starts with the major version
+        /usr/libexec/java_home -v "$major" 2>/dev/null | head -1 || echo ""
     else
         echo ""
     fi
@@ -112,6 +122,10 @@ detect_extra_mvn_args() {
         # NullArgumentForNonNullParameter (PathURLConnection.java:146) that cannot be suppressed.
         # Deactivate the profile to skip error-prone entirely. The '!' prefix deactivates a profile.
         jimfs) echo "-P '!errorprone-enabled'" ;;
+        # gson: errorprone 2.48.0 on JDK 21 emits InvalidBlockTag warning for @Since in Javadoc;
+        # failOnWarning=true turns it into a compile error. Force-activate the 'disable-error-prone'
+        # profile which overrides compilerArgs to skip the error-prone annotation processor.
+        gson) echo "-P disable-error-prone" ;;
         # logbook and jetty use JUnit class-level parallel execution (mode.classes.default=concurrent
         # or Surefire <parallel>classesAndMethods</parallel>).  test-order cannot track dependencies
         # when multiple test classes run simultaneously, so we override these to serial execution.
