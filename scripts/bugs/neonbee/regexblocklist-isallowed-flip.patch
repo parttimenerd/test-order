@@ -1,7 +1,9 @@
 diff --git a/src/main/java/io/neonbee/internal/RegexBlockList.java b/src/main/java/io/neonbee/internal/RegexBlockList.java
 --- a/src/main/java/io/neonbee/internal/RegexBlockList.java
 +++ b/src/main/java/io/neonbee/internal/RegexBlockList.java
-@@ -132,7 +132,7 @@ public class RegexBlockList {
+@@ -130,7 +130,7 @@ public class RegexBlockList {
+      * @return true if the element is allowed
+      */
      public boolean isAllowed(String input) {
 -        boolean allowed = true;
 +        boolean allowed = false; /* BUG_INJECTED */
