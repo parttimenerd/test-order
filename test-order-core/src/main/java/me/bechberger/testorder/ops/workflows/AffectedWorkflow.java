@@ -67,11 +67,23 @@ public final class AffectedWorkflow {
 		DependencyMap effectiveDepMap = a.depMap();
 		String currentModule = ctx.currentModuleId();
 		if (currentModule != null && !currentModule.isEmpty() && a.depMap().hasModuleMap()) {
-			effectiveDepMap = a.depMap().filterForModule(currentModule, ctx.log());
-			changedAndNew.removeIf(t -> {
-				String m = a.depMap().getModule(t);
-				return m != null && !m.equals(currentModule);
-			});
+			DependencyMap filtered = a.depMap().filterForModule(currentModule, ctx.log());
+			if (!filtered.testClasses().isEmpty()) {
+				// Normal case: module filter narrowed to this module's tests.
+				effectiveDepMap = filtered;
+				changedAndNew.removeIf(t -> {
+					String m = a.depMap().getModule(t);
+					return m != null && !m.equals(currentModule);
+				});
+			} else {
+				// The module map exists but no tests match currentModule — this happens when
+				// the dep map was built with an older module-ID format (e.g. "g-a" instead of
+				// "g:a"). Fall back to the full dep map so selection still works correctly.
+				// The changedAndNew removeIf is also skipped because getModule() would return
+				// old-format IDs that never equal currentModule, silently emptying the set.
+				ctx.log().debug("[test-order] Module filter for '" + currentModule
+						+ "' produced an empty dep map — skipping module filter to avoid empty selection.");
+			}
 		}
 
 		me.bechberger.testorder.TestSelector.CacheConfig cacheConfig = AutoWorkflow.readCacheConfig(ctx.stateFile());
