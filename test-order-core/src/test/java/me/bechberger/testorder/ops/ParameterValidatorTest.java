@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
+
+import me.bechberger.testorder.DependencyMap;
 
 class ParameterValidatorTest {
 
@@ -134,10 +137,45 @@ class ParameterValidatorTest {
 		assertTrue(e.getMessage().contains("optimizeEvery"), "message should name the offending param");
 	}
 
+	// ── warnUnknownChangedClasses (mode-aware) ───────────────────────────────
+
 	@Test
-	void validateAutoLearnThresholds_zeroAndPositiveAccepted() {
+	void warnUnknownChangedClasses_orderMode_allUnknown_warnsNotThrows() {
+		CapturingLog log = new CapturingLog();
+		ParameterValidator v = new ParameterValidator(log);
+		// Empty dep map — no known classes
+		DependencyMap depMap = new DependencyMap();
+		// Should NOT throw in order mode even when all classes are unknown
+		assertDoesNotThrow(() -> v.warnUnknownChangedClasses(Set.of("com.example.Bogus"), depMap, "explicit", "order"));
+		assertFalse(log.warnings.isEmpty(), "Should emit at least one warning about unknown classes");
+	}
+
+	@Test
+	void warnUnknownChangedClasses_affectedMode_allUnknown_throws() {
 		ParameterValidator v = new ParameterValidator(new CapturingLog());
-		assertDoesNotThrow(() -> v.validateAutoLearnThresholds(0, 0, 0));
-		assertDoesNotThrow(() -> v.validateAutoLearnThresholds(10, 5, 50));
+		DependencyMap depMap = new DependencyMap();
+		// Should throw in affected mode when all classes are unknown
+		assertThrows(IllegalArgumentException.class,
+				() -> v.warnUnknownChangedClasses(Set.of("com.example.Bogus"), depMap, "explicit", "affected"));
+	}
+
+	@Test
+	void warnUnknownChangedClasses_nullMode_allUnknown_throws() {
+		ParameterValidator v = new ParameterValidator(new CapturingLog());
+		DependencyMap depMap = new DependencyMap();
+		// null testOrderMode (3-arg compat overload) should throw when all unknown
+		assertThrows(IllegalArgumentException.class,
+				() -> v.warnUnknownChangedClasses(Set.of("com.example.Bogus"), depMap, "explicit", null));
+	}
+
+	@Test
+	void warnUnknownChangedClasses_nonExplicitChangeMode_skips() {
+		CapturingLog log = new CapturingLog();
+		ParameterValidator v = new ParameterValidator(log);
+		DependencyMap depMap = new DependencyMap();
+		// Non-explicit changeModes are ignored entirely
+		assertDoesNotThrow(
+				() -> v.warnUnknownChangedClasses(Set.of("com.example.Bogus"), depMap, "uncommitted", "order"));
+		assertTrue(log.warnings.isEmpty(), "No warning expected for non-explicit change modes");
 	}
 }

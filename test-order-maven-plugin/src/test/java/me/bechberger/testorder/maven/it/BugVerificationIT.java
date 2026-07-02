@@ -904,6 +904,31 @@ class BugVerificationIT {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
+	// BUG: order mode with all-unknown explicit changed classes throws
+	//
+	// Steps: learn → run test with -Dtestorder.mode=order
+	// -Dtestorder.changeMode=explicit -Dtestorder.changed.classes=com.example.BOGUS
+	// Plugin threw IAE because all specified classes were unknown in the index.
+	// Expected: warn and continue (tests run in default score order).
+	// ═══════════════════════════════════════════════════════════════════
+
+	@Test
+	@Order(238)
+	@DisplayName("BUG: order mode with all-unknown explicit changed classes should warn not throw")
+	void orderModeWithAllUnknownExplicitChangedClassesShouldWarnNotThrow() {
+		if (!project.exists(".test-order/test-dependencies.lz4")) {
+			project.cleanAll();
+			project.maven().learn();
+		}
+
+		MavenResult result = project.maven().run("test", "-Dtestorder.mode=order", "-Dtestorder.changeMode=explicit",
+				"-Dtestorder.changed.classes=com.example.DoesNotExist");
+		assertThat(result).succeeded();
+		assertThat(result.output()).contains("not in the dependency index");
+		assertThat(result.output()).doesNotContain("BUILD FAILURE");
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
 	// BUG: CLI -Dtestorder.mode should override POM-level <mode>
 	//
 	// Steps: configure <mode>learn</mode> in POM → pass
