@@ -16,6 +16,7 @@
 | [MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md) | Multi-module project setup and aggregation |
 | [SCORING.md](SCORING.md) | Scoring formula, weights, ML-enhanced scoring, and automatic tuning |
 | [FLAKY_AND_CACHING.md](FLAKY_AND_CACHING.md) | Auto-retry FLAKY tests, quarantine mode, and skip-if-unchanged caching |
+| [PERFORMANCE_OPTIMIZATIONS.md](PERFORMANCE_OPTIMIZATIONS.md) | Performance architecture: socket-based collection, in-JVM caching, selective learn, benchmarking |
 
 ## Quick Links
 
@@ -46,7 +47,7 @@ Pick the path that matches your role:
 
 ## Known limitations
 
-The dependency index cannot distinguish _how heavily_ a test exercises a class — only whether it touched it at all. For highly-transitive dependencies (e.g. Jackson's `ClassUtil`, which appears in 97% of tests), the selection signal is weak. TF-IDF scoring reduces the noise but does not eliminate it for classes with near-universal coverage. Use `-Dtestorder.deps.dropFrequencyThreshold=0.8` to filter out near-universal deps from the index entirely.
+The dependency index cannot distinguish _how heavily_ a test exercises a class — only whether it touched it at all. For highly-transitive dependencies (e.g. Jackson's `ClassUtil`, which appears in 97% of tests), the selection signal is weak. Use `-Dtestorder.deps.dropFrequencyThreshold=0.8` to filter out near-universal deps from the index entirely and improve selection precision.
 
 ---
 

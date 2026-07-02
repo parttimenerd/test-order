@@ -310,6 +310,7 @@ The dashboard is an interactive HTML report with three tabs: **Tests** (ranked l
 | `testorder.structuralDiff.enabled` | `true` | Use structural diff for change complexity scoring |
 | `testorder.score.springContextGrouping` | `false` | Group tests sharing a Spring context |
 | `testorder.score.ema.varianceThreshold` | `0.35` | EMA variance threshold for adaptive smoothing — stored in state file only; setting via `-D` has no effect |
+| `testorder.deps.dropFrequencyThreshold` | unset | Drop dep classes that appear in more than `threshold × total tests` entries from the index (valid range: `(0, 1)`). Useful when a handful of utility classes (e.g. Jackson's `ClassUtil`) appear in nearly every test and dilute the selection signal. Recommended starting value: `0.8`. |
 
 ### Selective Learn
 
