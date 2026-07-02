@@ -2593,7 +2593,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected Path[] resolveOrdererClasspath() throws MojoExecutionException {
 		LinkedHashSet<Path> entries = new LinkedHashSet<>();
 		entries.add(resolveModuleOutputOrArtifact("test-order-junit"));
-		entries.add(resolveModuleOutputOrArtifact("test-order-annotations"));
+		// test-order-annotations is intentionally NOT added here: the shaded
+		// test-order-core-all jar already bundles all annotation classes. Adding a
+		// separate test-order-annotations jar would create a split-package conflict
+		// (me.bechberger.testorder.annotations in two JARs) that kills JPMS projects.
 		if (isTestNGOnTestClasspath()) {
 			entries.add(resolveModuleOutputOrArtifact("test-order-testng"));
 		}
