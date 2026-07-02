@@ -189,17 +189,27 @@ public class TestSelector {
 	 * <p>
 	 * Semantics:
 	 * <ul>
-	 * <li>If a change signal exists (changed source classes or changed test
-	 * classes), only tests whose deps overlap the changed classes — or whose own
-	 * test class changed — are eligible. topN caps the count (topN=-1 = no cap).
+	 * <li>If a change signal exists (changed source classes or changed
+	 * <em>known</em> test classes), only tests whose deps overlap the changed
+	 * classes — or whose own test class changed — are eligible. topN caps the count
+	 * (topN=-1 = no cap).
 	 * <li>If no change is detected, topN=-1 selects all tests so the run is
-	 * non-empty; topN>=0 picks the top N by score.
+	 * non-empty; topN>=0 picks the top N by score — tests already selected by Phase
+	 * 1 (new tests) count toward the topN budget so topN is a hard cap on total
+	 * selected.
 	 * </ul>
-	 * Tests already selected by earlier phases count towards the topN budget — only
-	 * {@code @AlwaysRun} tests are truly additive.
+	 * Unindexed new tests in {@code changedTestClasses} are excluded from the
+	 * change signal — they are already picked up by Phase 1 and must not suppress
+	 * the topN fallback. {@code @AlwaysRun} tests are additive (never cap-counted).
 	 */
 	private void selectTopN(List<ScoredTest> scored, Set<String> selected) {
-		boolean hasChangeSignal = !changedClasses.isEmpty() || !changedTestClasses.isEmpty();
+		// Only truly-changed known tests trigger the change-signal path.
+		// Unindexed new tests added to changedTestClasses for scoring are handled by
+		// Phase 1 (selectNewTests); including them here would falsely suppress the
+		// "no change detected" topN fallback when only new tests exist.
+		Set<String> knownTests = depMap.testClasses();
+		boolean hasChangeSignal = !changedClasses.isEmpty()
+				|| changedTestClasses.stream().anyMatch(knownTests::contains);
 		if (hasChangeSignal) {
 			Set<String> affectedByDeps = depMap.getAffectedTests(changedClasses);
 			int cap = config.topN() < 0 ? Integer.MAX_VALUE : config.topN();
@@ -227,13 +237,14 @@ public class TestSelector {
 			}
 			return;
 		}
-		int counted = 0;
+		// Count tests already selected by Phase 1 (new tests) toward the topN budget
+		// so that topN acts as a hard cap on total selected tests.
+		int counted = (int) selected.stream().filter(t -> !alwaysRunClasses.contains(t)).count();
 		for (ScoredTest s : scored) {
 			if (counted >= config.topN())
 				break;
 			if (alwaysRunClasses.contains(s.name()))
 				continue;
-			// M19: only count toward the budget when the element is actually new
 			if (selected.add(s.name())) {
 				counted++;
 			}
