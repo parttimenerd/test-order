@@ -675,7 +675,7 @@ public class PrepareMojo extends AbstractTestOrderMojo {
 			Path idxPath = resolveIndexPath();
 			if (Files.exists(idxPath)) {
 				try {
-					warnUnknownChangedClasses(mergedChanged, DependencyMap.load(idxPath));
+					warnUnknownChangedClasses(mergedChanged, DependencyMap.load(idxPath), mode);
 				} catch (IOException e) {
 					getLog().debug("[test-order] Could not load index to validate explicit classes: " + e.getMessage());
 				}

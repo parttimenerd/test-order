@@ -415,17 +415,19 @@ public final class RuntimeRealmInjector extends AbstractExecutionListener {
 	}
 
 	/**
-	 * Restores instrumented bytecode immediately after {@code maven-surefire-plugin:test}
-	 * (or {@code maven-failsafe-plugin:integration-test}) succeeds or fails.
+	 * Restores instrumented bytecode immediately after
+	 * {@code maven-surefire-plugin:test} (or
+	 * {@code maven-failsafe-plugin:integration-test}) succeeds or fails.
 	 * <p>
-	 * This prevents instrumented class files from being used as annotation processors
-	 * or Maven plugin mojos in downstream module compilations, which would cause
+	 * This prevents instrumented class files from being used as annotation
+	 * processors or Maven plugin mojos in downstream module compilations, which
+	 * would cause
 	 * {@code NoClassDefFoundError: me/bechberger/testorder/agent/runtime/UsageStore}
 	 * because those classloaders don't include the test-order runtime JAR.
 	 * <p>
-	 * The {@code restore-instrumentation} goal bound to {@code prepare-package} is a
-	 * belt-and-suspenders backup for the case where tests are skipped; this hook is
-	 * the primary restore point for normal test runs.
+	 * The {@code restore-instrumentation} goal bound to {@code prepare-package} is
+	 * a belt-and-suspenders backup for the case where tests are skipped; this hook
+	 * is the primary restore point for normal test runs.
 	 */
 	private void restoreAfterSurefireIfNeeded(ExecutionEvent event) {
 		MojoExecution exec = event == null ? null : event.getMojoExecution();

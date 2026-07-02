@@ -225,10 +225,21 @@ public final class ParameterValidator {
 	 * </p>
 	 *
 	 * @throws IllegalArgumentException
-	 *             if ALL specified classes are unknown (protects against silently
-	 *             wrong test selection)
+	 *             /** Warns about explicitly specified changed classes that are not
+	 *             found in the dependency index. In {@code order} mode, a
+	 *             completely-unknown changeset degrades gracefully (tests run in
+	 *             default order) so only a warning is issued. In other modes
+	 *             (affected/select), all-unknown is treated as a likely mistake and
+	 *             throws.
+	 *
+	 * @param testOrderMode
+	 *            the test-order run mode (e.g. "order", "affected")
+	 * @throws IllegalArgumentException
+	 *             if ALL specified classes are unknown and {@code testOrderMode} is
+	 *             not "order"
 	 */
-	public void warnUnknownChangedClasses(Set<String> changed, DependencyMap depMap, String changeMode) {
+	public void warnUnknownChangedClasses(Set<String> changed, DependencyMap depMap, String changeMode,
+			String testOrderMode) {
 		if (changed.isEmpty() || !"explicit".equalsIgnoreCase(changeMode)) {
 			return;
 		}
@@ -247,13 +258,27 @@ public final class ParameterValidator {
 					+ String.join(", ", unknown)
 					+ ". The class may exist in source but have no test coverage yet, or the index"
 					+ " may be out of date.\nRun: mvn test -Dtestorder.mode=learn");
-			if (unknown.size() == changed.size()) {
+			// In order mode, all-unknown is fine — tests simply run in default score order
+			// (no dep-overlap boost). Failing here would be confusing and unhelpful.
+			if (unknown.size() == changed.size() && !"order".equalsIgnoreCase(testOrderMode)) {
 				throw new IllegalArgumentException(
 						"[test-order] None of the explicitly specified changed classes exist in the "
 								+ "dependency index. Check for typos. Changed classes: " + String.join(", ", changed)
 								+ "\nRun: mvn test -Dtestorder.mode=learn");
 			}
 		}
+	}
+
+	/**
+	 * @deprecated Prefer
+	 *             {@link #warnUnknownChangedClasses(Set, DependencyMap, String, String)}
+	 *             which allows mode-aware error handling. This variant always
+	 *             throws when all specified classes are unknown.
+	 * @throws IllegalArgumentException
+	 *             if ALL specified classes are unknown
+	 */
+	public void warnUnknownChangedClasses(Set<String> changed, DependencyMap depMap, String changeMode) {
+		warnUnknownChangedClasses(changed, depMap, changeMode, null);
 	}
 
 	/**

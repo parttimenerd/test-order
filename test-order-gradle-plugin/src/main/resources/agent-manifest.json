@@ -413,6 +413,19 @@
       "exampleGradle": "./gradlew testOrderCompact"
     },
     {
+      "name": "restore-instrumentation",
+      "maven": "test-order:restore-instrumentation",
+      "gradle": null,
+      "description": "Restore class files that were instrumented during offline learn mode back to their original state. Auto-injected at prepare-package phase — users do not need to call this manually.",
+      "stability": "stable",
+      "supportsJson": false,
+      "jsonProperty": null,
+      "outputsTo": "log",
+      "requiresIndex": false,
+      "exampleMaven": "mvn test-order:restore-instrumentation",
+      "exampleGradle": null
+    },
+    {
       "name": "clean",
       "maven": "test-order:clean",
       "gradle": "testOrderClean",
