@@ -75,8 +75,8 @@ public class GitLabCiDownloader implements DepDownloader {
 		String baseUrl = config.getBaseUrl().replaceAll("/+$", "");
 		String encodedBranch = URLEncoder.encode(config.getBranch(), StandardCharsets.UTF_8);
 		String pipelinesUrl = String.format(
-				"%s/api/v4/projects/%s/pipelines?ref=%s&status=success&order_by=id&sort=desc&per_page=1",
-				baseUrl, projectId, encodedBranch);
+				"%s/api/v4/projects/%s/pipelines?ref=%s&status=success&order_by=id&sort=desc&per_page=1", baseUrl,
+				projectId, encodedBranch);
 
 		List<Object> pipelines = fetchJsonArray(pipelinesUrl);
 		if (pipelines.isEmpty()) {
@@ -128,8 +128,7 @@ public class GitLabCiDownloader implements DepDownloader {
 		logger.info("Found job: {} (ID: {})", config.getJobName(), jobId);
 
 		// Step 3: download the artifact archive for that job
-		String artifactsUrl = String.format("%s/api/v4/projects/%s/jobs/%d/artifacts", baseUrl, projectId,
-				jobId);
+		String artifactsUrl = String.format("%s/api/v4/projects/%s/jobs/%d/artifacts", baseUrl, projectId, jobId);
 		return downloadFile(artifactsUrl, outputPath);
 	}
 

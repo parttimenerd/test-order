@@ -12,14 +12,16 @@ import org.apache.maven.plugins.annotations.Mojo;
  * tests finish but before {@code package} and {@code install} create JARs from
  * {@code target/classes}.
  *
- * <p>Without this, a module that is also used as a Maven plugin (e.g.
+ * <p>
+ * Without this, a module that is also used as a Maven plugin (e.g.
  * {@code cds-maven-plugin}) would install its instrumented bytecode into the
  * local repository. When downstream modules then load that plugin, Guice
  * injection of mojo classes would fail with
  * {@code NoClassDefFoundError: me/bechberger/testorder/agent/runtime/UsageStore}
  * because the plugin classloader does not include the test-order runtime JAR.
  *
- * <p>This goal is auto-injected by {@link CollectorLifecycleParticipant} into
+ * <p>
+ * This goal is auto-injected by {@link CollectorLifecycleParticipant} into
  * every non-POM module alongside the {@code prepare} goal; users do not need to
  * configure it explicitly.
  */

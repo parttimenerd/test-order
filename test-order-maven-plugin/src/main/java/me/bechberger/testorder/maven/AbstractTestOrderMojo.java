@@ -1059,9 +1059,24 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	 * match. Protects against silently wrong test selection (M-CRIT-1).
 	 */
 	protected void warnUnknownChangedClasses(Set<String> changed, DependencyMap depMap) throws MojoExecutionException {
+		warnUnknownChangedClasses(changed, depMap, null);
+	}
+
+	/**
+	 * Validates explicitly specified changed classes against the dependency index.
+	 * Logs a warning for each class not found in the index. In order mode, a
+	 * completely-unknown changeset is acceptable (tests run in default score
+	 * order); in other modes, all-unknown throws to protect against silently wrong
+	 * selection.
+	 *
+	 * @param testOrderMode
+	 *            the effective test-order run mode (e.g. "order")
+	 */
+	protected void warnUnknownChangedClasses(Set<String> changed, DependencyMap depMap, String testOrderMode)
+			throws MojoExecutionException {
 		try {
 			new me.bechberger.testorder.ops.ParameterValidator(pluginLog()).warnUnknownChangedClasses(changed, depMap,
-					changeMode);
+					changeMode, testOrderMode);
 		} catch (IllegalArgumentException e) {
 			throw new MojoExecutionException(e.getMessage());
 		}
@@ -2098,6 +2113,15 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					// runOfflineInstrumentation modifies classes in place.
 					snapshotBytecodeHashes();
 					runOfflineInstrumentation(instrumentationMode, includePackages, classesDir, targetDir, mappingFile);
+				} else {
+					// Classes not compiled yet (CLI goal runs before compile). Defer
+					// instrumentation to the prepare mojo at process-test-classes.
+					getLog().info("[test-order] Classes not yet compiled — deferring offline instrumentation to "
+							+ "process-test-classes phase.");
+					project.getProperties().setProperty("testorder.offline.pending", "true");
+					project.getProperties().setProperty("testorder.offline.instrMode", instrumentationMode);
+					project.getProperties().setProperty("testorder.offline.includePackages",
+							includePackages == null ? "" : includePackages);
 				}
 			} else {
 				// Backup exists from a prior learn run that wasn't cleaned up (e.g. the
