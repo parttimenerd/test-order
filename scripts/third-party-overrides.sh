@@ -68,15 +68,11 @@ detect_extra_mvn_args() {
         quarkus) echo "-Dcheckstyle.skip=true -Dmaven.test.failure.ignore=true" ;;
         # javaparser-symbol-solver-testing has a pre-existing test failure:
         # "Unable to determine the current version of java running" on Java 21.
-        # maven.test.failure.ignore lets the build continue past this module;
-        # our bug-injection check inspects "Tests run: ... Failures:" lines directly.
-        # failIfNoSpecifiedTests=false: the affected tests for Range live in
-        # javaparser-symbol-solver-core, but test-order:affected runs per-module.
-        # Surefire in javaparser-core can't find symbol-solver tests; disable the
-        # hard failure so those modules still execute their own test files.
+        # maven.test.failure.ignore lets the build continue past this module.
         # javaparser-core-testing-bdd has failIfNoTests=true hardcoded in pom.xml and
         # its BDD runner produces no tests in our context; exclude it to keep the reactor moving.
-        javaparser) echo "-Dmaven.test.failure.ignore=true -Dsurefire.failIfNoSpecifiedTests=false -pl '!javaparser-core-testing-bdd'" ;;
+        # (failIfNoSpecifiedTests is now set globally in phase_bugs_maven.)
+        javaparser) echo "-Dmaven.test.failure.ignore=true -pl '!javaparser-core-testing-bdd'" ;;
         # commons-lang has pre-existing test failures in FastDateParser_TimeZoneStrategyTest
         # (locale-dependent tests) and several StringUtils tests. Ignore so all steps run.
         commons-lang) echo "-Dmaven.test.failure.ignore=true" ;;
@@ -107,10 +103,8 @@ detect_extra_mvn_args() {
         # when running clean build (processor JAR from maven-api-di isn't pre-built).
         # Skip annotation processing to allow compilation past maven-api-core.
         # maven-executor needs apache-maven:zip:bin SNAPSHOT not available locally; exclude it.
-        # failIfNoSpecifiedTests=false: PathSelectorTest lives in maven-impl but
-        # test-order:affected selects it while running in maven-api-annotations
-        # (which has no tests); disable the hard failure per-module so maven-impl runs.
-        maven) echo "-Drat.skip=true -Dmaven.test.failure.ignore=true -Dmaven.compiler.proc=none -Dsurefire.failIfNoSpecifiedTests=false -pl '!:maven-executor'" ;;
+        # failIfNoSpecifiedTests is now set globally in phase_bugs_maven.
+        maven) echo "-Drat.skip=true -Dmaven.test.failure.ignore=true -Dmaven.compiler.proc=none -pl '!:maven-executor'" ;;
         # cds-feature-attachments: integration-tests module requires a running server;
         # exclude it and focus on the core cds-feature-attachments module.
         # Use positive selection (-pl <modules> -am) since Maven's !exclude syntax
