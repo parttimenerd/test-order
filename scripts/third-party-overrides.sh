@@ -104,6 +104,10 @@ detect_extra_mvn_args() {
         # Without it, the build fails with exit 127 (command not found). Skip this project
         # if @sap/cds is not available.
         cds-feature-attachments) echo "-Dmaven.test.failure.ignore=true -pl 'cds-feature-attachments,storage-targets/cds-feature-attachments-fs,storage-targets/cds-feature-attachments-oss' -am" ;;
+        # cds4j: focus on cds4j-core (1,491 @Test methods); skip archunit/spotless;
+        # node/npm installs require the cds.install profile which is off by default.
+        # Skip arch-unit-maven-plugin which runs in cds4j-api and checks test naming conventions.
+        cds4j) echo "-Dmaven.test.failure.ignore=true -pl cds4j-core -am -Darch.test.skip=true -Dskip.archunit=true -Denforcer.skip=true" ;;
         # jimfs: error-prone profile 'errorprone-enabled' is activated on JDK >= 21 and fails with
         # NullArgumentForNonNullParameter (PathURLConnection.java:146) that cannot be suppressed.
         # Deactivate the profile to skip error-prone entirely. The '!' prefix deactivates a profile.
@@ -192,6 +196,7 @@ detect_package_override() {
     case "$repo" in
         # Add per-repo overrides here if the heuristic picks the wrong package.
         cds-feature-attachments) echo "com.sap.cds" ;;
+        cds4j) echo "com.sap.cds" ;;
         neonbee) echo "io.neonbee" ;;
         resilience4j) echo "io.github.resilience4j" ;;
         # problem: tests span multiple submodules under org.zalando.problem
@@ -514,6 +519,18 @@ detect_gradle_learn_extra_args() {
         # compileTestJava tasks fingerprint those class files at the same time, producing
         # NoSuchFileException. Serialise execution with --max-workers=1 for the learn run.
         spring-boot) echo "--max-workers=1" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Return "true" if the repo already has test-order configured via pom.xml extensions,
+# so inject_maven_plugin can skip creating .mvn/extensions.xml (which would double-load it).
+detect_plugin_already_configured() {
+    local repo="$1"
+    case "$repo" in
+        # cds4j: test-order-maven-plugin is declared with <extensions>true</extensions> in
+        # the root pom.xml, so it already acts as a lifecycle participant.
+        cds4j) echo "true" ;;
         *) echo "" ;;
     esac
 }

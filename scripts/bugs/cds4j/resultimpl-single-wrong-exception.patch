@@ -1,0 +1,11 @@
+--- a/cds4j-core/src/main/java/com/sap/cds/impl/ResultImpl.java
++++ b/cds4j-core/src/main/java/com/sap/cds/impl/ResultImpl.java
+@@ -173,7 +173,7 @@ public class ResultImpl extends ResultBuilder {
+     public Row single() {
+       Iterator<Row> iterator = iterator();
+       if (!iterator.hasNext()) {
+-        throw emptyExceptionSupplier.apply(entity);
++        throw nonUniqueExceptionSupplier.apply(entity);
+       }
+       Row row = iterator.next();
+       if (iterator.hasNext()) {

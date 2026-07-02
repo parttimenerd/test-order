@@ -56,6 +56,7 @@ MAVEN_REPOS=(
     "maven"
     "logging-log4j2"
     "cds-feature-attachments"
+    "cds4j"
     "assertj"
     "awaitility"
     "classgraph"
@@ -249,7 +250,7 @@ detect_source_class() {
 
     # Try extracting a non-test dependency class from the existing index
     local idx_file
-    idx_file=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    idx_file=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -n "$idx_file" ]]; then
         # Run dump, parse the dep column, skip test classes, pick first non-inner non-test class
         local from_index
@@ -485,6 +486,17 @@ inject_maven_plugin() {
     local dir="$THIRD_PARTY/$repo"
     # optional module arg (ignored — we no longer inject into pom.xml)
     local module="${2:-}"
+
+    # Per-repo hook: if the repo already ships test-order as a <extensions>true</extensions>
+    # plugin in its pom.xml, skip injection to avoid double-loading the lifecycle participant.
+    if type detect_plugin_already_configured &>/dev/null; then
+        local already
+        already=$(detect_plugin_already_configured "$repo" 2>/dev/null || echo "")
+        if [[ "$already" == "true" ]]; then
+            ok "$repo already has test-order configured in pom.xml — skipping injection"
+            return
+        fi
+    fi
 
     local mvn_dir="$dir/.mvn"
     local ext_file="$mvn_dir/extensions.xml"
@@ -1075,7 +1087,7 @@ phase_learn_maven() {
     fi
 
     # Check if index was created
-    local idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit)
+    local idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit)
     if [[ -n "$idx" ]]; then
         ok "Index created: $idx ($(du -h "$idx" | cut -f1))"
     else
@@ -1112,7 +1124,7 @@ phase_learn_gradle() {
         warn "Learn had failures for $repo"
     fi
 
-    local idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit)
+    local idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit)
     if [[ -n "$idx" ]]; then
         ok "Index created: $idx ($(du -h "$idx" | cut -f1))"
         # Clean up accumulated .deps files — can be GB-scale for large projects.
@@ -1138,7 +1150,7 @@ detect_source_class_gradle() {
 
     # Try reading from the index via testOrderDump
     local idx_file
-    idx_file=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    idx_file=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -n "$idx_file" ]]; then
         local override_java_home
         override_java_home=$(detect_gradle_java_home "$repo" 2>/dev/null || echo "")
@@ -1275,7 +1287,7 @@ phase_bugs_gradle() {
 
     # Ensure we have an index
     local idx
-    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -z "$idx" ]]; then
         log "No index found, running learn first..."
         # shellcheck disable=SC2086
@@ -1284,7 +1296,7 @@ phase_bugs_gradle() {
             -Dtestorder.mode=learn \
             $extra_args \
             2>&1 | tee "$results/bug-learn.log" | tail -3 || true
-        idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+        idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     fi
 
     # Apply pre-written patch if available
@@ -1382,7 +1394,7 @@ phase_full_gradle() {
 
     # 1. Clean
     log "Step 1: Clean test-order data"
-    find "$dir" -name "test-dependencies.lz4" ! -path "*precheck*" -delete 2>/dev/null || true
+    find -L "$dir" -name "test-dependencies.lz4" ! -path "*precheck*" -delete 2>/dev/null || true
     find "$dir" -name "test-order-deps" -type d -exec rm -rf {} + 2>/dev/null || true
     ok "Cleaned test-order data"
 
@@ -1401,7 +1413,7 @@ phase_full_gradle() {
     done
 
     local idx
-    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -z "$idx" ]]; then
         warn "No dependency index produced. Skipping remaining steps."
         remove_gradle_plugin "$repo"
@@ -1736,7 +1748,7 @@ phase_bugs_maven() {
 
     # Ensure we have an index (learn first if needed)
     local idx
-    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -z "$idx" ]]; then
         log "No index found, running learn first..."
         # Pre-learn: install jars first if required by this repo (e.g. cross-module test deps)
@@ -1751,7 +1763,7 @@ phase_bugs_maven() {
         fi
         mvn_learn "${mvn_args[@]}" \
             2>&1 | tee "$results/bug-learn.log" | tail -3
-        idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+        idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
         if [[ -z "$idx" ]]; then
             warn "No index produced — cannot run bug injection"
             remove_maven_plugin "$repo" "$module"
@@ -1871,7 +1883,7 @@ phase_full_maven() {
     done
 
     # Check if index was actually produced
-    local idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    local idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -z "$idx" ]]; then
         warn "No dependency index produced (project may use JUnit 4). Skipping remaining steps."
         remove_maven_plugin "$repo" "$module"
@@ -2453,7 +2465,7 @@ phase_synthetic_history_maven() {
         || warn "Learn-A had test failures (index may still be valid)"
 
     local idx
-    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -z "$idx" ]]; then
         warn "No index after Learn-A — project likely uses JUnit 4. Skipping synthetic-history."
         remove_maven_plugin "$repo" "$module"
@@ -2607,7 +2619,7 @@ phase_synthetic_history_gradle() {
         || warn "Learn-A had test failures (index may still be valid)"
 
     local idx
-    idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+    idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
     if [[ -z "$idx" ]]; then
         warn "No index after Learn-A. Skipping synthetic-history."
         remove_gradle_plugin "$repo"
@@ -2869,7 +2881,7 @@ phase_matrix_maven() {
                     || warn "  Learn-A failed for cell $cell (may still have index)"
 
                 local idx
-                idx=$(find "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
+                idx=$(find -L "$dir" ! -path "*precheck*" -name "test-dependencies.lz4" -print -quit 2>/dev/null)
                 if [[ -z "$idx" ]]; then
                     warn "  No index after learn-A for cell $cell — skipping"
                     for mut in "${mutators[@]}"; do
