@@ -115,8 +115,8 @@ detect_extra_mvn_args() {
         cds-feature-attachments) echo "-Dmaven.test.failure.ignore=true -pl 'cds-feature-attachments,storage-targets/cds-feature-attachments-fs,storage-targets/cds-feature-attachments-oss' -am" ;;
         # cds4j: focus on cds4j-core (1,491 @Test methods); skip archunit/spotless;
         # node/npm installs require the cds.install profile which is off by default.
-        # Skip arch-unit-maven-plugin which runs in cds4j-api and checks test naming conventions.
-        cds4j) echo "-Dmaven.test.failure.ignore=true -pl cds4j-core -am -Darch.test.skip=true -Dskip.archunit=true -Denforcer.skip=true" ;;
+        # arch-unit-maven-plugin skip property is ${archunit.skip} (not arch.test.skip).
+        cds4j) echo "-Dmaven.test.failure.ignore=true -pl cds4j-core -am -Darchunit.skip=true -Denforcer.skip=true" ;;
         # jimfs: error-prone profile 'errorprone-enabled' is activated on JDK >= 21 and fails with
         # NullArgumentForNonNullParameter (PathURLConnection.java:146) that cannot be suppressed.
         # Deactivate the profile to skip error-prone entirely. The '!' prefix deactivates a profile.
