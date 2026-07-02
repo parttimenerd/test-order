@@ -1263,7 +1263,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                             ? splitClasses(pctx.changedClasses())
                             : Set.of();
                     new ParameterValidator(wrapLog(project))
-                            .warnUnknownChangedClasses(changed, depMap, ext.getChangeMode().get());
+                            .warnUnknownChangedClasses(changed, depMap, ext.getChangeMode().get(), "order");
                 } catch (IllegalArgumentException e) {
                     throw new GradleException(e.getMessage(), e);
                 } catch (IOException e) {
