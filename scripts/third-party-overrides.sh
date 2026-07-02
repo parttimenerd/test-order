@@ -107,7 +107,10 @@ detect_extra_mvn_args() {
         # when running clean build (processor JAR from maven-api-di isn't pre-built).
         # Skip annotation processing to allow compilation past maven-api-core.
         # maven-executor needs apache-maven:zip:bin SNAPSHOT not available locally; exclude it.
-        maven) echo "-Drat.skip=true -Dmaven.test.failure.ignore=true -Dmaven.compiler.proc=none -pl '!:maven-executor'" ;;
+        # failIfNoSpecifiedTests=false: PathSelectorTest lives in maven-impl but
+        # test-order:affected selects it while running in maven-api-annotations
+        # (which has no tests); disable the hard failure per-module so maven-impl runs.
+        maven) echo "-Drat.skip=true -Dmaven.test.failure.ignore=true -Dmaven.compiler.proc=none -Dsurefire.failIfNoSpecifiedTests=false -pl '!:maven-executor'" ;;
         # cds-feature-attachments: integration-tests module requires a running server;
         # exclude it and focus on the core cds-feature-attachments module.
         # Use positive selection (-pl <modules> -am) since Maven's !exclude syntax
