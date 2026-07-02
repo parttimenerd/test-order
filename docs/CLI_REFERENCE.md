@@ -39,7 +39,7 @@ mvn test-order:show
 | `prepare` | Validates setup and writes plugin/runtime configuration | First-time setup, troubleshooting |
 | `learn` | Attach agent for learn mode (pair with `test` phase) | Rebuild dependency index |
 | `auto` | Main developer workflow: select high-value subset and run it | Fast feedback loop |
-| `select` | Writes selected tests to file without executing tests | CI orchestration, custom runners |
+| `affected` | Writes selected tests to file without executing tests | CI orchestration, custom runners |
 | `run-remaining` | Executes deferred tests from prior selection | Follow-up confidence run |
 | `tiered-select` | Splits tests into tier 1/2/3 files and runs tier 1 | Three-phase CI fail-fast workflow |
 | `run-tiered` | Runs all three tiers in a single Maven invocation (tiers 1+2+3) | Simpler single-job CI alternative to multi-step tiered flow |
@@ -254,8 +254,8 @@ Writes per-run summaries to `target/` (Maven) / `build/` (Gradle) after each tes
 | Property | Default | Notes |
 |---|---|---|
 | `testorder.show.classes` | `true` | Include class-level order section |
-| `testorder.show.methods` | `auto` | Include method-level order (`true`/`false`/`auto` = show if data exists) |
-| `testorder.show.ml` | `auto` | Include ML health analysis (`true`/`false`/`auto` = show if history exists) |
+| `testorder.show.methods` | `false` | Include method-level order (`true`/`false`/`auto` = show if data exists) |
+| `testorder.show.ml` | `false` | Include ML health analysis (`true`/`false`/`auto` = show if history exists) |
 | `testorder.show.all` | `false` | Force all sections on (equivalent to classes+methods+ml) |
 | `testorder.showOrder.explain` | `false` | Show per-test scoring breakdown |
 | `testorder.showMethodOrder.explain` | `false` | Show per-method scoring breakdown (for `show-method-order` goal) |
@@ -333,7 +333,7 @@ The **Static Analysis** tab in the dashboard shows the instrumentation scope fro
 | `testorder.includePackages` | unset | Restricts instrumentation scope |
 | `testorder.filterByGroupId` | `true` | Falls back to project groupId when package detection is empty |
 | `testorder.methodOrder.enabled` | `false` | Experimental method ordering |
-| `testorder.compression` | `fast` | LZ4 compression level for index/state files: `fast` or `hc` (high compression) |
+| `testorder.compression` | `medium` (Maven) / `fast` (Gradle) | LZ4 compression level for index/state files: `fast`, `medium` (HC level 4), or `hc` (HC level 9, maximum compression) |
 | `testorder.source.root` | auto | Override main source root directory (replaces automatic detection) |
 | `testorder.testSourceRoot` | auto | Override test source root directory (replaces automatic detection) |
 
@@ -406,12 +406,12 @@ When method-level ordering is active (`testorder.methodOrder.enabled=true`), the
 
 | Property | Default | Description |
 |---|---|---|
-| `testorder.method.score.changedMethod` | `15` | Bonus for methods that touch a changed source method |
+| `testorder.method.score.changedMethod` | `3.0` | Bonus for methods that touch a changed source method |
 | `testorder.method.score.coverageBonus` | `0` | Greedy set-cover bonus across method telemetry |
-| `testorder.method.score.depOverlap` | `5` | Max score from method-level dependency overlap |
-| `testorder.method.score.failureRecency` | `5` | Bonus for methods that recently failed |
+| `testorder.method.score.depOverlap` | `2.0` | Max score from method-level dependency overlap |
+| `testorder.method.score.failureRecency` | `3.0` | Bonus for methods that recently failed |
 | `testorder.method.score.fast` | `1` | Bonus for fast methods (full at 1/8× median runtime) |
-| `testorder.method.score.newMethod` | `12` | Bonus for methods absent from the dependency index |
+| `testorder.method.score.newMethod` | `5.0` | Bonus for methods absent from the dependency index |
 | `testorder.method.score.slow` | `1` | Penalty for slow methods (full at 8× median runtime) |
 
 ### Build Identification
@@ -600,7 +600,7 @@ All commands support `--help` for detailed option descriptions.
 | `stats` | `<indexFile>` | Print dependency index statistics (class count, unique deps, avg deps) |
 | `dump` | `<indexFile> [-o file]` | Dump index as human-readable text (stdout or file) |
 | `export-json` | `<indexFile> [-o file]` | Export dependency index (and optionally state history) as JSON |
-| `select` | `<indexFile>` | Select a prioritized subset: new tests + top-N scored + M diverse fast tests |
+| `select` | `<indexFile>` | **Deprecated** — use `affected` instead. Select a prioritized subset: new tests + top-N scored + M diverse fast tests |
 | `optimize` | `[stateFile]` | Analyze run history and optimize scoring weights |
 | `hash-snapshot` | `[-s sourceRoot] [-o hashFile]` | Scan source tree and save file hash snapshot (for `since-last-run`) |
 | `changed` | `[--mode M] [--classes C]` | Detect changed production classes using the specified mode |

@@ -178,12 +178,12 @@ export function computeScore(
   const killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0
 
   if (w.coverageBonus > 0 && bonusMap) {
-    s += bonusMap[name] || 0
+    s += Math.round((bonusMap[name] || 0) * killMultiplier)
   } else {
     const effectiveDepOverlap = ('weightedDepOverlap' in t && (t as any).weightedDepOverlap != null)
       ? (t as any).weightedDepOverlap as number : t.depOverlap
     if (effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0)
-      s += Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap))
+      s += Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier)
     if (t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0)
       s += Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier)
   }
@@ -193,7 +193,7 @@ export function computeScore(
   if (t.isNew) s += w.newTest
   if (t.speedRatio < 0) s += Math.round(Math.abs(t.speedRatio) * w.speed)
   else if (t.speedRatio > 0) s -= Math.round(t.speedRatio * w.speedPenalty)
-  if (t.hasStaticFieldOverlap && w.staticFieldBonus > 0) s += w.staticFieldBonus
+  if (t.hasStaticFieldOverlap && w.staticFieldBonus > 0) s += Math.round(w.staticFieldBonus * killMultiplier)
   if (t.failScore > 0) s += Math.min(Math.ceil(t.failScore), w.maxFailure)
   return s
 }
@@ -247,12 +247,12 @@ export function computeScoreBreakdown(
   // dep overlap / set-cover
   let depContrib = 0, depDetail = ''
   if (w.coverageBonus > 0 && bonusMap) {
-    depContrib = bonusMap[name] || 0
+    depContrib = Math.round((bonusMap[name] || 0) * killMultiplier)
     depDetail = 'set-cover bonus'
   } else {
     const effectiveDepOverlap = (te?.weightedDepOverlap != null) ? te.weightedDepOverlap : t.depOverlap
     depContrib = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap)) : 0
+      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
     depDetail = `${t.depOverlap}/${t.depTotal} deps changed`
     if (killRate >= 0) depDetail += ` · kill rate ${(killRate * 100).toFixed(0)}%`
     if (te?.weightedDepOverlap != null && te.weightedDepOverlap !== t.depOverlap)
@@ -344,12 +344,12 @@ export function scoreTooltip(
   const killRate = te?.killRate ?? -1
   const killMultiplier = killRate >= 0 ? (0.5 + killRate * 0.5) : 1.0
   if (w.coverageBonus > 0 && bonusMap) {
-    const scBonus = bonusMap[name] || 0
+    const scBonus = Math.round((bonusMap[name] || 0) * killMultiplier)
     lines.push(`Set-cover bonus:       ${signed(scBonus)}`)
   } else {
     const effectiveDepOverlap = (te?.weightedDepOverlap != null) ? te.weightedDepOverlap : t.depOverlap
     const depOv = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap * killMultiplier), w.depOverlap)) : 0
+      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
     const idfNote = te?.weightedDepOverlap != null && te.weightedDepOverlap !== t.depOverlap
       ? `, IDF-weighted ${te.weightedDepOverlap.toFixed(2)}` : ''
     lines.push(`Dependency overlap:    ${signed(depOv)}  (${t.depOverlap}/${t.depTotal} deps overlap${idfNote}${killRate >= 0 ? `, kill-rate ×${killMultiplier.toFixed(2)}` : ''})`)

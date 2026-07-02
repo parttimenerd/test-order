@@ -2893,10 +2893,25 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		String buildDir = project.getBuild().getDirectory();
 		if (buildDir == null)
 			return;
-		Path runtimeJar = Path.of(buildDir).resolve(".test-order").resolve("test-order-runtime.jar");
-		if (Files.exists(runtimeJar)) {
-			injectTestClasspath(runtimeJar);
+		Path targetDir = Path.of(buildDir);
+		Path runtimeJar = targetDir.resolve(".test-order").resolve("test-order-runtime.jar");
+		if (!Files.exists(runtimeJar)) {
+			// JAR not yet extracted — this happens when a module enters order mode
+			// directly (index already exists) without having run configureOfflineLearnMode
+			// in the current session (e.g. a test-only module like cds4j-test that has no
+			// src/main/java). The TelemetryListener is still registered via the service
+			// file in test-order-runtime/ and will crash with ClassNotFoundException when
+			// it tries to bootstrap OfflineRuntimeBootstrap. Extract the JAR now so the
+			// runtime classes are on the test classpath.
+			try {
+				Path agentJar = resolveArtifact("test-order-agent");
+				runtimeJar = me.bechberger.testorder.AgentArgsBuilder.preExtractRuntimeJar(agentJar, targetDir);
+			} catch (MojoExecutionException e) {
+				getLog().debug("[test-order] Could not extract runtime JAR for order mode: " + e.getMessage());
+				return;
+			}
 		}
+		injectTestClasspath(runtimeJar);
 	}
 
 	/**

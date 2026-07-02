@@ -38,8 +38,8 @@ This document tracks optimization work — completed items are marked **DONE**.
 
 ### H12. Index reload on every `select` invocation — **DONE**
 
-**Location**: `Tool.java` / `SelectMojo` — wherever `DependencyMap.load(indexPath)` is called in select mode  
-**Files**: `test-order-core/.../Tool.java`, `test-order-maven-plugin/.../maven/SelectMojo.java`
+**Location**: `Tool.java` / `AffectedMojo` — wherever `DependencyMap.load(indexPath)` is called in affected mode  
+**Files**: `test-order-core/.../Tool.java`, `test-order-maven-plugin/.../maven/AffectedMojo.java`
 
 **Problem**: In a Maven multi-module reactor, `mvn test-order:affected test` is executed once per module. Each execution starts a fresh JVM (via the Maven plugin classloader) and calls `DependencyMap.load(indexPath)`. If all modules share the same `.test-order/test-dependencies.lz4` index — the common case — the same file is decompressed and deserialized once per module.
 
