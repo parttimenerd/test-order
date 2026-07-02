@@ -1808,6 +1808,7 @@ phase_bugs_maven() {
             -Dtestorder.changed.classes="$classname" \
             -Dtestorder.affected.topN=3 \
             -Dtestorder.mode=skip \
+            -Dsurefire.failIfNoSpecifiedTests=false \
             "${test_cmd_args[@]}" \
             2>&1 | tee "$bug_log" | tail -10 || true
         if log_has_test_failures "$bug_log"; then
