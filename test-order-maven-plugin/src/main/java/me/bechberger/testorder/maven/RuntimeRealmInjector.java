@@ -404,12 +404,61 @@ public final class RuntimeRealmInjector extends AbstractExecutionListener {
 	public void mojoSucceeded(ExecutionEvent event) {
 		if (delegate != null)
 			delegate.mojoSucceeded(event);
+		restoreAfterSurefireIfNeeded(event);
 	}
 
 	@Override
 	public void mojoFailed(ExecutionEvent event) {
 		if (delegate != null)
 			delegate.mojoFailed(event);
+		restoreAfterSurefireIfNeeded(event);
+	}
+
+	/**
+	 * Restores instrumented bytecode immediately after {@code maven-surefire-plugin:test}
+	 * (or {@code maven-failsafe-plugin:integration-test}) succeeds or fails.
+	 * <p>
+	 * This prevents instrumented class files from being used as annotation processors
+	 * or Maven plugin mojos in downstream module compilations, which would cause
+	 * {@code NoClassDefFoundError: me/bechberger/testorder/agent/runtime/UsageStore}
+	 * because those classloaders don't include the test-order runtime JAR.
+	 * <p>
+	 * The {@code restore-instrumentation} goal bound to {@code prepare-package} is a
+	 * belt-and-suspenders backup for the case where tests are skipped; this hook is
+	 * the primary restore point for normal test runs.
+	 */
+	private void restoreAfterSurefireIfNeeded(ExecutionEvent event) {
+		MojoExecution exec = event == null ? null : event.getMojoExecution();
+		if (exec == null) {
+			return;
+		}
+		String artifact = exec.getArtifactId();
+		String goal = exec.getGoal();
+		boolean isSurefire = "maven-surefire-plugin".equals(artifact) && "test".equals(goal);
+		boolean isFailsafe = "maven-failsafe-plugin".equals(artifact) && "integration-test".equals(goal);
+		if (!isSurefire && !isFailsafe) {
+			return;
+		}
+		MavenProject project = event.getProject();
+		if (project == null || project.getBuild() == null || project.getBuild().getDirectory() == null) {
+			return;
+		}
+		java.nio.file.Path targetDir = java.nio.file.Path.of(project.getBuild().getDirectory());
+		java.nio.file.Path backupDir = targetDir.resolve(".test-order").resolve("classes-backup");
+		java.nio.file.Path testBackupDir = targetDir.resolve(".test-order").resolve("classes-backup-test");
+		try {
+			boolean restored = me.bechberger.testorder.agent.OfflineInstrumentor.restore(backupDir);
+			if (me.bechberger.testorder.agent.OfflineInstrumentor.restore(testBackupDir)) {
+				restored = true;
+			}
+			if (restored) {
+				System.err.println("[test-order] Restored instrumented classes for " + project.getArtifactId()
+						+ " after surefire (prevents NoClassDefFoundError in downstream classloaders).");
+			}
+		} catch (java.io.IOException e) {
+			System.err.println("[test-order] Could not restore instrumented classes after surefire for "
+					+ project.getArtifactId() + ": " + e.getMessage());
+		}
 	}
 
 	@Override
