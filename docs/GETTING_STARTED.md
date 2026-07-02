@@ -8,7 +8,7 @@ This tutorial walks you through using test-order from scratch. By the end, you'l
 
 - **Java 17–26** installed (tested on all LTS releases and Java 26)
 - **Maven 3.8+** or **Gradle 7.6+**
-- A **Git** repository (test-order uses Git to detect changes)
+- A **Git** repository (recommended; the default `uncommitted` change-detection mode uses git. Non-git projects can use `changeMode=since-last-run` instead.)
 - A project with **JUnit 5/6**, **TestNG 7.x+**, or **Kotest** tests
 
 > **Using TestNG?** The setup is the same — add the plugin and run `mvn test`. The TestNG integration module (`test-order-testng`) is included automatically. See [test-order-testng/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-testng/README.md) for TestNG-specific behaviour, or [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) for a side-by-side comparison with JUnit 5.
@@ -320,6 +320,7 @@ mvn test-order:dashboard
 | `No plugin found for prefix 'test-order'` | Maven doesn't know the plugin prefix | Add `me.bechberger` to `~/.m2/settings.xml` `<pluginGroups>`, or use the fully-qualified form `mvn me.bechberger:test-order-maven-plugin:<version>:show` |
 | All tests score 0, nothing reordered | Plugin running but no changed classes detected | Try `-Dtestorder.debug=true` to see what change detection reports; check `testorder.changeMode` setting |
 | No index despite running `mvn test` | Source packages not detected (groupId mismatch) | Set `-Dtestorder.includePackages=com.yourpackage` |
+| `since-last-run` always shows all classes as changed | Hash snapshot (`hashes.lz4`) is missing or was not updated | The source-hash baseline is **only updated during learn runs** — run `mvn test -Dtestorder.mode=learn` or `mvn test-order:snapshot` to advance it |
 | JaCoCo reports 0% coverage | Hardcoded `<argLine>` in Surefire | Replace with `@{argLine}` so JaCoCo and test-order chain correctly |
 | "Failed to load JUnit Platform" (Gradle) | Snapshot repo added to project `repositories {}` instead of `pluginManagement.repositories {}` | Move it to `pluginManagement.repositories {}` only — see Step 1 above |
 

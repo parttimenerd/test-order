@@ -90,8 +90,8 @@ mvn test-order:show -Dtestorder.show.format=json
 | Property | Default | Description |
 |---|---|---|
 | `testorder.show.classes` | `true` | Show class-level priority order |
-| `testorder.show.methods` | `auto` | Show method-level priority order (`auto` = show if method telemetry exists) |
-| `testorder.show.ml` | `auto` | ML health section: `auto` (show if history exists), `true`, `false` |
+| `testorder.show.methods` | `false` | Show method-level priority order; pass `true` to enable, `auto` to show only if telemetry exists |
+| `testorder.show.ml` | `false` | ML health section; pass `true` to enable, `auto` to show only if history exists |
 | `testorder.showOrder.explain` | `false` | Show per-test score breakdown |
 | `testorder.showOrder.fullNames` | `false` | Print fully-qualified class names |
 | `testorder.show.format` | `text` | Output format: `text` or `json` |
@@ -100,6 +100,8 @@ mvn test-order:show -Dtestorder.show.format=json
 | `testorder.affected.randomM` | `10` | Include M random diverse tests |
 | `testorder.affected.seed` | — | Random seed for `randomM` |
 | `testorder.show.all` | `false` | Enable all sections (classes + methods + ML) |
+| `testorder.show.limit` | `20` | Max tests to display (`-1` = all); stats always use the full list |
+| `testorder.show.explain` | `false` | Show per-test score breakdown (why each test ranked as it did) |
 
 > **CamelCase aliases:** `testorder.showOrder.format` is accepted as an alias for `testorder.show.format`,
 > and `testorder.showOrder.topN` is accepted as an alias for `testorder.affected.topN`.
@@ -618,6 +620,8 @@ Beyond the standard plugin parameters, these system properties control advanced 
 |---|---|---|
 | `testorder.autoLearnRunThreshold` | `10` | Force re-learn after N order-mode runs (`0` = disabled) |
 | `testorder.autoLearnDiffThreshold` | `0` (disabled) | Automatically re-learn when changed file count ≥ threshold |
+| `testorder.auto.alwaysLearn` | `false` | Always attach the learn agent in `auto` mode. Combine with `testorder.learn.selective=true` for low-overhead incremental index updates on every run |
+| `testorder.learn.selective` | `false` | Instrument only changed classes + transitive callees (static call-graph up to 4 hops) — keeps learn overhead proportional to change size |
 
 ### Additional Scoring Properties
 
@@ -638,6 +642,7 @@ Beyond the standard plugin parameters, these system properties control advanced 
 | `testorder.structuralDiff.enabled` | Enable/disable structural change analysis (default: true) |
 | `testorder.changed.classes.file` | Read changed classes from a file (one fully-qualified class name per line; blank lines ignored) |
 | `testorder.changed.methods` | Explicit changed production methods in `className#methodName` format (comma-separated). Affects method-level scoring; use with `changeMode=explicit` to restrict scoring to specific changed methods (e.g. `com.example.Foo#doWork,com.example.Bar#process`) |
+| `testorder.deps.dropFrequencyThreshold` | Drop dep classes appearing in more than `threshold × total tests` entries (range: `(0, 1)`). Filters out near-universal deps (e.g. utility base classes) that dilute the selection signal. Recommended: `0.8`. |
 
 ## Mutation Testing (`analyze-mutations`)
 

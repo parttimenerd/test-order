@@ -50,20 +50,21 @@ project-root/
 │   │   ├── com.app-module-a-test-hashes.lz4
 │   │   ├── com.app-module-b-hashes.lz4
 │   │   └── com.app-module-b-test-hashes.lz4
+│   ├── deps/                       ← Per-module .deps files (inside shared dir in multi-module)
+│   │   ├── com.app-module-a-*.deps
+│   │   └── com.app-module-b-*.deps
 │   └── (other files...)
 │
 ├── module-a/
-│   └── target/test-order-deps/     ← Per-module .deps files (Maven only)
-│
 ├── module-b/
-│   └── target/test-order-deps/
-│
 └── pom.xml (root) or settings.gradle
 ```
 
+> **Single-module Maven projects** store `.deps` files under `module/target/test-order-deps/` instead. Multi-module builds always write them to `.test-order/deps/` under the reactor root so the lifecycle extension can aggregate them without scanning the entire `target/` tree.
+
 ### Why This Design?
 
-**Shared Index**: All modules write `.deps` files to `target/test-order-deps/` during learn mode. The lifecycle extension aggregates these into a **single dependency graph** showing which tests cover which classes across **all modules** at the end of the build. This enables:
+**Shared Index**: All modules write `.deps` files to `.test-order/deps/` during learn mode (in multi-module builds; single-module Maven projects use `target/test-order-deps/`). The lifecycle extension aggregates these into a **single dependency graph** showing which tests cover which classes across **all modules** at the end of the build. This enables:
 - Running only affected test modules
 - Detecting inter-module dependencies
 - Global test prioritization
@@ -401,10 +402,10 @@ Learn run:
   module-a tests run → write .test-order/deps/com.app-module-a-*.deps
   module-b tests run → write .test-order/deps/com.app-module-b-*.deps
                                     ↓
-  mvn test-order:aggregate   ← merges all .deps files into test-dependencies.lz4
+  CollectorLifecycleParticipant (session end) ← aggregates .deps into test-dependencies.lz4
 ```
 
-> In Maven the `CollectorLifecycleParticipant` (registered automatically via `extensions.xml`) calls `aggregate` at session end, so an explicit `test-order:aggregate` goal is usually not needed. In Gradle the `testOrderAggregateAll` task combines all subproject `.deps` outputs.
+> The `CollectorLifecycleParticipant` (registered automatically via `<extensions>true</extensions>`) aggregates at session end — no explicit `mvn test-order:aggregate` step is needed. In Gradle the `testOrderAggregateAll` task combines all subproject `.deps` outputs.
 
 #### What the index stores
 
@@ -502,7 +503,7 @@ The `CollectorLifecycleParticipant` lifecycle extension (automatically active wh
 mvn test -Dtestorder.reactorReorder=true
 
 # Reorder AND skip modules with no affected tests (run only top N)
-mvn test -Dtestorder.reactorReorder=true -DtestorderReactorTopN=5
+mvn test -Dtestorder.reactorReorder=true -Dtestorder.reactorTopN=5
 
 # Dry-run: print the planned reorder without actually reordering
 mvn test -Dtestorder.reactorReorder=true -Dtestorder.reactorReorder.dryRun=true

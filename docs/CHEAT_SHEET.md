@@ -143,6 +143,8 @@ For full YAML examples: [ci-examples/](https://github.com/parttimenerd/test-orde
 | `testorder.flaky.quarantine` | `false` | Report FLAKY-test failures as aborted (skipped) instead of failed |
 | `testorder.cache.skipUnchanged` | `false` | Skip tests whose deps are unchanged and that passed the last N runs |
 | `testorder.cache.minPassStreak` | `3` | Required consecutive pass streak before cache eligibility |
+| `testorder.auto.alwaysLearn` | `false` | Always attach learn agent in `auto` mode (pair with `selective` for low-overhead incremental index updates) |
+| `testorder.learn.selective` | `false` | Instrument only changed classes + transitive callees — keeps learn overhead proportional to change size |
 
 ---
 

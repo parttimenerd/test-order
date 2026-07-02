@@ -71,7 +71,7 @@ Cache `.test-order/` between CI runs so PRs benefit from the existing index.
 | `.test-order/test-dependencies.lz4` | Dependency index | **Yes** |
 | `.test-order/state.lz4` | Durations + failure history (improves scoring) | **Yes** |
 | `.test-order/ml/history.lz4` | ML run history | Yes (if `ml.enabled=true`) |
-| `.test-order/hashes/*.lz4` | Hash snapshots for `since-last-run` change detection | Yes |
+| `.test-order/hashes*.lz4` (single-module) or `.test-order/hashes/` (multi-module) | Hash snapshots for `since-last-run` change detection | Yes |
 | `**/target/test-order-deps/` | Per-module `.deps` files (Maven only) | Yes |
 | `target/test-order-dashboard/` | Dashboard HTML (regenerated) | No |
 | `target/test-order-selected.txt` | Transient selection list | No |
@@ -214,7 +214,7 @@ If you commit the index, add machine-local files to `.gitignore`:
 
 | Concern | Maven | Gradle |
 |---|---|---|
-| Extra cache paths | `**/target/test-order-deps/` (per-module `.deps` files) | Not needed — written to `.test-order/` directly |
+| Extra cache paths | `**/target/test-order-deps/` (single-module only; multi-module writes deps to `.test-order/deps/` already covered above) | Not needed — written to `.test-order/` directly |
 | Aggregation step | `mvn test-order:aggregate` (optional, merges `.deps`) | `./gradlew testOrderAggregate` |
 | Multi-module index | Single shared `.test-order/` at root | Same — single `.test-order/` at root project |
 | Cold start fallback | Learns on first run, or use `mvn test-order:download` | Learns on first run, or `./gradlew testOrderDownload` |
@@ -226,7 +226,7 @@ If you commit the index, add machine-local files to `.gitignore`:
 - Always save the cache even when tests fail (`if: always()`) — failure history improves future scoring.
 - For shallow clones (e.g. `fetch-depth: 1`), use `changeMode=since-last-run` instead of `since-last-commit`.
 - With multiple concurrent PR builds writing to the same cache key, the last writer wins — this is safe, as all runners produce equivalent indexes from the same source.
-- Avoid caching `.test-order/hashes/*.lz4` across heterogeneous runner images (different OS/JDK versions) when using `since-last-run` change detection — hash snapshots are machine-local and may produce spurious diffs.
+- Avoid caching hash snapshots (`*.lz4` in `.test-order/` or `.test-order/hashes/`) across heterogeneous runner images (different OS/JDK versions) when using `since-last-run` change detection — hash snapshots are machine-local and may produce spurious diffs.
 
 ---
 
