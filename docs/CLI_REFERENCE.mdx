@@ -73,6 +73,7 @@ Controls what the `auto` goal does. Pass via `-Dtestorder.mode=<value>` or set i
 | `auto` (default) | Learn if no index exists; otherwise select/order. |
 | `learn` | Always run learn regardless of whether an index already exists. |
 | `order` | Require an existing index and run select/order. Warns and exits if no index is found — **does not** fall back to learn. |
+| `optimize` | Run the scoring weight optimizer against the stored run history, then save the optimised weights to the state file. Does not run tests. |
 | `skip` | Do nothing. Surefire runs tests in its default order without any test-order influence. |
 
 
@@ -84,6 +85,9 @@ mvn test-order:auto test -Dtestorder.mode=learn
 
 # Require index; fail gracefully instead of silently rebaselining
 mvn test-order:auto test -Dtestorder.mode=order
+
+# Run weight optimizer and update state file (does not run tests)
+mvn test-order:auto -Dtestorder.mode=optimize
 
 # Disable test-order without removing the plugin (e.g., for a hotfix)
 mvn test-order:auto test -Dtestorder.mode=skip

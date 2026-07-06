@@ -473,7 +473,7 @@ When the same setting is provided in multiple places, priority is:
 
 ### `testorder.mode=auto` (default behaviour)
 
-If `testorder.mode` is `auto` (the default), the plugin checks for an existing dependency index on startup. If no index is found it enters learn mode; otherwise it enters order mode. In order mode it falls back through: explicit classes → hash-based → git-based change detection.
+If `testorder.mode` is `auto` (the default), the plugin checks for an existing dependency index on startup. If no index is found it enters learn mode; otherwise it enters order mode. The change detection strategy is controlled separately by `testorder.changeMode` — `auto` (the default) selects `since-last-run` if a hash snapshot exists, otherwise `since-last-commit`.
 
 ### `test-order:auto` goal (combined workflow)
 
