@@ -162,9 +162,9 @@ mvn test
 
 After the learn run, the dependency index is written to `.test-order/test-dependencies.lz4`. You can gitignore this directory — the plugin auto-learns on the first run for any new checkout.
 
-> **Instrumentation modes:** The default is `offline` (build-time bytecode instrumentation — the plugin modifies compiled classes before tests run, no `-javaagent` flag needed on the test JVM).
+> **Instrumentation modes:** The default is `offline` (build-time bytecode instrumentation — the plugin modifies compiled classes before tests run, no `-javaagent` flag needed on the test JVM). **Use `offline` unless you have a specific reason not to** — it works with all standard Maven/Gradle setups.
 > To use online instrumentation instead (agent attached at runtime via `-javaagent`), pass `-Dtestorder.instrumentation=online`.
-> Online mode avoids modifying bytecode on disk but requires the agent JAR to be locatable on the classpath.
+> Online mode avoids modifying bytecode on disk; it is useful when your security policy or build environment prohibits class-file mutation (e.g., read-only build directories, OSGi containers, or strict reproducible-build pipelines). It requires the agent JAR to be locatable on the classpath.
 > Both modes report dependency data through the same `IndexCollectorServer`.
 
 <AsciinemaPlayer src="/casts/demo-learn.cast" cols={120} rows={28} />
