@@ -140,13 +140,43 @@ The cache key controls which prior run a job can inherit from.
 ### GitLab CI
 
 ```yaml
+variables:
+  # Full history — since-last-commit needs HEAD~1 to be reachable.
+  GIT_DEPTH: 0
+
 cache:
-  # Branch-coupled key: PRs inherit from their source branch; main builds write a fresh one.
-  key: test-order-${CI_COMMIT_REF_SLUG}
-  paths:
-    - .test-order/
-  policy: pull-push
+  # Feature branches read from their own key first, then fall back to
+  # the index built on the default branch. Without fallback_keys,
+  # feature-branch jobs run without an index and fail with
+  # "No dependency index".
+  - key: test-order-${CI_COMMIT_REF_SLUG}
+    fallback_keys:
+      - test-order-${CI_DEFAULT_BRANCH}
+    paths:
+      - .test-order/
+      - .m2/repository/
 ```
+
+> **Three GitLab-specific pitfalls (all confirmed on GitLab CE):**
+>
+> 1. **`GIT_DEPTH: 0` is required for `since-last-commit`.** GitLab's default
+>    shallow clone means `HEAD~1` is often unavailable. test-order then logs
+>    `git revision HEAD~1 is unavailable; treating all tracked source files as
+>    changed` and every test lands in tier-1 — tiering is silently defeated.
+>    Either set `GIT_DEPTH: 0` (recommended) or switch to
+>    `-Dtestorder.changeMode=since-last-run`.
+> 2. **`fallback_keys` is not optional for feature-branch pipelines.** The
+>    per-branch cache key means a fresh feature branch has no cache of its
+>    own; without `fallback_keys: [test-order-${CI_DEFAULT_BRANCH}]` the tier-1
+>    job errors out with "No dependency index".
+> 3. **Use `maven:3.9-eclipse-temurin-17`, not `eclipse-temurin:17`.** The
+>    plain temurin image has no `mvn` on `PATH`; jobs fail with
+>    `mvn: command not found`. The `maven:3.9-eclipse-temurin-17` image
+>    bundles both Java 17 and Maven 3.9.
+>
+> Avoid `CI_RUNNER_EXECUTABLE_ARCH` inside cache keys — it expands to
+> `linux/amd64` and the slash is normalised by GitLab, which is confusing
+> without any real benefit for a single-arch runner pool.
 
 ### Azure Pipelines
 
@@ -224,9 +254,21 @@ If you commit the index, add machine-local files to `.gitignore`:
 ## Tips
 
 - Always save the cache even when tests fail (`if: always()`) — failure history improves future scoring.
-- For shallow clones (e.g. `fetch-depth: 1`), use `changeMode=since-last-run` instead of `since-last-commit`.
+- For shallow clones (e.g. `fetch-depth: 1` on GitHub Actions, default `GIT_DEPTH` on GitLab), either deepen the clone or use `changeMode=since-last-run` instead of `since-last-commit`.
 - With multiple concurrent PR builds writing to the same cache key, the last writer wins — this is safe, as all runners produce equivalent indexes from the same source.
 - Avoid caching hash snapshots (`*.lz4` in `.test-order/` or `.test-order/hashes/`) across heterogeneous runner images (different OS/JDK versions) when using `since-last-run` change detection — hash snapshots are machine-local and may produce spurious diffs.
+
+### Shallow-clone impact on `since-last-commit`
+
+`since-last-commit` compares `HEAD` to `HEAD~1`. On a shallow clone `HEAD~1` may not exist. When that happens, test-order falls back to treating every tracked source file as changed, which pushes every test into tier-1 and defeats tiering.
+
+| Platform | Default clone depth | Fix for `since-last-commit` |
+|---|---|---|
+| GitLab CI | ~50 (shallow) | Set `variables: { GIT_DEPTH: 0 }` |
+| GitHub Actions | 1 (shallow) | Use `actions/checkout@v4` with `fetch-depth: 0` |
+| Jenkins | full by default | No change needed |
+
+If you can't (or don't want to) deepen the clone, use `-Dtestorder.changeMode=since-last-run` instead — it uses cached source hashes rather than git history.
 
 ---
 
