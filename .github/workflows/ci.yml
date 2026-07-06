@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload test reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: surefire-reports-jdk-${{ matrix.java-version }}
           path: |
@@ -201,7 +201,7 @@ jobs:
 
       - name: Upload integration test reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plugin-it-reports-${{ matrix.name }}
           path: ${{ matrix.report_glob }}
@@ -231,7 +231,7 @@ jobs:
           cache: maven
 
       - name: Set up Gradle cache
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Install artifacts for Gradle plugin tests
         run: mvn -B -ntp -pl test-order-core,test-order-junit,test-order-agent,test-order-ci,test-order-dashboard -am install -DskipTests -Dspotless.check.skip=true
@@ -261,7 +261,7 @@ jobs:
 
       - name: Upload Gradle plugin reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gradle-plugin-test-reports-jdk-${{ matrix.java-version }}
           path: |
@@ -312,7 +312,7 @@ jobs:
 
       - name: Upload reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maven-compat-reports-${{ matrix.maven-version }}
           path: |
