@@ -2142,6 +2142,15 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		// instrumentation before tests run and prevent dependency tracking.
 		project.getProperties().setProperty("testorder.offline.learnActive", "true");
 
+		// Re-instrument upstream sibling modules' classes so cross-module dependency
+		// edges are recorded when this module's tests call into sibling code.
+		// RuntimeRealmInjector restores sibling classes after their own surefire run
+		// (to prevent NCDFE during downstream compilation), so by the time this
+		// module's prepare executes, sibling target/classes contain un-instrumented
+		// bytecode. Re-applying instrumentation here ensures the recording callbacks
+		// are present during this module's test execution.
+		instrumentUpstreamSiblingClasses(instrumentationMode, includePackages, mappingFile);
+
 		// Resolve output paths
 		Path depsDir = ctx.resolveDepsDir(this.depsDir);
 		Path indexFile = ctx.resolveIndexFile(this.indexFile);
@@ -2255,6 +2264,146 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			return testClasses;
 		}
 		return null;
+	}
+
+	/**
+	 * Re-instruments upstream sibling modules' {@code target/classes} so that
+	 * cross-module dependency edges are recorded when this module's tests call into
+	 * sibling code.
+	 *
+	 * <p>
+	 * In an offline learn reactor build, each module's classes are instrumented
+	 * during its own {@code prepare} phase and restored to pristine bytecode
+	 * immediately after its surefire run (to prevent
+	 * {@code NoClassDefFoundError: UsageStore} in downstream annotation processors
+	 * and compiler plugins). By the time the <em>current</em> module's prepare
+	 * executes, sibling {@code target/classes} directories therefore contain
+	 * un-instrumented bytecode. Any call from this module's tests into a sibling
+	 * class goes un-recorded, silently dropping the cross-module edge.
+	 *
+	 * <p>
+	 * This method finds all reactor siblings whose compiled output ({@code
+	 * target/classes} or installed jar) appears on this project's test classpath
+	 * and re-instruments their {@code target/classes} using the shared reactor
+	 * class-id-map. The sibling backup directories are registered for cleanup so
+	 * {@code RestoreInstrumentationMojo} and {@code afterSessionEnd} restore
+	 * pristine bytecode after this module's tests finish.
+	 */
+	private void instrumentUpstreamSiblingClasses(String instrumentationMode, String includePackages,
+			Path mappingFile) {
+		if (session == null || session.getProjects() == null || session.getProjects().size() <= 1) {
+			return;
+		}
+		// Collect sibling module output directories indexed by canonical path.
+		// We match against project.getTestClasspathElements() which returns absolute
+		// paths to target/classes for reactor siblings (not installed jars).
+		java.util.Map<String, org.apache.maven.project.MavenProject> outputToProject = new java.util.HashMap<>();
+		for (org.apache.maven.project.MavenProject sibling : session.getProjects()) {
+			if (sibling == project || sibling.getBuild() == null) {
+				continue;
+			}
+			String out = sibling.getBuild().getOutputDirectory();
+			if (out != null) {
+				try {
+					outputToProject.put(java.nio.file.Path.of(out).toRealPath().toString(), sibling);
+				} catch (IOException ignored) {
+					outputToProject.put(java.nio.file.Path.of(out).toAbsolutePath().normalize().toString(), sibling);
+				}
+			}
+		}
+		if (outputToProject.isEmpty()) {
+			return;
+		}
+		// Find sibling target/classes entries on the test classpath.
+		java.util.List<String> testCp;
+		try {
+			testCp = project.getTestClasspathElements();
+		} catch (org.apache.maven.artifact.DependencyResolutionRequiredException e) {
+			getLog().debug("[test-order] Could not resolve test classpath for upstream instrumentation: " + e);
+			return;
+		}
+		Agent.InstrumentationMode iMode;
+		try {
+			iMode = Agent.InstrumentationMode.fromString(instrumentationMode);
+		} catch (Exception e) {
+			iMode = Agent.InstrumentationMode.MEMBER;
+		}
+		List<String> includes = includePackages == null || includePackages.isBlank()
+				? List.of()
+				: List.of(includePackages.split(","));
+		for (String cpEntry : testCp) {
+			if (cpEntry == null) {
+				continue;
+			}
+			String canonical;
+			try {
+				canonical = java.nio.file.Path.of(cpEntry).toRealPath().toString();
+			} catch (IOException ignored) {
+				canonical = java.nio.file.Path.of(cpEntry).toAbsolutePath().normalize().toString();
+			}
+			org.apache.maven.project.MavenProject sibling = outputToProject.get(canonical);
+			if (sibling == null) {
+				continue;
+			}
+			Path siblingClassesDir = java.nio.file.Path.of(cpEntry).toAbsolutePath().normalize();
+			if (!java.nio.file.Files.isDirectory(siblingClassesDir)) {
+				continue;
+			}
+			Path siblingTargetDir = siblingClassesDir.getParent();
+			if (siblingTargetDir == null) {
+				continue;
+			}
+			Path siblingBackupDir = siblingTargetDir.resolve(".test-order").resolve("classes-backup");
+			// Only re-instrument if classes are currently un-instrumented (no marker).
+			// If the marker exists, this sibling was already prepared for this module.
+			if (java.nio.file.Files.exists(siblingBackupDir.resolve(".instrumented"))) {
+				getLog().debug("[test-order] Sibling " + sibling.getArtifactId()
+						+ " already has instrumented backup — skipping re-instrumentation.");
+				continue;
+			}
+			try {
+				getLog().info("[test-order] Re-instrumenting upstream sibling " + sibling.getArtifactId()
+						+ " for cross-module dependency tracking.");
+				OfflineInstrumentor siblingInstrumentor = new OfflineInstrumentor(iMode, includes, List.of());
+				Path lockFile = mappingFile.resolveSibling(mappingFile.getFileName() + ".lock");
+				synchronized (REACTOR_MAP_INTRA_JVM_LOCK) {
+					try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(lockFile.toFile(), "rw");
+							java.nio.channels.FileLock fileLock = raf.getChannel().lock()) {
+						if (java.nio.file.Files.exists(mappingFile)) {
+							try {
+								me.bechberger.testorder.agent.runtime.ClassIdMapping reactor = me.bechberger.testorder.agent.runtime.ClassIdMapping
+										.load(mappingFile);
+								me.bechberger.testorder.agent.runtime.ClassIdMap.getInstance()
+										.bulkLoadClasses(reactor.toClassMap());
+								if (reactor.memberCount() > 0) {
+									me.bechberger.testorder.agent.runtime.ClassIdMap.getInstance()
+											.bulkLoadMembers(reactor.toMemberMap());
+								}
+							} catch (IOException e) {
+								getLog().warn("[test-order] Could not load reactor map for sibling "
+										+ sibling.getArtifactId() + ": " + e.getMessage());
+							}
+						}
+						siblingInstrumentor.instrument(siblingClassesDir, siblingBackupDir);
+						// Save updated class-id map (sibling may have added inner classes)
+						me.bechberger.testorder.agent.runtime.ClassIdMap singleton = me.bechberger.testorder.agent.runtime.ClassIdMap
+								.getInstance();
+						me.bechberger.testorder.agent.runtime.ClassIdMapping fullMapping = me.bechberger.testorder.agent.runtime.ClassIdMapping
+								.fromClassIdMap(singleton, singleton.getNextClassId(), singleton.getNextMemberId());
+						fullMapping.save(mappingFile);
+					}
+				}
+				int count = siblingInstrumentor.getTransformedCount();
+				getLog().info("[test-order] Re-instrumented " + count + " classes in sibling " + sibling.getArtifactId()
+						+ " (backup: " + siblingBackupDir + ")");
+				// Register for restore so the sibling's classes are cleaned up after our tests.
+				pendingRestores.add(siblingBackupDir);
+				registerPendingRestoreInSession(siblingBackupDir);
+			} catch (IOException e) {
+				getLog().warn("[test-order] Failed to re-instrument sibling " + sibling.getArtifactId()
+						+ " — cross-module edges may be missing: " + e.getMessage());
+			}
+		}
 	}
 
 	private void runOfflineInstrumentation(String instrumentationMode, String includePackages, Path classesDir,
