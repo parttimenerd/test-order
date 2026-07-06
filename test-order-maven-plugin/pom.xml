@@ -68,24 +68,24 @@
         <dependency>
             <groupId>org.pitest</groupId>
             <artifactId>pitest-entry</artifactId>
-            <version>1.25.1</version>
+            <version>1.25.5</version>
         </dependency>
         <dependency>
             <groupId>org.pitest</groupId>
             <artifactId>pitest</artifactId>
-            <version>1.25.1</version>
+            <version>1.25.5</version>
         </dependency>
         <dependency>
             <groupId>org.pitest</groupId>
             <artifactId>pitest-junit5-plugin</artifactId>
-            <version>1.2.1</version>
+            <version>1.2.3</version>
         </dependency>
 
         <!-- ML: Tribuo logistic regression (Apache 2.0, opt-in via testorder.ml.enabled) -->
         <dependency>
             <groupId>org.tribuo</groupId>
             <artifactId>tribuo-classification-sgd</artifactId>
-            <version>4.3.1</version>
+            <version>4.3.2</version>
         </dependency>
 
         <!-- test -->
@@ -102,7 +102,7 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
-            <version>3.25.3</version>
+            <version>3.27.7</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -113,7 +113,7 @@
         <dependency>
             <groupId>net.bytebuddy</groupId>
             <artifactId>byte-buddy</artifactId>
-            <version>1.15.11</version>
+            <version>1.18.10</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -169,7 +169,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-invoker-plugin</artifactId>
-                        <version>3.7.0</version>
+                        <version>3.10.1</version>
                         <configuration>
                             <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
                             <localRepositoryPath>${project.build.directory}/local-repo</localRepositoryPath>
