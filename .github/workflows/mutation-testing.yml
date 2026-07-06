@@ -72,7 +72,7 @@ jobs:
 
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-report-${{ github.run_number }}
           path: third-party/cloud-sdk-java/**/target/test-mutation-results.json
@@ -132,7 +132,7 @@ jobs:
 
       - name: Upload mutation report (test-order-core)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-self-report-core-${{ github.run_number }}
           path: test-order-core/target/test-mutation-results.json
