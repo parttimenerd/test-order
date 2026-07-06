@@ -26,7 +26,7 @@
                 <version>2.0.1</version>
                 <configuration>
                     <workingDirectory>src/main/dashboard</workingDirectory>
-                    <nodeVersion>v20.18.3</nodeVersion>
+                    <nodeVersion>v22.16.0</nodeVersion>
                 </configuration>
                 <executions>
                     <execution>
