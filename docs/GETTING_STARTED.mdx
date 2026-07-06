@@ -1,8 +1,12 @@
 # Getting Started with test-order
 
+import AsciinemaPlayer from '@site/src/components/AsciinemaPlayer';
+
 This tutorial walks you through using test-order from scratch. By the end, you'll have tests running in priority order with affected tests surfacing first.
 
 **Time required:** ~5 minutes.
+
+<AsciinemaPlayer src="/casts/demo-hello-world.cast" cols={120} rows={28} />
 
 ## Prerequisites
 
@@ -163,6 +167,8 @@ After the learn run, the dependency index is written to `.test-order/test-depend
 > Online mode avoids modifying bytecode on disk but requires the agent JAR to be locatable on the classpath.
 > Both modes report dependency data through the same `IndexCollectorServer`.
 
+<AsciinemaPlayer src="/casts/demo-learn.cast" cols={120} rows={28} />
+
 ---
 
 ## Step 3: Make a change and re-run
@@ -253,6 +259,8 @@ The **KPI bar** at the top shows APFD, latest failures, pass streak, clean-run c
 
 Full feature reference: [test-order-dashboard/README.md](https://github.com/parttimenerd/test-order/blob/main/test-order-dashboard/README.md)
 
+<AsciinemaPlayer src="/casts/demo-dashboard.cast" cols={120} rows={28} />
+
 ---
 
 ## Step 6: Diagnose issues
@@ -268,6 +276,8 @@ mvn test-order:diagnose
 ```
 
 This checks index health, agent attachment, framework detection, and configuration issues.
+
+<AsciinemaPlayer src="/casts/demo-diagnose.cast" cols={120} rows={28} />
 
 ---
 
@@ -332,12 +342,12 @@ mvn test-order:dashboard
 |------|-------|
 | **Quick reference (bookmark this)** | [CHEAT_SHEET.md](CHEAT_SHEET.md) |
 | Set up CI with tiered testing | [docs/ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples) |
-| Configure multi-module projects | [docs/MULTI_MODULE_SETUP.md](MULTI_MODULE_SETUP.md) |
+| Configure multi-module projects | [docs/MULTI_MODULE_SETUP.mdx](MULTI_MODULE_SETUP.mdx) |
 | Tune scoring weights | [docs/SCORING.md](SCORING.md) |
 | Enable ML failure predictions | [docs/MAVEN_PLUGIN.md](MAVEN_PLUGIN.md) (ML section) |
 | Detect order-dependent (flaky) tests | [docs/DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) |
 | Build from source / contribute | [docs/DEVELOPMENT.md](DEVELOPMENT.md) |
-| Full CLI & properties reference | [docs/CLI_REFERENCE.md](CLI_REFERENCE.md) |
+| Full CLI & properties reference | [docs/CLI_REFERENCE.mdx](CLI_REFERENCE.mdx) |
 
 ---
 

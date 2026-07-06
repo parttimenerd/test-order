@@ -39,7 +39,7 @@ Sample configurations for the three-tier test workflow:
 
 ## Key properties
 
-A complete list is in [CLI_REFERENCE.md](../CLI_REFERENCE.md). The most commonly tuned properties for CI:
+A complete list is in [CLI_REFERENCE.mdx](../CLI_REFERENCE.mdx). The most commonly tuned properties for CI:
 
 | Property | Default | Description |
 |----------|---------|-------------|

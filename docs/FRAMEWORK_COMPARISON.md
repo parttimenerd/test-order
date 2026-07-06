@@ -107,7 +107,7 @@ If you are evaluating moving a TestNG project to JUnit 5 and want to preserve te
 
 ## Shared configuration
 
-All properties in [CLI_REFERENCE.md](CLI_REFERENCE.md) apply to both frameworks unless noted. Both modules read configuration from system properties and from `testorder-config.properties` on the classpath (written by the Maven/Gradle plugin).
+All properties in [CLI_REFERENCE.mdx](CLI_REFERENCE.mdx) apply to both frameworks unless noted. Both modules read configuration from system properties and from `testorder-config.properties` on the classpath (written by the Maven/Gradle plugin).
 
 The key properties with framework-specific behaviour:
 

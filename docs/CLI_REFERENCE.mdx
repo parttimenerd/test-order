@@ -1,5 +1,7 @@
 # test-order CLI Reference
 
+import AsciinemaPlayer from '@site/src/components/AsciinemaPlayer';
+
 Practical reference for Maven plugin goals and the most important configuration properties.
 
 ## Supported Frameworks
@@ -230,6 +232,8 @@ Jump to the relevant table below — properties are organized by purpose:
 | `testorder.tiered.currentTier` | unset | Required for `run-tier` (`2` or `3`) |
 | `testorder.tiered.shard` | unset | Split tier-3 across N runners: `k/N` (e.g. `2/3`). Tier 1 and 2 run in full on every runner. Works with `run-tier`, `run-tiered`, and the Gradle `testOrderRunTier`/`testOrderRunTiered` tasks. |
 
+<AsciinemaPlayer src="/casts/demo-tiered.cast" cols={120} rows={28} />
+
 ### Auto Mode
 
 | Property | Default | Notes |
@@ -369,7 +373,7 @@ ML data is shown in:
 
 ### Flaky-test Handling and Skip-if-unchanged Cache
 
-All three features below are opt-in and independent of each other. See [FLAKY_AND_CACHING.md](FLAKY_AND_CACHING.md) for the full guide.
+All three features below are opt-in and independent of each other. See [FLAKY_AND_CACHING.mdx](FLAKY_AND_CACHING.mdx) for the full guide.
 
 | Property | Default | Notes |
 |---|---|---|
@@ -655,3 +659,9 @@ Some runtime keys have canonical and legacy aliases. The following are commonly 
 - `testorder.state.path` and `testorder.stateFile`
 - `testorder.source.root` and `testorder.sourceRoot`
 - `testorder.methodOrder.enabled` and `testorder.methodOrderingEnabled`
+
+## Diagnose
+
+When something looks off, `diagnose` checks index health, agent attachment, framework detection, and configuration issues.
+
+<AsciinemaPlayer src="/casts/demo-diagnose.cast" cols={120} rows={28} />

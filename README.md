@@ -6,7 +6,7 @@
 
 ---
 
-> **New here?** Jump to the [Quick Start](#quick-start) below, or follow the [Getting Started Tutorial](docs/GETTING_STARTED.md) for a hands-on 5-minute walkthrough. Something not working? Run `mvn test-order:diagnose` or see [Troubleshooting](#troubleshooting).
+> **New here?** Jump to the [Quick Start](#quick-start) below, or follow the [Getting Started Tutorial](docs/GETTING_STARTED.mdx) for a hands-on 5-minute walkthrough. Something not working? Run `mvn test-order:diagnose` or see [Troubleshooting](#troubleshooting).
 
 ---
 
@@ -192,7 +192,7 @@ If your learn run is slow (large projects), you can commit `.test-order/test-dep
 | Detect flaky tests | `mvn test-order:detect-dependencies` | `./gradlew testOrderDetectDependencies` |
 | **Mutation testing** | `mvn test-order:analyze-mutations` | `./gradlew testOrderAnalyzeMutations` |
 
-For the full CLI reference, see [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
+For the full CLI reference, see [docs/CLI_REFERENCE.mdx](docs/CLI_REFERENCE.mdx).
 
 ## Demo
 
@@ -665,7 +665,7 @@ Git is the default change detection backend. Without Git, you can use `-Dtestord
 <details>
 <summary><strong>Does it work with multi-module projects?</strong></summary>
 
-Yes. Each module gets its own dependency index. For reactor-level features (e.g., skipping entire modules that have no relevant changes), see [Multi-Module Setup](docs/MULTI_MODULE_SETUP.md).
+Yes. Each module gets its own dependency index. For reactor-level features (e.g., skipping entire modules that have no relevant changes), see [Multi-Module Setup](docs/MULTI_MODULE_SETUP.mdx).
 
 </details>
 
@@ -779,11 +779,11 @@ After install, Claude picks it up automatically based on the skill's `descriptio
 | Guide | Description |
 |---|---|
 | **[Cheat Sheet](docs/CHEAT_SHEET.md)** | One-page quick reference: commands, properties, troubleshooting |
-| **[Getting Started](docs/GETTING_STARTED.md)** | 5-minute tutorial: first run → reordering → dashboard |
-| **[CLI Reference](docs/CLI_REFERENCE.md)** | All goals, properties, and configuration options |
+| **[Getting Started](docs/GETTING_STARTED.mdx)** | 5-minute tutorial: first run → reordering → dashboard |
+| **[CLI Reference](docs/CLI_REFERENCE.mdx)** | All goals, properties, and configuration options |
 | **[Maven Plugin](docs/MAVEN_PLUGIN.md)** | Full Maven goal reference and CI YAML examples |
 | **[Scoring](docs/SCORING.md)** | Formula details, weight customization, auto-tuning |
-| **[Multi-Module Setup](docs/MULTI_MODULE_SETUP.md)** | Reactor-level aggregation for multi-module projects |
+| **[Multi-Module Setup](docs/MULTI_MODULE_SETUP.mdx)** | Reactor-level aggregation for multi-module projects |
 | **[CI Examples](docs/ci-examples/)** | Ready-to-use GitHub Actions, GitLab CI, Azure configs |
 | **[Detect Dependencies](docs/DETECT_DEPENDENCIES.md)** | Order-dependent (flaky) test detection |
 | **[Kotest](docs/KOTEST.md)** | Kotlin & Kotest integration |

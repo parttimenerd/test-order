@@ -2,7 +2,7 @@
 
 test-order isn't a brand-new idea — it stands on roughly two decades of academic work on **test case prioritization** (TCP) and **regression test selection** (RTS), and on industry experience from companies running hundreds of millions of tests a day.
 
-This page is a small bibliography linking the techniques in test-order back to the papers and posts that informed them. If you'd rather see the practical side first, start with [Getting started](GETTING_STARTED.md) or [Architecture](ARCHITECTURE.md); come back here when you want the *why*.
+This page is a small bibliography linking the techniques in test-order back to the papers and posts that informed them. If you'd rather see the practical side first, start with [Getting started](GETTING_STARTED.mdx) or [Architecture](ARCHITECTURE.md); come back here when you want the *why*.
 
 ## Foundational surveys
 
@@ -45,8 +45,8 @@ This page is a small bibliography linking the techniques in test-order back to t
 | Failure-history weighting (Yoo/Harman)   | EMA scoring in [SCORING.md](SCORING.md)                                         |
 | Coverage-based RTS (PTS)                 | JaCoCo signals + [affected-test selection](DETECT_DEPENDENCIES.md)              |
 | Lightweight per-project ML               | Genetic optimizer in [ARCHITECTURE.md](ARCHITECTURE.md)                         |
-| OD-bug detection (iDFlakies)             | `detect-dependencies` mode in [CLI_REFERENCE.md](CLI_REFERENCE.md)             |
+| OD-bug detection (iDFlakies)             | `detect-dependencies` mode in [CLI_REFERENCE.mdx](CLI_REFERENCE.mdx)             |
 | Tuscan-square pair-coverage (Li 2023)    | `tuscan-systematic` ordering in [DETECT_DEPENDENCIES](DETECT_DEPENDENCIES.md)  |
-| Tiered execution (Memon/Google)          | `tiered-select` / `run-tier` goals in [CLI_REFERENCE.md](CLI_REFERENCE.md)     |
+| Tiered execution (Memon/Google)          | `tiered-select` / `run-tier` goals in [CLI_REFERENCE.mdx](CLI_REFERENCE.mdx)     |
 
 If you've come across a paper that should be on this list, please [open an issue](https://github.com/parttimenerd/test-order/issues) — the goal is for this page to grow with the project.

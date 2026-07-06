@@ -1,5 +1,7 @@
 # Flaky-Test Handling and Skip-if-Unchanged Cache
 
+import AsciinemaPlayer from '@site/src/components/AsciinemaPlayer';
+
 test-order ships three opt-in features that close the remaining gap to commercial
 "predictive test selection" tooling (e.g. Gradle Develocity):
 
@@ -189,6 +191,8 @@ test has yet built up the required pass streak), the Cache tab shows an
 **"enabled but no tests were skipped this run"** message instead of the
 "cache is disabled" message reserved for runs where the feature is off.
 
+<AsciinemaPlayer src="/casts/demo-dashboard.cast" cols={120} rows={28} />
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -201,6 +205,6 @@ test has yet built up the required pass streak), the Cache tab shows an
 
 ## See also
 
-- [CLI_REFERENCE.md](CLI_REFERENCE.md) — full property list
+- [CLI_REFERENCE.mdx](CLI_REFERENCE.mdx) — full property list
 - [SCORING.md](SCORING.md) — how the underlying score is computed
 - [MAVEN_PLUGIN.md](MAVEN_PLUGIN.md) — Maven configuration examples

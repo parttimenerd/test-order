@@ -33,6 +33,22 @@ CORE=$SPRING_BOOT/core/spring-boot
 SRC=$CORE/src/main/java/org/springframework/boot
 INIT=$SPRING_BOOT/test-order-init.gradle
 
+# Preflight: require the third-party repo and a learned index.
+if [ ! -d "$SPRING_BOOT" ]; then
+  echo "SKIP: third-party/spring-boot checkout not found at $SPRING_BOOT" >&2
+  exit 0
+fi
+if [ ! -f "$SPRING_BOOT/.test-order/test-dependencies.lz4" ]; then
+  echo "SKIP: no learned index at $SPRING_BOOT/.test-order/test-dependencies.lz4" >&2
+  echo "      Run: cd $SPRING_BOOT && ./gradlew --init-script test-order-init.gradle :core:spring-boot:testOrderLearn --no-daemon" >&2
+  exit 0
+fi
+
+# Disable pagers — required when running in headless/CI mode
+export GIT_PAGER=cat
+export LESS="-FRX"
+export PAGER=cat
+
 # Spring Boot currently requires JDK 25+ for some modules. Prefer JDK 25.
 if [ -z "${JAVA_HOME:-}" ] || [ "${JAVA_HOME}" != "$(/usr/libexec/java_home -v 25 2>/dev/null || echo)" ]; then
   JAVA_25_HOME="$(/usr/libexec/java_home -v 25 2>/dev/null || true)"
@@ -80,22 +96,22 @@ step "Test class count in spring-boot core:"
 type_cmd "find core/spring-boot/src/test -name '*Tests.java' | wc -l"
 pause 1.5
 
-step "Dependency index (learned earlier):"
-type_cmd "ls -lh core/spring-boot/.test-order/test-dependencies.lz4"
+step "Dependency index (shared at repo root — covers all modules):"
+type_cmd "ls -lh .test-order/test-dependencies.lz4"
 pause 1
 
 # ── 2. Dump a sample of the dependency index ─────────────────────
 banner "2 · Dependency index (sample)"
 
 step "Which source classes does each test class exercise?"
-type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderDump --no-daemon -q 2>/dev/null | head -25"
+type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderDump --no-daemon --console plain -q 2>/dev/null | head -5"
 pause 2
 
 # ── 3. Baseline ordering ─────────────────────────────────────────
 banner "3 · Baseline ordering (no code changes)"
 
 step "Predicted test order — scored by speed & past failures only:"
-type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderShowOrder --no-daemon -q 2>/dev/null | head -30"
+type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderShowOrder --no-daemon --console plain -q 2>/dev/null | head -20"
 pause 2.5
 
 # ── 4. Modify SpringApplication.java ─────────────────────────────
@@ -112,21 +128,23 @@ type_cmd "git -C $SPRING_BOOT diff --stat"
 pause 1
 
 step "Show the diff:"
-type_cmd "git -C $SPRING_BOOT diff core/spring-boot/src/main/java/org/springframework/boot/SpringApplication.java | head -20"
+type_cmd "git -C $SPRING_BOOT diff core/spring-boot/src/main/java/org/springframework/boot/SpringApplication.java | head -15"
 pause 2
 
 # ── 5. Show updated ordering ─────────────────────────────────────
 banner "5 · Updated ordering after change"
 
 step "Tests that exercise SpringApplication jump to the top:"
-type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderShowOrder --no-daemon -q 2>/dev/null | head -30"
+type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderShowOrder --no-daemon --console plain -q 2>/dev/null | head -20"
 pause 3
 
-# ── 6. Run tests in priority order ───────────────────────────────
-banner "6 · Run tests in priority order"
+# ── 6. Show affected tests (no test run needed) ──────────────────
+banner "6 · Affected tests — instant preview"
 
-step "Tests affected by our change run FIRST:"
-type_cmd "./gradlew --init-script $INIT :core:spring-boot:test -Dtestorder.mode=order --no-daemon --rerun-tasks 2>&1 | tail -40"
+step "Which tests would run for this change? (no test execution needed):"
+type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderShowOrder --no-daemon --console plain -q 2>/dev/null | grep -A3 'Changed classes' | head -5"
+pause 1
+type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderShowOrder --no-daemon --console plain -q 2>/dev/null | grep -E '^  [0-9]' | head -10"
 pause 2
 
 # ── 7. Restore, then modify a different file ─────────────────────
@@ -144,15 +162,15 @@ type_cmd "git -C $SPRING_BOOT diff --stat"
 pause 1
 
 step "Watch the order shift — BannerTests / ResourceBannerTests jump up:"
-type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderShowOrder --no-daemon -q 2>/dev/null | head -30"
+type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderShowOrder --no-daemon --console plain -q 2>/dev/null | head -20"
 pause 3
 
 # ── 8. Dashboard ─────────────────────────────────────────────────
 banner "8 · Generate interactive dashboard"
 
-type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderDashboard --no-daemon -q 2>/dev/null"
+type_cmd "./gradlew --init-script $INIT :core:spring-boot:testOrderDashboard --no-daemon --console plain -q 2>/dev/null"
 step "Dashboard HTML generated:"
-type_cmd "ls -lh core/spring-boot/build/test-order/dashboard/index.html"
+type_cmd "ls -lh core/spring-boot/build/test-order/dashboard/index.html 2>/dev/null || find core/spring-boot/build -name 'index.html' 2>/dev/null | head -1"
 pause 2
 
 # ── Cleanup ──────────────────────────────────────────────────────

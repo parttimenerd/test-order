@@ -84,7 +84,7 @@ jobs:
         run: |
           CAST_DIR="website/static/casts"
           mkdir -p "$CAST_DIR"
-          DEMOS=(demo-hello-world demo-learn demo-tiered demo-dashboard demo-optimizer demo-diagnose demo-multi-module)
+          DEMOS=(demo-hello-world demo-learn demo-tiered demo-dashboard demo-optimizer demo-diagnose demo-multi-module demo-spring-ai)
           for name in "${DEMOS[@]}"; do
             if [ -f "$CAST_DIR/$name.cast" ]; then
               echo "[skip] $name.cast already exists"

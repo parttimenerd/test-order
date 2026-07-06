@@ -393,9 +393,9 @@ jobs:
 
           ### Documentation
 
-          - [Getting Started](https://github.com/parttimenerd/test-order/blob/main/docs/GETTING_STARTED.md)
+          - [Getting Started](https://github.com/parttimenerd/test-order/blob/main/docs/GETTING_STARTED.mdx)
           - [Maven Plugin Reference](https://github.com/parttimenerd/test-order/blob/main/docs/MAVEN_PLUGIN.md)
-          - [CLI Reference](https://github.com/parttimenerd/test-order/blob/main/docs/CLI_REFERENCE.md)
+          - [CLI Reference](https://github.com/parttimenerd/test-order/blob/main/docs/CLI_REFERENCE.mdx)
           - [CI Setup](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/)
           - [Full Documentation](https://github.com/parttimenerd/test-order/blob/main/docs/README.md)
           EOF
