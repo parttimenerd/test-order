@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload test reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: surefire-reports-jdk-${{ matrix.java-version }}
           path: |
@@ -201,7 +201,7 @@ jobs:
 
       - name: Upload integration test reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plugin-it-reports-${{ matrix.name }}
           path: ${{ matrix.report_glob }}
@@ -261,7 +261,7 @@ jobs:
 
       - name: Upload Gradle plugin reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gradle-plugin-test-reports-jdk-${{ matrix.java-version }}
           path: |
@@ -312,7 +312,7 @@ jobs:
 
       - name: Upload reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maven-compat-reports-${{ matrix.maven-version }}
           path: |
