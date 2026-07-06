@@ -11,6 +11,14 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # okhttp 5.x changed to Kotlin Multiplatform; the JVM artifact is now
+      # okhttp-jvm, so a plain okhttp major bump breaks compilation.
+      - dependency-name: "com.squareup.okhttp3:okhttp"
+        update-types: ["version-update:semver-major"]
+      # jenetics 8+ requires Java 21+; CI runs on Java 17.
+      - dependency-name: "io.jenetics:jenetics"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "gradle"
     directory: "/test-order-gradle-plugin"
