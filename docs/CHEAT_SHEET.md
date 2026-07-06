@@ -163,6 +163,7 @@ It checks index health, permissions, package filters, and prints actionable fix 
 | JaCoCo reports 0% coverage | Change Surefire `<argLine>` to `@{argLine}` |
 | `Failed to execute auto workflow` | Run `mvn test-order:diagnose`; check permissions on `.test-order/` |
 | Tests skipped unexpectedly | Cold-start without index — `affected`/tiered goals fall back to all tests; run `mvn test` first |
+| Every test lands in tier-1 in CI | Shallow clone hides `HEAD~1`. On GitLab set `variables: { GIT_DEPTH: 0 }`; on GitHub Actions use `actions/checkout@v4` with `fetch-depth: 0`; or use `-Dtestorder.changeMode=since-last-run`. |
 
 **Nuclear reset:** `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 
