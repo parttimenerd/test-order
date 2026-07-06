@@ -336,7 +336,7 @@ mvn test-order:dashboard
 | No index despite running `mvn test` | Source packages not detected (groupId mismatch) | Set `-Dtestorder.includePackages=com.yourpackage` |
 | `since-last-run` always shows all classes as changed | Hash snapshot (`hashes.lz4`) is missing or was not updated | The source-hash baseline is **only updated during learn runs** — run `mvn test -Dtestorder.mode=learn` or `mvn test-order:snapshot` to advance it |
 | JaCoCo reports 0% coverage | Hardcoded `<argLine>` in Surefire | Replace with `@{argLine}` so JaCoCo and test-order chain correctly |
-| "Failed to load JUnit Platform" (Gradle) | Snapshot repo added to project `repositories {}` instead of `pluginManagement.repositories {}` | Move it to `pluginManagement.repositories {}` only — see Step 1 above |
+| "Failed to load JUnit Platform" (Gradle) | Snapshot repo in project `repositories {}` lets a stale snapshot JAR shadow your project's JUnit Platform version | Move the snapshot repo to `pluginManagement.repositories {}` only — see Step 1 above |
 | Every test lands in tier-1 in CI (tiering defeated) | Shallow clone: `HEAD~1` unavailable, so `since-last-commit` treats every source file as changed. Look for the log line `git revision HEAD~1 is unavailable`. | On GitLab: set `variables: { GIT_DEPTH: 0 }`. On GitHub Actions: `actions/checkout@v4` with `fetch-depth: 0`. Or switch to `-Dtestorder.changeMode=since-last-run`. |
 
 ---
