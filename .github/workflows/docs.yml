@@ -159,7 +159,7 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
           exit $EXIT
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: website/build
 
