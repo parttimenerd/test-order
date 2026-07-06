@@ -32,6 +32,8 @@ DEMOS=(
 	demo-optimizer
 	demo-diagnose
 	demo-multi-module
+	demo-spring-ai
+	demo-spring-boot
 )
 
 # Per-demo idle-gap target (seconds). Snappy for short demos, more
@@ -44,6 +46,8 @@ IDLE[demo-dashboard]=1.0
 IDLE[demo-optimizer]=1.5
 IDLE[demo-diagnose]=0.8
 IDLE[demo-multi-module]=1.5
+IDLE[demo-spring-ai]=1.5
+IDLE[demo-spring-boot]=2.0
 
 for name in "${DEMOS[@]}"; do
 	script="$SCRIPT_DIR/$name.sh"
@@ -54,13 +58,22 @@ for name in "${DEMOS[@]}"; do
 	fi
 	echo "─── recording $name ───"
 	rm -f "$out"
-	asciinema rec \
+	if asciinema rec \
 		--cols 120 --rows 32 \
 		--idle-time-limit 2 \
 		--overwrite \
 		--command "bash $script" \
-		"$out"
-	"$SCRIPT_DIR/trim-cast-idle.sh" "$out" "${IDLE[$name]:-1.0}"
+		"$out" 2>&1; then
+		if [ -f "$out" ] && [ -s "$out" ]; then
+			"$SCRIPT_DIR/trim-cast-idle.sh" "$out" "${IDLE[$name]:-1.0}"
+		else
+			echo "[skip] $name produced no cast (preflight check triggered)"
+			rm -f "$out"
+		fi
+	else
+		echo "::warning::Demo $name failed to record; skipping cast"
+		rm -f "$out"
+	fi
 done
 
 echo

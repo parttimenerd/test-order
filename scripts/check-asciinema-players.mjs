@@ -29,12 +29,43 @@ const PAGES = [
   {
     url: '/docs/DEMOS',
     players: [
+      { src: '/casts/demo-hello-world.cast',  label: 'hello-world' },
+      { src: '/casts/demo-learn.cast',         label: 'learn' },
+      { src: '/casts/demo-tiered.cast',        label: 'tiered' },
+      { src: '/casts/demo-dashboard.cast',     label: 'dashboard' },
+      { src: '/casts/demo-optimizer.cast',     label: 'optimizer' },
+      { src: '/casts/demo-diagnose.cast',      label: 'diagnose' },
+      { src: '/casts/demo-multi-module.cast',  label: 'multi-module' },
+      { src: '/casts/demo-spring-ai.cast',     label: 'spring-ai' },
+      { src: '/casts/demo-spring-boot.cast',   label: 'spring-boot' },
+      { src: '/casts/demo-sap-cds4j.cast',     label: 'sap-cds4j' },
+    ],
+  },
+  {
+    url: '/docs/GETTING_STARTED',
+    players: [
       { src: '/casts/demo-hello-world.cast', label: 'hello-world' },
       { src: '/casts/demo-learn.cast',        label: 'learn' },
-      { src: '/casts/demo-tiered.cast',       label: 'tiered' },
       { src: '/casts/demo-dashboard.cast',    label: 'dashboard' },
-      { src: '/casts/demo-optimizer.cast',    label: 'optimizer' },
       { src: '/casts/demo-diagnose.cast',     label: 'diagnose' },
+    ],
+  },
+  {
+    url: '/docs/CLI_REFERENCE',
+    players: [
+      { src: '/casts/demo-tiered.cast',   label: 'tiered' },
+      { src: '/casts/demo-diagnose.cast', label: 'diagnose' },
+    ],
+  },
+  {
+    url: '/docs/FLAKY_AND_CACHING',
+    players: [
+      { src: '/casts/demo-dashboard.cast', label: 'dashboard' },
+    ],
+  },
+  {
+    url: '/docs/MULTI_MODULE_SETUP',
+    players: [
       { src: '/casts/demo-multi-module.cast', label: 'multi-module' },
     ],
   },

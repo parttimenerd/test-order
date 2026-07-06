@@ -379,7 +379,7 @@ dashboard:
 ## Flaky-Test Handling and Skip-if-Unchanged Cache
 
 Three opt-in features close the gap to commercial "predictive test selection"
-tooling. See the dedicated [FLAKY_AND_CACHING.md](FLAKY_AND_CACHING.md) guide for
+tooling. See the dedicated [FLAKY_AND_CACHING.mdx](FLAKY_AND_CACHING.mdx) guide for
 the full design and decision matrix.
 
 ### Properties

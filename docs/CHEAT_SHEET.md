@@ -1,7 +1,7 @@
 # test-order Cheat Sheet
 
 Quick reference for the most common commands. For full details see the
-[CLI Reference](CLI_REFERENCE.md) or [Maven Plugin](MAVEN_PLUGIN.md) docs.
+[CLI Reference](CLI_REFERENCE.mdx) or [Maven Plugin](MAVEN_PLUGIN.md) docs.
 
 ---
 
@@ -139,7 +139,7 @@ For full YAML examples: [ci-examples/](https://github.com/parttimenerd/test-orde
 | `testorder.debug` | `false` | Verbose output showing change detection and ordering decisions |
 | `testorder.autoLearnRunThreshold` | `10` | Force re-learn after N order-mode runs |
 | `testorder.affected.topN` | `-1` | Max number of tests for `affected` goal (`-1` = all affected) |
-| `testorder.flaky.retries` | `0` | Retry FLAKY-classified tests on failure (recommended: `2`). See [FLAKY_AND_CACHING.md](FLAKY_AND_CACHING.md). |
+| `testorder.flaky.retries` | `0` | Retry FLAKY-classified tests on failure (recommended: `2`). See [FLAKY_AND_CACHING.mdx](FLAKY_AND_CACHING.mdx). |
 | `testorder.flaky.quarantine` | `false` | Report FLAKY-test failures as aborted (skipped) instead of failed |
 | `testorder.cache.skipUnchanged` | `false` | Skip tests whose deps are unchanged and that passed the last N runs |
 | `testorder.cache.minPassStreak` | `3` | Required consecutive pass streak before cache eligibility |

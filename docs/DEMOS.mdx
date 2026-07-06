@@ -5,9 +5,8 @@ sidebar_position: 3
 
 # Demos
 
-Short feature-focused asciinema casts. Each one runs against a real fixture in
-`test-fixtures/` so the output is what you'd see locally — no stitching, no
-fake terminal recordings.
+Short feature-focused asciinema casts. Each one runs against a real fixture so
+the output is what you'd see locally — no stitching, no fake terminal recordings.
 
 import AsciinemaPlayer from '@site/src/components/AsciinemaPlayer';
 
@@ -52,3 +51,35 @@ When something looks off, run `diagnose` first.
 `-pl` filtering and reactor-aware reordering across modules.
 
 <AsciinemaPlayer src="/casts/demo-multi-module.cast" cols={120} rows={28} />
+
+## Spring AI — real-world Maven project
+
+Change-aware test prioritisation on Spring AI's `spring-ai-commons` module (20 test classes).
+Injects a bug into `Document.java`, watches it fail fast, then fixes it.
+
+<AsciinemaPlayer src="/casts/demo-spring-ai.cast" cols={120} rows={35} />
+
+## Spring Boot core — large Gradle project (351 test classes)
+
+Demonstrates test-order on Spring Boot's core module. Shows the dependency index,
+baseline ordering, how order shifts when `SpringApplication.java` changes, a full
+priority-ordered run, and the dashboard.
+
+:::note
+This cast requires recording against a local `third-party/spring-boot` checkout.
+Run `scripts/record-all-demos.sh` after completing a learn run in that directory.
+:::
+
+<AsciinemaPlayer src="/casts/demo-spring-boot.cast" cols={120} rows={35} />
+
+## SAP cds4j — selective test execution (1 491 tests → 15)
+
+Injects a bug into `ResultImpl.java` in SAP's CAP Java SDK and shows test-order
+selecting only the 15 affected tests out of 1 491 in `cds4j-core`.
+
+:::note
+This cast requires a local `sap-tests/cds4j` checkout with a completed learn run.
+Run `scripts/demo-sap-cds4j.sh` manually and copy the output to `website/static/casts/demo-sap-cds4j.cast`.
+:::
+
+<AsciinemaPlayer src="/casts/demo-sap-cds4j.cast" cols={120} rows={35} />

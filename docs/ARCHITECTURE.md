@@ -109,7 +109,7 @@ flowchart TD
     class I,J output
 ```
 
-See [CLI Reference → affected goal](./CLI_REFERENCE.md) for configuration options.
+See [CLI Reference → affected goal](./CLI_REFERENCE.mdx) for configuration options.
 
 ## Data Produced
 
