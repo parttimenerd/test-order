@@ -15,7 +15,7 @@
 
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
-        <playwright.version>1.60.0</playwright.version>
+        <playwright.version>1.61.0</playwright.version>
         <!-- Set to true on CI without display or Chromium; browser install step below handles it -->
         <playwright.skip>false</playwright.skip>
         <!-- Browser-based UI tests are skipped unless explicitly enabled with -Dtestorder.ui=true -->
@@ -87,7 +87,7 @@
         <dependency>
             <groupId>net.bytebuddy</groupId>
             <artifactId>byte-buddy</artifactId>
-            <version>1.18.10</version>
+            <version>1.18.11</version>
             <scope>test</scope>
         </dependency>
         <dependency>
