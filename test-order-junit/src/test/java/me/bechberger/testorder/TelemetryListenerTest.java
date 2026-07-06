@@ -1552,9 +1552,13 @@ class TelemetryListenerTest {
 		private StubTestPlan() {
 			super(false, null, new org.junit.platform.engine.OutputDirectoryCreator() {
 				@Override
-				public java.nio.file.Path getRootDirectory() { return null; }
+				public java.nio.file.Path getRootDirectory() {
+					return null;
+				}
 				@Override
-				public java.nio.file.Path createOutputDirectory(org.junit.platform.engine.TestDescriptor d) { return null; }
+				public java.nio.file.Path createOutputDirectory(org.junit.platform.engine.TestDescriptor d) {
+					return null;
+				}
 			});
 		}
 
