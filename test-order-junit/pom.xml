@@ -18,7 +18,7 @@
         <!-- Compile against JUnit 5.10.x so the JAR works with both JUnit 5 and 6.
              JUnit 6 is API-backward-compatible with 5, so the same JAR runs on both. -->
         <junit.version>5.10.2</junit.version>
-        <junit.platform.version>6.1.0</junit.platform.version>
+        <junit.platform.version>6.1.1</junit.platform.version>
     </properties>
 
     <dependencies>
@@ -43,10 +43,24 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- test -->
+        <!-- test: use JUnit 6 engine/platform to match platform-testkit version -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
+            <version>${junit.platform.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Override the 5.10.2/1.10.2 artifacts pulled in by the provided compile deps -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>${junit.platform.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-commons</artifactId>
+            <version>${junit.platform.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
