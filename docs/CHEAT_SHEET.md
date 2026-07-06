@@ -164,6 +164,8 @@ It checks index health, permissions, package filters, and prints actionable fix 
 | `Failed to execute auto workflow` | Run `mvn test-order:diagnose`; check permissions on `.test-order/` |
 | Tests skipped unexpectedly | Cold-start without index — `affected`/tiered goals fall back to all tests; run `mvn test` first |
 | Every test lands in tier-1 in CI | Shallow clone hides `HEAD~1`. On GitLab set `variables: { GIT_DEPTH: 0 }`; on GitHub Actions use `actions/checkout@v4` with `fetch-depth: 0`; or use `-Dtestorder.changeMode=since-last-run`. |
+| Learn run completes but tests still run in alphabetical order | `testorder.skip=true` is set, or the JUnit/TestNG extension isn't on the test classpath — check `-Dtestorder.debug=true` output; ensure no `-Dtestorder.skip=true` in CI env vars or `pom.xml`; verify `test-order-junit` or `test-order-testng` is on the test classpath |
+| "Binary read error" or index appears corrupt | Partial CI cache restore or interrupted learn run left a truncated `.lz4` file — `rm -rf .test-order/ && mvn test` to force a clean learn run |
 
 **Nuclear reset:** `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 
