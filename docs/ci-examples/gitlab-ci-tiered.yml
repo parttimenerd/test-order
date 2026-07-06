@@ -1,32 +1,55 @@
-# GitLab CI — Three-tier pipeline with test-order
+# GitLab CI — test-order integration
 #
-# Uses GitLab's sequential stages: tier-1 → tier-2 → tier-3.
-# Each tier fails fast; later tiers are skipped on failure.
+# On the default branch: full learn run (builds the dependency index).
+# On all other branches/MRs: three-tier fail-fast pipeline.
 #
-# Supports both Maven and Gradle (comment out whichever you don't use).
+# GIT_DEPTH: 0  — full history so since-last-commit can compare HEAD~1.
+#   Without this (default depth <= 50), HEAD~1 may be unavailable.
+#   test-order then warns "treating all tracked source files as changed"
+#   and dumps all tests into tier-1 — tiering is defeated.
+# fallback_keys lets feature branches inherit the main-branch index.
 
 stages:
+  - learn
   - tier-1
   - tier-2
   - tier-3
 
 variables:
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  GIT_DEPTH: 0
+  GIT_STRATEGY: clone
 
-cache:
-  key: test-order-${CI_COMMIT_REF_SLUG}
-  paths:
-    - .test-order/
-    - .m2/repository/
-    - build/
+.cache: &cache
+  cache:
+    - key: test-order-${CI_COMMIT_REF_SLUG}
+      fallback_keys:
+        - test-order-${CI_DEFAULT_BRANCH}
+      paths:
+        - .test-order/
+        - .m2/repository/
 
-# ── Maven ────────────────────────────────────────────────────────────────────
+# ── Learn (default branch only) ──────────────────────────────────────────────
 
-tier-1:maven:
-  stage: tier-1
-  image: eclipse-temurin:17
+learn:
+  stage: learn
+  image: maven:3.9-eclipse-temurin-17
+  <<: *cache
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   script:
-    - mvn test-order:tiered-select test
+    - mvn -B -ntp test -Dtestorder.mode=learn
+
+# ── Three-tier (non-default branches / MRs) ──────────────────────────────────
+
+tier-1:
+  stage: tier-1
+  image: maven:3.9-eclipse-temurin-17
+  <<: *cache
+  rules:
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+  script:
+    - mvn -B -ntp test-order:tiered-select test
         -Dtestorder.changeMode=since-last-commit
         -Dtestorder.tiered.tier2Fraction=0.5
         -Dsurefire.failIfNoSpecifiedTests=false
@@ -35,48 +58,26 @@ tier-1:maven:
       - target/test-order-tier*.txt
     expire_in: 1 hour
 
-tier-2:maven:
+tier-2:
   stage: tier-2
-  image: eclipse-temurin:17
-  needs: [tier-1:maven]
+  needs: [tier-1]
+  image: maven:3.9-eclipse-temurin-17
+  <<: *cache
+  rules:
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
   script:
-    - mvn test-order:run-tier test
+    - mvn -B -ntp test-order:run-tier test
         -Dtestorder.tiered.currentTier=2
         -Dsurefire.failIfNoSpecifiedTests=false
 
-tier-3:maven:
+tier-3:
   stage: tier-3
-  image: eclipse-temurin:17
-  needs: [tier-2:maven]
+  needs: [tier-2]
+  image: maven:3.9-eclipse-temurin-17
+  <<: *cache
+  rules:
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
   script:
-    - mvn test-order:run-tier test
+    - mvn -B -ntp test-order:run-tier test
         -Dtestorder.tiered.currentTier=3
         -Dsurefire.failIfNoSpecifiedTests=false
-
-# ── Gradle ───────────────────────────────────────────────────────────────────
-
-# tier-1:gradle:
-#   stage: tier-1
-#   image: eclipse-temurin:17
-#   script:
-#     - ./gradlew testOrderTieredSelect
-#         -Dtestorder.changeMode=since-last-commit
-#         -Dtestorder.tiered.tier2Fraction=0.5
-#   artifacts:
-#     paths:
-#       - build/test-order-tier*.txt
-#     expire_in: 1 hour
-
-# tier-2:gradle:
-#   stage: tier-2
-#   image: eclipse-temurin:17
-#   needs: [tier-1:gradle]
-#   script:
-#     - ./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=2
-
-# tier-3:gradle:
-#   stage: tier-3
-#   image: eclipse-temurin:17
-#   needs: [tier-2:gradle]
-#   script:
-#     - ./gradlew testOrderRunTier -Dtestorder.tiered.currentTier=3
