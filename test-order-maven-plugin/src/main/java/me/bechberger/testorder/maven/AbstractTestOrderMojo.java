@@ -2294,34 +2294,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (session == null || session.getProjects() == null || session.getProjects().size() <= 1) {
 			return;
 		}
-		// Collect sibling module output directories indexed by canonical path.
-		// We match against project.getTestClasspathElements() which returns absolute
-		// paths to target/classes for reactor siblings (not installed jars).
-		java.util.Map<String, org.apache.maven.project.MavenProject> outputToProject = new java.util.HashMap<>();
-		for (org.apache.maven.project.MavenProject sibling : session.getProjects()) {
-			if (sibling == project || sibling.getBuild() == null) {
-				continue;
-			}
-			String out = sibling.getBuild().getOutputDirectory();
-			if (out != null) {
-				try {
-					outputToProject.put(java.nio.file.Path.of(out).toRealPath().toString(), sibling);
-				} catch (IOException ignored) {
-					outputToProject.put(java.nio.file.Path.of(out).toAbsolutePath().normalize().toString(), sibling);
-				}
-			}
-		}
-		if (outputToProject.isEmpty()) {
-			return;
-		}
-		// Find sibling target/classes entries on the test classpath.
-		java.util.List<String> testCp;
-		try {
-			testCp = project.getTestClasspathElements();
-		} catch (org.apache.maven.artifact.DependencyResolutionRequiredException e) {
-			getLog().debug("[test-order] Could not resolve test classpath for upstream instrumentation: " + e);
-			return;
-		}
+		// Instrument all reactor siblings that appear BEFORE this project in the
+		// session project list. These are the upstream modules whose target/classes
+		// have been restored by RuntimeRealmInjector after their own surefire run.
+		// We must re-instrument them so that when this module's test fork loads their
+		// classes, the recording callbacks are present to capture cross-module edges.
+		//
+		// NOTE: We iterate session.getProjects() directly rather than using
+		// project.getTestClasspathElements(), because in a reactor build Maven may
+		// resolve inter-module dependencies to the installed jar rather than
+		// target/classes, causing the classpath-based lookup to miss sibling modules.
 		Agent.InstrumentationMode iMode;
 		try {
 			iMode = Agent.InstrumentationMode.fromString(instrumentationMode);
@@ -2331,21 +2313,20 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		List<String> includes = includePackages == null || includePackages.isBlank()
 				? List.of()
 				: List.of(includePackages.split(","));
-		for (String cpEntry : testCp) {
-			if (cpEntry == null) {
+		boolean foundSelf = false;
+		for (org.apache.maven.project.MavenProject sibling : session.getProjects()) {
+			if (sibling == project) {
+				foundSelf = true;
+				break;
+			}
+			if (sibling.getBuild() == null || sibling.getBuild().getOutputDirectory() == null) {
 				continue;
 			}
-			String canonical;
-			try {
-				canonical = java.nio.file.Path.of(cpEntry).toRealPath().toString();
-			} catch (IOException ignored) {
-				canonical = java.nio.file.Path.of(cpEntry).toAbsolutePath().normalize().toString();
-			}
-			org.apache.maven.project.MavenProject sibling = outputToProject.get(canonical);
-			if (sibling == null) {
+			if ("pom".equals(sibling.getPackaging())) {
 				continue;
 			}
-			Path siblingClassesDir = java.nio.file.Path.of(cpEntry).toAbsolutePath().normalize();
+			Path siblingClassesDir = java.nio.file.Path.of(sibling.getBuild().getOutputDirectory()).toAbsolutePath()
+					.normalize();
 			if (!java.nio.file.Files.isDirectory(siblingClassesDir)) {
 				continue;
 			}
@@ -2396,6 +2377,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				int count = siblingInstrumentor.getTransformedCount();
 				getLog().info("[test-order] Re-instrumented " + count + " classes in sibling " + sibling.getArtifactId()
 						+ " (backup: " + siblingBackupDir + ")");
+				// Update the sibling jar (if it exists) with the newly instrumented classes.
+				// Maven's workspace resolver points surefire's test classpath to the jar once
+				// it has been packaged, so patching target/classes alone is insufficient.
+				updateSiblingJar(sibling, siblingClassesDir, siblingTargetDir);
 				// Register for restore so the sibling's classes are cleaned up after our tests.
 				pendingRestores.add(siblingBackupDir);
 				registerPendingRestoreInSession(siblingBackupDir);
@@ -2403,6 +2388,54 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 				getLog().warn("[test-order] Failed to re-instrument sibling " + sibling.getArtifactId()
 						+ " — cross-module edges may be missing: " + e.getMessage());
 			}
+		}
+		if (!foundSelf) {
+			getLog().debug(
+					"[test-order] instrumentUpstreamSiblingClasses: current project not found in session list; skipping");
+		}
+	}
+
+	private void updateSiblingJar(org.apache.maven.project.MavenProject sibling, Path siblingClassesDir,
+			Path siblingTargetDir) {
+		// Find the sibling's jar in its target directory and update it with the
+		// instrumented class files. This is necessary because Maven's workspace
+		// resolver sets the artifact file to the jar once it has been packaged,
+		// so surefire forks for downstream modules load classes from the jar rather
+		// than from target/classes.
+		String expectedJarName = sibling.getArtifactId() + "-" + sibling.getVersion() + ".jar";
+		Path jarPath = siblingTargetDir.resolve(expectedJarName);
+		if (!java.nio.file.Files.exists(jarPath)) {
+			// Jar not yet created (e.g. prepare ran before package) — nothing to update.
+			return;
+		}
+		try {
+			java.net.URI jarUri = new java.net.URI("jar:" + jarPath.toUri());
+			try (java.nio.file.FileSystem jarFs = java.nio.file.FileSystems.newFileSystem(jarUri,
+					java.util.Collections.emptyMap())) {
+				// Walk the instrumented classes and update each .class entry in the jar.
+				try (java.util.stream.Stream<java.nio.file.Path> classFiles = java.nio.file.Files
+						.walk(siblingClassesDir)) {
+					classFiles.filter(p -> p.toString().endsWith(".class") && java.nio.file.Files.isRegularFile(p))
+							.forEach(classFile -> {
+								java.nio.file.Path relative = siblingClassesDir.relativize(classFile);
+								java.nio.file.Path jarEntry = jarFs
+										.getPath("/" + relative.toString().replace('\\', '/'));
+								try {
+									if (jarEntry.getParent() != null) {
+										java.nio.file.Files.createDirectories(jarEntry.getParent());
+									}
+									java.nio.file.Files.copy(classFile, jarEntry,
+											java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+								} catch (IOException ex) {
+									getLog().warn("[test-order] Could not update " + relative + " in sibling jar: "
+											+ ex.getMessage());
+								}
+							});
+				}
+			}
+			getLog().info("[test-order] Updated jar with instrumented classes: " + jarPath.getFileName());
+		} catch (Exception e) {
+			getLog().warn("[test-order] Could not update sibling jar " + expectedJarName + ": " + e.getMessage());
 		}
 	}
 
