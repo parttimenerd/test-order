@@ -10,7 +10,7 @@ This tutorial walks you through using test-order from scratch. By the end, you'l
 
 ## Prerequisites
 
-- **Java 17–26** installed (tested on all LTS releases and Java 26)
+- **Java 17+** installed (tested in CI on LTS releases 17, 21, 25 and current 27)
 - **Maven 3.8+** or **Gradle 7.6+**
 - A **Git** repository (recommended; the default `uncommitted` change-detection mode uses git. Non-git projects can use `changeMode=since-last-run` instead.)
 - A project with **JUnit 5/6**, **TestNG 7.x+**, or **Kotest** tests
@@ -216,12 +216,16 @@ mvn test-order:show
 **Example output:**
 
 ```
- # │ Score │ Class                           │ Reason
-───┼───────┼─────────────────────────────────┼──────────────────────────
- 1 │  14.0 │ com.example.ServiceTest         │ dep-overlap=5, changed-test=9
- 2 │   5.0 │ com.example.ControllerTest      │ dep-overlap=5
- 3 │   1.0 │ com.example.UtilTest            │ speed-bonus=1
- 4 │   0.0 │ com.example.IntegrationTest     │ (no signal)
+Changed classes: com.example.Service
+
+  #    Test Class                    Score  Deps  Fail  Changed Duration
+  -    ----------------------------- ------ ----- ----- -------- --------
+  1.   com.example.ServiceTest          14   2/8           yes     12ms
+  2.   com.example.ControllerTest        5   1/8                   18ms
+  3.   com.example.UtilTest              1                          4ms [FAST]
+  4.   com.example.IntegrationTest       0                        320ms [SLOW]
+
+Showing 4 of 4 tests | Score range: 0–14 | 1 changed class
 ```
 
 ---

@@ -250,7 +250,7 @@ Three modes trade index precision against learn-run overhead:
 | `since-last-commit` | CI / branch workflows | `git diff HEAD~1..HEAD` + uncommitted overlay |
 | `explicit` | Scripted targeting | `-Dtestorder.changed.classes=pkg.Foo,pkg.Bar` |
 
-`auto` falls back through: `explicit` → `since-last-run` (if snapshots exist) → `since-last-commit`.
+`auto` selects: `since-last-run` (if a hash snapshot exists) → `since-last-commit`.
 
 Override with `-Dtestorder.changeMode=<mode>`.
 

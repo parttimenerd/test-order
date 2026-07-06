@@ -169,8 +169,8 @@ The dependency index (`.test-order/test-dependencies.lz4`) grows with the number
 
 | Mode | What is recorded | Index size | Overhead | Accuracy |
 |------|-----------------|-----------|----------|----------|
-| `MEMBER` *(default)* | Which fields/methods of each class each test accesses | Larger | ~10–30% | Highest |
-| `CLASS` | Which classes each test loads | Smaller | ~5–15% | Good for most projects |
+| `MEMBER` *(default)* | Which fields/methods of each class each test accesses | Larger | ~13% | Highest |
+| `CLASS` | Method/constructor entry + foreign static-field access per class | Smaller | ~13% | Good for most projects |
 
 Switch to `CLASS` mode if the index grows beyond ~50 MB or learn runs are slow:
 

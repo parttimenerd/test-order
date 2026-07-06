@@ -88,12 +88,12 @@ plugins { id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT' }
 | What | Maven | Gradle |
 |------|-------|--------|
 | Show test ranking and scores | `mvn test-order:show` | `./gradlew testOrderShow` |
-| Explain score for one test | `mvn test-order:explain -Dtestorder.explain.test=com.Foo` | — |
+| Explain score for one test | `mvn test-order:explain -Dtestorder.explain.test=com.Foo` | `./gradlew testOrderExplain -Ptest=com.Foo` |
 | Interactive HTML dashboard | `mvn test-order:dashboard` | `./gradlew testOrderDashboard` |
-| Live dashboard (auto-refresh) | `mvn test-order:serve` | — |
+| Live dashboard (auto-refresh) | `mvn test-order:serve` | `./gradlew testOrderServe` |
 | Health check / diagnose setup | `mvn test-order:diagnose` | `./gradlew testOrderDiagnose` |
 | What changed (dry-run) | `mvn test-order:show -Dtestorder.debug=true` | same |
-| List all goals | `mvn test-order:help` | — |
+| List all goals | `mvn test-order:help` | `./gradlew testOrderHelp` |
 
 ---
 
