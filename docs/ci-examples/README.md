@@ -6,7 +6,7 @@ Sample configurations for the three-tier test workflow:
 |------|----------|------------|
 | [github-actions-tiered-maven.yml](github-actions-tiered-maven.yml) | GitHub Actions | Maven |
 | [github-actions-tiered-gradle.yml](github-actions-tiered-gradle.yml) | GitHub Actions | Gradle |
-| [gitlab-ci-tiered.yml](gitlab-ci-tiered.yml) | GitLab CI | Maven + Gradle |
+| [gitlab-ci-tiered.yml](gitlab-ci-tiered.yml) | GitLab CI | Maven |
 | [azure-pipelines-tiered.yml](azure-pipelines-tiered.yml) | Azure Pipelines | Maven |
 
 ## How it works
@@ -27,15 +27,6 @@ Sample configurations for the three-tier test workflow:
 │  remaining tests        │  Ensures full coverage
 └─────────────────────────┘
 ```
-
-## Key properties
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `testorder.changeMode` | `uncommitted` | How to detect changes (`uncommitted`, `auto`, `since-last-commit`, `since-last-run`, `explicit`) |
-| `testorder.tiered.tier2Fraction` | `0.5` | Fraction of remaining test duration for tier 2 |
-| `testorder.tiered.weightByDuration` | `true` | Select by duration budget (vs count) |
-| `testorder.tiered.currentTier` | — | Required for `run-tier`: `2` or `3` |
 
 ## Key properties
 
