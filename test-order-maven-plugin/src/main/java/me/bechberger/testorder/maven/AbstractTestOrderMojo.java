@@ -1990,8 +1990,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			String debugProperty = isFailsafe ? "maven.failsafe.debug" : "maven.surefire.debug";
 			if (hasHardcodedSurefireArgLine) {
 				getLog().warn("[test-order] Surefire <argLine> is hardcoded (no @{argLine} or ${argLine} placeholder). "
-						+ "Injecting agent via " + debugProperty + " user property. "
-						+ "Consider using @{argLine} in your POM to chain agents safely.");
+						+ "Injecting agent via " + debugProperty + " user property as a fallback. "
+						+ "This fallback can fail with Surefire 3.2+ when the debug property is ignored "
+						+ "or when both JaCoCo and test-order are active. "
+						+ "Fix: replace the hardcoded value with @{argLine} in your POM so all agents chain safely.");
 			} else {
 				getLog().info("[test-order] Detected CLI -DargLine override. Injecting agent via " + debugProperty
 						+ " to preserve existing argLine.");
