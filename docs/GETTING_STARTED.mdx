@@ -338,6 +338,8 @@ mvn test-order:dashboard
 | JaCoCo reports 0% coverage | Hardcoded `<argLine>` in Surefire | Replace with `@{argLine}` so JaCoCo and test-order chain correctly |
 | "Failed to load JUnit Platform" (Gradle) | Snapshot repo in project `repositories {}` lets a stale snapshot JAR shadow your project's JUnit Platform version | Move the snapshot repo to `pluginManagement.repositories {}` only — see Step 1 above |
 | Every test lands in tier-1 in CI (tiering defeated) | Shallow clone: `HEAD~1` unavailable, so `since-last-commit` treats every source file as changed. Look for the log line `git revision HEAD~1 is unavailable`. | On GitLab: set `variables: { GIT_DEPTH: 0 }`. On GitHub Actions: `actions/checkout@v4` with `fetch-depth: 0`. Or switch to `-Dtestorder.changeMode=since-last-run`. |
+| Tests start failing after enabling test-order | Pre-existing test isolation bug exposed by reordering — tests that share static state, temp files, or DB rows may only fail in certain orders | Run `mvn test-order:auto test -Dtestorder.shuffle=true` a few times to reproduce; then use [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) to find which tests pollute others |
+| `-Dtest=...` filter active but test-order ignores it / no reordering | When `-Dtest` is set, test-order deliberately skips auto-selection and delegates entirely to Surefire (logged at INFO). This is intentional — test-order won't override your explicit filter. | Run without `-Dtest` to get auto-selection, or use `-Dtestorder.mode=order` with `-Dtest` to get ordering-only without selection |
 
 ---
 

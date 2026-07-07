@@ -166,6 +166,8 @@ It checks index health, permissions, package filters, and prints actionable fix 
 | Every test lands in tier-1 in CI | Shallow clone hides `HEAD~1`. On GitLab set `variables: { GIT_DEPTH: 0 }`; on GitHub Actions use `actions/checkout@v4` with `fetch-depth: 0`; or use `-Dtestorder.changeMode=since-last-run`. |
 | Learn run completes but tests still run in alphabetical order | `testorder.skip=true` is set, or the JUnit/TestNG extension isn't on the test classpath — check `-Dtestorder.debug=true` output; ensure no `-Dtestorder.skip=true` in CI env vars or `pom.xml`; verify `test-order-junit` or `test-order-testng` is on the test classpath |
 | "Binary read error" or index appears corrupt | Partial CI cache restore or interrupted learn run left a truncated `.lz4` file — `rm -rf .test-order/ && mvn test` to force a clean learn run |
+| Tests start failing in new/unexpected order after enabling test-order | Pre-existing isolation bug (shared static state, temp files, DB rows) exposed by reordering — run `mvn test -Dtestorder.shuffle=true` to reproduce, then see [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) |
+| `-Dtest=...` filter active, but no auto-selection / reordering happening | Intentional: test-order skips auto-selection when `-Dtest` is set and delegates to Surefire (see INFO log). Use `-Dtestorder.mode=order` with `-Dtest` for ordering-only. |
 
 **Nuclear reset:** `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 

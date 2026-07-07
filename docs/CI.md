@@ -280,5 +280,5 @@ See [ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-
 |------|----------|------------|
 | [github-actions-tiered-maven.yml](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/github-actions-tiered-maven.yml) | GitHub Actions | Maven |
 | [github-actions-tiered-gradle.yml](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/github-actions-tiered-gradle.yml) | GitHub Actions | Gradle |
-| [gitlab-ci-tiered.yml](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/gitlab-ci-tiered.yml) | GitLab CI | Maven + Gradle |
+| [gitlab-ci-tiered.yml](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/gitlab-ci-tiered.yml) | GitLab CI | Maven |
 | [azure-pipelines-tiered.yml](https://github.com/parttimenerd/test-order/blob/main/docs/ci-examples/azure-pipelines-tiered.yml) | Azure Pipelines | Maven |

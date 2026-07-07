@@ -358,6 +358,8 @@ mvn test -T 1C -DfailIfNoTests=false
 # (each module locks only its own state.lz4)
 ```
 
+> **`-T N` and learn mode:** Running `mvn -T N test -Dtestorder.mode=learn` is safe. The plugin uses two layers of protection when writing the shared index: an intra-JVM monitor (`REACTOR_MAP_INTRA_JVM_LOCK`) prevents `OverlappingFileLockException` when multiple modules share one Maven JVM, and a `java.nio.channels.FileLock` serialises access when separate JVMs write concurrently. You may see modules briefly waiting on the lock — this is normal. The index will be complete once all modules finish.
+
 ### Gradle: Parallel Task Execution
 
 ```bash
