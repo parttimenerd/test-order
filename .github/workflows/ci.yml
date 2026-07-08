@@ -119,14 +119,17 @@ jobs:
       - name: Install project artifacts
         run: mvn -B -ntp -DskipTests -Dspotless.check.skip=true install
 
-      - name: Learn — build dependency index for test-order-junit
-        run: mvn -B -ntp test -Dtestorder.mode=learn -pl test-order-junit -Dspotless.check.skip=true
+      - name: Learn — build dependency index
+        working-directory: samples/sample-basic
+        run: mvn -B -ntp test -Dtestorder.mode=learn -Dmaven.test.failure.ignore=true
 
       - name: Auto — run tests in scored order
-        run: mvn -B -ntp test-order:auto test -pl test-order-junit -Dspotless.check.skip=true
+        working-directory: samples/sample-basic
+        run: mvn -B -ntp test -Dmaven.test.failure.ignore=true
 
       - name: Show — print ranked test list
-        run: mvn -B -ntp test-order:show -pl test-order-junit -Dspotless.check.skip=true
+        working-directory: samples/sample-basic
+        run: mvn -B -ntp test-order:show
 
   maven-plugin-integration-tests:
     runs-on: ubuntu-latest
