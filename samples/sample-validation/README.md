@@ -15,5 +15,5 @@ mvn test-order:auto test
 
 # Render the dashboard and compare against the checked-in PNG fixtures
 mvn test-order:dashboard
-open target/test-order/dashboard/index.html
+open target/test-order-dashboard/index.html
 ```

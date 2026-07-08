@@ -6,6 +6,8 @@ This tutorial walks you through using test-order from scratch. By the end, you'l
 
 **Time required:** ~5 minutes.
 
+> **Upgrading from an earlier snapshot?** Check [CHANGELOG.md](https://github.com/parttimenerd/test-order/blob/main/CHANGELOG.md) before updating. The current unreleased version contains breaking changes: the property namespace `testorder.select.*` was renamed to `testorder.affected.*` (e.g. `-Dtestorder.select.topN` → `-Dtestorder.affected.topN`), and the Gradle task `testOrderSelect` was renamed to `testOrderAffected`. Old names produce an "unknown property" warning with a suggested replacement.
+
 <AsciinemaPlayer src="/casts/demo-hello-world.cast" cols={120} rows={28} />
 
 ## Prerequisites
