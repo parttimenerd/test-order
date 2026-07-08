@@ -66,6 +66,17 @@ test relies on per-attempt fixture freshness (e.g. a counter or a freshly
 opened resource that `@BeforeEach` sets up), move that setup into the test
 body or use a `@TestTemplate`-based retry pattern instead.
 
+**`@ParameterizedTest` behaviour:** Each parameterized invocation is a
+separate `interceptTestMethod` call, so each parameter combination is retried
+independently — a failure on parameter set 2 does not retry parameter sets 1
+or 3. Parameter values are resolved once per invocation by JUnit's argument
+sources; they are not re-resolved on retry. This means stateless argument
+sources (e.g. `@ValueSource`, `@CsvSource`) are safe, but sources that draw
+from mutable external state (e.g. a database `@MethodSource` or a
+`@ArgumentsSource` that opens a stream) may return stale data on the retry
+attempt. In that case, move the data fetch into the test body rather than the
+argument provider.
+
 ### Activation
 
 The extension uses JUnit's service-loader auto-detection. Add **one line** to your

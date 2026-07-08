@@ -19,3 +19,20 @@ mvn -pl web -am test-order:auto test
 mvn -pl core test-order:diagnose
 mvn -pl web  test-order:diagnose
 ```
+
+## Expected output
+
+After the learn run both modules produce their own index entries. The
+`diagnose` goal for each module should report something like:
+
+```
+[INFO] [test-order] Index: OK (N test classes, M dependencies)
+[INFO] [test-order] State: OK
+[INFO] [test-order] Change detection: uncommitted (git)
+```
+
+If `diagnose` says "Index: MISSING", the learn run did not complete for that
+module — check that `<extensions>true</extensions>` is present in the parent
+`pom.xml` plugin block. Running `mvn -pl web -am test-order:auto test` after a
+change to any `core` class should surface `web` tests that transitively depend
+on that class first.
