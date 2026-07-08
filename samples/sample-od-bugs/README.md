@@ -15,6 +15,6 @@ mvn -Dtestorder.mode=learn test
 # Run in selected order — victim tests should now pass
 mvn test-order:auto test
 
-# Use the CLI to inspect order-dependence signals
-mvn test-order:advise
+# Use the CLI to detect order-dependence (runs tests in many orders)
+mvn test-order:detect-dependencies
 ```

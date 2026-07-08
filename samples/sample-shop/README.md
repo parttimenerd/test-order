@@ -17,7 +17,7 @@ mvn test-order:auto test
 
 # Generate the HTML dashboard
 mvn test-order:dashboard
-open target/test-order/dashboard/index.html
+open target/test-order-dashboard/index.html
 ```
 
 ## Expected output

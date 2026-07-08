@@ -6,6 +6,12 @@ that should keep the dependency index continuously fresh, or for projects
 where the runtime cost of always learning is acceptable in exchange for
 never serving stale rankings.
 
+> **Performance note:** Always-learn mode attaches the instrumentation agent on
+> every test run, adding roughly 5–15% overhead. For most projects the
+> recommended approach is `auto` mode (learn on demand, order otherwise) —
+> see the `sample-basic` sample. Use `always-learn` only when a perpetually
+> fresh index is worth the extra CI time.
+
 ## Try it
 
 ```bash
