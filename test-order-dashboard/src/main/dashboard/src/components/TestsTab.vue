@@ -3,7 +3,7 @@ import { inject, watch, nextTick, onMounted, onUnmounted, computed, ref, type Re
 import type { DashboardState } from '../composables/useDashboard'
 import type { TestHoverState } from '../composables/useTestHover'
 import type { TestEntry } from '../types'
-import { sn, fmtDur, fmtTime, computeScore, shortModule } from '../utils'
+import { sn, fmtDur, fmtTime, computeScore, shortModule, depDenom } from '../utils'
 import { mkChart, destroyCharts, chartOpts } from '../composables/useCharts'
 import { useClassHover } from '../composables/useClassInfo'
 import ClassInfoCard from './ClassInfoCard.vue'
@@ -319,7 +319,7 @@ const maxScore = computed(() => {
 function scoreStackedBar(t: import('../types').TestEntry): { w: number; color: string }[] {
   const w = d.dd.weights
   const fail = t.failScore > 0 ? Math.min(Math.ceil(t.failScore), w.maxFailure) : 0
-  const dep = t.depOverlap > 0 && t.depTotal > 0 ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
+  const dep = t.depOverlap > 0 && t.depTotal > 0 ? Math.min(Math.ceil((t.depOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
   const chg = t.isChanged ? w.changedTest : t.isNew ? w.newTest : 0
   const spd = t.speedRatio < 0 ? Math.round(Math.abs(t.speedRatio) * w.speed) : 0
   const stat = t.hasStaticFieldOverlap ? Math.round(w.staticFieldBonus ?? 0) : 0
@@ -755,7 +755,7 @@ function previewScoreBars(t: TestEntry) {
   const w = d.dd.weights
   const total = Math.max(t.score, 1)
   const fail = t.failScore > 0 ? Math.min(Math.ceil(t.failScore), w.maxFailure) : 0
-  const dep = t.depOverlap > 0 && t.depTotal > 0 ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
+  const dep = t.depOverlap > 0 && t.depTotal > 0 ? Math.min(Math.ceil((t.depOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
   const chg = t.isChanged ? w.changedTest : t.isNew ? w.newTest : 0
   const spd = t.isSlow ? 0 : Math.round(w.speed * 0.5)
   const stf = t.hasStaticFieldOverlap ? w.staticFieldBonus : 0
