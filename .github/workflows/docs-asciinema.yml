@@ -1,9 +1,6 @@
 name: Re-record asciinema demos
 
 on:
-  schedule:
-    # Sunday at 04:17 UTC. Off-peak; not on the :00 hour to spread load.
-    - cron: '17 4 * * 0'
   workflow_dispatch:
 
 permissions:
