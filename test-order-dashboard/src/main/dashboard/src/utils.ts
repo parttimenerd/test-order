@@ -20,6 +20,14 @@ export const DIST = {
   SET_COVER_DECAY: 0.8,
 } as const
 
+/** Floor for the sqrt normalization denominator — must match backend TestScorer.MIN_DEPS_DENOMINATOR */
+const MIN_DEPS_DENOMINATOR = 5
+
+/** sqrt(max(depTotal, MIN_DEPS_DENOMINATOR)) — mirrors backend depOverlapScore normalization */
+function depDenom(depTotal: number): number {
+  return Math.sqrt(Math.max(depTotal, MIN_DEPS_DENOMINATOR))
+}
+
 /** Shorten a FQCN to abbreviated form: com.example.util.MyClass → c.e.u.MyClass */
 export function sn(fqcn: string): string {
   if (!fqcn) return '(unknown)'
@@ -183,9 +191,9 @@ export function computeScore(
     const effectiveDepOverlap = ('weightedDepOverlap' in t && (t as any).weightedDepOverlap != null)
       ? (t as any).weightedDepOverlap as number : t.depOverlap
     if (effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0)
-      s += Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier)
+      s += Math.round(Math.min(Math.ceil((effectiveDepOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier)
     if (t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0)
-      s += Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier)
+      s += Math.round(Math.min(Math.ceil((t.complexityOverlap / depDenom(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier)
   }
 
   if (killRate >= 0 && w.killRateBonus > 0) s += Math.round(killRate * w.killRateBonus)
@@ -252,14 +260,14 @@ export function computeScoreBreakdown(
   } else {
     const effectiveDepOverlap = (te?.weightedDepOverlap != null) ? te.weightedDepOverlap : t.depOverlap
     depContrib = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
+      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
     depDetail = `${t.depOverlap}/${t.depTotal} deps changed`
     if (killRate >= 0) depDetail += ` · kill rate ${(killRate * 100).toFixed(0)}%`
     if (te?.weightedDepOverlap != null && te.weightedDepOverlap !== t.depOverlap)
       depDetail += ` · IDF-weighted ${te.weightedDepOverlap.toFixed(2)}`
   }
   const cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
-    ? Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
+    ? Math.round(Math.min(Math.ceil((t.complexityOverlap / depDenom(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
 
   const killBonus = killRate >= 0 && w.killRateBonus > 0 ? Math.round(killRate * w.killRateBonus) : 0
 
@@ -349,12 +357,12 @@ export function scoreTooltip(
   } else {
     const effectiveDepOverlap = (te?.weightedDepOverlap != null) ? te.weightedDepOverlap : t.depOverlap
     const depOv = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
+      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
     const idfNote = te?.weightedDepOverlap != null && te.weightedDepOverlap !== t.depOverlap
       ? `, IDF-weighted ${te.weightedDepOverlap.toFixed(2)}` : ''
     lines.push(`Dependency overlap:    ${signed(depOv)}  (${t.depOverlap}/${t.depTotal} deps overlap${idfNote}${killRate >= 0 ? `, kill-rate ×${killMultiplier.toFixed(2)}` : ''})`)
     const cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
-      ? Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
+      ? Math.round(Math.min(Math.ceil((t.complexityOverlap / depDenom(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
     lines.push(`Change complexity:     ${signed(cmplx)}  (complexity: ${t.complexityOverlap.toFixed(2)})`)
   }
   if (killRate >= 0 && w.killRateBonus > 0) {
