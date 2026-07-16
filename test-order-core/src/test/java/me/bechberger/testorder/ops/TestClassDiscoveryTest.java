@@ -151,6 +151,39 @@ class TestClassDiscoveryTest {
 	}
 
 	@Test
+	void hasTestAnnotations_falseForAbstractClassWithTestMethods() throws URISyntaxException {
+		// BUG-160: an abstract test base declares @Test methods but JUnit never runs
+		// it standalone — only its concrete subclasses do. It must NOT be treated as a
+		// runnable test, otherwise it receives the newTest ranking bonus and out-ranks
+		// the real tests (this is what made commons-codec's Base64 bug a MISS).
+		Class<?> abstractFixture = me.bechberger.testorder.ops.fixtures.AbstractFixtureTest.class;
+		Path classFile = Path.of(abstractFixture.getProtectionDomain().getCodeSource().getLocation().toURI())
+				.resolve(abstractFixture.getName().replace('.', '/') + ".class");
+		assertFalse(TestClassDiscovery.hasTestAnnotations(classFile),
+				"an abstract class must not be treated as a runnable test even with @Test methods");
+	}
+
+	@Test
+	void findNewTestClasses_excludesAbstractTestBases(@TempDir Path dir) throws IOException, URISyntaxException {
+		// BUG-160 end-to-end: an abstract test base copied into the compiled output
+		// must
+		// not be reported as a new test, since it can never run on its own.
+		Path testClassesRoot = dir.resolve("test-classes");
+		Path pkg = testClassesRoot.resolve("me/bechberger/testorder/ops/fixtures");
+		Files.createDirectories(pkg);
+		Class<?> abstractFixture = me.bechberger.testorder.ops.fixtures.AbstractFixtureTest.class;
+		Path abstractClassFile = Path.of(abstractFixture.getProtectionDomain().getCodeSource().getLocation().toURI())
+				.resolve(abstractFixture.getName().replace('.', '/') + ".class");
+		Files.copy(abstractClassFile, pkg.resolve("AbstractFixtureTest.class"));
+
+		Set<String> newTests = TestClassDiscovery.findNewTestClasses(new DependencyMap(), testClassesRoot,
+				PluginLog.NOOP);
+
+		assertFalse(newTests.contains("me.bechberger.testorder.ops.fixtures.AbstractFixtureTest"),
+				"abstract test base must not be reported as a new (runnable) test");
+	}
+
+	@Test
 	void findNewTestClasses_excludesHelperClassesWithNoTestAnnotations(@TempDir Path dir)
 			throws IOException, URISyntaxException {
 		// Copy this test class's .class file as the "real test" entry
