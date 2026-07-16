@@ -1520,7 +1520,7 @@ const apfdAttribution = computed(() => {
     const merged = { ...w, ...weightOverride }
     let sum = 0, count = 0
     for (const r of runsWithFail) {
-      const sorted = [...r.outcomes].sort((a, b) => computeScore(b, merged, scb) - computeScore(a, merged, scb))
+      const sorted = [...r.outcomes].sort((a, b) => computeScore(b, merged, scb, d.dd.changedClasses) - computeScore(a, merged, scb, d.dd.changedClasses))
       const apfd = computeApfd(sorted)
       if (apfd !== null) { sum += apfd; count++ }
     }

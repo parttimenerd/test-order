@@ -28,6 +28,30 @@ export function depDenom(depTotal: number): number {
   return Math.sqrt(Math.max(depTotal, MIN_DEPS_DENOMINATOR))
 }
 
+/**
+ * Points awarded when a test lives in the same package as (or a package
+ * enclosing/enclosed by) any changed class — mirrors backend
+ * TestScorer.packageProximityBonus (TestScorer.java:695-716). Requires at least
+ * a 2-component package on both sides (e.g. com.example, not bare com).
+ * Returns 0 when the weight is 0 or there are no changed classes.
+ */
+export function packageProximityBonus(testClass: string, changedClasses: string[], weight: number): number {
+  if (weight === 0 || !changedClasses || changedClasses.length === 0) return 0
+  const dot = testClass.lastIndexOf('.')
+  if (dot < 0) return 0
+  const testPkg = testClass.substring(0, dot)
+  if (!testPkg.includes('.')) return 0
+  for (const changed of changedClasses) {
+    const cdot = changed.lastIndexOf('.')
+    if (cdot < 0) continue
+    const changedPkg = changed.substring(0, cdot)
+    if (!changedPkg.includes('.')) continue
+    if (testPkg === changedPkg || testPkg.startsWith(changedPkg + '.') || changedPkg.startsWith(testPkg + '.'))
+      return weight
+  }
+  return 0
+}
+
 /** Shorten a FQCN to abbreviated form: com.example.util.MyClass → c.e.u.MyClass */
 export function sn(fqcn: string): string {
   if (!fqcn) return '(unknown)'
@@ -179,6 +203,7 @@ export function computeScore(
   t: TestEntry | TestOutcome,
   w: ScoringWeights,
   bonusMap: Record<string, number> | null,
+  changedClasses: string[] = [],
 ): number {
   let s = 0
   const name = 'name' in t ? t.name : (t as TestOutcome).testClass
@@ -203,6 +228,7 @@ export function computeScore(
   else if (t.speedRatio > 0) s -= Math.round(t.speedRatio * w.speedPenalty)
   if (t.hasStaticFieldOverlap && w.staticFieldBonus > 0) s += Math.round(w.staticFieldBonus * killMultiplier)
   if (t.failScore > 0) s += Math.min(Math.ceil(t.failScore), w.maxFailure)
+  s += packageProximityBonus(name, changedClasses, w.packageProximityBonus)
   return s
 }
 
@@ -303,6 +329,7 @@ export function computeScoreBreakdown(
   const durStr = dur >= 0 ? `${fmtDur(dur)} vs median ${fmtDur(medianDuration)}` : 'unknown'
 
   const fail = t.failScore > 0 ? Math.min(Math.ceil(t.failScore), w.maxFailure) : 0
+  const pkgProx = packageProximityBonus(name, changedClasses, w.packageProximityBonus)
 
   const raw: ScoreComponent[] = [
     { label: 'Dep overlap',       contribution: depContrib,                  rawDetail: depDetail },
@@ -313,6 +340,7 @@ export function computeScoreBreakdown(
     { label: 'Changed test',      contribution: t.isChanged ? w.changedTest : 0, rawDetail: t.isChanged ? 'yes' : 'no' },
     { label: 'Static field',      contribution: t.hasStaticFieldOverlap ? w.staticFieldBonus : 0, rawDetail: t.hasStaticFieldOverlap ? 'yes' : 'no' },
     { label: 'Speed',             contribution: speedPts,                    rawDetail: durStr },
+    { label: 'Package proximity', contribution: pkgProx,                     rawDetail: pkgProx > 0 ? 'same package as a changed class' : 'no' },
   ]
   const components = raw
     .filter(c => c.contribution !== 0)
@@ -450,6 +478,10 @@ export function scoreTooltip(
   const dur = 'duration' in t ? (t as TestEntry).duration : -1
   const durStr = dur >= 0 ? `${fmtDur(dur)} (median: ${fmtDur(medianDuration)}, ratio: ${t.speedRatio >= 0 ? '+' : ''}${t.speedRatio.toFixed(2)})` : 'unknown'
   lines.push(`Speed:                 ${signed(speedPts)}  (${durStr})`)
+
+  // package proximity
+  const pkgProx = packageProximityBonus(name, changedClasses, w.packageProximityBonus)
+  if (pkgProx > 0) lines.push(`Package proximity:     ${signed(pkgProx)}  (same package as a changed class)`)
 
   return lines.join('\n')
 }
