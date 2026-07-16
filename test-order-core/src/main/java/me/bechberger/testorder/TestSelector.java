@@ -74,7 +74,7 @@ public class TestSelector {
 	}
 
 	/** A test class with its computed score and metadata. */
-	record ScoredTest(String name, int score, long duration, boolean isNew, boolean isFast) {
+	record ScoredTest(String name, int score, long duration, boolean isNew, boolean isFast, int depOverlap) {
 	}
 
 	private final DependencyMap depMap;
@@ -161,11 +161,17 @@ public class TestSelector {
 			TestScorer.ScoreResult result = scorer.score(tc);
 			long dur = state.getDuration(tc, -1);
 			scored.add(new ScoredTest(tc, result.score(), dur >= 0 ? dur : Long.MAX_VALUE, result.isNew(),
-					result.isFast()));
+					result.isFast(), result.depOverlap()));
 		}
 
-		scored.sort(Comparator.comparing(ScoredTest::score).reversed().thenComparingLong(ScoredTest::duration)
-				.thenComparing(ScoredTest::name));
+		// Sort by score DESC, then break ties toward the more change-relevant test
+		// (higher dep-overlap count) BEFORE preferring the faster one. Without the
+		// dep-overlap tiebreak, a slow-but-uniquely-relevant test (e.g. the only test
+		// covering a changed method) loses a score tie to a faster, less-relevant test
+		// and can fall below the topN cutoff — the commons-codec Base64 MISS (BUG-161).
+		scored.sort(Comparator.comparing(ScoredTest::score).reversed()
+				.thenComparing(Comparator.comparingInt(ScoredTest::depOverlap).reversed())
+				.thenComparingLong(ScoredTest::duration).thenComparing(ScoredTest::name));
 		return scored;
 	}
 
