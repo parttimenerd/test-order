@@ -160,6 +160,60 @@ class TestSelectorTest {
 		assertEquals("com.A,com.B", includes);
 	}
 
+	/**
+	 * BUG-161: when two tests tie on total score, the more change-relevant one
+	 * (more changed-class dependency overlap) must be preferred over a merely
+	 * faster one. Previously the sort broke score ties by duration only, so a
+	 * highly relevant but slow test lost to a faster, less-relevant test and fell
+	 * below the topN cutoff. This mirrors commons-codec: the slow Base64Test (the
+	 * only test covering the changed method) tied on score with faster Base64*
+	 * tests and was dropped.
+	 */
+	@Test
+	void scoreTie_prefersHigherDepOverlapOverFasterDuration() {
+		// Reproduces the commons-codec MISS: two change-affected tests whose TOTAL
+		// scores are exactly equal, but which differ in how much they overlap the
+		// changed classes. The higher-overlap test is slower; the lower-overlap test
+		// is fast. Under a pure "score DESC, duration ASC" sort the faster (less
+		// relevant) test wins the tie and displaces the more relevant one below the
+		// topN cutoff — which is what dropped the only Base64 test that actually
+		// covered the flipped isBase64(). The tie must instead be broken by dep
+		// overlap so the more change-relevant test is kept.
+		//
+		// Scoring math (DEFAULT weights: depOverlap=5, speed=±1, median=500ms):
+		// SlowRelevant: overlap 2 of 5 deps → ceil(2/√5·5)=5; 4000ms = 8×median →
+		// speed −1 ⇒ total 4
+		// FastLessRelevant: overlap 1 of 5 deps → ceil(1/√5·5)=3; 62ms ≈ median/8 →
+		// speed +1 ⇒ total 4
+		// Fillers pin the median at 500ms and carry no overlap (score 0, not affected).
+		Map<String, Set<String>> deps = new LinkedHashMap<>();
+		deps.put("com.SlowRelevant", Set.of("app.A", "app.B", "app.x1", "app.x2", "app.x3"));
+		deps.put("com.FastLessRelevant", Set.of("app.A", "app.y1", "app.y2", "app.y3", "app.y4"));
+		for (int i = 0; i < 5; i++) {
+			deps.put("com.Filler" + i, Set.of("app.f" + i + "a", "app.f" + i + "b"));
+		}
+		DependencyMap depMap = buildDepMap(deps);
+
+		Map<String, Long> durations = new LinkedHashMap<>();
+		durations.put("com.SlowRelevant", 4000L);
+		durations.put("com.FastLessRelevant", 62L);
+		for (int i = 0; i < 5; i++) {
+			durations.put("com.Filler" + i, 500L);
+		}
+		TestOrderState state = stateWithDurations(durations);
+
+		Set<String> changed = Set.of("app.A", "app.B");
+
+		// topN=1: only ONE of the two change-affected tests can be selected.
+		TestSelector.Selection sel = new TestSelector(depMap, state, changed, Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(1, 0, 42L)).select();
+
+		assertTrue(sel.selected().contains("com.SlowRelevant"),
+				"the more change-relevant test must win a score tie even though it is slower");
+		assertFalse(sel.selected().contains("com.FastLessRelevant"),
+				"the faster but less-relevant test must not displace the more relevant one");
+	}
+
 	@Test
 	void emptyDepMapSelectsNothing() {
 		DependencyMap depMap = new DependencyMap();
