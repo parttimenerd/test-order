@@ -173,7 +173,13 @@ public final class PropertySuggestion {
 						? knownSuffix.substring(0, knownSuffix.indexOf('.'))
 						: knownSuffix;
 				int segDist = levenshtein(unknownFirstSeg, knownFirstSeg);
-				if (segDist <= 2 && segDist < bestPrefixDist) {
+				// BUG-166: require a near-exact first-segment match (single typo).
+				// A distance of 2 on a short word (e.g. "select" vs "detect") is
+				// not a plausible typo and produced misleading suggestions whose
+				// whole-key distance was 9-10. Truncation/prefix cases are already
+				// handled above by the startsWith checks, so this fallback only
+				// needs to catch genuine single-character typos.
+				if (segDist <= 1 && segDist < bestPrefixDist) {
 					bestPrefixDist = segDist;
 					bestPrefixMatch = known;
 				}
