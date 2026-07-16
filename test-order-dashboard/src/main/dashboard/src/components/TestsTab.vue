@@ -178,7 +178,7 @@ const rankTrend = computed(() => {
   if (!t || d.runs.length < 4) return null
   const positions = d.runs.map(r => {
     if (!r.outcomes?.length) return null
-    const sorted = [...r.outcomes].sort((a, b) => computeScore(b, d.dd.weights, d.origSCB) - computeScore(a, d.dd.weights, d.origSCB))
+    const sorted = [...r.outcomes].sort((a, b) => computeScore(b, d.dd.weights, d.origSCB, d.dd.changedClasses) - computeScore(a, d.dd.weights, d.origSCB, d.dd.changedClasses))
     const idx = sorted.findIndex(o => o.testClass === t.name)
     return idx >= 0 ? idx + 1 : null
   }).filter(p => p !== null) as number[]
@@ -584,7 +584,7 @@ function initDetailCharts(t: TestEntry) {
     const labels = chronRuns2.map(r => fmtTime(r.timestamp))
     const scores = chronRuns2.map(r => {
       const o = (r.outcomes || []).find(o => o.testClass === t.name)
-      return o ? computeScore(o, d.dd.weights, d.origSCB) : null
+      return o ? computeScore(o, d.dd.weights, d.origSCB, d.dd.changedClasses) : null
     })
     const validScores = scores.filter(s => s !== null) as number[]
     const scoreMax = validScores.length ? Math.max(...validScores) : 0
@@ -596,7 +596,7 @@ function initDetailCharts(t: TestEntry) {
     })
     const positions = chronRuns2.map(r => {
       if (!r.outcomes?.length) return null
-      const sorted = [...r.outcomes].sort((a, b) => computeScore(b, d.dd.weights, d.origSCB) - computeScore(a, d.dd.weights, d.origSCB))
+      const sorted = [...r.outcomes].sort((a, b) => computeScore(b, d.dd.weights, d.origSCB, d.dd.changedClasses) - computeScore(a, d.dd.weights, d.origSCB, d.dd.changedClasses))
       const idx = sorted.findIndex(o => o.testClass === t.name)
       return idx >= 0 ? idx + 1 : null
     })
