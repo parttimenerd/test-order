@@ -169,6 +169,60 @@ class DepsAndScoringTest {
 		assertEquals(-2, slow.score(), "speed penalty");
 	}
 
+	/**
+	 * BUG-162: a slow integration test whose dep overlap with the change is so
+	 * broad that its raw (uncapped) dep-overlap score exceeds the weight cap is a
+	 * genuine deep-coverage test and must NOT be demoted by the speed penalty.
+	 * Otherwise it can be ranked below faster, less-relevant tests and drop out of
+	 * top-N — exactly the commons-pool TestGenericObjectPool MISS (21/68 overlap,
+	 * ~100s).
+	 */
+	@Test
+	void testScorerDeepCoverageShieldedFromSpeedPenalty() {
+		// Deep-coverage: 20 of 20 deps changed → 20/sqrt(20)*5 = 22.4, ceil=23 > cap 5
+		// → deepCoverage, score capped at 5. Very slow (2000ms vs 200ms median).
+		// Shallow: 1 of 5 deps changed → 1/sqrt(5)*5 = 2.24, ceil=3 (not deep). Fast.
+		Map<String, Set<String>> deps = new LinkedHashMap<>();
+		Set<String> deepDeps = new LinkedHashSet<>();
+		Set<String> changed = new LinkedHashSet<>();
+		for (int i = 0; i < 20; i++) {
+			deepDeps.add("app.C" + i);
+			changed.add("app.C" + i);
+		}
+		deps.put("com.DeepSlow", deepDeps);
+		deps.put("com.ShallowFast", Set.of("app.C0", "app.z1", "app.z2", "app.z3", "app.z4"));
+		// Fillers pin the median duration at 200ms; no overlap with the change.
+		deps.put("com.Filler1", Set.of("app.f1"));
+		deps.put("com.Filler2", Set.of("app.f2"));
+		DependencyMap depMap = buildDepMap(deps);
+
+		Map<String, Long> durations = new LinkedHashMap<>();
+		durations.put("com.DeepSlow", 2000L);
+		durations.put("com.ShallowFast", 10L);
+		durations.put("com.Filler1", 200L);
+		durations.put("com.Filler2", 200L);
+		TestOrderState state = stateWithDurations(durations);
+
+		var weights = new TestOrderState.ScoringWeights(0, 0, 0, 2, 2, 5, 0);
+		TestScorer scorer = new TestScorer(weights, depMap, state, changed, Set.of(), depMap.testClasses());
+
+		var deep = scorer.score("com.DeepSlow");
+		// depOverlap capped at 5; speed penalty (-2) suppressed by the deep-coverage
+		// shield → total 5, and the test is not flagged slow.
+		assertFalse(deep.isSlow(), "deep-coverage test must not be demoted by the speed penalty");
+		assertEquals(5, deep.score(), "deep-coverage: capped depOverlap 5, penalty shielded");
+
+		var shallow = scorer.score("com.ShallowFast");
+		// depOverlap 3 + fast bonus 2 = 5.
+		assertTrue(shallow.isFast(), "shallow test is fast");
+		assertEquals(5, shallow.score(), "shallow: depOverlap 3 + speed bonus 2");
+
+		// The deep-coverage test must not rank below the shallow one on score. Before
+		// the fix it scored 3 (5 - 2 penalty) < 5 and lost the top slot.
+		assertTrue(deep.score() >= shallow.score(),
+				"the deeply-relevant slow test must rank at least as high as a fast shallow one");
+	}
+
 	@Test
 	void testScorerCombinedMaximumScore() throws IOException {
 		// Test that's new + changed + has failure + has dep overlap → all bonuses stack
