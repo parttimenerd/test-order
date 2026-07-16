@@ -4,7 +4,7 @@ import type {
   SortColumn, GraphMode, TabDef, ScoreComponent, TestRunOutcome,
   SimResult, SelectionCoverage, CoverageClass, RunDiffEntry,
 } from '../types'
-import { sn, computeSetCoverBonuses, computeScore, computeApfd, exportTestsCsv, scoreTooltip, computeScoreBreakdown, computeCommonPrefix, type ScoreBreakdown } from '../utils'
+import { sn, computeSetCoverBonuses, computeScore, computeApfd, exportTestsCsv, scoreTooltip, computeScoreBreakdown, computeCommonPrefix, depDenom, type ScoreBreakdown } from '../utils'
 
 type ScoreMode = 'orig' | 'sim'
 
@@ -513,9 +513,9 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       scBonus = Math.round((origSCB[t.name] || 0) * killMultiplier)
     } else {
       depOv = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-        ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
+        ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
       cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
-        ? Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
+        ? Math.round(Math.min(Math.ceil((t.complexityOverlap / depDenom(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
     }
     const chg = t.isChanged ? w.changedTest : 0
     const isNew = t.isNew ? w.newTest : 0

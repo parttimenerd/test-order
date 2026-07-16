@@ -24,7 +24,7 @@ export const DIST = {
 const MIN_DEPS_DENOMINATOR = 5
 
 /** sqrt(max(depTotal, MIN_DEPS_DENOMINATOR)) — mirrors backend depOverlapScore normalization */
-function depDenom(depTotal: number): number {
+export function depDenom(depTotal: number): number {
   return Math.sqrt(Math.max(depTotal, MIN_DEPS_DENOMINATOR))
 }
 
