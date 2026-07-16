@@ -128,6 +128,23 @@ class PropertySuggestionTest {
 	}
 
 	@Test
+	void closestDoesNotSuggestUnrelatedFirstSegmentMatch() {
+		// BUG-166: testorder.select.enabled is not a real key. The first-segment
+		// prefix heuristic used to return testorder.detect.seed because
+		// levenshtein("select","detect")==2, which is a misleading suggestion
+		// (33% of a 6-char word differs). Any suggestion returned must be
+		// genuinely close by whole-key edit distance; a wildly different key is
+		// worse than no suggestion.
+		String closest = PropertySuggestion.findClosest("testorder.select.enabled");
+		assertNotEquals("testorder.detect.seed", closest,
+				"select.enabled must not resolve to the unrelated detect.seed");
+		if (closest != null) {
+			int dist = PropertySuggestion.levenshtein("testorder.select.enabled".toLowerCase(), closest.toLowerCase());
+			assertTrue(dist <= 5, "Returned suggestion is too far from input: " + closest + " (dist=" + dist + ")");
+		}
+	}
+
+	@Test
 	void closestNullReturnsNull() {
 		assertNull(PropertySuggestion.findClosest(null));
 	}
