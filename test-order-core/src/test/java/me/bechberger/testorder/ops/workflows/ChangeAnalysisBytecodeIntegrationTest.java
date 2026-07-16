@@ -62,6 +62,54 @@ class ChangeAnalysisBytecodeIntegrationTest {
 				"bytecode-only change must flow into changedClasses: " + second.changedClasses());
 	}
 
+	/**
+	 * BUG-165: when the user supplies an explicit non-empty changed-class list,
+	 * that list is authoritative and bytecode-detected classes must NOT be unioned
+	 * in. Otherwise a stale bytecode snapshot (e.g. after a recompile) contaminates
+	 * {@code changedClasses()} with unrelated classes — observed in the field as a
+	 * phantom {@code Printer$Pretty} appearing when only {@code Attributes} was
+	 * requested. Contrast with {@link #bytecodeOnlyChangeFlowsThroughAnalyze()}
+	 * where the explicit list is EMPTY and bytecode detection is the intended
+	 * fallback signal.
+	 */
+	@Test
+	void explicitChangedClassesSuppressBytecodeUnion() throws Exception {
+		Path classesDir = Files.createDirectory(tempDir.resolve("classes"));
+		Path testClassesDir = Files.createDirectory(tempDir.resolve("test-classes"));
+
+		compile(classesDir, "package com.example; public class Prod { public int x() { return 1; } }");
+		compile(classesDir, "package com.example; public class Other { public int y() { return 2; } }");
+
+		DependencyMap depMap = new DependencyMap();
+		depMap.put("com.example.ProdTest", Set.of("com.example.Prod"));
+		depMap.put("com.example.OtherTest", Set.of("com.example.Other"));
+		Path indexFile = tempDir.resolve("test-dependencies.lz4");
+		depMap.save(indexFile);
+
+		// changeMode=explicit but with a NON-EMPTY explicit list (only Prod).
+		PluginContext ctx = PluginContext.builder().projectRoot(tempDir).sourceRoot(tempDir.resolve("src/main/java"))
+				.testSourceRoot(tempDir.resolve("src/test/java")).indexFile(indexFile)
+				.stateFile(tempDir.resolve("state.lz4")).classesDir(classesDir).testClassesDir(testClassesDir)
+				.hashFile(tempDir.resolve("hashes.lz4")).testHashFile(tempDir.resolve("test-hashes.lz4"))
+				.bytecodeHashFile(tempDir.resolve("bytecode-hashes.lz4")).changeMode("explicit")
+				.changedClasses("com.example.Prod").changedTestClasses("").log(PluginLog.NOOP).build();
+
+		// First run seeds the bytecode snapshot.
+		ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.CHANGES_ONLY);
+
+		// Recompile Other so its bytecode differs from the seeded snapshot. The
+		// user still only asked for Prod.
+		compile(classesDir, "package com.example; public class Other { public int y() { return 999; } }");
+
+		ChangeAnalysis.Result result = ChangeAnalysis.analyze(ctx, ChangeAnalysis.Options.CHANGES_ONLY);
+		assertTrue(result.changedClasses().contains("com.example.Prod"),
+				"explicit class must be present: " + result.changedClasses());
+		assertFalse(result.changedClasses().contains("com.example.Other"),
+				"bytecode-detected class must NOT contaminate an explicit non-empty list: " + result.changedClasses());
+		assertEquals(Set.of("com.example.Prod"), result.changedClasses(),
+				"explicit non-empty list must be authoritative: " + result.changedClasses());
+	}
+
 	@Test
 	void augmenterPopulatesMissingEdge() throws Exception {
 		Path classesDir = Files.createDirectory(tempDir.resolve("classes"));
