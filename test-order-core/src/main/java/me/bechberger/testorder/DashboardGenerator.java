@@ -175,7 +175,7 @@ public class DashboardGenerator {
 
 		Map<String, Double> killRates = state.getKillRates();
 		Map<String, String> classToModule = deriveClassToModule(depMap);
-		List<Object> tests = buildTestEntries(scored, depMap, classToModule, mlPredictions, killRates);
+		List<Object> tests = buildTestEntries(scored, depMap, classToModule, mlPredictions);
 		// Compress memberDeps: replace repeated strings with integer indices into a
 		// shared dictionary. This reduces the 355MB jackson-databind dashboard to
 		// ~12MB.
@@ -260,7 +260,7 @@ public class DashboardGenerator {
 	}
 
 	private List<Object> buildTestEntries(List<ScoredTest> scored, DependencyMap depMap,
-			Map<String, String> classToModule, Map<String, Double> mlPredictions, Map<String, Double> killRates) {
+			Map<String, String> classToModule, Map<String, Double> mlPredictions) {
 		List<Object> tests = new ArrayList<>();
 		for (int i = 0; i < scored.size(); i++) {
 			ScoredTest st = scored.get(i);
@@ -275,7 +275,7 @@ public class DashboardGenerator {
 			t.put("speedRatio", r.speedRatio());
 			t.put("complexityOverlap", r.complexityOverlap());
 			if (r.killRate() >= 0)
-				t.put("killRate", r.killRate());
+				t.put("killRate", Math.round(r.killRate() * 10000.0) / 10000.0);
 			if (r.weightedDepOverlap() != r.depOverlap())
 				t.put("weightedDepOverlap", r.weightedDepOverlap());
 			t.put("isNew", r.isNew());
@@ -350,11 +350,10 @@ public class DashboardGenerator {
 				Double pFail = mlPredictions.get(st.name());
 				t.put("mlPFail", pFail != null ? Math.round(pFail * 10000.0) / 10000.0 : null);
 			}
-			// Mutation kill rate (if available)
-			if (!killRates.isEmpty()) {
-				Double kr = killRates.get(st.name());
-				t.put("killRate", kr != null ? Math.round(kr * 10000.0) / 10000.0 : null);
-			}
+			// Note: killRate is written once above from ScoreResult.killRate(), which
+			// the scorer already resolves via inner→top-level fallback. Do NOT re-read
+			// state.getKillRates() by st.name() here — that lookup has no inner-class
+			// fallback and would clobber a resolved value with null (BUG-158).
 			tests.add(t);
 		}
 		return tests;
