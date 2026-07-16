@@ -201,6 +201,56 @@ class IndexCollectorServerTest {
 	}
 
 	@Test
+	void frequencyFilterAlsoDropsHighFreqClassFromMethodDeps() throws Exception {
+		// Regression: the drop-frequency filter removes near-universal dep classes from
+		// classDeps/memberDeps/methodMemberDeps but must ALSO remove them from
+		// methodDeps.
+		// If it doesn't, the method-level index references classes the class-level
+		// index
+		// dropped, and MethodScorer's dep-overlap denominator stays inflated with
+		// noise.
+		String prev = System.getProperty("testorder.deps.dropFrequencyThreshold");
+		System.setProperty("testorder.deps.dropFrequencyThreshold", "0.8");
+		try {
+			Path indexFile = tempDir.resolve("test-deps-freq.lz4");
+			IndexCollectorServer server = new IndexCollectorServer(indexFile);
+
+			// "com.example.Common" appears in every one of the 5 tests (100% > 80%),
+			// so it must be dropped. Each test also has a unique dep that stays.
+			for (int i = 0; i < 5; i++) {
+				String testClass = "com.example.Test" + i;
+				String unique = "com.example.Unique" + i;
+				Map<String, Set<String>> classDeps = Map.of(testClass, Set.of("com.example.Common", unique));
+				Map<String, Set<String>> methodDeps = Map.of(testClass + "#testMethod",
+						Set.of("com.example.Common", unique));
+				assertTrue(me.bechberger.testorder.agent.runtime.IndexCollectorClient.send(server.getPort(), classDeps,
+						methodDeps, Map.of(), Map.of()));
+			}
+			Thread.sleep(100);
+
+			int merged = server.stopAndMerge();
+			assertEquals(5, merged);
+
+			DependencyMap map = DependencyMap.load(indexFile);
+			// class-level: Common dropped, Unique kept
+			assertFalse(map.get("com.example.Test0").contains("com.example.Common"),
+					"high-frequency class must be dropped from classDeps");
+			assertTrue(map.get("com.example.Test0").contains("com.example.Unique0"));
+			// method-level: Common must ALSO be dropped
+			Set<String> methodDeps0 = map.getMethodDeps("com.example.Test0#testMethod");
+			assertFalse(methodDeps0.contains("com.example.Common"),
+					"high-frequency class must ALSO be dropped from methodDeps");
+			assertTrue(methodDeps0.contains("com.example.Unique0"), "unique method dep must be retained");
+		} finally {
+			if (prev == null) {
+				System.clearProperty("testorder.deps.dropFrequencyThreshold");
+			} else {
+				System.setProperty("testorder.deps.dropFrequencyThreshold", prev);
+			}
+		}
+	}
+
+	@Test
 	void packagePrefixFilterKeepsInnerClasses() throws Exception {
 		// Inner class (com.example.Outer$Inner) should be kept when prefix is
 		// "com.example" — the '$' separator is a valid boundary.

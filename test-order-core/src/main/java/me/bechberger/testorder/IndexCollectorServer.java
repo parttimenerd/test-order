@@ -358,6 +358,9 @@ public final class IndexCollectorServer implements AutoCloseable {
 		}
 
 		Map<String, Set<String>> classDepsToWrite = applyFrequencyThreshold(classDepsSnapshot);
+		Map<String, Set<String>> methodDepsToWrite = classDepsToWrite == classDepsSnapshot
+				? methodDepsSnapshot
+				: filterMethodDeps(methodDepsSnapshot, classDepsToWrite);
 		Map<String, Set<String>> memberDepsToWrite = classDepsToWrite == classDepsSnapshot
 				? memberDepsSnapshot
 				: filterMemberDeps(memberDepsSnapshot, classDepsToWrite);
@@ -373,9 +376,9 @@ public final class IndexCollectorServer implements AutoCloseable {
 				// Use instance-level compression with a scoped sysprop to keep DependencyMap's
 				// System.getProperty() read correct without leaking into parallel merges.
 				withScopedCompression(compression, () -> DependencyMap.mergeFromAgent(targetIndexFile, classDepsToWrite,
-						methodDepsSnapshot, memberDepsToWrite, methodMemberDepsToWrite, testToModuleSnapshot));
+						methodDepsToWrite, memberDepsToWrite, methodMemberDepsToWrite, testToModuleSnapshot));
 			} else {
-				DependencyMap.mergeFromAgent(targetIndexFile, classDepsToWrite, methodDepsSnapshot, memberDepsToWrite,
+				DependencyMap.mergeFromAgent(targetIndexFile, classDepsToWrite, methodDepsToWrite, memberDepsToWrite,
 						methodMemberDepsToWrite, testToModuleSnapshot);
 			}
 		} catch (IOException e) {
@@ -483,6 +486,30 @@ public final class IndexCollectorServer implements AutoCloseable {
 					kept.add(memberKey);
 				}
 			}
+			if (!kept.isEmpty()) {
+				result.put(e.getKey(), kept);
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Removes dropped dep classes from method-level deps. Unlike member deps, the
+	 * values here are bare class names (the same universe as class-level deps), so
+	 * we intersect each method's deps with the classes kept after the frequency
+	 * filter. Keeping this consistent stops MethodScorer's dep-overlap denominator
+	 * from being inflated by noise classes the class-level index already dropped.
+	 */
+	private static Map<String, Set<String>> filterMethodDeps(Map<String, Set<String>> methodDeps,
+			Map<String, Set<String>> filteredClassDeps) {
+		Set<String> keptClasses = new java.util.HashSet<>();
+		for (Set<String> deps : filteredClassDeps.values()) {
+			keptClasses.addAll(deps);
+		}
+		Map<String, Set<String>> result = new java.util.LinkedHashMap<>(methodDeps.size());
+		for (Map.Entry<String, Set<String>> e : methodDeps.entrySet()) {
+			Set<String> kept = new java.util.LinkedHashSet<>(e.getValue());
+			kept.retainAll(keptClasses);
 			if (!kept.isEmpty()) {
 				result.put(e.getKey(), kept);
 			}
