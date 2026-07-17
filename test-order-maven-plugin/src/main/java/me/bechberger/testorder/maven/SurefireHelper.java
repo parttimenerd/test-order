@@ -701,83 +701,9 @@ final class SurefireHelper {
 	 * {@code -Dtest} list — otherwise deliberately-excluded tests get run.
 	 */
 	static boolean matchesAnySurefirePattern(String fqcn, List<String> patterns) {
-		if (fqcn == null || patterns == null || patterns.isEmpty())
-			return false;
-		// Normalize inner classes to their enclosing top-level class.
-		int dollar = fqcn.indexOf('$');
-		String topLevel = dollar > 0 ? fqcn.substring(0, dollar) : fqcn;
-		String path = topLevel.replace('.', '/');
-		String javaPath = path + ".java";
-		String classPath = path + ".class";
-		for (String pattern : patterns) {
-			if (pattern == null || pattern.isBlank())
-				continue;
-			String p = pattern.trim();
-			if (p.startsWith("%regex[") && p.endsWith("]")) {
-				String regex = p.substring("%regex[".length(), p.length() - 1);
-				// Surefire matches %regex[...] against the class name (dotted FQCN),
-				// optionally with a .class/.java suffix — match against the dotted form.
-				if (topLevel.matches(regex)) {
-					return true;
-				}
-				continue;
-			}
-			String regex = globToRegex(p);
-			if (javaPath.matches(regex) || classPath.matches(regex)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Converts an Ant-style file glob (as used in Surefire {@code <excludes>}) to a
-	 * regular expression anchored to the full path. {@code **} matches across
-	 * directory separators (including none), {@code *} matches within a single path
-	 * segment, {@code ?} matches a single non-separator character. A leading
-	 * {@code **}{@code /} also matches a class at the path root (zero directories).
-	 */
-	private static String globToRegex(String glob) {
-		StringBuilder sb = new StringBuilder();
-		for (int i = 0; i < glob.length(); i++) {
-			char c = glob.charAt(i);
-			switch (c) {
-				case '*' :
-					if (i + 1 < glob.length() && glob.charAt(i + 1) == '*') {
-						i++;
-						// Collapse "**/" so it also matches zero directories at the root.
-						if (i + 1 < glob.length() && glob.charAt(i + 1) == '/') {
-							i++;
-							sb.append("(?:.*/)?");
-						} else {
-							sb.append(".*");
-						}
-					} else {
-						sb.append("[^/]*");
-					}
-					break;
-				case '?' :
-					sb.append("[^/]");
-					break;
-				case '.' :
-				case '(' :
-				case ')' :
-				case '+' :
-				case '|' :
-				case '^' :
-				case '$' :
-				case '{' :
-				case '}' :
-				case '[' :
-				case ']' :
-				case '\\' :
-					sb.append('\\').append(c);
-					break;
-				default :
-					sb.append(c);
-			}
-		}
-		return sb.toString();
+		// Delegate to the Maven-independent core matcher so the run path (here) and the
+		// show Selection Preview (BUG-172) share one source of truth and never diverge.
+		return me.bechberger.testorder.SurefireExcludeMatcher.matches(fqcn, patterns);
 	}
 
 	/**
