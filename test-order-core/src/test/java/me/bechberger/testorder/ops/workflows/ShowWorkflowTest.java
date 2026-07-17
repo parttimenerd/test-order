@@ -72,4 +72,29 @@ class ShowWorkflowTest {
 		assertTrue(text.contains("ML health unavailable"));
 		assertTrue(text.contains("-Dtestorder.ml.enabled=true"));
 	}
+
+	// ── BUG-172: Selection Preview honors Surefire <excludes> ────────────
+
+	@Test
+	void filterExcluded_dropsMatchingClassesFromAllLists() {
+		var selection = new me.bechberger.testorder.TestSelector.Selection(
+				java.util.List.of("com.foo.BarTest", "com.foo.perf.PerformanceTest"),
+				java.util.List.of("com.foo.BazTest", "com.foo.SlowPerformanceTest"), 0,
+				java.util.List.of("com.foo.perf.OtherPerformanceTest"));
+
+		var filtered = ShowWorkflow.filterExcluded(selection, java.util.List.of("**/*PerformanceTest.java"));
+
+		assertEquals(java.util.List.of("com.foo.BarTest"), filtered.selected());
+		assertEquals(java.util.List.of("com.foo.BazTest"), filtered.remaining());
+		assertTrue(filtered.cached().isEmpty(), "excluded cached entry must be dropped");
+	}
+
+	@Test
+	void filterExcluded_noPatternsReturnsSameSelection() {
+		var selection = new me.bechberger.testorder.TestSelector.Selection(java.util.List.of("com.foo.BarTest"),
+				java.util.List.of("com.foo.BazTest"), 0);
+
+		assertSame(selection, ShowWorkflow.filterExcluded(selection, java.util.List.of()));
+		assertSame(selection, ShowWorkflow.filterExcluded(selection, null));
+	}
 }

@@ -75,13 +75,28 @@ public final class ShowWorkflow {
 	 * @param displayLimit
 	 *            max rows to display in the class-order table per module (default
 	 *            20; use -1 to show all)
+	 * @param excludePatterns
+	 *            Surefire {@code <excludes>} glob/regex patterns; classes matching
+	 *            any are dropped from the selection preview so it does not
+	 *            advertise tests that will never run (BUG-172). Empty = no
+	 *            filtering.
 	 */
 	public record Options(boolean classes, Boolean methods, Boolean ml, boolean explain, boolean fullNames,
-			String format, String filter, int topN, int randomM, Long seed, int displayLimit) {
+			String format, String filter, int topN, int randomM, Long seed, int displayLimit,
+			List<String> excludePatterns) {
 
 		/** Default: show classes, auto-detect methods and ML, text format. */
 		public static Options defaults() {
-			return new Options(true, null, null, false, false, "text", null, -1, 10, null, 20);
+			return new Options(true, null, null, false, false, "text", null, -1, 10, null, 20, List.of());
+		}
+
+		/**
+		 * Backward-compatible constructor without excludePatterns (defaults to empty).
+		 */
+		public Options(boolean classes, Boolean methods, Boolean ml, boolean explain, boolean fullNames, String format,
+				String filter, int topN, int randomM, Long seed, int displayLimit) {
+			this(classes, methods, ml, explain, fullNames, format, filter, topN, randomM, seed, displayLimit,
+					List.of());
 		}
 
 		/**
@@ -89,7 +104,11 @@ public final class ShowWorkflow {
 		 */
 		public Options(boolean classes, Boolean methods, Boolean ml, boolean explain, boolean fullNames, String format,
 				String filter, int topN, int randomM, Long seed) {
-			this(classes, methods, ml, explain, fullNames, format, filter, topN, randomM, seed, 20);
+			this(classes, methods, ml, explain, fullNames, format, filter, topN, randomM, seed, 20, List.of());
+		}
+
+		public Options {
+			excludePatterns = excludePatterns == null ? List.of() : List.copyOf(excludePatterns);
 		}
 
 		public boolean isJson() {
@@ -307,6 +326,9 @@ public final class ShowWorkflow {
 						result.analysis().state(), result.analysis().changedClasses(), changedAndNew,
 						result.analysis().weights(), new TestSelector.Config(opts.topN(), opts.randomM(), opts.seed()),
 						alwaysRun, result.analysis().changeComplexity()).select();
+				// BUG-172: drop Surefire <excludes>'d classes from the preview so it matches
+				// what `affected`/`auto` actually run (configureIncludes filters them there).
+				selection = filterExcluded(selection, opts.excludePatterns());
 				ShowOrderWorkflow.printSelectionPreview(out, selection, opts.fullNames(), opts.topN(), opts.randomM());
 			}
 		} else if (opts.classes()) {
@@ -347,6 +369,30 @@ public final class ShowWorkflow {
 			out.println("[test-order] ML health unavailable: no ML history found.");
 			out.println("[test-order] To enable: run tests with -Dtestorder.ml.enabled=true and collect a few runs.");
 		}
+	}
+
+	/**
+	 * Returns a copy of {@code selection} with any class matching a Surefire
+	 * {@code <excludes>} pattern removed from all three lists (BUG-172). Returns
+	 * the input unchanged when there are no patterns.
+	 */
+	static TestSelector.Selection filterExcluded(TestSelector.Selection selection, List<String> excludePatterns) {
+		if (excludePatterns == null || excludePatterns.isEmpty()) {
+			return selection;
+		}
+		return new TestSelector.Selection(dropExcluded(selection.selected(), excludePatterns),
+				dropExcluded(selection.remaining(), excludePatterns), selection.randomFastCount(),
+				dropExcluded(selection.cached(), excludePatterns));
+	}
+
+	private static List<String> dropExcluded(List<String> names, List<String> excludePatterns) {
+		List<String> out = new ArrayList<>(names.size());
+		for (String n : names) {
+			if (!me.bechberger.testorder.SurefireExcludeMatcher.matches(n, excludePatterns)) {
+				out.add(n);
+			}
+		}
+		return out;
 	}
 
 	// ── Module-grouped class order ────────────────────────────────────
