@@ -708,7 +708,10 @@ class SurefireHelperTest {
 	}
 
 	@Test
-	void warnSelectModeFilters_warnsForExcludes() {
+	void warnSelectModeFilters_infoForExcludesHonored() {
+		// BUG-168: test-order now HONORS file-based <excludes> (drops matching classes
+		// from the -Dtest selection) rather than overriding them, so the message is an
+		// informational note, not a warning.
 		Xpp3Dom excludes = child("excludes", null);
 		excludes.addChild(child("exclude", "**/Abstract*Test.java"));
 		MavenProject project = projectWithSurefire(config(excludes));
@@ -716,7 +719,8 @@ class SurefireHelperTest {
 
 		SurefireHelper.warnSelectModeFilters(project, log);
 
-		verify(log).warn(contains("excludes"));
+		verify(log).info(contains("excludes"));
+		verify(log, never()).warn(contains("excludes"));
 	}
 
 	@Test
