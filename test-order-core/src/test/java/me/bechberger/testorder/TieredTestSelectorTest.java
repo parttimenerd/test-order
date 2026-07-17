@@ -89,6 +89,39 @@ class TieredTestSelectorTest {
 		assertEquals(2, selection.tier3().size());
 	}
 
+	/**
+	 * BUG-171: {@code @Nested} inner test classes are indexed as separate
+	 * {@code Outer$Nested} FQCNs. Surefire runs the outer class, so tier lists must
+	 * be collapsed to outer-class form — nested siblings must not inflate tier
+	 * counts or land in different tiers.
+	 */
+	@Test
+	void collapsesNestedSiblingsToOuterClassAcrossTiers() {
+		DependencyMap depMap = new DependencyMap();
+		// Three @Nested siblings of the same outer class, plus three distinct classes.
+		depMap.put("t.OuterA$N1", Set.of("p.S1"));
+		depMap.put("t.OuterA$N2", Set.of("p.S2"));
+		depMap.put("t.OuterA$N3", Set.of("p.S3"));
+		depMap.put("t.OuterB", Set.of("p.S4"));
+		depMap.put("t.OuterC", Set.of("p.S5"));
+		depMap.put("t.OuterD", Set.of("p.S6"));
+
+		TieredTestSelector selector = new TieredTestSelector(depMap, new TestOrderState(), Set.of(), Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TieredTestSelector.Config(0.5, false), Set.of());
+
+		TieredTestSelector.TieredSelection selection = selector.select();
+
+		List<String> all = selection.allInOrder();
+		for (String t : all) {
+			assertFalse(t.contains("$"), "tier entry must be collapsed to the outer class: " + t);
+		}
+		// 6 raw FQCNs collapse to 4 runnable outer classes (OuterA once).
+		assertEquals(4, all.size(), "tiers must report distinct outer classes, not nested siblings");
+		assertEquals(new java.util.LinkedHashSet<>(all).size(), all.size(),
+				"no outer class may appear in more than one tier");
+		assertTrue(all.contains("t.OuterA"), "OuterA must appear exactly once across tiers");
+	}
+
 	// ── applyShard ───────────────────────────────────────────────────────────
 
 	private static List<String> shardTests(int n) {
