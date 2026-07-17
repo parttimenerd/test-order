@@ -143,7 +143,37 @@ public class TestSelector {
 		}
 
 		List<String> cached = applyCacheSkip(scored, selected, remaining);
-		return new Selection(new ArrayList<>(selected), remaining, randomActual, cached);
+
+		// BUG-170: @Nested inner test classes are indexed as separate Outer$Nested
+		// FQCNs, but Surefire runs the OUTER class (nested tests execute as its
+		// children) — SurefireHelper.configureIncludes collapses Outer$Nested -> Outer
+		// before building -Dtest=. Collapse the emitted lists to outer-class form here
+		// so counts reflect runnable classes and match what actually runs. Done AFTER
+		// selectDiverseFast/applyCacheSkip so their per-nested depMap lookups stay
+		// intact. An outer that is selected must not also appear in remaining.
+		List<String> selectedOuter = collapseToOuter(selected);
+		Set<String> selectedOuterSet = new LinkedHashSet<>(selectedOuter);
+		List<String> remainingOuter = new ArrayList<>();
+		Set<String> seenRemaining = new LinkedHashSet<>();
+		for (String r : remaining) {
+			String outer = TestOrderConfigResolver.toTopLevelClassName(r);
+			if (!selectedOuterSet.contains(outer) && seenRemaining.add(outer)) {
+				remainingOuter.add(outer);
+			}
+		}
+		List<String> cachedOuter = collapseToOuter(cached);
+		return new Selection(selectedOuter, remainingOuter, randomActual, cachedOuter);
+	}
+
+	/**
+	 * Collapse a name collection to distinct outer-class form, preserving order.
+	 */
+	private static List<String> collapseToOuter(Collection<String> names) {
+		Set<String> out = new LinkedHashSet<>();
+		for (String n : names) {
+			out.add(TestOrderConfigResolver.toTopLevelClassName(n));
+		}
+		return new ArrayList<>(out);
 	}
 
 	// ── Scoring ───────────────────────────────────────────────────────
@@ -219,7 +249,10 @@ public class TestSelector {
 		if (hasChangeSignal) {
 			Set<String> affectedByDeps = depMap.getAffectedTests(changedClasses);
 			int cap = config.topN() < 0 ? Integer.MAX_VALUE : config.topN();
-			int counted = 0;
+			// BUG-170: budget by outer class — nested siblings that collapse to one
+			// runnable outer class (see configureIncludes) must not each consume a slot.
+			Set<String> selectedOuter = outerSet(selected);
+			int counted = selectedOuter.size();
 			for (ScoredTest s : scored) {
 				if (counted >= cap)
 					break;
@@ -230,7 +263,8 @@ public class TestSelector {
 					continue; // additive, doesn't count
 				// M19: only count toward the budget when the element is actually new
 				// (selected.add returns false for duplicates added by earlier phases)
-				if (selected.add(s.name())) {
+				boolean added = selected.add(s.name());
+				if (added && selectedOuter.add(TestOrderConfigResolver.toTopLevelClassName(s.name()))) {
 					counted++;
 				}
 			}
@@ -244,17 +278,30 @@ public class TestSelector {
 			return;
 		}
 		// Count tests already selected by Phase 1 (new tests) toward the topN budget
-		// so that topN acts as a hard cap on total selected tests.
-		int counted = (int) selected.stream().filter(t -> !alwaysRunClasses.contains(t)).count();
+		// so that topN acts as a hard cap on total selected tests. BUG-170: count by
+		// outer class so nested siblings collapse to one budget unit.
+		Set<String> selectedOuter = outerSet(selected.stream().filter(t -> !alwaysRunClasses.contains(t))
+				.collect(java.util.stream.Collectors.toSet()));
+		int counted = selectedOuter.size();
 		for (ScoredTest s : scored) {
 			if (counted >= config.topN())
 				break;
 			if (alwaysRunClasses.contains(s.name()))
 				continue;
-			if (selected.add(s.name())) {
+			boolean added = selected.add(s.name());
+			if (added && selectedOuter.add(TestOrderConfigResolver.toTopLevelClassName(s.name()))) {
 				counted++;
 			}
 		}
+	}
+
+	/** Map a name collection to the set of distinct outer-class names. */
+	private static Set<String> outerSet(Collection<String> names) {
+		Set<String> out = new LinkedHashSet<>();
+		for (String n : names) {
+			out.add(TestOrderConfigResolver.toTopLevelClassName(n));
+		}
+		return out;
 	}
 
 	/** Phase 3: greedily pick M fast tests maximizing Jaccard diversity. */
