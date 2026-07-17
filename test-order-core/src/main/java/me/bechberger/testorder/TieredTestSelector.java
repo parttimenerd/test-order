@@ -106,7 +106,36 @@ public class TieredTestSelector {
 			}
 		}
 
-		return new TieredSelection(new ArrayList<>(tier1Set), tier2, tier3);
+		// BUG-171: @Nested inner test classes are indexed as separate Outer$Nested
+		// FQCNs, but Surefire runs the OUTER class (nested tests execute as its
+		// children) — RunTierMojo routes each tier through SurefireHelper
+		// .configureIncludes, which collapses Outer$Nested -> Outer. Collapse the tier
+		// lists to outer-class form here so tier counts and the tier2 split reflect
+		// runnable classes. Dedup across tiers in priority order (tier1 > tier2 >
+		// tier3)
+		// so an outer class runs in exactly one tier. Same family as BUG-170.
+		Set<String> seen = new LinkedHashSet<>();
+		List<String> tier1Out = collapseToOuter(tier1Set, seen);
+		List<String> tier2Out = collapseToOuter(tier2, seen);
+		List<String> tier3Out = collapseToOuter(tier3, seen);
+
+		return new TieredSelection(tier1Out, tier2Out, tier3Out);
+	}
+
+	/**
+	 * Collapse a name collection to distinct outer-class form, preserving order and
+	 * skipping any outer class already emitted into {@code seen} (cross-tier
+	 * dedup).
+	 */
+	private static List<String> collapseToOuter(Collection<String> names, Set<String> seen) {
+		List<String> out = new ArrayList<>();
+		for (String n : names) {
+			String outer = TestOrderConfigResolver.toTopLevelClassName(n);
+			if (seen.add(outer)) {
+				out.add(outer);
+			}
+		}
+		return out;
 	}
 
 	// ── Scoring ───────────────────────────────────────────────────────
