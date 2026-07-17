@@ -1,9 +1,7 @@
 package me.bechberger.testorder.ops;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -29,35 +27,19 @@ public final class ShowOrderOperation {
 	}
 
 	/**
-	 * Checks whether a compiled {@code .class} file looks like a JUnit test class
-	 * by scanning the constant pool for JUnit test annotation descriptors.
+	 * Checks whether a compiled {@code .class} file is a concrete JUnit/TestNG test
+	 * class — i.e. it carries a test-framework annotation and is not abstract.
 	 */
-	/**
-	 * Read at most 16 KB — annotation descriptors live in the constant pool near
-	 * the file start.
-	 */
-	private static final int CLASS_SCAN_LIMIT = 16 * 1024;
-
 	public static boolean looksLikeTestClass(Path classFile) {
-		String name = classFile.getFileName().toString();
-		String simpleName = name.substring(0, name.length() - 6); // strip .class
-		// Abstract*Test classes are base classes that Surefire never runs directly.
-		// They appear as "NEW" tests (not in dep map) and would otherwise flood the
-		// top of the selection list with an unearned new-test bonus.
-		if (simpleName.startsWith("Abstract")) {
-			return false;
-		}
-		try (InputStream in = Files.newInputStream(classFile)) {
-			byte[] buf = in.readNBytes(CLASS_SCAN_LIMIT);
-			String content = new String(buf, StandardCharsets.ISO_8859_1);
-			return content.contains("Lorg/junit/jupiter/api/Test;")
-					|| content.contains("Lorg/junit/jupiter/api/TestFactory;")
-					|| content.contains("Lorg/junit/jupiter/api/RepeatedTest;")
-					|| content.contains("Lorg/junit/jupiter/params/ParameterizedTest;")
-					|| content.contains("Lorg/junit/Test;");
-		} catch (IOException e) {
-			return false;
-		}
+		// Delegate to the bytecode-based detector, which returns true only for a
+		// concrete class carrying a test-framework annotation. This correctly
+		// excludes abstract test bases regardless of where "Abstract" sits in the
+		// name (BUG-169: a prior startsWith("Abstract") heuristic missed infix/suffix
+		// names such as commons-io's ComparatorAbstractTest, letting the unrunnable
+		// base leak into the selection candidate set and displace its concrete
+		// subclasses). It also covers TestNG/Kotlin/@TestTemplate annotations the old
+		// string scan did not.
+		return TestClassDiscovery.hasTestAnnotations(classFile);
 	}
 
 	/**
