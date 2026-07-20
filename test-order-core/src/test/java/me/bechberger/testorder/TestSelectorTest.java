@@ -372,4 +372,51 @@ class TestSelectorTest {
 		assertEquals(3, sel.selected().size(),
 				"topN=3 with 1 new test should yield 3 total (1 new + 2 existing), got: " + sel.selected());
 	}
+
+	// ── BUG-174: @AlwaysRun must not consume the topN budget ─────────────
+
+	@Test
+	void alwaysRunDoesNotConsumeTopNBudgetWhenChangeSignalPresent() {
+		// Regression for BUG-174: when a change signal exists and alwaysRun classes
+		// are in the selection, the initial `counted` in selectTopN must NOT include
+		// alwaysRun outer classes — they are additive and must not eat into the topN
+		// cap for change-affected tests.
+		//
+		// Setup: com.A overlaps changed class app.X; com.Smoke is @AlwaysRun (not
+		// change-affected). topN=1 should still select com.A (the affected test) even
+		// though com.Smoke was already added by Phase 0.
+		DependencyMap depMap = buildDepMap(
+				Map.of("com.A", Set.of("app.X"), "com.B", Set.of("app.Y"), "com.Smoke", Set.of("app.Z")));
+		TestOrderState state = stateWithDurations(Map.of("com.A", 100L, "com.B", 200L, "com.Smoke", 50L));
+		Set<String> changed = Set.of("app.X"); // only com.A is change-affected
+
+		TestSelector.Selection sel = new TestSelector(depMap, state, changed, Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(1, 0, 42L), Set.of("com.Smoke"))
+				.select();
+
+		assertTrue(sel.selected().contains("com.Smoke"), "alwaysRun must always be selected");
+		assertTrue(sel.selected().contains("com.A"),
+				"change-affected test must be selected even when alwaysRun class is present; got: " + sel.selected());
+	}
+
+	@Test
+	void alwaysRunDoesNotConsumeTopNBudgetWithMultipleAlwaysRun() {
+		// BUG-174: multiple alwaysRun classes must not steal all topN slots.
+		// topN=2 with 2 alwaysRun + 1 change-affected → all 3 should be selected
+		// (2 affected slots remain after excluding alwaysRun from the budget count).
+		DependencyMap depMap = buildDepMap(Map.of("com.A", Set.of("app.X"), "com.B", Set.of("app.X"), "com.Smoke1",
+				Set.of("app.Z"), "com.Smoke2", Set.of("app.W")));
+		TestOrderState state = stateWithDurations(
+				Map.of("com.A", 100L, "com.B", 200L, "com.Smoke1", 50L, "com.Smoke2", 60L));
+		Set<String> changed = Set.of("app.X"); // com.A and com.B are change-affected
+
+		TestSelector.Selection sel = new TestSelector(depMap, state, changed, Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(2, 0, 42L),
+				Set.of("com.Smoke1", "com.Smoke2")).select();
+
+		assertTrue(sel.selected().contains("com.Smoke1"), "alwaysRun1 must always be selected");
+		assertTrue(sel.selected().contains("com.Smoke2"), "alwaysRun2 must always be selected");
+		assertTrue(sel.selected().contains("com.A"), "first change-affected test must be selected");
+		assertTrue(sel.selected().contains("com.B"), "second change-affected test must be selected");
+	}
 }

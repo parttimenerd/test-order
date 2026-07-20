@@ -65,15 +65,14 @@ public class TestScorer {
 		}
 
 		/**
-		 * Whether this test is genuinely <em>affected by the change</em>, as opposed
-		 * to merely prioritized. A positive {@link #score()} is not sufficient: the
-		 * speed bonus and failure-history bonus are change-independent (a fast or
-		 * flaky test scores above zero no matter what changed). A test counts as
-		 * affected only when its covered application code probably changed (dependency
-		 * overlap, static-field overlap, or change-complexity overlap), it is itself a
-		 * changed test, or it is new. Used by the {@code show} module header and the
-		 * reactor reorderer so both agree on which modules are change-affected
-		 * (BUG-173).
+		 * Whether this test is genuinely <em>affected by the change</em>, as opposed to
+		 * merely prioritized. A positive {@link #score()} is not sufficient: the speed
+		 * bonus and failure-history bonus are change-independent (a fast or flaky test
+		 * scores above zero no matter what changed). A test counts as affected only
+		 * when its covered application code probably changed (dependency overlap,
+		 * static-field overlap, or change-complexity overlap), it is itself a changed
+		 * test, or it is new. Used by the {@code show} module header and the reactor
+		 * reorderer so both agree on which modules are change-affected (BUG-173).
 		 */
 		public boolean isChangeAffected() {
 			return depOverlap > 0 || isChanged || isNew || hasStaticFieldOverlap || complexityOverlap > 0;
