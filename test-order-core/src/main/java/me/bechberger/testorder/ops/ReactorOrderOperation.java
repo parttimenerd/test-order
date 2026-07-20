@@ -38,10 +38,13 @@ public final class ReactorOrderOperation {
 
 		/**
 		 * Primary sort: by affected test count (descending), then total score sum
-		 * (descending), then max test score (descending). Modules with more affected
-		 * tests are prioritized first because they represent broader change impact; the
-		 * score sum tiebreaks at equal affected counts and reflects cumulative urgency
-		 * across all affected tests in the module.
+		 * (descending), then max test score (descending), then module ID ascending.
+		 * Modules with more affected tests are prioritized first because they represent
+		 * broader change impact; the score sum tiebreaks at equal affected counts and
+		 * reflects cumulative urgency across all affected tests in the module. The
+		 * final alphabetical moduleId tiebreak makes the ordering deterministic when
+		 * all three numeric keys are equal — matching the stable tie-break used by
+		 * {@code ShowWorkflow.ModuleAggregate.compareByPriority} (BUG-184).
 		 */
 		@Override
 		public int compareTo(ModuleScore other) {
@@ -51,7 +54,10 @@ public final class ReactorOrderOperation {
 			cmp = Long.compare(other.sumTestScores, this.sumTestScores);
 			if (cmp != 0)
 				return cmp;
-			return Integer.compare(other.maxTestScore, this.maxTestScore);
+			cmp = Integer.compare(other.maxTestScore, this.maxTestScore);
+			if (cmp != 0)
+				return cmp;
+			return this.moduleId.compareTo(other.moduleId);
 		}
 	}
 
