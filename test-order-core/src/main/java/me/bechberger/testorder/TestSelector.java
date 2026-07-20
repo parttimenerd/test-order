@@ -251,8 +251,13 @@ public class TestSelector {
 			int cap = config.topN() < 0 ? Integer.MAX_VALUE : config.topN();
 			// BUG-170: budget by outer class — nested siblings that collapse to one
 			// runnable outer class (see configureIncludes) must not each consume a slot.
+			// BUG-174: exclude @AlwaysRun outer classes from the initial counted value —
+			// they are additive (never cap-counted), consistent with the no-change path.
+			// Building selectedOuter from the full selected set (including alwaysRun) still
+			// correctly deduplicates outer classes shared between alwaysRun and new tests.
 			Set<String> selectedOuter = outerSet(selected);
-			int counted = selectedOuter.size();
+			int counted = outerSet(selected.stream().filter(t -> !alwaysRunClasses.contains(t))
+					.collect(java.util.stream.Collectors.toSet())).size();
 			for (ScoredTest s : scored) {
 				if (counted >= cap)
 					break;

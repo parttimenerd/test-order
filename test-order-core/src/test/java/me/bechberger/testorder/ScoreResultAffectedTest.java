@@ -30,7 +30,8 @@ class ScoreResultAffectedTest {
 
 	@Test
 	void speedOnlyBonusIsNotAffected() {
-		// The jackson-databind case: fast test, +1 purely from speed, zero change signal.
+		// The jackson-databind case: fast test, +1 purely from speed, zero change
+		// signal.
 		var r = result(1, 0, 238, 0.0, false, false, true, false, 0.0, false);
 		assertFalse(r.isChangeAffected(), "a test scoring only on speed must not count as change-affected");
 	}
