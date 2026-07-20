@@ -345,6 +345,15 @@ public final class ShowWorkflow {
 			if (filter != null) {
 				classOrders = classOrders.stream().filter(co -> filter.test(co.className())).toList();
 			}
+			// BUG-194: drop Surefire <excludes>'d classes from the method order preview so
+			// it does not advertise method ordering for tests that will never run (mirrors
+			// BUG-172's fix for the class-order Selection Preview).
+			if (!opts.excludePatterns().isEmpty()) {
+				List<String> excl = opts.excludePatterns();
+				classOrders = classOrders.stream()
+						.filter(co -> !me.bechberger.testorder.SurefireExcludeMatcher.matches(co.className(), excl))
+						.toList();
+			}
 			if (!classOrders.isEmpty()) {
 				ShowMethodOrderWorkflow.printMethodOrderReport(out,
 						new ShowMethodOrderWorkflow.ShowMethodOrderResult(classOrders, mo.changedClasses(),
