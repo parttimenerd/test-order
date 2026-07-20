@@ -437,19 +437,48 @@ public class DependencyMap {
 
 	/**
 	 * Returns the number of distinct tracked members (methods) per source class,
-	 * derived from the member key dictionary. Only populated when member-level
-	 * instrumentation is active (i.e. {@link #hasMemberDeps()} is true). Keys are
-	 * fully-qualified class names; values are the count of tracked members.
+	 * derived from the union of all class-level member-dep bitmaps. Only populated
+	 * when member-level instrumentation is active (i.e. {@link #hasMemberDeps()} is
+	 * true). Keys are fully-qualified class names; values are the count of tracked
+	 * members.
+	 *
+	 * <p>
+	 * BUG-204: the previous implementation iterated {@code memberKeyDictionary}
+	 * directly, which overcounts after {@link #filterForModule} because the
+	 * dictionary is shared with the unfiltered parent and contains keys for
+	 * excluded tests. Using the union of bitmaps instead counts only the member
+	 * keys actually referenced by the tests in this map.
 	 */
 	public Map<String, Integer> trackedMembersPerClass() {
-		Map<String, Integer> counts = new LinkedHashMap<>();
-		for (String key : memberKeyDictionary) {
-			int hash = key.indexOf('#');
-			if (hash < 0)
-				continue;
-			String cls = key.substring(0, hash);
-			counts.merge(cls, 1, Integer::sum);
+		if (memberDepsMap.isEmpty()) {
+			// No class-level member data — fall back to dictionary-based counting for
+			// method-only member maps (backward compatibility for older indexes where
+			// only methodMemberDepsMap is present).
+			Map<String, Integer> counts = new LinkedHashMap<>();
+			for (String key : memberKeyDictionary) {
+				int hash = key.indexOf('#');
+				if (hash < 0)
+					continue;
+				String cls = key.substring(0, hash);
+				counts.merge(cls, 1, Integer::sum);
+			}
+			return counts;
 		}
+		// Compute the union of all referenced member key IDs across all test classes.
+		RoaringBitmap union = new RoaringBitmap();
+		for (RoaringBitmap bm : memberDepsMap.values()) {
+			union.or(bm);
+		}
+		Map<String, Integer> counts = new LinkedHashMap<>();
+		union.forEach((int id) -> {
+			if (id >= 0 && id < memberKeyDictionary.size()) {
+				String key = memberKeyDictionary.get(id);
+				int hash = key.indexOf('#');
+				if (hash >= 0) {
+					counts.merge(key.substring(0, hash), 1, Integer::sum);
+				}
+			}
+		});
 		return counts;
 	}
 

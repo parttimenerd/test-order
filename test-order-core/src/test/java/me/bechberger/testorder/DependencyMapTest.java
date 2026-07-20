@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -871,6 +872,46 @@ class DependencyMapTest {
 		// getAffectedTests for a rare dep must return only the 5 tests
 		Set<String> rare = loaded.getAffectedTests(Set.of("rare.Helper"));
 		assertEquals(5, rare.size(), "getAffectedTests for rare dep must return only the 5 tests that reference it");
+	}
+
+	@Test
+	void filterForModuleDoesNotLeakMemberDictionary() {
+		// BUG-204: filterForModule copied the full memberKeyDictionary to the filtered
+		// result, so trackedMembersPerClass() on the filtered map over-reported member
+		// counts for excluded tests.
+		DependencyMap map = new DependencyMap();
+		map.put("com.moduleA.FooTest", Set.of("com.app.Foo"));
+		map.put("com.moduleB.BarTest", Set.of("com.app.Bar"));
+		// moduleA test tracks 2 members in app.Foo
+		map.putMemberDeps("com.moduleA.FooTest", Set.of("com.app.Foo#methodA", "com.app.Foo#methodB"));
+		// moduleB test tracks 3 members in app.Bar
+		map.putMemberDeps("com.moduleB.BarTest",
+				Set.of("com.app.Bar#methodX", "com.app.Bar#methodY", "com.app.Bar#methodZ"));
+		map.putModule("com.moduleA.FooTest", "com.example:module-a");
+		map.putModule("com.moduleB.BarTest", "com.example:module-b");
+
+		// Filter to module-a only
+		DependencyMap filteredA = map.filterForModule("com.example:module-a", null);
+		assertEquals(1, filteredA.testClasses().size(), "only module-a tests should be present");
+		Map<String, Integer> countsA = filteredA.trackedMembersPerClass();
+		// Must report only module-a's 2 members in com.app.Foo, NOT module-b's 3
+		assertEquals(1, countsA.size(), "only one class should appear in tracked members for module-a");
+		assertEquals(2, countsA.get("com.app.Foo"), "module-a tracks 2 members in Foo");
+		assertNull(countsA.get("com.app.Bar"), "Bar members must not leak into module-a's view (BUG-204)");
+
+		// Filter to module-b only
+		DependencyMap filteredB = map.filterForModule("com.example:module-b", null);
+		assertEquals(1, filteredB.testClasses().size(), "only module-b tests should be present");
+		Map<String, Integer> countsB = filteredB.trackedMembersPerClass();
+		assertEquals(1, countsB.size(), "only one class should appear in tracked members for module-b");
+		assertEquals(3, countsB.get("com.app.Bar"), "module-b tracks 3 members in Bar");
+		assertNull(countsB.get("com.app.Foo"), "Foo members must not leak into module-b's view (BUG-204)");
+
+		// Full map tracks both
+		Map<String, Integer> countsFull = map.trackedMembersPerClass();
+		assertEquals(2, countsFull.size(), "full map sees both classes");
+		assertEquals(2, countsFull.get("com.app.Foo"), "Foo has 2 tracked members in full map");
+		assertEquals(3, countsFull.get("com.app.Bar"), "Bar has 3 tracked members in full map");
 	}
 
 	@Test
