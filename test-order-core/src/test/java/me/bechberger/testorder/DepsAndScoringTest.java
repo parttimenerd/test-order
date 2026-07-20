@@ -694,6 +694,35 @@ class DepsAndScoringTest {
 		assertEquals(0.0, bar.coverageBonus(), 0.001, "testBar deps do not overlap with changed classes");
 	}
 
+	@Test
+	void methodScorerDepOverlapCountsChangedClassesNotDeps() {
+		// BUG-196: computeDepOverlapBonus used to count the number of matching deps,
+		// so two deps "app.X$Foo" and "app.X$Bar" both resolving to the single changed
+		// class "app.X" would produce intersectionSize=2 instead of 1. The fix counts
+		// the distinct changed classes covered (like class-level scoring does).
+		TestOrderState state = new TestOrderState();
+		DependencyMap depMap = new DependencyMap();
+		// testFoo has two deps that both resolve to the same changed outer class
+		// "app.X"
+		depMap.putMethodDeps("com.A#testFoo", Set.of("app.X$Foo", "app.X$Bar", "app.Y"));
+		// testSingle has one direct dep on the changed class
+		depMap.putMethodDeps("com.A#testSingle", Set.of("app.X", "app.Y"));
+
+		var weights = new TestOrderState.MethodScoringWeights(0, 0, 0, 4.0, 0, 0);
+		MethodScorer scorer = new MethodScorer(weights, state, depMap, Set.of("app.X"), null);
+
+		var results = scorer.score(List.of(new MethodScorer.MethodMetadata("com.A", "testFoo", 100, null),
+				new MethodScorer.MethodMetadata("com.A", "testSingle", 100, null)));
+
+		var foo = results.stream().filter(r -> r.methodName().equals("testFoo")).findFirst().orElseThrow();
+		var single = results.stream().filter(r -> r.methodName().equals("testSingle")).findFirst().orElseThrow();
+
+		// Both methods cover exactly 1 changed class with a total of 3 deps (same dep
+		// set size); their depOverlapBonus must be equal.
+		assertEquals(single.depOverlapBonus(), foo.depOverlapBonus(), 0.001,
+				"two inner-class deps of one changed class must count as 1 overlap, same as direct dep (BUG-196)");
+	}
+
 	// ═══════════════════════════════════════════════════════════════════
 	// DependencyMap edge cases
 	// ═══════════════════════════════════════════════════════════════════
