@@ -152,9 +152,26 @@ public class MethodScorer {
 			Set<String> methodDeps = depMap.getMethodDeps(methodKey);
 			if (methodDeps == null || methodDeps.isEmpty())
 				continue;
-			if (methodDeps.stream().anyMatch(changedClasses::contains)) {
-				Set<String> covered = methodDeps.stream().filter(changedClasses::contains)
-						.collect(java.util.stream.Collectors.toUnmodifiableSet());
+			// BUG-195: use changedClassesContains() to handle nested-class deps
+			// (e.g. "com.Foo$Builder" must match when "com.Foo" is in changedClasses),
+			// consistent with the computeDepOverlapBonus() path. Record the matching
+			// changed class (not the dep itself) so the SetCoverComputer universe
+			// intersection is correct.
+			Set<String> covered = new java.util.LinkedHashSet<>();
+			for (String dep : methodDeps) {
+				if (changedClasses.contains(dep)) {
+					covered.add(dep);
+				} else {
+					int dollar = dep.indexOf('$');
+					if (dollar > 0) {
+						String outer = dep.substring(0, dollar);
+						if (changedClasses.contains(outer)) {
+							covered.add(outer);
+						}
+					}
+				}
+			}
+			if (!covered.isEmpty()) {
 				coverage.put(methodKey, covered);
 			}
 		}
