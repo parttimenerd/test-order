@@ -161,7 +161,13 @@ public final class ReactorOrderOperation {
 
 			int maxScore = 0;
 			long sumScores = 0;
-			int affectedCount = 0;
+			// Collapse Outer$Nested entries to their outer class before counting affected
+			// tests. The dep map indexes @Nested inner test classes as separate Outer$Inner
+			// FQCNs, but Surefire runs only the outer class as a single task (it discovers
+			// nested tests automatically). Counting outer$inner entries separately inflates
+			// affectedCount, making a module with one changed class but many @Nested tests
+			// appear more urgent than one with several changed outer classes (BUG-186).
+			Set<String> affectedOuterClasses = new java.util.LinkedHashSet<>();
 			List<Map.Entry<String, Integer>> testScores = new ArrayList<>();
 
 			for (String testClass : moduleTests) {
@@ -174,7 +180,9 @@ public final class ReactorOrderOperation {
 					// or flaky test earns from change-independent speed/failure bonuses. Otherwise
 					// a module of fast-but-unrelated tests would sort as "affected" and run first
 					// for an unrelated change (BUG-173).
-					affectedCount++;
+					// Collapse Outer$Inner → Outer so sibling @Nested classes count once (BUG-186).
+					int dollar = testClass.indexOf('$');
+					affectedOuterClasses.add(dollar > 0 ? testClass.substring(0, dollar) : testClass);
 				}
 				if (score > 0) {
 					// Sum only positive scores. Negative scores (e.g. the SLOW penalty) would
@@ -187,6 +195,7 @@ public final class ReactorOrderOperation {
 					maxScore = score;
 				}
 			}
+			int affectedCount = affectedOuterClasses.size();
 
 			// Top-N tests for display
 			List<String> topTests = testScores.stream().filter(e -> e.getValue() > 0)

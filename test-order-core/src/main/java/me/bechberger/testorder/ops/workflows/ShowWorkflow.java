@@ -465,7 +465,11 @@ public final class ShowWorkflow {
 		List<ModuleAggregate> aggregates = new ArrayList<>();
 		for (Map.Entry<String, List<OrderReportPrinter.RankedTest>> entry : byModule.entrySet()) {
 			List<OrderReportPrinter.RankedTest> tests = entry.getValue();
-			int affected = 0;
+			// Collapse Outer$Nested → Outer before counting affected tests. The dep map
+			// indexes @Nested inner classes as separate Outer$Inner entries, but Surefire
+			// runs only the outer class as a single task. Counting each inner class
+			// separately inflates affectedCount and skews module priority (BUG-186).
+			Set<String> affectedOuters = new java.util.LinkedHashSet<>();
 			long sum = 0;
 			int max = 0;
 			for (OrderReportPrinter.RankedTest rt : tests) {
@@ -474,7 +478,8 @@ public final class ShowWorkflow {
 					// "affected" means genuinely impacted by the change (dep/static/complexity
 					// overlap, changed test, or new) — NOT merely a positive score, which a fast
 					// or flaky test earns from change-independent speed/failure bonuses (BUG-173).
-					affected++;
+					int dollar = rt.name().indexOf('$');
+					affectedOuters.add(dollar > 0 ? rt.name().substring(0, dollar) : rt.name());
 				}
 				if (s > 0) {
 					// Sum only positive scores. Negative SLOW penalties on otherwise unaffected
@@ -485,7 +490,7 @@ public final class ShowWorkflow {
 					max = s;
 				}
 			}
-			aggregates.add(new ModuleAggregate(entry.getKey(), tests, affected, sum, max));
+			aggregates.add(new ModuleAggregate(entry.getKey(), tests, affectedOuters.size(), sum, max));
 		}
 		aggregates.sort(ModuleAggregate::compareByPriority);
 

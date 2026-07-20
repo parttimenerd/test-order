@@ -130,4 +130,53 @@ class ReactorOrderOperationTest {
 
 		assertEquals(0, moduleB.totalTestCount(), "truly empty module must have totalTestCount=0");
 	}
+
+	/**
+	 * BUG-186: {@code @Nested} inner test classes (e.g. {@code OuterTest$Inner1})
+	 * are separate entries in the dep map. If both inner siblings are change-
+	 * affected, they used to inflate {@code affectedCount} from 1 (one Surefire
+	 * task: {@code OuterTest}) to 2. The fix collapses {@code Outer$Inner → Outer}
+	 * before counting, so sibling inner classes of the same outer test count as a
+	 * single affected task.
+	 */
+	@Test
+	void nestedTestSiblings_countedOnceInAffectedCount() throws IOException {
+		// Dep map: OuterTest$Inner1 and OuterTest$Inner2 both depend on changed class
+		DependencyMap map = new DependencyMap();
+		map.put("com.a.OuterTest$Inner1", Set.of("app.ChangedService"));
+		map.put("com.a.OuterTest$Inner2", Set.of("app.ChangedService"));
+		map.put("com.b.UnrelatedTest", Set.of("app.OtherService"));
+		Path indexFile = tempDir.resolve("index2.lz4");
+		map.save(indexFile);
+		Path stateFile = tempDir.resolve("state2.lz4");
+
+		Path moduleADir = tempDir.resolve("module-a2");
+		createFakeClassFile(moduleADir, "com.a.OuterTest$Inner1");
+		createFakeClassFile(moduleADir, "com.a.OuterTest$Inner2");
+
+		Path moduleBDir = tempDir.resolve("module-b2");
+		createFakeClassFile(moduleBDir, "com.b.UnrelatedTest");
+
+		Map<String, Path> moduleTestDirs = new LinkedHashMap<>();
+		moduleTestDirs.put("g:module-a", moduleADir);
+		moduleTestDirs.put("g:module-b", moduleBDir);
+
+		// changedClasses includes the service both nested classes depend on
+		ReactorOrderInput input = new ReactorOrderInput(indexFile, stateFile, Set.of("app.ChangedService"), Set.of(),
+				moduleTestDirs, null, 5, noopLog());
+		ReactorOrderResult result = ReactorOrderOperation.compute(input);
+
+		ModuleScore moduleA = result.moduleScores().stream().filter(m -> m.moduleId().equals("g:module-a")).findFirst()
+				.orElseThrow();
+		ModuleScore moduleB = result.moduleScores().stream().filter(m -> m.moduleId().equals("g:module-b")).findFirst()
+				.orElseThrow();
+
+		// module-a has 2 inner test classes both affected, but only 1 outer class →
+		// affectedCount must be 1, not 2 (BUG-186)
+		assertEquals(1, moduleA.affectedTestCount(),
+				"two @Nested siblings of the same outer class must count as 1 affected task (BUG-186)");
+
+		// module-b has 1 test, unrelated to the changed class → 0 affected
+		assertEquals(0, moduleB.affectedTestCount(), "unrelated module must have 0 affected tests");
+	}
 }
