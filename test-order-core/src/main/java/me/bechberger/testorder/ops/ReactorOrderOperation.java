@@ -146,7 +146,12 @@ public final class ReactorOrderOperation {
 			Set<String> moduleTests = moduleDepMap.testClasses();
 
 			if (moduleTests.isEmpty()) {
-				moduleScores.add(new ModuleScore(moduleId, 0, 0, 0, 0, List.of()));
+				// The dep map has no entries for this module yet (module not yet learned).
+				// Use onDiskTests.size() as totalTestCount so consumers can distinguish
+				// between "module truly empty" (onDiskTests.isEmpty(), caught above) and
+				// "module has unlearned tests" — the operator can see the module has N
+				// compiled test classes and take action (e.g. run a learn pass). (BUG-185)
+				moduleScores.add(new ModuleScore(moduleId, 0, 0, 0, onDiskTests.size(), List.of()));
 				continue;
 			}
 

@@ -666,6 +666,34 @@ class DepsAndScoringTest {
 		assertEquals(0.0, foo.depOverlapBonus(), 0.001, "depOverlap should be zero in set-cover mode");
 	}
 
+	@Test
+	void methodScorerSetCoverBonusUsesNestedClassFallback() {
+		// BUG-195: computeSetCoverBonuses used changedClasses::contains (plain set
+		// lookup) instead of DependencyMap.changedClassesContains(), so a dep on
+		// "app.X$Builder" would NOT produce a coverage bonus when the changed class is
+		// "app.X". This test verifies the fix.
+		TestOrderState state = new TestOrderState();
+		DependencyMap depMap = new DependencyMap();
+		// testFoo depends on the inner class "app.X$Builder"; changedClass is "app.X"
+		depMap.putMethodDeps("com.A#testFoo", Set.of("app.X$Builder", "app.Y"));
+		depMap.putMethodDeps("com.A#testBar", Set.of("app.Z"));
+
+		var weights = new TestOrderState.MethodScoringWeights(0, 0, 0, 0, 0, 0, 5.0);
+		// Only "app.X" is changed; testFoo's dep "app.X$Builder" must match via the
+		// nested-class fallback.
+		MethodScorer scorer = new MethodScorer(weights, state, depMap, Set.of("app.X"), null);
+
+		var results = scorer.score(List.of(new MethodScorer.MethodMetadata("com.A", "testFoo", 100, null),
+				new MethodScorer.MethodMetadata("com.A", "testBar", 100, null)));
+
+		var foo = results.stream().filter(r -> r.methodName().equals("testFoo")).findFirst().orElseThrow();
+		var bar = results.stream().filter(r -> r.methodName().equals("testBar")).findFirst().orElseThrow();
+
+		assertTrue(foo.coverageBonus() > 0,
+				"testFoo depends on app.X$Builder which must match changed app.X via nested-class fallback (BUG-195)");
+		assertEquals(0.0, bar.coverageBonus(), 0.001, "testBar deps do not overlap with changed classes");
+	}
+
 	// ═══════════════════════════════════════════════════════════════════
 	// DependencyMap edge cases
 	// ═══════════════════════════════════════════════════════════════════
