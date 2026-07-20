@@ -203,11 +203,25 @@ public class MethodScorer {
 		if (methodDeps == null || methodDeps.isEmpty()) {
 			return 0.0;
 		}
-		long intersectionSize = 0;
+		// BUG-196: count the number of *changed classes* covered, not the number of
+		// matching deps. Multiple deps of the form "com.Foo$Bar" and "com.Foo$Baz"
+		// both resolve to the same changed outer class "com.Foo" and must count as
+		// one (consistent with class-level scoring via computeOverlapClasses()).
+		Set<String> coveredChangedClasses = new java.util.HashSet<>();
 		for (String dep : methodDeps) {
-			if (DependencyMap.changedClassesContains(changedClasses, dep))
-				intersectionSize++;
+			if (changedClasses.contains(dep)) {
+				coveredChangedClasses.add(dep);
+			} else {
+				int dollar = dep.indexOf('$');
+				if (dollar > 0) {
+					String outer = dep.substring(0, dollar);
+					if (changedClasses.contains(outer)) {
+						coveredChangedClasses.add(outer);
+					}
+				}
+			}
 		}
+		int intersectionSize = coveredChangedClasses.size();
 		if (intersectionSize == 0)
 			return 0.0;
 		double normalized = intersectionSize / Math.sqrt(Math.max(methodDeps.size(), TestScorer.MIN_DEPS_DENOMINATOR));
