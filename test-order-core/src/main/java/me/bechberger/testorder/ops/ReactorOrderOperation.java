@@ -157,13 +157,20 @@ public final class ReactorOrderOperation {
 				TestScorer.ScoreResult result = scorer.score(testClass);
 				int score = result.score();
 				testScores.add(Map.entry(testClass, score));
-				if (score > 0) {
-					// Only positive scores contribute to module urgency. Negative scores (e.g.
-					// the SLOW penalty) would otherwise drag the module sum below zero on
-					// modules dominated by slow but unaffected tests, producing misleading
-					// "sum=-1" output and inverted priority.
-					sumScores += score;
+				if (result.isChangeAffected()) {
+					// "affected" means genuinely impacted by the change (dep/static/complexity
+					// overlap, changed test, or new) — NOT merely a positive score, which a fast
+					// or flaky test earns from change-independent speed/failure bonuses. Otherwise
+					// a module of fast-but-unrelated tests would sort as "affected" and run first
+					// for an unrelated change (BUG-173).
 					affectedCount++;
+				}
+				if (score > 0) {
+					// Sum only positive scores. Negative scores (e.g. the SLOW penalty) would
+					// otherwise drag the module sum below zero on modules dominated by slow but
+					// unaffected tests, producing misleading "sum=-1" output and inverted
+					// priority.
+					sumScores += score;
 				}
 				if (score > maxScore) {
 					maxScore = score;

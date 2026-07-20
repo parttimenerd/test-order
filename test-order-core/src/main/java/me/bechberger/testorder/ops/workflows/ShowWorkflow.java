@@ -461,10 +461,15 @@ public final class ShowWorkflow {
 			int max = 0;
 			for (OrderReportPrinter.RankedTest rt : tests) {
 				int s = rt.score().score();
-				if (s > 0) {
-					// Only positive scores feed urgency. Negative SLOW penalties on otherwise
-					// unaffected tests would produce misleading "sum=-1" headers.
+				if (rt.score().isChangeAffected()) {
+					// "affected" means genuinely impacted by the change (dep/static/complexity
+					// overlap, changed test, or new) — NOT merely a positive score, which a fast
+					// or flaky test earns from change-independent speed/failure bonuses (BUG-173).
 					affected++;
+				}
+				if (s > 0) {
+					// Sum only positive scores. Negative SLOW penalties on otherwise unaffected
+					// tests would produce misleading "sum=-1" headers.
 					sum += s;
 				}
 				if (s > max) {
