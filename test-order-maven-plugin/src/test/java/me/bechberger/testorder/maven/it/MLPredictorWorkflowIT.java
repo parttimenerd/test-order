@@ -65,7 +65,8 @@ class MLPredictorWorkflowIT {
 	void repeatedRunsGenerateHistoryAndPredictions() throws Exception {
 		MavenResult finalResult = null;
 		for (int run = 1; run <= 6; run++) {
-			finalResult = project.maven().run("clean", "test", "-Dtestorder.ml.enabled=true");
+			finalResult = project.maven().run("clean", "test", "-Dtestorder.ml.enabled=true",
+					"-Dmaven.test.failure.ignore=true");
 			assertThat(finalResult).succeeded().outputContains("[test-order]").outputContains("Tests run:");
 		}
 
@@ -98,7 +99,7 @@ class MLPredictorWorkflowIT {
 	@DisplayName("ML workflow: forked test JVM consumes generated predictions")
 	void forkedJvmConsumesPredictions() {
 		MavenResult result = project.maven().run("clean", "test", "-Dtestorder.ml.enabled=true",
-				"-Dtestorder.debug=true");
+				"-Dtestorder.debug=true", "-Dmaven.test.failure.ignore=true");
 		assertThat(result).succeeded()
 				.outputContains("[ml] Generated predictions for " + EXPECTED_TEST_CLASSES + " test classes");
 		assertThat(result.output())

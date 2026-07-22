@@ -29,7 +29,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 class NestedTieredWorkflowIT {
 
 	private static final String VALIDATOR = "com.myapp.Validator";
-	private static final String NESTED_TEST = "com.myapp.ValidatorParameterizedClassTest$AgeValidation";
+	private static final String NESTED_TEST = "com.myapp.ValidatorParameterizedClassTest";
 
 	private TestProject project;
 

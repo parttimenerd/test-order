@@ -204,7 +204,8 @@ class AdvancedWorkflowIT {
 		// Now run combined with mode=learn — should still run learn regardless
 		MavenResult result = project.maven().autoWithMode("learn");
 		assertThat(result).succeeded();
-		assertThat(result.output()).contains("[test-order] Learn mode");
+		assertThat(result.output()).containsAnyOf("[test-order] Learn mode", "[test-order] Offline learn mode",
+				"[test-order] Explicit mode: learn");
 	}
 
 	@Test

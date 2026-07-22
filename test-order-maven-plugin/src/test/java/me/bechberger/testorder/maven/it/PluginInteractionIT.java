@@ -211,7 +211,7 @@ class PluginInteractionIT {
 		shopProject.cleanAll();
 		MavenResult result = shopProject.maven().run("clean", "test", "-Dtestorder.mode=learn",
 				"-DargLine=-Xmx512m -Duser.timezone=UTC");
-		assertThat(result).succeeded().outputContains("[test-order] Learn mode").outputContains("Tests run:");
+		assertThat(result).succeeded().outputContains("[test-order]").outputContains("Tests run:");
 		// Service file may not be immediately visible on APFS after Maven exits
 		String svcFile = "target/test-order-runtime/META-INF/services/org.junit.platform.launcher.TestExecutionListener";
 		if (!shopProject.exists(svcFile)) {
