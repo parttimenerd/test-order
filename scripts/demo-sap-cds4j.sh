@@ -96,7 +96,7 @@ type_cmd "ls -lh .test-order/test-dependencies.lz4"
 pause 1
 
 step "Show the prioritised test order (no changed classes → score by history & speed):"
-type_cmd "mvn me.bechberger:test-order-maven-plugin:show ${MVN_ARGS[*]}"
+type_cmd "mvn me.bechberger:test-order-maven-plugin:show ${MVN_ARGS[*]} 2>&1 | grep -v '^WARNING:'"
 pause 1.5
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -180,8 +180,8 @@ banner "Summary"
 # Extract timing numbers from logs if available
 FULL_TIME=$(grep "Total time:" "$BUG_LOG" 2>/dev/null | tail -1 | sed 's/.*Total time:[ ]*//' || echo "~17 s")
 SA_TIME=$(grep "Total time:" "$SA_LOG"  2>/dev/null | tail -1 | sed 's/.*Total time:[ ]*//' || echo "~10 s")
-# Count selected classes from the topN run: look for "Tests run:" aggregate line
-SELECTED=$(grep -oE "Tests run: [0-9]+" "$BUG_LOG" 2>/dev/null | tail -1 | grep -oE "[0-9]+" || echo "3")
+# Count selected test classes: read from the show log's "affected=N" header
+SELECTED=$(grep -oE 'affected=[0-9]+' "$LOG_DIR/show.log" 2>/dev/null | head -1 | grep -oE '[0-9]+' || echo "3")
 
 cat <<EOF
 
