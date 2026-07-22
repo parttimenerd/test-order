@@ -65,13 +65,13 @@
         <dependency>
             <groupId>org.pitest</groupId>
             <artifactId>pitest-entry</artifactId>
-            <version>1.25.5</version>
+            <version>1.25.7</version>
             <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.pitest</groupId>
             <artifactId>pitest</artifactId>
-            <version>1.25.5</version>
+            <version>1.25.7</version>
             <optional>true</optional>
         </dependency>
         <dependency>
