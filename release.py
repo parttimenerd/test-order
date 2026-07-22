@@ -1,671 +1,366 @@
 #!/usr/bin/env python3
-"""
-Bump test-order version and prepare a release.
+"""release.py — version bump and release helper for test-order.
 
-This script:
-1. Reads current version from root pom.xml
-2. Bumps major/minor/patch version (release version, without -SNAPSHOT)
-3. Rolls CHANGELOG.md Unreleased into a versioned entry
-4. Updates version references in root/module/sample POMs and README.md
-5. Runs checks/builds
-6. Optionally deploys artifacts
-7. Commits, tags, and optionally pushes
-8. Optionally creates a GitHub release
+Usage:
+  python3 release.py              # bump minor (default), prompt before push
+  python3 release.py --patch      # bump patch
+  python3 release.py --major      # bump major
+  python3 release.py --version 1.2.3   # set explicit version
+  python3 release.py --dry-run    # show what would change, write nothing
+  python3 release.py --no-push    # commit + tag locally, don't push
+  python3 release.py --skip-tests # skip mvn test before committing
+  python3 release.py bump         # update files + changelog only, no git
+  python3 release.py changelog    # preview the CHANGELOG update
 
-It also supports --github-release-only to create a release for the current
-version without editing files.
+Releasing pushes main + the vX.Y.Z tag, which triggers release.yml → Maven
+Central publish. The script never deploys directly.
 """
 
 from __future__ import annotations
 
 import argparse
-from datetime import date
 import re
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 
-class ReleaseManager:
-    EMPTY_CHANGELOG_HEADINGS = {
-        "### Added",
-        "### Changed",
-        "### Deprecated",
-        "### Removed",
-        "### Fixed",
-        "### Security",
-    }
+ROOT = Path(__file__).resolve().parent
 
-    def __init__(self, project_root: Path):
-        self.project_root = project_root
-        self.root_pom = project_root / "pom.xml"
-        self.readme = project_root / "README.md"
-        self.changelog = project_root / "CHANGELOG.md"
+# ---------------------------------------------------------------------------
+# Version helpers
+# ---------------------------------------------------------------------------
 
-        self.module_poms = self._discover_module_poms()
-        self.sample_poms = self._discover_sample_poms()
-        self._release_files: List[Path] = [
-            self.root_pom,
-            self.readme,
-            self.changelog,
-            *self.module_poms,
-            *self.sample_poms,
-            *self._discover_doc_files(),
-        ]
+def _current_version() -> str:
+    text = (ROOT / "pom.xml").read_text()
+    m = re.search(r"<version>(\d+\.\d+\.\d+)</version>", text)
+    if not m:
+        sys.exit("ERROR: cannot parse release version from pom.xml")
+    return m.group(1)
 
-    def _discover_doc_files(self) -> List[Path]:
-        docs_dir = self.project_root / "docs"
-        if not docs_dir.is_dir():
-            return []
-        return list(docs_dir.rglob("*.md"))
+def _bump(v: str, kind: str) -> str:
+    major, minor, patch = (int(x) for x in v.split("."))
+    if kind == "major": return f"{major + 1}.0.0"
+    if kind == "minor": return f"{major}.{minor + 1}.0"
+    return f"{major}.{minor}.{patch + 1}"
 
-    def _discover_module_poms(self) -> List[Path]:
-        content = self.root_pom.read_text(encoding="utf-8")
-        modules = re.findall(r"<module>([^<]+)</module>", content)
-        poms: List[Path] = []
-        for module in modules:
-            pom = self.project_root / module / "pom.xml"
-            if pom.exists():
-                poms.append(pom)
-        return poms
+def _validate_semver(v: str):
+    if not re.fullmatch(r"\d+\.\d+\.\d+", v):
+        sys.exit(f"ERROR: '{v}' is not a valid X.Y.Z version")
 
-    def _discover_sample_poms(self) -> List[Path]:
-        """Find sample and fixture POMs that reference test-order artifacts."""
-        poms: List[Path] = []
-        for search_dir in (self.project_root / "samples", self.project_root / "test-fixtures"):
-            if search_dir.is_dir():
-                for pom in search_dir.rglob("pom.xml"):
-                    content = pom.read_text(encoding="utf-8")
-                    if "me.bechberger" in content:
-                        poms.append(pom)
-        return poms
 
-    def get_current_version(self) -> str:
-        content = self.root_pom.read_text(encoding="utf-8")
-        match = re.search(r"<version>([^<]+)</version>", content)
-        if not match:
-            raise ValueError("Could not find version in root pom.xml")
-        return match.group(1)
+# ---------------------------------------------------------------------------
+# File scanning
+# ---------------------------------------------------------------------------
 
-    @staticmethod
-    def to_base_version(version: str) -> str:
-        return version[:-9] if version.endswith("-SNAPSHOT") else version
+_IGNORE_DIRS = {"third-party", "target", "build", ".git", "node_modules"}
 
-    @staticmethod
-    def parse_version(version: str) -> Tuple[int, int, int]:
-        parts = version.split(".")
-        if len(parts) == 2:
-            return int(parts[0]), int(parts[1]), 0
-        if len(parts) == 3:
-            return int(parts[0]), int(parts[1]), int(parts[2])
-        raise ValueError(f"Unsupported version format: {version}")
+# Directories that should never be bumped even if they contain matching version strings
+_SKIP_DIRS = _IGNORE_DIRS | {"femtojar"}
 
-    def bump_version(self, current: str, bump: str) -> str:
-        major, minor, patch = self.parse_version(self.to_base_version(current))
-        if bump == "major":
-            return f"{major + 1}.0.0"
-        if bump == "minor":
-            return f"{major}.{minor + 1}.0"
-        if bump == "patch":
-            return f"{major}.{minor}.{patch + 1}"
-        raise ValueError(f"Unknown bump kind: {bump}")
+def _pom_files() -> list[Path]:
+    return [
+        p for p in ROOT.rglob("pom.xml")
+        if not any(part in _SKIP_DIRS for part in p.parts)
+    ]
 
-    def update_root_pom_version(self, old: str, new: str) -> None:
-        content = self.root_pom.read_text(encoding="utf-8")
-        updated = content.replace(f"<version>{old}</version>", f"<version>{new}</version>", 1)
-        self.root_pom.write_text(updated, encoding="utf-8")
+def _gradle_files() -> list[Path]:
+    return [
+        p for p in ROOT.rglob("*")
+        if p.suffix in (".gradle", ".kts")
+        and not any(part in _SKIP_DIRS for part in p.parts)
+    ]
 
-    def update_module_parent_versions(self, old: str, new: str) -> None:
-        pattern = (
-            r"(<parent>\s*"
-            r"<groupId>me\.bechberger</groupId>\s*"
-            r"<artifactId>test-order-parent</artifactId>\s*"
-            r"<version>)" + re.escape(old) + r"(</version>)"
-        )
-        for pom in self.module_poms:
-            content = pom.read_text(encoding="utf-8")
-            updated = re.sub(pattern, r"\g<1>" + new + r"\g<2>", content, flags=re.DOTALL)
-            pom.write_text(updated, encoding="utf-8")
+def _doc_files() -> list[Path]:
+    return [
+        p for p in ROOT.rglob("*")
+        if p.suffix in (".md", ".mdx", ".sh", ".jsx", ".tsx", ".java")
+        and not any(part in _SKIP_DIRS for part in p.parts)
+    ]
 
-    def update_readme_versions(self, old: str, new: str) -> None:
-        if not self.readme.exists():
-            return
-        content = self.readme.read_text(encoding="utf-8")
-        content = self._replace_version_strings(content, old, new)
-        self.readme.write_text(content, encoding="utf-8")
 
-    def update_docs_versions(self, old: str, new: str) -> None:
-        """Update test-order version references in docs/ markdown files."""
-        docs_dir = self.project_root / "docs"
-        if not docs_dir.is_dir():
-            return
-        for md in docs_dir.rglob("*.md"):
-            content = md.read_text(encoding="utf-8")
-            updated = self._replace_version_strings(content, old, new)
-            if updated != content:
-                md.write_text(updated, encoding="utf-8")
+# ---------------------------------------------------------------------------
+# Bump logic
+# ---------------------------------------------------------------------------
 
-    def _replace_version_strings(self, content: str, old: str, new: str) -> str:
-        """Replace test-order version strings (Maven <version>, Gradle plugin version, classpath).
+# Anchors that must appear near a version string for it to be a test-order ref.
+# Used for POMs to avoid bumping unrelated <version> tags that happen to match.
+_POM_ANCHORS = re.compile(
+    r"me\.bechberger|test-order|testorder",
+    re.IGNORECASE,
+)
 
-        Only replaces <version> tags that are in me.bechberger contexts.
-        """
-        base_old = self.to_base_version(old)
-        versions_to_replace = [old]
-        if base_old != old:
-            versions_to_replace.append(base_old)
-        for ver in versions_to_replace:
-            # Maven: <version> after me.bechberger groupId
-            pattern = (
-                r"(<groupId>me\.bechberger</groupId>\s*"
-                r"<artifactId>[^<]+</artifactId>\s*"
-                r"<version>)" + re.escape(ver) + r"(</version>)"
-            )
-            content = re.sub(pattern, r"\g<1>" + new + r"\g<2>", content, flags=re.DOTALL)
-            # Property-style version in docs
-            content = content.replace(
-                f"<test-order.version>{ver}</test-order.version>",
-                f"<test-order.version>{new}</test-order.version>",
-            )
-            # Gradle plugin DSL
-            content = content.replace(
-                f"'me.bechberger.test-order' version '{ver}'",
-                f"'me.bechberger.test-order' version '{new}'",
-            )
-            content = content.replace(
-                f'"me.bechberger.test-order") version "{ver}"',
-                f'"me.bechberger.test-order") version "{new}"',
-            )
-            # Gradle classpath
-            content = content.replace(
-                f"test-order-gradle-plugin:{ver}",
-                f"test-order-gradle-plugin:{new}",
-            )
-            content = content.replace(
-                f"test-order-maven-plugin:{ver}",
-                f"test-order-maven-plugin:{new}",
-            )
-        return content
+def _pom_wants_bump(text: str, old: str) -> bool:
+    """True if the POM file should have `old` replaced.
 
-    def _doc_files(self) -> List[str]:
-        """Return relative paths of docs files that contain version references."""
-        docs_dir = self.project_root / "docs"
-        if not docs_dir.is_dir():
-            return []
-        return [str(md.relative_to(self.project_root)) for md in docs_dir.rglob("*.md")]
+    A POM should be bumped if:
+    - It is a test-order module POM (contains test-order-parent as parent), OR
+    - It references a me.bechberger/test-order artifact near the version string.
+    """
+    return bool(_POM_ANCHORS.search(text))
 
-    def sync_docs_to_version(self, target_version: str) -> List[str]:
-        """Find stale version references in README and docs, update them to target_version.
+def bump_files(old: str, new: str, dry: bool = False) -> list[str]:
+    """Replace version strings in all tracked files.
 
-        Returns list of relative paths of files that were updated.
-        """
-        # Pattern to detect any me.bechberger version string (x.y.z or x.y.z-SNAPSHOT)
-        version_re = re.compile(r"\d+\.\d+\.\d+(?:-SNAPSHOT)?")
-        updated_files: List[str] = []
+    For POMs, only bumps files that reference test-order artifacts.
+    For Gradle/doc files, does a plain string replace (version is unique enough).
+    Returns sorted list of relative paths of changed files.
+    """
+    changed: list[str] = []
 
-        files_to_check: List[Path] = []
-        if self.readme.exists():
-            files_to_check.append(self.readme)
-        docs_dir = self.project_root / "docs"
-        if docs_dir.is_dir():
-            files_to_check.extend(docs_dir.rglob("*.md"))
+    for p in _pom_files():
+        text = p.read_text()
+        if old not in text:
+            continue
+        if not _pom_wants_bump(text, old):
+            continue
+        rel = str(p.relative_to(ROOT))
+        if not dry:
+            p.write_text(text.replace(old, new))
+        changed.append(rel)
 
-        for filepath in files_to_check:
-            content = filepath.read_text(encoding="utf-8")
-            new_content = content
-            # Find versions in me.bechberger contexts
-            for old_ver in set(version_re.findall(content)):
-                if old_ver == target_version:
-                    continue
-                # Only replace if it appears in a test-order context
-                candidate = self._replace_version_strings(new_content, old_ver, target_version)
-                if candidate != new_content:
-                    new_content = candidate
-            if new_content != content:
-                filepath.write_text(new_content, encoding="utf-8")
-                updated_files.append(str(filepath.relative_to(self.project_root)))
+    for p in _gradle_files() + _doc_files():
+        text = p.read_text()
+        if old not in text:
+            continue
+        rel = str(p.relative_to(ROOT))
+        if not dry:
+            p.write_text(text.replace(old, new))
+        changed.append(rel)
 
-        return updated_files
+    return sorted(set(changed))
 
-    def update_sample_versions(self, old: str, new: str) -> None:
-        """Update test-order version references in sample/fixture POMs (scoped to me.bechberger)."""
-        base_old = self.to_base_version(old)
-        versions_to_replace = [old]
-        if base_old != old:
-            versions_to_replace.append(base_old)
-        for pom in self.sample_poms:
-            content = pom.read_text(encoding="utf-8")
-            for ver in versions_to_replace:
-                # Replace version in dependency/plugin blocks with me.bechberger groupId
-                pattern = (
-                    r"(<groupId>me\.bechberger</groupId>\s*"
-                    r"<artifactId>[^<]+</artifactId>\s*"
-                    r"<version>)" + re.escape(ver) + r"(</version>)"
-                )
-                content = re.sub(pattern, r"\g<1>" + new + r"\g<2>", content, flags=re.DOTALL)
-                # Also replace parent version referencing test-order-parent
-                parent_pattern = (
-                    r"(<parent>\s*"
-                    r"<groupId>me\.bechberger</groupId>\s*"
-                    r"<artifactId>test-order-parent</artifactId>\s*"
-                    r"<version>)" + re.escape(ver) + r"(</version>)"
-                )
-                content = re.sub(parent_pattern, r"\g<1>" + new + r"\g<2>", content, flags=re.DOTALL)
-            pom.write_text(content, encoding="utf-8")
 
-    def update_changelog_for_release(self, new_version: str) -> None:
-        if not self.changelog.exists():
-            raise FileNotFoundError("CHANGELOG.md not found")
+# ---------------------------------------------------------------------------
+# CHANGELOG
+# ---------------------------------------------------------------------------
 
-        content = self.changelog.read_text(encoding="utf-8")
+_EMPTY_HEADINGS = {
+    "### Breaking", "### Added", "### Changed", "### Deprecated",
+    "### Removed", "### Fixed", "### Security",
+}
 
-        if "## [Unreleased]" not in content:
-            raise ValueError("CHANGELOG.md must contain a '## [Unreleased]' section")
+def _unreleased_body() -> str:
+    text = (ROOT / "CHANGELOG.md").read_text()
+    m = re.search(r"## \[Unreleased\]\s*\n(.*?)(?=\n## \[|\Z)", text, re.DOTALL)
+    return m.group(1).strip() if m else ""
 
-        lines = content.splitlines()
-        unreleased_idx = next((i for i, line in enumerate(lines) if line.strip() == "## [Unreleased]"), None)
-        if unreleased_idx is None:
-            raise ValueError("CHANGELOG.md must contain a '## [Unreleased]' section")
+def _has_content(body: str) -> bool:
+    return any(
+        l.strip() and l.strip() not in _EMPTY_HEADINGS
+        for l in body.splitlines()
+    )
 
-        next_section_idx = len(lines)
-        for idx in range(unreleased_idx + 1, len(lines)):
-            if lines[idx].startswith("## "):
-                next_section_idx = idx
-                break
+def validate_changelog() -> bool:
+    body = _unreleased_body()
+    if not _has_content(body):
+        print("ERROR: CHANGELOG.md [Unreleased] has no content.")
+        print("Add your changes there before releasing.")
+        return False
+    return True
 
-        unreleased_body = "\n".join(lines[unreleased_idx + 1:next_section_idx]).strip()
-        if self._is_unreleased_body_empty(unreleased_body):
-            raise ValueError("CHANGELOG.md Unreleased section is empty; add release notes before releasing")
+_NEW_UNRELEASED = (
+    "## [Unreleased]\n\n"
+    "### Breaking\n### Added\n### Changed\n"
+    "### Deprecated\n### Removed\n### Fixed\n### Security\n"
+)
 
-        release_header = f"## [{new_version}] - {date.today().isoformat()}"
-        unreleased_template = "\n".join([
-            "### Breaking",
-            "### Added",
-            "### Changed",
-            "### Deprecated",
-            "### Removed",
-            "### Fixed",
-            "### Security",
-            "",
-        ])
+def update_changelog(new_version: str, dry: bool = False) -> str:
+    today = date.today().isoformat()
+    p = ROOT / "CHANGELOG.md"
+    text = p.read_text()
 
-        replacement = f"## [Unreleased]\n\n{unreleased_template}\n{release_header}"
-        updated = content.replace("## [Unreleased]", replacement, 1)
-        updated = self._update_changelog_compare_links(updated, new_version)
-        self.changelog.write_text(updated, encoding="utf-8")
+    text = re.sub(
+        r"## \[Unreleased\]",
+        f"{_NEW_UNRELEASED}\n## [{new_version}] - {today}",
+        text, count=1,
+    )
 
-    @staticmethod
-    def _update_changelog_compare_links(content: str, new_version: str) -> str:
-        unreleased_link_re = re.compile(
-            r"^\[Unreleased\]:\s+(?P<url>.+)/compare/v(?P<old>[\d.]+)\.\.\.HEAD\s*$",
-            re.MULTILINE,
-        )
-        match = unreleased_link_re.search(content)
-        if not match:
-            return content
-
-        base_url = match.group("url")
-        old_version = match.group("old")
+    # Rewrite comparison links
+    m = re.search(
+        r"\[Unreleased\]: (https://[^\s]+)/compare/v([\d.]+)\.\.\.HEAD",
+        text,
+    )
+    if m:
+        base_url, prev = m.group(1), m.group(2)
         new_links = (
             f"[Unreleased]: {base_url}/compare/v{new_version}...HEAD\n"
-            f"[{new_version}]: {base_url}/compare/v{old_version}...v{new_version}"
+            f"[{new_version}]: {base_url}/compare/v{prev}...v{new_version}"
         )
-        return unreleased_link_re.sub(new_links, content, count=1)
-
-    def preview_changelog_release(self, new_version: str) -> str:
-        if not self.changelog.exists():
-            return "- CHANGELOG.md not found"
-
-        lines = self.changelog.read_text(encoding="utf-8").splitlines()
-        unreleased_idx = next((i for i, line in enumerate(lines) if line.strip() == "## [Unreleased]"), None)
-        if unreleased_idx is None:
-            return "- CHANGELOG.md missing '## [Unreleased]' section"
-
-        next_section_idx = len(lines)
-        for idx in range(unreleased_idx + 1, len(lines)):
-            if lines[idx].startswith("## "):
-                next_section_idx = idx
-                break
-
-        body = "\n".join(lines[unreleased_idx + 1:next_section_idx]).strip()
-        if self._is_unreleased_body_empty(body):
-            return "- CHANGELOG.md Unreleased is empty"
-
-        return (
-            f"- CHANGELOG.md: create ## [{new_version}] - {date.today().isoformat()} from Unreleased notes\n"
-            "- CHANGELOG.md: reset Unreleased headings"
+        text = re.sub(
+            r"\[Unreleased\]: .+\n\[" + re.escape(prev) + r"\]: .+",
+            new_links, text,
         )
 
-    def _is_unreleased_body_empty(self, body: str) -> bool:
-        if not body:
-            return True
-
-        meaningful = []
-        for line in body.splitlines():
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped in self.EMPTY_CHANGELOG_HEADINGS:
-                continue
-            meaningful.append(stripped)
-        return len(meaningful) == 0
-
-    def snapshot_files(self) -> Dict[Path, str]:
-        snapshots: Dict[Path, str] = {}
-        for file in self._release_files:
-            if file.exists():
-                snapshots[file] = file.read_text(encoding="utf-8")
-        return snapshots
-
-    @staticmethod
-    def restore_snapshots(snapshots: Dict[Path, str]) -> None:
-        for path, content in snapshots.items():
-            path.write_text(content, encoding="utf-8")
-
-    def run_command(self, cmd: List[str], desc: str) -> None:
-        print(f"\n-> {desc}")
-        print("   $ " + " ".join(cmd))
-        result = subprocess.run(cmd, cwd=self.project_root)
-        if result.returncode != 0:
-            raise RuntimeError(f"Command failed: {' '.join(cmd)}")
-
-    def run_checks(self, include_its: bool) -> None:
-        self.run_command(["mvn", "test"], "Running unit tests")
-        if include_its:
-            self.run_command(
-                ["mvn", "verify", "-pl", "test-order-maven-plugin",
-                 "-Dtestorder.it=true"],
-                "Running integration tests",
-            )
-        self.run_command(["mvn", "-P", "release", "package", "-DskipTests"], "Building release artifacts")
-
-    def deploy(self) -> None:
-        self.run_command(["mvn", "clean", "deploy", "-P", "release"], "Deploying release")
-
-    def deploy_snapshot(self) -> None:
-        self.run_command(["mvn", "clean", "deploy", "-DskipTests"], "Deploying SNAPSHOT")
-
-    def update_gradle_plugin_version(self, old: str, new: str) -> None:
-        """Update version in the Gradle plugin build file and init script."""
-        gradle_build = self.project_root / "test-order-gradle-plugin" / "build.gradle.kts"
-        if gradle_build.exists():
-            content = gradle_build.read_text(encoding="utf-8")
-            updated = re.sub(
-                r'(version\s*=\s*")' + re.escape(old) + r'(")',
-                r'\g<1>' + new + r'\g<2>',
-                content,
-            )
-            gradle_build.write_text(updated, encoding="utf-8")
-
-        init_gradle = self.project_root / "test-order-gradle-plugin" / "test-order-init.gradle"
-        if init_gradle.exists():
-            content = init_gradle.read_text(encoding="utf-8")
-            updated = content.replace(
-                f"test-order-gradle-plugin:{old}",
-                f"test-order-gradle-plugin:{new}",
-            )
-            init_gradle.write_text(updated, encoding="utf-8")
-
-        # Update VERSION constant and test fixtures in Gradle plugin Java sources
-        gradle_src = self.project_root / "test-order-gradle-plugin" / "src"
-        if gradle_src.is_dir():
-            for java_file in gradle_src.rglob("*.java"):
-                content = java_file.read_text(encoding="utf-8")
-                updated = content.replace(
-                    f'VERSION = "{old}"', f'VERSION = "{new}"'
-                )
-                updated = updated.replace(
-                    f"'me.bechberger.test-order' version '{old}'",
-                    f"'me.bechberger.test-order' version '{new}'",
-                )
-                updated = updated.replace(
-                    f'"me.bechberger.test-order") version "{old}"',
-                    f'"me.bechberger.test-order") version "{new}"',
-                )
-                if updated != content:
-                    java_file.write_text(updated, encoding="utf-8")
-
-    def _gradle_plugin_files(self) -> List[str]:
-        """Return relative paths of Gradle plugin files managed by release."""
-        files: List[str] = []
-        for name in ("build.gradle.kts", "test-order-init.gradle"):
-            path = self.project_root / "test-order-gradle-plugin" / name
-            if path.exists():
-                files.append(str(path.relative_to(self.project_root)))
-        # Include Java sources that contain version constants
-        gradle_src = self.project_root / "test-order-gradle-plugin" / "src"
-        if gradle_src.is_dir():
-            for java_file in gradle_src.rglob("*.java"):
-                content = java_file.read_text(encoding="utf-8")
-                if 'VERSION = "' in content or "me.bechberger.test-order" in content:
-                    files.append(str(java_file.relative_to(self.project_root)))
-        return files
-
-    def git_commit_tag(self, version: str) -> None:
-        files = [
-            "pom.xml",
-            "README.md",
-            "CHANGELOG.md",
-            *[str(p.relative_to(self.project_root)) for p in self.module_poms],
-            *[str(p.relative_to(self.project_root)) for p in self.sample_poms],
-            *self._gradle_plugin_files(),
-            *self._doc_files(),
-        ]
-        self.run_command(["git", "add", *files], "Staging release files")
-        self.run_command(["git", "commit", "-m", f"Release {version}"], "Creating release commit")
-        self.run_command(["git", "tag", "-a", f"v{version}", "-m", f"Release {version}"], "Tagging release")
-
-    def bump_to_next_snapshot(self, release_version: str) -> None:
-        """Bump version to next SNAPSHOT after release."""
-        major, minor, patch = self.parse_version(release_version)
-        next_snapshot = f"{major}.{minor}.{patch + 1}-SNAPSHOT"
-        print(f"\n-> Bumping to next development version: {next_snapshot}")
-        self.update_root_pom_version(release_version, next_snapshot)
-        self.update_module_parent_versions(release_version, next_snapshot)
-        self.update_sample_versions(release_version, next_snapshot)
-        self.update_gradle_plugin_version(release_version, next_snapshot)
-        self.update_readme_versions(release_version, next_snapshot)
-        self.update_docs_versions(release_version, next_snapshot)
-        files = [
-            "pom.xml",
-            "README.md",
-            *[str(p.relative_to(self.project_root)) for p in self.module_poms],
-            *[str(p.relative_to(self.project_root)) for p in self.sample_poms],
-            *self._gradle_plugin_files(),
-            *self._doc_files(),
-        ]
-        self.run_command(["git", "add", *files], "Staging SNAPSHOT bump")
-        self.run_command(["git", "commit", "-m", f"Prepare next development iteration {next_snapshot}"],
-                        "Committing SNAPSHOT bump")
-
-    def git_push(self) -> None:
-        self.run_command(["git", "push"], "Pushing commits")
-        self.run_command(["git", "push", "--tags"], "Pushing tags")
-
-    def cleanup_git_release_state(self, version: str) -> None:
-        tag = f"v{version}"
-        print("\n-> Cleaning up local git release state")
-        subprocess.run(["git", "tag", "-d", tag], cwd=self.project_root,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # Undo up to 2 commits: snapshot bump + release commit
-        for expected_msg in (f"Prepare next development iteration", f"Release {version}"):
-            head = subprocess.run(
-                ["git", "log", "-1", "--pretty=%s"],
-                cwd=self.project_root,
-                capture_output=True,
-                text=True,
-            )
-            if head.returncode == 0 and head.stdout.strip().startswith(expected_msg):
-                subprocess.run(
-                    ["git", "reset", "--mixed", "HEAD~1"],
-                    cwd=self.project_root,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-
-    def get_version_changelog_entry(self, version: str) -> str:
-        if not self.changelog.exists():
-            return ""
-
-        content = self.changelog.read_text(encoding="utf-8")
-        match = re.search(
-            rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|$)",
-            content,
-            re.DOTALL,
-        )
-        if match:
-            return match.group(1).strip()
-        return ""
-
-    def create_github_release(self, version: str) -> None:
-        tag = f"v{version}"
-        changelog_entry = self.get_version_changelog_entry(version)
-        if not changelog_entry:
-            changelog_entry = (
-                f"Release {version}\n\n"
-                "See CHANGELOG.md for details."
-            )
-
-        release_notes = f"""{changelog_entry}
-
-## Maven
-
-```xml
-<plugin>
-  <groupId>me.bechberger</groupId>
-  <artifactId>test-order-maven-plugin</artifactId>
-  <version>{version}</version>
-  <executions>
-    <execution>
-      <goals>
-        <goal>prepare</goal>
-      </goals>
-    </execution>
-  </executions>
-</plugin>
-```
-"""
-
-        notes_file = self.project_root / ".release-notes.md"
-        notes_file.write_text(release_notes, encoding="utf-8")
-
-        try:
-            create_cmd = [
-                "gh", "release", "create", tag,
-                "--title", f"Release {version}",
-                "--notes-file", str(notes_file),
-            ]
-            self.run_command(create_cmd, "Creating GitHub release")
-        except Exception as exc:
-            print(f"Warning: Failed to create GitHub release: {exc}")
-            print("You can create it manually via GitHub Releases.")
-        finally:
-            if notes_file.exists():
-                notes_file.unlink()
+    if not dry:
+        p.write_text(text)
+    return text
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Release test-order")
-    parser.add_argument("--major", action="store_true", help="Bump major version")
-    parser.add_argument("--minor", action="store_true", help="Bump minor version (default)")
-    parser.add_argument("--patch", action="store_true", help="Bump patch version")
-    parser.add_argument("--no-its", action="store_true", help="Skip integration tests")
-    parser.add_argument("--no-push", action="store_true", help="Skip git push")
-    parser.add_argument("--no-github-release", action="store_true", help="Skip GitHub release creation")
-    parser.add_argument("--no-deploy", action="store_true", help="Skip deploy")
-    parser.add_argument("--github-release-only", action="store_true",
-                        help="Create GitHub release for current version only")
-    parser.add_argument("--snapshot", action="store_true",
-                        help="Deploy current SNAPSHOT version without bumping or releasing")
-    parser.add_argument("--dry-run", action="store_true", help="Show planned changes only")
-    return parser.parse_args()
+# ---------------------------------------------------------------------------
+# Git helpers
+# ---------------------------------------------------------------------------
+
+def _run(cmd: list, *, check: bool = True) -> subprocess.CompletedProcess:
+    print(f"  $ {' '.join(str(c) for c in cmd)}")
+    return subprocess.run(cmd, cwd=ROOT, check=check, text=True)
+
+def _git_clean() -> bool:
+    return subprocess.run(["git", "diff", "--quiet", "HEAD"], cwd=ROOT).returncode == 0
+
+def _git_branch() -> str:
+    return subprocess.check_output(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=ROOT
+    ).decode().strip()
+
+def git_commit(version: str):
+    print("\n→ Staging all changes")
+    _run(["git", "add", "-A"])
+    _run(["git", "commit", "-m", f"chore: release {version}"])
+
+def git_tag(version: str):
+    print(f"\n→ Creating annotated tag v{version}")
+    _run(["git", "tag", "-a", f"v{version}", "-m", f"Release {version}"])
+
+def git_push(version: str):
+    branch = _git_branch()
+    print(f"\n→ Pushing {branch} and tag v{version}")
+    _run(["git", "push", "origin", branch])
+    _run(["git", "push", "origin", f"v{version}"])
 
 
-def main() -> None:
-    args = parse_args()
-    root = Path(__file__).resolve().parent
-    manager = ReleaseManager(root)
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
-    current = manager.get_current_version()
-    current_base = manager.to_base_version(current)
+def run_tests():
+    print("\n→ Running mvn test ...")
+    _run(["mvn", "-B", "-ntp", "test"])
 
-    if args.github_release_only:
-        print(f"Creating GitHub release for current version: {current_base}")
-        manager.create_github_release(current_base)
-        print(f"GitHub release created for version {current_base}")
-        return
 
-    if args.snapshot:
-        if not current.endswith("-SNAPSHOT"):
-            print(f"Error: current version '{current}' is not a SNAPSHOT version.")
-            sys.exit(1)
-        print(f"Deploying SNAPSHOT: {current}")
-        # Synchronize docs/README to current version if stale
-        stale = manager.sync_docs_to_version(current)
-        if stale:
-            print(f"  Updated version references in: {', '.join(stale)}")
-        manager.deploy_snapshot()
-        print(f"\nSNAPSHOT {current} deployed successfully.")
-        return
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
-    bump = "minor"
-    if args.major:
-        bump = "major"
+def main():
+    parser = argparse.ArgumentParser(
+        description="test-order release helper",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("--patch",       action="store_true", help="Bump patch (0.0.x)")
+    parser.add_argument("--minor",       action="store_true", help="Bump minor (0.x.0) [default]")
+    parser.add_argument("--major",       action="store_true", help="Bump major (x.0.0)")
+    parser.add_argument("--version",     metavar="X.Y.Z",     help="Set explicit target version")
+    parser.add_argument("--no-push",     action="store_true", help="Commit + tag, but don't push")
+    parser.add_argument("--skip-tests",  action="store_true", help="Skip mvn test")
+    parser.add_argument("--dry-run",     action="store_true", help="Show changes, write nothing")
+
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("bump",      help="Bump files + changelog only (no git ops)")
+    sub.add_parser("changelog", help="Preview the CHANGELOG update")
+
+    args = parser.parse_args()
+    old = _current_version()
+
+    # Resolve target version
+    if args.version:
+        _validate_semver(args.version)
+        new = args.version
+        kind = "explicit"
+    elif args.major:
+        new = _bump(old, "major"); kind = "major"
     elif args.patch:
-        bump = "patch"
+        new = _bump(old, "patch"); kind = "patch"
+    else:
+        new = _bump(old, "minor"); kind = "minor"
 
-    new = manager.bump_version(current, bump)
-
-    print(f"Current version: {current}")
-    print(f"Next version:    {new}")
-
-    if args.dry_run:
-        print("\nDry run only. Files that would be updated:")
-        print("- pom.xml")
-        for pom in manager.module_poms:
-            print(f"- {pom.relative_to(root)}")
-        print("- README.md")
-        print("- CHANGELOG.md")
-        print(manager.preview_changelog_release(new))
+    # ── changelog preview ─────────────────────────────────────────────────
+    if args.cmd == "changelog":
+        print(f"CHANGELOG preview: {old} → {new}\n")
+        snippet = update_changelog(new, dry=True)
+        print("\n".join(snippet.splitlines()[:30]))
         return
 
-    snapshots = manager.snapshot_files()
-    created_git_release_state = False
-    try:
-        manager.update_changelog_for_release(new)
-        manager.update_root_pom_version(current, new)
-        manager.update_module_parent_versions(current, new)
-        manager.update_sample_versions(current, new)
-        manager.update_gradle_plugin_version(current, new)
-        manager.update_readme_versions(current, new)
-        manager.update_docs_versions(current, new)
+    # ── dry-run ───────────────────────────────────────────────────────────
+    if args.dry_run:
+        print(f"DRY RUN  {old} → {new}  ({kind})")
+        changed = bump_files(old, new, dry=True)
+        print(f"\n{len(changed)} file(s) would be updated:")
+        for f in changed:
+            print(f"  {f}")
+        if validate_changelog():
+            print("\nCHANGELOG (first 20 lines of updated file):")
+            snippet = update_changelog(new, dry=True)
+            print("\n".join(snippet.splitlines()[:20]))
+        print("\n(no files written)")
+        return
 
-        manager.run_checks(include_its=not args.no_its)
+    # ── validate ──────────────────────────────────────────────────────────
+    print(f"Releasing  {old} → {new}  ({kind})")
 
-        manager.git_commit_tag(new)
-        created_git_release_state = True
-
-        manager.bump_to_next_snapshot(new)
-
-        if not args.no_push:
-            manager.git_push()
-
-        if not args.no_deploy:
-            manager.deploy()
-
-        if not args.no_github_release:
-            manager.create_github_release(new)
-
-        print("\nRelease completed successfully.")
-        print(f"Version: {new}")
-    except Exception as exc:
-        manager.restore_snapshots(snapshots)
-        if created_git_release_state:
-            manager.cleanup_git_release_state(new)
-        print(f"\nRelease failed: {exc}")
-        print("Local release edits were reverted automatically.")
+    if not validate_changelog():
         sys.exit(1)
+
+    if not _git_clean():
+        print("ERROR: working tree has uncommitted changes. Commit or stash first.")
+        sys.exit(1)
+
+    branch = _git_branch()
+    if branch != "main":
+        print(f"WARNING: on branch '{branch}', not 'main'.")
+
+    # Confirm plan
+    print(f"\nPlan:")
+    print(f"  1. Bump all version strings  {old} → {new}")
+    print(f"  2. Update CHANGELOG.md")
+    if not args.skip_tests:
+        print(f"  3. Run mvn test")
+    print(f"  {'4' if not args.skip_tests else '3'}. git commit + tag v{new}")
+    if not args.no_push:
+        print(f"  {'5' if not args.skip_tests else '4'}. git push origin {branch} + v{new}")
+        print(f"       → triggers release.yml → Maven Central publish")
+    else:
+        print(f"  (--no-push: tag stays local)")
+
+    resp = input("\nContinue? [y/N] ").strip().lower()
+    if resp not in ("y", "yes"):
+        print("Aborted.")
+        sys.exit(0)
+
+    # ── bump files ────────────────────────────────────────────────────────
+    print(f"\n→ Bumping version strings")
+    changed = bump_files(old, new)
+    print(f"  Updated {len(changed)} file(s)")
+
+    # ── update CHANGELOG ──────────────────────────────────────────────────
+    print(f"\n→ Updating CHANGELOG.md")
+    update_changelog(new)
+
+    # ── bump subcommand: stop here ────────────────────────────────────────
+    if args.cmd == "bump":
+        print(f"\n✓ Files updated to {new}. No git operations performed.")
+        return
+
+    # ── local tests ───────────────────────────────────────────────────────
+    if not args.skip_tests:
+        run_tests()
+
+    # ── git ───────────────────────────────────────────────────────────────
+    git_commit(new)
+    git_tag(new)
+
+    if not args.no_push:
+        git_push(new)
+        print(f"\n✓ Released {new}.")
+        print(f"  CI:            https://github.com/parttimenerd/test-order/actions")
+        print(f"  Maven Central: https://central.sonatype.com/artifact/me.bechberger/test-order-maven-plugin/{new}")
+    else:
+        print(f"\n✓ Committed and tagged v{new} locally (--no-push).")
+        print(f"  When ready:")
+        print(f"    git push origin {branch}")
+        print(f"    git push origin v{new}")
 
 
 if __name__ == "__main__":
