@@ -5,23 +5,7 @@ import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
 import styles from '../pages/index.module.css';
 
-const MAVEN = `<!-- pom.xml — add the Sonatype snapshot repository -->
-<repositories>
-  <repository>
-    <id>ossrh-snapshots</id>
-    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
-    <snapshots><enabled>true</enabled></snapshots>
-  </repository>
-</repositories>
-<pluginRepositories>
-  <pluginRepository>
-    <id>ossrh-snapshots</id>
-    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
-    <snapshots><enabled>true</enabled></snapshots>
-  </pluginRepository>
-</pluginRepositories>
-
-<!-- pom.xml — add the plugin -->
+const MAVEN = `<!-- pom.xml — add the plugin -->
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
@@ -41,13 +25,9 @@ const MAVEN_SETTINGS = `<!-- ~/.m2/settings.xml — lets you use the short mvn t
   </pluginGroups>
 </settings>`;
 
-const GRADLE_GROOVY = `// settings.gradle — add the snapshot repository
+const GRADLE_GROOVY = `// settings.gradle
 pluginManagement {
     repositories {
-        maven {
-            url 'https://central.sonatype.com/repository/maven-snapshots/'
-            mavenContent { snapshotsOnly() }
-        }
         gradlePluginPortal()
     }
 }
@@ -57,13 +37,9 @@ plugins {
     id 'me.bechberger.test-order' version '0.1.0'
 }`;
 
-const GRADLE_KOTLIN = `// settings.gradle.kts — add the snapshot repository
+const GRADLE_KOTLIN = `// settings.gradle.kts
 pluginManagement {
     repositories {
-        maven {
-            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-            mavenContent { snapshotsOnly() }
-        }
         gradlePluginPortal()
     }
 }
@@ -108,15 +84,15 @@ export default function HomepageInstall() {
 
         <p className={styles.installFootnote}>
           <em>
-            Distributed as <code>0.1.0</code> via the{' '}
+            Available on{' '}
             <Link
-              to="https://central.sonatype.com/repository/maven-snapshots/"
+              to="https://central.sonatype.com/artifact/me.bechberger/test-order-maven-plugin"
               target="_blank"
               rel="noopener"
             >
-              Sonatype Central snapshot repository
+              Maven Central
             </Link>
-            . Maven Central stable release in progress.
+            .
           </em>{' '}
           Full setup:{' '}
           <Link to="/docs/MAVEN_PLUGIN">Maven →</Link>
