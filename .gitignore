@@ -113,3 +113,7 @@ website/build/
 website/.cache-loader/
 website/static/casts/
 website/static/img/screenshots/
+
+# SAP-internal demo/bug files (kept locally, not for public repo)
+scripts/demo-sap-cds4j.sh
+scripts/bugs/cds4j/
