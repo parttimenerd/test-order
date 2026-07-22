@@ -69,7 +69,7 @@ public class TestOrderPlugin implements Plugin<Project> {
     static final String AGENT_CONFIG_NAME = "testOrderAgent";
     /** Group and version for the test-order artifacts. Must match the build. */
     static final String GROUP_ID = "me.bechberger";
-    static final String VERSION = "0.0.1-SNAPSHOT";
+    static final String VERSION = "0.1.0";
 
     /**
      * Stores active IndexCollectorServer instances keyed by task path, paired

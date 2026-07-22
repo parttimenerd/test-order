@@ -170,7 +170,7 @@ REGRESSION_REPOS=(
     "hibernate-orm"
 )
 
-PLUGIN_VERSION="0.0.1-SNAPSHOT"
+PLUGIN_VERSION="0.1.0"
 PLUGIN_GROUP="me.bechberger"
 PLUGIN_ARTIFACT="test-order-maven-plugin"
 PREPARE_GOAL="$PLUGIN_GROUP:$PLUGIN_ARTIFACT:prepare"

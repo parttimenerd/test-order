@@ -21,7 +21,7 @@ Add the Sonatype snapshot repository and plugin to your `pom.xml`:
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.1.0</version>
   <extensions>true</extensions>   <!-- required -->
   <executions>
     <execution>
@@ -56,7 +56,7 @@ pluginManagement {
 }
 
 // build.gradle
-plugins { id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT' }
+plugins { id 'me.bechberger.test-order' version '0.1.0' }
 ```
 
 ---

@@ -251,7 +251,7 @@ echo "project,mode,iteration,time_sec,index_bytes,total_bytes" > "$CSV"
 # Otherwise injects a fresh plugin block with a marker for clean removal.
 
 PLUGIN_MARKER="<!-- bench-test-order-plugin -->"
-PLUGIN_VERSION="0.0.1-SNAPSHOT"
+PLUGIN_VERSION="0.1.0"
 
 inject_plugin_maven() {
     local pom="$1"

@@ -84,7 +84,7 @@ git --version   # Any recent version
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.1.0</version>
   <extensions>true</extensions>  <!-- required: registers the lifecycle participant that writes the index -->
   <executions>
     <execution>
@@ -139,7 +139,7 @@ pluginManagement {
 
 // build.gradle
 plugins {
-    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
+    id 'me.bechberger.test-order' version '0.1.0'
 }
 ```
 
@@ -149,7 +149,7 @@ plugins {
 ```kotlin
 // build.gradle.kts
 plugins {
-    id("me.bechberger.test-order") version "0.0.1-SNAPSHOT"
+    id("me.bechberger.test-order") version "0.1.0"
 }
 ```
 </details>

@@ -25,7 +25,7 @@ const MAVEN = `<!-- pom.xml — add the Sonatype snapshot repository -->
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.1.0</version>
   <extensions>true</extensions>
   <executions>
     <execution>
@@ -54,7 +54,7 @@ pluginManagement {
 
 // build.gradle
 plugins {
-    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
+    id 'me.bechberger.test-order' version '0.1.0'
 }`;
 
 const GRADLE_KOTLIN = `// settings.gradle.kts — add the snapshot repository
@@ -70,7 +70,7 @@ pluginManagement {
 
 // build.gradle.kts
 plugins {
-    id("me.bechberger.test-order") version "0.0.1-SNAPSHOT"
+    id("me.bechberger.test-order") version "0.1.0"
 }`;
 
 export default function HomepageInstall() {
@@ -108,7 +108,7 @@ export default function HomepageInstall() {
 
         <p className={styles.installFootnote}>
           <em>
-            Distributed as <code>0.0.1-SNAPSHOT</code> via the{' '}
+            Distributed as <code>0.1.0</code> via the{' '}
             <Link
               to="https://central.sonatype.com/repository/maven-snapshots/"
               target="_blank"

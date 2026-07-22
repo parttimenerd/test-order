@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-22
+
 ### Breaking
 - **Property namespace renamed:** `testorder.select.*` → `testorder.affected.*`. Affected keys: `topN`, `randomM`, `seed`, `selectedFile`, `remainingFile`. CI configurations and shell aliases pinning `-Dtestorder.select.topN` (and friends) must be updated. No backward-compatibility shim is provided — using the old names yields an "unknown property" warning with a suggestion to the new name.
 - **Gradle task renamed:** `testOrderSelect` removed; use `testOrderAffected` instead. No backward-compatibility alias is provided. Build scripts invoking `testOrderSelect` will fail with "task not found" — replace with `testOrderAffected`. Task output paths under `build/test-results/` move from `testOrderSelect/` to `testOrderAffected/` accordingly.
@@ -49,13 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-## [0.1.0] - 2026-04-13
-
-### Added
+### Initial release (core capabilities)
 - Java agent for recording test class dependencies via bytecode instrumentation (javassist)
 - JUnit 5 `ClassOrderer` that prioritizes tests by dependency overlap with changed classes
 - `TestExecutionListener` for learn-mode telemetry (sets current test class)
-- Dependency map aggregation and I/O (text-based index format)
+- Dependency map aggregation and I/O (LZ4-compressed index format)
 - File hash store with LZ4 compression for "since-last-run" change detection
 - Git-based change detection (since last commit, uncommitted changes)
 - Unified `ChangeDetector` with four modes: `SINCE_LAST_RUN`, `SINCE_LAST_COMMIT`, `UNCOMMITTED`, `EXPLICIT`
@@ -63,7 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Maven plugin with `prepare`, `aggregate`, and `snapshot` goals
 - Auto/learn/order mode support in Maven plugin
 - Agent option parsing via [femtocli](https://github.com/parttimenerd/femtocli) agent-args mode
-- Example project demonstrating plugin usage
+- Interactive HTML dashboard with test-class dependency viewer
+- Gradle plugin with `testOrderLearn`, `testOrderAffected`, `testOrderShow`, `testOrderDashboard` tasks
+- Method-level ordering within selected test classes
+- Tiered test selection (`@AlwaysRun`, change-affected, history-weighted baseline)
+- SA auto-mode (`changeMode=uncommitted`) — zero-config change detection from `git diff`
+- Multi-module Maven reactor support with module-level affectedCount reporting
 
 [Unreleased]: https://github.com/parttimenerd/test-order/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/parttimenerd/test-order/releases/tag/v0.1.0

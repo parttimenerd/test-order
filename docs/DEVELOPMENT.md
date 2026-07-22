@@ -1,6 +1,6 @@
 # Building & Using the Development Version
 
-This guide helps you build test-order from source and use the `0.0.1-SNAPSHOT` in your own projects.
+This guide helps you build test-order from source and use the `0.1.0` in your own projects.
 
 ## Prerequisites
 
@@ -38,7 +38,7 @@ Add the plugin to your project's `pom.xml`:
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.1.0</version>
   <extensions>true</extensions>  <!-- required: registers the lifecycle participant that writes the index -->
   <executions>
     <execution>
@@ -63,7 +63,7 @@ pluginManagement {
 
 // build.gradle
 plugins {
-    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
+    id 'me.bechberger.test-order' version '0.1.0'
 }
 
 repositories {
