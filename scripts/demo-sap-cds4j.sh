@@ -175,6 +175,29 @@ fi
 pause 1.5
 
 # ══════════════════════════════════════════════════════════════════════════════
+banner "Scene 5 — Interactive dashboard"
+# ══════════════════════════════════════════════════════════════════════════════
+step "Generate the dashboard with the changed class highlighted (bug still applied):"
+DASH_LOG="$LOG_DIR/dashboard.log"
+type_cmd "mvn me.bechberger:test-order-maven-plugin:dashboard \
+    -Dtestorder.changeMode=uncommitted \
+    -Dtestorder.dashboard.open=true \
+    -pl cds4j-core --no-transfer-progress \
+    2>&1 | tee '$DASH_LOG' | grep -v '^WARNING:' | grep -E 'Dashboard written|open|BUILD SUCCESS|test-order\]'"
+
+DASH_HTML=$(grep "Dashboard written to:" "$DASH_LOG" 2>/dev/null | sed 's/.*written to: //' | tr -d '[:space:]' || true)
+if [[ -z "$DASH_HTML" ]]; then
+    DASH_HTML=$(find "$CDS4J_DIR" /tmp -name "index.html" -path "*test-order-dashboard*" 2>/dev/null | head -1 || true)
+fi
+if [[ -n "$DASH_HTML" && -f "$DASH_HTML" ]]; then
+    DASH_SIZE=$(du -sh "$DASH_HTML" 2>/dev/null | cut -f1 || true)
+    step "Dashboard ready ($DASH_SIZE) — look for ResultImpl in the Changed Classes column"
+else
+    step "Dashboard open — look for ResultImpl in the Changed Classes column"
+fi
+pause 2
+
+# ══════════════════════════════════════════════════════════════════════════════
 banner "Summary"
 # ══════════════════════════════════════════════════════════════════════════════
 # Extract timing numbers from logs if available
