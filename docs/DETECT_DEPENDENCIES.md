@@ -16,7 +16,7 @@ mvn test-order:detect-dependencies
 > <dependency>
 >     <groupId>me.bechberger</groupId>
 >     <artifactId>test-order-junit</artifactId>
->     <version>0.0.1-SNAPSHOT</version>
+>     <version>0.1.0</version>
 >     <scope>test</scope>
 > </dependency>
 > ```
@@ -34,7 +34,7 @@ All parameters can be set via `-D` on the command line or in `<configuration>` i
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.1.0</version>
   <configuration>
     <!-- Detection algorithm (default: combined) -->
     <algorithm>combined</algorithm>
@@ -118,7 +118,7 @@ The target project must have `test-order-junit` on the test classpath for order 
 <dependency>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-junit</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.1.0</version>
   <scope>test</scope>
 </dependency>
 ```
@@ -294,7 +294,7 @@ Designed for human review — in pull requests, wiki pages, or local inspection.
 During execution, the plugin logs progress and results:
 
 ```
-[INFO] --- test-order:0.0.1-SNAPSHOT:detect-dependencies (default-cli) @ sample-od-bugs ---
+[INFO] --- test-order:0.1.0:detect-dependencies (default-cli) @ sample-od-bugs ---
 [INFO] Loaded dependency map: 8 test classes
 [INFO] Loaded state: 3 historical runs
 [INFO] No prior data — running discovery test run...

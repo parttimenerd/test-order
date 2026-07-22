@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'me.bechberger.test-order' version '0.0.1-SNAPSHOT'
+    id 'me.bechberger.test-order' version '0.1.0'
 }
 
 repositories {

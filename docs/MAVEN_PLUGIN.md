@@ -144,7 +144,7 @@ If Maven reports `No plugin found for prefix 'test-order'`, use one of these sol
 
 2. **Use fully-qualified coordinates**:
    ```bash
-   mvn me.bechberger:test-order-maven-plugin:0.0.1-SNAPSHOT:detect-dependencies
+   mvn me.bechberger:test-order-maven-plugin:0.1.0:detect-dependencies
    ```
 
 3. **Declare the plugin in your POM** (if not already):
@@ -154,7 +154,7 @@ If Maven reports `No plugin found for prefix 'test-order'`, use one of these sol
        <plugin>
          <groupId>me.bechberger</groupId>
          <artifactId>test-order-maven-plugin</artifactId>
-         <version>0.0.1-SNAPSHOT</version>
+         <version>0.1.0</version>
          <extensions>true</extensions>  <!-- required: registers the lifecycle participant that writes the index -->
        </plugin>
      </plugins>
