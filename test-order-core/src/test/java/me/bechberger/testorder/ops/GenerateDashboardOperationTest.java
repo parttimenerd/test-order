@@ -62,6 +62,17 @@ class GenerateDashboardOperationTest {
 		return new DashboardGenerator.ScoredTest(name, result, 100L, 0.0);
 	}
 
+	/**
+	 * Builds a scored test whose ScoreResult carries a kill rate — mirrors the real
+	 * production path where {@code TestScorer.score()} resolves the kill rate (with
+	 * inner-class fallback) into the ScoreResult. The dashboard reads killRate from
+	 * the ScoreResult, not by re-looking-up state (see BUG-158).
+	 */
+	private DashboardGenerator.ScoredTest scored(String name, double killRate) {
+		var result = new TestScorer.ScoreResult(0, 0, 0, 0.0, false, false, false, false, 0.0, 0.0, false, killRate);
+		return new DashboardGenerator.ScoredTest(name, result, 100L, 0.0);
+	}
+
 	@SuppressWarnings("unchecked")
 	@Test
 	void buildDataIncludesMutationSectionWhenKillRatesSet() {
@@ -126,7 +137,7 @@ class GenerateDashboardOperationTest {
 		state.setKillRates(Map.of("com.FooTest", 0.123456789));
 
 		var gen = new DashboardGenerator("proj", "state.lz4", "index.lz4", "0.0.1");
-		Map<String, Object> data = gen.buildData(List.of(scored("com.FooTest")), Set.of(), Set.of(), state,
+		Map<String, Object> data = gen.buildData(List.of(scored("com.FooTest", 0.123456789)), Set.of(), Set.of(), state,
 				TestOrderState.ScoringWeights.DEFAULT, new DependencyMap(), 100L);
 
 		// The test entry should have a rounded killRate field

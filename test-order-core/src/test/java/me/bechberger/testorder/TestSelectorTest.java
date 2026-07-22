@@ -160,6 +160,60 @@ class TestSelectorTest {
 		assertEquals("com.A,com.B", includes);
 	}
 
+	/**
+	 * BUG-161: when two tests tie on total score, the more change-relevant one
+	 * (more changed-class dependency overlap) must be preferred over a merely
+	 * faster one. Previously the sort broke score ties by duration only, so a
+	 * highly relevant but slow test lost to a faster, less-relevant test and fell
+	 * below the topN cutoff. This mirrors commons-codec: the slow Base64Test (the
+	 * only test covering the changed method) tied on score with faster Base64*
+	 * tests and was dropped.
+	 */
+	@Test
+	void scoreTie_prefersHigherDepOverlapOverFasterDuration() {
+		// Reproduces the commons-codec MISS: two change-affected tests whose TOTAL
+		// scores are exactly equal, but which differ in how much they overlap the
+		// changed classes. The higher-overlap test is slower; the lower-overlap test
+		// is fast. Under a pure "score DESC, duration ASC" sort the faster (less
+		// relevant) test wins the tie and displaces the more relevant one below the
+		// topN cutoff — which is what dropped the only Base64 test that actually
+		// covered the flipped isBase64(). The tie must instead be broken by dep
+		// overlap so the more change-relevant test is kept.
+		//
+		// Scoring math (DEFAULT weights: depOverlap=5, speed=±1, median=500ms):
+		// SlowRelevant: overlap 2 of 5 deps → ceil(2/√5·5)=5; 4000ms = 8×median →
+		// speed −1 ⇒ total 4
+		// FastLessRelevant: overlap 1 of 5 deps → ceil(1/√5·5)=3; 62ms ≈ median/8 →
+		// speed +1 ⇒ total 4
+		// Fillers pin the median at 500ms and carry no overlap (score 0, not affected).
+		Map<String, Set<String>> deps = new LinkedHashMap<>();
+		deps.put("com.SlowRelevant", Set.of("app.A", "app.B", "app.x1", "app.x2", "app.x3"));
+		deps.put("com.FastLessRelevant", Set.of("app.A", "app.y1", "app.y2", "app.y3", "app.y4"));
+		for (int i = 0; i < 5; i++) {
+			deps.put("com.Filler" + i, Set.of("app.f" + i + "a", "app.f" + i + "b"));
+		}
+		DependencyMap depMap = buildDepMap(deps);
+
+		Map<String, Long> durations = new LinkedHashMap<>();
+		durations.put("com.SlowRelevant", 4000L);
+		durations.put("com.FastLessRelevant", 62L);
+		for (int i = 0; i < 5; i++) {
+			durations.put("com.Filler" + i, 500L);
+		}
+		TestOrderState state = stateWithDurations(durations);
+
+		Set<String> changed = Set.of("app.A", "app.B");
+
+		// topN=1: only ONE of the two change-affected tests can be selected.
+		TestSelector.Selection sel = new TestSelector(depMap, state, changed, Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(1, 0, 42L)).select();
+
+		assertTrue(sel.selected().contains("com.SlowRelevant"),
+				"the more change-relevant test must win a score tie even though it is slower");
+		assertFalse(sel.selected().contains("com.FastLessRelevant"),
+				"the faster but less-relevant test must not displace the more relevant one");
+	}
+
 	@Test
 	void emptyDepMapSelectsNothing() {
 		DependencyMap depMap = new DependencyMap();
@@ -317,5 +371,52 @@ class TestSelectorTest {
 		assertTrue(sel.selected().contains("com.NewTest"), "new test must be selected");
 		assertEquals(3, sel.selected().size(),
 				"topN=3 with 1 new test should yield 3 total (1 new + 2 existing), got: " + sel.selected());
+	}
+
+	// ── BUG-174: @AlwaysRun must not consume the topN budget ─────────────
+
+	@Test
+	void alwaysRunDoesNotConsumeTopNBudgetWhenChangeSignalPresent() {
+		// Regression for BUG-174: when a change signal exists and alwaysRun classes
+		// are in the selection, the initial `counted` in selectTopN must NOT include
+		// alwaysRun outer classes — they are additive and must not eat into the topN
+		// cap for change-affected tests.
+		//
+		// Setup: com.A overlaps changed class app.X; com.Smoke is @AlwaysRun (not
+		// change-affected). topN=1 should still select com.A (the affected test) even
+		// though com.Smoke was already added by Phase 0.
+		DependencyMap depMap = buildDepMap(
+				Map.of("com.A", Set.of("app.X"), "com.B", Set.of("app.Y"), "com.Smoke", Set.of("app.Z")));
+		TestOrderState state = stateWithDurations(Map.of("com.A", 100L, "com.B", 200L, "com.Smoke", 50L));
+		Set<String> changed = Set.of("app.X"); // only com.A is change-affected
+
+		TestSelector.Selection sel = new TestSelector(depMap, state, changed, Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(1, 0, 42L), Set.of("com.Smoke"))
+				.select();
+
+		assertTrue(sel.selected().contains("com.Smoke"), "alwaysRun must always be selected");
+		assertTrue(sel.selected().contains("com.A"),
+				"change-affected test must be selected even when alwaysRun class is present; got: " + sel.selected());
+	}
+
+	@Test
+	void alwaysRunDoesNotConsumeTopNBudgetWithMultipleAlwaysRun() {
+		// BUG-174: multiple alwaysRun classes must not steal all topN slots.
+		// topN=2 with 2 alwaysRun + 1 change-affected → all 3 should be selected
+		// (2 affected slots remain after excluding alwaysRun from the budget count).
+		DependencyMap depMap = buildDepMap(Map.of("com.A", Set.of("app.X"), "com.B", Set.of("app.X"), "com.Smoke1",
+				Set.of("app.Z"), "com.Smoke2", Set.of("app.W")));
+		TestOrderState state = stateWithDurations(
+				Map.of("com.A", 100L, "com.B", 200L, "com.Smoke1", 50L, "com.Smoke2", 60L));
+		Set<String> changed = Set.of("app.X"); // com.A and com.B are change-affected
+
+		TestSelector.Selection sel = new TestSelector(depMap, state, changed, Set.of(),
+				TestOrderState.ScoringWeights.DEFAULT, new TestSelector.Config(2, 0, 42L),
+				Set.of("com.Smoke1", "com.Smoke2")).select();
+
+		assertTrue(sel.selected().contains("com.Smoke1"), "alwaysRun1 must always be selected");
+		assertTrue(sel.selected().contains("com.Smoke2"), "alwaysRun2 must always be selected");
+		assertTrue(sel.selected().contains("com.A"), "first change-affected test must be selected");
+		assertTrue(sel.selected().contains("com.B"), "second change-affected test must be selected");
 	}
 }

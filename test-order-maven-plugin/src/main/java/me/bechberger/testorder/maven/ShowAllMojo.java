@@ -121,8 +121,10 @@ public class ShowAllMojo extends AbstractTestOrderMojo {
 
 		// show-all: force all sections on (auto-detect for method/ml so we don't
 		// emit "unavailable" noise when data genuinely doesn't exist)
+		// BUG-172: honor Surefire <excludes> in the Selection Preview.
+		java.util.List<String> excludePatterns = SurefireHelper.readExcludePatterns(project);
 		ShowWorkflow.Options opts = new ShowWorkflow.Options(true, null, null, effectiveExplain, fullNames, format,
-				filter, topN, randomM, seed, displayLimit);
+				filter, topN, randomM, seed, displayLimit, excludePatterns);
 
 		Path mlHistoryDir = resolveMLHistoryDir();
 

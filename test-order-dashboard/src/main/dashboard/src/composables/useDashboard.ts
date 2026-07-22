@@ -4,7 +4,7 @@ import type {
   SortColumn, GraphMode, TabDef, ScoreComponent, TestRunOutcome,
   SimResult, SelectionCoverage, CoverageClass, RunDiffEntry,
 } from '../types'
-import { sn, computeSetCoverBonuses, computeScore, computeApfd, exportTestsCsv, scoreTooltip, computeScoreBreakdown, computeCommonPrefix, type ScoreBreakdown } from '../utils'
+import { sn, computeSetCoverBonuses, computeScore, computeApfd, exportTestsCsv, scoreTooltip, computeScoreBreakdown, computeCommonPrefix, depDenom, type ScoreBreakdown } from '../utils'
 
 type ScoreMode = 'orig' | 'sim'
 
@@ -513,9 +513,9 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
       scBonus = Math.round((origSCB[t.name] || 0) * killMultiplier)
     } else {
       depOv = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-        ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
+        ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
       cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
-        ? Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
+        ? Math.round(Math.min(Math.ceil((t.complexityOverlap / depDenom(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
     }
     const chg = t.isChanged ? w.changedTest : 0
     const isNew = t.isNew ? w.newTest : 0
@@ -547,7 +547,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
 
   const simResults = computed<SimResult[]>(() => {
     const bonuses = simSetCoverBonuses.value
-    const scored = tests.map(t => ({ ...t, simScore: computeScore(t, lw as unknown as ScoringWeights, bonuses) }))
+    const scored = tests.map(t => ({ ...t, simScore: computeScore(t, lw as unknown as ScoringWeights, bonuses, dd.changedClasses) }))
     const sorted = [...scored].sort((a, b) => b.simScore - a.simScore)
     const rankMap: Record<string, number> = {}
     const scoreMap = new Map<string, number>()
@@ -660,8 +660,8 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     if (runs.length < 2) return []
     const prev = runs[runs.length - 2]
     const curr = runs[runs.length - 1]
-    const prevScored = (prev.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB), failed: o.failed }))
-    const currScored = (curr.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB), failed: o.failed }))
+    const prevScored = (prev.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB, dd.changedClasses), failed: o.failed }))
+    const currScored = (curr.outcomes || []).map(o => ({ name: o.testClass, score: computeScore(o, dd.weights, origSCB, dd.changedClasses), failed: o.failed }))
     prevScored.sort((a, b) => b.score - a.score)
     currScored.sort((a, b) => b.score - a.score)
     const prevRankMap = new Map<string, number>()
@@ -699,7 +699,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     const lastRun = runs.length ? runs[runs.length - 1] : null
     if (!lastRun?.outcomes?.length) return null
     const bonuses = simSetCoverBonuses.value
-    const scored = lastRun.outcomes.map(o => ({ ...o, simScore: computeScore(o, lw as unknown as ScoringWeights, bonuses) }))
+    const scored = lastRun.outcomes.map(o => ({ ...o, simScore: computeScore(o, lw as unknown as ScoringWeights, bonuses, dd.changedClasses) }))
     scored.sort((a, b) => b.simScore - a.simScore)
     return computeApfd(scored)
   })
@@ -827,7 +827,7 @@ export function useDashboard(dd: DashboardData, parseError: string | null): Dash
     const weights = mode === 'sim' ? (lw as unknown as ScoringWeights) : dd.weights
     const bonuses = mode === 'sim' ? simSetCoverBonuses.value : origSCB
     const score = mode === 'sim'
-      ? computeScore(t, lw as unknown as ScoringWeights, simSetCoverBonuses.value)
+      ? computeScore(t, lw as unknown as ScoringWeights, simSetCoverBonuses.value, dd.changedClasses)
       : t.score
     const sourceSuffix = sourceLabel ? ` (${sourceLabel})` : ''
     scoreModalTitle.value = `${sn(t.name)}${sourceSuffix} - ${mode === 'sim' ? 'Simulated' : 'Original'} score: ${score}`

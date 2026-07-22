@@ -749,7 +749,16 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 					// index file (test-dependencies.lz4). A root directory with only
 					// class-id-map.bin / deps/ / hashes/ (but no index) means the index
 					// lives in a submodule and should NOT be treated as a root index.
-					if (Files.isReadable(reactorRootPath.resolve(".test-order/test-dependencies.lz4"))) {
+					//
+					// BUG-167: additionally require that THIS project is genuinely a member
+					// of that reactor (root itself or declared in its <modules> graph).
+					// getMultiModuleProjectDirectory() walks up to the outermost .mvn/, which
+					// for a standalone project vendored under an unrelated Maven project (e.g.
+					// third-party/commons-lang inside the plugin's own repo) points at the
+					// ancestor. Without this check we enumerated the ancestor's 16 modules as
+					// siblings and injected ~720 unrelated classes into the changed set.
+					if (Files.isReadable(reactorRootPath.resolve(".test-order/test-dependencies.lz4"))
+							&& reactorContainsProject(reactorRootPath, project.getBasedir().toPath())) {
 						isEffectivelyMultiModule = true;
 						getLog().debug("[test-order] Inferred multi-module from .test-order/ at " + reactorRootPath);
 					}
@@ -3464,6 +3473,61 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		if (Files.exists(artifactPath))
 			return artifactPath;
 		return null;
+	}
+
+	/**
+	 * Returns {@code true} when {@code projectBasedir} is the reactor root itself
+	 * or is (transitively) declared in the reactor root pom's {@code <modules>}
+	 * graph.
+	 * <p>
+	 * BUG-167: Maven's {@code getMultiModuleProjectDirectory()} walks up to the
+	 * outermost {@code .mvn/} directory, which for a standalone project vendored
+	 * under another Maven project (e.g. {@code third-party/commons-lang} inside the
+	 * plugin's own repo) resolves to the ANCESTOR project — not a real reactor the
+	 * project belongs to. Treating that ancestor's modules as siblings injected
+	 * hundreds of unrelated classes into the changed set. This membership check
+	 * ensures we only infer multi-module when the current project is genuinely part
+	 * of the inferred reactor.
+	 */
+	static boolean reactorContainsProject(Path reactorRoot, Path projectBasedir) {
+		if (reactorRoot == null || projectBasedir == null) {
+			return false;
+		}
+		Path root = reactorRoot.toAbsolutePath().normalize();
+		Path target = projectBasedir.toAbsolutePath().normalize();
+		if (root.equals(target)) {
+			return true;
+		}
+		java.util.List<Path> toExplore = new java.util.ArrayList<>();
+		toExplore.add(root);
+		java.util.Set<String> explored = new java.util.HashSet<>();
+		for (int i = 0; i < toExplore.size(); i++) {
+			Path dir = toExplore.get(i);
+			if (dir == null || !explored.add(dir.toString())) {
+				continue;
+			}
+			Path pomFile = dir.resolve("pom.xml");
+			if (!Files.isRegularFile(pomFile)) {
+				continue;
+			}
+			try {
+				String pomXml = Files.readString(pomFile);
+				java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("<module>([^<]+)</module>")
+						.matcher(pomXml);
+				while (matcher.find()) {
+					Path moduleDir = dir.resolve(matcher.group(1).trim()).normalize();
+					if (moduleDir.equals(target)) {
+						return true;
+					}
+					if (Files.isDirectory(moduleDir)) {
+						toExplore.add(moduleDir);
+					}
+				}
+			} catch (java.io.IOException e) {
+				// Unreadable pom — cannot confirm membership from this node; keep exploring.
+			}
+		}
+		return false;
 	}
 
 	private java.util.List<MavenProject> discoverModulesFromReactorPom(Path reactorRoot,

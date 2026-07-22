@@ -3,7 +3,7 @@ import { inject, watch, nextTick, onMounted, onUnmounted, computed, ref, type Re
 import type { DashboardState } from '../composables/useDashboard'
 import type { TestHoverState } from '../composables/useTestHover'
 import type { TestEntry } from '../types'
-import { sn, fmtDur, fmtTime, computeScore, shortModule } from '../utils'
+import { sn, fmtDur, fmtTime, computeScore, shortModule, depDenom } from '../utils'
 import { mkChart, destroyCharts, chartOpts } from '../composables/useCharts'
 import { useClassHover } from '../composables/useClassInfo'
 import ClassInfoCard from './ClassInfoCard.vue'
@@ -178,7 +178,7 @@ const rankTrend = computed(() => {
   if (!t || d.runs.length < 4) return null
   const positions = d.runs.map(r => {
     if (!r.outcomes?.length) return null
-    const sorted = [...r.outcomes].sort((a, b) => computeScore(b, d.dd.weights, d.origSCB) - computeScore(a, d.dd.weights, d.origSCB))
+    const sorted = [...r.outcomes].sort((a, b) => computeScore(b, d.dd.weights, d.origSCB, d.dd.changedClasses) - computeScore(a, d.dd.weights, d.origSCB, d.dd.changedClasses))
     const idx = sorted.findIndex(o => o.testClass === t.name)
     return idx >= 0 ? idx + 1 : null
   }).filter(p => p !== null) as number[]
@@ -319,7 +319,7 @@ const maxScore = computed(() => {
 function scoreStackedBar(t: import('../types').TestEntry): { w: number; color: string }[] {
   const w = d.dd.weights
   const fail = t.failScore > 0 ? Math.min(Math.ceil(t.failScore), w.maxFailure) : 0
-  const dep = t.depOverlap > 0 && t.depTotal > 0 ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
+  const dep = t.depOverlap > 0 && t.depTotal > 0 ? Math.min(Math.ceil((t.depOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
   const chg = t.isChanged ? w.changedTest : t.isNew ? w.newTest : 0
   const spd = t.speedRatio < 0 ? Math.round(Math.abs(t.speedRatio) * w.speed) : 0
   const stat = t.hasStaticFieldOverlap ? Math.round(w.staticFieldBonus ?? 0) : 0
@@ -584,7 +584,7 @@ function initDetailCharts(t: TestEntry) {
     const labels = chronRuns2.map(r => fmtTime(r.timestamp))
     const scores = chronRuns2.map(r => {
       const o = (r.outcomes || []).find(o => o.testClass === t.name)
-      return o ? computeScore(o, d.dd.weights, d.origSCB) : null
+      return o ? computeScore(o, d.dd.weights, d.origSCB, d.dd.changedClasses) : null
     })
     const validScores = scores.filter(s => s !== null) as number[]
     const scoreMax = validScores.length ? Math.max(...validScores) : 0
@@ -596,7 +596,7 @@ function initDetailCharts(t: TestEntry) {
     })
     const positions = chronRuns2.map(r => {
       if (!r.outcomes?.length) return null
-      const sorted = [...r.outcomes].sort((a, b) => computeScore(b, d.dd.weights, d.origSCB) - computeScore(a, d.dd.weights, d.origSCB))
+      const sorted = [...r.outcomes].sort((a, b) => computeScore(b, d.dd.weights, d.origSCB, d.dd.changedClasses) - computeScore(a, d.dd.weights, d.origSCB, d.dd.changedClasses))
       const idx = sorted.findIndex(o => o.testClass === t.name)
       return idx >= 0 ? idx + 1 : null
     })
@@ -755,7 +755,7 @@ function previewScoreBars(t: TestEntry) {
   const w = d.dd.weights
   const total = Math.max(t.score, 1)
   const fail = t.failScore > 0 ? Math.min(Math.ceil(t.failScore), w.maxFailure) : 0
-  const dep = t.depOverlap > 0 && t.depTotal > 0 ? Math.min(Math.ceil((t.depOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
+  const dep = t.depOverlap > 0 && t.depTotal > 0 ? Math.min(Math.ceil((t.depOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) : 0
   const chg = t.isChanged ? w.changedTest : t.isNew ? w.newTest : 0
   const spd = t.isSlow ? 0 : Math.round(w.speed * 0.5)
   const stf = t.hasStaticFieldOverlap ? w.staticFieldBonus : 0
