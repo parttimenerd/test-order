@@ -19,7 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 public abstract class BaseFixtureIT {
 
 	private static final String TEST_ORDER_PLUGIN_VERSION = System.getProperty("testorder.plugin.version",
-			"0.0.1-SNAPSHOT");
+			"0.1.0");
 
 	/**
 	 * Copy a fixture project from test-fixtures to a temporary directory. Ensures

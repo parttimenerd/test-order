@@ -74,6 +74,9 @@
                     <excludes>
                         <exclude>**/*IT.java</exclude>
                     </excludes>
+                    <systemPropertyVariables>
+                        <testorder.plugin.version>${project.version}</testorder.plugin.version>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>
