@@ -7,17 +7,9 @@ Quick reference for the most common commands. For full details see the
 
 ## Plugin setup (Maven)
 
-Add the Sonatype snapshot repository and plugin to your `pom.xml`:
+Add the plugin to your `pom.xml`:
 
 ```xml
-<pluginRepositories>
-  <pluginRepository>
-    <id>ossrh-snapshots</id>
-    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
-    <snapshots><enabled>true</enabled></snapshots>
-  </pluginRepository>
-</pluginRepositories>
-
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
@@ -47,10 +39,6 @@ Add to `~/.m2/settings.xml` once so `test-order:` prefix works:
 // settings.gradle
 pluginManagement {
     repositories {
-        maven {
-            url 'https://central.sonatype.com/repository/maven-snapshots/'
-            mavenContent { snapshotsOnly() }
-        }
         gradlePluginPortal()
     }
 }

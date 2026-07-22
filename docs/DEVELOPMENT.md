@@ -28,7 +28,7 @@ cd test-order-gradle-plugin
 ./gradlew publishToMavenLocal
 ```
 
-## Use the SNAPSHOT in your project
+## Use the locally-built plugin in your project
 
 ### Maven
 
@@ -48,7 +48,7 @@ Add the plugin to your project's `pom.xml`:
 </plugin>
 ```
 
-No repository configuration needed — Maven resolves SNAPSHOTs from `~/.m2/repository` by default.
+No repository configuration needed — Maven resolves locally-installed artifacts from `~/.m2/repository` by default.
 
 ### Gradle
 
@@ -135,11 +135,8 @@ Releases are managed by `release.py` in the project root. The script handles:
 
 1. Bumping versions in **all** POMs, README, docs, Gradle build files, and samples
 2. Rolling CHANGELOG.md's `[Unreleased]` into a dated version entry
-3. Running tests and building release artifacts
-4. Creating a git commit + tag (`vX.Y.Z`)
-5. Deploying to Maven Central (Sonatype OSSRH)
-6. Bumping to the next `-SNAPSHOT` and committing
-7. Pushing and creating a GitHub Release
+3. Creating a git commit + tag (`vX.Y.Z`)
+4. Pushing — CI picks up the tag, runs full tests, and deploys to Maven Central
 
 ### Quick release
 
@@ -167,29 +164,17 @@ python release.py --patch --dry-run
 | `test-order-gradle-plugin/test-order-init.gradle` | classpath version |
 | `CHANGELOG.md` | `[Unreleased]` → `[X.Y.Z] - date` |
 
-After a release, the script automatically bumps everything to the next SNAPSHOT (e.g., `0.0.2-SNAPSHOT`) so the README and docs always show the current development version.
-
-### SNAPSHOT deployment
-
-SNAPSHOTs are deployed automatically by CI on every push to `main` (after tests pass). You can also deploy manually:
-
-```bash
-python release.py --snapshot
-```
+After a release, bump the version with `python release.py --patch --dry-run` to preview the next version, then `python release.py --patch` to execute.
 
 ### Options reference
 
 | Flag | Effect |
 |------|--------|
 | `--major` / `--minor` / `--patch` | Bump level (default: minor) |
-| `--no-its` | Skip integration tests during release |
 | `--no-push` | Don't push to remote |
-| `--no-deploy` | Skip Maven Central deploy |
-| `--no-github-release` | Skip GitHub Release creation |
-| `--snapshot` | Deploy current SNAPSHOT as-is |
-| `--github-release-only` | Only create a GitHub Release for the current version |
+| `--skip-tests` | Skip local tests before tagging |
 | `--dry-run` | Preview changes without modifying files |
 
 ### CI release workflow
 
-Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds and deploys to Maven Central with GPG signing. Required secrets: `OSSRH_USERNAME`, `OSSRH_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`. Optional: `SAMPLE_REPO_TOKEN` — a PAT with `repo` scope on `parttimenerd/sample-ci-test-order`; when set, CI triggers a rebuild of that repo after each snapshot/release deploy. Omit it if you don't have that repo.
+Pushing a `v*` tag triggers `.github/workflows/release.yml`, which runs full tests across JDK 17/21/25/26 and Maven 3.8/3.9, then deploys to Maven Central with GPG signing. Required secrets: `OSSRH_USERNAME`, `OSSRH_TOKEN`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`. Optional: `SAMPLE_REPO_TOKEN` — a PAT with `repo` scope on `parttimenerd/sample-ci-test-order`; when set, CI triggers a rebuild of that repo after each release deploy.

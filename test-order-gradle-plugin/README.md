@@ -18,7 +18,6 @@ On Java 24+ (JEP 472), test JVMs need native-access enablement for some runtime 
 // settings.gradle
 pluginManagement {
     repositories {
-        mavenLocal()       // needed while using SNAPSHOT versions
         gradlePluginPortal()
         mavenCentral()
     }
@@ -33,7 +32,6 @@ plugins {
 }
 
 repositories {
-    mavenLocal()   // needed while using SNAPSHOT versions
     mavenCentral()
 }
 ```
@@ -56,7 +54,6 @@ The init script:
 // test-order-init.gradle
 initscript {
     repositories {
-        mavenLocal()
         mavenCentral()
     }
     dependencies {

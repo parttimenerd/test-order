@@ -133,15 +133,11 @@ tests, deploys to Maven Central, tags, and pushes.
 # Standard minor release
 python release.py
 
-# Patch release, skip integration tests
-python release.py --patch --no-its
+# Patch release, skip tests
+python release.py --patch --skip-tests
 
 # Preview what would change
 python release.py --dry-run
-
-# Deploy current SNAPSHOT without releasing
-python release.py --snapshot
 ```
 
-The script creates two commits (release + next-SNAPSHOT bump) and a signed tag.
-On failure it automatically reverts local changes and removes the tag.
+The script bumps versions, updates the CHANGELOG, commits, tags, and pushes. CI picks up the tag and handles deployment to Maven Central.

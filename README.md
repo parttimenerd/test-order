@@ -59,26 +59,7 @@ git --version   # Any recent version
 
 ### Maven
 
-**1. Add the Sonatype snapshot repository** to your `pom.xml` (needed while using a SNAPSHOT version):
-
-```xml
-<repositories>
-  <repository>
-    <id>ossrh-snapshots</id>
-    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
-    <snapshots><enabled>true</enabled></snapshots>
-  </repository>
-</repositories>
-<pluginRepositories>
-  <pluginRepository>
-    <id>ossrh-snapshots</id>
-    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
-    <snapshots><enabled>true</enabled></snapshots>
-  </pluginRepository>
-</pluginRepositories>
-```
-
-**2. Add the plugin** to your `pom.xml` inside `<build><plugins>`:
+**1. Add the plugin** to your `pom.xml` inside `<build><plugins>`:
 
 ```xml
 <plugin>
@@ -94,7 +75,7 @@ git --version   # Any recent version
 </plugin>
 ```
 
-**3. Run your tests twice:**
+**2. Run your tests twice:**
 
 ```bash
 mvn test          # First run: learns which tests cover which code
@@ -103,7 +84,7 @@ mvn test          # Second run: reorders — affected tests run first
 
 That's it. The plugin auto-switches between learn and order mode. No configuration needed.
 
-**4. Explore (optional):**
+**3. Explore (optional):**
 
 ```bash
 mvn test-order:show           # See how tests are ranked and why
@@ -129,10 +110,6 @@ mvn test -Dtestorder.skip=true  # Skip the plugin entirely
 // settings.gradle
 pluginManagement {
     repositories {
-        maven {
-            url 'https://central.sonatype.com/repository/maven-snapshots/'
-            mavenContent { snapshotsOnly() }
-        }
         gradlePluginPortal()
     }
 }
@@ -798,7 +775,7 @@ git clone https://github.com/parttimenerd/test-order.git
 cd test-order && mvn install -DskipTests -Dspotless.check.skip=true
 ```
 
-This installs the SNAPSHOT to your local Maven repository. Full build instructions: **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**
+This installs the plugin to your local Maven repository. Full build instructions: **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**
 
 ## Contributing
 
