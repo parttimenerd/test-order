@@ -19,6 +19,44 @@ class DashboardGeneratorMlSchemaTest {
 			"volatility", "totalRuns", "totalFailures");
 
 	@Test
+	void killRate_innerClass_notClobberedToNullBySecondWrite() {
+		// Regression: buildTestEntries writes killRate twice. The first write uses
+		// ScoreResult.killRate() (which the scorer resolves via inner→top-level
+		// fallback). The second write does a fallback-less killRates.get(st.name())
+		// and, when the mutation map is non-empty but lacks the inner-class key,
+		// overwrites the good value with null. For an inner test class whose kill
+		// rate is stored under the top-level parent name, the dashboard then shows
+		// null instead of the real rate.
+		String inner = "com.example.OuterTest$Inner";
+		String topLevel = "com.example.OuterTest";
+
+		// Scorer already resolved the rate to 0.75 via top-level fallback.
+		TestScorer.ScoreResult result = new TestScorer.ScoreResult(10, 1, 2, 0.0, false, false, false, false, 0.0, 0.0,
+				false, 0.75);
+		DashboardGenerator.ScoredTest scored = new DashboardGenerator.ScoredTest(inner, result, 5L, 0.0);
+
+		// State's mutation kill-rate map is keyed by the TOP-LEVEL name only.
+		TestOrderState state = new TestOrderState();
+		state.setKillRates(Map.of(topLevel, 0.75));
+
+		DashboardGenerator gen = new DashboardGenerator("p", "state", "index", "v");
+		DashboardGenerator.RuntimeExtras extras = new DashboardGenerator.RuntimeExtras(List.of(), 0L,
+				FlakyRuntimeReport.empty());
+
+		Map<String, Object> data = gen.buildData(List.of(scored), Set.of(), Set.of(), state,
+				TestOrderState.ScoringWeights.DEFAULT, new DependencyMap(), 0L, TestOrderState.WEIGHT_DEFS, Map.of(),
+				new TestHealthReport(Map.of(), 0L, 0), extras);
+
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> tests = (List<Map<String, Object>>) data.get("tests");
+		assertNotNull(tests);
+		assertEquals(1, tests.size());
+		Object killRate = tests.get(0).get("killRate");
+		assertNotNull(killRate, "inner-class killRate must not be clobbered to null by the second write");
+		assertEquals(0.75, ((Number) killRate).doubleValue(), 1e-9);
+	}
+
+	@Test
 	void mlSection_doesNotEmitPrunedKeys() {
 		DashboardGenerator gen = new DashboardGenerator("p", "state", "index", "v");
 		TestHealth health = new TestHealth("com.example.FooTest", 0.42, 0.1, 0.25, 0.05, 30, 7, HealthStatus.FLAKY);

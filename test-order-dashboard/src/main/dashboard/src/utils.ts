@@ -20,6 +20,38 @@ export const DIST = {
   SET_COVER_DECAY: 0.8,
 } as const
 
+/** Floor for the sqrt normalization denominator — must match backend TestScorer.MIN_DEPS_DENOMINATOR */
+const MIN_DEPS_DENOMINATOR = 5
+
+/** sqrt(max(depTotal, MIN_DEPS_DENOMINATOR)) — mirrors backend depOverlapScore normalization */
+export function depDenom(depTotal: number): number {
+  return Math.sqrt(Math.max(depTotal, MIN_DEPS_DENOMINATOR))
+}
+
+/**
+ * Points awarded when a test lives in the same package as (or a package
+ * enclosing/enclosed by) any changed class — mirrors backend
+ * TestScorer.packageProximityBonus (TestScorer.java:695-716). Requires at least
+ * a 2-component package on both sides (e.g. com.example, not bare com).
+ * Returns 0 when the weight is 0 or there are no changed classes.
+ */
+export function packageProximityBonus(testClass: string, changedClasses: string[], weight: number): number {
+  if (weight === 0 || !changedClasses || changedClasses.length === 0) return 0
+  const dot = testClass.lastIndexOf('.')
+  if (dot < 0) return 0
+  const testPkg = testClass.substring(0, dot)
+  if (!testPkg.includes('.')) return 0
+  for (const changed of changedClasses) {
+    const cdot = changed.lastIndexOf('.')
+    if (cdot < 0) continue
+    const changedPkg = changed.substring(0, cdot)
+    if (!changedPkg.includes('.')) continue
+    if (testPkg === changedPkg || testPkg.startsWith(changedPkg + '.') || changedPkg.startsWith(testPkg + '.'))
+      return weight
+  }
+  return 0
+}
+
 /** Shorten a FQCN to abbreviated form: com.example.util.MyClass → c.e.u.MyClass */
 export function sn(fqcn: string): string {
   if (!fqcn) return '(unknown)'
@@ -171,6 +203,7 @@ export function computeScore(
   t: TestEntry | TestOutcome,
   w: ScoringWeights,
   bonusMap: Record<string, number> | null,
+  changedClasses: string[] = [],
 ): number {
   let s = 0
   const name = 'name' in t ? t.name : (t as TestOutcome).testClass
@@ -183,9 +216,9 @@ export function computeScore(
     const effectiveDepOverlap = ('weightedDepOverlap' in t && (t as any).weightedDepOverlap != null)
       ? (t as any).weightedDepOverlap as number : t.depOverlap
     if (effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0)
-      s += Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier)
+      s += Math.round(Math.min(Math.ceil((effectiveDepOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier)
     if (t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0)
-      s += Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier)
+      s += Math.round(Math.min(Math.ceil((t.complexityOverlap / depDenom(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier)
   }
 
   if (killRate >= 0 && w.killRateBonus > 0) s += Math.round(killRate * w.killRateBonus)
@@ -195,6 +228,7 @@ export function computeScore(
   else if (t.speedRatio > 0) s -= Math.round(t.speedRatio * w.speedPenalty)
   if (t.hasStaticFieldOverlap && w.staticFieldBonus > 0) s += Math.round(w.staticFieldBonus * killMultiplier)
   if (t.failScore > 0) s += Math.min(Math.ceil(t.failScore), w.maxFailure)
+  s += packageProximityBonus(name, changedClasses, w.packageProximityBonus)
   return s
 }
 
@@ -252,14 +286,14 @@ export function computeScoreBreakdown(
   } else {
     const effectiveDepOverlap = (te?.weightedDepOverlap != null) ? te.weightedDepOverlap : t.depOverlap
     depContrib = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
+      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
     depDetail = `${t.depOverlap}/${t.depTotal} deps changed`
     if (killRate >= 0) depDetail += ` · kill rate ${(killRate * 100).toFixed(0)}%`
     if (te?.weightedDepOverlap != null && te.weightedDepOverlap !== t.depOverlap)
       depDetail += ` · IDF-weighted ${te.weightedDepOverlap.toFixed(2)}`
   }
   const cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
-    ? Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
+    ? Math.round(Math.min(Math.ceil((t.complexityOverlap / depDenom(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
 
   const killBonus = killRate >= 0 && w.killRateBonus > 0 ? Math.round(killRate * w.killRateBonus) : 0
 
@@ -295,6 +329,7 @@ export function computeScoreBreakdown(
   const durStr = dur >= 0 ? `${fmtDur(dur)} vs median ${fmtDur(medianDuration)}` : 'unknown'
 
   const fail = t.failScore > 0 ? Math.min(Math.ceil(t.failScore), w.maxFailure) : 0
+  const pkgProx = packageProximityBonus(name, changedClasses, w.packageProximityBonus)
 
   const raw: ScoreComponent[] = [
     { label: 'Dep overlap',       contribution: depContrib,                  rawDetail: depDetail },
@@ -305,6 +340,7 @@ export function computeScoreBreakdown(
     { label: 'Changed test',      contribution: t.isChanged ? w.changedTest : 0, rawDetail: t.isChanged ? 'yes' : 'no' },
     { label: 'Static field',      contribution: t.hasStaticFieldOverlap ? w.staticFieldBonus : 0, rawDetail: t.hasStaticFieldOverlap ? 'yes' : 'no' },
     { label: 'Speed',             contribution: speedPts,                    rawDetail: durStr },
+    { label: 'Package proximity', contribution: pkgProx,                     rawDetail: pkgProx > 0 ? 'same package as a changed class' : 'no' },
   ]
   const components = raw
     .filter(c => c.contribution !== 0)
@@ -349,12 +385,12 @@ export function scoreTooltip(
   } else {
     const effectiveDepOverlap = (te?.weightedDepOverlap != null) ? te.weightedDepOverlap : t.depOverlap
     const depOv = effectiveDepOverlap > 0 && t.depTotal > 0 && w.depOverlap > 0
-      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / Math.sqrt(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
+      ? Math.round(Math.min(Math.ceil((effectiveDepOverlap / depDenom(t.depTotal)) * w.depOverlap), w.depOverlap) * killMultiplier) : 0
     const idfNote = te?.weightedDepOverlap != null && te.weightedDepOverlap !== t.depOverlap
       ? `, IDF-weighted ${te.weightedDepOverlap.toFixed(2)}` : ''
     lines.push(`Dependency overlap:    ${signed(depOv)}  (${t.depOverlap}/${t.depTotal} deps overlap${idfNote}${killRate >= 0 ? `, kill-rate ×${killMultiplier.toFixed(2)}` : ''})`)
     const cmplx = t.complexityOverlap > 0 && t.depTotal > 0 && w.changeComplexity > 0
-      ? Math.round(Math.min(Math.ceil((t.complexityOverlap / Math.sqrt(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
+      ? Math.round(Math.min(Math.ceil((t.complexityOverlap / depDenom(t.depTotal)) * w.changeComplexity), w.changeComplexity) * killMultiplier) : 0
     lines.push(`Change complexity:     ${signed(cmplx)}  (complexity: ${t.complexityOverlap.toFixed(2)})`)
   }
   if (killRate >= 0 && w.killRateBonus > 0) {
@@ -442,6 +478,10 @@ export function scoreTooltip(
   const dur = 'duration' in t ? (t as TestEntry).duration : -1
   const durStr = dur >= 0 ? `${fmtDur(dur)} (median: ${fmtDur(medianDuration)}, ratio: ${t.speedRatio >= 0 ? '+' : ''}${t.speedRatio.toFixed(2)})` : 'unknown'
   lines.push(`Speed:                 ${signed(speedPts)}  (${durStr})`)
+
+  // package proximity
+  const pkgProx = packageProximityBonus(name, changedClasses, w.packageProximityBonus)
+  if (pkgProx > 0) lines.push(`Package proximity:     ${signed(pkgProx)}  (same package as a changed class)`)
 
   return lines.join('\n')
 }

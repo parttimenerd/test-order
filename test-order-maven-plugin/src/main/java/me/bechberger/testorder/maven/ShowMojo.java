@@ -156,8 +156,12 @@ public class ShowMojo extends AbstractTestOrderMojo {
 			effectiveMl = Boolean.TRUE;
 		}
 
+		// BUG-172: read Surefire <excludes> so the Selection Preview drops classes that
+		// `affected`/`auto` would filter out (configureIncludes already honors these).
+		java.util.List<String> excludePatterns = SurefireHelper.readExcludePatterns(project);
+
 		ShowWorkflow.Options opts = new ShowWorkflow.Options(classes, effectiveMethods, effectiveMl, effectiveExplain,
-				fullNames, format, filter, topN, randomM, seed, displayLimit);
+				fullNames, format, filter, topN, randomM, seed, displayLimit, excludePatterns);
 
 		// Resolve ML history dir (ML predictions generated in maven-plugin layer)
 		Path mlHistoryDir = resolveMLHistoryDir();

@@ -311,9 +311,13 @@ public final class TestClassDiscovery {
 
 	/**
 	 * Returns {@code true} if the compiled class file at {@code classFile} carries
-	 * at least one test-framework annotation on the class or any of its methods.
-	 * Returns {@code true} on any read error so that uncertain classes are not
-	 * silently excluded.
+	 * at least one test-framework annotation on the class or any of its methods AND
+	 * is a concrete (non-abstract) class. Abstract classes and interfaces are never
+	 * run standalone by JUnit — only their concrete subclasses are — so even though
+	 * an abstract base may declare {@code @Test} methods, it must not be treated as
+	 * a runnable test (otherwise it wrongly earns the "new test" ranking bonus and
+	 * out-ranks the real tests). Returns {@code true} on any read error so that
+	 * uncertain classes are not silently excluded.
 	 */
 	static boolean hasTestAnnotations(Path classFile) {
 		if (!Files.exists(classFile)) {
@@ -322,8 +326,17 @@ public final class TestClassDiscovery {
 		try {
 			byte[] bytes = Files.readAllBytes(classFile);
 			boolean[] found = {false};
+			boolean[] isAbstract = {false};
 			ClassReader cr = new ClassReader(bytes);
 			cr.accept(new ClassVisitor(Opcodes.ASM9) {
+				@Override
+				public void visit(int version, int access, String name, String signature, String superName,
+						String[] interfaces) {
+					if ((access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE)) != 0) {
+						isAbstract[0] = true;
+					}
+				}
+
 				@Override
 				public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
 					if (TEST_ANNOTATION_PREFIXES.contains(descriptor)) {
@@ -348,7 +361,7 @@ public final class TestClassDiscovery {
 					};
 				}
 			}, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-			return found[0];
+			return found[0] && !isAbstract[0];
 		} catch (IOException e) {
 			return true; // conservative
 		} catch (IllegalArgumentException e) {

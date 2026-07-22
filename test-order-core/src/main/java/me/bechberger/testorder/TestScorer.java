@@ -63,6 +63,20 @@ public class TestScorer {
 			this(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOverlap,
 					speedRatio, hasStaticFieldOverlap, killRate, depTotal > 0 ? (double) depOverlap / depTotal : 0.0);
 		}
+
+		/**
+		 * Whether this test is genuinely <em>affected by the change</em>, as opposed to
+		 * merely prioritized. A positive {@link #score()} is not sufficient: the speed
+		 * bonus and failure-history bonus are change-independent (a fast or flaky test
+		 * scores above zero no matter what changed). A test counts as affected only
+		 * when its covered application code probably changed (dependency overlap,
+		 * static-field overlap, or change-complexity overlap), it is itself a changed
+		 * test, or it is new. Used by the {@code show} module header and the reactor
+		 * reorderer so both agree on which modules are change-affected (BUG-173).
+		 */
+		public boolean isChangeAffected() {
+			return depOverlap > 0 || isChanged || isNew || hasStaticFieldOverlap || complexityOverlap > 0;
+		}
 	}
 
 	/**
@@ -105,6 +119,20 @@ public class TestScorer {
 	/** Convenience overload for raw (non-IDF-weighted) integer overlap counts. */
 	public static int depOverlapScore(int depOverlap, int depTotal, int weight) {
 		return depOverlapScore((double) depOverlap, depTotal, weight);
+	}
+
+	/**
+	 * True when the dep-overlap is broad enough that its raw (uncapped)
+	 * contribution exceeds the {@code depOverlap} weight — i.e. the test would have
+	 * scored higher than the cap allows. Such tests are genuine deep-coverage tests
+	 * for the change and are shielded from the speed penalty (BUG-162). Uses the
+	 * same normalization as {@link #depOverlapScore}.
+	 */
+	static boolean isDeepCoverage(double depOverlap, int depTotal, int weight) {
+		if (depOverlap <= 0 || depTotal == 0 || weight == 0)
+			return false;
+		double normalized = depOverlap / Math.sqrt(Math.max(depTotal, MIN_DEPS_DENOMINATOR));
+		return Math.ceil(normalized * weight) > weight;
 	}
 
 	/**
@@ -433,6 +461,12 @@ public class TestScorer {
 		double weightedDepOverlap = 0.0;
 		double complexityOvlp = 0.0;
 		int staticFieldOverlap = 0;
+		// True when this test overlaps the changed classes so broadly that its raw
+		// (pre-cap) dep-overlap score exceeds the cap — a genuine deep-coverage test
+		// for the change, not one that barely reached the cap. Such tests must not be
+		// demoted by the speed penalty (BUG-162): prioritisation should still run the
+		// tests most likely to catch the regression even when they are slow.
+		boolean deepCoverage = false;
 		if (!effectiveChangedForOverlap.isEmpty()) {
 			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(testClassName) : null;
 			OverlapData overlap = resolveOverlap(testClassName, deps, memberDeps);
@@ -448,6 +482,7 @@ public class TestScorer {
 			} else {
 				int rawDepOverlap = depOverlapScore(weightedDepOverlap, depTotal, weights.depOverlap());
 				score += (int) Math.round(rawDepOverlap * killMultiplier);
+				deepCoverage = isDeepCoverage(weightedDepOverlap, depTotal, weights.depOverlap());
 			}
 
 			if (!changeComplexity.isEmpty() && depOverlap > 0) {
@@ -499,6 +534,13 @@ public class TestScorer {
 		if (medianDuration > 0 && dur > 0) {
 			sRatio = speedRatio(dur, medianDuration);
 			int speedScore = speedBucketScore(dur, medianDuration, weights.speed(), weights.speedPenalty());
+			// Deep-coverage tests (dep overlap so broad the raw score exceeds the cap)
+			// keep any speed bonus but are shielded from the speed penalty — a slow
+			// integration test that covers most of the change must not be ranked below
+			// faster, less-relevant tests (BUG-162).
+			if (deepCoverage && speedScore < 0) {
+				speedScore = 0;
+			}
 			score += speedScore;
 			isFast = speedScore > 0;
 			isSlow = speedScore < 0;
@@ -563,10 +605,12 @@ public class TestScorer {
 		int staticFieldPts = 0;
 		boolean hasStaticFieldOvlp = false;
 		int setCoverPts = 0;
+		double overlapWeighted = 0.0;
 
 		if (!effectiveChangedForOverlap.isEmpty()) {
 			OverlapData overlap = resolveOverlap(testClassName, deps, memberDeps);
 			overlapClasses = overlap.overlapClasses;
+			overlapWeighted = overlap.weightedDepOverlap;
 
 			if (!setCoverBonuses.isEmpty()) {
 				setCoverPts = setCoverBonuses.getOrDefault(testClassName, 0);
@@ -615,6 +659,12 @@ public class TestScorer {
 		if (medianDuration > 0 && dur > 0) {
 			sRatio = speedRatio(dur, medianDuration);
 			speedPts = speedBucketScore(dur, medianDuration, weights.speed(), weights.speedPenalty());
+			// Mirror score(): deep-coverage tests are shielded from the speed penalty
+			// so the explain output matches the selection ranking (BUG-162).
+			if (speedPts < 0 && setCoverBonuses.isEmpty() && !overlapClasses.isEmpty()
+					&& isDeepCoverage(overlapWeighted, depTotal, weights.depOverlap())) {
+				speedPts = 0;
+			}
 			totalScore += speedPts;
 		}
 

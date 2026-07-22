@@ -175,7 +175,7 @@ public class DashboardGenerator {
 
 		Map<String, Double> killRates = state.getKillRates();
 		Map<String, String> classToModule = deriveClassToModule(depMap);
-		List<Object> tests = buildTestEntries(scored, depMap, classToModule, mlPredictions, killRates);
+		List<Object> tests = buildTestEntries(scored, depMap, classToModule, mlPredictions);
 		// Compress memberDeps: replace repeated strings with integer indices into a
 		// shared dictionary. This reduces the 355MB jackson-databind dashboard to
 		// ~12MB.
@@ -260,7 +260,7 @@ public class DashboardGenerator {
 	}
 
 	private List<Object> buildTestEntries(List<ScoredTest> scored, DependencyMap depMap,
-			Map<String, String> classToModule, Map<String, Double> mlPredictions, Map<String, Double> killRates) {
+			Map<String, String> classToModule, Map<String, Double> mlPredictions) {
 		List<Object> tests = new ArrayList<>();
 		for (int i = 0; i < scored.size(); i++) {
 			ScoredTest st = scored.get(i);
@@ -275,7 +275,7 @@ public class DashboardGenerator {
 			t.put("speedRatio", r.speedRatio());
 			t.put("complexityOverlap", r.complexityOverlap());
 			if (r.killRate() >= 0)
-				t.put("killRate", r.killRate());
+				t.put("killRate", Math.round(r.killRate() * 10000.0) / 10000.0);
 			if (r.weightedDepOverlap() != r.depOverlap())
 				t.put("weightedDepOverlap", r.weightedDepOverlap());
 			t.put("isNew", r.isNew());
@@ -350,11 +350,10 @@ public class DashboardGenerator {
 				Double pFail = mlPredictions.get(st.name());
 				t.put("mlPFail", pFail != null ? Math.round(pFail * 10000.0) / 10000.0 : null);
 			}
-			// Mutation kill rate (if available)
-			if (!killRates.isEmpty()) {
-				Double kr = killRates.get(st.name());
-				t.put("killRate", kr != null ? Math.round(kr * 10000.0) / 10000.0 : null);
-			}
+			// Note: killRate is written once above from ScoreResult.killRate(), which
+			// the scorer already resolves via inner→top-level fallback. Do NOT re-read
+			// state.getKillRates() by st.name() here — that lookup has no inner-class
+			// fallback and would clobber a resolved value with null (BUG-158).
 			tests.add(t);
 		}
 		return tests;
@@ -913,12 +912,16 @@ public class DashboardGenerator {
 		if (depMap.modules().size() <= 1) {
 			return Map.of();
 		}
-		// tally: class → (module → count)
+		// tally: class → (module → count); also record which packages each module's
+		// tests live in, so we can break ties toward the module that actually owns
+		// the source file (Maven modules almost always align on package prefixes).
 		Map<String, Map<String, Integer>> tally = new HashMap<>();
+		Map<String, Set<String>> modulePackages = new HashMap<>();
 		for (String testClass : depMap.testClasses()) {
 			String module = depMap.getModule(testClass);
 			if (module == null)
 				continue;
+			modulePackages.computeIfAbsent(module, k -> new HashSet<>()).add(packageOf(testClass));
 			Set<String> deps = depMap.get(testClass);
 			if (deps == null)
 				continue;
@@ -928,12 +931,49 @@ public class DashboardGenerator {
 		}
 		Map<String, String> result = new HashMap<>(tally.size());
 		for (Map.Entry<String, Map<String, Integer>> e : tally.entrySet()) {
-			String winner = e.getValue().entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey)
-					.orElse(null);
+			String winner = resolveOwningModule(e.getKey(), e.getValue(), modulePackages);
 			if (winner != null)
 				result.put(e.getKey(), winner);
 		}
 		return result;
+	}
+
+	/**
+	 * Resolves the owning module for a source class from its per-module reference
+	 * counts. The module with the strict maximum count wins. On a tie (BUG-159),
+	 * prefer a tied module that has a test in the source class's own package — that
+	 * is the module that actually contains the source file. Falls back to a stable
+	 * lexicographic choice so the output is deterministic across runs.
+	 */
+	private static String resolveOwningModule(String sourceClass, Map<String, Integer> counts,
+			Map<String, Set<String>> modulePackages) {
+		int max = counts.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+		List<String> topModules = new ArrayList<>();
+		for (Map.Entry<String, Integer> c : counts.entrySet()) {
+			if (c.getValue() == max)
+				topModules.add(c.getKey());
+		}
+		if (topModules.size() == 1)
+			return topModules.get(0);
+		// Tie: prefer the module whose tests share this source class's package.
+		String pkg = packageOf(sourceClass);
+		List<String> packageMatches = new ArrayList<>();
+		for (String module : topModules) {
+			Set<String> pkgs = modulePackages.get(module);
+			if (pkgs != null && pkgs.contains(pkg))
+				packageMatches.add(module);
+		}
+		List<String> candidates = packageMatches.isEmpty() ? topModules : packageMatches;
+		candidates.sort(null); // deterministic tie-break of last resort
+		return candidates.get(0);
+	}
+
+	/**
+	 * Package portion of a fully-qualified class name ("" for the default package).
+	 */
+	private static String packageOf(String fqcn) {
+		int dot = fqcn.lastIndexOf('.');
+		return dot < 0 ? "" : fqcn.substring(0, dot);
 	}
 
 	// ── Value types ──────────────────────────────────────────────────────────

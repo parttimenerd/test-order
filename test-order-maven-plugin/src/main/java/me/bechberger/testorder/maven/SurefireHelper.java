@@ -656,22 +656,54 @@ final class SurefireHelper {
 					+ "</excludedGroups> is configured — tests matching this tag filter will be "
 					+ "skipped even if selected by test-order.");
 		}
-		Xpp3Dom excludes = config.getChild("excludes");
-		if (excludes != null && excludes.getChildCount() > 0) {
-			StringBuilder patterns = new StringBuilder();
-			for (int i = 0; i < excludes.getChildCount(); i++) {
-				String val = excludes.getChild(i).getValue();
-				if (val == null || val.isBlank())
-					continue;
-				if (patterns.length() > 0)
-					patterns.append(", ");
-				patterns.append(val);
-			}
-			log.warn("[test-order] Surefire <excludes> is configured (" + patterns
-					+ ") but test-order's affected mode overrides it via the <test> parameter. "
-					+ "File-based exclusions of non-test helpers are usually harmless. "
-					+ "Tag-based filtering should use <excludedGroups> (JUnit 5 @Tag) for consistent behaviour.");
+		List<String> excludePatterns = readExcludePatterns(project);
+		if (!excludePatterns.isEmpty()) {
+			log.info("[test-order] Surefire <excludes> is configured (" + String.join(", ", excludePatterns)
+					+ ") — test-order honors these patterns and drops matching classes from the selection "
+					+ "so they are not run via the <test> parameter. "
+					+ "Tag-based filtering should still use <excludedGroups> (JUnit 5 @Tag).");
 		}
+	}
+
+	/**
+	 * Reads the Surefire (or Failsafe) {@code <excludes>} patterns configured on
+	 * the project, skipping null/blank entries. Returns an empty list when no test
+	 * plugin or no excludes are configured.
+	 */
+	static List<String> readExcludePatterns(MavenProject project) {
+		List<String> result = new ArrayList<>();
+		Plugin surefire = findSurefirePlugin(project);
+		if (surefire == null)
+			return result;
+		Xpp3Dom config = (Xpp3Dom) surefire.getConfiguration();
+		if (config == null)
+			return result;
+		Xpp3Dom excludes = config.getChild("excludes");
+		if (excludes == null)
+			return result;
+		for (int i = 0; i < excludes.getChildCount(); i++) {
+			String val = excludes.getChild(i).getValue();
+			if (val != null && !val.isBlank()) {
+				result.add(val.trim());
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Returns {@code true} when the given test class FQCN matches any of the given
+	 * Surefire exclude patterns. Supports Ant-style file globs (matched against the
+	 * class's path form, e.g. {@code org/apache/foo/BarIT.java}) and Surefire's
+	 * {@code %regex[...]} form (matched against the dotted FQCN).
+	 * <p>
+	 * BUG-168: Surefire's {@code -Dtest=} parameter overrides {@code <excludes>},
+	 * so test-order must apply exclude patterns itself before building the
+	 * {@code -Dtest} list — otherwise deliberately-excluded tests get run.
+	 */
+	static boolean matchesAnySurefirePattern(String fqcn, List<String> patterns) {
+		// Delegate to the Maven-independent core matcher so the run path (here) and the
+		// show Selection Preview (BUG-172) share one source of truth and never diverge.
+		return me.bechberger.testorder.SurefireExcludeMatcher.matches(fqcn, patterns);
 	}
 
 	/**
@@ -815,6 +847,23 @@ final class SurefireHelper {
 			throws MojoExecutionException {
 		if (tests.isEmpty())
 			return;
+
+		// BUG-168: Surefire's -Dtest= parameter overrides <excludes>, so a
+		// deliberately-excluded test (e.g. **/perf/PerformanceTest.java) would be run
+		// if left in the selection. Drop excluded classes here so test-order matches
+		// plain `mvn test` behaviour.
+		List<String> excludePatterns = readExcludePatterns(project);
+		if (!excludePatterns.isEmpty()) {
+			List<String> filtered = new ArrayList<>();
+			for (String tc : tests) {
+				if (!matchesAnySurefirePattern(tc, excludePatterns)) {
+					filtered.add(tc);
+				}
+			}
+			tests = filtered;
+			if (tests.isEmpty())
+				return;
+		}
 
 		// Normalize inner/nested class names (e.g. OuterTest$InnerTests) to their
 		// top-level enclosing class. Surefire's -Dtest parameter does not support

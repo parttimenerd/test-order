@@ -185,12 +185,12 @@ const sensitivityCurves = computed((): SensCurve[] => {
 
     for (const val of steps) {
       const w = { ...baseW, [wd.name]: val } as unknown as ScoringWeights
-      const tScore = computeScore(t, w, d.origSCB)
+      const tScore = computeScore(t, w, d.origSCB, d.dd.changedClasses)
       // Count how many tests score higher (rank = 1 + count of tests with higher score)
       let rank = 1
       for (const other of tests) {
         if (other.name === t.name) continue
-        if (computeScore(other, w, d.origSCB) > tScore) rank++
+        if (computeScore(other, w, d.origSCB, d.dd.changedClasses) > tScore) rank++
       }
       ranks.push(rank)
       scores.push(tScore)

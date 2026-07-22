@@ -3,7 +3,7 @@ import { inject, watch, nextTick, onMounted, computed, ref, type Ref } from 'vue
 import * as d3 from 'd3'
 import type { DashboardState } from '../composables/useDashboard'
 import type { TestHoverState } from '../composables/useTestHover'
-import { sn, esc, DIST, fmtDur, fmtTime, computeScore, computeApfd, shortModule } from '../utils'
+import { sn, esc, DIST, fmtDur, fmtTime, computeScore, computeApfd, shortModule, depDenom } from '../utils'
 import { useClassHover } from '../composables/useClassInfo'
 import ClassInfoCard from './ClassInfoCard.vue'
 import SuiteHealthCard from './SuiteHealthCard.vue'
@@ -1520,7 +1520,7 @@ const apfdAttribution = computed(() => {
     const merged = { ...w, ...weightOverride }
     let sum = 0, count = 0
     for (const r of runsWithFail) {
-      const sorted = [...r.outcomes].sort((a, b) => computeScore(b, merged, scb) - computeScore(a, merged, scb))
+      const sorted = [...r.outcomes].sort((a, b) => computeScore(b, merged, scb, d.dd.changedClasses) - computeScore(a, merged, scb, d.dd.changedClasses))
       const apfd = computeApfd(sorted)
       if (apfd !== null) { sum += apfd; count++ }
     }
@@ -1673,7 +1673,7 @@ function scoreBar(o: { score: number; failScore: number; depOverlap: number; dep
   const w = d.dd.weights
   const total = Math.max(o.score, 1)
   const fail = o.failScore > 0 ? Math.min(Math.ceil(o.failScore), w.maxFailure) : 0
-  const dep = o.depOverlap > 0 && o.depTotal > 0 ? Math.min(Math.ceil((o.depOverlap / Math.sqrt(o.depTotal)) * w.depOverlap), w.depOverlap) : 0
+  const dep = o.depOverlap > 0 && o.depTotal > 0 ? Math.min(Math.ceil((o.depOverlap / depDenom(o.depTotal)) * w.depOverlap), w.depOverlap) : 0
   const chg = o.isChanged ? w.changedTest : o.isNew ? w.newTest : 0
   const spd = o.isSlow ? 0 : Math.round(w.speed * 0.5)
   const stf = o.hasStaticFieldOverlap ? w.staticFieldBonus : 0

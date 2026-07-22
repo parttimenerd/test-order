@@ -295,6 +295,14 @@ public final class ChangeAnalysis {
 		// ── Bytecode change detection (Step 1) ──────────────────────
 		// Cross-checks compiled .class files for source-invisible changes
 		// (annotation processors, generated code, dependency-version bumps).
+		// BUG-165: when the user supplies an explicit non-empty changed-class list,
+		// that list is authoritative (ChangeDetectionSupport contract) and
+		// bytecode-detected classes must NOT be unioned in — a stale snapshot after
+		// a recompile would otherwise contaminate changedClasses with unrelated
+		// classes. Method-key extraction below still runs (it drives method-level
+		// signals, not the class set).
+		boolean explicitClassesAuthoritative = "explicit".equalsIgnoreCase(ctx.changeMode())
+				&& ctx.changedClasses() != null && !ctx.changedClasses().isBlank();
 		Set<String> bytecodeChangedMethodKeys = Set.of();
 		if (ctx.bytecodeChangeDetectionEnabled() && ctx.classesDir() != null && Files.isDirectory(ctx.classesDir())
 				&& ctx.bytecodeHashFile() != null) {
@@ -314,7 +322,7 @@ public final class ChangeAnalysis {
 				}
 				if (!prev.isEmpty()) {
 					Set<String> bytecodeChangedClasses = curr.getChangedClasses(prev);
-					if (!bytecodeChangedClasses.isEmpty()) {
+					if (!bytecodeChangedClasses.isEmpty() && !explicitClassesAuthoritative) {
 						int before = changed.size();
 						Set<String> merged = new java.util.LinkedHashSet<>(changed);
 						merged.addAll(bytecodeChangedClasses);

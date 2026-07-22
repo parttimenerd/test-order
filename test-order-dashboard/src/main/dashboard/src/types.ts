@@ -94,7 +94,8 @@ export interface RunRecord {
   totalTests: number
   totalFailures: number
   firstFailurePosition: number
-  apfd: number
+  // Omitted by the backend for all-pass runs (APFD is undefined without failures).
+  apfd?: number
   outcomes: TestOutcome[]
 }
 
