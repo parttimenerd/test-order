@@ -5,56 +5,92 @@ description: Run, prioritise, and select tests with the test-order plugin (Maven
 
 # test-order skill
 
-You are working in a project that uses [test-order](https://github.com/parttimenerd/test-order) — a plugin that reorders and selects tests based on a learned dependency index. This skill teaches you how to drive it.
+[test-order](https://github.com/parttimenerd/test-order) reorders and selects tests based on a learned dependency index. First run learns; subsequent runs prioritise tests that cover changed code.
 
-## First contact: discover the surface
+## Installation
 
-Before invoking anything, fetch the machine-readable task list. The plugin ships a JSON manifest with every goal, its stability, JSON-output capability, and example invocation:
+Check [Maven Central](https://central.sonatype.com/artifact/me.bechberger/test-order-maven-plugin) for the latest version before inserting snippets.
+
+**Maven** — add to `<build><plugins>` in `pom.xml`:
+```xml
+<plugin>
+  <groupId>me.bechberger</groupId>
+  <artifactId>test-order-maven-plugin</artifactId>
+  <version>LATEST</version>
+  <extensions>true</extensions>
+  <executions><execution><goals><goal>prepare</goal></goals></execution></executions>
+</plugin>
+```
+For the short `test-order:` CLI prefix, add `<pluginGroup>me.bechberger</pluginGroup>` to `~/.m2/settings.xml`; otherwise use `mvn me.bechberger:test-order-maven-plugin:<goal>`.
+
+**Gradle** — plugin is on the Gradle Plugin Portal:
+```kotlin
+plugins { id("me.bechberger.test-order") version "LATEST" }
+```
+
+Add `.test-order/`, `target/test-order-dashboard/`, `build/test-order-dashboard/` to `.gitignore`.
+
+---
+
+## When to fetch the manifest
+
+The common tasks below cover the stable surface. Only fetch the manifest when you need a goal not listed here or want to verify stability/JSON support for an unfamiliar task:
 
 ```bash
-# Maven
-mvn -B -ntp -q test-order:help -Dtestorder.help.format=json
-
-# Gradle
-./gradlew --quiet testOrderHelp -Dtestorder.help.format=json
+mvn -B -ntp -q test-order:help -Dtestorder.help.format=json   # Maven
+./gradlew --quiet testOrderHelp -Dtestorder.help.format=json  # Gradle
 ```
 
-Both print parseable JSON to **stdout** (use `-q` / `--quiet` to suppress build-log noise on stderr). Top-level shape:
+The manifest is also at `docs/agent-manifest.json` in the repo.
 
-```json
-{
-  "schemaVersion": 1,
-  "tool": "test-order",
-  "tasks": [ { "name": "show", "maven": "test-order:show", "gradle": "testOrderShow", "stability": "stable", "supportsJson": true, "jsonProperty": "testorder.show.format=json", ... } ]
-}
+**`requiresIndex`** — tasks that need the dependency index (`.test-order/test-dependencies.lz4`) fail with a `Run:` recovery hint if it's missing. See Error recovery below.
+
+## Common tasks
+
+| Goal | Maven | Gradle |
+|---|---|---|
+| Bootstrap / re-learn | `mvn test -Dtestorder.mode=learn` | `./gradlew test -Dtestorder.mode=learn` |
+| Affected tests only | `mvn test-order:affected test` | `./gradlew testOrderAffected test` |
+| Affected + run deferred | `mvn test-order:affected test && mvn test-order:run-remaining test` | same pattern |
+| Inspect ranking (JSON) | `mvn test-order:show -Dtestorder.show.format=json -q` | `./gradlew testOrderShow -Dtestorder.show.format=json --quiet` |
+| Explain a test's rank | `mvn test-order:explain -Dtestorder.explain.class=com.example.FooTest` | `./gradlew testOrderExplain ...` |
+| Tiered CI (fast → slow) | `mvn test-order:run-tiered` | `./gradlew testOrderRunTiered` |
+| Multi-module order | `mvn test-order:reactor-order` | `./gradlew testOrderReactorOrder` |
+| Interactive dashboard | `mvn test-order:dashboard` | `./gradlew testOrderDashboard` |
+| Diagnose / health check | `mvn test-order:diagnose` | `./gradlew testOrderDiagnose` |
+| Skip for one run | `mvn test -Dtestorder.skip=true` | `./gradlew test -Ptestorder.skip=true` |
+| Export index + history | `mvn test-order:export-json` | `./gradlew testOrderExportJson` |
+
+**Try without modifying POM (Maven):** `mvn me.bechberger:test-order-maven-plugin:LATEST:auto test`
+
+**ML health:** `mvn test-order:show -Dtestorder.show.ml=true`
+
+### Tiered CI pattern
+
+Split one long suite into three phases — fast feedback first:
+
+```bash
+mvn test-order:tiered-select   # partition tests into tier1/2/3
+mvn test-order:run-tier -Dtestorder.tier=1   # run tier 1 (fast, high-priority)
+mvn test-order:run-tier -Dtestorder.tier=2   # run tier 2 in parallel / later
+# or run all tiers in sequence:
+mvn test-order:run-tiered
 ```
 
-If the project has the plugin applied, prefer this over guessing goal names. The manifest is also documented at `docs/AGENTS.md` in the test-order repo.
+## JSON output
 
-## Most useful tasks
+Tasks with `supportsJson: true` print parseable JSON to **stdout** when their `jsonProperty` is set. Use `-q` / `--quiet` to suppress build-log noise on stderr.
 
-| Goal | Maven | Gradle | Use when |
-|---|---|---|---|
-| Run only affected tests | `mvn test-order:affected test` | `./gradlew testOrderAffected test` | Few files changed; want fast feedback |
-| (Re)build the index | `mvn test -Dtestorder.mode=learn` | `./gradlew test -Dtestorder.mode=learn` | After big refactor; or as recovery from a missing index |
-| Show what would run | `mvn test-order:show -Dtestorder.show.format=json -q` | `./gradlew testOrderShow -Dtestorder.show.format=json -q` | Inspect ordering / ML health without running tests |
-| Full export of index + history | `mvn test-order:export-json` | `./gradlew testOrderExportJson` | Always-JSON dump for analysis |
-| Diagnose | `mvn test-order:diagnose` | `./gradlew testOrderDiagnose` | When something's wrong and you need a status report |
-
-## Tasks with stable JSON output
-
-These tasks emit parseable JSON to stdout when the property is set:
-
-- `help` — `-Dtestorder.help.format=json` (the manifest)
-- `show`, `show-all` — `-Dtestorder.show.format=json` (class order, method order, ML health)
+- `help` — `-Dtestorder.help.format=json` → the manifest
+- `show`, `show-all` — `-Dtestorder.show.format=json` → class order, method order, ML health
 - `export-json` — always JSON (full index + run history)
-- `metrics` — always JSON (written to a file, APFD-style metrics)
+- `metrics` — always JSON, written to a file (APFD-style metrics)
 
-Anything else emits human-readable text — don't try to parse it. Call `export-json` or `show -Dtestorder.show.format=json` instead.
+Don't parse human-readable output from any other task.
 
-## Error recovery: parse `Run:` lines
+## Error recovery: `Run:` lines
 
-When test-order can't proceed, its error message contains one or more lines starting with `Run: `. Each line is a literal command to execute. Example:
+Recoverable errors append `Run: <command>` lines to the message:
 
 ```
 Dependency index not found at /repo/.test-order/test-dependencies.lz4.
@@ -62,40 +98,31 @@ Run: mvn test -Dtestorder.mode=learn
 Run: mvn test-order:diagnose
 ```
 
-Procedure:
+1. Grep for `^Run: ` lines.
+2. Execute the **first** one; if it succeeds, retry the original command.
+3. If the original still fails, run the **second** `Run:` line (usually `diagnose`).
 
-1. Grep the failure output for `^Run: ` lines.
-2. Execute the **first** one.
-3. If it succeeds, retry the original command.
-4. If the original still fails, run the **second** `Run:` line (usually `diagnose`) to gather context for the user.
-
-Don't invent recovery commands — only run what the plugin tells you to run.
+Don't invent recovery commands — only run what the plugin provides.
 
 ## Stability tiers
 
 Each manifest task has a `stability` field:
 
-- `stable` — safe to call. Output shape and behaviour are committed.
-- `experimental` — works, but the surface may change. Pin behaviour by reading the manifest each session.
-- `deprecated` — still functions but a stable replacement exists; the description names it. Currently deprecated: `show-order`, `show-method-order`, `analyze`. Use `show` (with `-Dtestorder.show.ml=true` for ML health).
+- `stable` — output shape and behaviour are committed.
+- `experimental` — works, but surface may change (`optimize`, `coverage`, `detect-dependencies`, `analyze-mutations`).
+- `deprecated` — stable replacement exists; the manifest description names it.
 
-## Invoking goals from the CLI
+| Deprecated | Use instead |
+|---|---|
+| `show-order` | `show` |
+| `show-method-order` | `show` |
+| `analyze` | `show -Dtestorder.show.ml=true` |
 
-Maven users may not have the `test-order:` prefix configured. Two safe forms:
-
-```bash
-# Always works, no setup
-mvn me.bechberger:test-order-maven-plugin:<goal>
-
-# Works if the user has me.bechberger in ~/.m2/settings.xml <pluginGroups>
-mvn test-order:<goal>
-```
-
-If a `mvn test-order:foo` invocation fails with `No plugin found for prefix 'test-order'`, fall back to the fully qualified form. The Gradle equivalent (`./gradlew testOrder<Foo>`) needs no such configuration.
+Don't use deprecated goals in new invocations — suggest the replacement.
 
 ## Don't
 
-- Don't parse human-readable output of `show`/`show-all`/`dump` — use the JSON form.
-- Don't `mvn test-order:learn` and `mvn test` separately when a single `mvn test -Dtestorder.mode=learn` does the same thing.
-- Don't assume a goal exists — check the manifest first.
-- Don't suppress test-order's stderr; the `Run:` recovery hints live there.
+- Don't parse human-readable output — use the JSON form.
+- Don't run `mvn test-order:learn` + `mvn test` separately; `mvn test -Dtestorder.mode=learn` does both.
+- Don't assume a goal exists — check the manifest.
+- Don't suppress stderr; `Run:` recovery hints live there.
