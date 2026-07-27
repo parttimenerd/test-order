@@ -95,7 +95,10 @@ class NestedTieredWorkflowIT {
 		int tierWithNested = t1.contains(NESTED_TEST) ? 1 : (t2.contains(NESTED_TEST) ? 2 : 3);
 		if (tierWithNested == 1) {
 			// tier 1 is executed by tiered-select itself
-			assertThat(select.output()).contains(NESTED_TEST.substring(0, NESTED_TEST.indexOf('$')));
+			String outerName = NESTED_TEST.contains("$")
+					? NESTED_TEST.substring(0, NESTED_TEST.indexOf('$'))
+					: NESTED_TEST;
+			assertThat(select.output()).contains(outerName);
 		} else {
 			MavenResult runTier = project.maven().runTier(tierWithNested);
 			assertThat(runTier.isSuccess()).as("run-tier %s failed: %s", tierWithNested,

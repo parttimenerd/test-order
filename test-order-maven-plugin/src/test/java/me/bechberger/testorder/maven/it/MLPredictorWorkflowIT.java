@@ -36,7 +36,7 @@ import me.bechberger.testorder.ml.TestHealthReport;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MLPredictorWorkflowIT {
 
-	private static final int EXPECTED_TEST_CLASSES = 7;
+	private static final int EXPECTED_TEST_CLASSES = 28;
 
 	TestProject project;
 
@@ -70,7 +70,7 @@ class MLPredictorWorkflowIT {
 			assertThat(finalResult).succeeded().outputContains("[test-order]").outputContains("Tests run:");
 		}
 
-		Path historyFile = project.path(".test-order/ml/history.lz4");
+		Path historyFile = project.path(".test-order/ml-history/history.lz4");
 		assertThat(historyFile).exists();
 
 		List<MLRunRecord> history = MLHistoryPersistence.load(historyFile);
