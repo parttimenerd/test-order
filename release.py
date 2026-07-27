@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""release.py — version bump and release helper for test-order.
+"""release.py — version bump, test, and publish helper for test-order.
 
 Usage:
-  python3 release.py              # bump minor (default), prompt before push
+  python3 release.py              # bump minor (default), prompt before deploy
   python3 release.py --patch      # bump patch
   python3 release.py --major      # bump major
   python3 release.py --version 1.2.3   # set explicit version
   python3 release.py --dry-run    # show what would change, write nothing
-  python3 release.py --no-push    # commit + tag locally, don't push
+  python3 release.py --no-push    # commit + tag locally, don't push or deploy
   python3 release.py --skip-tests # skip mvn test before committing
   python3 release.py bump         # update files + changelog only, no git
   python3 release.py changelog    # preview the CHANGELOG update
 
-Releasing pushes main + the vX.Y.Z tag, which triggers release.yml → Maven
-Central publish. The script never deploys directly.
+Workflow: bump files → update CHANGELOG → run tests → commit → tag →
+push → mvn deploy -Prelease → create GitHub release.
+
+Requires OSSRH credentials and GPG key in ~/.m2/settings.xml (server id: ossrh)
+and GPG agent running with the signing key loaded.
 """
 
 from __future__ import annotations
@@ -239,6 +242,26 @@ def run_tests():
     _run(["mvn", "-B", "-ntp", "test"])
 
 
+def run_deploy(version: str):
+    print(f"\n→ Deploying {version} to Maven Central (mvn -Prelease deploy) ...")
+    _run(["mvn", "-B", "-ntp", "-Prelease", "deploy", "-DskipTests"])
+
+
+def create_github_release(version: str):
+    print(f"\n→ Creating GitHub release v{version} ...")
+    _run(["gh", "release", "create", f"v{version}", "--generate-notes"], check=False)
+
+
+def trigger_sample_update(version: str):
+    print(f"\n→ Triggering sample-ci-test-order update to {version} ...")
+    _run([
+        "gh", "api", "repos/parttimenerd/sample-ci-test-order/dispatches",
+        "-f", "event_type=plugin-released",
+        "-f", f"client_payload[version]={version}",
+        "-f", f"client_payload[tag]=v{version}",
+    ], check=False)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -317,12 +340,15 @@ def main():
     print(f"  2. Update CHANGELOG.md")
     if not args.skip_tests:
         print(f"  3. Run mvn test")
-    print(f"  {'4' if not args.skip_tests else '3'}. git commit + tag v{new}")
+    n = 4 if not args.skip_tests else 3
+    print(f"  {n}. git commit + tag v{new}")
     if not args.no_push:
-        print(f"  {'5' if not args.skip_tests else '4'}. git push origin {branch} + v{new}")
-        print(f"       → triggers release.yml → Maven Central publish")
+        print(f"  {n+1}. git push origin {branch} + v{new}")
+        print(f"  {n+2}. mvn -Prelease deploy  (publish to Maven Central)")
+        print(f"  {n+3}. gh release create v{new}")
+        print(f"  {n+4}. trigger sample-ci-test-order update")
     else:
-        print(f"  (--no-push: tag stays local)")
+        print(f"  (--no-push: tag stays local, no deploy)")
 
     resp = input("\nContinue? [y/N] ").strip().lower()
     if resp not in ("y", "yes"):
@@ -353,14 +379,17 @@ def main():
 
     if not args.no_push:
         git_push(new)
+        run_deploy(new)
+        create_github_release(new)
+        trigger_sample_update(new)
         print(f"\n✓ Released {new}.")
-        print(f"  CI:            https://github.com/parttimenerd/test-order/actions")
         print(f"  Maven Central: https://central.sonatype.com/artifact/me.bechberger/test-order-maven-plugin/{new}")
     else:
         print(f"\n✓ Committed and tagged v{new} locally (--no-push).")
         print(f"  When ready:")
         print(f"    git push origin {branch}")
         print(f"    git push origin v{new}")
+        print(f"    mvn -B -ntp -Prelease deploy -DskipTests")
 
 
 if __name__ == "__main__":
