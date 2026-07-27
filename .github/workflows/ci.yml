@@ -134,6 +134,22 @@ jobs:
               -Dspotless.check.skip=true
             report_glob: test-order-maven-plugin/target/failsafe-reports/**
             java-version: '17'
+          - name: plugin-its-2
+            step: Run plugin integration tests (batch 2)
+            cmd: >-
+              mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
+              -Dit.test="AdvancedWorkflowIT,BugReproducerIT,EndToEndServiceIT,EndToEndVintageIT,FieldsMethodsWorkflowIT,NestedTieredWorkflowIT,OfflineInstrumentationIT,PluginInteractionIT"
+              -Dspotless.check.skip=true
+            report_glob: test-order-maven-plugin/target/failsafe-reports/**
+            java-version: '17'
+          - name: plugin-its-3
+            step: Run plugin integration tests (batch 3)
+            cmd: >-
+              mvn -B -ntp verify -Dtestorder.it=true -pl test-order-maven-plugin
+              -Dit.test="BugVerificationIT,MLPredictorWorkflowIT,MultiModuleVintageIT,WorkflowSequenceIT"
+              -Dspotless.check.skip=true
+            report_glob: test-order-maven-plugin/target/failsafe-reports/**
+            java-version: '17'
           - name: flaky-cache-sample
             step: Smoke-test flaky/quarantine/cache features on samples/sample-flaky-cache
             cmd: bash scripts/test_flaky_cache_sample.sh
