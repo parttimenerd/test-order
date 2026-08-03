@@ -18,7 +18,7 @@
         <!-- Compile and test against the same JUnit version so there are no classpath conflicts.
              JUnit 6 is API-backward-compatible with 5; compiling against 6.1.1 means the JAR
              works on JUnit 5.10+ and JUnit 6 runtimes. -->
-        <junit.platform.version>6.1.1</junit.platform.version>
+        <junit.platform.version>6.1.2</junit.platform.version>
     </properties>
 
     <dependencies>
