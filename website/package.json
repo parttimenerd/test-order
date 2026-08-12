@@ -11,7 +11,7 @@
     "clear": "docusaurus clear",
     "serve": "docusaurus serve",
     "verify": "node scripts/verify-site.mjs",
-    "build:strict": "set -o pipefail; docusaurus build 2>&1 | tee /tmp/docs-build.log && ! grep -q 'Broken \\(link\\|anchor\\)' /tmp/docs-build.log",
+    "build:strict": "bash -c 'docusaurus build 2>&1 | tee /tmp/docs-build.log; [ ${PIPESTATUS[0]} -eq 0 ] && ! grep -qE \"Broken (link|anchor)\" /tmp/docs-build.log'",
     "build:verify": "docusaurus build && node scripts/verify-site.mjs",
     "regen-og": "rsvg-convert -w 1200 -h 630 static/img/og-image.svg -o static/img/og-image.png",
     "write-translations": "docusaurus write-translations",
