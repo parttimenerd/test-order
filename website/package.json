@@ -11,15 +11,15 @@
     "clear": "docusaurus clear",
     "serve": "docusaurus serve",
     "verify": "node scripts/verify-site.mjs",
-    "build:strict": "docusaurus build 2>&1 | tee /tmp/docs-build.log && ! grep -q 'Broken \\(link\\|anchor\\)' /tmp/docs-build.log",
+    "build:strict": "set -o pipefail; docusaurus build 2>&1 | tee /tmp/docs-build.log && ! grep -q 'Broken \\(link\\|anchor\\)' /tmp/docs-build.log",
     "build:verify": "docusaurus build && node scripts/verify-site.mjs",
     "regen-og": "rsvg-convert -w 1200 -h 630 static/img/og-image.svg -o static/img/og-image.png",
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.6.3",
-    "@docusaurus/preset-classic": "^3.6.3",
+    "@docusaurus/core": "^3.10.2",
+    "@docusaurus/preset-classic": "^3.10.2",
     "@docusaurus/theme-mermaid": "^3.10.2",
     "@easyops-cn/docusaurus-search-local": "^0.55.2",
     "@mdx-js/react": "^3.0.0",
@@ -32,8 +32,8 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "^3.6.3",
-    "@docusaurus/types": "^3.6.3"
+    "@docusaurus/module-type-aliases": "^3.10.2",
+    "@docusaurus/types": "^3.10.2"
   },
   "browserslist": {
     "production": [
