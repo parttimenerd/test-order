@@ -25,14 +25,14 @@
         <dependency>
             <groupId>org.yaml</groupId>
             <artifactId>snakeyaml</artifactId>
-            <version>2.6</version>
+            <version>2.7</version>
         </dependency>
 
         <!-- HTTP Client (okhttp 5.x uses okhttp-jvm for the JVM artifact) -->
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp-jvm</artifactId>
-            <version>5.4.0</version>
+            <version>5.5.0</version>
         </dependency>
 
         <!-- JSON Processing for GitHub/GitLab APIs -->
@@ -84,7 +84,7 @@
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>mockwebserver</artifactId>
-            <version>5.4.0</version>
+            <version>5.5.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
