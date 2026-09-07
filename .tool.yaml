@@ -1,0 +1,98 @@
+tag: experimental
+maven_coordinates: me.bechberger:test-order-maven-plugin
+tagline: Maven and Gradle plugin that reorders your test suite so tests covering recently changed code
+  run first. Uses bytecode instrumentation to track class-to-test coverage, then on the next run
+  promotes affected tests to the front — zero config, no cloud, no annotations.
+tagline_short: Run the tests most likely to fail first — zero-config test prioritisation for Maven/Gradle.
+github_pages: https://parttimenerd.github.io/test-order/
+when_to_use:
+- You want faster feedback in CI by surfacing relevant failures early
+- Your test suite is large enough that waiting for the full run hurts productivity
+- You want zero-config test prioritisation with Maven or Gradle
+when_not_to_use:
+- You need cross-module coverage tracking (single-module only for now)
+- You are not using Maven or Gradle
+links:
+- label: Docs ↗
+  url: https://parttimenerd.github.io/test-order/
+install:
+- label: Maven
+  lang: xml
+  code: |
+    <plugin>
+      <groupId>me.bechberger</groupId>
+      <artifactId>test-order-maven-plugin</artifactId>
+      <version>VERSION</version>
+      <extensions>true</extensions>
+      <executions>
+        <execution>
+          <goals><goal>prepare</goal></goals>
+        </execution>
+      </executions>
+    </plugin>
+- label: Gradle
+  lang: groovy
+  code: |
+    // build.gradle
+    plugins {
+        id 'me.bechberger.test-order' version 'VERSION'
+    }
+usage:
+- label: Maven
+  lang: bash
+  code: |
+    mvn test          # first run: learns coverage
+    mvn test          # second run: affected tests go first
+- label: Gradle
+  lang: bash
+  code: |
+    ./gradlew test    # first run: learns coverage
+    ./gradlew test    # second run: affected tests go first
+how_to:
+- title: Enable the short mvn test-order: prefix
+  body: |
+    Maven only resolves goal prefixes for trusted groupIds. Add `me.bechberger` to
+    `~/.m2/settings.xml` once so the short form works from the CLI:
+    ```xml
+    <settings>
+      <pluginGroups>
+        <pluginGroup>me.bechberger</pluginGroup>
+      </pluginGroups>
+    </settings>
+    ```
+    Without this, use the fully-qualified form:
+    ```bash
+    mvn me.bechberger:test-order-maven-plugin:show
+    ```
+
+- title: Inspect the test ranking and run affected tests only
+  body: |
+    **Maven:**
+    ```bash
+    mvn test-order:show       # ranked list of all tests
+    mvn test-order:affected test  # run only tests affected by recent changes
+    mvn test-order:dashboard  # full HTML report
+    ```
+    **Gradle:**
+    ```bash
+    ./gradlew testOrderShow
+    ./gradlew testOrderAffected
+    ./gradlew testOrderDashboard
+    ```
+
+- title: Detect flaky and order-dependent tests
+  body: |
+    ```bash
+    mvn test-order:detect-dependencies   # Maven
+    ./gradlew testOrderDetectDependencies  # Gradle
+    ```
+    Runs the suite in multiple orders to surface tests that only pass in a specific sequence.
+
+- title: Diagnose why reordering isn't working
+  body: |
+    ```bash
+    mvn test-order:diagnose         # Maven
+    ./gradlew testOrderDiagnose     # Gradle
+    ```
+    Checks prerequisites (Java 17+, Maven 3.6+/Gradle 7.6+, Git), coverage data presence,
+    and plugin configuration. Run this first if tests are not being reordered.
