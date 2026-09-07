@@ -173,6 +173,38 @@ For the full CLI reference, see [docs/CLI_REFERENCE.mdx](docs/CLI_REFERENCE.mdx)
 
 ## Demo
 
+### Verify reordering is working after the first run
+
+After the first `mvn test` (which collects coverage data), run it again and check
+that affected tests moved to the front:
+
+```bash
+mvn test          # first run — collects coverage, no reordering yet
+# edit a source file, then:
+mvn test          # second run — tests covering changed code run first
+```
+
+Confirm the ranking with:
+
+```bash
+mvn test-order:show
+# or the fully-qualified form if you haven't set up the prefix:
+mvn me.bechberger:test-order-maven-plugin:show
+```
+
+If the list is empty or tests are not reordered, run the diagnostics command
+to find out why:
+
+```bash
+mvn test-order:diagnose         # Maven
+./gradlew testOrderDiagnose     # Gradle
+```
+
+Checks prerequisites (Java 17+, Maven 3.6+/Gradle 7.6+, Git), coverage data presence,
+and plugin configuration.
+
+## Demo
+
 [![asciicast](https://asciinema.org/a/QhXjJtvug2nR2VVh.svg)](https://asciinema.org/a/QhXjJtvug2nR2VVh)
 
 > *Spring Petclinic: modify a controller → that test jumps to #1 → instant feedback.*
