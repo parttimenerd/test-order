@@ -49,7 +49,7 @@ usage:
     ./gradlew test    # first run: learns coverage
     ./gradlew test    # second run: affected tests go first
 how_to:
-- title: Enable the short mvn test-order: prefix
+- title: "Enable the short mvn test-order: prefix"
   body: |
     Maven only resolves goal prefixes for trusted groupIds. Add `me.bechberger` to
     `~/.m2/settings.xml` once so the short form works from the CLI:
