@@ -503,7 +503,7 @@ layout: section
 
 <div class="relative z-10 text-center">
 
-# Bytecode instrumentation + dependency index + scoring
+# Record once. Score instantly. Zero retraining.
 
 <div class="pt-4 opacity-70">bytecode instrumentation · dependency index · scoring</div>
 
@@ -919,23 +919,25 @@ layout: default
 
 <DemoCue>demo running — return at "Dashboard"</DemoCue>
 
-# While spring-petclinic runs…
+# The learn run is the only cost you pay
 
 <div class="mt-6 grid grid-cols-2 gap-6">
 
 <v-click>
 
 <div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-semibold text-orange-300 mb-2">This project</div>
-  <div class="text-sm opacity-80">40+ tests · full Spring context</div>
+  <div class="font-semibold text-orange-300 mb-2">Right now</div>
+  <div class="text-sm opacity-80">First run on spring-petclinic — 40+ tests, full Spring context</div>
+  <div class="text-sm text-orange-400 font-mono mt-1">This is the learn run. It runs once.</div>
 </div>
 
 </v-click>
 <v-click>
 
 <div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-semibold text-green-300 mb-2">The CI workflow</div>
-  <div class="text-sm text-green-400 font-mono mt-1">learn once → zero overhead after</div>
+  <div class="font-semibold text-green-300 mb-2">Every run after this</div>
+  <div class="text-sm opacity-80">learn already happened in CI last night</div>
+  <div class="text-sm text-green-400 font-mono mt-1">zero overhead · just ordering</div>
 </div>
 
 </v-click>
@@ -945,16 +947,15 @@ layout: default
 <v-click>
 
 <div class="mt-6 text-center text-lg font-semibold opacity-80">
-  Watch for the APFD line — that's the proof.
+  Watch for the APFD line — that number is the proof.
 </div>
 
 </v-click>
 
 <!--
-- This is a real codebase — 40+ test classes, full Spring context, JPA, web layer, not a toy
-- The CI workflow: learn once overnight in CI, then zero overhead on every dev run
-- Cover for the ~60s test run — keep talking
-- "Learn once, order forever. The learn run is the cost you pay once"
+- "The learn run is the cost you pay once. In CI it runs overnight. Dev runs have zero overhead."
+- Don't just fill time — make the CI workflow concrete while the suite runs
+- If the suite finishes fast, skip v-clicks 2 and 3 and go straight to the dashboard
 - TRANSITION: when the APFD line prints, open the dashboard
 -->
 
@@ -1272,17 +1273,25 @@ class: bg-zinc-900 text-white
 
 <div class="big-statement">
 
-install → reorder → measure → tune
+You don't have to wait<br/>20 minutes anymore.
 
 </div>
 
+<v-click>
+
 <div class="pt-10 text-2xl font-mono">
+  install → reorder → measure → tune
+</div>
+
+<div class="pt-6 text-xl font-mono">
   github.com/parttimenerd/test-order
 </div>
 
 <div class="pt-5 text-base opacity-50">
   <span class="font-mono text-emerald-300">mvn test-order:diagnose</span> checks your setup · Apache 2.0 · v0.1 — early-stage, feedback welcome
 </div>
+
+</v-click>
 
 </div>
 

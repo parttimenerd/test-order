@@ -365,6 +365,30 @@ Transition: "The idea isn't new — 25 years of research."
 
 
 ---
+layout: center
+class: text-center bg-zinc-900 text-white
+---
+
+<div class="big-statement">
+This idea isn't new.<br/>The research is 25 years old.
+</div>
+
+<v-click>
+
+<div class="text-xl mt-8 opacity-75">
+  The missing piece was local tooling that didn't need a cloud pipeline.
+</div>
+
+</v-click>
+
+<!--
+- Hard pivot: "We just settled where we fit. Now let me show you *why* this works at all."
+- The research section earns the claim. Don't rush through it — one slide per idea.
+Transition: "Rothermel 1999. Yoo and Harman 2012. Google at 5.5 million tests."
+-->
+
+
+---
 layout: section
 ---
 
@@ -1141,6 +1165,31 @@ Transition: "Now the developer's view — how it can be this fast."
 
 
 ---
+layout: center
+class: text-center bg-zinc-900 text-white
+---
+
+<div class="big-statement">
+It works. But <em>why</em> is it this fast?
+</div>
+
+<v-click>
+
+<div class="text-xl mt-8 opacity-75">
+  One learn run. Zero re-training. Sub-millisecond scoring per change.<br/>
+  Five engineering decisions made that possible.
+</div>
+
+</v-click>
+
+<!--
+- Pause after "this fast?" — let the question hang.
+- The audience has seen demos; they know it works. This section explains the mechanism.
+Transition: "Let me open it up."
+-->
+
+
+---
 layout: section
 ---
 
@@ -1519,169 +1568,71 @@ Transition: "Five performance decisions made this fast."
 
 
 ---
-layout: center
-class: bg-zinc-900 text-white
+layout: default
 ---
 
-<img src="/images/loc-scientist-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
+<img src="/images/loc-scientist-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-10" />
+<div class="absolute inset-0 bg-zinc-900/88 z-0" />
 
-<div class="big-statement">
+<div class="relative z-10">
 
-Integer IDs, not strings.
+# Five decisions that make it fast
 
-</div>
+<div class="mt-6 space-y-3">
 
 <v-click>
 
-<div class="text-xl text-center mt-8 opacity-90">
-  ~50× vs. ConcurrentHashMap&lt;String, Set&gt;
+<div class="flex items-start gap-4 text-lg">
+  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">①</span>
+  <div><span class="font-semibold">Integer IDs, not strings</span> <span class="opacity-60 text-base">— ~50× vs. ConcurrentHashMap&lt;String, Set&gt;; pre-computed before JVM start</span></div>
+</div>
+
+</v-click>
+<v-click>
+
+<div class="flex items-start gap-4 text-lg">
+  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">②</span>
+  <div><span class="font-semibold">Thread-local bitsets</span> <span class="opacity-60 text-base">— zero lock contention; drained once per test, not per call site</span></div>
+</div>
+
+</v-click>
+<v-click>
+
+<div class="flex items-start gap-4 text-lg">
+  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">③</span>
+  <div><span class="font-semibold">Socket batch</span> <span class="opacity-60 text-base">— one binary write per fork at shutdown; killed the 100–500 ms per-fork round-trip</span></div>
+</div>
+
+</v-click>
+<v-click>
+
+<div class="flex items-start gap-4 text-lg">
+  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">④</span>
+  <div><span class="font-semibold">In-JVM cache</span> <span class="opacity-60 text-base">— (path, mtime, size) key; 100-module build calls load() once not 100×</span></div>
+</div>
+
+</v-click>
+<v-click>
+
+<div class="flex items-start gap-4 text-lg">
+  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">⑤</span>
+  <div><span class="font-semibold">Frequency filter</span> <span class="opacity-60 text-base">— deps in &gt;80% of tests are pure noise; dropped at write time, not at query time</span></div>
 </div>
 
 </v-click>
 
 </div>
 
-<!--
-- First of five perf decisions.
-- Pre-computed before the JVM starts.
-- First iteration used class-name strings: 4000 string.equals() per test-method call in a 4000-class project.
-- Worse under parallel runners.
-Transition: "Second decision — thread-local bits."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/loc-scientist-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-Thread-local bits.
-
-</div>
-
-<v-click>
-
-<div class="text-xl text-center mt-8 opacity-90">
-  Zero lock contention. Drained once per test.
-</div>
-
-</v-click>
-
 </div>
 
 <!--
-- Second perf decision.
-- No lock contention between parallel test runners.
-- Drained once per test method, not per call site.
-Transition: "Third — socket batch."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/loc-scientist-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-Socket batch.
-
-</div>
-
-<v-click>
-
-<div class="text-xl text-center mt-8 opacity-90">
-  Killed the 100–500 ms per-fork round-trip.
-</div>
-
-</v-click>
-
-</div>
-
-<!--
-- Third perf decision.
-- One binary write per fork at shutdown.
-- Eliminated the per-fork index reload/merge/resave round-trip.
-Transition: "Fourth — in-JVM cache."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/loc-scientist-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-In-JVM cache.
-
-</div>
-
-<v-click>
-
-<div class="text-xl text-center mt-8 opacity-90">
-  Skips LZ4 decompression in multi-module builds.
-</div>
-
-</v-click>
-
-</div>
-
-<!--
-- Fourth perf decision.
-- ConcurrentHashMap keyed by (path, mtime, size).
-- A 100-module build calls load() 100× for the same 5 MB file.
-- mtime in the key means stale reads are impossible.
-Transition: "Fifth — frequency filter."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/loc-scientist-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-Frequency filter.
-
-</div>
-
-<v-click>
-
-<div class="text-xl text-center mt-8 opacity-90">
-  Drop deps in &gt;80% of tests — pure noise.
-</div>
-
-</v-click>
-
-</div>
-
-<!--
-- Fifth perf decision.
-- Dropped at write time.
-- Jackson's ClassUtil, log facades appear in ~99% of dep sets.
-- They bloat the index, slow intersection, and score tests identically — no signal.
+- Reveal one at a time — let each decision land.
+- "Each of these was a measured regression before we fixed it."
+- Integer IDs: first iteration used class-name strings. 4000 string.equals() per call in a 4000-class project.
+- Thread-local: ConcurrentHashMap had measurable contention under parallel Surefire forks.
+- Socket batch: 100 forks × 500ms I/O = 50s of pure overhead on a large module.
+- In-JVM cache: 100-module build was reloading + decompressing the same 5 MB index 100 times.
+- Frequency filter: Jackson ClassUtil, log facades appear in ~99% of dep sets — bloat index, score tests identically, add zero signal.
 Transition: "Now the scoring formula itself."
 -->
 
@@ -1797,7 +1748,34 @@ public Money total() {
 - Vineflower decompiles the transformed bytecode on the fly.
 - Every touched class at /classes; every instrumented method visible.
 - "You can verify exactly what we inject. No hidden state, no side channels."
-Transition: "Now the honest part — where it breaks."
+Transition: "That's how deep it goes. Now let's come back up."
+-->
+
+
+---
+layout: center
+class: text-center bg-zinc-900 text-white
+---
+
+<div class="big-statement">
+That's how it works.
+</div>
+
+<v-click>
+
+<div class="text-xl mt-8 opacity-75">
+  One injected call. One bitset. One file.<br/>
+  Now let's talk about where it <em>doesn't</em> work.
+</div>
+
+</v-click>
+
+<!--
+- Explicit decompression after the deep dive.
+- "We just went from 25 years of research down to five bytes of bytecode. Let's surface."
+- The pivot to Honest Assessment lands better when the audience knows you're done with internals.
+- This slide gives them a moment to exhale.
+Transition: "straight to Honest Assessment."
 -->
 
 
@@ -1891,7 +1869,7 @@ layout: section
 
 # Beyond Ordering
 
-<div class="pt-4 opacity-60">the problems ordering alone can't solve</div>
+<div class="pt-4 opacity-60">three problems ordering alone can't solve</div>
 
 </div>
 
@@ -1910,12 +1888,54 @@ class: bg-zinc-900 text-white
 
 <img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
 <div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
+
+<div class="relative z-10 flex flex-col items-center text-center">
 
 <div class="big-statement">
+Ordering can't fix<br/>three things.
+</div>
 
+<v-click>
+
+<div class="text-2xl mt-8 opacity-80">
+  Flaky tests &nbsp;·&nbsp; unchanged code &nbsp;·&nbsp; shared state between tests
+</div>
+
+</v-click>
+
+<v-click>
+
+<div class="text-xl mt-6 opacity-60">
+  We handle each one.
+</div>
+
+</v-click>
+
+</div>
+
+<!--
+- Name the problems before the solutions. The audience should feel the shape of the space.
+- Flaky: ordering can't help if the test fails intermittently regardless of position.
+- Unchanged code: ordering still runs unrelated tests; affected-selection skips them.
+- Shared state: ordering can create new OD failures if tests assume a particular predecessor.
+- "Three opt-in features. Day-one you need none of them."
+Transition: "Problem 1 — flaky tests."
+-->
+
+
+---
+layout: center
+class: bg-zinc-900 text-white
+---
+
+<img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
+<div class="absolute inset-0 bg-zinc-900/82 z-0" />
+<div class="relative z-10 flex flex-col items-center text-center">
+
+<div class="text-2xl text-rose-400 font-semibold mb-6">Problem: flaky tests corrupt the failure-history signal</div>
+
+<div class="big-statement">
 Auto-retry
-
 </div>
 
 <div class="pt-10 flex justify-center">
@@ -1927,14 +1947,23 @@ void fetchRatesFromExternalApi() { … }
 
 </div>
 
+<v-click>
+
+<div class="text-xl mt-6 opacity-80">
+  Failed once? Re-run N times before reporting FAILED.<br/>
+  <span class="text-emerald-400">Network blip stops breaking builds.</span>
+</div>
+
+</v-click>
+
 </div>
 
 <!--
 - InvocationInterceptor, JUnit 5.
 - For tests that fail on DNS blip, pool saturation, rate-limit hiccup.
-- Failed once? Re-run N times before reporting FAILED. ABORTED if all attempts fail.
-- Network-adjacent tests stop breaking builds.
-Transition: "Next — quarantine."
+- ABORTED if all attempts fail — build can still be configured to pass on ABORTED.
+- The EMA score doesn't spike on a single retry — noise filtered.
+Transition: "Problem 2 — chronically flaky tests."
 -->
 
 
@@ -1945,21 +1974,22 @@ class: bg-zinc-900 text-white
 
 <img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
 <div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
+<div class="relative z-10 flex flex-col items-center text-center">
+
+<div class="text-2xl text-rose-400 font-semibold mb-6">Problem: chronically flaky tests block the team</div>
 
 <div class="big-statement">
-
 Quarantine
-
 </div>
 
-<div class="pt-8 text-xl text-center opacity-90">
-  Flaky test throws <span class="font-mono text-emerald-300">TestAbortedException</span>: ABORTED, not FAILED.<br/>
+<div class="pt-8 text-xl opacity-90">
+  Throws <span class="font-mono text-emerald-300">TestAbortedException</span>: ABORTED, not FAILED.<br/>
   Build stays green. You fix it when you have time.
 </div>
 
-<div class="pt-6 text-base text-center opacity-60">
-  4.56% of failures at Google TAP were flaky. · Luo et al., FSE 2014
+<div class="pt-6 text-base opacity-55">
+  Luo et al. 2014: 4.56% of Google TAP failures were flaky.<br/>
+  That's enough EMA noise to bury your real failure signal.
 </div>
 
 </div>
@@ -1967,9 +1997,8 @@ Quarantine
 <!--
 - @QuarantinedTest. Tests still run — they just can't break the build.
 - Luo et al. 2014: Google TAP had 73K flaky failures of 1.6M total (4.56%).
-- "78% of flaky tests are flaky from the first time written" (Luo 2014).
-- Flaky failures in the signal are noise — quarantine removes them before they corrupt the EMA decay.
-Transition: "Next — skip-if-unchanged."
+- Flaky failures corrupt the EMA decay — quarantine filters them before they distort scores.
+Transition: "Problem 3 — running tests that can't possibly fail."
 -->
 
 
@@ -1980,25 +2009,34 @@ class: bg-zinc-900 text-white
 
 <img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
 <div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
+<div class="relative z-10 flex flex-col items-center text-center">
+
+<div class="text-2xl text-rose-400 font-semibold mb-6">Problem: ordering still runs tests that can't fail on this change</div>
 
 <div class="big-statement">
-
 Skip-if-unchanged
-
 </div>
 
-<div class="pt-8 text-xl text-center opacity-90">
+<div class="pt-8 text-xl opacity-90">
   Stable dep set + N-run pass streak → defer the test.<br/>
   Skip fraction capped at 90%.
 </div>
+
+<v-click>
+
+<div class="text-xl mt-6 text-emerald-400">
+  "Can't possibly fail" goes from last place to not running.
+</div>
+
+</v-click>
 
 </div>
 
 <!--
 - The cache. Same dep hash + no failures for N runs → "safe to skip."
 - 90% cap: you can never accidentally defer the whole suite.
-Transition: "And detecting order-dependent tests."
+- The logical extension of "if it hasn't touched the changed code, it cannot fail."
+Transition: "Problem 4 — tests that depend on each other's side effects."
 -->
 
 
@@ -2009,15 +2047,15 @@ class: bg-zinc-900 text-white
 
 <img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
 <div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
+<div class="relative z-10 flex flex-col items-center text-center">
+
+<div class="text-2xl text-rose-400 font-semibold mb-6">Problem: reordering can create new test failures via shared state</div>
 
 <div class="big-statement">
-
-Order-dependent test detection
-
+Order-dependent<br/>test detection
 </div>
 
-<div class="pt-8 text-xl text-center opacity-90">
+<div class="pt-8 text-xl opacity-90">
   Tuscan-square combinatorial designs (Li et al., ISSTA 2023).<br/>
   97.2% detection rate. ~105 test orders. vs. <em>n!</em> for brute force.
 </div>
@@ -2028,7 +2066,7 @@ Order-dependent test detection
 - detect-dependencies mode.
 - Li et al. 2023: "97.2% of known OD tests with 104.7 orders on average per subject." Brute force = n!.
 - Tuscan squares give pair-coverage: every pair appears in both orderings at least once.
-- "Static state leaking between tests? We find it."
+- "Static state leaking between tests? We find it — before reordering makes it your problem."
 Transition: "Back to the headline — does it actually catch bugs?"
 -->
 
@@ -2090,6 +2128,30 @@ The 5% that miss<br/>are predictable.
 - Average rank of a MISSED bug: still 1.4. MISSED means rank ≥ 2 but usually top 5.
 - If your change is to a near-universal utility class: run the full suite. Otherwise trust the ordering.
 Transition: "The bigger reason scale matters now: AI agents."
+-->
+
+
+---
+layout: center
+class: text-center bg-zinc-900 text-white
+---
+
+<div class="big-statement">
+That's your laptop.<br/>What about 52 modules?
+</div>
+
+<v-click>
+
+<div class="text-xl mt-8 opacity-75">
+  And what happens when AI agents run your suite hundreds of times a session?
+</div>
+
+</v-click>
+
+<!--
+- "We've proven accuracy. Now: does it hold at real project scale?"
+- The AI agent angle is the "why now" — not a feature, a forcing function.
+Transition: "AI agents change the economics of test feedback."
 -->
 
 
@@ -2222,28 +2284,36 @@ class: bg-zinc-900 text-white
 
 <div class="big-statement text-center w-full">
 
-install → reorder → measure → tune
+You don't have to wait<br/>20 minutes anymore.
 
 </div>
 
-<div class="pt-10 text-2xl font-mono text-center">
+<v-click>
+
+<div class="text-2xl font-mono text-center mt-10">
+  install → reorder → measure → tune
+</div>
+
+<div class="pt-6 text-xl font-mono text-center">
   github.com/parttimenerd/test-order
 </div>
 
-<div class="pt-6 text-base opacity-50 text-center">
+<div class="pt-4 text-base opacity-50 text-center">
   <span class="font-mono text-emerald-300">mvn test-order:diagnose</span> on your own project · Apache 2.0 · v0.1 — early-stage, feedback welcome
 </div>
+
+</v-click>
 
 </div>
 
 <!--
-- Four words, the whole talk.
+- Close the loop: the talk opened with "who waited 20 minutes?" — this answers it directly.
+- Pause after the first line. Let it land before revealing the four words.
 - Install: ten lines POM, three lines Gradle.
-- Reorder: `mvn test` twice. Failures surface earlier — typically in the first 20% of wall time on the benchmarked repos.
+- Reorder: `mvn test` twice. Failures surface earlier — typically in the first 20% of wall time.
 - Measure: APFD every run. Dashboard for trends.
 - Tune: weights tab. Meets you where you are.
 - Say the URL twice — it's on the recording.
-- `test-order:diagnose` = health check: suggests mode, shows overhead estimate.
 Transition: pause, then advance to Q&A.
 -->
 
