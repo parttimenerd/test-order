@@ -142,7 +142,7 @@ layout: cover
 # You Are Running the Wrong Tests First
 
 <div class="pt-8 text-xl opacity-60">
-  Local, zero-config test prioritization for Java
+  Local, zero-config test prioritization for Java · v0.1 · early-stage
 </div>
 
 <div class="abs-br m-6 text-sm opacity-50">
@@ -1892,6 +1892,15 @@ layout: default
   </div>
 </div>
 
+<v-click>
+
+<div class="mt-6 p-4 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-sm">
+  <strong>v0.1 — early-stage:</strong> API and index format may change between releases.
+  Runs in CI today; not yet battle-tested at enterprise scale. File issues at github.com/parttimenerd/test-order.
+</div>
+
+</v-click>
+
 <!--
 - Tiny suites: no ordering headroom. Parallelism helps more.
 - Reflection: Spring AOP and Mockito are fine — they go through bytecode. "Build the object graph from YAML at runtime" loses us.
@@ -2257,7 +2266,7 @@ install → reorder → measure → tune
 </div>
 
 <div class="pt-6 text-base opacity-50 text-center">
-  <span class="font-mono text-emerald-300">mvn test-order:diagnose</span> on your own project · Apache 2.0
+  <span class="font-mono text-emerald-300">mvn test-order:diagnose</span> on your own project · Apache 2.0 · v0.1 — early-stage, feedback welcome
 </div>
 
 </div>
@@ -2265,7 +2274,7 @@ install → reorder → measure → tune
 <!--
 - Four words, the whole talk.
 - Install: ten lines POM, three lines Gradle.
-- Reorder: `mvn test` twice. Failures in the first 5–10%.
+- Reorder: `mvn test` twice. Failures surface earlier — typically in the first 20% of wall time on the benchmarked repos.
 - Measure: APFD every run. Dashboard for trends.
 - Tune: weights tab. Meets you where you are.
 - Say the URL twice — it's on the recording.

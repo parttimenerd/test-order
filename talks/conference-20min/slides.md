@@ -137,7 +137,7 @@ layout: cover
 # You Are Running the Wrong Tests First
 
 <div class="pt-6 text-xl opacity-70">
-  bytecode instrumentation · zero config · faster feedback
+  bytecode instrumentation · zero config · faster feedback · v0.1 · early-stage
 </div>
 
 <div class="pt-4 text-base opacity-40">
@@ -1256,6 +1256,15 @@ layout: default
 
 </v-click>
 
+<v-click>
+
+<div class="mt-4 p-4 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-sm">
+  <strong>v0.1 — early-stage:</strong> API and index format may change between releases.
+  Useful in CI today; not yet battle-tested at enterprise scale.
+</div>
+
+</v-click>
+
 </div>
 
 <!--
@@ -1293,7 +1302,7 @@ install → reorder → measure → tune
 </div>
 
 <div class="pt-5 text-base opacity-50">
-  <span class="font-mono text-emerald-300">mvn test-order:diagnose</span> checks your setup · Apache 2.0 · no cloud
+  <span class="font-mono text-emerald-300">mvn test-order:diagnose</span> checks your setup · Apache 2.0 · v0.1 — early-stage, feedback welcome
 </div>
 
 </div>
@@ -1302,7 +1311,7 @@ install → reorder → measure → tune
 - LOC librarians — orderly, finding the right thing fast
 - Four words. The whole talk
 - Install: ten lines of POM
-- Reorder: mvn test twice. Failures in the first 5–10%
+- Reorder: mvn test twice. Failures surface earlier — typically in the first 20% on the benchmarked repos
 - Measure: APFD on every run. Dashboard for trends
 - Tune: weights tab
 - SAY THE URL TWICE. It is on the recording
