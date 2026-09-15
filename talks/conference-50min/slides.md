@@ -359,9 +359,9 @@ layout: section
 
 <div class="relative z-10 text-center">
 
-# 25 years of research.<br/>One weekend of plumbing.
+# Test prioritization is a solved research problem.<br/>Local tooling wasn't.
 
-<div class="pt-4 opacity-70">test prioritization is a solved problem — plumbing it was not</div>
+<div class="pt-4 opacity-70">25 years of research · practical Java tooling that was missing</div>
 
 </div>
 
