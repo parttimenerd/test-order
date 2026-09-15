@@ -359,9 +359,9 @@ layout: section
 
 <div class="relative z-10 text-center">
 
-# The Idea
+# 25 years of research.<br/>One weekend of plumbing.
 
-<div class="pt-4 opacity-70">25 years of research, one weekend of plumbing</div>
+<div class="pt-4 opacity-70">test prioritization is a solved problem — plumbing it was not</div>
 
 </div>
 
@@ -697,21 +697,20 @@ Transition: "And here's what it buys you."
 layout: fact
 ---
 
-# 50% → 85–90%
+# 50% → 87–91%
 
 <div class="pt-2 text-2xl opacity-80">
-  APFD — failures surface in the first 20% of wall time.
-</div>
+  APFD — failures surface in the first 20% of wall time.</div>
 
 <div class="pt-8 text-base opacity-50">
   Average Percentage of Faults Detected · 100% = all failures first · 50% = random / alphabetical<br/>
-  Measured: synthetic one-line bugs · 20+ OSS repos · rank of first failing test
+  Measured: synthetic one-line bugs · 7 benchmarked OSS repos · rank of first failing test
 </div>
 
 <!--
 - The hero claim. Say it once, then silence for 3 seconds.
 - 50% = random/alphabetical baseline (Yoo & Harman 2012).
-- 85–90% = test-order, 20+ open-source repos.
+- 87–91% = test-order, 7 benchmarked repos; 20+ repos total in regression suite.
 - Method: inject a one-line bug, record rank of first failing test.
 - Reproducible: scripts/third_party_test_plan.sh.
 Transition: "Let me make that concrete with real project numbers."
@@ -722,7 +721,7 @@ Transition: "Let me make that concrete with real project numbers."
 layout: default
 ---
 
-# Benchmarks: 20+ OSS repos
+# 7 benchmarked OSS repos — same result every time
 
 <BenchmarkChart />
 
@@ -737,7 +736,7 @@ layout: default
 
 <!--
 - Alphabetical APFD hovers at 50% — random baseline, exactly as Yoo & Harman predicted.
-- test-order: 85–93% across utilities, networking, DI framework, AI libraries.
+- test-order: 87–93% across utilities, networking, DI framework, AI libraries.
 - These are ranges across 5 injected bugs × 3 runs — individual results vary by which class was changed.
 - "scripts/third_party_test_plan.sh bugs commons-lang — anyone can reproduce this."
 - Real test counts from the live indexes present in this checkout.
@@ -756,7 +755,7 @@ layout: section
 
 # Adoption
 
-<div class="pt-4 opacity-70">what a developer actually does</div>
+<div class="pt-4 opacity-70">what a developer actually does — Maven or Gradle, ten lines</div>
 
 </div>
 
@@ -1038,7 +1037,7 @@ Transition: "What does the learn run actually cost?"
 layout: default
 ---
 
-# Instrumentation modes
+# Instrumentation overhead: you pay once, then zero
 
 <InstrumentationOverhead />
 
@@ -1707,7 +1706,7 @@ Transition: "Now the scoring formula itself."
 layout: default
 ---
 
-# The scoring formula: design rationale
+# 7 scoring signals, all configurable
 
 <div class="pt-2 grid grid-cols-2 gap-6">
 
@@ -1718,7 +1717,7 @@ layout: default
 | New test | **+15** | No history — learn it first |
 | Changed test | **+9** | You edited it |
 | Recent failure | 0–5 | EMA d=0.3 · Yoo & Harman |
-| **Dep overlap** | **0–5** | √-norm · Memon et al. |
+| **Dep overlap** | **0–5** | √-norm intersection score |
 
 </div>
 
@@ -1759,7 +1758,7 @@ Transition: "What does that look like for a real test? One worked example."
 layout: default
 ---
 
-# Scoring in practice: CartTest gets 14
+# CartTest scores 14 — here's every point
 
 ```ansi
 deps(CartTest) = {Cart, Invoice, Money, …} ← 8 classes
@@ -2045,7 +2044,7 @@ layout: fact
 
 # 95%
 
-<div class="pt-2 text-3xl opacity-90">bug-detection rate · 20+ OSS repos</div>
+<div class="pt-2 text-3xl opacity-90">failing test ranked #1 · 7 benchmarked OSS repos</div>
 
 <div class="pt-6 text-2xl font-bold text-emerald-400">
   Average rank of first failing test: 1.4

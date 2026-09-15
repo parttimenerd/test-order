@@ -485,7 +485,7 @@ layout: section
 
 <div class="relative z-10 text-center">
 
-# How It Works
+# Bytecode instrumentation + dependency index + scoring
 
 <div class="pt-4 opacity-70">bytecode instrumentation · dependency index · scoring</div>
 
@@ -579,7 +579,7 @@ public Money total() {
 layout: default
 ---
 
-# The scoring formula
+# 7 signals, all configurable — dep overlap is the core
 
 <ScoringBreakdown />
 
@@ -593,7 +593,7 @@ layout: default
 
 <!--
 - Split table: left column (high-weight signals) first, right revealed after
-- If you only remember one line: dep overlap — Memon et al. operationalized as a set intersection
+- If you only remember one line: dep overlap — √-normalized class intersection, higher = more overlap with the changed set
 - Recent failure EMA: Yoo & Harman 2012's strongest secondary signal
 - √-normalized overlap: a test with 1 dep shouldn't outrank one with 50 at the same ratio
 - Additive means every term is independently debuggable — the dashboard shows each contribution
@@ -1080,7 +1080,7 @@ BUILD SUCCESS in 1.2 s
 layout: fact
 ---
 
-# 50% → 85–90%
+# 50% → 87–91%
 
 <div class="pt-2 text-2xl opacity-80">
   APFD — failures surface in the first 20% of wall time
@@ -1088,13 +1088,13 @@ layout: fact
 
 <div class="pt-6 text-base opacity-50 max-w-2xl mx-auto">
   Alphabetical / random baseline = 50% APFD · Yoo &amp; Harman 2012<br/>
-  Measured across 20+ OSS repos · synthetic one-line bugs · rank of first failing test<br/>
+  Measured across 7 benchmarked OSS repos (20+ in regression suite) · synthetic one-line bugs · rank of first failing test<br/>
   Average rank of first failing test: <strong class="text-white text-lg">1.4</strong>
 </div>
 
 <!--
 - 50% APFD = alphabetical baseline (Yoo & Harman 2012 standard)
-- 85–90% = test-order across commons-lang, jackson-core, okhttp, spring-ai, guava, netty…
+- 87–91% = test-order across commons-lang, jackson-core, okhttp, spring-ai, guava, netty…
 - Average rank 1.4: when we miss #1, the failing test is still #2 almost every time
 - PAUSE 3 seconds after advancing. Don't speak. Let it land
 - TRANSITION: "let me make that concrete with real numbers"
@@ -1105,7 +1105,7 @@ layout: fact
 layout: default
 ---
 
-# Real projects, real numbers
+# 7 benchmarked OSS repos — same result every time
 
 <BenchmarkChart />
 
