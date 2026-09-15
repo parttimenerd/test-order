@@ -835,13 +835,7 @@ layout: default
 
 # Demo 1 — Maven from scratch
 
-<DemoCard id="D1" duration="5 min" :cmd="`cd samples/sample-shop
-mvn test                  # learn run
-mvn test                  # order run
-mvn test-order:show       # scores + why`">
-  <template #title>Zero to ordered in two commands</template>
-  <template #watch>Watch: <code>.test-order/</code> appears after run #1. Run #2 shows tests in scored order with a why column.</template>
-</DemoCard>
+<DemoCard id="D1" duration="5 min" :cmd="`cd samples/sample-shop\nmvn test                  # learn run\nmvn test                  # order run\nmvn test-order:show       # scores + why`" title="Zero to ordered in two commands" watch="Watch: .test-order/ appears after run #1. Run #2 shows tests in scored order with a why column."></DemoCard>
 
 <div class="pt-4 text-sm opacity-50 text-center"><em>Switch to terminal tab #1.</em></div>
 
@@ -962,14 +956,7 @@ layout: default
 
 # Demo 2 — edit → rank shift
 
-<DemoCard id="D2" duration="2 min" :cmd="`# In Cart.java: change add() to reject null items
-# e.g. add:  if (item == null) throw new IllegalArgumentException();
-$EDITOR src/main/java/com/example/shop/Cart.java
-mvn test
-mvn test-order:show`">
-  <template #title>Change one method. Watch CartTest jump to #1.</template>
-  <template #watch>Why column: <code>changed-test=9, overlap=5</code>. Nothing retrained — score recomputed from the existing index and the git diff.</template>
-</DemoCard>
+<DemoCard id="D2" duration="2 min" :cmd="`# In Cart.java: change add() to reject null items\n# e.g. add:  if (item == null) throw new IllegalArgumentException();\n$EDITOR src/main/java/com/example/shop/Cart.java\nmvn test\nmvn test-order:show`" title="Change one method. Watch CartTest jump to #1." watch="Why column: changed-test=9, overlap=5. Nothing retrained — score recomputed from the existing index and the git diff."></DemoCard>
 
 <!--
 - The demo where it clicks: no ML, no retraining — just set intersection.
@@ -1031,12 +1018,7 @@ layout: default
 
 # Demo 3 — Gradle
 
-<DemoCard id="D3" duration="2 min" :cmd="`cd samples/sample-vintage-gradle
-./gradlew test            # learn + order
-./gradlew testOrderShow   # ranking`">
-  <template #title>Three lines. Same result.</template>
-  <template #watch>Point out: camelCase tasks, Gradle daemon stays warm, <code>.test-order/</code> at project root. Same APFD line.</template>
-</DemoCard>
+<DemoCard id="D3" duration="2 min" :cmd="`cd samples/sample-vintage-gradle\n./gradlew test            # learn + order\n./gradlew testOrderShow   # ranking`" title="Three lines. Same result." watch="Point out: camelCase tasks, Gradle daemon stays warm, .test-order/ at project root. Same APFD line."></DemoCard>
 
 <!--
 - DON'T repeat Maven narration. "Same data model, same scoring, same index."
@@ -1078,13 +1060,7 @@ layout: default
 
 # Demo 4 — spring-petclinic, pre-indexed
 
-<DemoCard id="D4" duration="6 min" :cmd="`cd third-party/spring-petclinic
-# learn ran last night in CI — zero overhead today
-mvn test
-mvn test-order:dashboard`">
-  <template #title>Real project. Watch APFD live, then open dashboard.</template>
-  <template #watch>Test order in terminal. First failure surfaces early. Then dashboard: APFD trend, run history, cache tab.</template>
-</DemoCard>
+<DemoCard id="D4" duration="6 min" :cmd="`cd third-party/spring-petclinic\n# learn ran last night in CI — zero overhead today\nmvn test\nmvn test-order:dashboard`" title="Real project. Watch APFD live, then open dashboard." watch="Test order in terminal. First failure surfaces early. Then dashboard: APFD trend, run history, cache tab."></DemoCard>
 
 <!--
 - "Learn ran last night. Today's run is zero overhead." — normal CI workflow.
@@ -1411,13 +1387,7 @@ layout: default
 
 <DemoCue>switching to browser · localhost:7071</DemoCue>
 
-<DemoCard id="D5" duration="4 min" :cmd="`# meta-agent at localhost:7071
-open http://localhost:7071/instrumentators
-open http://localhost:7071/classes
-open http://localhost:7071/full-diff/com.example.Cart`">
-  <template #title>What does test-order actually do to your bytecode?</template>
-  <template #watch>Vineflower decompilation diff — <code>UsageStore.recordUsageIdFast</code> at every method entry. Nothing else.</template>
-</DemoCard>
+<DemoCard id="D5" duration="4 min" :cmd="`# meta-agent at localhost:7071\nopen http://localhost:7071/instrumentators\nopen http://localhost:7071/classes\nopen http://localhost:7071/full-diff/com.example.Cart`" title="What does test-order actually do to your bytecode?" watch="Vineflower decompilation diff — UsageStore.recordUsageIdFast at every method entry. Nothing else."></DemoCard>
 
 <!--
 - meta-agent instruments other agents' ClassFileTransformers, decompiles via Vineflower.
@@ -1757,6 +1727,8 @@ layout: default
 </div>
 
 </v-click>
+
+</div>
 
 <!--
 - Additive so I can see which signal betrayed the ordering — every term visible in the dashboard.
@@ -2227,14 +2199,7 @@ layout: default
 
 # Demo 6 — SAP CDS Services
 
-<DemoCard id="D6" duration="5 min" :cmd="`cd third-party/cds-services
-# The pain: kill at 90s — no test has started
-mvn clean test
-# The fix: affected-only on the same change
-mvn test-order:affected test`">
-  <template #title>52 Maven modules. Affected-only vs. full suite.</template>
-  <template #watch><strong>Pain:</strong> 90 s, compile crawl, no test started.<br/><strong>Fix:</strong> ~55 s, RED build, right failure.</template>
-</DemoCard>
+<DemoCard id="D6" duration="5 min" :cmd="`cd third-party/cds-services\n# The pain: kill at 90s — no test has started\nmvn clean test\n# The fix: affected-only on the same change\nmvn test-order:affected test`" title="52 Maven modules. Affected-only vs. full suite." watch="Pain: 90 s, compile crawl, no test started.Fix: ~55 s, RED build, right failure."></DemoCard>
 
 <!--
 - Run `mvn clean test`. Watch it crawl. At 90s: "Still compiling module 12 of 52. No test started." Ctrl-C. "That's the pain."

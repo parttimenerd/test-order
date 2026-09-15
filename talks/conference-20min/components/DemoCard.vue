@@ -4,9 +4,9 @@
       <span class="badge">DEMO {{ id }}</span>
       <span class="timing">≈ {{ duration }}</span>
     </div>
-    <h2 class="title"><slot name="title" /></h2>
+    <h2 class="title">{{ title }}</h2>
     <pre class="cmd">{{ cmd }}</pre>
-    <div class="watch"><slot name="watch" /></div>
+    <div v-if="watch" class="watch">{{ watch }}</div>
   </div>
 </template>
 
@@ -15,7 +15,9 @@ defineProps({
   id: { type: String, required: true },
   duration: { type: String, required: true },
   cmd: { type: String, required: true },
-});
+  title: { type: String, default: '' },
+  watch: { type: String, default: '' },
+})
 </script>
 
 <style scoped>
@@ -23,7 +25,7 @@ defineProps({
   border: 2px solid #3b82f6;
   border-radius: 14px;
   padding: 1.6rem 2rem;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(139, 92, 246, 0.04));
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.10), rgba(139, 92, 246, 0.07));
   font-family: 'Inter', sans-serif;
 }
 .header {
@@ -44,12 +46,13 @@ defineProps({
 .timing {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.95rem;
-  color: #64748b;
+  color: #94a3b8;
 }
 .title {
-  font-size: 2.0rem;
+  font-size: 1.8rem;
   margin: 0.4rem 0 1rem;
-  color: #0f172a;
+  color: #e2e8f0;
+  font-weight: 700;
 }
 .cmd {
   background: #0f172a;
@@ -57,14 +60,14 @@ defineProps({
   padding: 1.1rem 1.4rem;
   border-radius: 8px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 1.2rem;
-  line-height: 1.55;
+  font-size: 1.1rem;
+  line-height: 1.6;
   margin: 0 0 0.9rem 0;
   white-space: pre-wrap;
 }
 .watch {
-  font-size: 1.15rem;
-  color: #475569;
+  font-size: 1.05rem;
+  color: #94a3b8;
   font-style: italic;
 }
 </style>

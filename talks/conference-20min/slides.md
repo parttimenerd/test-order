@@ -679,13 +679,7 @@ layout: section
 layout: default
 ---
 
-<DemoCard id="D1" duration="3:00" :cmd="`cd samples/sample-shop
-mvn test                  # learn run
-mvn test                  # order run — same command, order changed
-mvn test-order:show       # scores + why`">
-  <template #title>Zero to ordered in two commands</template>
-  <template #watch>Run #1: "Auto-instrumenting 42 classes". Run #2: tests reordered, APFD printed. <code>:show</code> gives score + why column per test.</template>
-</DemoCard>
+<DemoCard id="D1" duration="3:00" :cmd="`cd samples/sample-shop\nmvn test                  # learn run\nmvn test                  # order run — same command, order changed\nmvn test-order:show       # scores + why`" title="Zero to ordered in two commands" watch="Run #1: &quot;Auto-instrumenting 42 classes&quot;. Run #2: tests reordered, APFD printed. :show gives score + why column per test."></DemoCard>
 
 <!--
 DEMO STEPS:
@@ -845,13 +839,7 @@ Transition: switch to IDE.
 layout: default
 ---
 
-<DemoCard id="D2" duration="2:00" :cmd="`# Add null-check to Cart.add() — one line
-$EDITOR src/main/java/com/example/shop/Cart.java
-mvn test
-mvn test-order:show`">
-  <template #title>Edit one method. Watch CartTest jump to #1.</template>
-  <template #watch>Why column: <code>changed-test=9, overlap=5</code>. Score 14. Nothing retrained — a set intersection on the existing index.</template>
-</DemoCard>
+<DemoCard id="D2" duration="2:00" :cmd="`# Add null-check to Cart.add() — one line\n$EDITOR src/main/java/com/example/shop/Cart.java\nmvn test\nmvn test-order:show`" title="Edit one method. Watch CartTest jump to #1." watch="Why column: changed-test=9, overlap=5. Score 14. Nothing retrained — a set intersection on the existing index."></DemoCard>
 
 <!--
 DEMO STEPS:
@@ -906,13 +894,7 @@ java -jar ~/.m2/.../test-order-core-*-jar-with-dependencies.jar \
 layout: default
 ---
 
-<DemoCard id="D3" duration="4:00" :cmd="`cd third-party/spring-petclinic
-# learn ran in CI last night — zero overhead today
-mvn test
-mvn test-order:dashboard`">
-  <template #title>Real Spring Boot project. Live APFD. Then the dashboard.</template>
-  <template #watch>First failure surfaces early in terminal. Dashboard: APFD trend, rank heatmap, score breakdown modal, weights tuning.</template>
-</DemoCard>
+<DemoCard id="D3" duration="4:00" :cmd="`cd third-party/spring-petclinic\n# learn ran in CI last night — zero overhead today\nmvn test\nmvn test-order:dashboard`" title="Real Spring Boot project. Live APFD. Then the dashboard." watch="First failure surfaces early in terminal. Dashboard: APFD trend, rank heatmap, score breakdown modal, weights tuning."></DemoCard>
 
 <!--
 DEMO STEPS:
@@ -1033,10 +1015,7 @@ mvn test-order:serve
 layout: default
 ---
 
-<DemoCard id="D4" duration="2:00" :cmd="`mvn test-order:affected test`">
-  <template #title>Skip the unrelated tests entirely.</template>
-  <template #watch>N test classes skipped. 1 runs. BUILD SUCCESS in &lt;2 s. Same change — only tests that <em>could</em> possibly fail.</template>
-</DemoCard>
+<DemoCard id="D4" duration="2:00" :cmd="`mvn test-order:affected test`" title="Skip the unrelated tests entirely." watch="N test classes skipped. 1 runs. BUILD SUCCESS in &lt;2 s. Same change — only tests that could possibly fail."></DemoCard>
 
 <!--
 DEMO STEPS:
