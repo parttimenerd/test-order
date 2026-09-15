@@ -266,45 +266,45 @@ layout: default
 
 # What people already try
 
-<div class="mt-6 space-y-3">
+<div class="mt-8 space-y-4">
 
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">STRONG</span>
-  <span><strong>Cloud TIA</strong> — ML on long failure history; excellent at scale, needs data egress &amp; training time</span>
+  <span><strong>Cloud TIA</strong> — Launchable, Develocity PTS</span>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">WORKS</span>
-  <span><strong>Coverage-based</strong> — precise when stable; gaps on refactors and dynamic dispatch</span>
+  <span><strong>Coverage-based</strong> — Skippy, OpenClover</span>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">SIMPLE</span>
-  <span><strong>Manual <code>@Order</code></strong> — zero tooling; becomes stale as the codebase evolves</span>
+  <span><strong>Manual <code>@Order</code></strong></span>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">EASY</span>
-  <span><strong>Random / shuffle</strong> — catches OD bugs for free; 50% APFD baseline, no prioritization signal</span>
+  <span><strong>Random / shuffle</strong></span>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">FAST</span>
-  <span><strong>Stop-on-first-failure</strong> — cuts wall time immediately; which test runs first is unchanged</span>
+  <span><strong>Stop-on-first-failure</strong></span>
 </div>
 
 </v-click>
@@ -313,7 +313,7 @@ layout: default
 
 <v-click>
 
-<div class="hands-up mt-4">✋ tried any of these in the last year?</div>
+<div class="hands-up mt-6">✋ tried any of these in the last year?</div>
 
 </v-click>
 
@@ -704,32 +704,32 @@ layout: default
 
 # What's happening right now
 
-<div class="mt-6 grid grid-cols-3 gap-4 text-center">
+<div class="mt-8 grid grid-cols-3 gap-6 text-center">
 
 <v-click>
 
-<div class="p-4 rounded-lg bg-blue-950/60 border border-blue-800/50">
-  <div class="text-2xl mb-2">🔍</div>
-  <div class="font-semibold text-blue-300 mb-1">Attach</div>
-  <div class="text-sm opacity-70">transformer hooks every class loader</div>
+<div class="p-6 rounded-lg bg-blue-950/60 border border-blue-800/50">
+  <div class="text-4xl mb-3">🔍</div>
+  <div class="font-semibold text-blue-300 text-xl">Attach</div>
+  <div class="text-sm opacity-60 mt-2">hooks class loader</div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="p-4 rounded-lg bg-violet-950/60 border border-violet-800/50">
-  <div class="text-2xl mb-2">📝</div>
-  <div class="font-semibold text-violet-300 mb-1">Record</div>
-  <div class="text-sm opacity-70">method entry → thread-local bitset</div>
+<div class="p-6 rounded-lg bg-violet-950/60 border border-violet-800/50">
+  <div class="text-4xl mb-3">📝</div>
+  <div class="font-semibold text-violet-300 text-xl">Record</div>
+  <div class="text-sm opacity-60 mt-2">method entry → bitset</div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="p-4 rounded-lg bg-green-950/60 border border-green-800/50">
-  <div class="text-2xl mb-2">💾</div>
-  <div class="font-semibold text-green-300 mb-1">Write</div>
-  <div class="text-sm opacity-70">one <code>.lz4</code> index file</div>
+<div class="p-6 rounded-lg bg-green-950/60 border border-green-800/50">
+  <div class="text-4xl mb-3">💾</div>
+  <div class="font-semibold text-green-300 text-xl">Write</div>
+  <div class="text-sm opacity-60 mt-2">one <code>.lz4</code> file</div>
 </div>
 
 </v-click>
@@ -738,7 +738,7 @@ layout: default
 
 <v-click>
 
-<div class="mt-6 text-center text-lg opacity-70">
+<div class="mt-8 text-center text-2xl font-semibold opacity-75">
   No cloud. No model. One file.
 </div>
 
@@ -1190,19 +1190,19 @@ layout: default
 
 # When NOT to use this
 
-<div class="mt-6 space-y-3">
+<div class="mt-8 space-y-4">
 
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-bad">&lt; 20</span>
-  <span><strong>Tiny suites</strong> — just parallelize instead</span>
+  <span><strong>Tiny suites</strong> — just parallelize</span>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-bad">OPAQUE</span>
   <span><strong>Reflection-only paths</strong> — invisible to bytecode</span>
 </div>
@@ -1210,7 +1210,7 @@ layout: default
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-bad">DYNAMIC</span>
   <span><strong>Custom classloaders after JVM start</strong> — OSGi, Quarkus dev</span>
 </div>
@@ -1218,9 +1218,9 @@ layout: default
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-bad">FLAKY</span>
-  <span><strong>Flaky suites</strong> — quarantine first</span>
+  <span><strong>Highly flaky suites</strong> — quarantine first</span>
 </div>
 
 </v-click>
@@ -1229,18 +1229,8 @@ layout: default
 
 <v-click>
 
-<div class="pull-quote mt-4">
-  Luo et al. (2014): 4.56% of Google TAP failures were flaky.<br/>
-  That's enough EMA noise to bury your real signal.
-</div>
-
-</v-click>
-
-<v-click>
-
-<div class="mt-4 p-4 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-sm">
-  <strong>v0.1 — early-stage:</strong> API and index format may change between releases.
-  Useful in CI today; not yet battle-tested at enterprise scale.
+<div class="mt-6 p-4 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-base text-center">
+  <strong>v0.1 — early-stage.</strong> Useful in CI today; not yet battle-tested at enterprise scale.
 </div>
 
 </v-click>

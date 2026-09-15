@@ -309,45 +309,45 @@ layout: default
 
 # What people already try
 
-<div class="mt-6 space-y-3">
+<div class="mt-8 space-y-4">
 
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">STRONG</span>
-  <span><strong>Cloud TIA</strong> (Launchable, Develocity PTS) — ML on long failure history; excellent at scale, needs data egress &amp; training time</span>
+  <span><strong>Cloud TIA</strong> — Launchable, Develocity PTS</span>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">WORKS</span>
-  <span><strong>Coverage-based</strong> (Skippy, OpenClover) — precise when stable; gaps on refactors and dynamic dispatch</span>
+  <span><strong>Coverage-based</strong> — Skippy, OpenClover</span>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">SIMPLE</span>
-  <span><strong>Manual <code>@Order</code></strong> — zero tooling; becomes stale as the codebase evolves</span>
+  <span><strong>Manual <code>@Order</code></strong></span>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">EASY</span>
-  <span><strong>Random / shuffle</strong> — catches OD bugs for free; 50% APFD baseline, no prioritization signal</span>
+  <span><strong>Random / shuffle</strong></span>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-3 text-lg">
+<div class="flex items-center gap-4 text-xl">
   <span class="tag-ok">FAST</span>
-  <span><strong>Stop-on-first-failure</strong> — cuts wall time immediately; which test runs first is unchanged</span>
+  <span><strong>Stop-on-first-failure</strong></span>
 </div>
 
 </v-click>
@@ -1099,55 +1099,55 @@ Transition: "Six numbers on the dashboard KPI bar — let me decode them."
 layout: default
 ---
 
-# The dashboard KPI bar — six numbers
+# The dashboard — six numbers at a glance
 
-<div class="mt-6 grid grid-cols-3 gap-4 text-sm">
+<div class="mt-6 grid grid-cols-3 gap-4">
 
 <v-click>
 
-<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-bold text-orange-300 text-xl font-mono">APFD</div>
-  <div class="opacity-80 mt-2">Fraction of suite elapsed before first failure. <code>0.92</code> = failure at 8% of wall time.</div>
+<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
+  <div class="font-bold text-orange-300 text-2xl font-mono">APFD</div>
+  <div class="text-sm opacity-60 mt-1">failure at X% of wall time</div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-bold text-rose-300 text-xl font-mono">Latest failures</div>
-  <div class="opacity-80 mt-2">Count of tests that failed in the most recent run. Drives EMA scoring on the next run.</div>
+<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
+  <div class="font-bold text-rose-300 text-2xl font-mono">Failures</div>
+  <div class="text-sm opacity-60 mt-1">most recent run</div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-bold text-green-300 text-xl font-mono">Pass streak</div>
-  <div class="opacity-80 mt-2">Consecutive clean runs. High streak = lower failure-recency scores across the board.</div>
+<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
+  <div class="font-bold text-green-300 text-2xl font-mono">Pass streak</div>
+  <div class="text-sm opacity-60 mt-1">consecutive clean runs</div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-bold text-blue-300 text-xl font-mono">At-risk tests</div>
-  <div class="opacity-80 mt-2">Tests with non-zero EMA failure score — still carrying history from a past failure.</div>
+<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
+  <div class="font-bold text-blue-300 text-2xl font-mono">At-risk</div>
+  <div class="text-sm opacity-60 mt-1">carrying a past failure</div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-bold text-violet-300 text-xl font-mono">Time saved</div>
-  <div class="opacity-80 mt-2">Cumulative: wall time to first failure vs. alphabetical across all tracked runs.</div>
+<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
+  <div class="font-bold text-violet-300 text-2xl font-mono">Time saved</div>
+  <div class="text-sm opacity-60 mt-1">cumulative vs. alphabetical</div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-bold text-yellow-300 text-xl font-mono">Health grade (A–F)</div>
-  <div class="opacity-80 mt-2">Combined score: APFD trend + flaky rate + index freshness. A = tuned and effective.</div>
+<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
+  <div class="font-bold text-yellow-300 text-2xl font-mono">Health A–F</div>
+  <div class="text-sm opacity-60 mt-1">APFD trend + flaky rate</div>
 </div>
 
 </v-click>
@@ -1578,45 +1578,45 @@ layout: default
 
 # Five decisions that make it fast
 
-<div class="mt-6 space-y-3">
+<div class="mt-8 space-y-4">
 
 <v-click>
 
-<div class="flex items-start gap-4 text-lg">
-  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">①</span>
-  <div><span class="font-semibold">Integer IDs, not strings</span> <span class="opacity-60 text-base">— ~50× vs. ConcurrentHashMap&lt;String, Set&gt;; pre-computed before JVM start</span></div>
+<div class="flex items-center gap-4 text-xl">
+  <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">①</span>
+  <div><span class="font-semibold">Integer IDs</span> <span class="opacity-55 text-base">— ~50× vs. string hashing</span></div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-4 text-lg">
-  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">②</span>
-  <div><span class="font-semibold">Thread-local bitsets</span> <span class="opacity-60 text-base">— zero lock contention; drained once per test, not per call site</span></div>
+<div class="flex items-center gap-4 text-xl">
+  <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">②</span>
+  <div><span class="font-semibold">Thread-local bitsets</span> <span class="opacity-55 text-base">— zero contention, drained once per test</span></div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-4 text-lg">
-  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">③</span>
-  <div><span class="font-semibold">Socket batch</span> <span class="opacity-60 text-base">— one binary write per fork at shutdown; killed the 100–500 ms per-fork round-trip</span></div>
+<div class="flex items-center gap-4 text-xl">
+  <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">③</span>
+  <div><span class="font-semibold">Socket batch</span> <span class="opacity-55 text-base">— one write per fork, not 100–500 ms round-trip</span></div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-4 text-lg">
-  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">④</span>
-  <div><span class="font-semibold">In-JVM cache</span> <span class="opacity-60 text-base">— (path, mtime, size) key; 100-module build calls load() once not 100×</span></div>
+<div class="flex items-center gap-4 text-xl">
+  <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">④</span>
+  <div><span class="font-semibold">In-JVM cache</span> <span class="opacity-55 text-base">— 100-module build loads the index once</span></div>
 </div>
 
 </v-click>
 <v-click>
 
-<div class="flex items-start gap-4 text-lg">
-  <span class="font-mono text-emerald-400 font-bold min-w-[2.5rem] text-right">⑤</span>
-  <div><span class="font-semibold">Frequency filter</span> <span class="opacity-60 text-base">— deps in &gt;80% of tests are pure noise; dropped at write time, not at query time</span></div>
+<div class="flex items-center gap-4 text-xl">
+  <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">⑤</span>
+  <div><span class="font-semibold">Frequency filter</span> <span class="opacity-55 text-base">— drop deps shared by &gt;80% of tests</span></div>
 </div>
 
 </v-click>
@@ -1830,23 +1830,22 @@ layout: default
 <div class="pt-8 grid grid-cols-3 gap-6 text-center">
   <div class="p-6 rounded-lg bg-rose-950 border border-rose-800 text-white">
     <div class="text-4xl font-bold text-rose-400">&lt; 20</div>
-    <div class="pt-3 text-base opacity-80">tiny suites<br/>run them all in parallel</div>
+    <div class="pt-3 text-base opacity-80">tiny suites</div>
   </div>
   <div class="p-6 rounded-lg bg-rose-950 border border-rose-800 text-white">
     <div class="text-4xl font-bold text-rose-400">⚙</div>
-    <div class="pt-3 text-base opacity-80">reflection-only call paths<br/>we can't see them</div>
+    <div class="pt-3 text-base opacity-80">reflection-only paths</div>
   </div>
   <div class="p-6 rounded-lg bg-rose-950 border border-rose-800 text-white">
     <div class="text-4xl font-bold text-rose-400">⚡</div>
-    <div class="pt-3 text-base opacity-80">dynamic classloading<br/>Quarkus dev mode</div>
+    <div class="pt-3 text-base opacity-80">dynamic classloading</div>
   </div>
 </div>
 
 <v-click>
 
-<div class="mt-6 p-4 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-sm">
-  <strong>v0.1 — early-stage:</strong> API and index format may change between releases.
-  Runs in CI today; not yet battle-tested at enterprise scale. File issues at github.com/parttimenerd/test-order.
+<div class="mt-8 p-4 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-base text-center">
+  <strong>v0.1 — early-stage.</strong> Useful in CI today; not yet battle-tested at enterprise scale.
 </div>
 
 </v-click>
