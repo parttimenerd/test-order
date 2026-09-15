@@ -110,6 +110,20 @@ layout: cover
   margin-right: 0.4rem;
   vertical-align: middle;
 }
+
+.tag-ok {
+  display: inline-block;
+  background: rgba(148,163,184,0.12);
+  border: 1px solid rgba(148,163,184,0.35);
+  color: #94a3b8;
+  border-radius: 6px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
 </style>
 
 
@@ -257,40 +271,40 @@ layout: default
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">PAID</span>
-  <span><strong>Cloud TIA</strong> — data leaves your network</span>
+  <span class="tag-ok">STRONG</span>
+  <span><strong>Cloud TIA</strong> — ML on long failure history; excellent at scale, needs data egress &amp; training time</span>
 </div>
 
 </v-click>
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">FRAGILE</span>
-  <span><strong>Coverage-based</strong> — breaks on refactors</span>
+  <span class="tag-ok">WORKS</span>
+  <span><strong>Coverage-based</strong> — precise when stable; gaps on refactors and dynamic dispatch</span>
 </div>
 
 </v-click>
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">STALE</span>
-  <span><strong>Manual <code>@Order</code></strong> — stale within a sprint</span>
+  <span class="tag-ok">SIMPLE</span>
+  <span><strong>Manual <code>@Order</code></strong> — zero tooling; becomes stale as the codebase evolves</span>
 </div>
 
 </v-click>
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">GUESS</span>
-  <span><strong>Random / shuffle</strong> — 50% APFD, no better</span>
+  <span class="tag-ok">EASY</span>
+  <span><strong>Random / shuffle</strong> — catches OD bugs for free; 50% APFD baseline, no prioritization signal</span>
 </div>
 
 </v-click>
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">INCOMPLETE</span>
-  <span><strong>Stop-on-first-failure</strong> — doesn't surface it earlier</span>
+  <span class="tag-ok">FAST</span>
+  <span><strong>Stop-on-first-failure</strong> — cuts wall time immediately; which test runs first is unchanged</span>
 </div>
 
 </v-click>
@@ -304,7 +318,11 @@ layout: default
 </v-click>
 
 <!--
-- Cloud TIA (Develocity, Launchable): needs months of failure history to train, data egress
+- Acknowledge each approach honestly — they all solve a real problem.
+- Cloud TIA (Develocity, Launchable): strongest at scale with long failure history. Needs months of data, a cloud pipeline, data egress. We win on day-1, cost, data residency.
+- Coverage-based (Skippy, OpenClover): source instrumentation is fragile across refactors; good on stable codebases.
+- Stop-on-first-failure: pairs well with test-order — we put the right test first, fail-fast cuts everything after.
+- Our position: local, deterministic, zero config, useful from run 2.
 - Coverage-based (Skippy, OpenClover): source instrumentation breaks on refactors, gaps = silent misses
 - Manual @Order: doesn't scale past one developer, rots fast
 - Random/shuffle: still 50% APFD, no better than alphabetical on average
@@ -1324,7 +1342,7 @@ Likely questions:
 - "Parallel test execution?" Class-level: ordering is a scheduling priority, fine.
   Method-level: per-thread bitset, fine.
 - "Can the index be wrong?" Over-approximation only — false positives, never false negatives.
-- "Develocity PTS / Launchable?" ML on cloud history. We win on day-1, cost, data residency.
+- "Develocity PTS / Launchable?" Both are strong once you have months of failure history — ML signal is genuinely better at scale. We win on day-1 (no training data needed), data residency, and running cost.
   Machalica et al. (Facebook, ICSE 2019): 2× cost reduction with ML — but requires labelled failure data, a training pipeline, and data egress.
 - "CI caching?" Cache `.test-order/` between runs (tiny) or commit to git.
 - "How does APFD relate to wall time?" 22-min suite at 85% APFD = first failure at ~minute 3, not minute 18.

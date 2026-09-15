@@ -118,6 +118,20 @@ layout: cover
   margin-right: 0.4rem;
   vertical-align: middle;
 }
+
+.tag-ok {
+  display: inline-block;
+  background: rgba(148,163,184,0.12);
+  border: 1px solid rgba(148,163,184,0.35);
+  color: #94a3b8;
+  border-radius: 6px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
 </style>
 
 <img src="/images/wiki-bletchley-cards.jpg" class="absolute inset-0 w-full h-full object-cover opacity-25" />
@@ -300,40 +314,40 @@ layout: default
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">PAID</span>
-  <span><strong>Cloud TIA</strong> (Launchable, Develocity PTS) — data leaves your network</span>
+  <span class="tag-ok">STRONG</span>
+  <span><strong>Cloud TIA</strong> (Launchable, Develocity PTS) — ML on long failure history; excellent at scale, needs data egress &amp; training time</span>
 </div>
 
 </v-click>
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">FRAGILE</span>
-  <span><strong>Coverage-based</strong> (Skippy, OpenClover) — breaks on refactors</span>
+  <span class="tag-ok">WORKS</span>
+  <span><strong>Coverage-based</strong> (Skippy, OpenClover) — precise when stable; gaps on refactors and dynamic dispatch</span>
 </div>
 
 </v-click>
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">STALE</span>
-  <span><strong>Manual <code>@Order</code></strong> — stale within a sprint</span>
+  <span class="tag-ok">SIMPLE</span>
+  <span><strong>Manual <code>@Order</code></strong> — zero tooling; becomes stale as the codebase evolves</span>
 </div>
 
 </v-click>
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">GUESS</span>
-  <span><strong>Random / shuffle</strong> — 50% APFD, no better than alphabetical</span>
+  <span class="tag-ok">EASY</span>
+  <span><strong>Random / shuffle</strong> — catches OD bugs for free; 50% APFD baseline, no prioritization signal</span>
 </div>
 
 </v-click>
 <v-click>
 
 <div class="flex items-start gap-3 text-lg">
-  <span class="tag-bad">INCOMPLETE</span>
-  <span><strong>Stop-on-first-failure</strong> — cuts time, doesn't surface the right failure first</span>
+  <span class="tag-ok">FAST</span>
+  <span><strong>Stop-on-first-failure</strong> — cuts wall time immediately; which test runs first is unchanged</span>
 </div>
 
 </v-click>
@@ -341,11 +355,11 @@ layout: default
 </div>
 
 <!--
-- Don't dismiss these. Each is real.
-- Cloud TIA wins on long-history projects — paid, data leaves your network.
-- Stop-on-first-failure cuts wall time but doesn't change WHICH test runs first.
-- test-order complements fail-fast: first failure is the right one.
-- Our position: local, deterministic, zero config, day-1 useful.
+- Acknowledge each approach honestly — they all solve a real problem.
+- Cloud TIA (Launchable, Develocity PTS) is the strongest competitor at scale. Needs months of labeled failure history and a cloud pipeline. Excellent if you have that data. We win on day-1 usefulness, data residency, and no running cost.
+- Coverage-based (Skippy, OpenClover): source-level instrumentation is more fragile than bytecode — refactors break the mapping silently. Good choice for stable, lightly-refactored codebases.
+- Stop-on-first-failure pairs well with test-order: we make sure the right test runs first; fail-fast cuts everything after it.
+- Our position: local, deterministic, zero config, day-1 useful — different niche from cloud TIA, not a dismissal.
 Transition: "The idea isn't new — 25 years of research."
 -->
 
@@ -2288,7 +2302,7 @@ Likely questions:
 - "Bazel?" Not yet. Maven/Gradle plugins only.
 - "Parallel execution?" Class-level: ordering is a scheduling priority. Method-level: per-thread bitset, fine.
 - "Can the index be wrong?" Over-approximation only. False positives (extra tests), never false negatives.
-- "Develocity PTS / Launchable?" ML on cloud history. Facebook PTS (Machalica 2019): 2× cost cut, >99.9% caught — but needs labeled data, a pipeline, data egress. We win on day-1, cost, residency; genetic optimizer closes the gap after 5+ runs.
+- "Develocity PTS / Launchable?" Both are strong at scale with months of failure history. ML on cloud history (Machalica 2019: 2× cost cut, >99.9% caught). We win on day-1 (no training data needed), data residency, and running cost; their ML signal is stronger once you have the history.
 - "CI state sharing?" Cache .test-order/ between runs or commit it.
 - "GitHub Actions cache?" Add .test-order/ to your cache key.
 - "APFD vs wall time?" 22-min suite at APFD 85% = first failure ~minute 3, not 18.
