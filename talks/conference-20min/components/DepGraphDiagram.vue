@@ -10,27 +10,22 @@ const svg = ref(null)
 
 const W = 320, H = 300
 
-// Vertical BFS tree layout
-// depth 0: Cart.java (red) — centre
-// depth 1: CartLineItem, Money (orange) — left/right of centre
-// depth 2: Discount (under CartLineItem), Currency (under Money) (yellow)
-// depth 3: CouponEngine (under Discount, centred) (green)
 const NODES = [
-  { id: 'cart',    x: 160, y: 30,  w: 140, h: 36, label: '🔴 Cart.java',    sub: '(edited)',     clr: '#f87171', bg: 'rgba(127,29,29,0.85)' },
-  { id: 'cli',     x: 70,  y: 105, w: 130, h: 36, label: '🟠 CartLineItem', sub: 'depth 1',      clr: '#fb923c', bg: 'rgba(124,45,18,0.85)' },
-  { id: 'money',   x: 250, y: 105, w: 110, h: 36, label: '🟠 Money',        sub: 'depth 1',      clr: '#fb923c', bg: 'rgba(124,45,18,0.85)' },
-  { id: 'disc',    x: 70,  y: 185, w: 120, h: 36, label: '🟡 Discount',     sub: 'depth 2',      clr: '#fbbf24', bg: 'rgba(113,63,18,0.85)' },
-  { id: 'curr',    x: 250, y: 185, w: 120, h: 36, label: '🟡 Currency',     sub: 'depth 2',      clr: '#fbbf24', bg: 'rgba(113,63,18,0.85)' },
-  { id: 'coupon',  x: 160, y: 262, w: 140, h: 36, label: '🟢 CouponEngine', sub: 'depth 3',      clr: '#4ade80', bg: 'rgba(20,83,45,0.85)' },
+  { id: 'cart',   x: 160, y: 30,  w: 140, h: 36, label: '🔴 Cart.java',    sub: '(edited)',  clr: '#f87171', bg: 'rgba(127,29,29,0.85)',  depth: 0 },
+  { id: 'cli',    x: 70,  y: 105, w: 130, h: 36, label: '🟠 CartLineItem', sub: 'depth 1',   clr: '#fb923c', bg: 'rgba(124,45,18,0.85)',  depth: 1 },
+  { id: 'money',  x: 250, y: 105, w: 110, h: 36, label: '🟠 Money',        sub: 'depth 1',   clr: '#fb923c', bg: 'rgba(124,45,18,0.85)',  depth: 1 },
+  { id: 'disc',   x: 70,  y: 185, w: 120, h: 36, label: '🟡 Discount',     sub: 'depth 2',   clr: '#fbbf24', bg: 'rgba(113,63,18,0.85)', depth: 2 },
+  { id: 'curr',   x: 250, y: 185, w: 120, h: 36, label: '🟡 Currency',     sub: 'depth 2',   clr: '#fbbf24', bg: 'rgba(113,63,18,0.85)', depth: 2 },
+  { id: 'coupon', x: 160, y: 262, w: 140, h: 36, label: '🟢 CouponEngine', sub: 'depth 3',   clr: '#4ade80', bg: 'rgba(20,83,45,0.85)',  depth: 3 },
 ]
-
 const EDGES = [
-  { s: 'cart',  t: 'cli' },
-  { s: 'cart',  t: 'money' },
-  { s: 'cli',   t: 'disc' },
-  { s: 'money', t: 'curr' },
-  { s: 'disc',  t: 'coupon' },
+  { s: 'cart',  t: 'cli',    clr: '#f87171' },
+  { s: 'cart',  t: 'money',  clr: '#f87171' },
+  { s: 'cli',   t: 'disc',   clr: '#fb923c' },
+  { s: 'money', t: 'curr',   clr: '#fb923c' },
+  { s: 'disc',  t: 'coupon', clr: '#fbbf24' },
 ]
+const arrowId = clr => ({ '#f87171': 'dg-arr-r', '#fb923c': 'dg-arr-o', '#fbbf24': 'dg-arr-y' }[clr] ?? 'dg-arr-y')
 
 onMounted(() => {
   const nm = Object.fromEntries(NODES.map(n => [n.id, n]))
@@ -49,48 +44,44 @@ onMounted(() => {
   mkArr('dg-arr-o','#fb923c')
   mkArr('dg-arr-y','#fbbf24')
 
-  const strokeFor = id => {
-    if (id === 'cart') return '#f87171'
-    if (id === 'cli' || id === 'money') return '#fb923c'
-    return '#fbbf24'
-  }
-  const arrowFor = id => {
-    if (id === 'cart') return 'dg-arr-r'
-    if (id === 'cli' || id === 'money') return 'dg-arr-o'
-    return 'dg-arr-y'
-  }
-
   const bottomOf = n => ({ x: n.x, y: n.y + n.h / 2 })
   const topOf    = n => ({ x: n.x, y: n.y - n.h / 2 })
+
+  // Source node depth → edge draw delay
+  const depthDelay = d => 100 + d * 240
 
   EDGES.forEach(e => {
     const sn = nm[e.s], tn = nm[e.t]
     const sb = bottomOf(sn), tt = topOf(tn)
     const sx = sb.x, sy = sb.y, tx = tt.x, ty = tt.y
     const my = (sy + ty) / 2
-    const path = `M${sx},${sy} C${sx},${my} ${tx},${my} ${tx},${ty}`
+    const pathD = `M${sx},${sy} C${sx},${my} ${tx},${my} ${tx},${ty}`
 
-    root.append('path')
-      .attr('d', path)
-      .attr('stroke', strokeFor(e.s))
-      .attr('stroke-width', 1.8)
-      .attr('fill', 'none')
-      .attr('opacity', 0.8)
-      .attr('marker-end', `url(#${arrowFor(e.s)})`)
+    const phantom = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    phantom.setAttribute('d', pathD)
+    const len = phantom.getTotalLength ? phantom.getTotalLength() : 100
+
+    const edgeDelay = depthDelay(sn.depth) + 140
+    root.append('path').attr('d', pathD)
+      .attr('stroke', e.clr).attr('stroke-width', 1.8).attr('fill', 'none').attr('opacity', 0.8)
+      .attr('marker-end', `url(#${arrowId(e.clr)})`)
+      .attr('stroke-dasharray', len).attr('stroke-dashoffset', len)
+      .transition().delay(edgeDelay).duration(300).ease(d3.easeLinear)
+      .attr('stroke-dashoffset', 0)
   })
 
   NODES.forEach(n => {
     const g = root.append('g')
-    g.append('rect')
-      .attr('x', n.x - n.w / 2).attr('y', n.y - n.h / 2)
-      .attr('width', n.w).attr('height', n.h).attr('rx', 7)
+      .attr('transform', `translate(${n.x},${n.y}) scale(0)`).attr('opacity', 0)
+    g.transition().delay(depthDelay(n.depth)).duration(320).ease(d3.easeBackOut.overshoot(1.6))
+      .attr('transform', `translate(${n.x},${n.y}) scale(1)`).attr('opacity', 1)
+
+    g.append('rect').attr('x', -n.w/2).attr('y', -n.h/2).attr('width', n.w).attr('height', n.h).attr('rx', 7)
       .attr('fill', n.bg).attr('stroke', n.clr).attr('stroke-width', 1.8)
-    g.append('text').attr('x', n.x).attr('y', n.y - 3)
-      .attr('text-anchor','middle').attr('font-size', 11).attr('font-weight', 700)
-      .attr('fill', n.clr).text(n.label)
-    g.append('text').attr('x', n.x).attr('y', n.y + 11)
-      .attr('text-anchor','middle').attr('font-size', 9)
-      .attr('fill','#cbd5e1').attr('opacity', 0.75).text(n.sub)
+    g.append('text').attr('y', -3).attr('text-anchor','middle')
+      .attr('font-size', 11).attr('font-weight', 700).attr('fill', n.clr).text(n.label)
+    g.append('text').attr('y', 11).attr('text-anchor','middle')
+      .attr('font-size', 9).attr('fill','#cbd5e1').attr('opacity', 0.75).text(n.sub)
   })
 })
 </script>

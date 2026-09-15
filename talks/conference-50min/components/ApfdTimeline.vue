@@ -13,34 +13,99 @@ const MARGIN = { top: 30, right: 20, bottom: 50, left: 120 }
 const IW = W - MARGIN.left - MARGIN.right
 const IH = H - MARGIN.top - MARGIN.bottom
 
-// 10 tests — alphabetical order vs. test-order order.
-// Failure occurs at test #8 alphabetically (80% elapsed) vs test #1 ordered (10% elapsed).
 const TESTS_ALPHA = [
-  { name: 'AddressTest',  t: 0.10, fail: false },
-  { name: 'AuthTest',     t: 0.20, fail: false },
-  { name: 'CacheTest',    t: 0.30, fail: false },
-  { name: 'CartTest',     t: 0.40, fail: false },
-  { name: 'CouponTest',   t: 0.50, fail: false },
-  { name: 'InvoiceTest',  t: 0.60, fail: false },
-  { name: 'MoneyTest',    t: 0.70, fail: false },
-  { name: 'OrderTest',    t: 0.80, fail: true  },
-  { name: 'ProductTest',  t: 0.90, fail: false },
-  { name: 'ZipTest',      t: 1.00, fail: false },
+  { name: 'AddressTest',  fail: false },
+  { name: 'AuthTest',     fail: false },
+  { name: 'CacheTest',    fail: false },
+  { name: 'CartTest',     fail: false },
+  { name: 'CouponTest',   fail: false },
+  { name: 'InvoiceTest',  fail: false },
+  { name: 'MoneyTest',    fail: false },
+  { name: 'OrderTest',    fail: true  },
+  { name: 'ProductTest',  fail: false },
+  { name: 'ZipTest',      fail: false },
 ]
 const TESTS_RANKED = [
-  { name: 'OrderTest',    t: 0.10, fail: true  },
-  { name: 'CartTest',     t: 0.20, fail: false },
-  { name: 'CouponTest',   t: 0.30, fail: false },
-  { name: 'InvoiceTest',  t: 0.40, fail: false },
-  { name: 'MoneyTest',    t: 0.50, fail: false },
-  { name: 'ProductTest',  t: 0.60, fail: false },
-  { name: 'AuthTest',     t: 0.70, fail: false },
-  { name: 'AddressTest',  t: 0.80, fail: false },
-  { name: 'CacheTest',    t: 0.90, fail: false },
-  { name: 'ZipTest',      t: 1.00, fail: false },
+  { name: 'OrderTest',    fail: true  },
+  { name: 'CartTest',     fail: false },
+  { name: 'CouponTest',   fail: false },
+  { name: 'InvoiceTest',  fail: false },
+  { name: 'MoneyTest',    fail: false },
+  { name: 'ProductTest',  fail: false },
+  { name: 'AuthTest',     fail: false },
+  { name: 'AddressTest',  fail: false },
+  { name: 'CacheTest',    fail: false },
+  { name: 'ZipTest',      fail: false },
 ]
 
 const ROW_H = IH / 2 - 8
+
+function buildRow(g, tests, offsetY, accentClr, badgeBg, badgeBorder, label, labelClr, failLabel) {
+  const row = g.append('g').attr('transform', `translate(0,${offsetY})`)
+  const segW = IW / tests.length
+
+  row.append('text').attr('x', -8).attr('y', ROW_H / 2 + 5)
+    .attr('text-anchor', 'end').attr('font-size', 12).attr('font-weight', 600)
+    .attr('fill', labelClr).attr('opacity', 0).text(label)
+    .transition().delay(20).duration(300).attr('opacity', 1)
+
+  row.append('rect').attr('x', 0).attr('y', 0)
+    .attr('width', IW).attr('height', ROW_H).attr('rx', 4)
+    .attr('fill', 'rgba(255,255,255,0.04)').attr('stroke', 'rgba(255,255,255,0.08)')
+    .attr('opacity', 0).transition().delay(20).duration(300).attr('opacity', 1)
+
+  const failIdx = tests.findIndex(t => t.fail)
+
+  tests.forEach((t, i) => {
+    const col   = t.fail ? accentClr   : (labelClr === '#f87171' ? '#374151' : '#1f2937')
+    const border = t.fail ? accentClr  : 'rgba(255,255,255,0.08)'
+    const delay = 80 + i * 55
+
+    const seg = row.append('rect')
+      .attr('x', i * segW + 1).attr('y', 2)
+      .attr('width', segW - 2).attr('height', ROW_H - 4).attr('rx', 3)
+      .attr('fill', col).attr('stroke', border).attr('stroke-width', 1)
+      .attr('opacity', 0)
+    seg.transition().delay(delay).duration(200).attr('opacity', 1)
+
+    if (t.fail) {
+      row.append('text')
+        .attr('x', i * segW + segW / 2).attr('y', ROW_H / 2 + 5)
+        .attr('text-anchor', 'middle').attr('font-size', 11).attr('font-weight', 700)
+        .attr('fill', '#fff').attr('opacity', 0)
+        .transition().delay(delay + 100).duration(200).attr('opacity', 1)
+        .selection().text('✗')
+    }
+  })
+
+  const markerDelay = 80 + failIdx * 55 + 280
+  const failX = (failIdx + 0.5) * segW
+
+  row.append('line')
+    .attr('x1', failX).attr('y1', ROW_H + 2)
+    .attr('x2', failX).attr('y2', ROW_H + 2) // start collapsed
+    .attr('stroke', accentClr).attr('stroke-width', 1.5).attr('stroke-dasharray', '3,2')
+    .transition().delay(markerDelay).duration(200)
+    .attr('y2', ROW_H + 14)
+
+  row.append('text').attr('x', failX).attr('y', ROW_H + 24)
+    .attr('text-anchor', 'middle').attr('font-size', 10).attr('fill', accentClr)
+    .attr('opacity', 0).text(failLabel)
+    .transition().delay(markerDelay + 150).duration(200).attr('opacity', 1)
+
+  // APFD badge
+  const badgeDelay = 80 + (tests.length - 1) * 55 + 300
+  row.append('rect').attr('x', IW + 6).attr('y', ROW_H / 2 - 14)
+    .attr('width', 54).attr('height', 28).attr('rx', 5)
+    .attr('fill', badgeBg).attr('stroke', badgeBorder)
+    .attr('opacity', 0).transition().delay(badgeDelay).duration(300).attr('opacity', 1)
+  row.append('text').attr('x', IW + 33).attr('y', ROW_H / 2 + 5)
+    .attr('text-anchor', 'middle').attr('font-size', 12).attr('font-weight', 700)
+    .attr('fill', accentClr).attr('opacity', 0).text(label === 'Alphabetical' ? '~50%' : '~90%')
+    .transition().delay(badgeDelay).duration(300).attr('opacity', 1)
+
+  return markerDelay
+}
 
 onMounted(() => {
   const svg = d3.select(container.value)
@@ -50,101 +115,78 @@ onMounted(() => {
     .attr('font-family', "'Inter','Helvetica Neue',sans-serif")
 
   const g = svg.append('g').attr('transform', `translate(${MARGIN.left},${MARGIN.top})`)
-
   const x = d3.scaleLinear().domain([0, 1]).range([0, IW])
 
-  // ─── Row 1: Alphabetical ───────────────────────────────────────────
-  const rowA = g.append('g').attr('transform', 'translate(0,0)')
+  // Row A — plays first
+  buildRow(g, TESTS_ALPHA,  0,          '#ef4444',
+    'rgba(239,68,68,0.15)', 'rgba(239,68,68,0.4)',
+    'Alphabetical', '#94a3b8', 'failure at 80%')
 
-  rowA.append('text').attr('x', -8).attr('y', ROW_H / 2 + 5)
+  // Row B — starts after row A's segments finish (10 segs × 55ms + 80ms base ≈ 630ms)
+  const rowBOffset = ROW_H + 28
+  const rowBDelay = 680
+  const rowBGroup = g.append('g').attr('transform', `translate(0,${rowBOffset})`)
+
+  rowBGroup.append('text').attr('x', -8).attr('y', ROW_H / 2 + 5)
     .attr('text-anchor', 'end').attr('font-size', 12).attr('font-weight', 600)
-    .attr('fill', '#94a3b8').text('Alphabetical')
+    .attr('fill', '#4ade80').attr('opacity', 0).text('test-order')
+    .transition().delay(rowBDelay).duration(300).attr('opacity', 1)
 
-  // background track
-  rowA.append('rect').attr('x', 0).attr('y', 0)
+  rowBGroup.append('rect').attr('x', 0).attr('y', 0)
     .attr('width', IW).attr('height', ROW_H).attr('rx', 4)
     .attr('fill', 'rgba(255,255,255,0.04)').attr('stroke', 'rgba(255,255,255,0.08)')
+    .attr('opacity', 0).transition().delay(rowBDelay).duration(300).attr('opacity', 1)
 
-  const segW = IW / TESTS_ALPHA.length
-  TESTS_ALPHA.forEach((t, i) => {
-    const col = t.fail ? '#ef4444' : '#374151'
-    const border = t.fail ? '#f87171' : 'rgba(255,255,255,0.1)'
-    rowA.append('rect')
-      .attr('x', i * segW + 1).attr('y', 2)
-      .attr('width', segW - 2).attr('height', ROW_H - 4).attr('rx', 3)
-      .attr('fill', col).attr('stroke', border).attr('stroke-width', 1)
-    if (t.fail) {
-      rowA.append('text')
-        .attr('x', i * segW + segW / 2).attr('y', ROW_H / 2 + 5)
-        .attr('text-anchor', 'middle').attr('font-size', 11).attr('font-weight', 700)
-        .attr('fill', '#fff').text('✗')
-    }
-  })
-
-  // failure marker + label
-  const failIdxA = TESTS_ALPHA.findIndex(t => t.fail)
-  const failXA = (failIdxA + 0.5) * segW
-  rowA.append('line')
-    .attr('x1', failXA).attr('y1', ROW_H + 2)
-    .attr('x2', failXA).attr('y2', ROW_H + 14)
-    .attr('stroke', '#f87171').attr('stroke-width', 1.5).attr('stroke-dasharray', '3,2')
-  rowA.append('text').attr('x', failXA).attr('y', ROW_H + 24)
-    .attr('text-anchor', 'middle').attr('font-size', 10).attr('fill', '#f87171')
-    .text('failure at 80%')
-
-  // APFD badge
-  rowA.append('rect').attr('x', IW + 6).attr('y', ROW_H / 2 - 14)
-    .attr('width', 54).attr('height', 28).attr('rx', 5)
-    .attr('fill', 'rgba(239,68,68,0.15)').attr('stroke', 'rgba(239,68,68,0.4)')
-  rowA.append('text').attr('x', IW + 33).attr('y', ROW_H / 2 + 5)
-    .attr('text-anchor', 'middle').attr('font-size', 12).attr('font-weight', 700)
-    .attr('fill', '#f87171').text('~50%')
-
-  // ─── Row 2: test-order ────────────────────────────────────────────
-  const rowB = g.append('g').attr('transform', `translate(0,${ROW_H + 28})`)
-
-  rowB.append('text').attr('x', -8).attr('y', ROW_H / 2 + 5)
-    .attr('text-anchor', 'end').attr('font-size', 12).attr('font-weight', 600)
-    .attr('fill', '#4ade80').text('test-order')
-
-  rowB.append('rect').attr('x', 0).attr('y', 0)
-    .attr('width', IW).attr('height', ROW_H).attr('rx', 4)
-    .attr('fill', 'rgba(255,255,255,0.04)').attr('stroke', 'rgba(255,255,255,0.08)')
+  const segW = IW / TESTS_RANKED.length
+  const failIdxB = TESTS_RANKED.findIndex(t => t.fail)
 
   TESTS_RANKED.forEach((t, i) => {
-    const col = t.fail ? '#16a34a' : '#1f2937'
+    const col    = t.fail ? '#16a34a' : '#1f2937'
     const border = t.fail ? '#4ade80' : 'rgba(255,255,255,0.08)'
-    rowB.append('rect')
+    const delay  = rowBDelay + i * 55
+
+    rowBGroup.append('rect')
       .attr('x', i * segW + 1).attr('y', 2)
       .attr('width', segW - 2).attr('height', ROW_H - 4).attr('rx', 3)
       .attr('fill', col).attr('stroke', border).attr('stroke-width', 1)
+      .attr('opacity', 0)
+      .transition().delay(delay).duration(200).attr('opacity', 1)
+
     if (t.fail) {
-      rowB.append('text')
+      rowBGroup.append('text')
         .attr('x', i * segW + segW / 2).attr('y', ROW_H / 2 + 5)
         .attr('text-anchor', 'middle').attr('font-size', 11).attr('font-weight', 700)
-        .attr('fill', '#fff').text('✗')
+        .attr('fill', '#fff').attr('opacity', 0).text('✗')
+        .transition().delay(delay + 100).duration(200).attr('opacity', 1)
     }
   })
 
-  const failIdxB = TESTS_RANKED.findIndex(t => t.fail)
+  const markerBDelay = rowBDelay + failIdxB * 55 + 280
   const failXB = (failIdxB + 0.5) * segW
-  rowB.append('line')
-    .attr('x1', failXB).attr('y1', ROW_H + 2)
-    .attr('x2', failXB).attr('y2', ROW_H + 14)
+  rowBGroup.append('line')
+    .attr('x1', failXB).attr('y1', ROW_H + 2).attr('x2', failXB).attr('y2', ROW_H + 2)
     .attr('stroke', '#4ade80').attr('stroke-width', 1.5).attr('stroke-dasharray', '3,2')
-  rowB.append('text').attr('x', failXB).attr('y', ROW_H + 24)
+    .transition().delay(markerBDelay).duration(200).attr('y2', ROW_H + 14)
+  rowBGroup.append('text').attr('x', failXB).attr('y', ROW_H + 24)
     .attr('text-anchor', 'middle').attr('font-size', 10).attr('fill', '#4ade80')
-    .text('failure at 10%')
+    .attr('opacity', 0).text('failure at 10%')
+    .transition().delay(markerBDelay + 150).duration(200).attr('opacity', 1)
 
-  rowB.append('rect').attr('x', IW + 6).attr('y', ROW_H / 2 - 14)
+  const badgeBDelay = rowBDelay + (TESTS_RANKED.length - 1) * 55 + 300
+  rowBGroup.append('rect').attr('x', IW + 6).attr('y', ROW_H / 2 - 14)
     .attr('width', 54).attr('height', 28).attr('rx', 5)
     .attr('fill', 'rgba(74,222,128,0.12)').attr('stroke', 'rgba(74,222,128,0.4)')
-  rowB.append('text').attr('x', IW + 33).attr('y', ROW_H / 2 + 5)
+    .attr('opacity', 0).transition().delay(badgeBDelay).duration(300).attr('opacity', 1)
+  rowBGroup.append('text').attr('x', IW + 33).attr('y', ROW_H / 2 + 5)
     .attr('text-anchor', 'middle').attr('font-size', 12).attr('font-weight', 700)
-    .attr('fill', '#4ade80').text('~90%')
+    .attr('fill', '#4ade80').attr('opacity', 0).text('~90%')
+    .transition().delay(badgeBDelay).duration(300).attr('opacity', 1)
 
-  // ─── x-axis ───────────────────────────────────────────────────────
+  // x-axis fades in last
+  const axisDelay = rowBDelay + TESTS_RANKED.length * 55 + 400
   const axisG = g.append('g').attr('transform', `translate(0,${2 * ROW_H + 30})`)
+    .attr('opacity', 0)
+  axisG.transition().delay(axisDelay).duration(400).attr('opacity', 1)
   axisG.append('line').attr('x1', 0).attr('x2', IW)
     .attr('stroke', 'rgba(255,255,255,0.15)').attr('stroke-width', 1)
   ;[0, 0.25, 0.5, 0.75, 1].forEach(v => {
