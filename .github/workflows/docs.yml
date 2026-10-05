@@ -102,11 +102,12 @@ jobs:
           commit_message: 'docs(screenshots): auto-refresh dashboard screenshots'
           file_pattern: 'docs/assets/screenshots/*.png'
 
-      - name: Install system tools (asciinema, jq, librsvg2)
+      - name: Install librsvg2 (always needed for OG image regen)
+        run: sudo apt-get update && sudo apt-get install -y librsvg2-bin
+
+      - name: Install system tools (asciinema, jq)
         if: steps.changes.outputs.docs == 'true' || steps.changes.outputs.code == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y asciinema jq librsvg2-bin
+        run: sudo apt-get install -y asciinema jq
 
       - name: Record missing asciinema demos
         if: steps.changes.outputs.docs == 'true' || steps.changes.outputs.code == 'true'
