@@ -8,6 +8,8 @@ on:
       - 'website/**'
       - 'scripts/**'
       - 'talks/conference-20min/**'
+      - 'src/**'
+      - '**/pom.xml'
       - '.github/workflows/docs.yml'
   pull_request:
     paths:
@@ -15,6 +17,8 @@ on:
       - 'website/**'
       - 'scripts/**'
       - 'talks/conference-20min/**'
+      - 'src/**'
+      - '**/pom.xml'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -37,7 +41,31 @@ jobs:
           # diff back to main without a shallow-clone error.
           fetch-depth: 0
 
+      - name: Detect changed areas
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "code=true"    >> "$GITHUB_OUTPUT"
+            echo "slides=true"  >> "$GITHUB_OUTPUT"
+            echo "docs=true"    >> "$GITHUB_OUTPUT"
+          else
+            BASE=${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD^1' }}
+            changed=$(git diff --name-only "$BASE" HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD)
+            code_changed=$(echo "$changed"   | grep -qE '^(src/|test-order-core/|test-order-maven-plugin/|test-fixtures/|samples/|[^/]*pom\.xml)' && echo true || echo false)
+            slides_changed=$(echo "$changed" | grep -qE '^talks/conference-20min/' && echo true || echo false)
+            docs_changed=$(echo "$changed"   | grep -qE '^(docs/|website/|scripts/)' && echo true || echo false)
+            wf_changed=$(echo "$changed"     | grep -qE '^\.github/workflows/docs\.yml' && echo true || echo false)
+            if [ "$wf_changed" = "true" ]; then
+              code_changed=true; slides_changed=true; docs_changed=true
+            fi
+            echo "code=$code_changed"      >> "$GITHUB_OUTPUT"
+            echo "slides=$slides_changed"  >> "$GITHUB_OUTPUT"
+            echo "docs=$docs_changed"      >> "$GITHUB_OUTPUT"
+            echo "Changed areas — code=$code_changed slides=$slides_changed docs=$docs_changed"
+          fi
+
       - uses: actions/setup-java@v6
+        if: steps.changes.outputs.code == 'true'
         with:
           distribution: sapmachine
           java-version: 17
@@ -52,30 +80,36 @@ jobs:
             talks/conference-20min/package-lock.json
 
       - name: Install repo-root tooling (Playwright)
+        if: steps.changes.outputs.code == 'true'
         run: npm install --no-audit --no-fund
 
       - name: Install Playwright browsers
+        if: steps.changes.outputs.code == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Build test-order plugin (skip tests, needed by fixture)
+        if: steps.changes.outputs.code == 'true'
         run: mvn -B -q install -DskipTests
 
       - name: Capture dashboard screenshots
+        if: steps.changes.outputs.code == 'true'
         run: node scripts/capture-screenshots.mjs
 
       - name: Commit refreshed screenshots back to main
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.changes.outputs.code == 'true'
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: 'docs(screenshots): auto-refresh dashboard screenshots'
           file_pattern: 'docs/assets/screenshots/*.png'
 
       - name: Install system tools (asciinema, jq, librsvg2)
+        if: steps.changes.outputs.docs == 'true' || steps.changes.outputs.code == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y asciinema jq librsvg2-bin
 
       - name: Record missing asciinema demos
+        if: steps.changes.outputs.docs == 'true' || steps.changes.outputs.code == 'true'
         # Records only casts absent from website/static/casts/.
         # The weekly docs-asciinema workflow commits fresh full-pacing casts;
         # this step is the fallback so the site always builds successfully.
@@ -109,6 +143,7 @@ jobs:
           ls -lh "$CAST_DIR"
 
       - name: Stage docs assets into website/static
+        if: steps.changes.outputs.docs == 'true' || steps.changes.outputs.code == 'true'
         run: |
           mkdir -p website/static/img/screenshots
           cp -f docs/assets/screenshots/*.png website/static/img/screenshots/ 2>/dev/null || true
@@ -128,6 +163,7 @@ jobs:
           fi
 
       - name: Build slides (20-min talk)
+        if: steps.changes.outputs.slides == 'true'
         working-directory: talks/conference-20min
         run: |
           npm ci
