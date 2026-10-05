@@ -182,11 +182,12 @@ layout: default
 class: slide-base
 ---
 
-<DemoCard id="D0" :cmd="`cd third-party/spring-petclinic\n# No test-order. Plain mvn test.\nmvn test -pl . -Dsurefire.failIfNoSpecifiedTests=false`" title="What CI does today" watch="Tests run A-Z. VisitControllerTests is V. You broke something there. Spring boots up 4 times before you find out."></DemoCard>
+<DemoCard id="D0" :cmd="`cd third-party/spring-petclinic\n# No test-order. Plain mvn test.\nmvn test -pl . -Dsurefire.failIfNoSpecifiedTests=false`" title="What CI does today" watch="Tests run in JVM discovery order. VisitControllerTests runs 9th out of 18. You broke something there. Spring boots up multiple times before you find out."></DemoCard>
 
 <!--
 - Run this BEFORE the talk starts — show the scrollback or replay with asciinema.
-- Spring context starts cold: ~8s per context. By the time VisitControllerTests runs you've waited through A-U.
+- Spring context starts cold: ~8s per context. By the time VisitControllerTests runs you've waited through 8 other tests.
+- Actual order: VetControllerTests → VetTests → OwnerControllerTests → PetValidatorTests → PetControllerTests → VisitControllerTests → …
 - "You already knew which test. The runner just didn't."
 - FALLBACK: asciinema play public/demo-d0.cast
 - TRANSITION: "here's what that wait looks like, drawn out"
@@ -382,20 +383,28 @@ layout: default
 class: slide-base
 ---
 
-# Why CartTest moves to #1
+# Why tests that touch Cart move to the top
 
 <div class="flex flex-col gap-6 mt-8" style="font-size: 1.15rem">
 
 <div class="flex items-center gap-3">
   <div class="chain-box changed">Cart.java edited</div>
   <div class="chain-arrow">→</div>
-  <div class="chain-box index">CartTest calls Cart<br/><span style="font-size:0.8em;opacity:0.7">dep index says so</span></div>
+  <div class="chain-box index">InvoiceTest touches Cart+Invoice<br/><span style="font-size:0.8em;opacity:0.7">2/3 deps overlap → score 8</span></div>
   <div class="chain-arrow">→</div>
-  <div class="chain-box top">CartTest = #1</div>
+  <div class="chain-box top">InvoiceTest = #1</div>
 </div>
 
 <div class="flex items-center gap-3">
-  <div class="chain-box neutral">PaymentTest</div>
+  <div class="chain-box changed">Cart.java edited</div>
+  <div class="chain-arrow">→</div>
+  <div class="chain-box index">CartTest touches Cart<br/><span style="font-size:0.8em;opacity:0.7">1/2 deps overlap → score 6</span></div>
+  <div class="chain-arrow">→</div>
+  <div class="chain-box top2">CartTest = #2</div>
+</div>
+
+<div class="flex items-center gap-3">
+  <div class="chain-box neutral">ProductTest</div>
   <div class="chain-arrow">→</div>
   <div class="chain-box neutral-dim">never touched Cart<br/><span style="font-size:0.8em;opacity:0.7">zero overlap</span></div>
   <div class="chain-arrow">→</div>
@@ -411,6 +420,7 @@ class: slide-base
 .changed  { background: rgba(248,113,113,0.15); border: 1.5px solid #f87171; color: #fca5a5; white-space: nowrap; }
 .index    { background: rgba(167,139,250,0.12); border: 1.5px solid #a78bfa; color: #c4b5fd; }
 .top      { background: rgba(74,222,128,0.15);  border: 1.5px solid #4ade80; color: #86efac; white-space: nowrap; }
+.top2     { background: rgba(74,222,128,0.10);  border: 1.5px solid #22c55e; color: #4ade80; white-space: nowrap; }
 .neutral  { background: rgba(148,163,184,0.10); border: 1.5px solid #475569; color: #94a3b8; white-space: nowrap; }
 .neutral-dim { background: rgba(71,85,105,0.08); border: 1.5px solid #334155; color: #64748b; }
 .skip     { background: rgba(71,85,105,0.12);   border: 1.5px solid #475569; color: #64748b; white-space: nowrap; }
@@ -420,8 +430,9 @@ class: slide-base
 <!--
 - The learn run built a map: test → {classes it touched}
 - On every subsequent run: git diff gives changed classes; intersect with map → rank
-- Cart.java in deps(CartTest) → high overlap score
-- PaymentTest never touched Cart → zero overlap, runs later
+- InvoiceTest depends on Cart AND Invoice → higher overlap (2/3 deps) → score 8
+- CartTest depends on Cart only → lower overlap (1/2 deps) → score 6
+- ProductTest never touched Cart → zero overlap, runs last
 - "The intersection already knows. No ML, no retraining, no history needed."
 -->
 
@@ -431,16 +442,20 @@ layout: default
 class: slide-base
 ---
 
-<DemoCard id="D2" :cmd="`# Add null-check to Cart.add(), one line\n$EDITOR src/main/java/com/example/shop/Cart.java\nmvn test\nmvn test-order:show`" title="One method changed. CartTest is now #1." watch="Why column: changed-test=9, overlap=5. Score 14. Nothing retrained: a set intersection on the existing index."></DemoCard>
+<DemoCard id="D2" :cmd="`# Add null-check to Cart.add(), one line\n$EDITOR src/main/java/com/example/shop/Cart.java\nmvn spotless:apply   # project enforces formatting\nmvn test\nmvn test-order:show`" title="One method changed. Tests that touch Cart jump to the top." watch="InvoiceTest #1 (deps: Cart+Invoice), CartTest #2 (dep: Cart). Nothing retrained: a set intersection on the existing index."></DemoCard>
 
 <!--
 DEMO STEPS:
-1. Open Cart.java in add(), insert: if (item == null) throw new IllegalArgumentException();
-2. mvn test → "2 changed classes detected (uncommitted)", CartTest runs first
-3. mvn test-order:show → CartTest rank #1, InvoiceTest rank last (score 0, SLOW)
+1. Open Cart.java in add(), insert:
+     if (product == null)
+         throw new IllegalArgumentException();
+2. mvn spotless:apply  ← IMPORTANT: project enforces Palantir Java format; skip this → BUILD FAILURE
+3. mvn test → "1 changed class detected (Cart)", InvoiceTest #1, CartTest #2
+4. mvn test-order:show → InvoiceTest score 8 (2/3 deps overlap), CartTest score 6 (1/2 deps overlap)
 
-- "No retraining. No ML pipeline. A set intersection"
-- Demo steps: open Cart.java, add `if (item == null) throw new IllegalArgumentException();` in add(), save, run.
+- InvoiceTest scores higher because it depends on BOTH Cart AND Invoice (2 of 3 deps).
+- CartTest depends only on Cart (1 of 2 deps). Both tests are boosted; InvoiceTest wins on overlap.
+- "No retraining. No ML pipeline. A set intersection."
 - PAUSE after the rank shift appears. Let the room react.
 - FALLBACK: asciinema play public/demo.cast (skip to rank-shift section)
 - TRANSITION: "You've seen it work. Now — where does it fit relative to tools you may already know?"
