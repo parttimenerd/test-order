@@ -56,3 +56,24 @@
 .slidev-layout.intro,
 .slidev-layout.fact { padding: 2rem !important; }
 
+/* Global dark theme — override seriph's white card background */
+.slidev-layout.default,
+.slidev-layout.two-cols,
+.slidev-layout.two-cols-header,
+.slidev-layout.image-right,
+.slidev-layout.image-left {
+  background: #18181b !important;
+  color: #f4f4f5 !important;
+}
+.slidev-layout h1,
+.slidev-layout h2,
+.slidev-layout h3 {
+  color: #7dd3fc !important;
+}
+/* Ensure headings on explicit dark slides keep their color */
+.bg-zinc-900 h1,
+.bg-zinc-900 h2,
+.bg-zinc-900 h3 {
+  color: #7dd3fc !important;
+}
+

@@ -47,7 +47,7 @@ onMounted(() => {
     .attr('text-anchor', 'middle').attr('font-size', 10).attr('fill', '#334155')
     .text('overhead vs. uninstrumented suite')
 
-  const leg = chrome.append('g').attr('transform', `translate(${IW - 5}, 0)`)
+  const leg = chrome.append('g').attr('transform', `translate(${IW - 70}, 0)`)
   ;[
     { col: 'rgba(96,165,250,0.6)',  label: 'Learn run' },
     { col: 'rgba(74,222,128,0.5)', label: 'Order run' },

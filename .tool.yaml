@@ -49,6 +49,24 @@ usage:
     ./gradlew test    # first run: learns coverage
     ./gradlew test    # second run: affected tests go first
 how_to:
+- title: Verify reordering is working after the first run
+  body: |
+    After the first `mvn test` (which collects coverage data), run it again and check
+    that affected tests moved to the front:
+    ```bash
+    mvn test          # first run — collects coverage, no reordering yet
+    # edit a source file, then:
+    mvn test          # second run — tests covering changed code run first
+    ```
+    Confirm the ranking with:
+    ```bash
+    mvn test-order:show
+    # or the fully-qualified form if you haven't set up the prefix:
+    mvn me.bechberger:test-order-maven-plugin:show
+    ```
+    If the list is empty or tests are not reordered, run the diagnostics command
+    to find out why — see "Diagnose why reordering isn't working" below.
+
 - title: "Enable the short mvn test-order: prefix"
   body: |
     Maven only resolves goal prefixes for trusted groupIds. Add `me.bechberger` to

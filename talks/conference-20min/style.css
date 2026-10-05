@@ -173,3 +173,7 @@ html.light .hands-up {
   background: rgba(250,204,21,0.10) !important;
   border-color: rgba(250,204,21,0.5) !important;
 }
+
+
+/* ── hide go-to-slide dialog ──────────────────────────────────────────── */
+#slidev-goto-dialog { display: none !important; }

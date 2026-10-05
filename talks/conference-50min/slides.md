@@ -3,7 +3,7 @@ theme: seriph
 title: "You Are Running the Wrong Tests First"
 info: |
   test-order — 50-minute developer talk.
-  Local-first, zero-config test prioritization for Maven and Gradle.
+  Local-first, zero-config test prioritization for Java · v0.1 · early-stage
 class: text-center
 highlighter: shiki
 lineNumbers: false
@@ -134,8 +134,8 @@ layout: cover
 }
 </style>
 
-<img src="/images/wiki-bletchley-cards.jpg" class="absolute inset-0 w-full h-full object-cover opacity-25" />
-<div class="absolute inset-0 bg-black/60 z-0" />
+<img src="/images/wiki-bletchley-cards.jpg" class="absolute inset-0 w-full h-full object-cover opacity-40" />
+<div class="absolute inset-0 bg-black/50 z-0" />
 
 <div class="relative z-10">
 
@@ -160,6 +160,27 @@ Transition: straight into the show-of-hands question.
 
 
 ---
+layout: default
+class: bg-zinc-900 text-white
+---
+
+<DemoCard id="D0" duration="3 min" :cmd="`cd third-party/spring-petclinic\n# No test-order. Plain mvn test.\nmvn test -pl . -Dsurefire.failIfNoSpecifiedTests=false`" title="What CI does today" watch="Tests run A-Z. VisitControllerTests is V. You broke something there. Spring boots up 4 times before you find out."></DemoCard>
+
+<div class="pt-4 text-lg text-center opacity-70">
+  Watch where VisitControllerTests appears in the output.
+</div>
+
+<!--
+- Run this BEFORE the talk starts — show the scrollback or replay with asciinema.
+- Spring context starts cold: ~8s per context. By the time VisitControllerTests runs, you've already waited through A-U.
+- "You already knew which test. The runner just didn't."
+- Let the room feel it: failure is near the very end of output.
+- FALLBACK: asciinema play public/demo-d0.cast
+Transition: "Who's been here?"
+-->
+
+
+---
 layout: center
 class: bg-zinc-900 text-white
 ---
@@ -171,67 +192,39 @@ class: bg-zinc-900 text-white
 
 <div class="big-statement">
 
-Who's waited 20 minutes for CI<br/>to tell you the test that failed<br/>was the first thing you changed?
+Who's waited 20 minutes for CI<br/>to tell you the test that failed<br/>ran last, alphabetically?
 
 </div>
+
+<div class="hands-up mt-10">✋ raise your hand</div>
 
 </div>
 
 <!--
-- Pause. Let hands go up — most of the room.
-- "You already knew. The runner just didn't."
-- Don't move on until you see hands.
-Transition: "Here's what that wait looks like."
+- PAUSE. Let hands go up. Don't rush it.
+- "You already knew which test. The runner just didn't."
+- Count the hands. Then: "keep yours up if it's more than once a week." Watch them stay.
+Transition: "Here's what that wait looks like, drawn out."
 -->
 
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
 <ApfdTimeline />
 
 <div class="pt-4 text-2xl text-rose-400 font-bold text-center">
-  You changed that file 22 minutes ago.
-</div>
-
-<v-click>
-
-<div class="pt-3 text-lg text-center opacity-90">
-  The signal was already there.
-</div>
-
-</v-click>
-
-<!--
-- The JVM bytecode already knows which test hits which class.
-- We just never used that map.
-- 36× faster time-to-feedback for this exact case.
-- Pass case: same wall time, zero overhead.
-Transition: quick intro of me.
--->
-
-
----
-layout: default
----
-
-# Hi. I'm Johannes.
-
-<div class="pt-8 text-2xl font-semibold leading-relaxed">
-  OpenJDK developer.<br/>
-  I got annoyed enough to build something.
-</div>
-
-<div class="pt-8 text-base opacity-50">
-  @parttimenerd · mostlynerdless.de
+  You changed that file. The signal was already there.
 </div>
 
 <!--
-- 20 seconds max. SAP & SapMachine team.
-- Built test-order as a side project.
-- Too many lunch breaks waiting for CI.
-Transition: "So why is CI this slow? Start with the order."
+- The timeline bar IS the pain. Don't narrate it — point at it silently for 2 seconds.
+- "Every one of those passing tests ran before the one that found your bug."
+- "The bytecode already knew which test hit which class. We just never gave the runner that map."
+- One sentence: that's the entire talk.
+Transition: "So what do people reach for when they feel this pain?"
 -->
 
 
@@ -240,172 +233,78 @@ layout: center
 class: bg-zinc-900 text-white
 ---
 
-<img src="/images/wiki-switchboard-1922.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
-<div class="absolute inset-0 bg-zinc-900/80 z-0" />
-
-<div class="relative z-10 flex flex-col items-center">
-
 <div class="big-statement">
-
-Default test order is alphabetical.
-
-</div>
-
-<v-click>
-
-<div class="text-xl text-center mt-8 opacity-90">
-  JUnit 5: <em>"deterministic but intentionally nonobvious."</em>
-</div>
-
-</v-click>
-
+Other approaches<br/>worth knowing
 </div>
 
 <!--
-- Maven Surefire: filesystem scan, alphabetical class name.
-- JUnit 5 docs literally say "intentionally nonobvious."
-- Nonobvious = no one promises it helps you.
-- Correlation with "relevance to your change" = 0.
-Transition: make it concrete with two class names.
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-hollerith-leiden.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
-<div class="absolute inset-0 bg-zinc-900/80 z-0" />
-
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-ZipUtilsTest runs<br/>before AuthServiceTest.
-
-</div>
-
-<v-click>
-
-<div class="text-2xl text-center mt-8 opacity-90">
-  You changed auth. You'll find out last.
-</div>
-
-</v-click>
-
-</div>
-
-<!--
-- Concrete. Makes the problem felt.
-- Alphabetical Z-before-A only if... invert the example live if needed.
-Transition: "So what do people do about it?"
+- Each of these solves a real problem. Acknowledge that.
+- test-order is exploring a specific niche — not claiming to be better in all cases.
+Transition: "Here's how they sit relative to each other."
 -->
 
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# What people already try
+# Where each approach fits
 
-<div class="mt-8 space-y-4">
-
-<v-click>
-
-<div class="flex items-center gap-4 text-xl">
-  <span class="tag-ok">STRONG</span>
-  <span><strong>Cloud TIA</strong> — Launchable, Develocity PTS</span>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="flex items-center gap-4 text-xl">
-  <span class="tag-ok">WORKS</span>
-  <span><strong>Coverage-based</strong> — Skippy, OpenClover</span>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="flex items-center gap-4 text-xl">
-  <span class="tag-ok">SIMPLE</span>
-  <span><strong>Manual <code>@Order</code></strong></span>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="flex items-center gap-4 text-xl">
-  <span class="tag-ok">EASY</span>
-  <span><strong>Random / shuffle</strong></span>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="flex items-center gap-4 text-xl">
-  <span class="tag-ok">FAST</span>
-  <span><strong>Stop-on-first-failure</strong></span>
-</div>
-
-</v-click>
-
-</div>
+<LandscapeMap />
 
 <!--
-- Acknowledge each approach honestly — they all solve a real problem.
-- Cloud TIA (Launchable, Develocity PTS) is the strongest competitor at scale. Needs months of labeled failure history and a cloud pipeline. Excellent if you have that data. We win on day-1 usefulness, data residency, and no running cost.
-- Coverage-based (Skippy, OpenClover): source-level instrumentation is more fragile than bytecode — refactors break the mapping silently. Good choice for stable, lightly-refactored codebases.
-- Stop-on-first-failure pairs well with test-order: we make sure the right test runs first; fail-fast cuts everything after it.
-- Our position: local, deterministic, zero config, day-1 useful — different niche from cloud TIA, not a dismissal.
-Transition: "The idea isn't new — 25 years of research."
+- X axis: time to first value — how long before you get meaningful results.
+- Y axis: prioritization intelligence — how well it ranks failing tests first.
+- Random/shuffle: free, immediate. Removes alphabetical bias, doesn't prioritize.
+- Stop-on-first-failure: free, orthogonal — combine with any approach.
+- Manual @Order: works well for stable small suites.
+- Coverage-based (Skippy, OpenClover): good accuracy, needs source instrumentation overhead on every run.
+- Cloud TIA (Launchable, Develocity): excellent once warmed — requires a cloud pipeline and weeks/months of failure history to reach full accuracy.
+- test-order: tries to occupy the top-left — local, zero-config, useful from run 2 without training data.
+- "These aren't competing products. They're different trade-offs for different teams."
+Transition: "Here's what test-order's specific trade-off looks like in numbers."
 -->
 
 
 ---
 layout: center
-class: text-center bg-zinc-900 text-white
+class: bg-zinc-900 text-white text-center
 ---
 
-<div class="big-statement">
-This idea isn't new.<br/>The research is 25 years old.
-</div>
+<div class="text-7xl font-black text-amber-400">50% → 87–91%</div>
 
-<v-click>
-
-<div class="text-xl mt-8 opacity-75">
-  The missing piece was local tooling that didn't need a cloud pipeline.
-</div>
-
-</v-click>
+<div class="pt-2 text-xl opacity-70">Average Percentage of Faults Detected</div>
 
 <!--
-- Hard pivot: "We just settled where we fit. Now let me show you *why* this works at all."
-- The research section earns the claim. Don't rush through it — one slide per idea.
-Transition: "Rothermel 1999. Yoo and Harman 2012. Google at 5.5 million tests."
+- Drop this number. Silence for 3 seconds.
+- 50% = alphabetical. You're already doing 50% and calling it "running tests."
+- 87-91% = test-order, 7 real open-source repos.
+- This isn't a lab result. Run it yourself: scripts/third_party_test_plan.sh
+Transition: "Let me make that concrete."
 -->
 
 
 ---
-layout: section
+layout: default
+class: bg-zinc-900 text-white
 ---
 
-<img src="/images/wiki-fermi-blackboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-20" />
-<div class="absolute inset-0 bg-zinc-900/72 z-0" />
+# 7 benchmarked OSS repos, consistently
 
-<div class="relative z-10 text-center">
+<BenchmarkChart />
 
-# Test prioritization is a solved research problem.<br/>Local tooling wasn't.
+<v-click>
 
-<div class="pt-4 opacity-70">25 years of research · practical Java tooling that was missing</div>
+<div class="mt-4 text-sm opacity-60 text-center italic">Reproducible: <code>scripts/third_party_test_plan.sh bugs commons-lang</code></div>
 
-</div>
+</v-click>
 
 <!--
-- A few slides: foundation, then the claim.
-Transition: "The signal is real."
+- Alphabetical hovers at 50% — random baseline. test-order: 87-93%.
+- Ranges across 5 injected bugs × 3 runs — varies by which class was changed.
+- These are real project indexes checked in to this repo. Anyone can reproduce.
+Transition: "Why does it work? The idea is 25 years old."
 -->
 
 
@@ -417,183 +316,23 @@ class: bg-zinc-900 text-white
 <img src="/images/wiki-fermi-blackboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
 <div class="absolute inset-0 bg-zinc-900/80 z-0" />
 
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-The signal is real.<br/>25 years of papers say so.
-
-</div>
-
-</div>
-
-<!--
-- Rothermel et al. 1999: first formal TCP results.
-- Yoo & Harman 2012: surveyed 20+ years. APFD is the standard metric.
-- Point isn't "look at the research" — it's "we're not guessing."
-Transition: walk the trail, one paper per slide.
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-agassiz-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
-<div class="absolute inset-0 bg-zinc-900/80 z-0" />
-
 <div class="relative z-10 flex flex-col items-center text-center">
 
-<div class="text-2xl font-semibold text-blue-300 mb-6">Rothermel et al., 1999</div>
-
 <div class="big-statement">
 
-TCP is a real,<br/>measurable problem.
-
-</div>
-
-<v-click>
-
-<div class="text-base text-center mt-6 opacity-60">
-  → test-order: APFD is the metric we print on every run
-</div>
-
-</v-click>
-
-</div>
-
-<!--
-- The founding test-case-prioritization paper.
-- Defined the problem, the metrics, the safety criterion.
-- Every subsequent paper cites it.
-- Audience who knows TCP will nod here.
-Transition: "Two decades later, someone surveyed all of it."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-agassiz-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
-<div class="absolute inset-0 bg-zinc-900/80 z-0" />
-
-<div class="relative z-10 flex flex-col items-center text-center">
-
-<div class="text-2xl font-semibold text-blue-300 mb-6">Yoo & Harman, 2012</div>
-
-<div class="big-statement">
-
-Failure history + code churn<br/>= strong signal.
-
-</div>
-
-<v-click>
-
-<div class="text-base text-center mt-6 opacity-60">
-  → test-order: EMA failure decay + dep-overlap are our top two signals
-</div>
-
-</v-click>
-
-</div>
-
-<!--
-- Canonical TCP/RTS survey — two decades of results.
-- APFD becomes the standard metric here.
-- The heuristics we use are the validated ones.
-Transition: "Then Google measured it at scale."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-widener-card-catalog.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
-<div class="absolute inset-0 bg-zinc-900/78 z-0" />
-
-<div class="relative z-10 flex flex-col items-center text-center">
-
-<div class="text-2xl font-semibold text-violet-300 mb-6">Memon et al. / Google, 2017</div>
-
-<div class="big-statement">
-
-Failing tests cluster<br/>near changed code.
+Why does it work?<br/>The research is 25 years old.
 
 </div>
 
 </div>
 
 <!--
-- 5.5M test targets, 500K+ code changes.
-- 91% of tests never fail — the failing ones are "closer" to the change.
-- The most concrete number in the field. This is the evidence.
-Transition: "One more — the flakiness angle."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-agassiz-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-
-<div class="relative z-10 flex flex-col items-center text-center">
-
-<div class="text-2xl font-semibold text-rose-300 mb-6">Luo et al., 2014</div>
-
-<div class="big-statement">
-
-Order-dependency is<br/>12% of flaky root causes.
-
-</div>
-
-<v-click>
-
-<div class="text-base text-center mt-6 opacity-60">
-  → test-order: <code>@QuarantinedTest</code> + detect-dependencies mode
-</div>
-
-</v-click>
-
-</div>
-
-<!--
-- 51 Apache projects, 201 flaky-test commits.
-- Test order dependency: 12% of root causes.
-- 74% of those fixed by cleaning shared state.
-- Grounds our quarantine + OD-detection features.
-Transition: "We built the zero-config version of all this."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-telegraph-tokyo.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-We built the zero-config version.
-
-</div>
-
-</div>
-
-<!--
-- No ML pipeline, no cloud, no training data.
-- Just the validated heuristics, run locally.
-Transition: "Let me show you the one number that matters — 91%."
+- We didn't invent the signals. We just made them zero-config.
+- Rothermel 1999: founded TCP, defined APFD.
+- Yoo & Harman 2012: 20-year survey — failure history + code churn are the two strongest predictors.
+- Luo 2014: 12% of flaky tests are order-dependent — grounds the quarantine feature.
+- Google 2017: 5.5M targets, measured in production.
+Transition: "Google's number is the most striking."
 -->
 
 
@@ -612,23 +351,14 @@ class: bg-zinc-900 text-white
 
 </div>
 
-<v-click>
-
-<div class="text-xl text-center mt-8 opacity-90">
-  99 passing runs for every 1 that finds a bug.
-</div>
-
-</v-click>
-
 </div>
 
 <!--
-- Memon et al., ICSE-SEIP 2017. Google's TAP system.
-- 5.5M targets, 500K+ changes: "91.3% passed and never failed once."
-- PASSED:FAILED ratio per code change = 99:1.
-- Random ordering buries that 1%.
-- Not a Google problem — every project above a certain size.
-Transition: quote from the same paper.
+- Memon et al., ICSE-SEIP 2017. 5.5M targets, 500K+ code changes.
+- "91.3% passed and never failed once." Not a theory — a measurement.
+- The 9% aren't random. They're geometrically closer to the change.
+- Quote from the paper confirms it.
+Transition: exact words from the paper.
 -->
 
 
@@ -644,16 +374,15 @@ class: quote-slide bg-zinc-900 text-white
 <div class="quote-text">
 "Very few of our tests ever fail, but those that do are generally 'closer' to the code they test."
 </div>
-<div class="quote-attr">Memon et al. — Taming Google-Scale Continuous Testing, ICSE-SEIP 2017</div>
+<div class="quote-attr">Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017</div>
 
 </div>
 
 <!--
-- The empirical foundation for dep-overlap scoring.
 - "Closer" = shorter path in the dependency graph.
-- We operationalize it as set intersection: deps(test) ∩ changed_classes.
-- Bigger overlap → higher score.
-Transition: "Which leads to the logical core."
+- We operationalize this as set intersection: deps(test) ∩ changed_classes.
+- Bigger intersection → higher score. That's the whole scoring model.
+Transition: "Which leads to a hard logical claim."
 -->
 
 
@@ -675,10 +404,10 @@ If a test hasn't touched<br/>the changed code,<br/>it <em>cannot</em> fail on th
 </div>
 
 <!--
-- Say it slowly. This is the logical foundation.
-- "Cannot" — not "probably won't." Cannot.
-- Google measured it at 5.5M scale; now we act on it.
-Transition: "So how do we know what each test touches? Record it."
+- Say it slowly. "Cannot" — not "probably won't." Cannot.
+- This is deterministic, not probabilistic. The dep map is complete.
+- Google measured it at 5.5M scale. We act on it locally with bytecode.
+Transition: "So how do we know what each test touches? We record it."
 -->
 
 
@@ -693,14 +422,45 @@ class: bg-zinc-900 text-white
 
 <div class="big-statement">
 
-Record the map once.<br/>Use it forever.
+Record the map once.<br/>Use it on every push.
+
+</div>
+
+</div>
+
+<!--
+- "Record" = one learn run with a Java agent. Writes .test-order/ index.
+- "Every push" = every subsequent run is uninstrumented — pure ranking, no overhead.
+- This is the key insight: pay the cost once, use the map forever.
+Transition: "There's a tool that does exactly this."
+-->
+
+
+---
+layout: center
+class: bg-zinc-900 text-white
+---
+
+<img src="/images/wiki-telegraph-tokyo.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
+<div class="absolute inset-0 bg-zinc-900/82 z-0" />
+<div class="relative z-10 flex flex-col items-center text-center">
+
+<div class="big-statement">
+
+There's a zero-config,<br/>local solution.
 
 </div>
 
 <v-click>
 
-<div class="text-xl text-center mt-8 opacity-90">
-  One instrumented run. Zero overhead after.
+<div class="text-3xl font-bold mt-8 text-blue-400 tracking-wide">test-order</div>
+
+</v-click>
+
+<v-click>
+
+<div class="text-xl mt-4 opacity-70">
+  zero config &nbsp;·&nbsp; bytecode instrumentation &nbsp;·&nbsp; Maven &amp; Gradle &nbsp;·&nbsp; v0.1
 </div>
 
 </v-click>
@@ -708,14 +468,17 @@ Record the map once.<br/>Use it forever.
 </div>
 
 <!--
-- "Record the map" = one learn run with a Java agent.
-- "Use it forever" = every subsequent run is uninstrumented.
-Transition: "It's literally two runs."
+- Pause after "There's a zero-config, local solution." Let it sit. 3 seconds.
+- Click: reveal the name. Still don't speak.
+- Click: reveal the tagline.
+- Now: "It's called test-order. I spent two years of evenings building it so you don't have to."
+Transition: "Two commands. That's the whole model."
 -->
 
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
 # Two runs. That's the whole model.
@@ -727,58 +490,7 @@ layout: default
 - index = for each test class, a set of class IDs it called — stored as RoaringBitmaps.
 - Score step: set intersection of deps(test) ∩ changed_classes → overlap signal + other signals → additive total.
 - "Same code + same diff + same index → same ranked order. Fully deterministic."
-Transition: "And here's what it buys you."
--->
-
-
----
-layout: fact
----
-
-# 50% → 87–91%
-
-<div class="pt-2 text-2xl opacity-80">
-  APFD — failures surface in the first 20% of wall time.</div>
-
-<div class="pt-8 text-base opacity-50">
-  Average Percentage of Faults Detected · 100% = all failures first · 50% = random / alphabetical<br/>
-  Measured: synthetic one-line bugs · 7 benchmarked OSS repos · rank of first failing test
-</div>
-
-<!--
-- The hero claim. Say it once, then silence for 3 seconds.
-- 50% = random/alphabetical baseline (Yoo & Harman 2012).
-- 87–91% = test-order, 7 benchmarked repos; 20+ repos total in regression suite.
-- Method: inject a one-line bug, record rank of first failing test.
-- Reproducible: scripts/third_party_test_plan.sh.
-Transition: "Let me make that concrete with real project numbers."
--->
-
-
----
-layout: default
----
-
-# 7 benchmarked OSS repos — same result every time
-
-<BenchmarkChart />
-
-<v-click>
-
-<div class="pull-quote mt-2">
-  Method: synthetic one-line bugs · rank of first failing test · 5 bugs × 3 runs each.<br/>
-  Reproducible: <code>scripts/third_party_test_plan.sh bugs commons-lang</code>
-</div>
-
-</v-click>
-
-<!--
-- Alphabetical APFD hovers at 50% — random baseline, exactly as Yoo & Harman predicted.
-- test-order: 87–93% across utilities, networking, DI framework, AI libraries.
-- These are ranges across 5 injected bugs × 3 runs — individual results vary by which class was changed.
-- "scripts/third_party_test_plan.sh bugs commons-lang — anyone can reproduce this."
-- Real test counts from the live indexes present in this checkout.
-Transition: "Enough theory — what does a developer actually do?"
+Transition: "What does that look like on a developer's laptop?"
 -->
 
 
@@ -786,49 +498,30 @@ Transition: "Enough theory — what does a developer actually do?"
 layout: section
 ---
 
-<img src="/images/wiki-wacs-teletype.jpg" class="absolute inset-0 w-full h-full object-cover opacity-20" />
+<img src="/images/wiki-wacs-teletype.jpg" class="absolute inset-0 w-full h-full object-cover opacity-28" />
 <div class="absolute inset-0 bg-zinc-900/72 z-0" />
 
 <div class="relative z-10 text-center">
 
-# Adoption
+# Ten lines. Then run `mvn test`.
 
-<div class="pt-4 opacity-70">what a developer actually does — Maven or Gradle, ten lines</div>
-
-</div>
-
-<!--
-- 18 minutes. Four live demos.
-Transition: "Maven first — ten lines."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-telegraph-tokyo.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-Maven: ten lines of POM.
-
-</div>
+<div class="pt-4 opacity-70">Maven or Gradle — same result</div>
 
 </div>
 
 <!--
-- Next slide shows the code.
-Transition: show the POM.
+- "Ten lines of POM. That's the entire install. Let me show you."
+- Don't explain before showing. Show first.
+Transition: straight to POM code.
 -->
 
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
+
+# Maven POM: ten lines
 
 ```xml {all|2-3|5|6-10}{lines:true}
 <plugin>
@@ -845,29 +538,32 @@ layout: default
 ```
 
 <!--
-- Ten lines, full Maven setup.
-- Line 5 (extensions=true) is load-bearing — registers the lifecycle participant. #1 install mistake.
-- `prepare` auto-detects: no index → learn; index found → order.
-- `mvn test` works exactly as before.
-Transition: "Let's run it from scratch."
+- Walk highlights: groupId/artifactId → extensions=true → prepare goal.
+- extensions=true: the #1 install mistake. Registers test-order as a Maven lifecycle participant.
+- prepare goal: auto-detects — no index → learn run; index found → order run.
+- `mvn test` works exactly as before. No flags. No config.
+Transition: "Let me run it."
 -->
 
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# Demo 1 — Maven from scratch
+# Demo 1: learn → order → rank shift
 
-<DemoCard id="D1" duration="5 min" :cmd="`cd samples/sample-shop\nmvn test                  # learn run\nmvn test                  # order run\nmvn test-order:show       # scores + why`" title="Zero to ordered in two commands" watch="Watch: .test-order/ appears after run #1. Run #2 shows tests in scored order with a why column."></DemoCard>
+<DemoCard id="D1" duration="6 min" :cmd="`cd samples/sample-shop\nmvn test                  # learn run\nmvn test                  # order run\nmvn test-order:show       # scores + why\n# --- now make a change ---\n# Add: if (item == null) throw new IllegalArgumentException();\n$EDITOR src/main/java/com/example/shop/Cart.java\nmvn test\nmvn test-order:show       # watch CartTest jump to #1`" title="Two runs. Then one edit. Watch the rank respond." watch="Run 1: index written. Run 2: order changed, APFD printed. Edit: CartTest jumps to #1 — changed-test=9, overlap=2."></DemoCard>
 
-<div class="pt-4 text-sm opacity-50 text-center"><em>Switch to terminal tab #1.</em></div>
+<div class="pt-3 text-sm opacity-50 text-center"><em>Switch to terminal tab #1.</em></div>
 
 <!--
-- Type commands aloud — don't paste.
-- After #1: "Six files in .test-order/. That's everything."
-- After #2: "Same command. No flags. The order changed."
-- After :show: point at score + why columns. "Every score is debuggable."
+- DON'T paste — type aloud. Narrate each command before pressing Enter.
+- Run 1: "Auto-instrumenting 42 classes" — index written to .test-order/
+- Run 2: "Same command. No flags. The order changed." — point at the order in output.
+- :show: walk the Why column. "Every score is debuggable."
+- Edit: open Cart.java, add null-check to add(). "One line. Now watch."
+- Run 3: CartTest at #1. "No retraining. A set intersection on the existing index."
 - Fallback: asciinema play public/demo-d1.cast
 Transition: "Here's what :show prints."
 -->
@@ -875,61 +571,24 @@ Transition: "Here's what :show prints."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# What `:show` prints — every field explained
+# What `:show` prints
 
 ```ansi
 $ mvn test-order:show
 
-Changed: com.example.shop.Cart  (1 uncommitted edit)
+Changed: com.example.shop.Cart
 
- # │ Score │ Class                        │ Why
-───┼───────┼──────────────────────────────┼──────────────────────────────────
- 1 │  14.0 │ com.example.shop.CartTest    │ changed-test=9, overlap=2, pkg=2, speed=+1
- 2 │   7.0 │ com.example.shop.ProductTest │ overlap=5, pkg-prox=2
- 3 │   0.0 │ com.example.shop.InvoiceTest │ (no overlap)  [SLOW 320ms]
+ # │ Score │ Class       │ Why
+───┼───────┼─────────────┼───────────────────────────
+ 1 │  14.0 │ CartTest    │ changed=9, overlap=2, pkg=2
+ 2 │   7.0 │ ProductTest │ overlap=5, pkg=2
+ 3 │   0.0 │ InvoiceTest │ (no overlap) [SLOW 320ms]
 
-[test-order] Run APFD: 92.9%  (first failure at test 1 of 3)
-[test-order] Estimated time saved: 21 s vs. alphabetical order
+[test-order] Run APFD: 92.9%
 ```
-
-<div class="mt-4 grid grid-cols-2 gap-3 text-sm">
-
-<v-click>
-
-<div class="p-3 rounded bg-zinc-800 border-l-4 border-blue-500">
-  <div class="font-mono text-blue-300 font-bold">Score</div>
-  <div class="opacity-80 mt-1">Additive integer. Every signal visible in <code>Why</code>. Fully reproducible.</div>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="p-3 rounded bg-zinc-800 border-l-4 border-violet-500">
-  <div class="font-mono text-violet-300 font-bold">Why</div>
-  <div class="opacity-80 mt-1">Per-signal breakdown: <code>changed-test</code>, <code>overlap</code>, <code>pkg-prox</code>, <code>speed</code>, <code>failure</code>…</div>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="p-3 rounded bg-zinc-800 border-l-4 border-orange-500">
-  <div class="font-mono text-orange-300 font-bold">APFD</div>
-  <div class="opacity-80 mt-1">0–1. Fraction of the suite elapsed before the first failure. Printed every run.</div>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="p-3 rounded bg-zinc-800 border-l-4 border-green-500">
-  <div class="font-mono text-green-300 font-bold">Estimated time saved</div>
-  <div class="opacity-80 mt-1">Time to first failure vs. alphabetical order. Assumes Ctrl-C on first failure.</div>
-</div>
-
-</v-click>
-
-</div>
 
 <!--
 - "Changed:" line — which classes test-order detected as changed (the diff)
@@ -945,25 +604,17 @@ Transition: "Now edit one file and watch the rank move."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
 # The edit we're about to make
 
 ```java {all|3}
 public void add(Item item) {
-    // add this one line:
     if (item == null) throw new IllegalArgumentException();
     items.add(item);
 }
 ```
-
-<v-click>
-
-<div class="mt-4 p-3 rounded bg-zinc-800 border-l-4 border-orange-500 text-sm">
-  One line. Cart is in CartTest's dep set. Watch the rank move.
-</div>
-
-</v-click>
 
 <!--
 - Show the code BEFORE switching to the IDE — sets expectations.
@@ -974,50 +625,13 @@ Transition: switch to IDE / terminal.
 -->
 
 
+
 ---
 layout: default
----
-
-# Demo 2 — edit → rank shift
-
-<DemoCard id="D2" duration="2 min" :cmd="`# In Cart.java: change add() to reject null items\n# e.g. add:  if (item == null) throw new IllegalArgumentException();\n$EDITOR src/main/java/com/example/shop/Cart.java\nmvn test\nmvn test-order:show`" title="Change one method. Watch CartTest jump to #1." watch="Why column: changed-test=9, overlap=5. Nothing retrained — score recomputed from the existing index and the git diff."></DemoCard>
-
-<!--
-- The demo where it clicks: no ML, no retraining — just set intersection.
-- The edit gives CartTest BOTH the "changed test" signal (+9) AND the dep-overlap signal (Cart is in its deps).
-- Score goes from ~5 (overlap only) to 14 (overlap + changed-test).
-- Watch the room when CartTest moves to #1 before you even run it.
-- Say explicitly: "I didn't retrain anything. The index was recorded last run. The score recomputes in milliseconds."
-Transition: "Gradle is even shorter."
--->
-
-
----
-layout: center
 class: bg-zinc-900 text-white
 ---
 
-<img src="/images/wiki-telegraph-tokyo.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-Gradle: three lines.
-
-</div>
-
-</div>
-
-<!--
-- Next slide shows the code. Same arc, different build tool.
-Transition: show the Gradle block.
--->
-
-
----
-layout: default
----
+# Gradle: three lines
 
 ```groovy
 plugins {
@@ -1025,49 +639,22 @@ plugins {
 }
 ```
 
-<div class="pt-8 text-2xl font-semibold">
-  Same core, same scoring, same index.
-</div>
-
 <!--
-- Thin wrapper. Identical behaviour to Maven.
-- Multi-project builds share one .test-order/ at the root.
-Transition: "Let's run the Gradle demo — fast."
--->
-
-
----
-layout: default
----
-
-# Demo 3 — Gradle
-
-<DemoCard id="D3" duration="2 min" :cmd="`cd samples/sample-vintage-gradle\n./gradlew test            # learn + order\n./gradlew testOrderShow   # ranking`" title="Three lines. Same result." watch="Point out: camelCase tasks, Gradle daemon stays warm, .test-order/ at project root. Same APFD line."></DemoCard>
-
-<!--
-- DON'T repeat Maven narration. "Same data model, same scoring, same index."
-- Show two diffs only: task naming + daemon warmup.
-- Running long? Skip it: "Gradle is three lines — same outcome."
-- Fallback: asciinema play public/demo-d3.cast
+- Three lines. That's it. "Same data model, same scoring, same index format."
+- Don't run it live — save the time.
+- "Gradle is in the repo: samples/sample-vintage-gradle. Same APFD, camelCase tasks."
 Transition: "What does the learn run actually cost?"
 -->
 
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# Instrumentation overhead: you pay once, then zero
+# Instrumentation overhead
 
 <InstrumentationOverhead />
-
-<v-click>
-
-<div class="pt-3 text-xl font-bold text-emerald-400 text-center">
-  Order run overhead: 0%. No agent attached.
-</div>
-
-</v-click>
 
 <!--
 - You pay once, on the learn run. Overhead numbers are vs. spring-petclinic baseline 4.93s → ~5.5s.
@@ -1080,11 +667,12 @@ Transition: "Here's a real project, pre-indexed."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# Demo 4 — spring-petclinic, pre-indexed
+# Demo 2: spring-petclinic, pre-indexed
 
-<DemoCard id="D4" duration="6 min" :cmd="`cd third-party/spring-petclinic\n# learn ran last night in CI — zero overhead today\nmvn test\nmvn test-order:dashboard`" title="Real project. Watch APFD live, then open dashboard." watch="Test order in terminal. First failure surfaces early. Then dashboard: APFD trend, run history, cache tab."></DemoCard>
+<DemoCard id="D2" duration="6 min" :cmd="`cd third-party/spring-petclinic\n# learn ran last night in CI, zero overhead today\nmvn test\nmvn test-order:dashboard`" title="Real project. Watch APFD live, then open dashboard." watch="Test order in terminal. First failure surfaces early. Then dashboard: APFD trend, run history, cache tab."></DemoCard>
 
 <!--
 - "Learn ran last night. Today's run is zero overhead." — normal CI workflow.
@@ -1097,25 +685,21 @@ Transition: "Six numbers on the dashboard KPI bar — let me decode them."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# The dashboard — six numbers at a glance
+# The dashboard: six numbers
 
 <div class="mt-6 grid grid-cols-3 gap-4">
 
-<v-click>
-
 <div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
   <div class="font-bold text-orange-300 text-2xl font-mono">APFD</div>
-  <div class="text-sm opacity-60 mt-1">failure at X% of wall time</div>
 </div>
 
-</v-click>
 <v-click>
 
 <div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
   <div class="font-bold text-rose-300 text-2xl font-mono">Failures</div>
-  <div class="text-sm opacity-60 mt-1">most recent run</div>
 </div>
 
 </v-click>
@@ -1123,7 +707,6 @@ layout: default
 
 <div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
   <div class="font-bold text-green-300 text-2xl font-mono">Pass streak</div>
-  <div class="text-sm opacity-60 mt-1">consecutive clean runs</div>
 </div>
 
 </v-click>
@@ -1131,7 +714,6 @@ layout: default
 
 <div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
   <div class="font-bold text-blue-300 text-2xl font-mono">At-risk</div>
-  <div class="text-sm opacity-60 mt-1">carrying a past failure</div>
 </div>
 
 </v-click>
@@ -1139,7 +721,6 @@ layout: default
 
 <div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
   <div class="font-bold text-violet-300 text-2xl font-mono">Time saved</div>
-  <div class="text-sm opacity-60 mt-1">cumulative vs. alphabetical</div>
 </div>
 
 </v-click>
@@ -1147,7 +728,6 @@ layout: default
 
 <div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700 text-center">
   <div class="font-bold text-yellow-300 text-2xl font-mono">Health A–F</div>
-  <div class="text-sm opacity-60 mt-1">APFD trend + flaky rate</div>
 </div>
 
 </v-click>
@@ -1165,49 +745,24 @@ Transition: "Now the developer's view — how it can be this fast."
 
 
 ---
-layout: center
-class: text-center bg-zinc-900 text-white
----
-
-<div class="big-statement">
-It works. But <em>why</em> is it this fast?
-</div>
-
-<v-click>
-
-<div class="text-xl mt-8 opacity-75">
-  One learn run. Zero re-training. Sub-millisecond scoring per change.<br/>
-  Five engineering decisions made that possible.
-</div>
-
-</v-click>
-
-<!--
-- Pause after "this fast?" — let the question hang.
-- The audience has seen demos; they know it works. This section explains the mechanism.
-Transition: "Let me open it up."
--->
-
-
----
 layout: section
 ---
 
-<img src="/images/wiki-eniac-programmers.jpg" class="absolute inset-0 w-full h-full object-cover opacity-20" />
-<div class="absolute inset-0 bg-zinc-900/72 z-0" />
+<img src="/images/wiki-lego-bricks.jpg" class="absolute inset-0 w-full h-full object-cover opacity-28" />
+<div class="absolute inset-0 bg-zinc-900/75 z-0" />
 
 <div class="relative z-10 text-center">
 
-# Under the Hood
+# Honest Assessment
 
-<div class="pt-4 opacity-70">bytecode · data structures · performance engineering</div>
+<div class="pt-4 opacity-70">where it breaks, what we're still building</div>
 
 </div>
 
 <!--
-- 15 minutes. How the sausage is made.
-- Audience has seen it work — now they'll understand WHY it's fast.
-Transition: "I'm the developer — let me open it up."
+- Earn trust now — while demos are fresh in the room's mind.
+- "It works. Here's where it doesn't."
+Transition: "When NOT to use this."
 -->
 
 
@@ -1216,22 +771,109 @@ layout: center
 class: bg-zinc-900 text-white
 ---
 
-<img src="/images/wiki-eniac-programmers.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
+<img src="/images/wiki-lego-bricks.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
 <div class="absolute inset-0 bg-zinc-900/80 z-0" />
 <div class="relative z-10 flex flex-col items-center">
 
 <div class="big-statement">
 
-I am the developer.<br/>Let me show you<br/>how it actually works.
+When NOT to use this.
 
 </div>
 
 </div>
 
 <!--
-- Set expectations: deeper than the demos.
-- "Here for theory? Stay. Want the POM? It's on the CTA slide."
-Transition: "The entire instrumentation surface is one call."
+- Next slide has the three cases. Let the title land.
+Transition: reveal the three failure cases.
+-->
+
+
+---
+layout: default
+class: bg-zinc-900 text-white
+---
+
+<div class="pt-8 grid grid-cols-3 gap-6 text-center">
+  <div class="p-6 rounded-lg bg-rose-950 border border-rose-800 text-white">
+    <div class="text-4xl font-bold text-rose-400">&lt; 20</div>
+    <div class="pt-3 text-base opacity-80">tiny suites</div>
+  </div>
+  <div class="p-6 rounded-lg bg-rose-950 border border-rose-800 text-white">
+    <div class="text-4xl font-bold text-rose-400">⚙</div>
+    <div class="pt-3 text-base opacity-80">reflection-only paths</div>
+  </div>
+  <div class="p-6 rounded-lg bg-rose-950 border border-rose-800 text-white">
+    <div class="text-4xl font-bold text-rose-400">⚡</div>
+    <div class="pt-3 text-base opacity-80">dynamic classloading</div>
+  </div>
+</div>
+
+<!--
+- Tiny suites: no ordering headroom. Parallelism helps more.
+- Reflection: Spring AOP and Mockito are fine — they go through bytecode. "Build the object graph from YAML at runtime" loses us.
+- Dynamic classloading: classes loaded after JVM start aren't in the instrumentation window. Standard Surefire forks are fine.
+Transition: "v0.1 means we found things that break. Here's the deal."
+-->
+
+
+---
+layout: center
+class: bg-zinc-900 text-white
+---
+
+<img src="/images/wiki-lego-bricks.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
+<div class="absolute inset-0 bg-zinc-900/82 z-0" />
+<div class="relative z-10 flex flex-col items-center text-center max-w-2xl mx-auto">
+
+<div class="big-statement">
+You will find bugs.<br/>
+<span class="text-emerald-400">That's the point.</span>
+</div>
+
+<v-click>
+<div class="mt-8 text-xl opacity-80">
+  It's open source. Apache 2.0.<br/>
+  File an issue. Send a PR. Tell me what broke.
+</div>
+</v-click>
+
+<v-click>
+<div class="mt-6 font-mono text-lg text-sky-300">
+  github.com/parttimenerd/test-order
+</div>
+</v-click>
+
+</div>
+
+<!--
+- This is NOT a disclaimer slide. It's an invitation.
+- "v0.1 means I've run it on 7 repos. You have repos I've never seen."
+- Real users finding real edge cases is how OSS tools get good.
+- "If it breaks on your project, I want to know. That's more valuable than any benchmark I can run."
+- Don't apologize. This is the honest expectation-setting that earns long-term trust.
+Transition: "Let me show you how it's built, so you can contribute."
+-->
+
+
+---
+layout: section
+---
+
+<img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-28" />
+<div class="absolute inset-0 bg-zinc-900/72 z-0" />
+<div class="relative z-10">
+
+# Under the Hood
+
+<div class="pt-4 opacity-70">bytecode · data structures · performance engineering</div>
+
+</div>
+
+<!--
+- Skip entirely if time is short — jump to "Beyond Ordering."
+- Audience has seen it work. This rewards the technically curious.
+Transition: "One injected call. Let me open it up."
 -->
 
 
@@ -1269,12 +911,21 @@ Transition: "Here's the before/after."
 
 
 ---
-layout: two-cols
+layout: default
+class: bg-zinc-900 text-white injection-slide
 ---
 
-# The injection: ASM, not ByteBuddy
+# The injection: one `invokestatic`
 
-```java {all|3|4-5}
+<style>
+.injection-slide pre, .injection-slide pre code, .injection-slide .shiki { font-size: 1.1rem !important; }
+</style>
+
+<div class="grid grid-cols-2 gap-4 mt-2">
+
+<div>
+
+```java
 // BEFORE
 public Money total() {
     return items.stream()
@@ -1283,102 +934,173 @@ public Money total() {
 }
 ```
 
-```java {all|2}
-// AFTER (ClassFileTransformer output)
+</div>
+<div>
+
+```java {2}
+// AFTER
 public Money total() {
-    UsageStore.recordUsageIdFast(4711);
+    UsageStore.recordId(4711);
     return items.stream()
         .map(Item::price)
         .reduce(ZERO, Money::add);
 }
 ```
 
-::right::
-
-<div class="pl-6 pt-2 space-y-4">
-
-<v-click>
-
-<div class="p-3 rounded bg-zinc-800 border-l-4 border-blue-500">
-  <div class="font-semibold text-blue-300 text-sm">Why ASM, not ByteBuddy?</div>
-  <div class="text-sm opacity-80 mt-1">Streaming visitor. Zero classpath deps.</div>
+</div>
 </div>
 
+<div class="mt-4 grid grid-cols-2 gap-4">
+
+<v-click>
+<div class="p-3 rounded bg-zinc-800 border-l-4 border-blue-500 text-sm">
+  <span class="font-semibold text-blue-300">ASM streaming visitor</span> — no object model, single pass
+</div>
 </v-click>
+
 <v-click>
-
-<div class="p-3 rounded bg-zinc-800 border-l-4 border-green-500">
-  <div class="font-semibold text-green-300 text-sm">Why integer IDs?</div>
-  <div class="text-sm opacity-80 mt-1">~50× faster than strings.</div>
+<div class="p-3 rounded bg-zinc-800 border-l-4 border-green-500 text-sm">
+  <span class="font-semibold text-green-300">Integer class ID</span> — pre-computed, ~50× faster than strings
 </div>
-
-</v-click>
-<v-click>
-
-<div class="p-3 rounded bg-zinc-800 border-l-4 border-violet-500">
-  <div class="font-semibold text-violet-300 text-sm">Five bytes</div>
-  <div class="text-sm opacity-80 mt-1">Push + <code>invokestatic</code>. That's all.</div>
-</div>
-
 </v-click>
 
 </div>
 
 <!--
-- "ByteBuddy builds a full object model per class. We visit the stream once."
+- "ByteBuddy builds a full object model per class. We visit the stream once — next slide shows the numbers."
 - No full class model in memory; manual maxStack tracking.
 - Integer IDs are the single biggest win — pre-computed before any test runs. Strings cost hashing, allocation, concurrent-map contention.
 - Five bytes: iconst/bipush/sipush/ldc + invokestatic. Stack delta 0. No allocation, no GC pressure.
-Transition: "Where do those IDs go? A thread-local bitset."
+Transition: "Why not ByteBuddy — let me show you the numbers."
 -->
 
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# Thread-local bitset: why it's fast
+# Why not ByteBuddy?
 
-```java {all|1-2|4-5|7-9}
-// Each test method gets a thread-local long[]
-private static final ThreadLocal<long[]> BITS =
-    ThreadLocal.withInitial(() -> new long[CLASS_COUNT / 64 + 1]);
+<div class="mt-3 grid grid-cols-2 gap-5">
 
-// recordUsageIdFast: inlined by JIT — no method call overhead
-public static void recordUsageIdFast(int classId) {
+<div class="p-4 rounded-lg border-2 border-red-700/70" style="background: rgba(127,29,29,0.25)">
+
+<div class="font-semibold text-red-400 mb-4">ByteBuddy</div>
+
+<div class="font-mono text-sm text-red-200" style="background: rgba(127,29,29,0.5); padding: 0.5rem; border-radius: 6px">
+  10 000 classes × 200 µs = <strong>2 s overhead</strong>
+</div>
+
+</div>
+
+<div class="p-4 rounded-lg border-2 border-green-700/70" style="background: rgba(6,78,59,0.25)">
+
+<div class="font-semibold text-green-400 mb-4">ASM — streaming</div>
+
+<div class="font-mono text-sm text-green-200" style="background: rgba(6,78,59,0.5); padding: 0.5rem; border-radius: 6px">
+  10 000 classes × 4 µs = <strong>40 ms overhead</strong>
+</div>
+
+</div>
+
+</div>
+
+<!--
+- ByteBuddy is great for runtime proxies and agent-based tools — it's not the wrong choice in general.
+- For our case: we touch every class, every test run, during class loading. The per-class cost multiplies.
+- ASM is what javac, the JDK instrumentation API, and every serious bytecode tool reach for at scale.
+- "Zero classpath deps" is a bonus: we don't pull ByteBuddy (+ Byte-Buddy-Agent) into the user's test classpath.
+Transition: "Here's the whole transformation in one picture."
+-->
+
+
+---
+layout: default
+class: bg-zinc-900 text-white
+---
+
+# The transformation pipeline
+
+<InstrumentationPipeline />
+
+<!--
+- Walk the diagram left to right: class on disk → Surefire hook loads it → ASM visits → invokestatic inserted → bitset records which class ids fired → drained to index.
+- "The transformer is registered once. Every class that loads during a test goes through it automatically — including classes loaded lazily mid-test."
+- Selective learn skips classes whose bytecode hash hasn't changed — so repeat runs only re-instrument what's new.
+Transition: "This is fundamentally different from JaCoCo."
+-->
+
+
+---
+layout: default
+class: bg-zinc-900 text-white
+---
+
+# Not the same as JaCoCo
+
+<div class="mt-4 grid grid-cols-2 gap-6">
+
+<div class="p-5 rounded-lg border border-zinc-600 bg-zinc-800/50">
+
+### JaCoCo / Cobertura
+
+<div class="mt-3 space-y-2 text-base opacity-80">
+
+- Aggregate bit per line
+- "Was line 42 hit by **any** test in the suite?"
+- Suite-level answer — loses which test touched what
+
+</div>
+
+<div class="mt-4 font-mono text-xs text-zinc-400 bg-zinc-900 p-2 rounded">Cart.java:42 → hit ✓</div>
+
+</div>
+
+<div class="p-5 rounded-lg border border-sky-700 bg-sky-950/40">
+
+### test-order
+
+<div class="mt-3 space-y-2 text-base opacity-80">
+
+- Per-test-method dep set
+- "Which **specific test** touched which **classes**?"
+- Needed for scoring: CartTest's deps ∩ changed files
+
+</div>
+
+<div class="mt-4 font-mono text-xs text-sky-300 bg-zinc-900 p-2 rounded">CartTest → {Cart, Invoice, Money}</div>
+
+</div>
+
+</div>
+
+<!--
+- JaCoCo answers "was this code covered?" — useful for dead code, not for ordering.
+- We need per-test attribution: "did CartTest touch Cart.java?" — not just "was Cart.java touched?"
+- The intersection (dep set ∩ changed files) is the signal. Coverage tools don't produce it.
+- This is why no one has done this with JaCoCo: the data model is wrong for the problem.
+Transition: "The bitset is why the overhead is this low."
+-->
+
+
+---
+layout: default
+class: bg-zinc-900 text-white
+---
+
+# Thread-local bitset
+
+```java {all|1-2|4-6}
+// one long[] per thread — no contention
+static final ThreadLocal<long[]> BITS =
+    ThreadLocal.withInitial(() -> new long[N / 64 + 1]);
+
+public static void recordId(int id) {  // inlined by JIT
     long[] bits = BITS.get();
-    bits[classId >>> 6] |= (1L << classId);  // set bit N
+    bits[id >>> 6] |= (1L << id);
 }
 ```
-
-<div class="mt-6 grid grid-cols-3 gap-4 text-center">
-
-<v-click>
-
-<div class="p-3 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="text-lg font-bold text-green-300">No locks</div>
-  <div class="text-sm opacity-70 mt-1">Zero contention across runners</div>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="p-3 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="text-lg font-bold text-blue-300">~50×</div>
-  <div class="text-sm opacity-70 mt-1">Faster than a string map</div>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="p-3 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="text-lg font-bold text-violet-300">Aggregated once</div>
-  <div class="text-sm opacity-70 mt-1">Per test method, not per call</div>
-</div>
-
-</v-click>
-
-</div>
 
 <!--
 - Naive: ConcurrentHashMap<String, Set<String>>. Every call = hash + lookup + set.add. Contention under parallel runs.
@@ -1391,32 +1113,22 @@ Transition: "Don't take my word for it — see the injection live."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
 # Live: read the index yourself
 
-```bash {1|3-4|6-8|10-12}
-# After any learn run:
+```bash {1|2-4|6-8}
 cd samples/sample-shop && mvn test -Dtestorder.mode=learn
 
-# Which classes did CartTest call?
-java -jar test-order-core-*-jar-with-dependencies.jar \
+java -jar test-order-core-*-jar-with-deps.jar \
   deps .test-order/test-dependencies.lz4 \
   com.example.shop.CartTest
 
-# Output:
 # com.example.shop.Cart
 # com.example.shop.Invoice
 # com.example.shop.Money   … (8 classes)
 ```
-
-<v-click>
-
-<div class="mt-4 p-3 rounded bg-zinc-800 border-l-4 border-emerald-500 text-sm">
-  The index is just a file. You can inspect it, diff it, commit it.
-</div>
-
-</v-click>
 
 <!--
 - This is the "try it yourself" moment — audience can do this on their laptop tonight.
@@ -1430,13 +1142,14 @@ Transition: "The meta-agent makes this visual — let's see it."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# Demo 5 — meta-agent: see the injection live
+# Demo 3: meta-agent, see the injection live
 
 <DemoCue>switching to browser · localhost:7071</DemoCue>
 
-<DemoCard id="D5" duration="4 min" :cmd="`# meta-agent at localhost:7071\nopen http://localhost:7071/instrumentators\nopen http://localhost:7071/classes\nopen http://localhost:7071/full-diff/com.example.Cart`" title="What does test-order actually do to your bytecode?" watch="Vineflower decompilation diff — UsageStore.recordUsageIdFast at every method entry. Nothing else."></DemoCard>
+<DemoCard id="D3" duration="4 min" :cmd="`# meta-agent at localhost:7071\nopen http://localhost:7071/instrumentators\nopen http://localhost:7071/classes\nopen http://localhost:7071/full-diff/com.example.Cart`" title="What does test-order actually do to your bytecode?" watch="Vineflower decompilation diff: UsageStore.recordUsageIdFast at every method entry. Nothing else."></DemoCard>
 
 <!--
 - meta-agent instruments other agents' ClassFileTransformers, decompiles via Vineflower.
@@ -1451,30 +1164,14 @@ Transition: "So how does the index get to disk?"
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
 # How the index gets to disk
 
 <SocketBatchDiagram />
 
-<v-click>
-
-<div class="mt-4 grid grid-cols-2 gap-6">
-
-<div class="p-4 rounded-lg bg-red-950/40 border border-red-800/50">
-  <div class="font-semibold text-red-300 text-sm mb-2">Old design (abandoned)</div>
-  <div class="text-sm opacity-80">Every fork reloaded + resaved the full index.</div>
-</div>
-
-<div class="p-4 rounded-lg bg-green-950/40 border border-green-800/50">
-  <div class="font-semibold text-green-300 text-sm mb-2">Socket batch (current)</div>
-  <div class="text-sm opacity-80">One binary write per fork at shutdown.</div>
-</div>
-
-</div>
-
-</v-click>
-
+<!--
 <!--
 - Surefire forks a JVM per test class — hundreds of forks in a big build.
 - Old: each fork loaded the 5 MB index, merged, wrote back. 100–500 ms per fork → ~20s of pure I/O. Or 800 file cycles per fork in MEMBER mode.
@@ -1486,46 +1183,44 @@ Transition: "What's actually in that file?"
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
 # The index format
 
 ```
 test-dependencies.lz4
-├── LZ4 frame
-│   ├── Magic: "TORD" (4 bytes)
-│   ├── Format version: 1 (2 bytes)
-│   ├── Section count (4 bytes)
-│   ├── SECTION 1: ClassNameTrie   ← radix trie of all class names
-│   ├── SECTION 2: TestClasses     ← ordered list of test class IDs
-│   ├── SECTION 3: DepGroups       ← RoaringBitmap per test, row-deduplicated
-│   ├── SECTION 4: MethodDeps      ← per-test-method dep bitmaps (optional)
-│   └── SECTION 5: MemberDeps      ← exact field/method access (MEMBER mode)
+├── Magic: "TORD"
+├── SECTION 1: ClassNameTrie   ← radix trie
+├── SECTION 2: TestClasses
+├── SECTION 3: DepGroups       ← RoaringBitmap, deduped
+├── SECTION 4: MethodDeps
+└── SECTION 5: MemberDeps
 ```
 
+<div class="mt-3 grid grid-cols-2 gap-3">
+
 <v-click>
-
-<div class="mt-4 grid grid-cols-2 gap-4 text-sm">
-
-<div class="p-3 rounded bg-zinc-800 border-l-4 border-blue-500">
-  <div class="font-semibold text-blue-300">ClassNameTrie</div>
-  <div class="opacity-80 mt-1">Shared prefixes stored once.</div>
+<div class="p-3 rounded bg-zinc-800 border-l-4 border-sky-400 text-sm">
+  <div class="font-semibold text-sky-300 mb-1">Radix trie</div>
+  <div class="opacity-80">Shared prefixes stored once. <code>com.example.shop.*</code> = one node, not 50 strings.</div>
 </div>
-
-<div class="p-3 rounded bg-zinc-800 border-l-4 border-violet-500">
-  <div class="font-semibold text-violet-300">RoaringBitmap rows</div>
-  <div class="opacity-80 mt-1">Identical dep sets share one entry.</div>
-</div>
-
-</div>
-
 </v-click>
+
+<v-click>
+<div class="p-3 rounded bg-zinc-800 border-l-4 border-purple-400 text-sm">
+  <div class="font-semibold text-purple-300 mb-1">RoaringBitmap — "a better compressed bitset"</div>
+  <div class="opacity-80">Sparse class-ID sets stored as compressed 16-bit chunks. roaringbitmap.org</div>
+</div>
+</v-click>
+
+</div>
 
 <!--
 - Section-based: unknown sections skipped by length — forward compatible.
 - "TORD" magic identifies the payload inside the LZ4 frame.
 - ClassNameTrie: 500 classes sharing "com.example.shop." store that prefix once. Lookups O(name length).
-- RoaringBitmap: compressed sparse bitset; cuts a 10k-class dense case 80–90%.
+- RoaringBitmap: "a better compressed bitset" — roaringbitmap.org. Cuts a 10k-class dense case 80–90%.
 - Row-dedup: integration tests with identical dep sets point at one bitmap. Cuts index 30–60%.
 Transition: "We can even skip instrumenting most of the codebase."
 -->
@@ -1533,29 +1228,12 @@ Transition: "We can even skip instrumenting most of the codebase."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
 # Selective learn: BFS before the JVM starts
 
 <SelectiveLearnDiagram />
-
-<v-click>
-
-<div class="mt-4 grid grid-cols-2 gap-4">
-
-<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-semibold mb-2">Why 4 hops?</div>
-  <div class="text-sm opacity-70">Beyond 4, everything is reachable — noise.</div>
-</div>
-
-<div class="p-4 rounded-lg bg-zinc-800 border border-zinc-700">
-  <div class="font-semibold mb-2">Why before the JVM?</div>
-  <div class="text-sm opacity-70">Uncertain set must be known at attach time.</div>
-</div>
-
-</div>
-
-</v-click>
 
 <!--
 - Full learn: instruments every loaded class. Simple, complete, ~13% overhead.
@@ -1569,6 +1247,7 @@ Transition: "Five performance decisions made this fast."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
 <img src="/images/loc-scientist-chalkboard.jpg" class="absolute inset-0 w-full h-full object-cover opacity-10" />
@@ -1580,19 +1259,16 @@ layout: default
 
 <div class="mt-8 space-y-4">
 
-<v-click>
-
 <div class="flex items-center gap-4 text-xl">
   <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">①</span>
-  <div><span class="font-semibold">Integer IDs</span> <span class="opacity-55 text-base">— ~50× vs. string hashing</span></div>
+  <span class="font-semibold">Integer IDs</span>
 </div>
 
-</v-click>
 <v-click>
 
 <div class="flex items-center gap-4 text-xl">
   <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">②</span>
-  <div><span class="font-semibold">Thread-local bitsets</span> <span class="opacity-55 text-base">— zero contention, drained once per test</span></div>
+  <span class="font-semibold">Thread-local bitsets</span>
 </div>
 
 </v-click>
@@ -1600,7 +1276,7 @@ layout: default
 
 <div class="flex items-center gap-4 text-xl">
   <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">③</span>
-  <div><span class="font-semibold">Socket batch</span> <span class="opacity-55 text-base">— one write per fork, not 100–500 ms round-trip</span></div>
+  <span class="font-semibold">Socket batch</span>
 </div>
 
 </v-click>
@@ -1608,7 +1284,7 @@ layout: default
 
 <div class="flex items-center gap-4 text-xl">
   <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">④</span>
-  <div><span class="font-semibold">In-JVM cache</span> <span class="opacity-55 text-base">— 100-module build loads the index once</span></div>
+  <span class="font-semibold">In-JVM cache</span>
 </div>
 
 </v-click>
@@ -1616,7 +1292,7 @@ layout: default
 
 <div class="flex items-center gap-4 text-xl">
   <span class="font-mono text-emerald-400 font-bold text-2xl min-w-[2rem]">⑤</span>
-  <div><span class="font-semibold">Frequency filter</span> <span class="opacity-55 text-base">— drop deps shared by &gt;80% of tests</span></div>
+  <span class="font-semibold">Frequency filter</span>
 </div>
 
 </v-click>
@@ -1639,17 +1315,20 @@ Transition: "Now the scoring formula itself."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
 # 7 scoring signals, all configurable
 
-<div class="pt-2 grid grid-cols-2 gap-6">
+<div class="text-sm opacity-60 mb-2">Defaults work out of the box · tune via POM properties · <code>mvn test-order:optimize</code> auto-tunes after 5 runs</div>
+
+<div class="pt-1 grid grid-cols-2 gap-6">
 
 <div>
 
 | Signal | Weight | Rationale |
 |--------|:------:|-----------|
-| New test | **+15** | No history — learn it first |
+| New test | **+15** | No history, learn it first |
 | Changed test | **+9** | You edited it |
 | Recent failure | 0–5 | EMA d=0.3 · Yoo & Harman |
 | **Dep overlap** | **0–5** | √-norm intersection score |
@@ -1671,14 +1350,6 @@ layout: default
 
 </v-click>
 
-<v-click>
-
-<div class="mt-4 p-3 rounded bg-zinc-800 border-l-4 border-orange-500 text-sm">
-  <strong>Additive, not multiplicative</strong> — each term is independently debuggable.
-</div>
-
-</v-click>
-
 </div>
 
 <!--
@@ -1693,16 +1364,61 @@ Transition: "What does that look like for a real test? One worked example."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# CartTest scores 14 — here's every point
+# The scoring algorithm
 
-```ansi
-deps(CartTest) = {Cart, Invoice, Money, …} ← 8 classes
-changed        = {Cart}                    ← 1 match
+```python
+def score(test, changed, index):
+    deps = index[test]
+    overlap = deps & changed
+
+    s  = W_CHANGED if test_changed(test) else 0
+    s += W_OVERLAP * len(overlap)
+    s += W_PACKAGE if same_package(test, changed) else 0
+    s += W_SPEED   if is_fast(test) else 0
+    s *= ema_failure_weight(test)
+    return s
 ```
 
+<div class="mt-3 grid grid-cols-2 gap-3 text-sm opacity-80">
+  <div class="p-2 rounded bg-zinc-800 border-l-2 border-amber-400">All weights configurable in POM / <code>test-order.xml</code></div>
+  <div class="p-2 rounded bg-zinc-800 border-l-2 border-emerald-400"><code>mvn test-order:optimize</code> auto-tunes after 5 runs</div>
+</div>
+
+<!--
+- Every term additive and visible in the :show Why column.
+- Default weights work well out of the box — but every weight is a property: testorder.weight.changed=9
+- EMA = exponential moving average of past failures — history matters but decays.
+- After 5 runs with failures, `mvn test-order:optimize` tunes weights via genetic algorithm over APFD history.
+- No black box. Debuggable by design.
+Transition: "CartTest scores 14. Here's exactly why."
+-->
+
+
+---
+layout: default
+class: bg-zinc-900 text-white
+---
+
+# CartTest scores 14: here's every point
+
+<div class="grid grid-cols-2 gap-6 mt-2">
+<div>
+
+```
+deps    = {Cart, Invoice, …}
+changed = {Cart}
+```
+
+</div>
+<div>
+
 <ScoringBreakdown />
+
+</div>
+</div>
 
 <!--
 - Walk through each signal contribution for CartTest — the exact number shown in the :show output.
@@ -1718,20 +1434,21 @@ Transition: "Back to the meta-agent — the mode diff."
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# Demo 5 (cont.) — the meta-agent shows instrumentation mode diff
+# Demo 3 (cont.): meta-agent shows instrumentation mode diff
 
-```ansi {1|3-4|6-8}
+```ansi {1|3-4|6-9}
 GET /full-diff/com.example.Cart
 
 === BEFORE ===
-public Money total() { return items.stream().map(...).reduce(...); }
+public Money total() { return items.stream()…; }
 
 === AFTER ===
 public Money total() {
-    UsageStore.recordUsageIdFast(4711);
-    return items.stream().map(...).reduce(...);
+    UsageStore.recordId(4711);
+    return items.stream()…;
 }
 ```
 
@@ -1758,24 +1475,22 @@ class: text-center bg-zinc-900 text-white
 ---
 
 <div class="big-statement">
-That's how it works.
+Want to know <em>why</em> it's this fast?
 </div>
 
 <v-click>
 
 <div class="text-xl mt-8 opacity-75">
   One injected call. One bitset. One file.<br/>
-  Now let's talk about where it <em>doesn't</em> work.
+  Five engineering decisions made that possible.
 </div>
 
 </v-click>
 
 <!--
-- Explicit decompression after the deep dive.
-- "We just went from 25 years of research down to five bytes of bytecode. Let's surface."
-- The pivot to Honest Assessment lands better when the audience knows you're done with internals.
-- This slide gives them a moment to exhale.
-Transition: "straight to Honest Assessment."
+- Optional section — skip if running short on time; go straight to Beyond Ordering.
+- The audience has seen it work and knows the limits. Now reward the curious ones.
+Transition: "Let me open it up."
 -->
 
 
@@ -1783,88 +1498,10 @@ Transition: "straight to Honest Assessment."
 layout: section
 ---
 
-<img src="/images/wiki-lego-bricks.jpg" class="absolute inset-0 w-full h-full object-cover opacity-18" />
-<div class="absolute inset-0 bg-zinc-900/75 z-0" />
+<img src="/images/wiki-eniac-programmers.jpg" class="absolute inset-0 w-full h-full object-cover opacity-28" />
+<div class="absolute inset-0 bg-zinc-900/72 z-0" />
 
 <div class="relative z-10 text-center">
-
-# Honest Assessment
-
-<div class="pt-4 opacity-70">where it breaks, what we're still building</div>
-
-</div>
-
-<!--
-- 6 minutes. Earns more trust than any feature slide.
-Transition: "When NOT to use this."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-lego-bricks.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
-<div class="absolute inset-0 bg-zinc-900/80 z-0" />
-<div class="relative z-10 flex flex-col items-center">
-
-<div class="big-statement">
-
-When NOT to use this.
-
-</div>
-
-</div>
-
-<!--
-- Next slide has the three cases. Let the title land.
-Transition: reveal the three failure cases.
--->
-
-
----
-layout: default
----
-
-<div class="pt-8 grid grid-cols-3 gap-6 text-center">
-  <div class="p-6 rounded-lg bg-rose-950 border border-rose-800 text-white">
-    <div class="text-4xl font-bold text-rose-400">&lt; 20</div>
-    <div class="pt-3 text-base opacity-80">tiny suites</div>
-  </div>
-  <div class="p-6 rounded-lg bg-rose-950 border border-rose-800 text-white">
-    <div class="text-4xl font-bold text-rose-400">⚙</div>
-    <div class="pt-3 text-base opacity-80">reflection-only paths</div>
-  </div>
-  <div class="p-6 rounded-lg bg-rose-950 border border-rose-800 text-white">
-    <div class="text-4xl font-bold text-rose-400">⚡</div>
-    <div class="pt-3 text-base opacity-80">dynamic classloading</div>
-  </div>
-</div>
-
-<v-click>
-
-<div class="mt-8 p-4 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-base text-center">
-  <strong>v0.1 — early-stage.</strong> Useful in CI today; not yet battle-tested at enterprise scale.
-</div>
-
-</v-click>
-
-<!--
-- Tiny suites: no ordering headroom. Parallelism helps more.
-- Reflection: Spring AOP and Mockito are fine — they go through bytecode. "Build the object graph from YAML at runtime" loses us.
-- Dynamic classloading: classes loaded after JVM start aren't in the instrumentation window. Standard Surefire forks are fine.
-Transition: "Ordering alone can't fix everything — here's what's beyond it."
--->
-
-
----
-layout: section
----
-
-<img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-18" />
-<div class="absolute inset-0 bg-zinc-900/72 z-0" />
-<div class="relative z-10">
 
 # Beyond Ordering
 
@@ -1881,122 +1518,58 @@ Transition: "First — auto-retry."
 
 
 ---
-layout: center
-class: bg-zinc-900 text-white
+layout: default
+class: bg-zinc-900 text-white flaky-slide
 ---
 
-<img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
+<style>
+.flaky-slide pre,
+.flaky-slide pre code,
+.flaky-slide .shiki,
+.flaky-slide .shiki-container { 
+  font-size: 1.15rem !important;
+  background: #1e293b !important;
+  background-color: #1e293b !important;
+}
+</style>
 
-<div class="relative z-10 flex flex-col items-center text-center">
+# Handling flaky tests
 
-<div class="big-statement">
-Ordering can't fix<br/>three things.
-</div>
+<div class="mt-8 grid grid-cols-2 gap-10">
 
-<v-click>
+<div class="p-6 rounded-lg border border-zinc-600 bg-zinc-800">
 
-<div class="text-2xl mt-8 opacity-80">
-  Flaky tests &nbsp;·&nbsp; unchanged code &nbsp;·&nbsp; shared state between tests
-</div>
-
-</v-click>
-
-<v-click>
-
-<div class="text-xl mt-6 opacity-60">
-  We handle each one.
-</div>
-
-</v-click>
-
-</div>
-
-<!--
-- Name the problems before the solutions. The audience should feel the shape of the space.
-- Flaky: ordering can't help if the test fails intermittently regardless of position.
-- Unchanged code: ordering still runs unrelated tests; affected-selection skips them.
-- Shared state: ordering can create new OD failures if tests assume a particular predecessor.
-- "Three opt-in features. Day-one you need none of them."
-Transition: "Problem 1 — flaky tests."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center text-center">
-
-<div class="text-2xl text-rose-400 font-semibold mb-6">Problem: flaky tests corrupt the failure-history signal</div>
-
-<div class="big-statement">
-Auto-retry
-</div>
-
-<div class="pt-10 flex justify-center">
+### Auto-retry
 
 ```java
 @RetryingTest(3)
-void fetchRatesFromExternalApi() { … }
+void fetchRates() { … }
 ```
 
+<div class="mt-3 text-sm opacity-70">JUnit 5 · for DNS blips, rate limits, pool saturation</div>
+
 </div>
 
-<v-click>
+<div class="p-6 rounded-lg border border-zinc-600 bg-zinc-800">
 
-<div class="text-xl mt-6 opacity-80">
-  Failed once? Re-run N times before reporting FAILED.<br/>
-  <span class="text-emerald-400">Network blip stops breaking builds.</span>
+### Quarantine
+
+```java
+@QuarantinedTest
+void flakyTest() { … }
+```
+
+<div class="mt-3 text-sm opacity-70">Tests still run · can't break the build</div>
+
 </div>
-
-</v-click>
 
 </div>
 
 <!--
-- InvocationInterceptor, JUnit 5.
-- For tests that fail on DNS blip, pool saturation, rate-limit hiccup.
-- ABORTED if all attempts fail — build can still be configured to pass on ABORTED.
+- Auto-retry: InvocationInterceptor, JUnit 5. For DNS blips, pool saturation, rate-limit hiccups.
 - The EMA score doesn't spike on a single retry — noise filtered.
-Transition: "Problem 2 — chronically flaky tests."
--->
-
-
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
-<div class="absolute inset-0 bg-zinc-900/82 z-0" />
-<div class="relative z-10 flex flex-col items-center text-center">
-
-<div class="text-2xl text-rose-400 font-semibold mb-6">Problem: chronically flaky tests block the team</div>
-
-<div class="big-statement">
-Quarantine
-</div>
-
-<div class="pt-8 text-xl opacity-90">
-  Throws <span class="font-mono text-emerald-300">TestAbortedException</span>: ABORTED, not FAILED.<br/>
-  Build stays green. You fix it when you have time.
-</div>
-
-<div class="pt-6 text-base opacity-55">
-  Luo et al. 2014: 4.56% of Google TAP failures were flaky.<br/>
-  That's enough EMA noise to bury your real failure signal.
-</div>
-
-</div>
-
-<!--
-- @QuarantinedTest. Tests still run — they just can't break the build.
-- Luo et al. 2014: Google TAP had 73K flaky failures of 1.6M total (4.56%).
-- Flaky failures corrupt the EMA decay — quarantine filters them before they distort scores.
+- Quarantine: @QuarantinedTest. Tests still run — they just can't break the build.
+- Luo et al. 2014: 4.56% of Google TAP failures were flaky — enough EMA noise to bury real signal.
 Transition: "Problem 3 — running tests that can't possibly fail."
 -->
 
@@ -2010,24 +1583,15 @@ class: bg-zinc-900 text-white
 <div class="absolute inset-0 bg-zinc-900/82 z-0" />
 <div class="relative z-10 flex flex-col items-center text-center">
 
-<div class="text-2xl text-rose-400 font-semibold mb-6">Problem: ordering still runs tests that can't fail on this change</div>
+<div class="text-xl text-rose-400 font-semibold mb-6">Ordering still runs tests that can't fail on this change</div>
 
 <div class="big-statement">
 Skip-if-unchanged
 </div>
 
-<div class="pt-8 text-xl opacity-90">
-  Stable dep set + N-run pass streak → defer the test.<br/>
-  Skip fraction capped at 90%.
+<div class="pt-8 text-xl opacity-70">
+  Stable dep set + pass streak → defer. Cap: 90%.
 </div>
-
-<v-click>
-
-<div class="text-xl mt-6 text-emerald-400">
-  "Can't possibly fail" goes from last place to not running.
-</div>
-
-</v-click>
 
 </div>
 
@@ -2048,44 +1612,259 @@ class: bg-zinc-900 text-white
 <div class="absolute inset-0 bg-zinc-900/82 z-0" />
 <div class="relative z-10 flex flex-col items-center text-center">
 
-<div class="text-2xl text-rose-400 font-semibold mb-6">Problem: reordering can create new test failures via shared state</div>
+<div class="text-xl text-rose-400 font-semibold mb-6">Pass in isolation. Fail when another test runs first.</div>
 
 <div class="big-statement">
-Order-dependent<br/>test detection
-</div>
-
-<div class="pt-8 text-xl opacity-90">
-  Tuscan-square combinatorial designs (Li et al., ISSTA 2023).<br/>
-  97.2% detection rate. ~105 test orders. vs. <em>n!</em> for brute force.
+Order-dependent<br/>tests
 </div>
 
 </div>
 
 <!--
-- detect-dependencies mode.
-- Li et al. 2023: "97.2% of known OD tests with 104.7 orders on average per subject." Brute force = n!.
-- Tuscan squares give pair-coverage: every pair appears in both orderings at least once.
-- "Static state leaking between tests? We find it — before reordering makes it your problem."
-Transition: "Back to the headline — does it actually catch bugs?"
+- OD tests: TestA passes alone. TestA fails when TestB ran before it.
+- Root cause: shared mutable state — static fields, Spring context, Mockito static, DB rows.
+- Reordering (what test-order does for speed) can *expose* latent OD tests.
+- We need to *detect* them before they become noise.
+Transition: "This is a well-studied problem. Here's what we know."
 -->
 
 
 ---
-layout: fact
+layout: default
+class: bg-zinc-900 text-white
 ---
 
-# 95%
+# What the research found
 
-<div class="pt-2 text-3xl opacity-90">failing test ranked #1 · 7 benchmarked OSS repos</div>
+<div class="mt-5 space-y-4">
 
-<div class="pt-6 text-2xl font-bold text-emerald-400">
-  Average rank of first failing test: 1.4
+<div class="p-4 rounded-lg bg-zinc-800/60 border-l-4 border-rose-500">
+  <span class="font-semibold text-rose-300">Luo et al., ICSE 2014</span>
+  <span class="ml-3 opacity-80">4.56% of Google TAP suite failures were order-dependent</span>
 </div>
 
-<div class="pt-6 text-base opacity-60 max-w-2xl mx-auto">
-  commons-lang · jackson-core · okhttp · netty · resilience4j · spring-ai · guava · logbook…<br/>
-  Injected real-shaped one-line bugs. Checked rank of first failing test.
+<div class="p-4 rounded-lg bg-zinc-800/60 border-l-4 border-amber-500">
+  <span class="font-semibold text-amber-300">Shi et al., FSE 2019</span>
+  <span class="ml-3 opacity-80">OD tests found in 20 of 26 studied open-source Java projects</span>
 </div>
+
+<div class="p-4 rounded-lg bg-zinc-800/60 border-l-4 border-sky-500">
+  <span class="font-semibold text-sky-300">Bell et al., ASE 2015</span>
+  <span class="ml-3 opacity-80">Random shuffling finds ~60% of OD tests; needs many runs</span>
+</div>
+
+<div class="p-4 rounded-lg bg-zinc-800/60 border-l-4 border-emerald-500">
+  <span class="font-semibold text-emerald-300">Li et al., ISSTA 2023</span>
+  <span class="ml-3 opacity-80">Combinatorial (Tuscan square) designs: 97.2% detection, ~105 runs</span>
+</div>
+
+</div>
+
+<!--
+- Google data: 1 in 22 suite failures is order-dependent — not flaky, not broken, just wrong order.
+- 20/26 Java projects = you almost certainly have some. They hide because your CI runs a fixed order.
+- Bell 2015 showed random helps but you need dozens of random runs to get good coverage.
+- Li 2023 is the state of the art: structured designs get near-complete pair coverage in a fixed small number of runs.
+Transition: "Three detection approaches. Let me compare them."
+-->
+
+
+---
+layout: default
+class: bg-zinc-900 text-white
+---
+
+# Option 1: brute force
+
+<div class="grid grid-cols-2 gap-8 mt-4">
+
+<div>
+
+```python
+for o in permutations(t):
+    run(o)
+```
+
+</div>
+
+<div class="flex flex-col justify-center space-y-3">
+
+<div class="p-3 rounded bg-zinc-800/60 border-l-4 border-rose-500 text-sm">
+  <div class="font-semibold text-rose-300">n=10 tests → 3,628,800 runs</div>
+  <div class="mt-1 opacity-70">Nobody runs this.</div>
+</div>
+
+<div class="p-3 rounded bg-zinc-800/50 border border-zinc-700 text-sm opacity-70">
+  ✓ Finds every OD test<br/>
+  ✗ Combinatorially impossible at scale
+</div>
+
+</div>
+
+</div>
+
+<!--
+- It's complete. It's correct. It's useless at scale.
+- 10 tests = 3.6M. 20 tests = 2.4 × 10^18. Nobody runs this.
+- We need structure.
+Transition: "Maybe randomness helps?"
+-->
+
+
+---
+layout: default
+class: bg-zinc-900 text-white
+---
+
+# Option 2: random shuffle
+
+<div class="grid grid-cols-2 gap-8 mt-4">
+
+<div>
+
+```python
+for _ in range(k):
+    shuffle(tests)
+    run(tests)
+```
+
+</div>
+
+<div class="flex flex-col justify-center space-y-3">
+
+<div class="p-3 rounded bg-zinc-800/60 border-l-4 border-amber-500 text-sm">
+  <div class="font-semibold text-amber-300">Bell et al., ASE 2015</div>
+  <div class="mt-1 opacity-70">~60% detection rate. Needs dozens of runs.</div>
+</div>
+
+<div class="p-3 rounded bg-zinc-800/50 border border-zinc-700 text-sm opacity-70">
+  ✓ Simple to implement<br/>
+  ✗ No guarantee pair (b before a) ever runs<br/>
+  ✗ Coverage is probabilistic
+</div>
+
+</div>
+
+</div>
+
+<!--
+- Better than nothing. Each shuffle gives new ordering.
+- But you might run it 20 times and still never see (b, a) in that specific order.
+- Bell 2015: ~60% detection, which means 40% slip through.
+Transition: "There's a structured design that guarantees full pair coverage."
+-->
+
+
+---
+layout: default
+class: bg-zinc-900 text-white
+---
+
+# Option 3: Tuscan square
+
+<div class="grid grid-cols-2 gap-6 mt-3">
+
+<div>
+
+```python
+S = tuscan_square(n)
+for row in S:   # n rows
+    run(row)
+# all ordered pairs ✓
+```
+
+<div class="mt-3 p-3 rounded bg-sky-950/40 border border-sky-700 text-sky-200 text-sm">
+  Every ordered pair (a→b) <em>and</em> (b→a) appears at least once across the rows.<br/>
+  <span class="opacity-70 text-xs">Li et al., ISSTA 2023 — 97.2% detection rate</span>
+</div>
+
+</div>
+
+<div>
+
+<TuscanSquareViz />
+
+</div>
+
+</div>
+
+<!--
+- Latin square where every ordered pair appears in both directions.
+- n tests → n rows. n=50 = 50 runs vs 3×10^64 brute force.
+- Li 2023: 97.2% detection with this design. That's the state of the art.
+- The viz shows a 5×5 example. As each row runs, new pairs get covered. After 5 rows: all 20 ordered pairs.
+Transition: "Here's exactly what we generate and how we detect."
+-->
+
+
+---
+layout: default
+class: bg-zinc-900 text-white detect-algo-slide
+---
+
+<style>
+.detect-algo-slide pre, .detect-algo-slide pre code, .detect-algo-slide .shiki { font-size: 1.05rem !important; line-height: 1.5 !important; }
+</style>
+
+# `detect-dependencies`: the algorithm
+
+<div class="grid grid-cols-2 gap-5 mt-3">
+
+<div>
+
+```python
+S = tuscan_square(tests)  # ~n rows
+
+results = {}
+for row in S:
+    results[row] = run_suite(row)
+
+for test in tests:
+    outcomes = [results[r][test]
+                for r in S]
+    if not all_same(outcomes):
+        report_od(test)  # OD found!
+```
+
+</div>
+
+<div class="space-y-3 text-sm">
+
+<div class="p-3 rounded bg-sky-950/40 border border-sky-700">
+  <div class="font-semibold text-sky-300">Why it works</div>
+  <div class="mt-1 opacity-75">Every (a, b) pair runs in both orders. An OD test fails when its "polluter" precedes it — the square guarantees we see that ordering.</div>
+</div>
+
+<div class="p-3 rounded bg-zinc-800/60 border-l-4 border-amber-500">
+  <div class="font-semibold text-amber-300">n=50 tests → ~50 runs</div>
+  <div class="mt-1 opacity-75">vs 3×10<sup>64</sup> brute force</div>
+</div>
+
+<div class="p-3 rounded bg-emerald-950/40 border border-emerald-700">
+  <div class="font-semibold text-emerald-300">Run before release, not per-commit</div>
+</div>
+
+</div>
+
+</div>
+
+<!--
+- The Tuscan square is generated at runtime — we compute it for exactly your suite size.
+- "Run it before you ship, not 20 times a day."
+- If it finds something: that's a pre-existing bug that was hidden by fixed ordering. Fix the test, not the order.
+- &lt;2% in our benchmarks — low, but non-zero. Real projects have them.
+Transition: "Back to the headline numbers."
+-->
+
+
+---
+layout: center
+class: bg-zinc-900 text-white text-center
+---
+
+<div class="text-6xl font-black text-emerald-400">95% of the time: failing test at #1</div>
+
+<div class="pt-4 text-2xl opacity-70">7 benchmarked OSS repos · average rank: 1.4</div>
 
 <!--
 - 95% = rank #1 on the first run.
@@ -2113,9 +1892,8 @@ The 5% that miss<br/>are predictable.
 
 <v-click>
 
-<div class="text-xl text-center mt-8 opacity-90">
-  Universal utility classes — no discrimination signal.<br/>
-  Reflection-only paths — invisible to bytecode.
+<div class="text-xl text-center mt-8 opacity-70">
+  Universal utilities · reflection-only paths
 </div>
 
 </v-click>
@@ -2142,15 +1920,15 @@ That's your laptop.<br/>What about 52 modules?
 <v-click>
 
 <div class="text-xl mt-8 opacity-75">
-  And what happens when AI agents run your suite hundreds of times a session?
+  Or when CI runs your suite on every commit, dozens of times a day.
 </div>
 
 </v-click>
 
 <!--
 - "We've proven accuracy. Now: does it hold at real project scale?"
-- The AI agent angle is the "why now" — not a feature, a forcing function.
-Transition: "AI agents change the economics of test feedback."
+- The scale angle is the "why now" — not a feature, a forcing function.
+Transition: "Faster feedback compounds when CI runs more frequently."
 -->
 
 
@@ -2158,7 +1936,7 @@ Transition: "AI agents change the economics of test feedback."
 layout: section
 ---
 
-<img src="/images/wiki-kuka-robot.jpg" class="absolute inset-0 w-full h-full object-cover opacity-18" />
+<img src="/images/wiki-kuka-robot.jpg" class="absolute inset-0 w-full h-full object-cover opacity-28" />
 <div class="absolute inset-0 bg-zinc-900/72 z-0" />
 <div class="relative z-10">
 
@@ -2171,8 +1949,8 @@ layout: section
 <!--
 - The last demo section.
 - All those features compound at scale.
-- Two slides set up the agentic angle, then the multi-module demo.
-Transition: "AI agents run your suite hundreds of times a session."
+- Two slides set up the high-frequency angle, then the multi-module demo.
+Transition: "Your suite runs on every push. Sometimes dozens a day."
 -->
 
 
@@ -2187,16 +1965,15 @@ class: bg-zinc-900 text-white
 
 <div class="big-statement">
 
-An AI coding agent runs<br/>your test suite hundreds<br/>of times per session.
+Your suite runs<br/>on every push.<br/>Sometimes dozens a day.
 
 </div>
 
 </div>
 
 <!--
-- Claude Code, Copilot Workspace, Cursor — all run `mvn test` in a loop. No lunch break.
-- fix → test → fix → test → fix → test.
-- Every iteration pays the full suite cost.
+- CI runs on every push. Feature branches. PR checks. Fix → push → wait → fix → push.
+- Every run pays the full suite cost.
 - Why scale matters NOW in a way it didn't 5 years ago.
 Transition: "With ordering, the signal is in the first 20%."
 -->
@@ -2213,18 +1990,18 @@ class: bg-zinc-900 text-white
 
 <div class="big-statement">
 
-Signal in the first 20%.<br/>The agent moves on.
+Signal earlier in the run.<br/>Move on faster.
 
 </div>
 
 <div class="pt-8 text-xl text-center opacity-60">
-  Zero config change. The agent just runs <span class="font-mono text-emerald-300">mvn test</span>.
+  Zero config change. CI just runs <span class="font-mono text-emerald-300">mvn test</span>.
 </div>
 
 </div>
 
 <!--
-- Compounding: 80% earlier signal × hundreds of iterations = a different dev loop.
+- Compounding: 80% earlier signal × many CI runs per day = a different dev loop.
 - No integration needed — test-order intercepts Surefire/Gradle transparently.
 Transition: "Now the theatrical setup — 65 modules."
 -->
@@ -2256,11 +2033,12 @@ Transition: run Demo 6.
 
 ---
 layout: default
+class: bg-zinc-900 text-white
 ---
 
-# Demo 6 — SAP CDS Services
+# Demo 4: SAP CDS Services
 
-<DemoCard id="D6" duration="5 min" :cmd="`cd third-party/cds-services\n# The pain: kill at 90s — no test has started\nmvn clean test\n# The fix: affected-only on the same change\nmvn test-order:affected test`" title="52 Maven modules. Affected-only vs. full suite." watch="Pain: 90 s, compile crawl, no test started.Fix: ~55 s, RED build, right failure."></DemoCard>
+<DemoCard id="D4" duration="5 min" :cmd="`cd third-party/cds-services\n# The pain: kill at 90s, no test has started\nmvn clean test\n# The fix: affected-only on the same change\nmvn test-order:affected test`" title="52 Maven modules. Affected-only vs. full suite." watch="Pain: 90 s, compile crawl, no test started.Fix: ~55 s, RED build, right failure."></DemoCard>
 
 <!--
 - Run `mvn clean test`. Watch it crawl. At 90s: "Still compiling module 12 of 52. No test started." Ctrl-C. "That's the pain."
@@ -2289,16 +2067,14 @@ You don't have to wait<br/>20 minutes anymore.
 
 <v-click>
 
-<div class="text-2xl font-mono text-center mt-10">
-  install → reorder → measure → tune
-</div>
+<div class="pt-6 text-xl text-center opacity-70">v0.1 · proof of concept · usable today in CI</div>
 
-<div class="pt-6 text-xl font-mono text-center">
+</v-click>
+
+<v-click>
+
+<div class="pt-4 text-2xl font-mono text-center">
   github.com/parttimenerd/test-order
-</div>
-
-<div class="pt-4 text-base opacity-50 text-center">
-  <span class="font-mono text-emerald-300">mvn test-order:diagnose</span> on your own project · Apache 2.0 · v0.1 — early-stage, feedback welcome
 </div>
 
 </v-click>
@@ -2306,8 +2082,8 @@ You don't have to wait<br/>20 minutes anymore.
 </div>
 
 <!--
-- Close the loop: the talk opened with "who waited 20 minutes?" — this answers it directly.
-- Pause after the first line. Let it land before revealing the four words.
+- EXPLICIT CALLBACK: "At the start I asked who's waited 20 minutes for CI to tell you the failing test ran last. That wait is over."
+- Pause after the big statement. Let it land before clicking.
 - Install: ten lines POM, three lines Gradle.
 - Reorder: `mvn test` twice. Failures surface earlier — typically in the first 20% of wall time.
 - Measure: APFD every run. Dashboard for trends.
@@ -2345,7 +2121,7 @@ Likely questions:
 - "Bazel?" Not yet. Maven/Gradle plugins only.
 - "Parallel execution?" Class-level: ordering is a scheduling priority. Method-level: per-thread bitset, fine.
 - "Can the index be wrong?" Over-approximation only. False positives (extra tests), never false negatives.
-- "Develocity PTS / Launchable?" Both are strong at scale with months of failure history. ML on cloud history (Machalica 2019: 2× cost cut, >99.9% caught). We win on day-1 (no training data needed), data residency, and running cost; their ML signal is stronger once you have the history.
+- "Develocity PTS / Launchable?" Both are strong at scale with months of failure history — ML on cloud history is genuinely powerful (Machalica 2019: 2× cost cut). test-order's trade-off: local, no training data, useful from run 2; their ML signal grows stronger over time once you have the history.
 - "CI state sharing?" Cache .test-order/ between runs or commit it.
 - "GitHub Actions cache?" Add .test-order/ to your cache key.
 - "APFD vs wall time?" 22-min suite at APFD 85% = first failure ~minute 3, not 18.
