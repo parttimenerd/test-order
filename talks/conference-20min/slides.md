@@ -755,7 +755,7 @@ class: slide-base
 
 # Tests tab
 
-<img src="/images/dashboard-tests.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 520px; object-fit: contain; object-position: top;" />
+<img src="/images/dashboard-tests.png" class="w-full rounded-lg mt-2" style="max-height: 530px; object-fit: cover; object-position: top;" />
 
 <!--
 - Ranked list — CartTest at #1, score 16, "new test +15, speed +1"
@@ -772,7 +772,7 @@ class: slide-base
 
 # Analytics tab
 
-<img src="/images/dashboard-analytics.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 520px; object-fit: contain; object-position: top;" />
+<img src="/images/dashboard-analytics.png" class="w-full rounded-lg mt-2" style="max-height: 530px; object-fit: cover; object-position: top;" />
 
 <!--
 - APFD score over runs: starts at 50% (alphabetical), climbs as the index warms
@@ -789,7 +789,7 @@ class: slide-base
 
 # Coverage tab
 
-<img src="/images/dashboard-coverage.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 520px; object-fit: contain; object-position: top;" />
+<img src="/images/dashboard-coverage.png" class="w-full rounded-lg mt-2" style="max-height: 530px; object-fit: cover; object-position: top;" />
 
 <!--
 - The dep index IS a coverage map: every class reachable from a test is "covered" by that test.
@@ -808,7 +808,7 @@ class: slide-base
 
 # Weights tab
 
-<img src="/images/dashboard-weights.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 520px; object-fit: contain; object-position: top;" />
+<img src="/images/dashboard-weights.png" class="w-full rounded-lg mt-2" style="max-height: 530px; object-fit: cover; object-position: top;" />
 
 <!--
 - Sliders: changedTest, changeAround, depOverlap, speedBonus, failHistory…
