@@ -11,7 +11,6 @@
 <script setup>
 defineProps({
   id: { type: String, required: true },
-  duration: { type: String, default: '' },
   cmd: { type: String, required: true },
   title: { type: String, default: '' },
   watch: { type: String, default: '' },

@@ -182,7 +182,7 @@ layout: default
 class: slide-base
 ---
 
-<DemoCard id="D0" duration="3 min" :cmd="`cd third-party/spring-petclinic\n# No test-order. Plain mvn test.\nmvn test -pl . -Dsurefire.failIfNoSpecifiedTests=false`" title="What CI does today" watch="Tests run A-Z. VisitControllerTests is V. You broke something there. Spring boots up 4 times before you find out."></DemoCard>
+<DemoCard id="D0" :cmd="`cd third-party/spring-petclinic\n# No test-order. Plain mvn test.\nmvn test -pl . -Dsurefire.failIfNoSpecifiedTests=false`" title="What CI does today" watch="Tests run A-Z. VisitControllerTests is V. You broke something there. Spring boots up 4 times before you find out."></DemoCard>
 
 <!--
 - Run this BEFORE the talk starts — show the scrollback or replay with asciinema.
@@ -360,7 +360,7 @@ layout: default
 class: slide-base
 ---
 
-<DemoCard id="D1" duration="3:00" :cmd="`cd samples/sample-shop\nmvn test                  # learn run\nmvn test                  # order run (order changed)\nmvn test-order:show       # scores + why`" title="First run: learning. Second run: ordered." watch="Run #1: &quot;Auto-instrumenting 42 classes&quot;. Run #2: tests reordered, APFD printed. :show gives score + why column per test."></DemoCard>
+<DemoCard id="D1" :cmd="`cd samples/sample-shop\nmvn test                  # learn run\nmvn test                  # order run (order changed)\nmvn test-order:show       # scores + why`" title="First run: learning. Second run: ordered." watch="Run #1: &quot;Auto-instrumenting 42 classes&quot;. Run #2: tests reordered, APFD printed. :show gives score + why column per test."></DemoCard>
 
 <!--
 DEMO STEPS:
@@ -431,7 +431,7 @@ layout: default
 class: slide-base
 ---
 
-<DemoCard id="D2" duration="2:00" :cmd="`# Add null-check to Cart.add(), one line\n$EDITOR src/main/java/com/example/shop/Cart.java\nmvn test\nmvn test-order:show`" title="One method changed. CartTest is now #1." watch="Why column: changed-test=9, overlap=5. Score 14. Nothing retrained: a set intersection on the existing index."></DemoCard>
+<DemoCard id="D2" :cmd="`# Add null-check to Cart.add(), one line\n$EDITOR src/main/java/com/example/shop/Cart.java\nmvn test\nmvn test-order:show`" title="One method changed. CartTest is now #1." watch="Why column: changed-test=9, overlap=5. Score 14. Nothing retrained: a set intersection on the existing index."></DemoCard>
 
 <!--
 DEMO STEPS:
@@ -703,7 +703,7 @@ layout: default
 class: slide-base
 ---
 
-<DemoCard id="D3" duration="4:00" :cmd="`cd third-party/spring-petclinic\n# index from nightly learn run — zero overhead today\nmvn test\nmvn test-order:dashboard`" title="Real Spring Boot project. Live APFD. Then the dashboard." watch="First failure surfaces early in terminal. Dashboard: APFD trend, rank heatmap, score breakdown modal, weights tuning."></DemoCard>
+<DemoCard id="D3" :cmd="`cd third-party/spring-petclinic\n# index from nightly learn run — zero overhead today\nmvn test\nmvn test-order:dashboard`" title="Real Spring Boot project. Live APFD. Then the dashboard." watch="First failure surfaces early in terminal. Dashboard: APFD trend, rank heatmap, score breakdown modal, weights tuning."></DemoCard>
 
 <!--
 DEMO STEPS:
