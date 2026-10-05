@@ -413,11 +413,9 @@ class WorkflowSequenceIT {
 			selectedSimple = selectedSimple.substring(selectedSimple.lastIndexOf('.') + 1);
 		}
 		final String finalSelectedSimple = selectedSimple;
-		boolean selectedInShowOrder = showResult.output().lines()
-				.anyMatch(l -> l.contains(finalSelectedSimple));
+		boolean selectedInShowOrder = showResult.output().lines().anyMatch(l -> l.contains(finalSelectedSimple));
 		assertThat(selectedInShowOrder)
-				.as("selected test '" + finalSelectedSimple + "' should appear in show-order output")
-				.isTrue();
+				.as("selected test '" + finalSelectedSimple + "' should appear in show-order output").isTrue();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════
