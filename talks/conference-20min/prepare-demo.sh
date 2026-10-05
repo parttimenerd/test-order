@@ -103,17 +103,20 @@ else
   ok "Cart.java clean (no backup present)"
 fi
 
-# Remove the index so D1 starts fresh (learn run)
-SHOP_INDEX="$SHOP/.test-order"
-if [ -d "$SHOP_INDEX" ]; then
+# Remove the reactor-root index so D1 starts fresh (learn run).
+# sample-shop's parent is the repo root pom, so the plugin stores everything
+# in $REPO_ROOT/.test-order — NOT in $SHOP/.test-order.
+# Petclinic is safe: it has its own parent and uses third-party/spring-petclinic/.test-order.
+ROOT_INDEX="$REPO_ROOT/.test-order"
+if [ -d "$ROOT_INDEX" ]; then
   if $check_only; then
-    warn "sample-shop index exists — would delete on real run (D1 needs a fresh learn pass)"
+    warn "Root index exists at $ROOT_INDEX — would delete on real run (D1 needs a fresh learn pass)"
   else
-    rm -rf "$SHOP_INDEX"
-    ok "sample-shop index removed — D1 will run learn pass"
+    rm -rf "$ROOT_INDEX"
+    ok "Root index removed — D1 will run learn pass (petclinic index unaffected)"
   fi
 else
-  ok "sample-shop index absent — D1 will run learn pass"
+  ok "Root index absent — D1 will run learn pass"
 fi
 
 # Wipe compiled classes so the learn run rebuilds cleanly
@@ -129,6 +132,48 @@ if [ ! -d "$PETCLINIC" ]; then
   fail "third-party/spring-petclinic not found at $PETCLINIC"
 else
   ok "spring-petclinic checkout present"
+fi
+
+# Inject test-order via .mvn/extensions.xml (third-party/ is gitignored, so we write it here)
+PETCLINIC_EXT="$PETCLINIC/.mvn/extensions.xml"
+PLUGIN_VERSION="0.1.0"
+if grep -q "test-order-maven-plugin" "$PETCLINIC_EXT" 2>/dev/null; then
+  ok "test-order already in $PETCLINIC_EXT"
+elif [ -f "$PETCLINIC_EXT" ]; then
+  if $check_only; then
+    warn "$PETCLINIC_EXT exists without test-order — would append on real run"
+  else
+    cp "$PETCLINIC_EXT" "$PETCLINIC_EXT.bak"
+    python3 -c "
+import xml.etree.ElementTree as ET
+ET.register_namespace('', '')
+tree = ET.parse('$PETCLINIC_EXT')
+root = tree.getroot()
+ext = ET.SubElement(root, 'extension')
+ET.SubElement(ext, 'groupId').text = 'me.bechberger'
+ET.SubElement(ext, 'artifactId').text = 'test-order-maven-plugin'
+ET.SubElement(ext, 'version').text = '$PLUGIN_VERSION'
+tree.write('$PETCLINIC_EXT', xml_declaration=True, encoding='UTF-8')
+"
+    ok "Appended test-order to $PETCLINIC_EXT"
+  fi
+else
+  if $check_only; then
+    warn "$PETCLINIC_EXT missing — would create on real run"
+  else
+    mkdir -p "$PETCLINIC/.mvn"
+    cat > "$PETCLINIC_EXT" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+  <extension>
+    <groupId>me.bechberger</groupId>
+    <artifactId>test-order-maven-plugin</artifactId>
+    <version>$PLUGIN_VERSION</version>
+  </extension>
+</extensions>
+EOF
+    ok "Created $PETCLINIC_EXT — test-order will activate on next mvn test"
+  fi
 fi
 
 PETCLINIC_INDEX="$PETCLINIC/.test-order/test-dependencies.lz4"
@@ -179,7 +224,8 @@ printf "    mvn test                                    # D1 learn run\n"
 printf "    mvn test                                    # D1 order run\n"
 printf "    mvn test-order:show                         # D1 scores + why\n"
 printf "    # ── edit Cart.java: add null-check in add() ──\n"
-printf "    mvn test                                    # D2 CartTest = #1\n"
+printf "    mvn spotless:apply                          # format check (required!)\n"
+printf "    mvn test                                    # D2 InvoiceTest=#1, CartTest=#2\n"
 printf "    mvn test-order:show                         # D2 score breakdown\n\n"
 
 printf "  ${CYAN}Tab 3 — D3${NC} (real project, APFD live, then dashboard)\n"
@@ -193,5 +239,8 @@ printf "    npx slidev slides.md\n\n"
 
 printf "${BOLD}D2 edit:${NC}\n"
 printf "  File: %s\n" "$CART"
-printf "  Inside Cart.add(), add:\n"
-printf "    if (item == null) throw new IllegalArgumentException();\n\n"
+printf "  Inside Cart.add(), add TWO lines (Palantir format, braces on separate lines):\n"
+printf "    if (product == null)\n"
+printf "        throw new IllegalArgumentException();\n"
+printf "  Then: mvn spotless:apply  (REQUIRED — omitting this causes BUILD FAILURE)\n"
+printf "  Result: InvoiceTest = #1 (score 8), CartTest = #2 (score 6)\n\n"
