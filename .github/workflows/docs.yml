@@ -131,7 +131,7 @@ jobs:
         working-directory: talks/conference-20min
         run: |
           npm ci
-          npx slidev export --format html --base /test-order/slides/20m/ slides.md --output dist
+          npx slidev build --base /test-order/slides/20m/ slides.md --out dist
           mkdir -p ../../website/static/slides/20m
           cp -r dist/. ../../website/static/slides/20m/
 
