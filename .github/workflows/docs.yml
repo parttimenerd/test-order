@@ -80,11 +80,9 @@ jobs:
             talks/conference-20min/package-lock.json
 
       - name: Install repo-root tooling (Playwright)
-        if: steps.changes.outputs.code == 'true'
         run: npm install --no-audit --no-fund
 
       - name: Install Playwright browsers
-        if: steps.changes.outputs.code == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Build test-order plugin (skip tests, needed by fixture)
