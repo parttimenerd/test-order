@@ -14,7 +14,7 @@
 #   ./prepare-demo.sh --check-only      # dry-run: just validate, don't change anything
 #
 # Demos in the talk:
-#   D0  spring-petclinic, NO test-order — plain mvn test, tests run A-Z, VisitControllerTests last
+#   D0  spring-petclinic, NO test-order — plain mvn test, tests run in JVM discovery order
 #   D1  sample-shop — learn run then order run, auto-detection
 #   D2  sample-shop — edit Cart.java, order shifts (builds on D1 index)
 #   D3  spring-petclinic, WITH test-order — live APFD, then mvn test-order:serve
