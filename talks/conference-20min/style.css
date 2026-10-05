@@ -1,4 +1,4 @@
-/* Readability — body text and headings */
+/* ── Typography ──────────────────────────────────────────────────────────── */
 .slidev-layout h1 { font-size: 2.6rem; line-height: 1.15; }
 .slidev-layout h2 { font-size: 2.0rem; line-height: 1.2; }
 .slidev-layout h3 { font-size: 1.55rem; }
@@ -7,7 +7,7 @@
 .slidev-layout table { font-size: 1.2rem; }
 .slidev-layout table th { font-size: 1.1rem; }
 
-/* Big-statement slides */
+/* ── Big-statement slides ───────────────────────────────────────────────── */
 .slidev-layout .big-statement p {
   font-size: 3rem !important;
   font-weight: 700 !important;
@@ -16,7 +16,7 @@
   width: 100% !important;
 }
 
-/* Quote slide */
+/* ── Quote slide ────────────────────────────────────────────────────────── */
 .slidev-layout .quote-text {
   font-size: 1.85rem !important;
   line-height: 1.7 !important;
@@ -32,7 +32,7 @@
   text-align: center !important;
 }
 
-/* Code blocks */
+/* ── Code blocks ────────────────────────────────────────────────────────── */
 .slidev-layout pre,
 .slidev-layout pre code,
 .slidev-layout .shiki { font-size: 1.45rem !important; line-height: 1.6 !important; }
@@ -42,7 +42,7 @@
 /* Inline code */
 .slidev-layout :not(pre) > code { font-size: 1.05em; padding: 0.1em 0.35em; }
 
-/* Slide canvas padding */
+/* ── Slide canvas padding ───────────────────────────────────────────────── */
 .slidev-layout { padding: 2.2rem 3rem !important; }
 .slidev-layout.cover,
 .slidev-layout.section,
@@ -50,22 +50,125 @@
 .slidev-layout.intro,
 .slidev-layout.fact { padding: 2rem !important; }
 
-/* Global dark theme — override seriph's white card background */
+/* ── Dark mode: slide base ──────────────────────────────────────────────── */
+:root {
+  --slide-bg: #18181b;
+  --slide-fg: #f4f4f5;
+  --slide-fg-muted: #94a3b8;
+  --slide-heading: #7dd3fc;
+  --slide-border: rgba(255,255,255,0.08);
+  --slide-overlay: rgba(24,24,27,0.80);
+}
+
+html.dark {
+  --slide-bg: #18181b;
+  --slide-fg: #f4f4f5;
+  --slide-fg-muted: #94a3b8;
+  --slide-heading: #7dd3fc;
+  --slide-border: rgba(255,255,255,0.08);
+  --slide-overlay: rgba(24,24,27,0.80);
+}
+
+html.light {
+  --slide-bg: #f8fafc;
+  --slide-fg: #0f172a;
+  --slide-fg-muted: #475569;
+  --slide-heading: #0369a1;
+  --slide-border: rgba(0,0,0,0.08);
+  --slide-overlay: rgba(248,250,252,0.85);
+}
+
+/* Apply to slide-base class (replaces bg-zinc-900 text-white in frontmatter) */
+.slide-base {
+  background-color: var(--slide-bg) !important;
+  color: var(--slide-fg) !important;
+}
+
+.slide-base h1,
+.slide-base h2,
+.slide-base h3 {
+  color: var(--slide-heading) !important;
+}
+
+/* Dark layout defaults */
 .slidev-layout.default,
 .slidev-layout.two-cols,
 .slidev-layout.two-cols-header,
 .slidev-layout.image-right,
 .slidev-layout.image-left {
-  background: #18181b !important;
-  color: #f4f4f5 !important;
+  background: var(--slide-bg) !important;
+  color: var(--slide-fg) !important;
 }
+
 .slidev-layout h1,
 .slidev-layout h2,
 .slidev-layout h3 {
-  color: #7dd3fc !important;
+  color: var(--slide-heading) !important;
 }
-.bg-zinc-900 h1,
-.bg-zinc-900 h2,
-.bg-zinc-900 h3 {
-  color: #7dd3fc !important;
+
+/* Override in dark mode specifically */
+html.dark .slidev-layout.default,
+html.dark .slidev-layout.two-cols,
+html.dark .slidev-layout.two-cols-header {
+  background: #18181b !important;
+  color: #f4f4f5 !important;
+}
+
+/* Light mode layout backgrounds */
+html.light .slidev-layout.default,
+html.light .slidev-layout.two-cols,
+html.light .slidev-layout.two-cols-header {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html.light .slidev-layout h1,
+html.light .slidev-layout h2,
+html.light .slidev-layout h3 {
+  color: #0369a1 !important;
+}
+
+/* ── Image overlay for photo slides ────────────────────────────────────── */
+.img-overlay-dark { background: rgba(24,24,27,0.80) !important; }
+.img-overlay-light { background: rgba(248,250,252,0.82) !important; }
+
+html.dark  .img-overlay-adaptive { background: rgba(24,24,27,0.80) !important; }
+html.light .img-overlay-adaptive { background: rgba(248,250,252,0.82) !important; }
+
+/* ── Light-mode text colors for elements that embed color directly ───────── */
+html.light .text-slate-400   { color: #475569 !important; }
+html.light .text-slate-300   { color: #334155 !important; }
+html.light .opacity-70,
+html.light .opacity-80       { /* keep as-is, opacity still works */ }
+
+/* ── Code blocks in light mode ──────────────────────────────────────────── */
+html.light .slidev-layout pre,
+html.light .slidev-layout .shiki {
+  background: #f1f5f9 !important;
+  border: 1px solid #e2e8f0;
+}
+
+/* ── Table styling ──────────────────────────────────────────────────────── */
+html.dark .slidev-layout table thead tr {
+  background: rgba(255,255,255,0.06) !important;
+}
+html.dark .slidev-layout table tbody tr:nth-child(even) {
+  background: rgba(255,255,255,0.03) !important;
+}
+html.light .slidev-layout table thead tr {
+  background: rgba(0,0,0,0.06) !important;
+}
+html.light .slidev-layout table tbody tr:nth-child(even) {
+  background: rgba(0,0,0,0.03) !important;
+}
+
+/* ── pull-quote / hands-up light mode ──────────────────────────────────── */
+html.light .pull-quote {
+  color: #1e293b !important;
+  background: rgba(249,115,22,0.06) !important;
+}
+html.light .hands-up {
+  color: #92400e !important;
+  background: rgba(250,204,21,0.10) !important;
+  border-color: rgba(250,204,21,0.5) !important;
 }

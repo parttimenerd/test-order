@@ -6,7 +6,7 @@ info: |
   Local-first, zero-config test prioritization for Maven and Gradle.
 class: text-center
 highlighter: shiki
-colorSchema: dark
+colorSchema: 'dark'
 lineNumbers: false
 drawings:
   persist: false
@@ -153,35 +153,11 @@ layout: cover
 -->
 
 
----
-layout: center
-class: bg-zinc-900 text-white
----
-
-<div class="flex items-center gap-10 justify-center">
-
-<img src="https://parttimenerd.github.io/tiny-llm-library-demo/assets/sapmachine-logo-D-W5bFE3.png" class="h-20 object-contain rounded-lg" style="background: rgba(255,255,255,0.08); padding: 6px 10px; border-radius: 8px;" />
-
-<div class="text-left">
-  <div class="text-2xl font-bold">Johannes Bechberger</div>
-  <div class="text-lg opacity-70 mt-1">@parttimenerd</div>
-  <div class="mt-3 text-base opacity-60">SapMachine team · SAP SE</div>
-  <div class="text-sm opacity-45 mt-1">big OpenJDK contributor</div>
-</div>
-
-</div>
-
-<!--
-- SapMachine: SAP's OpenJDK distribution
-- Keep this under 20 seconds
--->
-
-
 <!-- ═══ HOOK ═══════════════════════════════════════════════════════════════════ -->
 
 ---
 layout: center
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <img src="/images/wiki-apollo10-mission-control.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
@@ -210,7 +186,7 @@ ran last, alphabetically?
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <DemoCard id="D0" duration="3 min" :cmd="`cd third-party/spring-petclinic\n# No test-order. Plain mvn test.\nmvn test -pl . -Dsurefire.failIfNoSpecifiedTests=false`" title="What CI does today" watch="Tests run A-Z. VisitControllerTests is V. You broke something there. Spring boots up 4 times before you find out."></DemoCard>
@@ -226,7 +202,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <ApfdTimeline />
@@ -245,7 +221,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: center
-class: quote-slide bg-zinc-900 text-white
+class: quote-slide slide-base
 ---
 
 <img src="/images/wiki-widener-card-catalog.jpg" class="absolute inset-0 w-full h-full object-cover opacity-20" />
@@ -266,7 +242,7 @@ class: quote-slide bg-zinc-900 text-white
 
 ---
 layout: center
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <img src="/images/wiki-bombe-wiring.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
@@ -292,7 +268,7 @@ If a test hasn't touched<br/>the changed code,<br/>it <em>cannot</em> fail on th
 
 ---
 layout: center
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <img src="/images/wiki-telegraph-tokyo.jpg" class="absolute inset-0 w-full h-full object-cover opacity-12" />
@@ -326,7 +302,7 @@ TRANSITION: "How does it compare to what you might already know?"
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Learn once. Rank on every run.
@@ -342,7 +318,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Ten lines of POM. Then `mvn test`.
@@ -374,7 +350,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <DemoCard id="D1" duration="3:00" :cmd="`cd samples/sample-shop\nmvn test                  # learn run\nmvn test                  # order run (order changed)\nmvn test-order:show       # scores + why`" title="First run: learning. Second run: ordered." watch="Run #1: &quot;Auto-instrumenting 42 classes&quot;. Run #2: tests reordered, APFD printed. :show gives score + why column per test."></DemoCard>
@@ -396,7 +372,7 @@ DEMO STEPS:
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Why CartTest moves to #1
@@ -429,7 +405,7 @@ public void add(Item item) {
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <DemoCard id="D2" duration="2:00" :cmd="`# Add null-check to Cart.add(), one line\n$EDITOR src/main/java/com/example/shop/Cart.java\nmvn test\nmvn test-order:show`" title="One method changed. CartTest is now #1." watch="Why column: changed-test=9, overlap=5. Score 14. Nothing retrained: a set intersection on the existing index."></DemoCard>
@@ -450,7 +426,7 @@ DEMO STEPS:
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Where each approach fits
@@ -508,7 +484,7 @@ layout: section
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # The transformation pipeline
@@ -526,7 +502,7 @@ Transition: "That bitset is the key — let me show you how the scoring uses it.
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # JaCoCo instruments every run. We instrument once.
@@ -551,7 +527,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # What each tool injects
@@ -634,7 +610,7 @@ public int add(int a, int b) {
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Why ~13%? Three design choices
@@ -679,7 +655,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # How CartTest scored 14
@@ -698,7 +674,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # The plain file that runs the runner
@@ -721,7 +697,7 @@ java -jar test-order.jar deps \
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <DemoCard id="D3" duration="4:00" :cmd="`cd third-party/spring-petclinic\n# learn ran in CI last night, zero overhead today\nmvn test\nmvn test-order:dashboard`" title="Real Spring Boot project. Live APFD. Then the dashboard." watch="First failure surfaces early in terminal. Dashboard: APFD trend, rank heatmap, score breakdown modal, weights tuning."></DemoCard>
@@ -742,7 +718,7 @@ DEMO STEPS:
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <DemoCue>demo running, return at "Tests tab"</DemoCue>
@@ -790,7 +766,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Tests tab
@@ -807,7 +783,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Analytics tab
@@ -824,7 +800,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Coverage tab
@@ -843,7 +819,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Weights tab
@@ -861,16 +837,21 @@ class: bg-zinc-900 text-white
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # Zero overlap = zero runtime. Guaranteed.
 
-```text
+<MavenLog :log="`
+[INFO] --- test-order-maven-plugin: affected (default-cli) ---
+[INFO] Changed classes: Cart.java, CartLineItem.java
 [INFO] Skipped 3 test classes (no dependency overlap)
 [INFO] Running com.example.shop.CartTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS in 1.2 s
-```
+`" />
+
+<div class="mt-6 text-base opacity-60">Over-approximation only — false positives, never false negatives.</div>
 
 <!--
 - Don't run this live — save the time. Show it as static output and explain verbally.
@@ -901,7 +882,7 @@ layout: center
 
 ---
 layout: center
-class: bg-zinc-900 text-white text-center
+class: slide-base text-center
 ---
 
 <div class="text-7xl font-black text-amber-400">50% → 87–91%</div>
@@ -918,7 +899,7 @@ class: bg-zinc-900 text-white text-center
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 # 87–91% APFD across 7 real OSS repos
@@ -946,7 +927,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: center
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <img src="/images/wiki-kuka-robot.jpg" class="absolute inset-0 w-full h-full object-cover opacity-28" />
@@ -991,7 +972,7 @@ Your suite runs<br/>on every push.<br/>Sometimes dozens a day.
 
 ---
 layout: default
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <img src="/images/wiki-lego-bricks.jpg" class="absolute inset-0 w-full h-full object-cover opacity-10" />
@@ -1056,7 +1037,7 @@ class: bg-zinc-900 text-white
 
 ---
 layout: center
-class: bg-zinc-900 text-white
+class: slide-base
 ---
 
 <img src="/images/wiki-loc-catalog.jpg" class="absolute inset-0 w-full h-full object-cover opacity-20" />
@@ -1109,37 +1090,37 @@ You don't have to wait<br/>20 minutes anymore.
 <!-- ═══ Q&A ══════════════════════════════════════════════════════════════════════ -->
 
 ---
-layout: center
-class: bg-zinc-900 text-white
+layout: none
+class: slide-base
 ---
 
 <img src="/images/wiki-loc-catalog.jpg" class="absolute inset-0 w-full h-full object-cover opacity-15" />
-<div class="absolute inset-0 bg-zinc-900/80 z-0" />
+<div class="absolute inset-0 bg-zinc-900/80" />
 
-<div class="relative z-10 flex flex-col items-center text-center">
+<div class="absolute inset-0 flex flex-col items-center justify-center text-center px-12">
 
-<div class="big-statement">
+<div class="big-statement" style="font-size:4rem">
 
 Questions?
 
 </div>
 
-<div class="mt-10 flex gap-10 items-start justify-center">
+<div class="mt-12 flex gap-12 items-start justify-center w-full">
 
 <div class="flex flex-col items-center gap-3">
-  <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://parttimenerd.github.io/test-order/&bgcolor=18181b&color=ffffff&qzone=1" class="rounded-lg" width="150" height="150" />
+  <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://parttimenerd.github.io/test-order/&bgcolor=18181b&color=ffffff&qzone=1" class="rounded-lg" width="180" height="180" />
   <div class="text-sm font-mono opacity-80">parttimenerd.github.io/test-order</div>
   <div class="text-xs opacity-50">docs · repo</div>
 </div>
 
 <div class="flex flex-col items-center gap-3">
-  <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://mostlynerdless.de&bgcolor=18181b&color=ffffff&qzone=1" class="rounded-lg" width="150" height="150" />
+  <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://mostlynerdless.de&bgcolor=18181b&color=ffffff&qzone=1" class="rounded-lg" width="180" height="180" />
   <div class="text-sm font-mono opacity-80">mostlynerdless.de</div>
   <div class="text-xs opacity-50">blog</div>
 </div>
 
 <div class="flex flex-col items-center gap-3">
-  <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://sapmachine.io&bgcolor=18181b&color=ffffff&qzone=1" class="rounded-lg" width="150" height="150" />
+  <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://sapmachine.io&bgcolor=18181b&color=ffffff&qzone=1" class="rounded-lg" width="180" height="180" />
   <div class="text-sm font-mono opacity-80">sapmachine.io</div>
   <div class="text-xs opacity-50">my team</div>
 </div>
