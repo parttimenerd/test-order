@@ -150,6 +150,7 @@ layout: cover
 
 ---
 layout: center
+title: "Who's Waited for Alphabetical CI?"
 class: slide-base
 ---
 
@@ -179,6 +180,7 @@ ran last, alphabetically?
 
 ---
 layout: default
+title: "D0 — CI Baseline Demo"
 class: slide-base
 ---
 
@@ -196,6 +198,7 @@ class: slide-base
 
 ---
 layout: default
+title: "APFD Timeline — The Pain Visualized"
 class: slide-base
 ---
 
@@ -215,6 +218,7 @@ class: slide-base
 
 ---
 layout: center
+title: "Research: Tests Closer to Changed Code Fail First"
 class: quote-slide slide-base
 ---
 
@@ -236,6 +240,7 @@ class: quote-slide slide-base
 
 ---
 layout: center
+title: "Zero Overlap = Cannot Fail"
 class: slide-base
 ---
 
@@ -262,6 +267,7 @@ If a test hasn't touched<br/>the changed code,<br/>it <em>cannot</em> fail on th
 
 ---
 layout: center
+title: "Zero-Config Local Solution"
 class: slide-base
 ---
 
@@ -314,6 +320,7 @@ class: slide-base
 
 ---
 layout: default
+title: "D1 — Learn & Order Demo"
 class: slide-base
 ---
 
@@ -358,6 +365,7 @@ class: slide-base
 
 ---
 layout: default
+title: "D1 — Learn & Order Demo"
 class: slide-base
 ---
 
@@ -380,6 +388,7 @@ DEMO STEPS:
 
 ---
 layout: default
+title: "D2 — Cart Edit Demo"
 class: slide-base
 ---
 
@@ -439,6 +448,7 @@ class: slide-base
 
 ---
 layout: default
+title: "D2 — Cart Edit Demo"
 class: slide-base
 ---
 
@@ -464,6 +474,7 @@ DEMO STEPS:
 
 ---
 layout: default
+title: "Cat Slide"
 class: slide-base
 ---
 
@@ -489,6 +500,7 @@ class: slide-base
 
 ---
 layout: center
+title: "Cat Interlude"
 ---
 
 <img src="https://parttimenerd.github.io/tiny-llm-library-demo/assets/cat-socks-oval-office-Bj7wbdg6.jpg" class="absolute inset-0 w-full h-full object-cover opacity-90" />
@@ -501,6 +513,7 @@ layout: center
 
 ---
 layout: section
+title: "The Transformation Pipeline"
 ---
 
 <img src="/images/wiki-cat-reading.jpg" class="absolute inset-0 w-full h-full object-cover opacity-28" />
@@ -540,6 +553,7 @@ Transition: "That bitset is the key — let me show you how the scoring uses it.
 
 ---
 layout: default
+title: "What Each Tool Injects"
 class: slide-base
 ---
 
@@ -644,6 +658,7 @@ public int add(int a, int b) {
 
 ---
 layout: default
+title: "How CartTest Scored 14"
 class: slide-base
 ---
 
@@ -692,6 +707,7 @@ class: slide-base
 
 ---
 layout: default
+title: "D3 — Spring Petclinic Demo"
 class: slide-base
 ---
 
@@ -715,6 +731,7 @@ java -jar test-order.jar deps \
 
 ---
 layout: default
+title: "What's Happening Right Now"
 class: slide-base
 ---
 
@@ -736,6 +753,7 @@ DEMO STEPS:
 
 ---
 layout: default
+title: "What's Happening Right Now"
 class: slide-base
 ---
 
@@ -794,6 +812,7 @@ class: slide-base
 
 ---
 layout: default
+title: "Affected Selection — Skip Unrelated Tests"
 class: slide-base
 ---
 
@@ -830,6 +849,7 @@ class: slide-base
 
 ---
 layout: default
+title: "Does It Actually Work?"
 class: slide-base
 ---
 
@@ -848,6 +868,7 @@ class: slide-base
 
 ---
 layout: default
+title: "50% → 87–91% APFD"
 class: slide-base
 ---
 
@@ -926,6 +947,7 @@ class: slide-base
 
 ---
 layout: center
+title: "Does It Actually Work?"
 class: slide-base
 ---
 
@@ -938,6 +960,7 @@ class: slide-base
 
 ---
 layout: center
+title: "Runs on Every Push"
 class: slide-base text-center
 ---
 
@@ -983,6 +1006,7 @@ class: slide-base
 
 ---
 layout: center
+title: "CTA — Try It Today"
 class: slide-base
 ---
 
@@ -1020,6 +1044,7 @@ Your suite runs<br/>on every push.<br/>Sometimes dozens a day.
 
 ---
 layout: default
+title: "Q&A"
 class: slide-base
 ---
 
@@ -1072,6 +1097,7 @@ class: slide-base
 
 ---
 layout: center
+title: "CTA — Try It Today"
 class: slide-base
 ---
 
@@ -1104,6 +1130,7 @@ You don't have to wait<br/>20 minutes anymore.
 
 ---
 layout: none
+title: "Q&A"
 class: slide-base
 ---
 
