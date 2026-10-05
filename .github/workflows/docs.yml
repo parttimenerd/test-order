@@ -7,12 +7,14 @@ on:
       - 'docs/**'
       - 'website/**'
       - 'scripts/**'
+      - 'talks/conference-20min/**'
       - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'docs/**'
       - 'website/**'
       - 'scripts/**'
+      - 'talks/conference-20min/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -47,6 +49,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             website/package-lock.json
+            talks/conference-20min/package-lock.json
 
       - name: Install repo-root tooling (Playwright)
         run: npm install --no-audit --no-fund
@@ -123,6 +126,14 @@ jobs:
           else
             echo "::warning::Demo dashboard not found at $DASH_SRC — skipping"
           fi
+
+      - name: Build slides (20-min talk)
+        working-directory: talks/conference-20min
+        run: |
+          npm ci
+          npx slidev export --format html --base /test-order/slides/20m/ slides.md --output dist
+          mkdir -p ../../website/static/slides/20m
+          cp -r dist/. ../../website/static/slides/20m/
 
       - name: Install website deps
         working-directory: website
