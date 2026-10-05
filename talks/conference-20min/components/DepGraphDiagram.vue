@@ -34,7 +34,8 @@ onMounted(() => {
 
   const root = d3.select(svg.value)
     .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('width', W).attr('height', H)
+    .attr('width', '100%')
+    .attr('preserveAspectRatio', 'xMidYMin meet')
     .attr('font-family', "'Inter','Helvetica Neue',sans-serif")
 
   const defs = root.append('defs')

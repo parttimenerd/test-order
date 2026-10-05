@@ -8,7 +8,7 @@ import * as d3 from 'd3'
 
 const container = ref(null)
 
-const W = 820, H = 270
+const W = 820, H = 360
 const MARGIN = { top: 20, right: 190, bottom: 24, left: 168 }
 const IW = W - MARGIN.left - MARGIN.right
 const IH = H - MARGIN.top - MARGIN.bottom

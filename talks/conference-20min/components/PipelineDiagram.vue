@@ -8,17 +8,17 @@ import * as d3 from 'd3'
 
 const svg = ref(null)
 
-const W = 820, H = 240
+const W = 820, H = 420
 const COL = [75, 248, 438, 598, 762]
-const MID = H / 2 + 10
+const MID = 210
 
 const NODES = [
-  { id: 'learn',  x: COL[0], y: MID,       w: 134, h: 66, label: 'mvn test #1',    sub: 'learn run · agent on',  clr: '#60a5fa', bg: 'rgba(30,58,138,0.90)' },
-  { id: 'index',  x: COL[1], y: MID - 46,  w: 144, h: 56, label: 'index.lz4',      sub: 'test → {classes}',      clr: '#a78bfa', bg: 'rgba(46,16,101,0.90)', cylinder: true },
-  { id: 'diff',   x: COL[1], y: MID + 46,  w: 144, h: 56, label: 'git diff',        sub: 'changed classes',       clr: '#f87171', bg: 'rgba(127,29,29,0.90)' },
-  { id: 'score',  x: COL[2], y: MID,        w: 154, h: 66, label: 'score',           sub: 'overlap · history · speed', clr: '#fbbf24', bg: 'rgba(113,63,18,0.90)' },
-  { id: 'ranked', x: COL[3], y: MID,        w: 144, h: 66, label: 'ranked order',    sub: 'CartTest #1 …',         clr: '#4ade80', bg: 'rgba(20,83,45,0.90)' },
-  { id: 'fast',   x: COL[4], y: MID,        r: 36,          label: '⚡',              sub: 'first failure sooner',  clr: '#4ade80', bg: 'rgba(5,46,22,0.95)', circle: true },
+  { id: 'learn',  x: COL[0], y: MID,       w: 148, h: 96, label: 'mvn test #1',    sub: 'learn run · agent on',  clr: '#60a5fa', bg: 'rgba(30,58,138,0.90)' },
+  { id: 'index',  x: COL[1], y: MID - 82,  w: 158, h: 84, label: 'index.lz4',      sub: 'test → {classes}',      clr: '#a78bfa', bg: 'rgba(46,16,101,0.90)', cylinder: true },
+  { id: 'diff',   x: COL[1], y: MID + 82,  w: 158, h: 84, label: 'git diff',        sub: 'changed classes',       clr: '#f87171', bg: 'rgba(127,29,29,0.90)' },
+  { id: 'score',  x: COL[2], y: MID,        w: 168, h: 96, label: 'score',           sub: 'overlap · history · speed', clr: '#fbbf24', bg: 'rgba(113,63,18,0.90)' },
+  { id: 'ranked', x: COL[3], y: MID,        w: 158, h: 96, label: 'ranked order',    sub: 'CartTest #1 …',         clr: '#4ade80', bg: 'rgba(20,83,45,0.90)' },
+  { id: 'fast',   x: COL[4], y: MID,        r: 52,          label: '⚡',              sub: 'first failure sooner',  clr: '#4ade80', bg: 'rgba(5,46,22,0.95)', circle: true },
 ]
 
 const EDGES = [
@@ -37,7 +37,8 @@ onMounted(() => {
 
   const root = d3.select(svg.value)
     .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('width', W).attr('height', H)
+    .attr('width', '100%')
+    .attr('preserveAspectRatio', 'xMidYMid meet')
     .attr('font-family', "'Inter','Helvetica Neue',sans-serif")
 
   const defs = root.append('defs')
@@ -168,5 +169,5 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.pipeline-diagram { display: block; max-width: 100%; }
+.pipeline-diagram { display: block; max-width: 100%; width: 100%; }
 </style>

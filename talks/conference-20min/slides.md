@@ -160,7 +160,7 @@ class: bg-zinc-900 text-white
 
 <div class="flex items-center gap-10 justify-center">
 
-<img src="https://parttimenerd.github.io/tiny-llm-library-demo/assets/sapmachine-logo-D-W5bFE3.png" class="h-20 object-contain rounded-lg" style="mix-blend-mode: multiply; background: transparent;" />
+<img src="https://parttimenerd.github.io/tiny-llm-library-demo/assets/sapmachine-logo-D-W5bFE3.png" class="h-20 object-contain rounded-lg" style="background: rgba(255,255,255,0.08); padding: 6px 10px; border-radius: 8px;" />
 
 <div class="text-left">
   <div class="text-2xl font-bold">Johannes Bechberger</div>
@@ -550,21 +550,31 @@ class: bg-zinc-900 text-white
 
 
 ---
-layout: two-cols
+layout: default
 class: bg-zinc-900 text-white
 ---
 
+# What each tool injects
+
 <style>
-.compact-code pre { font-size: 0.72rem !important; line-height: 1.45 !important; padding: 10px 14px !important; }
-.col-label { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 0.4rem; }
+.cmp-wrap { display: flex; gap: 1.5rem; align-items: flex-start; margin-top: 0.5rem; }
+.cmp-col  { flex: 1 1 0; min-width: 0; }
+.cmp-col pre, .cmp-col pre code, .cmp-col .shiki {
+  font-size: 0.82rem !important; line-height: 1.42 !important;
+  padding: 10px 12px !important; overflow: hidden !important;
+  white-space: pre !important;
+}
+.col-label { font-size: 0.88rem; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
+.cmp-note  { font-size: 0.78rem; color: #94a3b8; margin-top: 0.5rem; line-height: 1.5; }
 </style>
 
+<div class="cmp-wrap">
+
+<div class="cmp-col">
 <div class="col-label text-red-400">JaCoCo — probes every line &amp; branch</div>
 
-<div class="compact-code">
-
 ```java
-// injected field + init on every class load
+// injected field + init on every load
 boolean[] $jacocoData =
   $jacocoInit()[42];
 
@@ -574,23 +584,17 @@ public int add(int a, int b) {
 }                        //   on every run
 ```
 
-</div>
-
 <v-click>
-
-<div class="mt-4 text-xs text-slate-400">
+<div class="cmp-note">
   ↳ every run pays the probe cost<br/>
   ↳ branch arrays for every <code>if</code>/<code>for</code>/<code>?:</code><br/>
   ↳ goal: line/branch <strong>coverage report</strong>
 </div>
-
 </v-click>
+</div>
 
-::right::
-
+<div class="cmp-col">
 <div class="col-label text-green-400">test-order — one call at method entry</div>
-
-<div class="compact-code">
 
 ```java
 // nothing injected into class
@@ -602,17 +606,16 @@ public int add(int a, int b) {
 // learn run only — stripped on order runs
 ```
 
-</div>
-
 <v-click>
-
-<div class="mt-4 text-xs text-slate-400">
+<div class="cmp-note">
   ↳ learn run only (~13% overhead)<br/>
   ↳ one <code>invokestatic</code> per method (5 bytes)<br/>
   ↳ goal: <strong>dep map</strong> test → classes touched
 </div>
-
 </v-click>
+</div>
+
+</div>
 
 <!--
 - The original source: `public int add(int a, int b) { return a + b; }`
@@ -792,7 +795,7 @@ class: bg-zinc-900 text-white
 
 # Tests tab
 
-<img src="/images/dashboard-tests.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 380px; object-fit: contain; object-position: top;" />
+<img src="/images/dashboard-tests.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 520px; object-fit: contain; object-position: top;" />
 
 <!--
 - Ranked list — CartTest at #1, score 16, "new test +15, speed +1"
@@ -809,7 +812,7 @@ class: bg-zinc-900 text-white
 
 # Analytics tab
 
-<img src="/images/dashboard-analytics.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 380px; object-fit: contain; object-position: top;" />
+<img src="/images/dashboard-analytics.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 520px; object-fit: contain; object-position: top;" />
 
 <!--
 - APFD score over runs: starts at 50% (alphabetical), climbs as the index warms
@@ -826,7 +829,7 @@ class: bg-zinc-900 text-white
 
 # Coverage tab
 
-<img src="/images/dashboard-coverage.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 380px; object-fit: contain; object-position: top;" />
+<img src="/images/dashboard-coverage.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 520px; object-fit: contain; object-position: top;" />
 
 <!--
 - The dep index IS a coverage map: every class reachable from a test is "covered" by that test.
@@ -845,7 +848,7 @@ class: bg-zinc-900 text-white
 
 # Weights tab
 
-<img src="/images/dashboard-weights.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 380px; object-fit: contain; object-position: top;" />
+<img src="/images/dashboard-weights.png" class="w-full rounded-lg border border-zinc-700 mt-2" style="max-height: 520px; object-fit: contain; object-position: top;" />
 
 <!--
 - Sliders: changedTest, changeAround, depOverlap, speedBonus, failHistory…
