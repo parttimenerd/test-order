@@ -330,6 +330,11 @@ class: slide-base
 </plugin>
 ```
 
+<div class="mt-4 flex gap-8 text-xl">
+  <div><span class="text-red-400 font-bold">No index found</span> → learn run · instruments classes · writes <code>.test-order/</code></div>
+  <div><span class="text-green-400 font-bold">Index found</span> → order run · no instrumentation · zero overhead</div>
+</div>
+
 <div class="mt-3" style="font-size: 0.9rem; opacity: 0.6">
   Multi-module: also add to <code style="background: rgba(255,255,255,0.07); padding: 0.1em 0.4em; border-radius: 4px">.mvn/extensions.xml</code> for cross-module index merging
 </div>
@@ -653,12 +658,19 @@ class: slide-base
 
 <ScoringBreakdown />
 
+<v-click>
+
+<div class="mt-3 text-base opacity-70">+ <strong>fail history</strong>: tests that failed recently get an EMA boost — surfaces flaky tests automatically</div>
+
+</v-click>
+
 <!--
 - Changed test (+9): CartTest.java itself was edited
 - Package proximity (+2): same package as Cart
 - Dep overlap (+2): Cart is in deps(CartTest), ⌈1/√8×5⌉ = 2
 - Speed bonus (+1): fast test, below median duration
-- All signals additive. Configurable via weights tab.
+- Fail history: exponential moving average of failure rate — a test that failed 3 runs ago still gets a boost, decaying over time
+- All signals additive. Configurable via weights tab (see the weights tab in D3 dashboard).
 - Score 0 = test never touched any changed class → runs last
 -->
 
@@ -691,7 +703,7 @@ layout: default
 class: slide-base
 ---
 
-<DemoCard id="D3" duration="4:00" :cmd="`cd third-party/spring-petclinic\n# learn ran in CI last night, zero overhead today\nmvn test\nmvn test-order:dashboard`" title="Real Spring Boot project. Live APFD. Then the dashboard." watch="First failure surfaces early in terminal. Dashboard: APFD trend, rank heatmap, score breakdown modal, weights tuning."></DemoCard>
+<DemoCard id="D3" duration="4:00" :cmd="`cd third-party/spring-petclinic\n# index from nightly learn run — zero overhead today\nmvn test\nmvn test-order:dashboard`" title="Real Spring Boot project. Live APFD. Then the dashboard." watch="First failure surfaces early in terminal. Dashboard: APFD trend, rank heatmap, score breakdown modal, weights tuning."></DemoCard>
 
 <!--
 DEMO STEPS:
@@ -851,6 +863,51 @@ BUILD SUCCESS in 1.2 s
 
 
 <!-- ═══ RESULTS ════════════════════════════════════════════════════════════════ -->
+
+---
+layout: default
+class: slide-base
+---
+
+# CI without paying the learn tax every push
+
+<div class="mt-6 grid grid-cols-3 gap-4 text-base">
+
+<div class="p-4 rounded-lg" style="background: rgba(96,165,250,0.1); border: 1px solid rgba(96,165,250,0.3)">
+  <div class="text-blue-400 font-bold mb-2">Nightly / merge</div>
+  <code class="text-sm">mvn test</code>
+  <div class="mt-2 opacity-70">Full learn run. Updates index. Commits <code>.test-order/</code> to cache.</div>
+</div>
+
+<div class="p-4 rounded-lg" style="background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3)">
+  <div class="text-amber-400 font-bold mb-2">Every PR push</div>
+  <code class="text-sm">mvn test-order:tiered-select</code><br/>
+  <code class="text-sm">mvn test-order:run-tier -Dtier=1</code>
+  <div class="mt-2 opacity-70">Run highest-ranked tier first. Fail fast without touching the rest.</div>
+</div>
+
+<div class="p-4 rounded-lg" style="background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3)">
+  <div class="text-green-400 font-bold mb-2">Parallel remainder</div>
+  <code class="text-sm">run-tier -Dtier=2</code><br/>
+  <code class="text-sm">run-tier -Dtier=3</code>
+  <div class="mt-2 opacity-70">Lower tiers in parallel agents. Zero extra config in your test code.</div>
+</div>
+
+</div>
+
+<div class="mt-5 text-base opacity-60">One learn pass. Every push gets ranked order. Parallel tiers when you need them.</div>
+
+<!--
+- tiered-select partitions the ranked list into tiers by score bucket
+- run-tier 1 = highest-priority tests, run-tier 2/3 = remainder in parallel CI agents
+- The index is read-only on push runs — no instrumentation overhead
+- CI caches .test-order/ between runs (restores on each push run)
+- "You learn once nightly. Every developer push gets the benefit of last night's index."
+- TRANSITION: "so what does this buy you? Numbers"
+-->
+
+
+
 
 ---
 layout: center
