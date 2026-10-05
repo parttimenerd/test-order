@@ -2,18 +2,16 @@
   <div class="demo-card">
     <div class="header">
       <span class="badge">DEMO {{ id }}</span>
-      <span class="timing">≈ {{ duration }}</span>
     </div>
     <h2 class="title">{{ title }}</h2>
     <pre class="cmd">{{ cmd }}</pre>
-    <div v-if="watch" class="watch">{{ watch }}</div>
   </div>
 </template>
 
 <script setup>
 defineProps({
   id: { type: String, required: true },
-  duration: { type: String, required: true },
+  duration: { type: String, default: '' },
   cmd: { type: String, required: true },
   title: { type: String, default: '' },
   watch: { type: String, default: '' },
@@ -30,7 +28,6 @@ defineProps({
 }
 .header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   margin-bottom: 0.6rem;
 }
@@ -42,11 +39,6 @@ defineProps({
   font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-}
-.timing {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.95rem;
-  color: #94a3b8;
 }
 .title {
   font-size: 1.8rem;
@@ -62,12 +54,7 @@ defineProps({
   font-family: 'JetBrains Mono', monospace;
   font-size: 1.1rem;
   line-height: 1.6;
-  margin: 0 0 0.9rem 0;
+  margin: 0;
   white-space: pre-wrap;
-}
-.watch {
-  font-size: 1.05rem;
-  color: #94a3b8;
-  font-style: italic;
 }
 </style>

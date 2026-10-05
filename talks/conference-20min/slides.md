@@ -130,18 +130,11 @@ layout: cover
 
 <!-- ═══ COVER ═════════════════════════════════════════════════════════════════ -->
 
-<img src="/images/wiki-bletchley-cards.jpg" class="absolute inset-0 w-full h-full object-cover opacity-40" />
-<div class="absolute inset-0 bg-black/50 z-0" />
-
 <div class="relative z-10">
 
 # You Are Running the Wrong Tests First
 
-<div class="pt-6 text-xl opacity-70">
-  Maven · v0.1 · early-stage
-</div>
-
-<div class="pt-4 text-base opacity-40">
+<div class="pt-6 text-base opacity-50">
   Johannes Bechberger · @parttimenerd · SAP SE
 </div>
 
@@ -307,7 +300,9 @@ class: slide-base
 
 # Learn once. Rank on every run.
 
+<div style="max-height: 78%; overflow: hidden">
 <PipelineDiagram />
+</div>
 
 <!--
 - learn run: bytecode agent on, every method entry recorded → index.lz4
@@ -323,19 +318,26 @@ class: slide-base
 
 # Ten lines of POM. Then `mvn test`.
 
-```xml {all|2-3|5|6-10}
+```xml {all|2-3|4|5-9}
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
   <version>0.1.0</version>
   <extensions>true</extensions>
-  <executions>
-    <execution>
-      <goals><goal>prepare</goal></goals>
-    </execution>
-  </executions>
+  <executions><execution>
+    <goals><goal>prepare</goal></goals>
+  </execution></executions>
 </plugin>
 ```
+
+<div class="mt-3" style="font-size: 0.9rem; opacity: 0.6">
+  Multi-module: also add to <code style="background: rgba(255,255,255,0.07); padding: 0.1em 0.4em; border-radius: 4px">.mvn/extensions.xml</code> for cross-module index merging
+</div>
+
+<style>
+.slidev-layout pre, .slidev-layout pre code, .slidev-layout .shiki { font-size: 1.25rem !important; line-height: 1.55 !important; }
+.slidev-layout pre { padding: 0.9rem 1.1rem !important; }
+</style>
 
 <!--
 - Click 1: groupId/artifactId — "me.bechberger, test-order-maven-plugin"
@@ -377,29 +379,45 @@ class: slide-base
 
 # Why CartTest moves to #1
 
-<div class="flex gap-6 items-start mt-4" style="min-width:0">
+<div class="flex flex-col gap-6 mt-8" style="font-size: 1.15rem">
 
-<div style="flex: 0 0 48%; min-width:0">
+<div class="flex items-center gap-3">
+  <div class="chain-box changed">Cart.java edited</div>
+  <div class="chain-arrow">→</div>
+  <div class="chain-box index">CartTest calls Cart<br/><span style="font-size:0.8em;opacity:0.7">dep index says so</span></div>
+  <div class="chain-arrow">→</div>
+  <div class="chain-box top">CartTest = #1</div>
+</div>
 
-```java {all|3}
-public void add(Item item) {
-    if (item == null) throw new IllegalArgumentException();
-    items.add(item);
-}
-```
+<div class="flex items-center gap-3">
+  <div class="chain-box neutral">PaymentTest</div>
+  <div class="chain-arrow">→</div>
+  <div class="chain-box neutral-dim">never touched Cart<br/><span style="font-size:0.8em;opacity:0.7">zero overlap</span></div>
+  <div class="chain-arrow">→</div>
+  <div class="chain-box skip">stays low</div>
+</div>
 
 </div>
 
-<div style="flex: 0 0 50%; min-width:0">
-  <DepGraphDiagram />
-</div>
+<div class="mt-8" style="font-size: 0.95rem; opacity: 0.5">No retraining. The dep index is a static set intersection — built once, used forever.</div>
 
-</div>
+<style>
+.chain-box { border-radius: 8px; padding: 0.5rem 0.9rem; font-weight: 600; line-height: 1.3; }
+.changed  { background: rgba(248,113,113,0.15); border: 1.5px solid #f87171; color: #fca5a5; white-space: nowrap; }
+.index    { background: rgba(167,139,250,0.12); border: 1.5px solid #a78bfa; color: #c4b5fd; }
+.top      { background: rgba(74,222,128,0.15);  border: 1.5px solid #4ade80; color: #86efac; white-space: nowrap; }
+.neutral  { background: rgba(148,163,184,0.10); border: 1.5px solid #475569; color: #94a3b8; white-space: nowrap; }
+.neutral-dim { background: rgba(71,85,105,0.08); border: 1.5px solid #334155; color: #64748b; }
+.skip     { background: rgba(71,85,105,0.12);   border: 1.5px solid #475569; color: #64748b; white-space: nowrap; }
+.chain-arrow { color: #475569; font-size: 1.3rem; flex-shrink: 0; }
+</style>
 
 <!--
-- Cart.java changes → Cart is in deps(CartTest) → CartTest scores highest
-- The dep graph was built during the learn run — no retraining needed
-- "The intersection already knows."
+- The learn run built a map: test → {classes it touched}
+- On every subsequent run: git diff gives changed classes; intersect with map → rank
+- Cart.java in deps(CartTest) → high overlap score
+- PaymentTest never touched Cart → zero overlap, runs later
+- "The intersection already knows. No ML, no retraining, no history needed."
 -->
 
 
@@ -560,13 +578,11 @@ public int add(int a, int b) {
 }                        //   on every run
 ```
 
-<v-click>
 <div class="cmp-note">
   ↳ every run pays the probe cost<br/>
   ↳ branch arrays for every <code>if</code>/<code>for</code>/<code>?:</code><br/>
   ↳ goal: line/branch <strong>coverage report</strong>
 </div>
-</v-click>
 </div>
 
 <div class="cmp-col">
@@ -582,13 +598,11 @@ public int add(int a, int b) {
 // learn run only — stripped on order runs
 ```
 
-<v-click>
 <div class="cmp-note">
   ↳ learn run only (~13% overhead)<br/>
   ↳ one <code>invokestatic</code> per method (5 bytes)<br/>
   ↳ goal: <strong>dep map</strong> test → classes touched
 </div>
-</v-click>
 </div>
 
 </div>
@@ -615,34 +629,11 @@ class: slide-base
 
 # Why ~13%? Three design choices
 
-<div class="mt-6 space-y-5">
-
-<v-click>
-
-<div class="flex items-start gap-4">
-  <span class="text-green-400 font-mono text-lg mt-0.5">ASM streaming</span>
-  <span class="text-slate-300">One-pass visitor — no intermediate object model. ByteBuddy builds full class graphs; ASM visits 10 000 classes as byte streams.</span>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="flex items-start gap-4">
-  <span class="text-blue-400 font-mono text-lg mt-0.5 shrink-0">thread-local bitset</span>
-  <span class="text-slate-300">Each test thread writes to its own <code>long[]</code>. No synchronization on the hot path. Drained once when the test ends.</span>
-</div>
-
-</v-click>
-<v-click>
-
-<div class="flex items-start gap-4">
-  <span class="text-amber-400 font-mono text-lg mt-0.5 shrink-0">learn once</span>
-  <span class="text-slate-300">Transformer not attached on order runs. Zero bytecode overhead after the first learn run.</span>
-</div>
-
-</v-click>
-
-</div>
+| Choice | What it avoids |
+|---|---|
+| **ASM streaming** | No intermediate object model — visits 10k classes as byte streams |
+| **Thread-local bitset** | `bits[id>>>6] \|= 1L<<id` — no lock on the hot path |
+| **Learn once** | Transformer not attached on order runs — zero bytecode overhead after run #1 |
 
 <!--
 - ASM: streaming visitor model — reads class bytes once, never builds a DOM. ByteBuddy (used in first prototype) had to construct a full CtClass model; 10× more allocations per class.
@@ -727,30 +718,23 @@ class: slide-base
 
 <div class="mt-8 grid grid-cols-3 gap-6 text-center">
 
-<v-click>
-
 <div class="p-6 rounded-lg bg-blue-950/60 border border-blue-800/50">
   <div class="text-4xl mb-3">🔍</div>
   <div class="font-semibold text-blue-300 text-xl">Attach</div>
+  <div class="text-sm text-slate-400 mt-2">hooks into every class loader</div>
 </div>
-
-</v-click>
-<v-click>
 
 <div class="p-6 rounded-lg bg-violet-950/60 border border-violet-800/50">
   <div class="text-4xl mb-3">📝</div>
   <div class="font-semibold text-violet-300 text-xl">Record</div>
+  <div class="text-sm text-slate-400 mt-2">method entry → thread-local bitset</div>
 </div>
-
-</v-click>
-<v-click>
 
 <div class="p-6 rounded-lg bg-green-950/60 border border-green-800/50">
   <div class="text-4xl mb-3">💾</div>
   <div class="font-semibold text-green-300 text-xl">Write</div>
+  <div class="text-sm text-slate-400 mt-2">.test-order/test-dependencies.lz4</div>
 </div>
-
-</v-click>
 
 </div>
 
@@ -870,13 +854,13 @@ BUILD SUCCESS in 1.2 s
 
 ---
 layout: center
+class: slide-base
 ---
 
-<img src="https://parttimenerd.github.io/tiny-llm-library-demo/assets/cat-socks-oval-office-Bj7wbdg6.jpg" class="absolute inset-0 w-full h-full object-cover opacity-90" />
-<div class="absolute inset-0 bg-zinc-900/55 z-0" />
+<div class="big-statement">Does it actually work?</div>
 
 <!--
-- Pause. "Does it actually work? Numbers."
+- Pause. Numbers next.
 -->
 
 
@@ -941,19 +925,11 @@ Your suite runs<br/>on every push.<br/>Sometimes dozens a day.
 
 </div>
 
-<v-click>
-
 <div class="text-2xl text-orange-400 mt-8 text-center">
   First failure earlier. Every push.
 </div>
 
-</v-click>
-
-<v-click>
-
 <div class="hands-up mt-6">✋ running tests in CI on every commit?</div>
-
-</v-click>
 
 </div>
 
@@ -984,38 +960,25 @@ class: slide-base
 
 <div class="mt-8 space-y-4">
 
-<v-click>
-
 <div class="flex items-center gap-4 text-xl">
   <span class="tag-bad">&lt; 20</span>
-  <span>Tiny suites</span>
+  <span>Tiny suites — overhead isn't worth it</span>
 </div>
-
-</v-click>
-<v-click>
 
 <div class="flex items-center gap-4 text-xl">
   <span class="tag-bad">OPAQUE</span>
-  <span>Reflection-only paths</span>
+  <span>Reflection-only paths — invisible to the transformer</span>
 </div>
-
-</v-click>
-<v-click>
 
 <div class="flex items-center gap-4 text-xl">
   <span class="tag-bad">DYNAMIC</span>
-  <span>Custom classloaders after JVM start</span>
+  <span>Custom classloaders after JVM start (OSGi, Quarkus dev)</span>
 </div>
-
-</v-click>
-<v-click>
 
 <div class="flex items-center gap-4 text-xl">
   <span class="tag-bad">FLAKY</span>
-  <span>Highly flaky suites</span>
+  <span>Highly flaky suites — quarantine first</span>
 </div>
-
-</v-click>
 
 </div>
 
@@ -1051,33 +1014,11 @@ You don't have to wait<br/>20 minutes anymore.
 
 </div>
 
-<v-click>
-
-<div class="pt-6 text-xl text-center opacity-70">v0.1 — works, but rough edges exist</div>
-
-</v-click>
-
-<v-click>
-
-<div class="pt-4 text-xl opacity-80">
-  Apache 2.0. File an issue if something breaks.
-</div>
-
-</v-click>
-
-<v-click>
-
-<div class="pt-2 text-xl opacity-70">PRs welcome.</div>
-
-</v-click>
-
-<v-click>
+<div class="pt-8 text-xl opacity-70">v0.1 · Apache 2.0 · PRs welcome</div>
 
 <div class="pt-4 text-2xl font-mono text-sky-300">
   parttimenerd.github.io/test-order
 </div>
-
-</v-click>
 
 </div>
 
