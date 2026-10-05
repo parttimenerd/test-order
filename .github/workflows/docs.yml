@@ -35,7 +35,7 @@ jobs:
           # diff back to main without a shallow-clone error.
           fetch-depth: 0
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: sapmachine
           java-version: 17
