@@ -2938,7 +2938,7 @@ public class TestOrderPlugin implements Plugin<Project> {
                 orNull(ext.getScoreSpeedPenalty()), orNull(ext.getScoreDepOverlap()),
                 orNull(ext.getScoreChangeComplexity()), orNull(ext.getScoreStaticFieldBonus()),
                 orNull(ext.getScoreCoverageBonus()), orNull(ext.getScoreKillRateBonus()),
-                orNull(ext.getScorePackageProximityBonus()));
+                orNull(ext.getScorePackageProximityBonus()), orNull(ext.getScoreNameMatchBonus()));
 
         String explicitChanged = ext.getChangedClasses().get();
         String propChanged = gradleOrSystemProperty(project, "testorder.changed.classes");

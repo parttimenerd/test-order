@@ -371,6 +371,10 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	@Parameter(property = MavenPluginConfigKeys.SCORE_PACKAGE_PROXIMITY_BONUS)
 	protected Integer scorePackageProximityBonus;
 
+	/** Name-match bonus weight (default 4; 0 = disabled) */
+	@Parameter(property = MavenPluginConfigKeys.SCORE_NAME_MATCH_BONUS)
+	protected Integer scoreNameMatchBonus;
+
 	// ── Lifecycle helpers ─────────────────────────────────────────────
 
 	protected void initContext() throws MojoExecutionException {
@@ -1650,7 +1654,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		TestOrderState.ScoringWeights sw = resolveWeights(state);
 		return me.bechberger.testorder.ops.WeightResolverOperation.applyOverrides(sw, scoreNewTest, scoreChangedTest,
 				scoreMaxFailure, scoreSpeed, scoreSpeedPenalty, scoreDepOverlap, scoreChangeComplexity,
-				scoreStaticFieldBonus, scoreCoverageBonus, scoreKillRateBonus, scorePackageProximityBonus);
+				scoreStaticFieldBonus, scoreCoverageBonus, scoreKillRateBonus, scorePackageProximityBonus,
+				scoreNameMatchBonus);
 	}
 
 	/**
@@ -1660,7 +1665,8 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 	protected Map<String, Integer> buildScoreOverrides() {
 		return me.bechberger.testorder.ops.WeightResolverOperation.buildScoreOverrides(scoreNewTest, scoreChangedTest,
 				scoreMaxFailure, scoreSpeed, scoreSpeedPenalty, scoreDepOverlap, scoreChangeComplexity,
-				scoreStaticFieldBonus, scoreCoverageBonus, scoreKillRateBonus, scorePackageProximityBonus);
+				scoreStaticFieldBonus, scoreCoverageBonus, scoreKillRateBonus, scorePackageProximityBonus,
+				scoreNameMatchBonus);
 	}
 
 	// ── Orderer config ────────────────────────────────────────────────

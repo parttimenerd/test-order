@@ -196,6 +196,7 @@ public abstract class TestOrderExtension {
     public abstract Property<Integer> getScoreCoverageBonus();
     public abstract Property<Integer> getScoreKillRateBonus();
     public abstract Property<Integer> getScorePackageProximityBonus();
+    public abstract Property<Integer> getScoreNameMatchBonus();
 
     // ---- Auto-learn thresholds ----
 
@@ -411,6 +412,7 @@ public abstract class TestOrderExtension {
         validateWeightNonNegative(logger, "scoreCoverageBonus", getScoreCoverageBonus());
         validateWeightNonNegative(logger, "scoreKillRateBonus", getScoreKillRateBonus());
         validateWeightNonNegative(logger, "scorePackageProximityBonus", getScorePackageProximityBonus());
+        validateWeightNonNegative(logger, "scoreNameMatchBonus", getScoreNameMatchBonus());
 
         // Validate thresholds are non-negative
         int autoLearnThreshold = getAutoLearnRunThreshold().getOrElse(10);
