@@ -95,7 +95,8 @@ detect_extra_mvn_args() {
         # failures when our offline instrumentation modifies class files before the formatter runs.
         # Skip checkstyle: spring-ai-model checkstyle fails (missing newline in AbstractToolCallSupport).
         # spring-ai uses -Ddisable.checks=true (not -Dcheckstyle.skip) to disable checkstyle.
-        spring-ai) echo "-Dmaven.test.failure.ignore=true -Denv.CI=true -Ddisable.checks=true" ;;
+        # env.CI=true suppresses format-apply but activates format-check; deactivate it explicitly.
+        spring-ai) echo "-Dmaven.test.failure.ignore=true -Denv.CI=true -Ddisable.checks=true -P '!format-check'" ;;
         # maven (Apache Maven itself): RAT license check fails on injected extensions.xml
         # because it lacks an Apache license header. Skip RAT; also ignore test failures
         # since some integration tests require a fully installed Maven.
@@ -124,7 +125,9 @@ detect_extra_mvn_args() {
         # gson: errorprone 2.48.0 on JDK 21 emits InvalidBlockTag warning for @Since in Javadoc;
         # failOnWarning=true turns it into a compile error. Force-activate the 'disable-error-prone'
         # profile which overrides compilerArgs to skip the error-prone annotation processor.
-        gson) echo "-P disable-error-prone" ;;
+        # Exclude test-jpms: its module-info.java requires com.google.gson as a JPMS module,
+        # which fails because test-order disables the module path (useModulePath=false).
+        gson) echo "-P disable-error-prone -pl '!test-jpms'" ;;
         # logbook and jetty use JUnit class-level parallel execution (mode.classes.default=concurrent
         # or Surefire <parallel>classesAndMethods</parallel>).  test-order cannot track dependencies
         # when multiple test classes run simultaneously, so we override these to serial execution.

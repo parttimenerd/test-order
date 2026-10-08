@@ -1,0 +1,11 @@
+--- a/src/main/java/org/apache/commons/io/file/PathUtils.java
++++ b/src/main/java/org/apache/commons/io/file/PathUtils.java
+@@ -905,7 +905,7 @@ public class PathUtils {
+         if (Files.isDirectory(nPath2, linkOptions)) {
+             throw new IOException("Can't compare directories, only files: " + nPath2);
+         }
+-        if (Files.size(nPath1) != Files.size(nPath2)) {
++        if (Files.size(nPath1) == Files.size(nPath2)) {
+             // lengths differ, cannot be equal
+             return false;
+         }

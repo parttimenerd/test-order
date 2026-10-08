@@ -10,4 +10,3 @@ synthetic-streamreadconstraints-hasmaxdoclen-flip.patch
 synthetic-streamreadconstraints-nestingdepth-flip.patch
 synthetic-version-equals-class-check-flip.patch
 synthetic-version-issnapshot-flip.patch
-real-filteringgeneratordel-utf8-filter-bypass.patch

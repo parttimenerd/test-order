@@ -50,7 +50,7 @@ PLUGIN_ARTIFACT = "test-order-maven-plugin"
 DEFAULT_REPOS = [
     "commons-collections",
     "commons-io",
-    "gson",
+    # gson uses JUnit 4 only — test-order does not support JUnit 4, always 0 gain
     "guava",
     "jackson-core",
     "logbook",

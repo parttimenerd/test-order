@@ -1,6 +1,4 @@
 real-markdowncodeblockcleaner-missing-length-guard.patch
-real-mcpstdio-args-null-npe.patch
-real-openaichatmodel-finishreason-unknown-not-null.patch
 synthetic-defaulttoolcallingmanager-and-to-or.patch
 synthetic-flip-json-content-condition.patch
 synthetic-flip-tool-definition-condition.patch
@@ -9,6 +7,4 @@ synthetic-markdowncodeblock-and-to-or.patch
 synthetic-messagewindow-systemfilter-and-to-or.patch
 synthetic-messagewindowchatmemory-keep-removed-flip.patch
 synthetic-thinkingtag-fastpath-and-to-or.patch
-synthetic-tokencountbatching-singledoc-gt-to-gte.patch
 real-usagecalculator-null-usage-npe.patch
-real-simplevectorstore-in-nin-date-norm.patch
