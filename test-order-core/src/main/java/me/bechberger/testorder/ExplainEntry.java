@@ -85,6 +85,13 @@ public record ExplainEntry(
 		 */
 		int packageProximityPoints,
 
+		// ── Name match ────────────────────────────────────────────────
+		/**
+		 * Points from name-match bonus (zero-dep-overlap test whose simple name matches
+		 * a changed class name).
+		 */
+		int nameMatchPoints,
+
 		// ── Weights used ───────────────────────────────────────────────
 		/** Scoring weights active for this run. */
 		TestOrderState.ScoringWeights weights) {
@@ -127,6 +134,9 @@ public record ExplainEntry(
 		}
 		if (packageProximityPoints != 0) {
 			sb.append(String.format("      %-24s %+d%n", "Package proximity:", packageProximityPoints));
+		}
+		if (nameMatchPoints != 0) {
+			sb.append(String.format("      %-24s %+d%n", "Name match bonus:", nameMatchPoints));
 		}
 
 		// dependency list (non-overlapping) — cap at 10 to avoid flooding

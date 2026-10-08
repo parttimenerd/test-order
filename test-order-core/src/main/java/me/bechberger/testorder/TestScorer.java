@@ -554,6 +554,11 @@ public class TestScorer {
 		// Package-proximity bonus: favour tests in the same package as a changed class
 		score += packageProximityBonus(testClassName);
 
+		// Name-match bonus: for zero-dep-overlap tests whose simple name closely
+		// matches a changed class's simple name (e.g. BoundedReaderTest ↔
+		// BoundedReader)
+		score += nameMatchBonus(testClassName, depOverlap);
+
 		return new ScoreResult(score, depOverlap, depTotal, failScore, isNew, isChanged, isFast, isSlow, complexityOvlp,
 				sRatio, staticFieldOverlap > 0, killRate, weightedDepOverlap);
 	}
@@ -694,10 +699,13 @@ public class TestScorer {
 		int packageProximityPts = packageProximityBonus(testClassName);
 		totalScore += packageProximityPts;
 
+		int nameMatchPts = nameMatchBonus(testClassName, overlapClasses.size());
+		totalScore += nameMatchPts;
+
 		return new ExplainEntry(testClassName, rank, totalScore, isChanged, changedTestPts, deps, overlapClasses,
 				adjustedDepOverlapPts, complexityOvlp, adjustedComplexityPts, hasStaticFieldOvlp,
 				adjustedStaticFieldPts, failScore, failurePts, isNew, newTestPts, dur, medianDuration, sRatio, speedPts,
-				adjustedSetCoverPts, killRate, killRatePts, packageProximityPts, weights);
+				adjustedSetCoverPts, killRate, killRatePts, packageProximityPts, nameMatchPts, weights);
 	}
 
 	/**
@@ -727,6 +735,44 @@ public class TestScorer {
 				return weights.packageProximityBonus();
 		}
 		return 0;
+	}
+
+	/**
+	 * Returns a bonus when a test with zero dep-overlap has a simple name that
+	 * closely matches a changed class's simple name. Strips common test suffixes
+	 * (Test, Tests, IT, TestCase) before comparing, so {@code BoundedReaderTest}
+	 * matches {@code BoundedReader}.
+	 * <p>
+	 * Only fires when {@code depOverlap == 0} — acts as a fallback for leaf classes
+	 * not reachable via the dependency graph.
+	 */
+	private int nameMatchBonus(String testClassName, int depOverlap) {
+		if (depOverlap > 0 || weights.nameMatchBonus() == 0 || changedClasses.isEmpty())
+			return 0;
+		String testSimple = simpleName(testClassName);
+		String testBase = stripTestSuffix(testSimple);
+		for (String changed : changedClasses) {
+			String changedSimple = simpleName(changed);
+			if (testBase.equalsIgnoreCase(changedSimple) || testSimple.equalsIgnoreCase(changedSimple + "Test")
+					|| testSimple.equalsIgnoreCase(changedSimple + "Tests")
+					|| testSimple.equalsIgnoreCase(changedSimple + "IT")
+					|| testSimple.equalsIgnoreCase(changedSimple + "TestCase"))
+				return weights.nameMatchBonus();
+		}
+		return 0;
+	}
+
+	private static String simpleName(String fqcn) {
+		int dot = fqcn.lastIndexOf('.');
+		return dot < 0 ? fqcn : fqcn.substring(dot + 1);
+	}
+
+	private static String stripTestSuffix(String simpleName) {
+		for (String suffix : new String[]{"TestCase", "Tests", "Test", "IT"}) {
+			if (simpleName.endsWith(suffix) && simpleName.length() > suffix.length())
+				return simpleName.substring(0, simpleName.length() - suffix.length());
+		}
+		return simpleName;
 	}
 
 	/**

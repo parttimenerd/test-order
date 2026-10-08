@@ -206,7 +206,8 @@ public final class TestOrderConfigResolver {
 				getWeightInt(TestOrderConfig.SCORE_STATIC_FIELD_BONUS, base.staticFieldBonus()),
 				getWeightInt(TestOrderConfig.SCORE_COVERAGE_BONUS, base.coverageBonus()),
 				getWeightInt(TestOrderConfig.SCORE_KILL_RATE_BONUS, base.killRateBonus()),
-				getWeightInt(TestOrderConfig.SCORE_PACKAGE_PROXIMITY_BONUS, base.packageProximityBonus()));
+				getWeightInt(TestOrderConfig.SCORE_PACKAGE_PROXIMITY_BONUS, base.packageProximityBonus()),
+				getWeightInt(TestOrderConfig.SCORE_NAME_MATCH_BONUS, base.nameMatchBonus()));
 	}
 
 	/**

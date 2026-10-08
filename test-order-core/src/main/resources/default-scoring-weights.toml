@@ -101,6 +101,14 @@ range = [0, 10]
 value = 2
 range = [0, 5]
 
+# Bonus applied when a test with zero dep-overlap has a simple class name that
+# closely matches a changed class's simple name (e.g. BoundedReaderTest ↔
+# BoundedReader).  Only fires when dep-overlap is zero, acting as a fallback
+# for leaf classes whose test isn't reachable via the dependency graph.
+[nameMatchBonus]
+value = 4
+range = [0, 10]
+
 
 # ── Method-level scoring (for reordering methods within a class) ────
 # Enable via: testorder.methodOrder.enabled=true

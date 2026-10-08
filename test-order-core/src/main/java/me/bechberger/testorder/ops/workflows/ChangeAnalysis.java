@@ -522,6 +522,20 @@ public final class ChangeAnalysis {
 							+ aug.size() + " test class(es).");
 					depMap = depMap.withAugmentation(aug);
 				}
+				// Inheritance augmentation: propagate subclass deps to test superclasses so
+				// abstract base test classes (e.g. AbstractMapTest) score as high as the
+				// concrete subclass that wires in the changed production class.
+				Map<String, Set<String>> inheritAug = BytecodeDependencyAugmenter
+						.computeInheritanceAugmentation(testScan, depMap);
+				if (!inheritAug.isEmpty()) {
+					int inheritTotal = 0;
+					for (Set<String> v : inheritAug.values()) {
+						inheritTotal += v.size();
+					}
+					ctx.log().debug("[test-order] inheritance augmentation added " + inheritTotal + " edge(s) across "
+							+ inheritAug.size() + " test superclass(es).");
+					depMap = depMap.withAugmentation(inheritAug);
+				}
 			} catch (RuntimeException e) {
 				ctx.log().debug("[test-order] dependency-map augmentation failed: " + e.getMessage());
 			}
@@ -549,7 +563,8 @@ public final class ChangeAnalysis {
 		return WeightResolverOperation.applyOverrides(base, overrides.get("newTest"), overrides.get("changedTest"),
 				overrides.get("maxFailure"), overrides.get("speed"), overrides.get("speedPenalty"),
 				overrides.get("depOverlap"), overrides.get("changeComplexity"), overrides.get("staticFieldBonus"),
-				overrides.get("coverageBonus"), overrides.get("killRateBonus"), overrides.get("packageProximityBonus"));
+				overrides.get("coverageBonus"), overrides.get("killRateBonus"), overrides.get("packageProximityBonus"),
+				overrides.get("nameMatchBonus"));
 	}
 
 	/**

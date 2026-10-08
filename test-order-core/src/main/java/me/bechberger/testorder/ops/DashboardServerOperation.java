@@ -234,11 +234,12 @@ public final class DashboardServerOperation {
 			String json = String.format("{\"weights\":{\"newTest\":%d,\"changedTest\":%d,\"maxFailure\":%d,"
 					+ "\"speed\":%d,\"speedPenalty\":%d,\"depOverlap\":%d,"
 					+ "\"changeComplexity\":%d,\"staticFieldBonus\":%d,\"coverageBonus\":%d,\"killRateBonus\":%d,"
-					+ "\"packageProximityBonus\":%d},"
+					+ "\"packageProximityBonus\":%d,\"nameMatchBonus\":%d},"
 					+ "\"trainScore\":%.4f,\"validationScore\":%.4f,\"overfit\":%b,\"folds\":%d}", w.newTest(),
 					w.changedTest(), w.maxFailure(), w.speed(), w.speedPenalty(), w.depOverlap(), w.changeComplexity(),
 					w.staticFieldBonus(), w.coverageBonus(), w.killRateBonus(), w.packageProximityBonus(),
-					result.trainScore(), result.validationScore(), result.overfit(), result.folds());
+					w.nameMatchBonus(), result.trainScore(), result.validationScore(), result.overfit(),
+					result.folds());
 			sendJson(exchange, json);
 		} catch (Exception e) {
 			String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();

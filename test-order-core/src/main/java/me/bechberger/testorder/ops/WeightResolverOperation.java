@@ -62,7 +62,7 @@ public final class WeightResolverOperation {
 	public static TestOrderState.ScoringWeights applyOverrides(TestOrderState.ScoringWeights base, Integer newTest,
 			Integer changedTest, Integer maxFailure, Integer speed, Integer speedPenalty, Integer depOverlap,
 			Integer changeComplexity, Integer staticFieldBonus, Integer coverageBonus, Integer killRateBonus,
-			Integer packageProximityBonus) {
+			Integer packageProximityBonus, Integer nameMatchBonus) {
 		return new TestOrderState.ScoringWeights(newTest != null ? newTest : base.newTest(),
 				changedTest != null ? changedTest : base.changedTest(),
 				maxFailure != null ? maxFailure : base.maxFailure(), speed != null ? speed : base.speed(),
@@ -72,7 +72,8 @@ public final class WeightResolverOperation {
 				staticFieldBonus != null ? staticFieldBonus : base.staticFieldBonus(),
 				coverageBonus != null ? coverageBonus : base.coverageBonus(),
 				killRateBonus != null ? killRateBonus : base.killRateBonus(),
-				packageProximityBonus != null ? packageProximityBonus : base.packageProximityBonus());
+				packageProximityBonus != null ? packageProximityBonus : base.packageProximityBonus(),
+				nameMatchBonus != null ? nameMatchBonus : base.nameMatchBonus());
 	}
 
 	/**
@@ -83,7 +84,7 @@ public final class WeightResolverOperation {
 	 */
 	public static Map<String, Integer> buildScoreOverrides(Integer newTest, Integer changedTest, Integer maxFailure,
 			Integer speed, Integer speedPenalty, Integer depOverlap, Integer changeComplexity, Integer staticFieldBonus,
-			Integer coverageBonus, Integer killRateBonus, Integer packageProximityBonus) {
+			Integer coverageBonus, Integer killRateBonus, Integer packageProximityBonus, Integer nameMatchBonus) {
 		Map<String, Integer> scores = new LinkedHashMap<>();
 		if (newTest != null)
 			scores.put("newTest", newTest);
@@ -107,6 +108,8 @@ public final class WeightResolverOperation {
 			scores.put("killRateBonus", killRateBonus);
 		if (packageProximityBonus != null)
 			scores.put("packageProximityBonus", packageProximityBonus);
+		if (nameMatchBonus != null)
+			scores.put("nameMatchBonus", nameMatchBonus);
 		return scores.isEmpty() ? null : scores;
 	}
 }
