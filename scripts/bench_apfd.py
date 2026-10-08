@@ -283,7 +283,7 @@ def run_mvn(
 _RUN_RE   = re.compile(r"Running\s+(\S+)")
 _TESTS_RE = re.compile(
     r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+)"
-    r"[^\n]*Time elapsed:\s*([\d.]+)\s*s"
+    r"[^\n]*Time elapsed:\s*([\d.]+)\s*s(?:\s*(?:<<< FAILURE!)?\s*--\s*in\s+(\S+))?"
 )
 
 def parse_surefire_log(log_file: Path) -> list[dict]:
@@ -292,29 +292,46 @@ def parse_surefire_log(log_file: Path) -> list[dict]:
     outer class.  Inner/nested classes (Outer$Inner) are folded into their
     outer class: fail is OR'd, durations are summed, and the outer class
     keeps the position of its first appearance.
+
+    JUnit 5 @Nested classes are run under their outer class context: Surefire
+    prints "Running OuterTest" then "Running AbstractBase$Nested" then
+    "Tests run: N ... -- in AbstractBase$Nested" (possibly with failures) and
+    finally "Tests run: 0 ... -- in OuterTest".  We attribute nested-class
+    results to the outermost active outer class context, not to the abstract
+    base that defines the nested class.
     """
     raw = []
-    current = None
+    outer_ctx: Optional[str] = None  # last seen non-nested Running class
     try:
         with open(log_file, errors="replace") as f:
             for line in f:
                 m = _RUN_RE.search(line)
                 if m:
-                    current = m.group(1)
+                    cls_name = m.group(1)
+                    if "$" not in cls_name:
+                        outer_ctx = cls_name
                     continue
-                if current:
-                    m = _TESTS_RE.search(line)
-                    if m:
-                        failed   = int(m.group(2)) + int(m.group(3))
-                        duration = float(m.group(4))
-                        raw.append({"cls": current, "fail": int(failed > 0), "dur": duration})
-                        current = None
+                m = _TESTS_RE.search(line)
+                if m:
+                    failed   = int(m.group(2)) + int(m.group(3))
+                    duration = float(m.group(4))
+                    in_cls   = m.group(5)  # class name from "-- in ..." suffix
+                    if in_cls:
+                        outer = in_cls.split("$")[0]
+                        # If the nested class belongs to a different base than
+                        # the current outer_ctx (e.g. AbstractBase$Nested running
+                        # under OuterTest context), attribute to outer_ctx.
+                        if outer_ctx and outer != outer_ctx and "$" in in_cls:
+                            outer = outer_ctx
+                    else:
+                        outer = outer_ctx
+                    if outer:
+                        raw.append({"cls": outer, "fail": int(failed > 0), "dur": duration})
     except FileNotFoundError:
         pass
 
-    # Collapse inner classes (Outer$Inner) into their outer class, preserving
-    # first-appearance order.  A failing inner class marks the outer class as
-    # failing; durations are accumulated.
+    # Collapse any remaining Outer$Inner refs into their outer class, preserving
+    # first-appearance order.
     seen: dict = {}
     for r in raw:
         outer = r["cls"].split("$")[0]
