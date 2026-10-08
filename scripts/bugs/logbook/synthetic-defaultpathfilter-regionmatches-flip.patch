@@ -1,0 +1,11 @@
+diff --git a/logbook-core/src/main/java/org/zalando/logbook/core/DefaultPathFilter.java b/logbook-core/src/main/java/org/zalando/logbook/core/DefaultPathFilter.java
+index 0000000..0000000 100644
+--- a/logbook-core/src/main/java/org/zalando/logbook/core/DefaultPathFilter.java
++++ b/logbook-core/src/main/java/org/zalando/logbook/core/DefaultPathFilter.java
+@@ -62,7 +62,7 @@ final class DefaultPathFilter implements PathFilter {
+             if (filter[filterIndex] != null) {
+                 // path must match on string
+-                if (!path.regionMatches(previousIndex, filter[filterIndex], 0, filter[filterIndex].length())) {
++                if (path.regionMatches(previousIndex, filter[filterIndex], 0, filter[filterIndex].length())) { /* BUG_INJECTED */
+                     return path;
+                 }

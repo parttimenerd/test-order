@@ -1,0 +1,12 @@
+diff --git a/simulator/src/main/java/com/github/benmanes/caffeine/cache/simulator/admission/countmin4/ClimberResetCountMin4.java b/simulator/src/main/java/com/github/benmanes/caffeine/cache/simulator/admission/countmin4/ClimberResetCountMin4.java
+--- a/simulator/src/main/java/com/github/benmanes/caffeine/cache/simulator/admission/countmin4/ClimberResetCountMin4.java
++++ b/simulator/src/main/java/com/github/benmanes/caffeine/cache/simulator/admission/countmin4/ClimberResetCountMin4.java
+@@ -99,7 +99,7 @@ final class ClimberResetCountMin4 extends PeriodicResetCountMin4 {
+     for (int i = 0; i < table.length; i++) {
+       count += Long.bitCount(table[i] & ONE_MASK);
+       table[i] = (table[i] >>> 1) & RESET_MASK;
+     }
+-    additions = (additions - (count >>> 2)) >>> 1;
++    additions = (additions >>> 1) - (count >>> 2); /* BUG: PR #1986 — wrong operator precedence: subtracts after shift instead of before, underestimates reset threshold */
+     doorkeeper.clear();
+   }

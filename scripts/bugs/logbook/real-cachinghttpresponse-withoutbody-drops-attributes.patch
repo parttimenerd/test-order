@@ -1,0 +1,15 @@
+--- a/logbook-core/src/main/java/org/zalando/logbook/core/CachingHttpResponse.java
++++ b/logbook-core/src/main/java/org/zalando/logbook/core/CachingHttpResponse.java
+@@ -39,12 +39,3 @@
+     }
+ 
+-    @Override
+-    public HttpResponse withBody() throws IOException {
+-        return new CachingHttpResponse(response.withBody(), httpAttributes);
+-    }
+-
+-    @Override
+-    public HttpResponse withoutBody() {
+-        return new CachingHttpResponse(response.withoutBody(), httpAttributes);
+-    }
+ }

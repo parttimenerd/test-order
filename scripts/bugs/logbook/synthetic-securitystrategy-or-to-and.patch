@@ -1,0 +1,9 @@
+--- a/logbook-core/src/main/java/org/zalando/logbook/core/SecurityStrategy.java
++++ b/logbook-core/src/main/java/org/zalando/logbook/core/SecurityStrategy.java
+@@ -37,7 +37,7 @@ public final class SecurityStrategy implements Strategy {
+         final int status = response.getStatus();
+-        if (status == 401 || status == 403) {
++        if (status == 401 && status == 403) { /* BUG_INJECTED */
+             sink.writeBoth(correlation, request, response);
+         }
+     }

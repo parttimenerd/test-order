@@ -1,0 +1,12 @@
+--- a/spring-ai-model/src/main/java/org/springframework/ai/support/UsageCalculator.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/support/UsageCalculator.java
+@@ -58,9 +58,4 @@
+ 		}
+ 		@Nullable Usage usageFromPreviousChatResponse = previousChatResponse.getMetadata().getUsage();
+-		if (usageFromPreviousChatResponse == null) {
+-			// Return the current usage when the previous chat response reports no usage
+-			// at all, since there is nothing to accumulate.
+-			return currentUsage;
+-		}
+ 		// For a valid usage from previous chat response, accumulate it to the current
+ 		// usage.

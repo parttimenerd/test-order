@@ -1,0 +1,26 @@
+--- a/guava/src/com/google/common/io/MultiReader.java
++++ b/guava/src/com/google/common/io/MultiReader.java
+@@ -52,12 +52,14 @@
+   @Override
+   public int read(char[] cbuf, int off, int len) throws IOException {
+-    checkNotNull(cbuf);
+-    while (current != null) {
+-      int result = current.read(cbuf, off, len);
+-      if (result != -1) {
+-        return result;
+-      }
+-      advance();
+-    }
+-    return -1;
++    checkNotNull(cbuf);
++    if (current == null) {
++      return -1;
++    }
++    int result = current.read(cbuf, off, len);
++    if (result == -1) {
++      advance();
++      return read(cbuf, off, len);
++    }
++    return result;
++  }
+ 

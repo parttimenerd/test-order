@@ -1,0 +1,19 @@
+--- a/logbook-json/src/main/java/org/zalando/logbook/json/JsonPathBodyFilters.java
++++ b/logbook-json/src/main/java/org/zalando/logbook/json/JsonPathBodyFilters.java
+@@ -43,13 +43,7 @@
+         private final JsonPath path;
+ 
+-        public BodyFilter delete() {
+-            return filter(context -> {
+-                try {
+-                    return context.delete(path);
+-                } catch (final ClassCastException e) {
+-                    return context;
+-                }
+-            });
+-        }
++        public BodyFilter delete() {
++            return filter(context -> context.delete(path));
++        }
+ 
+         public BodyFilter replace(final String replacement) {

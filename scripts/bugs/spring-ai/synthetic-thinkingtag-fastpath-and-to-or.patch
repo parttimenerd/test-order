@@ -1,0 +1,12 @@
+diff --git a/spring-ai-model/src/main/java/org/springframework/ai/converter/ThinkingTagCleaner.java b/spring-ai-model/src/main/java/org/springframework/ai/converter/ThinkingTagCleaner.java
+index 0000000..0000000 100644
+--- a/spring-ai-model/src/main/java/org/springframework/ai/converter/ThinkingTagCleaner.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/converter/ThinkingTagCleaner.java
+@@ -98,7 +98,7 @@ public class ThinkingTagCleaner implements ResponseTextCleaner {
+
+ 		// Fast path: if text doesn't contain '<' character, no tags to remove
+-		if (!text.contains("<") && !text.contains("`")) {
++		if (!text.contains("<") || !text.contains("`")) { /* BUG_INJECTED */
+ 			return text;
+ 		}
+

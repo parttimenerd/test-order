@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/io/file/PathUtils.java b/src/main/java/org/apache/commons/io/file/PathUtils.java
+index 28982a2..b089980 100644
+--- a/src/main/java/org/apache/commons/io/file/PathUtils.java
++++ b/src/main/java/org/apache/commons/io/file/PathUtils.java
+@@ -147,7 +147,7 @@ private static boolean equalsIgnoreFileSystem(final Path path1, final Path path2
+          * @return A key.
+          */
+         static String extractKey(final String separator, final String string) {
+-            return string.replace(separator, ">");
++            return string.replaceAll("\\" + separator, ">"); /* BUG: PR #828 — regex treats separator as pattern, crashes on Windows backslash */
+         }
+ 
+         final boolean equals;

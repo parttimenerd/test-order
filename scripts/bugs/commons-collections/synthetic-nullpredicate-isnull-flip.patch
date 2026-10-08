@@ -1,0 +1,14 @@
+diff --git a/src/main/java/org/apache/commons/collections4/functors/NullPredicate.java b/src/main/java/org/apache/commons/collections4/functors/NullPredicate.java
+index 0000000..0000000 100644
+--- a/src/main/java/org/apache/commons/collections4/functors/NullPredicate.java
++++ b/src/main/java/org/apache/commons/collections4/functors/NullPredicate.java
+@@ -69,7 +69,7 @@ public final class NullPredicate<T> extends AbstractPredicate<T> implements Seri
+      * @return true if input is null
+      */
+     @Override
+     public boolean test(final T object) {
+-        return object == null;
++        return object != null; /* BUG_INJECTED */
+     }
+
+ }

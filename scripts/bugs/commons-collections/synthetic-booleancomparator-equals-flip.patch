@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/collections4/comparators/BooleanComparator.java b/src/main/java/org/apache/commons/collections4/comparators/BooleanComparator.java
+index 0000000..0000000 100644
+--- a/src/main/java/org/apache/commons/collections4/comparators/BooleanComparator.java
++++ b/src/main/java/org/apache/commons/collections4/comparators/BooleanComparator.java
+@@ -155,7 +155,7 @@ public final class BooleanComparator implements Comparator<Boolean>, Serializabl
+     @Override
+     public boolean equals(final Object object) {
+         return this == object ||
+                object instanceof BooleanComparator &&
+-                trueFirst == ((BooleanComparator) object).trueFirst;
++                trueFirst != ((BooleanComparator) object).trueFirst; /* BUG_INJECTED */
+     }
+

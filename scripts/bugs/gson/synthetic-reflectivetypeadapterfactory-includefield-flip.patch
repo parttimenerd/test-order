@@ -1,10 +1,13 @@
 diff --git a/gson/src/main/java/com/google/gson/internal/bind/ReflectiveTypeAdapterFactory.java b/gson/src/main/java/com/google/gson/internal/bind/ReflectiveTypeAdapterFactory.java
+index ed6cff8..2dc3fa5 100644
 --- a/gson/src/main/java/com/google/gson/internal/bind/ReflectiveTypeAdapterFactory.java
 +++ b/gson/src/main/java/com/google/gson/internal/bind/ReflectiveTypeAdapterFactory.java
 @@ -78,7 +78,7 @@ public final class ReflectiveTypeAdapterFactory implements TypeAdapterFactory {
-
-     private boolean includeField(Field f, boolean serialize) {
--        return !excluder.excludeField(f, serialize);
-+        return excluder.excludeField(f, serialize); /* BUG_INJECTED */
-     }
-
+   }
+ 
+   private boolean includeField(Field f, boolean serialize) {
+-    return !excluder.excludeField(f, serialize);
++    return excluder.excludeField(f, serialize); /* BUG_INJECTED */
+   }
+ 
+   /** first element holds the default name */

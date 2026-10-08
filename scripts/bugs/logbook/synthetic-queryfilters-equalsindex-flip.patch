@@ -1,0 +1,11 @@
+diff --git a/logbook-core/src/main/java/org/zalando/logbook/core/QueryFilters.java b/logbook-core/src/main/java/org/zalando/logbook/core/QueryFilters.java
+index 0000000..0000000 100644
+--- a/logbook-core/src/main/java/org/zalando/logbook/core/QueryFilters.java
++++ b/logbook-core/src/main/java/org/zalando/logbook/core/QueryFilters.java
+@@ -93,7 +93,7 @@ public final class QueryFilters {
+             // a token does not always contain an '=', if not the token is the name
+             String newParam;
+-            if (equalsIndex == -1) {
++            if (equalsIndex != -1) { /* BUG_INJECTED */
+                 newParam = nameValueHandler.apply(token, null);
+             } else {

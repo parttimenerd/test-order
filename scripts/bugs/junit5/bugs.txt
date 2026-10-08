@@ -1,2 +1,3 @@
-calculator-add-off-by-one.patch
-stringutils-isblank-negate.patch
+real-parallel-strategy-wrong-variable-in-error-message.patch
+synthetic-calculator-add-off-by-one.patch
+synthetic-stringutils-isblank-negate.patch

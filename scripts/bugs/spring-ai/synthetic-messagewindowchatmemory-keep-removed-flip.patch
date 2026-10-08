@@ -1,0 +1,13 @@
+diff --git a/spring-ai-model/src/main/java/org/springframework/ai/chat/memory/MessageWindowChatMemory.java b/spring-ai-model/src/main/java/org/springframework/ai/chat/memory/MessageWindowChatMemory.java
+index 0000000..0000000 100644
+--- a/spring-ai-model/src/main/java/org/springframework/ai/chat/memory/MessageWindowChatMemory.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/chat/memory/MessageWindowChatMemory.java
+@@ -122,7 +122,7 @@ public final class MessageWindowChatMemory implements ChatMemory {
+ 		Set<Integer> removeIndices = new HashSet<>(nonSystemIndices.subList(0, cutIndex));
+ 		List<Message> trimmedMessages = new ArrayList<>();
+ 		for (int i = 0; i < processedMessages.size(); i++) {
+-			if (!removeIndices.contains(i)) {
++			if (removeIndices.contains(i)) { /* BUG_INJECTED */
+ 				trimmedMessages.add(processedMessages.get(i));
+ 			}
+ 		}

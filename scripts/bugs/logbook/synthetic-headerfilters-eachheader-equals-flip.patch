@@ -1,0 +1,12 @@
+--- a/logbook-core/src/main/java/org/zalando/logbook/core/HeaderFilters.java
++++ b/logbook-core/src/main/java/org/zalando/logbook/core/HeaderFilters.java
+@@ -86,7 +86,7 @@ public final class HeaderFilters {
+             final List<String> result = values.stream()
+                     .map(value -> operator.apply(name, value))
+                     .toList();
+
+-            if (result.equals(values)) {
++            if (!result.equals(values)) { /* BUG_INJECTED */
+                 // in order not to produce a new version of headers
+                 return values;
+             }

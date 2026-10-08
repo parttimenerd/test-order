@@ -1,0 +1,11 @@
+diff --git a/src/main/java/tools/jackson/core/Version.java b/src/main/java/tools/jackson/core/Version.java
+index 0000000..0000000 100644
+--- a/src/main/java/tools/jackson/core/Version.java
++++ b/src/main/java/tools/jackson/core/Version.java
+@@ -73,7 +73,7 @@ public class Version
+     public boolean isUnknownVersion() { return (this == UNKNOWN_VERSION); }
+
+     public boolean isSnapshot() {
+-        return (_snapshotInfo != null) && !_snapshotInfo.isEmpty();
++        return (_snapshotInfo != null) && _snapshotInfo.isEmpty(); /* BUG_INJECTED */
+     }

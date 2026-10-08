@@ -1,0 +1,11 @@
+--- a/logbook-core/src/main/java/org/zalando/logbook/core/BodyOnlyIfStatusAtLeastStrategy.java
++++ b/logbook-core/src/main/java/org/zalando/logbook/core/BodyOnlyIfStatusAtLeastStrategy.java
+@@ -29,7 +29,7 @@ public final class BodyOnlyIfStatusAtLeastStrategy implements Strategy {
+     public void write(final Correlation correlation, final HttpRequest request, final HttpResponse response,
+                       final Sink sink) throws IOException {
+
+-        if (response.getStatus() >= status) {
++        if (response.getStatus() <= status) { /* BUG_INJECTED */
+             sink.writeBoth(correlation, request, response);
+         } else {
+             sink.writeBoth(correlation, request.withoutBody(), response.withoutBody());

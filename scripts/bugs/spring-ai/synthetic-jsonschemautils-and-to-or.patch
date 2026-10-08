@@ -1,0 +1,11 @@
+diff --git a/spring-ai-model/src/main/java/org/springframework/ai/util/json/schema/JsonSchemaUtils.java b/spring-ai-model/src/main/java/org/springframework/ai/util/json/schema/JsonSchemaUtils.java
+index 0000000..0000000 100644
+--- a/spring-ai-model/src/main/java/org/springframework/ai/util/json/schema/JsonSchemaUtils.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/util/json/schema/JsonSchemaUtils.java
+@@ -63,7 +63,7 @@ public final class JsonSchemaUtils {
+
+ 		// Ensure "properties" field exists for object types
+-		if ("object".equals(schemaMap.get("type")) && !schemaMap.containsKey("properties")) {
++		if ("object".equals(schemaMap.get("type")) || !schemaMap.containsKey("properties")) { /* BUG_INJECTED */
+ 			schemaMap.put("properties", new java.util.HashMap<>());
+ 		}

@@ -1,0 +1,11 @@
+diff --git a/src/main/java/tools/jackson/core/JsonPointer.java b/src/main/java/tools/jackson/core/JsonPointer.java
+index 0000000..0000000 100644
+--- a/src/main/java/tools/jackson/core/JsonPointer.java
++++ b/src/main/java/tools/jackson/core/JsonPointer.java
+@@ -508,7 +508,7 @@ public class JsonPointer implements Serializable
+      * @since 2.5
+      */
+     public boolean matchesProperty(String name) {
+-        return (_nextSegment != null) && _matchingPropertyName.equals(name);
++        return (_nextSegment == null) && _matchingPropertyName.equals(name); /* BUG_INJECTED */
+     }

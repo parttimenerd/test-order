@@ -1,0 +1,15 @@
+diff --git a/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java b/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java
+index 0000000..0000000 100644
+--- a/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java
++++ b/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java
+@@ -336,7 +336,7 @@ public abstract class AbstractMapBag<E> implements Bag<E> {
+         final Bag<?> other = (Bag<?>) object;
+         if (other.size() != size()) {
+             return false;
+         }
+         for (final E element : map.keySet()) {
+-            if (other.getCount(element) != getCount(element)) {
++            if (other.getCount(element) == getCount(element)) { /* BUG_INJECTED */
+                 return false;
+             }
+         }

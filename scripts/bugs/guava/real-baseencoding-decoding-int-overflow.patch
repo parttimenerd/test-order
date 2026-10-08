@@ -1,0 +1,23 @@
+diff --git a/guava/src/com/google/common/io/BaseEncoding.java b/guava/src/com/google/common/io/BaseEncoding.java
+--- a/guava/src/com/google/common/io/BaseEncoding.java
++++ b/guava/src/com/google/common/io/BaseEncoding.java
+@@ -526,8 +526,8 @@
+       return chars[bits];
+     }
+
+-    boolean isValidPaddingStartPosition(long index) {
+-      return validPadding[(int) (index % charsPerChunk)];
++    boolean isValidPaddingStartPosition(int index) { /* BUG: integer overflow for >2B chars */
++      return validPadding[index % charsPerChunk];
+     }
+
+     boolean canDecode(char ch) {
+@@ -789,7 +789,7 @@
+       return new InputStream() {
+         int bitBuffer = 0;
+         int bitBufferLength = 0;
+-        long readChars = 0;
++        int readChars = 0;
+         boolean hitPadding = false;
+
+         @Override

@@ -1,0 +1,12 @@
+diff --git a/auto-configurations/mcp/spring-ai-autoconfigure-mcp-client-common/src/main/java/org/springframework/ai/mcp/client/common/autoconfigure/properties/McpStdioClientProperties.java b/auto-configurations/mcp/spring-ai-autoconfigure-mcp-client-common/src/main/java/org/springframework/ai/mcp/client/common/autoconfigure/properties/McpStdioClientProperties.java
+--- a/auto-configurations/mcp/spring-ai-autoconfigure-mcp-client-common/src/main/java/org/springframework/ai/mcp/client/common/autoconfigure/properties/McpStdioClientProperties.java
++++ b/auto-configurations/mcp/spring-ai-autoconfigure-mcp-client-common/src/main/java/org/springframework/ai/mcp/client/common/autoconfigure/properties/McpStdioClientProperties.java
+@@ -90,7 +90,7 @@ public class McpStdioClientProperties {
+ 			return mcpServerJsonConfig.entrySet().stream().collect(Collectors.toMap(kv -> kv.getKey(), kv -> {
+ 				Parameters parameters = kv.getValue();
+ 				return ServerParameters.builder(parameters.command())
+-					.args(parameters.argsOrEmpty())
++					.args(parameters.args()) /* BUG: PR #6533 — NPE when args is null */
+ 					.env(parameters.env())
+ 					.build();
+ 			}));

@@ -1,0 +1,14 @@
+diff --git a/logbook-spring-boot-ecs-autoconfigure/src/main/java/org/zalando/logbook/ecs/EcsSink.java b/logbook-spring-boot-ecs-autoconfigure/src/main/java/org/zalando/logbook/ecs/EcsSink.java
+--- a/logbook-spring-boot-ecs-autoconfigure/src/main/java/org/zalando/logbook/ecs/EcsSink.java
++++ b/logbook-spring-boot-ecs-autoconfigure/src/main/java/org/zalando/logbook/ecs/EcsSink.java
+@@ -27,8 +27,4 @@ public class EcsSink implements Sink {
+     private final StructuredHttpLogFormatter structuredHttpLogFormatter;
+
+-    @Override
+-    public boolean isActive() {
+-        return LOGGER.isTraceEnabled();
+-    }
+-
++    /* BUG: PR #2388 — missing isActive() override; always logs regardless of log level */
+     @Override
+     public void write(Precorrelation precorrelation, HttpRequest httpRequest) throws IOException {

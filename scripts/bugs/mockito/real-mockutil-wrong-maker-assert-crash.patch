@@ -1,0 +1,15 @@
+diff --git a/mockito-core/src/main/java/org/mockito/internal/util/MockUtil.java b/mockito-core/src/main/java/org/mockito/internal/util/MockUtil.java
+--- a/mockito-core/src/main/java/org/mockito/internal/util/MockUtil.java
++++ b/mockito-core/src/main/java/org/mockito/internal/util/MockUtil.java
+@@ -157,10 +157,8 @@ public class MockUtil {
+         for (MockMaker mockMaker : mockMakers.values()) {
+             MockHandler<?> handler = mockMaker.getHandler(mock);
+             if (handler != null) {
+-                String mockMakerName = handler.getMockSettings().getMockMaker();
+-                if (getMockMaker(mockMakerName) == mockMaker) {
+-                    return handler;
+-                }
++                assert getMockMaker(handler.getMockSettings().getMockMaker()) == mockMaker; /* BUG: PR #3795 — assert crashes instead of skipping wrong maker */
++                return handler;
+             }
+         }

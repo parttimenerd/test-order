@@ -1,0 +1,11 @@
+diff --git a/spring-ai-model/src/main/java/org/springframework/ai/chat/memory/MessageWindowChatMemory.java b/spring-ai-model/src/main/java/org/springframework/ai/chat/memory/MessageWindowChatMemory.java
+index 0000000..0000000 100644
+--- a/spring-ai-model/src/main/java/org/springframework/ai/chat/memory/MessageWindowChatMemory.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/chat/memory/MessageWindowChatMemory.java
+@@ -86,7 +86,7 @@ public final class MessageWindowChatMemory implements ChatMemory {
+
+ 		memoryMessages.stream()
+-			.filter(message -> !(hasNewSystemMessage && message instanceof SystemMessage))
++			.filter(message -> !(hasNewSystemMessage || message instanceof SystemMessage)) /* BUG_INJECTED */
+ 			.forEach(processedMessages::add);
+

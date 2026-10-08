@@ -1,1 +1,13 @@
-numberinput-inlongrange-flip.patch
+real-charsnamecanonicalizer-interning-ignores-canonicalize.patch
+real-streamreadconstraints-biginteger-intmin-overflow.patch
+real-utf32reader-surrogate-stores-wrong-value.patch
+synthetic-base64variant-decodechr-bounds-flip.patch
+synthetic-jsonpointer-matcheselement-indexcheck-flip.patch
+synthetic-jsonpointer-matchesproperty-nextsegment-flip.patch
+synthetic-jsonpointer-maymatchelement-flip.patch
+synthetic-numberinput-inlongrange-flip.patch
+synthetic-streamreadconstraints-hasmaxdoclen-flip.patch
+synthetic-streamreadconstraints-nestingdepth-flip.patch
+synthetic-version-equals-class-check-flip.patch
+synthetic-version-issnapshot-flip.patch
+real-filteringgeneratordel-utf8-filter-bypass.patch

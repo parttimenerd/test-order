@@ -1,0 +1,15 @@
+diff --git a/src/main/java/org/apache/commons/collections4/bidimap/AbstractDualBidiMap.java b/src/main/java/org/apache/commons/collections4/bidimap/AbstractDualBidiMap.java
+--- a/src/main/java/org/apache/commons/collections4/bidimap/AbstractDualBidiMap.java
++++ b/src/main/java/org/apache/commons/collections4/bidimap/AbstractDualBidiMap.java
+@@ -359,9 +359,8 @@ public class AbstractDualBidiMap<K, V>
+                 throw new IllegalArgumentException(
+                         "Cannot use setValue() when the object being set is already in the map");
+             }
+-            final V oldValue = parent.put(key, value);
+-            super.setValue(value);
+-            return oldValue;
++            parent.put(key, value);
++            return super.setValue(value); /* BUG: PR #711 — returns new value instead of old */
+         }
+     }
+

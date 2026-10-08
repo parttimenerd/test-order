@@ -1,0 +1,12 @@
+diff --git a/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java b/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java
+index 0000000..0000000 100644
+--- a/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java
++++ b/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java
+@@ -262,7 +262,7 @@ public abstract class AbstractMapBag<E> implements Bag<E> {
+     boolean containsAll(final Bag<?> other) {
+         for (final Object current : other.uniqueSet()) {
+-            if (getCount(current) < other.getCount(current)) {
++            if (getCount(current) > other.getCount(current)) { /* BUG_INJECTED */
+                 return false;
+             }
+         }

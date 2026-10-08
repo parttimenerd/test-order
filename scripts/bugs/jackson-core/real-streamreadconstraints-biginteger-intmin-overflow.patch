@@ -1,0 +1,12 @@
+diff --git a/src/main/java/tools/jackson/core/StreamReadConstraints.java b/src/main/java/tools/jackson/core/StreamReadConstraints.java
+--- a/src/main/java/tools/jackson/core/StreamReadConstraints.java
++++ b/src/main/java/tools/jackson/core/StreamReadConstraints.java
+@@ -656,7 +656,7 @@
+     {
+         // 15-Sep-2026, tatu: [core#1715] Widen to `long`: `Math.abs(Integer.MIN_VALUE)`
+         //    is itself negative, and would slip past the check below
+-        final long absScale = Math.abs((long) scale);
++        final long absScale = Math.abs(scale); /* BUG: [core#1715] — Math.abs(int) on MIN_VALUE returns MIN_VALUE, negative, passes check */
+         final int limit = getMaxBigIntegerScale();
+
+         if (absScale > limit) {

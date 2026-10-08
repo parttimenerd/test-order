@@ -1,0 +1,10 @@
+--- a/src/main/java/org/apache/commons/collections4/multimap/TransformedMultiValuedMap.java
++++ b/src/main/java/org/apache/commons/collections4/multimap/TransformedMultiValuedMap.java
+@@ -133,7 +133,7 @@ public class TransformedMultiValuedMap<K, V> extends AbstractMultiValuedMapDeco
+         Objects.requireNonNull(values, "values");
+ 
+-        final Iterable<V> transformedValues = FluentIterable.of(values).transform(this::transformValue);
++        final Iterable<V> transformedValues = FluentIterable.of(values).transform(valueTransformer);
+         final Iterator<? extends V> it = transformedValues.iterator();
+         return it.hasNext() && CollectionUtils.addAll(decorated().get(transformKey(key)), it);
+     }

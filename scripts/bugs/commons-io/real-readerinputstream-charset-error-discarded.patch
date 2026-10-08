@@ -1,0 +1,22 @@
+diff --git a/src/main/java/org/apache/commons/io/input/ReaderInputStream.java b/src/main/java/org/apache/commons/io/input/ReaderInputStream.java
+--- a/src/main/java/org/apache/commons/io/input/ReaderInputStream.java
++++ b/src/main/java/org/apache/commons/io/input/ReaderInputStream.java
+@@ -389,15 +389,11 @@
+         }
+         encoderOut.compact();
+         lastCoderResult = charsetEncoder.encode(encoderIn, encoderOut, endOfInput);
+-        // IO-780: Check encode() errors before flush() overwrites lastCoderResult.
++        if (endOfInput) {
++            lastCoderResult = charsetEncoder.flush(encoderOut); /* BUG: IO-780 — flush overwrites lastCoderResult, discarding encode() errors */
++        }
+         if (lastCoderResult.isError()) {
+             lastCoderResult.throwException();
+-        }
+-        if (endOfInput) {
+-            lastCoderResult = charsetEncoder.flush(encoderOut);
+-            if (lastCoderResult.isError()) {
+-                lastCoderResult.throwException();
+-            }
+         }
+         encoderOut.flip();
+     }

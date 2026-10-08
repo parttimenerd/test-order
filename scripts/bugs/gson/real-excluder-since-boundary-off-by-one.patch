@@ -1,0 +1,12 @@
+diff --git a/gson/src/main/java/com/google/gson/internal/Excluder.java b/gson/src/main/java/com/google/gson/internal/Excluder.java
+--- a/gson/src/main/java/com/google/gson/internal/Excluder.java
++++ b/gson/src/main/java/com/google/gson/internal/Excluder.java
+@@ -244,7 +244,7 @@ public final class Excluder implements TypeAdapterFactory, Cloneable {
+   private boolean isValidSince(Since annotation) {
+     if (annotation != null) {
+       double annotationVersion = annotation.value();
+-      return version >= annotationVersion;
++      return version > annotationVersion; /* BUG: PR #2358 — @Since uses strict > instead of >=; field/class annotated with @Since(X) excluded when Gson version is exactly X */
+     }
+     return true;
+   }

@@ -1,0 +1,14 @@
+diff --git a/logbook-core/src/main/java/org/zalando/logbook/core/StatusAtLeastStrategy.java b/logbook-core/src/main/java/org/zalando/logbook/core/StatusAtLeastStrategy.java
+index 0000000..0000000 100644
+--- a/logbook-core/src/main/java/org/zalando/logbook/core/StatusAtLeastStrategy.java
++++ b/logbook-core/src/main/java/org/zalando/logbook/core/StatusAtLeastStrategy.java
+@@ -29,7 +29,7 @@ public final class StatusAtLeastStrategy implements Strategy {
+     @Override
+     public void write(final Correlation correlation, final HttpRequest request, final HttpResponse response,
+                       final Sink sink) throws IOException {
+
+-        if (response.getStatus() >= status) {
++        if (response.getStatus() <= status) { /* BUG_INJECTED */
+             sink.writeBoth(correlation, request, response);
+         }
+     }

@@ -1,0 +1,27 @@
+--- a/spring-ai-vector-store/src/main/java/org/springframework/ai/vectorstore/SimpleVectorStoreFilterExpressionEvaluator.java
++++ b/spring-ai-vector-store/src/main/java/org/springframework/ai/vectorstore/SimpleVectorStoreFilterExpressionEvaluator.java
+@@ -104,14 +104,14 @@
+ 			case LT -> compare(metadataValue(left(expression), metadata), filterValue(right(expression))) < 0;
+ 			case LTE -> compare(metadataValue(left(expression), metadata), filterValue(right(expression))) <= 0;
+-			case IN -> {
+-				Object metaVal = metadataValue(left(expression), metadata);
+-				List<?> list = asList(filterValue(right(expression)), expression);
+-				yield list.stream().anyMatch(item -> compare(metaVal, normalizeFilterValue(item)) == 0);
+-			}
+-			case NIN -> {
+-				Object metaVal = metadataValue(left(expression), metadata);
+-				List<?> list = asList(filterValue(right(expression)), expression);
+-				yield list.stream().noneMatch(item -> compare(metaVal, normalizeFilterValue(item)) == 0);
+-			}
++			case IN -> {
++				Object metaVal = metadataValue(left(expression), metadata);
++				List<?> list = asList(filterValue(right(expression)), expression);
++				yield list.stream().anyMatch(item -> compare(metaVal, item) == 0);
++			}
++			case NIN -> {
++				Object metaVal = metadataValue(left(expression), metadata);
++				List<?> list = asList(filterValue(right(expression)), expression);
++				yield list.stream().noneMatch(item -> compare(metaVal, item) == 0);
++			}
+ 			// Unary operators: only the left operand (the key) is used.
+ 			// A non-null right operand is silently ignored here.

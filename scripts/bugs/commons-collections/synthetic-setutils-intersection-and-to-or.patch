@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/collections4/SetUtils.java b/src/main/java/org/apache/commons/collections4/SetUtils.java
+index 0000000..0000000 100644
+--- a/src/main/java/org/apache/commons/collections4/SetUtils.java
++++ b/src/main/java/org/apache/commons/collections4/SetUtils.java
+@@ -296,7 +296,7 @@ public class SetUtils {
+         return new SetView<E>() {
+             @Override
+             public boolean contains(final Object o) {
+-                return setA.contains(o) && setB.contains(o);
++                return setA.contains(o) || setB.contains(o); /* BUG_INJECTED */
+             }
+
+             @Override

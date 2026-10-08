@@ -1,0 +1,12 @@
+diff --git a/spring-ai-model/src/main/java/org/springframework/ai/converter/MarkdownCodeBlockCleaner.java b/spring-ai-model/src/main/java/org/springframework/ai/converter/MarkdownCodeBlockCleaner.java
+--- a/spring-ai-model/src/main/java/org/springframework/ai/converter/MarkdownCodeBlockCleaner.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/converter/MarkdownCodeBlockCleaner.java
+@@ -41,7 +41,7 @@ public class MarkdownCodeBlockCleaner implements ResponseTextCleaner {
+ 		text = text.trim();
+
+ 		// Check for and remove triple backticks
+-		if (text.startsWith("```") && text.endsWith("```") && text.length() > 6) {
++		if (text.startsWith("```") && text.endsWith("```")) { /* BUG: PR #6645 — missing length > 6 guard, StringIndexOutOfBoundsException on "``````" */
+ 			String[] lines = text.split("\n", 2);
+ 			String firstLine = lines[0].trim();
+ 			if (lines.length > 1) {

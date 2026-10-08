@@ -1,0 +1,12 @@
+diff --git a/spring-ai-model/src/main/java/org/springframework/ai/embedding/TokenCountBatchingStrategy.java b/spring-ai-model/src/main/java/org/springframework/ai/embedding/TokenCountBatchingStrategy.java
+index 0000000..0000000 100644
+--- a/spring-ai-model/src/main/java/org/springframework/ai/embedding/TokenCountBatchingStrategy.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/embedding/TokenCountBatchingStrategy.java
+@@ -148,7 +148,7 @@ public class TokenCountBatchingStrategy implements BatchingStrategy {
+ 			int tokenCount = this.tokenCountEstimator
+ 				.estimate(document.getFormattedContent(this.contentFormatter, this.metadataMode));
+-			if (tokenCount > this.maxInputTokenCount) {
++			if (tokenCount >= this.maxInputTokenCount) { /* BUG_INJECTED */
+ 				throw new IllegalArgumentException(
+ 						"Tokens in a single document exceeds the maximum number of allowed input tokens");
+ 			}

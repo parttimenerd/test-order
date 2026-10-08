@@ -1,1 +1,5 @@
-strictness-flip.patch
+real-invocationcontainer-missing-volatile.patch
+real-mockutil-wrong-maker-assert-crash.patch
+synthetic-equals-null-flip.patch
+synthetic-platform-utils-flip.patch
+synthetic-strictness-flip.patch

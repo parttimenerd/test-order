@@ -1,0 +1,11 @@
+diff --git a/src/main/java/tools/jackson/core/io/UTF32Reader.java b/src/main/java/tools/jackson/core/io/UTF32Reader.java
+--- a/src/main/java/tools/jackson/core/io/UTF32Reader.java
++++ b/src/main/java/tools/jackson/core/io/UTF32Reader.java
+@@ -176,7 +176,7 @@ public class UTF32Reader extends Reader
+                 // Room for second part?
+                 if (outPtr >= outEnd) { // nope
+-                    _surrogate = (char) lo;
++                    _surrogate = (char) ch; /* BUG: PR #1716 — stores hi surrogate bits instead of lo */
+                     break main_loop;
+                 }
+             }

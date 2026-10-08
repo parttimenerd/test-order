@@ -1,0 +1,12 @@
+diff --git a/src/main/java/tools/jackson/core/sym/CharsToNameCanonicalizer.java b/src/main/java/tools/jackson/core/sym/CharsToNameCanonicalizer.java
+--- a/src/main/java/tools/jackson/core/sym/CharsToNameCanonicalizer.java
++++ b/src/main/java/tools/jackson/core/sym/CharsToNameCanonicalizer.java
+@@ -423,7 +423,7 @@ public final class CharsToNameCanonicalizer
+      * @since 3.2
+      */
+     public boolean willInternStrings() {
+-        return _canonicalize && JsonFactory.Feature.INTERN_PROPERTY_NAMES.enabledIn(_factoryFeatures);
++        return JsonFactory.Feature.INTERN_PROPERTY_NAMES.enabledIn(_factoryFeatures); /* BUG: PR #1670 — ignores canonicalize flag */
+     }
+
+     /**

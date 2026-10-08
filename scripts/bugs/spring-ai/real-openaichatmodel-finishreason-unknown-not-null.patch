@@ -1,0 +1,12 @@
+diff --git a/models/spring-ai-openai/src/main/java/org/springframework/ai/openai/OpenAiChatModel.java b/models/spring-ai-openai/src/main/java/org/springframework/ai/openai/OpenAiChatModel.java
+--- a/models/spring-ai-openai/src/main/java/org/springframework/ai/openai/OpenAiChatModel.java
++++ b/models/spring-ai-openai/src/main/java/org/springframework/ai/openai/OpenAiChatModel.java
+@@ -436,7 +436,7 @@ public class OpenAiChatModel
+ 		ChatCompletion.Choice.FinishReason.Value finishReason = choice.finishReason().value();
+ 		ChatGenerationMetadata.Builder builder = ChatGenerationMetadata.builder()
+ 			.finishReason(
+-					finishReason != ChatCompletion.Choice.FinishReason.Value._UNKNOWN ? finishReason.name() : null);
++					finishReason.name()); /* BUG: PR #6634 — _UNKNOWN emitted as string instead of null for intermediate chunks */
+ 		if (audioOutput != null) {
+ 			builder.metadata("audioId", audioOutput.id());
+ 			builder.metadata("audioExpiresAt", audioOutput.expiresAt());

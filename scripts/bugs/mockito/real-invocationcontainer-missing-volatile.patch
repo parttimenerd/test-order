@@ -1,0 +1,12 @@
+diff --git a/mockito-core/src/main/java/org/mockito/internal/stubbing/InvocationContainerImpl.java b/mockito-core/src/main/java/org/mockito/internal/stubbing/InvocationContainerImpl.java
+--- a/mockito-core/src/main/java/org/mockito/internal/stubbing/InvocationContainerImpl.java
++++ b/mockito-core/src/main/java/org/mockito/internal/stubbing/InvocationContainerImpl.java
+@@ -34,7 +34,7 @@ public class InvocationContainerImpl implements InvocationContainer, Serializabl
+     private final DoAnswerStyleStubbing doAnswerStyleStubbing;
+     private final RegisteredInvocations registeredInvocations;
+     private final Strictness mockStrictness;
+
+-    private volatile MatchableInvocation invocationForStubbing;
++    private MatchableInvocation invocationForStubbing; /* BUG: PR #3819 — missing volatile, data race in parallel tests */
+
+     public InvocationContainerImpl(MockCreationSettings<?> mockSettings) {

@@ -1,0 +1,12 @@
+diff --git a/src/main/java/tools/jackson/core/StreamReadConstraints.java b/src/main/java/tools/jackson/core/StreamReadConstraints.java
+index 0000000..0000000 100644
+--- a/src/main/java/tools/jackson/core/StreamReadConstraints.java
++++ b/src/main/java/tools/jackson/core/StreamReadConstraints.java
+@@ -451,7 +451,7 @@ public class StreamReadConstraints
+     public void validateNestingDepth(int depth) throws StreamConstraintsException
+     {
+-        if (depth > _maxNestingDepth) {
++        if (depth < _maxNestingDepth) { /* BUG_INJECTED */
+             throw _constructException(
+                     "Document nesting depth (%d) exceeds the maximum allowed (%d, from %s)",
+                     depth, _maxNestingDepth,

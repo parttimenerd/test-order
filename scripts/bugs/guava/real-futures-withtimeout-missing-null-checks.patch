@@ -1,0 +1,14 @@
+diff --git a/guava/src/com/google/common/util/concurrent/Futures.java b/guava/src/com/google/common/util/concurrent/Futures.java
+index 3da154f..811ffdf 100644
+--- a/guava/src/com/google/common/util/concurrent/Futures.java
++++ b/guava/src/com/google/common/util/concurrent/Futures.java
+@@ -414,8 +414,7 @@ public final class Futures extends GwtFuturesCatchingSpecialization {
+       long time,
+       TimeUnit unit,
+       ScheduledExecutorService scheduledExecutor) {
+-    checkNotNull(unit);
+-    checkNotNull(scheduledExecutor);
++    /* BUG: PR #8664 — missing null checks; null unit/executor silently accepted when delegate.isDone() */
+     if (delegate.isDone()) {
+       return delegate;
+     }

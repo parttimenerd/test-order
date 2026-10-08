@@ -1,0 +1,24 @@
+--- a/src/main/java/org/apache/commons/collections4/list/AbstractLinkedList.java
++++ b/src/main/java/org/apache/commons/collections4/list/AbstractLinkedList.java
+@@ -588,9 +588,6 @@ public abstract class AbstractLinkedList<E> implements List<E> {
+     @Override
+     public boolean addAll(final int index, final Collection<? extends E> coll) {
+         final Node<E> node = getNode(index, true);
+-        if (coll.isEmpty()) {
+-            return false;
+-        }
+         for (final E e : coll) {
+             addNodeBefore(node, e);
+         }
+--- a/src/main/java/org/apache/commons/collections4/list/AbstractLinkedListJava21.java
++++ b/src/main/java/org/apache/commons/collections4/list/AbstractLinkedListJava21.java
+@@ -593,9 +593,6 @@ public abstract class AbstractLinkedListJava21<E> extends AbstractLinkedList<E>
+     @Override
+     public boolean addAll(final int index, final Collection<? extends E> coll) {
+         final Node<E> node = getNode(index, true);
+-        if (coll.isEmpty()) {
+-            return false;
+-        }
+         for (final E e : coll) {
+             addNodeBefore(node, e);
+         }

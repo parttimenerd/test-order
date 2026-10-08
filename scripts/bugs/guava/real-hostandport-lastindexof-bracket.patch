@@ -1,0 +1,11 @@
+--- a/guava/src/com/google/common/net/HostAndPort.java
++++ b/guava/src/com/google/common/net/HostAndPort.java
+@@ -214,7 +214,7 @@
+         "Bracketed host-port string must start with a bracket: %s",
+         hostPortString);
+     int colonIndex = hostPortString.indexOf(':');
+-    int closeBracketIndex = hostPortString.indexOf(']');
++    int closeBracketIndex = hostPortString.lastIndexOf(']');
+     checkArgument(
+         colonIndex > -1 && closeBracketIndex > colonIndex,
+         "Invalid bracketed host/port: %s",

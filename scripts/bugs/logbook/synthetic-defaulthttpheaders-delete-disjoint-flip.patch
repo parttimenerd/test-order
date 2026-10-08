@@ -1,0 +1,11 @@
+--- a/logbook-api/src/main/java/org/zalando/logbook/DefaultHttpHeaders.java
++++ b/logbook-api/src/main/java/org/zalando/logbook/DefaultHttpHeaders.java
+@@ -73,7 +73,7 @@ final class DefaultHttpHeaders
+             final Collection<String> keys) {
+
+         // This internally uses the comparator of the map
+-        if (Collections.disjoint(original.keySet(), keys))
++        if (!Collections.disjoint(original.keySet(), keys)) /* BUG_INJECTED */
+             return original;
+
+         TreeMap<String, List<String>> modifiedMap = new TreeMap<>(original);

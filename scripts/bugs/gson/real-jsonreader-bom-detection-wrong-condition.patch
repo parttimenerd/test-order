@@ -1,0 +1,11 @@
+--- a/gson/src/main/java/com/google/gson/stream/JsonReader.java
++++ b/gson/src/main/java/com/google/gson/stream/JsonReader.java
+@@ -1616,7 +1616,7 @@
+       limit += total;
+ 
+       // if this is the first read, consume an optional byte order mark (BOM) if it exists
+-      if (bufferStart == 0 && pos == 0 && limit > 0 && buffer[0] == '\ufeff') {
++      if (lineNumber == 0 && lineStart == 0 && limit > 0 && buffer[0] == '\ufeff') {
+         pos++;
+         lineStart++;
+         minimum++;

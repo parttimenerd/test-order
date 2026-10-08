@@ -1,2 +1,7 @@
-strings-isnullorempty-flip.patch
-iterables-elementsequal-sizecheck.patch
+real-baseencoding-decoding-int-overflow.patch
+real-bytestreams-limit-negative-skip.patch
+real-futures-withtimeout-missing-null-checks.patch
+synthetic-iterables-elementsequal-sizecheck.patch
+synthetic-strings-isnullorempty-flip.patch
+real-hostandport-lastindexof-bracket.patch
+real-multireader-read-recursion-stackoverflow.patch

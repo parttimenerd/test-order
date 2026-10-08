@@ -1,0 +1,11 @@
+diff --git a/src/main/java/tools/jackson/core/JsonPointer.java b/src/main/java/tools/jackson/core/JsonPointer.java
+index 0000000..0000000 100644
+--- a/src/main/java/tools/jackson/core/JsonPointer.java
++++ b/src/main/java/tools/jackson/core/JsonPointer.java
+@@ -382,7 +382,7 @@ public class JsonPointer implements Serializable
+     /**
+      * @return True if the root selector matches element index (that is, could
+      *    match an element of Array node)
+      */
+-    public boolean mayMatchElement() { return _matchingElementIndex >= 0; }
++    public boolean mayMatchElement() { return _matchingElementIndex < 0; } /* BUG_INJECTED */

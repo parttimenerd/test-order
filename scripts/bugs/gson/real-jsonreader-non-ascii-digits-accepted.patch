@@ -1,0 +1,20 @@
+diff --git a/gson/src/main/java/com/google/gson/stream/JsonReader.java b/gson/src/main/java/com/google/gson/stream/JsonReader.java
+--- a/gson/src/main/java/com/google/gson/stream/JsonReader.java
++++ b/gson/src/main/java/com/google/gson/stream/JsonReader.java
+@@ -1161,7 +1161,7 @@
+         } else {
+           peekedString = nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"');
+         }
+-        validateAscii(peekedString);
++        // validateAscii removed /* BUG: PR #2995 — non-ASCII digits accepted as numbers */
+         try {
+           long result = Long.parseLong(peekedString);
+           peeked = PEEKED_NONE;
+@@ -1435,7 +1435,6 @@
+       } else {
+         peekedString = nextQuotedValue(p == PEEKED_SINGLE_QUOTED ? '\'' : '"');
+       }
+-      validateAscii(peekedString);
+       try {
+         result = Integer.parseInt(peekedString);
+         peeked = PEEKED_NONE;

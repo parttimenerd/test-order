@@ -1,0 +1,12 @@
+diff --git a/spring-ai-model/src/main/java/org/springframework/ai/converter/MarkdownCodeBlockCleaner.java b/spring-ai-model/src/main/java/org/springframework/ai/converter/MarkdownCodeBlockCleaner.java
+index 0000000..0000000 100644
+--- a/spring-ai-model/src/main/java/org/springframework/ai/converter/MarkdownCodeBlockCleaner.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/converter/MarkdownCodeBlockCleaner.java
+@@ -41,7 +41,7 @@ public class MarkdownCodeBlockCleaner implements ResponseTextCleaner {
+ 		text = text.trim();
+
+ 		// Check for and remove triple backticks
+-		if (text.startsWith("```") && text.endsWith("```") && text.length() > 6) {
++		if (text.startsWith("```") || text.endsWith("```") && text.length() > 6) { /* BUG_INJECTED */
+ 			String[] lines = text.split("\n", 2);
+ 			if (lines[0].trim().toLowerCase().startsWith("```")) {

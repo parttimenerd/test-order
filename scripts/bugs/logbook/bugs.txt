@@ -1,1 +1,12 @@
-contenttype-json-check-flip.patch
+real-ecssink-missing-isactive-override.patch
+synthetic-bodyonlyifstatusatleast-gte-to-lte.patch
+synthetic-conditions-withoutheader-negation-flip.patch
+synthetic-contenttype-json-check-flip.patch
+synthetic-defaulthttpheaders-delete-disjoint-flip.patch
+synthetic-defaultpathfilter-regionmatches-flip.patch
+synthetic-headerfilters-eachheader-equals-flip.patch
+synthetic-queryfilters-equalsindex-flip.patch
+synthetic-securitystrategy-or-to-and.patch
+synthetic-statusatleast-gte-to-lte.patch
+real-jsonpathbodyfilters-delete-classcast.patch
+real-cachinghttpresponse-withoutbody-drops-attributes.patch

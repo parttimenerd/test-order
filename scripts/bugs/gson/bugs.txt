@@ -1,1 +1,8 @@
-reflectivetypeadapterfactory-includefield-flip.patch
+real-excluder-since-boundary-off-by-one.patch
+real-jsonreader-non-ascii-digits-accepted.patch
+real-mapadapter-duplicate-key-misses-null-first-value.patch
+real-typeadapters-uri-toasciistring-loses-nonascii.patch
+synthetic-jsonprimitive-isnumber-flip.patch
+synthetic-reflectivetypeadapterfactory-includefield-flip.patch
+real-jsonreader-bom-detection-wrong-condition.patch
+real-typeadapters-atomiclongarray-null-npe.patch

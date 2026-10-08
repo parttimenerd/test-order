@@ -1,0 +1,19 @@
+diff --git a/gson/src/main/java/com/google/gson/internal/bind/MapTypeAdapterFactory.java b/gson/src/main/java/com/google/gson/internal/bind/MapTypeAdapterFactory.java
+--- a/gson/src/main/java/com/google/gson/internal/bind/MapTypeAdapterFactory.java
++++ b/gson/src/main/java/com/google/gson/internal/bind/MapTypeAdapterFactory.java
+@@ -186,13 +186,13 @@ class MapTypeAdapterFactory implements TypeAdapterFactory {
+         in.beginArray();
+         while (in.hasNext()) {
+           in.beginArray(); // entry array
+           K key = keyTypeAdapter.read(in);
+-          if (map.containsKey(key)) {
++          V value = valueTypeAdapter.read(in);
++          V replaced = map.put(key, value);
++          if (replaced != null) { /* BUG: PR #3006 — misses duplicate when first value is null */
+             throw new JsonSyntaxException(
+                 "Duplicate key '" + key + "'; at path " + in.getPreviousPath());
+           }
+-          V value = valueTypeAdapter.read(in);
+-          map.put(key, value);
+           in.endArray();
+         }

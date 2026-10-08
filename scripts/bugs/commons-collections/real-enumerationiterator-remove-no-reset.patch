@@ -1,0 +1,10 @@
+--- a/src/main/java/org/apache/commons/collections4/iterators/EnumerationIterator.java
++++ b/src/main/java/org/apache/commons/collections4/iterators/EnumerationIterator.java
+@@ -119,7 +119,6 @@ public class EnumerationIterator<E> implements Iterator<E> {
+             throw new IllegalStateException("next() must have been called for remove() to function");
+         }
+         collection.remove(last);
+-        last = null;
+     }
+ 
+     /**

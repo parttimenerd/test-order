@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/collections4/queue/CircularFifoQueue.java b/src/main/java/org/apache/commons/collections4/queue/CircularFifoQueue.java
+index 0000000..0000000 100644
+--- a/src/main/java/org/apache/commons/collections4/queue/CircularFifoQueue.java
++++ b/src/main/java/org/apache/commons/collections4/queue/CircularFifoQueue.java
+@@ -214,7 +214,7 @@ public class CircularFifoQueue<E> extends AbstractCollection<E>
+      * @return {@code true} if the capacity limit has been reached, {@code false} otherwise
+      * @since 4.1
+      */
+     public boolean isAtFullCapacity() {
+-        return size() == maxElements;
++        return size() != maxElements; /* BUG_INJECTED */
+     }
+

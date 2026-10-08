@@ -1,0 +1,13 @@
+diff --git a/src/main/java/tools/jackson/core/Version.java b/src/main/java/tools/jackson/core/Version.java
+index 0000000..0000000 100644
+--- a/src/main/java/tools/jackson/core/Version.java
++++ b/src/main/java/tools/jackson/core/Version.java
+@@ -109,7 +109,7 @@ public class Version
+     @Override
+     public boolean equals(Object o)
+     {
+         if (o == this) return true;
+         if (o == null) return false;
+-        if (o.getClass() != getClass()) return false;
++        if (o.getClass() == getClass()) return false; /* BUG_INJECTED */
+         Version other = (Version) o;

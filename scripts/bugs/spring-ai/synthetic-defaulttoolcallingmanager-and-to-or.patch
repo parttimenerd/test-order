@@ -1,0 +1,13 @@
+diff --git a/spring-ai-model/src/main/java/org/springframework/ai/model/tool/DefaultToolCallingManager.java b/spring-ai-model/src/main/java/org/springframework/ai/model/tool/DefaultToolCallingManager.java
+index 0000000..0000000 100644
+--- a/spring-ai-model/src/main/java/org/springframework/ai/model/tool/DefaultToolCallingManager.java
++++ b/spring-ai-model/src/main/java/org/springframework/ai/model/tool/DefaultToolCallingManager.java
+@@ -209,7 +209,7 @@ public class DefaultToolCallingManager implements ToolCallingManager {
+ 			if (returnDirect == null) {
+ 				returnDirect = toolCallback.getToolMetadata().returnDirect();
+ 			}
+ 			else {
+-				returnDirect = returnDirect && toolCallback.getToolMetadata().returnDirect();
++				returnDirect = returnDirect || toolCallback.getToolMetadata().returnDirect(); /* BUG_INJECTED */
+ 			}
+

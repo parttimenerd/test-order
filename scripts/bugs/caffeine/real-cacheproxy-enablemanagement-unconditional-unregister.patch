@@ -1,0 +1,31 @@
+diff --git a/jcache/src/main/java/com/github/benmanes/caffeine/jcache/CacheProxy.java b/jcache/src/main/java/com/github/benmanes/caffeine/jcache/CacheProxy.java
+--- a/jcache/src/main/java/com/github/benmanes/caffeine/jcache/CacheProxy.java
++++ b/jcache/src/main/java/com/github/benmanes/caffeine/jcache/CacheProxy.java
+@@ -1303,13 +1303,13 @@ class CacheProxy<K, V> implements Cache<K, V> {
+   void enableManagement(boolean enabled) {
+     synchronized (configuration) {
+       requireNotClosed();
+       if (enabled) {
+         JmxRegistration.registerMxBean(this, cacheMxBean, MBeanType.CONFIGURATION);
+-      } else if (configuration.isManagementEnabled()) {
++      } else { /* BUG: PR #2010 — unconditionally tries to unregister, bootstrapping JMX server even when management was never enabled */
+         JmxRegistration.unregisterMxBean(this, MBeanType.CONFIGURATION);
+       }
+       configuration.setManagementEnabled(enabled);
+     }
+   }
+
+   /** Enables or disables the statistics JMX bean. */
+   void enableStatistics(boolean enabled) {
+     synchronized (configuration) {
+       requireNotClosed();
+       if (enabled) {
+         JmxRegistration.registerMxBean(this, statistics, MBeanType.STATISTICS);
+-      } else if (configuration.isStatisticsEnabled()) {
++      } else { /* BUG: PR #2010 — same issue for statistics */
+         JmxRegistration.unregisterMxBean(this, MBeanType.STATISTICS);
+       }
+       statistics.enable(enabled);
+       configuration.setStatisticsEnabled(enabled);
+     }
+   }

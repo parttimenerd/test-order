@@ -1,3 +1,17 @@
-# Preferred injection order: low-df targets first
-comparatorpredicate-equal.patch
-listutils-isequal.patch
+real-abstractdualbidimap-setvalue-returns-new-not-old.patch
+real-abstractmapbag-retainall-wrong-else-condition.patch
+real-fixedsizesortedmap-putall-missing-negation.patch
+real-maputils-getintvalue-returns-byte.patch
+synthetic-abstractmapbag-containsall-less-to-greater.patch
+synthetic-abstractmapbag-equals-count-flip.patch
+synthetic-booleancomparator-equals-flip.patch
+synthetic-circularfifoqueue-isatfullcapacity-flip.patch
+synthetic-comparatorpredicate-equal.patch
+synthetic-identitypredicate-identity-flip.patch
+synthetic-listutils-isequal.patch
+synthetic-notnullpredicate-notnull-flip.patch
+synthetic-nullpredicate-isnull-flip.patch
+synthetic-setutils-intersection-and-to-or.patch
+real-enumerationiterator-remove-no-reset.patch
+real-abstractlinkedlist-addall-empty-returns-true.patch
+real-transformedmultivaluedmap-putall-uses-transformer-directly.patch

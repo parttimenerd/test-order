@@ -1,0 +1,11 @@
+diff --git a/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java b/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java
+--- a/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java
++++ b/src/main/java/org/apache/commons/collections4/bag/AbstractMapBag.java
+@@ -505,7 +505,7 @@ public abstract class AbstractMapBag<E>
+             if (1 <= otherCount && otherCount <= myCount) {
+                 excess.add(current, myCount - otherCount);
+-            } else if (otherCount == 0) {
++            } else { /* BUG: PR #692 — removes elements when other has more copies */
+                 excess.add(current, myCount);
+             }
+         }
