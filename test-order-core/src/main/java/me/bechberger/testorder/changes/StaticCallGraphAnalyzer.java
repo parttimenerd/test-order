@@ -147,6 +147,19 @@ public class StaticCallGraphAnalyzer {
 		public int classCount() {
 			return classCount;
 		}
+
+		/** {@code className → superClassName} (null for j.l.Object). */
+		public Map<String, String> superClasses() {
+			return superClasses;
+		}
+
+		/**
+		 * {@code className → set of direct subtype names} (extends + implements
+		 * inverted).
+		 */
+		public Map<String, Set<String>> directSubtypes() {
+			return directSubtypes;
+		}
 	}
 
 	/**

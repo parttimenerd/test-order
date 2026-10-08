@@ -3292,6 +3292,14 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 			Files.writeString(propsFile, String.join(System.lineSeparator(), existing) + System.lineSeparator(),
 					java.nio.charset.StandardCharsets.UTF_8);
 		}
+		// Remove the runtimeDir copy so JUnit only finds one junit-platform.properties
+		// on the classpath. Without this, JUnit 5.11+ warns "Discovered 2
+		// 'junit-platform.properties' files" for every test class boot.
+		try {
+			Files.deleteIfExists(runtimeDir.resolve("junit-platform.properties"));
+		} catch (IOException e) {
+			getLog().debug("[test-order] Could not remove runtimeDir junit-platform.properties: " + e.getMessage());
+		}
 	}
 
 	/**

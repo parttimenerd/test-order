@@ -536,6 +536,20 @@ detect_gradle_learn_extra_args() {
     esac
 }
 
+# Return extra Maven args needed by a repo during bench_apfd.sh runs.
+# These are args that are needed for all trial types (alpha, learn, order).
+detect_bench_extra_args() {
+    local repo="$1"
+    case "$repo" in
+        # javaparser: symbol-solver-testing has pre-existing failures; BDD module has
+        # failIfNoTests=true but no BDD tests in CI — exclude it to avoid spurious failure.
+        javaparser) echo "-Dmaven.test.failure.ignore=true '-pl=!javaparser-core-testing-bdd'" ;;
+        # commons-lang: locale-dependent test failures (FastDateParser_TimeZoneStrategyTest)
+        commons-lang) echo "-Dmaven.test.failure.ignore=true" ;;
+        *) echo "" ;;
+    esac
+}
+
 # Return "true" if the repo already has test-order configured via pom.xml extensions,
 # so inject_maven_plugin can skip creating .mvn/extensions.xml (which would double-load it).
 detect_plugin_already_configured() {

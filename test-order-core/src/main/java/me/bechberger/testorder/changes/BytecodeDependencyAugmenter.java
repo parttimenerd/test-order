@@ -130,6 +130,92 @@ public final class BytecodeDependencyAugmenter {
 	}
 
 	/**
+	 * Propagates production-class dependencies upward through the test-class
+	 * inheritance hierarchy.
+	 *
+	 * <p>
+	 * Motivation: a test superclass (e.g. {@code AbstractMapTest}) may have no
+	 * direct dep-graph edge to a production class ({@code FixedSizeSortedMap}) even
+	 * though it exercises it indirectly — because the concrete subclass
+	 * ({@code FixedSizeSortedMapTest}) wires the production class in at runtime via
+	 * {@code makeFullMap()} / constructor overrides. The agent only records the
+	 * classes the superclass <em>itself</em> touched, so the superclass gets a low
+	 * dep-overlap score despite being the one that actually fails.
+	 *
+	 * <p>
+	 * Fix: for every test superclass in the dep map, union in the deps of all its
+	 * concrete test subclasses. The result is returned as a delta (augment-only) to
+	 * be applied via {@link DependencyMap#withAugmentation(Map)}.
+	 *
+	 * <p>
+	 * Only propagates one level at a time; callers that want transitive propagation
+	 * should iterate or apply this to the already-augmented map. In practice a
+	 * single pass is sufficient because the scorer uses the union of each test's
+	 * own dep set, and a two-level hierarchy ({@code Abstract → Concrete}) is the
+	 * common case.
+	 *
+	 * @param testScan
+	 *            scan result of the compiled test classes directory
+	 * @param depMap
+	 *            current dependency map
+	 * @return augmentation delta: testSuperclass → set of prod-class deps to add
+	 */
+	public static Map<String, Set<String>> computeInheritanceAugmentation(StaticCallGraphAnalyzer.ScanResult testScan,
+			DependencyMap depMap) {
+		if (testScan == null || depMap == null) {
+			return Map.of();
+		}
+		Set<String> testClasses = depMap.testClasses();
+		if (testClasses.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Set<String>> directSubtypes = testScan.directSubtypes();
+		if (directSubtypes.isEmpty()) {
+			return Map.of();
+		}
+
+		Map<String, Set<String>> augmentation = new HashMap<>();
+		for (String superClass : directSubtypes.keySet()) {
+			if (!testClasses.contains(superClass)) {
+				continue; // superClass not in dep map — nothing to augment
+			}
+			Set<String> existing = depMap.get(superClass);
+			Set<String> toAdd = null;
+			for (String subClass : directSubtypes.get(superClass)) {
+				if (!testClasses.contains(subClass)) {
+					continue; // not a known test class
+				}
+				Set<String> subDeps = depMap.get(subClass);
+				for (String dep : subDeps) {
+					if (testClasses.contains(dep)) {
+						continue; // test→test edges are not production deps
+					}
+					if (existing.contains(dep)) {
+						continue; // already present
+					}
+					// Honour the nested-class fallback: top-level entry covers nested deps
+					int dollar = dep.indexOf('$');
+					if (dollar > 0 && existing.contains(dep.substring(0, dollar))) {
+						continue;
+					}
+					if (toAdd == null) {
+						toAdd = new HashSet<>();
+					}
+					toAdd.add(dep);
+				}
+			}
+			if (toAdd != null && !toAdd.isEmpty()) {
+				augmentation.merge(superClass, toAdd, (a, b) -> {
+					Set<String> m = new HashSet<>(a);
+					m.addAll(b);
+					return m;
+				});
+			}
+		}
+		return augmentation;
+	}
+
+	/**
 	 * Extracts the FQCN portion from a {@code Foo#bar} key. Returns the input
 	 * unchanged if no {@code #} is present (treated as a bare class name).
 	 */
