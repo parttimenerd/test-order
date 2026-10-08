@@ -1,11 +1,13 @@
 diff --git a/src/main/java/org/apache/commons/collections4/MapUtils.java b/src/main/java/org/apache/commons/collections4/MapUtils.java
+index 78496e4..316e356 100644
 --- a/src/main/java/org/apache/commons/collections4/MapUtils.java
 +++ b/src/main/java/org/apache/commons/collections4/MapUtils.java
-@@ -739,7 +739,7 @@ public class MapUtils {
+@@ -738,7 +738,7 @@ public class MapUtils {
+      */
      public static <K> int getIntValue(final Map<? super K, ?> map, final K key,
              final Function<K, Integer> defaultFunction) {
 -        return applyDefaultFunction(map, key, MapUtils::getInteger, defaultFunction, 0).intValue();
-+        return applyDefaultFunction(map, key, MapUtils::getInteger, defaultFunction, 0).byteValue(); /* BUG: PR #704 — truncates to byte */
++        return applyDefaultFunction(map, key, MapUtils::getInteger, defaultFunction, 0).byteValue(); /* BUG */
      }
-
+ 
      /**

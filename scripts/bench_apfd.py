@@ -485,8 +485,13 @@ def run_trial(
         where the previous build's JVM briefly holds compiled classes or surefire
         reports open, causing maven-clean-plugin to fail."""
         target = THIRD_PARTY / repo / "target"
-        if target.is_dir():
+        for attempt in range(5):
+            if not target.is_dir():
+                break
             shutil.rmtree(target, ignore_errors=True)
+            if not target.is_dir():
+                break
+            time.sleep(0.5 * (attempt + 1))
 
     try:
         # ── 2. Alphabetical baseline ──────────────────────────────────────────
