@@ -1,4 +1,4 @@
-real-abstractdualbidimap-setvalue-returns-new-not-old.patch
+synthetic-abstractdualbidimap-containskey-flip.patch
 real-abstractmapbag-retainall-wrong-else-condition.patch
 real-fixedsizesortedmap-putall-missing-negation.patch
 real-maputils-getintvalue-returns-byte.patch

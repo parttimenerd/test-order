@@ -1,0 +1,10 @@
+--- a/src/main/java/org/apache/commons/collections4/bidimap/AbstractDualBidiMap.java
++++ b/src/main/java/org/apache/commons/collections4/bidimap/AbstractDualBidiMap.java
+@@ -780,7 +780,7 @@ public abstract class AbstractDualBidiMap<K, V> implements BidiMap<K, V> {
+     @Override
+     public V put(final K key, final V value) {
+-        if (normalMap.containsKey(key)) {
++        if (!normalMap.containsKey(key)) {
+             reverseMap.remove(normalMap.get(key));
+         }
+         if (reverseMap.containsKey(value)) {
