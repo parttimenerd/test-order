@@ -1,0 +1,7 @@
+import{_ as u}from"./slidev/VClick-DvZSWfrM.js";import{o as d,K as m,_ as o,b as t,$ as n,Z as l,A as c,ao as p,ap as f,u as a}from"./modules/vue-BX9ho2sT.js";import{I as _}from"./slidev/center-5E_YSey6.js";import{u as v,f as g}from"./slidev/context-B-j2uW20.js";import"./index-CrM3wuoG.js";import"./modules/shiki-CdhS3xfJ.js";const x="/20min/images/wiki-telegraph-tokyo.jpg",b={class:"relative z-10 flex flex-col items-center text-center"},P={__name:"slides.md__slidev_11",setup(k){const{$clicksContext:i,$frontmatter:r}=v();return i.setup(),(y,e)=>{const s=u;return d(),m(_,p(f(a(g)(a(r),10))),{default:o(()=>[e[3]||(e[3]=t("img",{src:x,class:"absolute inset-0 w-full h-full object-cover opacity-12"},null,-1)),e[4]||(e[4]=t("div",{class:"absolute inset-0 bg-zinc-900/82 z-0"},null,-1)),t("div",b,[e[2]||(e[2]=t("div",{class:"big-statement"},[t("p",null,[n("There’s a zero-config,"),t("br"),n("local solution.")])],-1)),l(s,null,{default:o(()=>[...e[0]||(e[0]=[t("div",{class:"text-3xl font-bold mt-8 text-blue-400 tracking-wide"},"test-order",-1)])]),_:1}),l(s,null,{default:o(()=>[...e[1]||(e[1]=[t("div",{class:"text-xl mt-4 opacity-70"}," zero config  ·  bytecode instrumentation  ·  Maven & Gradle  ·  v0.1 ",-1)])]),_:1})]),c(`
+- Pause after "There's a zero-config, local solution." Let it sit. 3 seconds.
+- Click: reveal the name. Still don't speak.
+- Click: reveal the tagline.
+- "It's called test-order. I spent two years of evenings building it so you don't have to."
+TRANSITION: "Ten lines of POM. Let me show you."
+`)]),_:1},16)}}};export{P as default};

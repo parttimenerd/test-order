@@ -8,16 +8,15 @@ import * as d3 from 'd3'
 
 const container = ref(null)
 
-const W = 820, H = 360
-const MARGIN = { top: 20, right: 190, bottom: 24, left: 168 }
+const W = 860, H = 380
+const MARGIN = { top: 24, right: 220, bottom: 28, left: 190 }
 const IW = W - MARGIN.left - MARGIN.right
 const IH = H - MARGIN.top - MARGIN.bottom
 
 const SIGNALS = [
-  { label: 'Changed test',      value: 9,  clr: '#60a5fa', desc: 'CartTest.java was also edited' },
-  { label: 'Package proximity', value: 2,  clr: '#34d399', desc: 'same package as Cart.java' },
-  { label: 'Dep overlap',       value: 2,  clr: '#a78bfa', desc: '⌈1 / √8 × 5⌉ = 2' },
-  { label: 'Speed bonus',       value: 1,  clr: '#fbbf24', desc: 'fast test, below median' },
+  { label: 'Dep overlap',       value: 2,  clr: '#a78bfa', desc: '1 of 21 deps changed → score 2' },
+  { label: 'Pkg proximity',     value: 2,  clr: '#34d399', desc: 'same package as changed class' },
+  { label: 'Change complexity', value: 1,  clr: '#60a5fa', desc: '1 changed class in deps' },
 ]
 const TOTAL = SIGNALS.reduce((s, x) => s + x.value, 0)
 
@@ -37,8 +36,8 @@ onMounted(() => {
 
   const g = svg.append('g').attr('transform', `translate(${MARGIN.left},${MARGIN.top})`)
 
-  const barH   = Math.min(40, (IH - (SIGNALS.length - 1) * 10) / SIGNALS.length)
-  const gap    = 12
+  const barH   = Math.min(50, (IH - (SIGNALS.length - 1) * 14) / SIGNALS.length)
+  const gap    = 16
   const totalH = SIGNALS.length * (barH + gap) - gap
   const startY = (IH - totalH - barH - 16) / 2
   const xScale = d3.scaleLinear().domain([0, TOTAL]).range([0, IW])
@@ -48,8 +47,8 @@ onMounted(() => {
     const delay = 100 + i * 130
 
     // Label
-    g.append('text').attr('x', -12).attr('y', y + barH / 2 + 5)
-      .attr('text-anchor', 'end').attr('font-size', 13).attr('font-weight', 600)
+    g.append('text').attr('x', -12).attr('y', y + barH / 2 + 6)
+      .attr('text-anchor', 'end').attr('font-size', 15).attr('font-weight', 600)
       .attr('fill', sig.clr).attr('opacity', 0).text(sig.label)
       .transition().delay(delay).duration(250).attr('opacity', 1)
 
@@ -66,14 +65,14 @@ onMounted(() => {
 
     // Value label — always outside bar to avoid clipping
     g.append('text')
-      .attr('x', xScale(sig.value) + 8).attr('y', y + barH / 2 + 5)
-      .attr('text-anchor', 'start').attr('font-size', 14).attr('font-weight', 800)
+      .attr('x', xScale(sig.value) + 8).attr('y', y + barH / 2 + 6)
+      .attr('text-anchor', 'start').attr('font-size', 16).attr('font-weight', 800)
       .attr('fill', sig.clr).attr('opacity', 0).text(`+${sig.value}`)
       .transition().delay(delay + 520).duration(200).attr('opacity', 1)
 
     // Description
-    g.append('text').attr('x', IW + 14).attr('y', y + barH / 2 + 5)
-      .attr('font-size', 11).attr('fill', '#94a3b8').attr('opacity', 0).text(sig.desc)
+    g.append('text').attr('x', IW + 14).attr('y', y + barH / 2 + 6)
+      .attr('font-size', 13).attr('fill', '#94a3b8').attr('opacity', 0).text(sig.desc)
       .transition().delay(delay + 220).duration(300).attr('opacity', 1)
   })
 
@@ -96,8 +95,8 @@ onMounted(() => {
     .attr('width', IW)
 
   // "Total" label
-  g.append('text').attr('x', -12).attr('y', totalY + tH / 2 + 5)
-    .attr('text-anchor', 'end').attr('font-size', 14).attr('font-weight', 700)
+  g.append('text').attr('x', -12).attr('y', totalY + tH / 2 + 6)
+    .attr('text-anchor', 'end').attr('font-size', 16).attr('font-weight', 700)
     .attr('fill', '#fbbf24').attr('opacity', 0).text('Total')
     .transition().delay(totalDelay).duration(300).attr('opacity', 1)
 
@@ -111,8 +110,8 @@ onMounted(() => {
     .transition().delay(badgeDelay).duration(300).ease(d3.easeBackOut.overshoot(1.3))
     .attr('r', tH / 2 + 2)
 
-  const scoreText = g.append('text').attr('x', badgeX).attr('y', totalY + tH / 2 + 6)
-    .attr('text-anchor', 'middle').attr('font-size', 17).attr('font-weight', 900)
+  const scoreText = g.append('text').attr('x', badgeX).attr('y', totalY + tH / 2 + 7)
+    .attr('text-anchor', 'middle').attr('font-size', 19).attr('font-weight', 900)
     .attr('fill', '#fbbf24').attr('opacity', 0).text('0')
   scoreText.transition().delay(badgeDelay).duration(200).attr('opacity', 1)
   scoreText.transition().delay(badgeDelay + 200).duration(500)
@@ -129,10 +128,10 @@ onMounted(() => {
     .attr('stroke', 'rgba(251,191,36,0.4)').attr('fill', 'rgba(251,191,36,0.10)')
     .attr('filter', null)
 
-  // "CartTest ranks #1" label
-  g.append('text').attr('x', IW + 14).attr('y', totalY + tH / 2 + 5)
-    .attr('font-size', 12).attr('font-weight', 600).attr('fill', '#fbbf24').attr('opacity', 0)
-    .text('→ CartTest ranks #1')
+  // "ResolverTest ranks #1" label
+  g.append('text').attr('x', IW + 14).attr('y', totalY + tH / 2 + 6)
+    .attr('font-size', 13).attr('font-weight', 600).attr('fill', '#fbbf24').attr('opacity', 0)
+    .text('→ ResolverTest ranks #1')
     .transition().delay(badgeDelay + 700).duration(300).attr('opacity', 1)
 })
 </script>

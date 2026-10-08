@@ -137,13 +137,6 @@ onMounted(() => {
       .attr('width', BOX_W - 8).attr('height', 3).attr('rx', 2)
       .attr('fill', s.color).attr('opacity', 0.25)
 
-    // Emoji above box
-    g.append('text')
-      .attr('y', -BOX_H / 2 - 12)
-      .attr('text-anchor', 'middle')
-      .attr('font-size', 20)
-      .text(s.emoji)
-
     // Line 1 label
     g.append('text')
       .attr('y', -10)
@@ -184,16 +177,6 @@ onMounted(() => {
     .attr('opacity', 0)
     .text('bitset drained once per test → dep set written to index')
     .transition().delay(1200).duration(500).attr('opacity', 1)
-
-  // ── Phase label ───────────────────────────────────────────────────────────
-  svg.append('text')
-    .attr('x', W / 2).attr('y', 18)
-    .attr('text-anchor', 'middle')
-    .attr('font-size', 10).attr('fill', 'rgba(148,163,184,0.40)')
-    .attr('font-family', "'Inter','Helvetica Neue',sans-serif")
-    .attr('font-style', 'italic')
-    .attr('letter-spacing', '0.08em')
-    .text('learn run only')
 })
 </script>
 

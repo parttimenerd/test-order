@@ -1,0 +1,5 @@
+version=1
+buildId=aafef068-af14-4751-804f-f49ad15ac6ac
+timestamp=1791286510081
+isLearnRun=true
+testClass=com.sap.cloud.sdk.cloudplatform.connectivity.HttpClient5OAuth2TokenServiceTest failed=false score=15 isNew=true isChanged=false depOverlap=0 depTotal=0 failScore=0.0 isFast=false isSlow=false complexityOverlap=0.0 speedRatio=0.0 hasStaticFieldOverlap=false weightedDepOverlap=0.0

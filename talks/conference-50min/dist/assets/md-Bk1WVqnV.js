@@ -1,0 +1,11 @@
+import{_ as o}from"./slidev/CodeBlockWrapper.vue_vue_type_script_setup_true_lang-CEs_vU0a.js";import{o as d,b as p,w as i,g as s,aa as a,d as c,m as h,v as k,x as m,C as t}from"./modules/vue-S1F8S-Jh.js";import{I as g}from"./slidev/default-D8rpuaCo.js";import{u as f,f as u}from"./slidev/context-PTAtwiRM.js";import"./modules/unplugin-icons-BQQWuRGW.js";import"./index-COT5_59P.js";import"./modules/shiki-DYMu1dN8.js";const B={__name:"slides.md__slidev_19",setup(_){const{$clicksContext:n,$frontmatter:l}=f();return n.setup(),(b,e)=>{const r=o;return d(),p(g,k(m(t(u)(t(l),18))),{default:i(()=>[e[1]||(e[1]=s("h1",null,[a("What "),s("code",null,":show"),a(" prints")],-1)),c(r,h({},{ranges:[]}),{default:i(()=>[...e[0]||(e[0]=[s("pre",{class:"shiki shiki-themes vitesse-dark vitesse-light slidev-code",style:{"--shiki-dark":"#dbd7caee","--shiki-light":"#393a34","--shiki-dark-bg":"#121212","--shiki-light-bg":"#ffffff"}},[s("code",{class:"language-ansi"},[s("span",{class:"line"},[s("span",{style:{"--shiki-dark":"#dbd7caee","--shiki-light":"#393a34"}},"$ mvn test-order:show")]),a(`
+`),s("span",{class:"line"}),a(`
+`),s("span",{class:"line"},[s("span",{style:{"--shiki-dark":"#dbd7caee","--shiki-light":"#393a34"}},"Changed: com.example.shop.Cart")]),a(`
+`),s("span",{class:"line"}),a(`
+`),s("span",{class:"line"},[s("span",{style:{"--shiki-dark":"#dbd7caee","--shiki-light":"#393a34"}}," # │ Score │ Class       │ Why")]),a(`
+`),s("span",{class:"line"},[s("span",{style:{"--shiki-dark":"#dbd7caee","--shiki-light":"#393a34"}},"───┼───────┼─────────────┼───────────────────────────")]),a(`
+`),s("span",{class:"line"},[s("span",{style:{"--shiki-dark":"#dbd7caee","--shiki-light":"#393a34"}}," 1 │  14.0 │ CartTest    │ changed=9, overlap=2, pkg=2")]),a(`
+`),s("span",{class:"line"},[s("span",{style:{"--shiki-dark":"#dbd7caee","--shiki-light":"#393a34"}}," 2 │   7.0 │ ProductTest │ overlap=5, pkg=2")]),a(`
+`),s("span",{class:"line"},[s("span",{style:{"--shiki-dark":"#dbd7caee","--shiki-light":"#393a34"}}," 3 │   0.0 │ InvoiceTest │ (no overlap) [SLOW 320ms]")]),a(`
+`),s("span",{class:"line"}),a(`
+`),s("span",{class:"line"},[s("span",{style:{"--shiki-dark":"#dbd7caee","--shiki-light":"#393a34"}},"[test-order] Run APFD: 92.9%")])])],-1)])]),_:1},16)]),_:1},16)}}};export{B as default};

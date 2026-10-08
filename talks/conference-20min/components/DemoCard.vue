@@ -4,16 +4,14 @@
       <span class="badge">DEMO {{ id }}</span>
     </div>
     <h2 class="title">{{ title }}</h2>
-    <pre class="cmd">{{ cmd }}</pre>
+    <div class="cmd"><slot /></div>
   </div>
 </template>
 
 <script setup>
 defineProps({
   id: { type: String, required: true },
-  cmd: { type: String, required: true },
   title: { type: String, default: '' },
-  watch: { type: String, default: '' },
 })
 </script>
 
@@ -46,14 +44,25 @@ defineProps({
   font-weight: 700;
 }
 .cmd {
-  background: #0f172a;
-  color: #e2e8f0;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  margin: 0;
+  overflow: hidden;
+}
+/* Slidev renders fenced code blocks as shiki <pre> — match our sizing */
+.cmd :deep(pre) {
+  background: #0f172a !important;
+  margin: 0;
   padding: 1.1rem 1.4rem;
   border-radius: 8px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 1.1rem;
   line-height: 1.6;
-  margin: 0;
   white-space: pre-wrap;
+  word-break: break-all;
+}
+.cmd :deep(code) {
+  font-family: 'JetBrains Mono', monospace;
 }
 </style>

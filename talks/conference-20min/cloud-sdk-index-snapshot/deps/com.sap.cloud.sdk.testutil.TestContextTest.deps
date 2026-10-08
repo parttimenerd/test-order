@@ -1,0 +1,10 @@
+com.sap.cloud.sdk.cloudplatform.thread.ThreadContext
+com.sap.cloud.sdk.cloudplatform.util.FacadeLocator$MockableInstance
+com.sap.cloud.sdk.cloudplatform.security.AuthToken
+com.sap.cloud.sdk.cloudplatform.util.FacadeLocator
+com.sap.cloud.sdk.cloudplatform.thread.Property
+com.sap.cloud.sdk.cloudplatform.security.AuthTokenThreadContextListener
+com.sap.cloud.sdk.cloudplatform.thread.ThreadLocalThreadContextFacade
+com.sap.cloud.sdk.cloudplatform.thread.ThreadContextAccessor
+com.sap.cloud.sdk.cloudplatform.thread.exception.ThreadContextAccessException
+com.sap.cloud.sdk.cloudplatform.thread.DefaultThreadContext

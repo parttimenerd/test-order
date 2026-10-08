@@ -8,20 +8,21 @@ import * as d3 from 'd3'
 
 const container = ref(null)
 
-const W = 700, H = 440
-const M = { top: 24, right: 24, bottom: 56, left: 72 }
+const W = 900, H = 520
+const M = { top: 28, right: 40, bottom: 72, left: 104 }
 const IW = W - M.left - M.right
 const IH = H - M.top - M.bottom
 
 // x = time-to-first-value (0=immediate, 10=months)
 // y = prioritization intelligence (0=none, 10=high)
 const TOOLS = [
-  { name: 'Random / shuffle',              x: 0.4, y: 1.2, col: '#94a3b8', anchor: 'right' },
-  { name: 'Stop-on-first-failure',         x: 0.6, y: 2.2, col: '#fda4af', anchor: 'right' },
-  { name: 'Manual @Order',                 x: 2.2, y: 3.8, col: '#fde68a', anchor: 'above' },
-  { name: 'Coverage-based\n(Skippy, OpenClover)', x: 4.2, y: 6.2, col: '#86efac', anchor: 'above' },
-  { name: 'Cloud TIA\n(Launchable, Develocity)',  x: 8.2, y: 8.8, col: '#93c5fd', anchor: 'left'  },
-  { name: 'test-order',                    x: 1.2, y: 7.2, col: '#fbbf24', anchor: 'right', highlight: true },
+  { name: 'Alphabetical\n(default)',              x: 0.2, y: 0.5, col: '#64748b', anchor: 'right' },
+  { name: 'Random / shuffle',                     x: 0.4, y: 1.0, col: '#94a3b8', anchor: 'right' },
+  { name: 'Manual @Order',                        x: 3.5, y: 2.5, col: '#fde68a', anchor: 'right' },
+  { name: 'Coverage-based\n(re-instrument/run)',  x: 2.0, y: 4.8, col: '#86efac', anchor: 'right' },
+  { name: 'Coverage-based\n(stored index/Skippy)', x: 2.5, y: 5.6, col: '#6ee7b7', anchor: 'right' },
+  { name: 'Cloud TIA\n(Launchable, Develocity)',  x: 7.0, y: 8.0, col: '#93c5fd', anchor: 'left'  },
+  { name: 'test-order',                           x: 1.0, y: 7.5, col: '#fbbf24', anchor: 'right', highlight: true },
 ]
 
 onMounted(() => {
@@ -38,10 +39,10 @@ onMounted(() => {
 
   // Soft region fills
   const regions = [
-    { x1: 0, y1: 5, x2: 5, y2: 10, col: 'rgba(251,191,36,0.05)' },  // top-left: low friction, smart
-    { x1: 5, y1: 5, x2: 10, y2: 10, col: 'rgba(147,197,253,0.04)' }, // top-right: powerful, high setup
-    { x1: 0, y1: 0, x2: 5, y2: 5,  col: 'rgba(148,163,184,0.03)' },  // bottom-left
-    { x1: 5, y1: 0, x2: 10, y2: 5, col: 'rgba(148,163,184,0.03)' },  // bottom-right
+    { x1: 0, y1: 5, x2: 5, y2: 10, col: 'rgba(251,191,36,0.05)' },
+    { x1: 5, y1: 5, x2: 10, y2: 10, col: 'rgba(147,197,253,0.04)' },
+    { x1: 0, y1: 0, x2: 5, y2: 5,  col: 'rgba(148,163,184,0.03)' },
+    { x1: 5, y1: 0, x2: 10, y2: 5, col: 'rgba(148,163,184,0.03)' },
   ]
   regions.forEach(r => {
     g.append('rect')
@@ -59,85 +60,80 @@ onMounted(() => {
       .attr('stroke', 'rgba(255,255,255,0.04)').attr('stroke-dasharray', '2,4')
   })
 
-  // Mid dividers (slightly more visible)
+  // Mid dividers
   g.append('line').attr('x1', x(5)).attr('x2', x(5)).attr('y1', 0).attr('y2', IH)
-    .attr('stroke', 'rgba(255,255,255,0.10)').attr('stroke-dasharray', '4,5')
+    .attr('stroke', 'rgba(255,255,255,0.18)').attr('stroke-dasharray', '4,5')
   g.append('line').attr('x1', 0).attr('x2', IW).attr('y1', y(5)).attr('y2', y(5))
-    .attr('stroke', 'rgba(255,255,255,0.10)').attr('stroke-dasharray', '4,5')
+    .attr('stroke', 'rgba(255,255,255,0.18)').attr('stroke-dasharray', '4,5')
 
   // Axes
   g.append('line').attr('x1', 0).attr('x2', IW).attr('y1', IH).attr('y2', IH)
-    .attr('stroke', '#334155').attr('stroke-width', 1.5)
+    .attr('stroke', '#475569').attr('stroke-width', 1.5)
   g.append('line').attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', IH)
-    .attr('stroke', '#334155').attr('stroke-width', 1.5)
+    .attr('stroke', '#475569').attr('stroke-width', 1.5)
 
   // Axis labels
-  g.append('text').attr('x', IW / 2).attr('y', IH + 42)
-    .attr('text-anchor', 'middle').attr('font-size', 12).attr('fill', '#475569')
+  g.append('text').attr('x', IW / 2).attr('y', IH + 58)
+    .attr('text-anchor', 'middle').attr('font-size', 18).attr('fill', '#cbd5e1')
     .text('Time to first value  →')
 
   g.append('text')
-    .attr('transform', `translate(-52, ${IH / 2}) rotate(-90)`)
-    .attr('text-anchor', 'middle').attr('font-size', 12).attr('fill', '#475569')
+    .attr('transform', `translate(-76, ${IH / 2}) rotate(-90)`)
+    .attr('text-anchor', 'middle').attr('font-size', 18).attr('fill', '#cbd5e1')
     .text('↑  Prioritization intelligence')
 
   // X axis tick labels
   ;[['Immediate', 0], ['Days', 3.3], ['Weeks', 6.6], ['Months', 10]].forEach(([label, v]) => {
-    g.append('text').attr('x', x(v)).attr('y', IH + 18)
-      .attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', '#334155')
+    g.append('text').attr('x', x(v)).attr('y', IH + 24)
+      .attr('text-anchor', 'middle').attr('font-size', 14).attr('fill', '#94a3b8')
       .text(label)
   })
 
-  // Region label: top-left
+  // Region labels
   g.append('text').attr('x', x(0.3)).attr('y', y(9.6))
-    .attr('font-size', 9).attr('fill', 'rgba(251,191,36,0.30)')
+    .attr('font-size', 14).attr('fill', 'rgba(251,191,36,0.55)')
     .attr('font-style', 'italic')
     .text('low friction, intelligent')
 
-  // Region label: top-right
   g.append('text').attr('x', x(5.4)).attr('y', y(9.6))
-    .attr('font-size', 9).attr('fill', 'rgba(147,197,253,0.25)')
+    .attr('font-size', 14).attr('fill', 'rgba(147,197,253,0.50)')
     .attr('font-style', 'italic')
     .text('powerful at scale')
 
   // Plot tools
   TOOLS.forEach((d, i) => {
     const cx = x(d.x), cy = y(d.y)
-    const r = d.highlight ? 9 : 6.5
+    const r = d.highlight ? 12 : 9
     const delay = 250 + i * 130
 
-    // Glow ring for highlighted tool
     if (d.highlight) {
       g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', 0)
         .attr('fill', 'none').attr('stroke', d.col).attr('stroke-width', 1.5).attr('opacity', 0.25)
-        .transition().delay(delay).duration(450).attr('r', 20)
+        .transition().delay(delay).duration(450).attr('r', 26)
     }
 
-    // Dot
     g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', 0)
       .attr('fill', d.highlight ? d.col : d.col + '80')
       .attr('stroke', d.col).attr('stroke-width', d.highlight ? 1.5 : 1)
       .transition().delay(delay).duration(300).attr('r', r)
 
-    // Label lines
     const lines = d.name.split('\n')
-    const lx = d.anchor === 'left'  ? cx - r - 7  :
-               d.anchor === 'right' ? cx + r + 7  : cx
-    const baseY = d.anchor === 'above' ? cy - r - 7 - (lines.length - 1) * 13
-                : d.anchor === 'below' ? cy + r + 15
-                : cy + 4
-    const textAnchor = d.anchor === 'left' ? 'end' : d.anchor === 'right' ? 'start' : 'middle'
+    const lx = d.anchor === 'left' ? cx - r - 10 : cx + r + 10
+    const lineH = 19
+    // vertically center the label block on the dot
+    const baseY = cy - ((lines.length - 1) * lineH) / 2 + 5
+    const textAnchor = d.anchor === 'left' ? 'end' : 'start'
 
     const lbl = g.append('text')
       .attr('x', lx).attr('y', baseY)
       .attr('text-anchor', textAnchor)
-      .attr('font-size', d.highlight ? 12 : 10)
-      .attr('font-weight', d.highlight ? 600 : 400)
+      .attr('font-size', d.highlight ? 18 : 15)
+      .attr('font-weight', d.highlight ? 700 : 400)
       .attr('fill', d.col)
       .attr('opacity', 0)
 
     lines.forEach((line, li) => {
-      lbl.append('tspan').attr('x', lx).attr('dy', li === 0 ? 0 : 13).text(line)
+      lbl.append('tspan').attr('x', lx).attr('dy', li === 0 ? 0 : lineH).text(line)
     })
 
     lbl.transition().delay(delay + 220).duration(250).attr('opacity', 1)

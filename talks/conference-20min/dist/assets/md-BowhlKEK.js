@@ -1,0 +1,4 @@
+import{_ as o}from"./DemoCard-DW8YXnad.js";import{o as n,K as s,_ as i,Z as d,ao as c,ap as m,u as t}from"./modules/vue-BX9ho2sT.js";import{I as p}from"./slidev/default-UyMiTmZm.js";import{u as _,f as l}from"./slidev/context-B-j2uW20.js";import"./index-CrM3wuoG.js";import"./modules/shiki-CdhS3xfJ.js";const P={__name:"slides.md__slidev_20",setup(u){const{$clicksContext:e,$frontmatter:r}=_();return e.setup(),(f,h)=>{const a=o;return n(),s(p,c(m(t(l)(t(r),19))),{default:i(()=>[d(a,{id:"D3",duration:"4:00",cmd:`cd third-party/spring-petclinic
+# learn ran in CI last night, zero overhead today
+mvn test
+mvn test-order:dashboard`,title:"Real Spring Boot project. Live APFD. Then the dashboard.",watch:"First failure surfaces early in terminal. Dashboard: APFD trend, rank heatmap, score breakdown modal, weights tuning."})]),_:1},16)}}};export{P as default};
