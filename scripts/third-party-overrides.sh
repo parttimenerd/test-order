@@ -86,9 +86,11 @@ detect_extra_mvn_args() {
         # guava: guava-testlib's module-info.java (Java 9 multi-release) requires com.google.common
         # but the JPMS compile step fails to find it in the Maven module path.
         # Skip the java9 profile to avoid this; tests in guava-tests still run normally.
-        # Also exclude guava-testlib from the build entirely — it requires JPMS compilation
-        # that fails outside of a full build. guava-tests has its own testlib transitive dep via guava.
-        guava) echo "-P '!java9' -pl '!guava-testlib'" ;;
+        # guava-testlib is installed locally (mvn install -DskipTests -P '!java9') so we
+        # no longer need -pl '!guava-testlib' — that flag conflicted with the -pl guava-tests
+        # module override and caused Maven to drop the exclusion entirely.
+        # Pre-existing test failures in guava-tests require failure.ignore so learn/order continue.
+        guava) echo "-P '!java9' -Dmaven.test.failure.ignore=true" ;;
         # spring-ai has pre-existing test failures in spring-ai-commons (DocumentTests,
         # ContentFormatterTests etc — "[DRAFT]" prefix mismatch). Ignore so steps 5/6 run.
         # Also skip spring-javaformat:apply which runs in non-CI mode and causes compilation

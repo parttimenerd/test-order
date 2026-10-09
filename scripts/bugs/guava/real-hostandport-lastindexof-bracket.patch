@@ -1,11 +1,13 @@
+diff --git a/guava/src/com/google/common/net/HostAndPort.java b/guava/src/com/google/common/net/HostAndPort.java
+index 59446f5..c1df1b0 100644
 --- a/guava/src/com/google/common/net/HostAndPort.java
 +++ b/guava/src/com/google/common/net/HostAndPort.java
-@@ -214,7 +214,7 @@
-         "Bracketed host-port string must start with a bracket: %s",
-         hostPortString);
-     int colonIndex = hostPortString.indexOf(':');
--    int closeBracketIndex = hostPortString.indexOf(']');
-+    int closeBracketIndex = hostPortString.lastIndexOf(']');
-     checkArgument(
-         colonIndex > -1 && closeBracketIndex > colonIndex,
-         "Invalid bracketed host/port: %s",
+@@ -178,7 +178,7 @@ public final class HostAndPort implements Serializable {
+       portString = hostAndPort[1];
+     } else {
+       int colonPos = hostPortString.indexOf(':');
+-      if (colonPos >= 0 && hostPortString.indexOf(':', colonPos + 1) == -1) {
++      if (colonPos >= 0 && hostPortString.indexOf(':', colonPos + 1) != -1) { /* BUG_INJECTED */
+         // Exactly 1 colon. Split into host:port.
+         host = hostPortString.substring(0, colonPos);
+         portString = hostPortString.substring(colonPos + 1);

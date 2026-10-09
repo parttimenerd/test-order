@@ -1,26 +1,26 @@
+diff --git a/guava/src/com/google/common/io/MultiReader.java b/guava/src/com/google/common/io/MultiReader.java
+index 5e61854..1e201b1 100644
 --- a/guava/src/com/google/common/io/MultiReader.java
 +++ b/guava/src/com/google/common/io/MultiReader.java
-@@ -52,12 +52,14 @@
+@@ -52,14 +52,15 @@ final class MultiReader extends Reader {
    @Override
    public int read(char[] cbuf, int off, int len) throws IOException {
--    checkNotNull(cbuf);
+     checkNotNull(cbuf);
 -    while (current != null) {
 -      int result = current.read(cbuf, off, len);
 -      if (result != -1) {
 -        return result;
 -      }
--      advance();
--    }
--    return -1;
-+    checkNotNull(cbuf);
 +    if (current == null) {
 +      return -1;
 +    }
 +    int result = current.read(cbuf, off, len);
 +    if (result == -1) {
-+      advance();
-+      return read(cbuf, off, len);
-+    }
+       advance();
++      return read(cbuf, off, len); /* BUG_INJECTED: recursion causes StackOverflow on many empty sources */
+     }
+-    return -1;
 +    return result;
-+  }
- 
+   }
+
+   @Override

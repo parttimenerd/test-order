@@ -1,13 +1,13 @@
-diff --git a/guava/src/com/google/common/collect/Iterables.java b/guava/src/com/google/common/collect/Iterables.java
-index 042948e..b3d4565 100644
---- a/guava/src/com/google/common/collect/Iterables.java
-+++ b/guava/src/com/google/common/collect/Iterables.java
-@@ -238,7 +238,7 @@ public final class Iterables {
-     if (iterable1 instanceof Collection && iterable2 instanceof Collection) {
-       Collection<?> collection1 = (Collection<?>) iterable1;
-       Collection<?> collection2 = (Collection<?>) iterable2;
--      if (collection1.size() != collection2.size()) {
-+      if (collection1.size() == collection2.size()) { /* BUG_INJECTED */
+diff --git a/guava/src/com/google/common/collect/Iterators.java b/guava/src/com/google/common/collect/Iterators.java
+index df88bb1..ed5f16b 100644
+--- a/guava/src/com/google/common/collect/Iterators.java
++++ b/guava/src/com/google/common/collect/Iterators.java
+@@ -278,7 +278,7 @@ public final class Iterators {
+       }
+       Object o1 = iterator1.next();
+       Object o2 = iterator2.next();
+-      if (!Objects.equals(o1, o2)) {
++      if (Objects.equals(o1, o2)) { /* BUG_INJECTED */
          return false;
        }
      }

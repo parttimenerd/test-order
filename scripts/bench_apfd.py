@@ -381,9 +381,11 @@ class CsvWriter:
     def __init__(self, path: Path) -> None:
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._f = open(path, "w", newline="", buffering=1)  # line-buffered
+        append = path.exists() and path.stat().st_size > 0
+        self._f = open(path, "a" if append else "w", newline="", buffering=1)
         self._w = csv.DictWriter(self._f, fieldnames=FIELDNAMES)
-        self._w.writeheader()
+        if not append:
+            self._w.writeheader()
         self._f.flush()
 
     def write(self, row: dict) -> None:
@@ -777,12 +779,20 @@ def main() -> None:
                     help="Skip 'mvn install -DskipTests' of the plugin")
     ap.add_argument("--patch", metavar="SUBSTRING",
                     help="Only run patches whose name contains SUBSTRING")
+    ap.add_argument("--append", metavar="RUN_DIR",
+                    help="Append results to an existing run directory (e.g. 20261008_223724)")
     args = ap.parse_args()
 
     repos = args.repos if args.repos else DEFAULT_REPOS
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = RESULTS_DIR / timestamp
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if args.append:
+        out_dir = RESULTS_DIR / args.append
+        if not out_dir.is_dir():
+            err(f"Run directory not found: {out_dir}")
+            sys.exit(1)
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = RESULTS_DIR / timestamp
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     csv_path = out_dir / "results.csv"
     writer = CsvWriter(csv_path)

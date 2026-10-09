@@ -1,17 +1,13 @@
 diff --git a/guava/src/com/google/common/io/ByteStreams.java b/guava/src/com/google/common/io/ByteStreams.java
+index 9aa7821..5c319f1 100644
 --- a/guava/src/com/google/common/io/ByteStreams.java
 +++ b/guava/src/com/google/common/io/ByteStreams.java
-@@ -781,12 +781,7 @@
+@@ -741,7 +741,7 @@ public final class ByteStreams {
 
      @Override
-     public long skip(long n) throws IOException {
--      n = min(n, left);
--      if (n <= 0) {
--        // Some streams, like FileInputStream, skip backward for a negative n. That would move
--        // before the position at which the limit began and increase the number of bytes left.
--        return 0;
--      }
-+      n = min(n, left); /* BUG: #8712 — negative n skips backward past limit start */
-       long skipped = in().skip(n);
-       left -= skipped;
-       return skipped;
+     public int read() throws IOException {
+-      if (left == 0) {
++      if (left != 0) { /* BUG_INJECTED */
+         return -1;
+       }
+

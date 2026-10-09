@@ -1,14 +1,13 @@
 diff --git a/guava/src/com/google/common/util/concurrent/Futures.java b/guava/src/com/google/common/util/concurrent/Futures.java
-index 3da154f..811ffdf 100644
+index 3da154f..4f7ab1e 100644
 --- a/guava/src/com/google/common/util/concurrent/Futures.java
 +++ b/guava/src/com/google/common/util/concurrent/Futures.java
-@@ -414,8 +414,7 @@ public final class Futures extends GwtFuturesCatchingSpecialization {
-       long time,
-       TimeUnit unit,
-       ScheduledExecutorService scheduledExecutor) {
--    checkNotNull(unit);
--    checkNotNull(scheduledExecutor);
-+    /* BUG: PR #8664 — missing null checks; null unit/executor silently accepted when delegate.isDone() */
-     if (delegate.isDone()) {
-       return delegate;
-     }
+@@ -1173,7 +1173,7 @@ public final class Futures extends GwtFuturesCatchingSpecialization {
+      * Why do we deviate here? The answer: We want for fluentFuture.getDone() to throw the same
+      * exception as Futures.getDone(fluentFuture).
+      */
+-    checkState(future.isDone(), "Future was expected to be done: %s", future);
++    checkState(!future.isDone(), "Future was expected to be done: %s", future); /* BUG_INJECTED */
+     return getUninterruptibly(future);
+   }
+
