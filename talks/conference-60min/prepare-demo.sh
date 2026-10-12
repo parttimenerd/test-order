@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+# prepare-demo.sh — Pre-flight setup for the "You Are Running the Wrong Tests First" talk.
+#
+# Run this once, ~10 minutes before going on stage. It:
+#   1. Checks JDK and Maven are on PATH
+#   2. Verifies commons-collections checkout, reverts any leftover patch
+#   3. Removes live commons-collections index (D0 needs no index)
+#   4. Verifies/builds commons-collections index snapshot (needed by copy-in-db.sh for D1)
+#   5. Verifies spring-petclinic checkout and pom.xml has test-order
+#   6. Verifies/builds petclinic index snapshot (needed by copy-in-db.sh for D2/D3 dashboard)
+#   7. Copies make-change-commons.sh + copy-in-db.sh into each project dir
+#   8. Prints a ready summary with exact demo commands
+#
+# Usage:
+#   ./prepare-demo.sh                    # normal pre-show prep
+#   ./prepare-demo.sh --rebuild-indexes  # force-rebuild both index snapshots (~8 min)
+#   ./prepare-demo.sh --check-only       # dry-run: just validate, don't change anything
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+COLLECTIONS="$REPO_ROOT/third-party/commons-collections"
+PETCLINIC="$REPO_ROOT/third-party/spring-petclinic"
+COLLECTIONS_SNAPSHOT="$SCRIPT_DIR/commons-collections-index-snapshot"
+PETCLINIC_SNAPSHOT="$SCRIPT_DIR/petclinic-index-snapshot"
+PATCH="$REPO_ROOT/scripts/bugs/commons-collections/real-enumerationiterator-remove-no-reset.patch"
+
+BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
+say()    { printf "${BOLD}▶ %s${NC}\n" "$*"; }
+ok()     { printf "  ${GREEN}✓${NC}  %s\n" "$*"; }
+warn()   { printf "  ${YELLOW}⚠${NC}  %s\n" "$*"; }
+fail()   { printf "  ${RED}✗${NC}  %s\n" "$*"; FAILURES=$((FAILURES+1)); }
+section(){ printf "\n${CYAN}${BOLD}── %s ──${NC}\n" "$*"; }
+
+rebuild_indexes=false
+check_only=false
+FAILURES=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --rebuild-indexes) rebuild_indexes=true ;;
+    --check-only)      check_only=true ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    *) echo "Unknown arg: $arg" >&2; exit 2 ;;
+  esac
+done
+
+# ── 1. Prerequisites ──────────────────────────────────────────────────────────
+
+section "Prerequisites"
+
+if command -v java >/dev/null 2>&1; then
+  JAVA_VER=$(java -version 2>&1 | head -1 | sed -E 's/.*"([0-9]+)[._].*/\1/;s/.*"([0-9]+)".*/\1/')
+  if [ "${JAVA_VER:-0}" -ge 17 ]; then
+    ok "Java $JAVA_VER on PATH"
+  else
+    fail "Java $JAVA_VER found — need 17+. Set JAVA_HOME and retry."
+  fi
+else
+  fail "java not found on PATH"
+fi
+
+if command -v mvn >/dev/null 2>&1; then
+  MVN_VER=$(mvn -v 2>/dev/null | head -1 | awk '{print $3}')
+  ok "Maven $MVN_VER on PATH"
+else
+  fail "mvn not found on PATH"
+fi
+
+[ $FAILURES -gt 0 ] && { printf "\n${RED}${BOLD}%d prerequisite(s) failed.${NC}\n" "$FAILURES"; exit 1; }
+
+# ── 2. commons-collections: D0 baseline setup ────────────────────────────────
+
+section "D0/D1 — commons-collections"
+
+if [ ! -d "$COLLECTIONS" ]; then
+  fail "third-party/commons-collections not found"
+  fail "Clone: git clone --depth=1 https://github.com/apache/commons-collections.git $COLLECTIONS"
+else
+  ok "commons-collections checkout present"
+
+  # Revert any leftover patch
+  if ! git -C "$COLLECTIONS" diff --quiet HEAD; then
+    if $check_only; then
+      warn "commons-collections has uncommitted changes — would revert on real run"
+    else
+      git -C "$COLLECTIONS" checkout src/
+      ok "commons-collections patch reverted"
+    fi
+  else
+    ok "commons-collections source clean"
+  fi
+
+  # Remove live index (D0 must run alphabetically)
+  if [ -d "$COLLECTIONS/.test-order" ]; then
+    if $check_only; then
+      warn "commons-collections .test-order exists — would remove (D0 needs no index)"
+    else
+      rm -rf "$COLLECTIONS/.test-order"
+      ok "commons-collections .test-order removed — D0 will run alphabetically"
+    fi
+  else
+    ok "commons-collections .test-order absent — D0 will run alphabetically"
+  fi
+
+  # Copy demo scripts into commons-collections
+  for script in make-change-commons.sh copy-in-db.sh; do
+    src="$SCRIPT_DIR/$script"
+    dst="$COLLECTIONS/$script"
+    if [ -f "$src" ]; then
+      if $check_only; then ok "would copy $script → third-party/commons-collections/"
+      else cp "$src" "$dst"; chmod +x "$dst"; ok "copied $script → commons-collections/"; fi
+    else
+      fail "$src not found"
+    fi
+  done
+
+  # Ensure .mvn/extensions.xml has test-order (D1 needs the plugin wired in)
+  EXT_COLL="$COLLECTIONS/.mvn/extensions.xml"
+  if grep -q "test-order-maven-plugin" "$EXT_COLL" 2>/dev/null; then
+    ok "commons-collections .mvn/extensions.xml has test-order"
+  elif grep -q "test-order-maven-plugin" "$COLLECTIONS/pom.xml" 2>/dev/null; then
+    ok "commons-collections pom.xml has test-order"
+  else
+    if $check_only; then
+      warn "commons-collections has no test-order — would inject .mvn/extensions.xml"
+    else
+      mkdir -p "$COLLECTIONS/.mvn"
+      cat > "$EXT_COLL" <<'XMLEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+  <extension>
+    <groupId>me.bechberger</groupId>
+    <artifactId>test-order-maven-plugin</artifactId>
+    <version>0.1.0</version>
+  </extension>
+</extensions>
+XMLEOF
+      ok "created commons-collections .mvn/extensions.xml with test-order 0.1.0"
+    fi
+  fi
+
+  # Verify patch file
+  if [ -f "$PATCH" ]; then
+    ok "EnumerationIterator patch present"
+  else
+    fail "patch not found at $PATCH"
+  fi
+
+  # Build commons-collections index snapshot (needed for D1 copy-in-db)
+  if $rebuild_indexes || [ ! -d "$COLLECTIONS_SNAPSHOT" ]; then
+    if $check_only; then
+      warn "commons-collections snapshot missing — run without --check-only to build (~2 min)"
+    else
+      say "Building commons-collections index snapshot (~2 min)…"
+      (cd "$COLLECTIONS" && mvn test -q 2>&1 | tail -5) && ok "learn run complete"
+      rm -rf "$COLLECTIONS_SNAPSHOT"
+      cp -r "$COLLECTIONS/.test-order" "$COLLECTIONS_SNAPSHOT"
+      ok "snapshot saved → $COLLECTIONS_SNAPSHOT"
+      rm -rf "$COLLECTIONS/.test-order"
+      ok "live index removed — D0 will run alphabetically"
+    fi
+  else
+    SNAP_FILES=$(find "$COLLECTIONS_SNAPSHOT" -type f | wc -l | tr -d ' ')
+    ok "commons-collections snapshot present ($SNAP_FILES files) — copy-in-db.sh ready"
+  fi
+fi
+
+# ── 3. spring-petclinic: D2/D3 setup ─────────────────────────────────────────
+
+section "D2/D3 — spring-petclinic"
+
+if [ ! -d "$PETCLINIC" ]; then
+  fail "third-party/spring-petclinic not found"
+  fail "Clone: git clone --depth=1 https://github.com/spring-projects/spring-petclinic.git $PETCLINIC"
+else
+  ok "spring-petclinic checkout present"
+
+  # Copy demo scripts
+  for script in copy-in-db.sh petclinic-make-change.sh; do
+    src="$SCRIPT_DIR/$script"
+    dst="$PETCLINIC/$script"
+    if [ -f "$src" ]; then
+      if $check_only; then ok "would copy $script → third-party/spring-petclinic/"
+      else cp "$src" "$dst"; chmod +x "$dst"; ok "copied $script → spring-petclinic/"; fi
+    else
+      fail "$src not found"
+    fi
+  done
+
+  # Verify VisitController is clean
+  VISIT="$PETCLINIC/src/main/java/org/springframework/samples/petclinic/owner/VisitController.java"
+  if [ -f "$VISIT.bak" ]; then
+    if $check_only; then warn "VisitController.java.bak exists — would restore"
+    else mv "$VISIT.bak" "$VISIT"; ok "VisitController.java restored from backup"; fi
+  else
+    ok "VisitController.java clean"
+  fi
+
+  # Ensure .mvn/extensions.xml has test-order (plugin is wired via extension, not pom)
+  EXT_PETCLINIC="$PETCLINIC/.mvn/extensions.xml"
+  if grep -q "test-order-maven-plugin" "$EXT_PETCLINIC" 2>/dev/null; then
+    ok "spring-petclinic .mvn/extensions.xml has test-order"
+  elif grep -q "test-order-maven-plugin" "$PETCLINIC/pom.xml" 2>/dev/null; then
+    ok "spring-petclinic pom.xml has test-order"
+  else
+    if $check_only; then
+      warn "spring-petclinic has no test-order — would inject .mvn/extensions.xml"
+    else
+      mkdir -p "$PETCLINIC/.mvn"
+      cat > "$EXT_PETCLINIC" <<'XMLEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+  <extension>
+    <groupId>me.bechberger</groupId>
+    <artifactId>test-order-maven-plugin</artifactId>
+    <version>0.1.0</version>
+  </extension>
+</extensions>
+XMLEOF
+      ok "created spring-petclinic .mvn/extensions.xml with test-order 0.1.0"
+    fi
+  fi
+
+  # Build petclinic index snapshot
+  if $rebuild_indexes || [ ! -d "$PETCLINIC_SNAPSHOT" ]; then
+    if $check_only; then
+      warn "petclinic snapshot missing — run without --check-only to build (~3 min)"
+    else
+      say "Building petclinic index snapshot (~3 min)…"
+      # Run twice so dashboard has run history for D3
+      (cd "$PETCLINIC" && mvn test -q 2>&1 | tail -5) && ok "petclinic learn run 1 complete"
+      (cd "$PETCLINIC" && mvn test -q 2>&1 | tail -5) && ok "petclinic order run 2 complete"
+      rm -rf "$PETCLINIC_SNAPSHOT"
+      cp -r "$PETCLINIC/.test-order" "$PETCLINIC_SNAPSHOT"
+      ok "snapshot saved → $PETCLINIC_SNAPSHOT"
+    fi
+  else
+    SNAP_FILES=$(find "$PETCLINIC_SNAPSHOT" -type f | wc -l | tr -d ' ')
+    ok "petclinic snapshot present ($SNAP_FILES files) — dashboard will have history"
+  fi
+fi
+
+# ── 4. Ready summary ──────────────────────────────────────────────────────────
+
+if [ $FAILURES -gt 0 ]; then
+  printf "\n${RED}${BOLD}%d check(s) failed — fix before going on stage.${NC}\n\n" "$FAILURES"
+  exit 1
+fi
+
+printf "\n${GREEN}${BOLD}Demo ready.${NC} Open 4 terminal tabs:\n\n"
+
+printf "  ${CYAN}D0${NC} (alphabetical baseline, ~5 min to failure at test #237):\n"
+printf "    cd %s\n" "$COLLECTIONS"
+printf "    mvn test -Dtestorder.mode=skip   # wait for EnumerationIteratorTest at #237\n\n"
+
+printf "  ${CYAN}D1${NC} (test-order active, same bug → test #1, Ctrl+C after red):\n"
+printf "    cd %s\n" "$COLLECTIONS"
+printf "    ./copy-in-db.sh && ./make-change-commons.sh\n"
+printf "    mvn test-order:show\n"
+printf "    mvn test   # Ctrl+C after first red (~10 seconds)\n\n"
+
+printf "  ${CYAN}D2${NC} (petclinic dashboard):\n"
+printf "    cd %s\n" "$PETCLINIC"
+printf "    ./copy-in-db.sh && ./petclinic-make-change.sh\n"
+printf "    mvn test-order:show\n"
+printf "    mvn test-order:dashboard && open target/test-order-dashboard/index.html\n\n"
+
+printf "  ${CYAN}Reset between runs:${NC}\n"
+printf "    cd %s && ./reset-demo.sh\n\n" "$SCRIPT_DIR"
