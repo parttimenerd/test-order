@@ -843,3 +843,158 @@ class: slide-base
 Real numbers from a real run — too big to fake.
 TRANSITION: "Before we go under the hood — a quick tour of what else is in the box."
 -->
+
+<!-- ═══ INTERLUDE: FEATURE CATALOGUE ══════════════════════════════════════════ -->
+
+---
+layout: default
+title: "Gradle"
+class: slide-base
+---
+
+## Gradle? Three lines.
+
+```groovy
+plugins {
+    id 'me.bechberger.test-order' version '0.1.0'
+}
+```
+
+```bash
+./gradlew test   # same index format, same dep map
+```
+
+<!--
+Same index works for both Maven and Gradle. You can share an index across build tools.
+-->
+
+---
+layout: default
+title: "Multi-Framework"
+class: slide-base
+---
+
+## Works with your test framework
+
+<div class="grid grid-cols-2 gap-4 mt-6">
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">✓ JUnit 5 / JUnit 6</div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">✓ JUnit 4 via Vintage</div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">✓ TestNG 7.x+</div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">✓ Kotest</div>
+</div>
+
+---
+layout: default
+title: "Annotations"
+class: slide-base
+---
+
+## Fine-grained control
+
+```java
+@AlwaysRun          // always ranked #1 regardless of score
+class SmokeTest { }
+
+@TestOrder(scoreBonus = 10)          // flat bonus to score
+class CriticalPathTest { }
+
+@TestOrder(changeBonus = 5)          // bonus only when deps overlap a change
+class IntegrationTest { }
+```
+
+<div class="mt-6 text-base opacity-70">
+  Flaky quarantine: <code>testorder.flaky.quarantine=true</code> — reports ABORTED not FAILED. Build stays green.
+</div>
+
+---
+layout: default
+title: "TDD Enforcement"
+class: slide-base
+---
+
+## `testorder.tdd=true`
+
+```
+[test-order] TDD VIOLATION: NewFeatureTest
+  → Test passed on first run with no prior failure recorded.
+  → Write the failing test BEFORE the implementation.
+BUILD FAILURE
+```
+
+<v-click>
+
+<div class="pull-quote mt-6">
+  Flip this on in CI. It will catch tests written after the feature, not before.
+</div>
+
+</v-click>
+
+<!--
+Pause for the laugh after "BUILD FAILURE". Let it land.
+Then: "This is opt-in. You don't have to use it. But if you care about TDD discipline in CI, one property."
+The v-click reveals the pull-quote after the code — gives the audience time to read the error first.
+-->
+
+---
+layout: default
+title: "Goals Overview"
+class: slide-base
+---
+
+## Six goals. Zero config.
+
+<div class="grid grid-cols-3 gap-4 mt-6 text-sm">
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="font-bold text-green-400 font-mono">show</div>
+    <div class="opacity-70 mt-1">Ranking preview before you run</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="font-bold text-blue-400 font-mono">affected</div>
+    <div class="opacity-70 mt-1">CI selection — changed classes only</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="font-bold text-purple-400 font-mono">dashboard</div>
+    <div class="opacity-70 mt-1">Local analytics + run history</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="font-bold text-yellow-400 font-mono">optimize</div>
+    <div class="opacity-70 mt-1">Tune scoring weights to your project</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="font-bold text-orange-400 font-mono">analyze-mutations</div>
+    <div class="opacity-70 mt-1">PIT kill-rate per test</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="font-bold text-red-400 font-mono">detect-dependencies</div>
+    <div class="opacity-70 mt-1">Find order-dependent tests</div>
+  </div>
+</div>
+
+<!--
+diagnose and download exist too — mention only if asked.
+TRANSITION: "Now — how does it actually work?"
+-->
+
+---
+layout: default
+title: "Staleness and Safety Nets"
+class: slide-base
+---
+
+## The index never goes stale
+
+<div class="grid grid-cols-1 gap-4 mt-6 max-w-2xl mx-auto">
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <strong>Opcode hash</strong> — checked on every run. Bytecode changed → invalidate entry.
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <strong>Dep fingerprint</strong> — source change triggers selective re-learn for affected classes only.
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <strong>Unknown classes</strong> — over-approximated and deferred, never silently skipped.
+  </div>
+</div>
+
+<!--
+TRANSITION: "Now — how does it actually work?"
+-->
