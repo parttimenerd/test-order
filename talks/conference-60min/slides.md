@@ -20,13 +20,14 @@ layout: cover
 ---
 
 <style>
-.big-statement {
+:global(.big-statement) {
   font-size: 3rem;
   font-weight: 700;
   line-height: 1.3;
   text-align: center;
+  width: 100%;
 }
-.quote-slide {
+:global(.quote-slide) {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -34,8 +35,9 @@ layout: cover
   text-align: center;
   padding: 6rem 4rem;
   position: relative;
+  width: 100%;
 }
-.quote-slide::before {
+:global(.quote-slide::before) {
   content: '\201C';
   position: absolute;
   left: 40px;
@@ -47,7 +49,7 @@ layout: cover
   line-height: 1;
   z-index: 0;
 }
-.quote-text {
+:global(.quote-text) {
   font-size: 1.85rem;
   line-height: 1.7;
   font-style: italic;
@@ -56,20 +58,20 @@ layout: cover
   position: relative;
   z-index: 1;
 }
-.quote-attr {
+:global(.quote-attr) {
   font-size: 1.05rem;
   opacity: 0.7;
   margin-top: 1.5rem;
   font-weight: 500;
 }
-.slidev-slide pre,
-.slidev-slide .shiki {
+:global(.slidev-slide pre),
+:global(.slidev-slide .shiki) {
   font-size: 1.05rem;
   line-height: 1.6;
   border-radius: 10px;
   padding: 18px 22px;
 }
-.pull-quote {
+:global(.pull-quote) {
   border-left: 4px solid #f97316;
   padding: 0.9rem 1.4rem;
   margin: 1.2rem 0;
@@ -80,7 +82,7 @@ layout: cover
   background: rgba(249, 115, 22, 0.07);
   border-radius: 0 8px 8px 0;
 }
-.hands-up {
+:global(.hands-up) {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
@@ -93,7 +95,7 @@ layout: cover
   color: #fef08a;
   margin-top: 1.2rem;
 }
-.tag-bad {
+:global(.tag-bad) {
   display: inline-block;
   background: rgba(239,68,68,0.15);
   border: 1px solid rgba(239,68,68,0.4);
@@ -106,7 +108,7 @@ layout: cover
   margin-right: 0.4rem;
   vertical-align: middle;
 }
-.tag-ok {
+:global(.tag-ok) {
   display: inline-block;
   background: rgba(148,163,184,0.12);
   border: 1px solid rgba(148,163,184,0.35);
@@ -820,7 +822,7 @@ title: "Scale Results"
 class: slide-base
 ---
 
-## SAP CDS Services · 52 modules
+## Large multi-module project · 52 modules
 
 <div class="grid grid-cols-2 gap-8 mt-6">
 <div class="p-6 rounded-xl bg-red-900/20 border border-red-800/40 text-center">
@@ -840,7 +842,8 @@ class: slide-base
 </div>
 
 <!--
-Real numbers from a real run — too big to fake.
+Numbers from a real run on a large internal project (think sap-cap scale — 52 modules).
+Don't name the project on stage.
 TRANSITION: "Before we go under the hood — a quick tour of what else is in the box."
 -->
 
