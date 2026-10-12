@@ -1,0 +1,8 @@
+import{$ as e,B as t,C as n,D as r,S as i,bt as a,v as o,vt as s,y as c}from"./modules/shiki-CdGmwcEL.js";import{nt as l,rt as u}from"./index-CfBNjXQS.js";import{t as d}from"./slidev/default-uT3wGax9.js";import{t as f}from"./slidev/CodeBlockWrapper-NOSHtXe7.js";var p={__name:`slides.md__slidev_52`,setup(p){let{$slidev:m,$nav:h,$clicksContext:g,$clicks:_,$page:v,$renderContext:y,$frontmatter:b}=u();return g.setup(),(u,p)=>{let m=f;return t(),c(d,a(r(s(l)(s(b),51))),{default:e(()=>[p[1]||=o(`h2`,null,[i(`How `),o(`code`,null,`detect-dependencies`),i(` works`)],-1),n(m,{title:``,ranges:[]},{default:e(()=>[...p[0]||=[o(`pre`,{class:`shiki shiki-themes vitesse-dark vitesse-light slidev-code`,style:{"--shiki-dark":`#dbd7caee`,"--shiki-light":`#393a34`,"--shiki-dark-bg":`#121212`,"--shiki-light-bg":`#ffffff`}},[o(`code`,{class:`language-text`},[o(`span`,{class:`line`},[o(`span`,null,`1. Generate Tuscan square for N tests → N orderings`)]),i(`
+`),o(`span`,{class:`line`},[o(`span`,null,`2. Run test suite in each ordering → record outcomes`)]),i(`
+`),o(`span`,{class:`line`},[o(`span`,null,`3. Compare: test T fails in ordering X but passes in Y?`)]),i(`
+`),o(`span`,{class:`line`},[o(`span`,null,`   → T is a potential victim`)]),i(`
+`),o(`span`,{class:`line`},[o(`span`,null,`4. Exclusion probes: run T in isolation, then with each`)]),i(`
+`),o(`span`,{class:`line`},[o(`span`,null,`   predecessor → find the polluter`)]),i(`
+`),o(`span`,{class:`line`},[o(`span`,null,`5. Classify: victim (broken by polluter) or brittle`)]),i(`
+`),o(`span`,{class:`line`},[o(`span`,null,`   (depends on prior state)`)])])],-1)]]),_:1})]),_:1},16)}}};export{p as default};
