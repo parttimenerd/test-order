@@ -137,3 +137,131 @@ layout: cover
 <!--
 OPENING LINE (spoken): "Regression testing is an important but costly software engineering task." — Legunsen et al., FSE 2016. Pause. "And yet here we are, still running tests in alphabetical order."
 -->
+
+---
+layout: image
+image: /images/baselone26-sponsors.png
+title: "Sponsors"
+---
+
+<!-- ═══ SLIDE 2: FEEDBACK LOOP ════════════════════════════════════════════════ -->
+
+---
+layout: default
+title: "The Feedback Loop"
+class: slide-base
+---
+
+## The Feedback Loop
+
+<div class="mt-6 text-xl leading-relaxed">
+
+**Edit** → commit → push → wait → context-switch → finally red → context-switch back → fix → repeat.
+
+</div>
+
+<div v-click class="pull-quote mt-8">
+  The bottleneck isn't how fast your tests run.<br/>
+  It's <strong>which one runs first.</strong>
+</div>
+
+<!--
+Don't rush this slide. The audience recognises this loop — it's their daily life.
+Let "which one runs first" land before advancing.
+-->
+
+<!-- ═══ SLIDE 3: D0 LIVE DEMO ════════════════════════════════════════════════ -->
+
+---
+layout: default
+title: "D0 — CI Baseline Demo"
+class: slide-base
+---
+
+<DemoCard id="D0" title="What we do today">
+
+```bash
+cd third-party/commons-collections
+# patch already applied — one missing line in remove()
+mvn test -Dtestorder.mode=skip
+```
+
+</DemoCard>
+
+<!--
+DEMO D0 — commons-collections with enumerationiterator patch pre-applied. mode=skip forces alphabetical.
+
+SETUP (run prepare-demo.sh before going on stage):
+- patch already applied via make-change-commons.sh
+- .test-order/ absent — mode=skip would ignore it anyway
+
+STEPS:
+1. cd third-party/commons-collections
+2. mvn test -Dtestorder.mode=skip  — DO NOT kill it early, let it reach pos 237
+
+NARRATE as it runs:
+- "This is Apache Commons Collections. Real open-source project. 321 tests."
+- "I removed one line from EnumerationIterator.remove() — a `last = null` reset."
+- "Alphabetical order. A… B… C… E… we're at test 80 out of 321… still going…"
+- Keep narrating as it crawls past 150, 200, 237
+- When EnumerationIteratorTest fails: "There it is. Position 237. We ran 236 tests first."
+- "Every one of those was wasted time."
+
+Let it sink in for 2 seconds. Then advance.
+
+FALLBACK: asciinema play public/demo-d0.cast
+-->
+
+<!-- ═══ SLIDE 4: SHOW OF HANDS ════════════════════════════════════════════════ -->
+
+---
+layout: center
+title: "Show of Hands"
+---
+
+<div class="big-statement">
+  Who's been context-switched out of a problem<br/>because CI took too long?
+</div>
+
+<div class="hands-up mt-10">✋ Keep your hand up if it happened this week.</div>
+
+<!--
+First audience interaction. Feed the response: "Right. That's what we're fixing today."
+-->
+
+<!-- ═══ SLIDE 5: APFD TIMELINE ════════════════════════════════════════════════ -->
+
+---
+layout: default
+title: "APFD Timeline"
+class: slide-base
+---
+
+## The Cost of Wrong Order
+
+<ApfdTimeline />
+
+<!--
+The chart shows first failure landing at ~80% of total runtime in alphabetical suites.
+"You already felt this. Position 237 out of 321 — that's 74% of the suite run before the failure."
+-->
+
+<!-- ═══ SLIDE 6: GOOGLE STAT ════════════════════════════════════════════════ -->
+
+---
+layout: center
+title: "91% Stat"
+class: quote-slide slide-base
+---
+
+<div class="absolute inset-0 bg-zinc-900/52 z-0" />
+
+<div class="quote-text relative z-10">
+  91.3% of tests at Google passed and never failed.<br/><em>Not once.</em>
+</div>
+<div class="quote-attr relative z-10">Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017 · 5.5M targets, 500K+ code changes</div>
+
+<!--
+Pause 3 seconds. Let it land.
+TRANSITION: "Which leads to a hard logical claim."
+-->
