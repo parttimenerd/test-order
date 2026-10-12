@@ -460,3 +460,101 @@ class: slide-base
 "This is what it tells you before you run. You can see exactly why each test is ranked where it is."
 TRANSITION: "That was 15 tests on a toy project. Does this hold up on a real project with hundreds of tests and a real bug?"
 -->
+
+<!-- ═══ ACT 2: PROVE IT ═══════════════════════════════════════════════════════ -->
+
+---
+layout: default
+title: "Real Bug Setup + Diff"
+class: slide-base
+---
+
+## Position 237. One missing line.
+
+<div class="grid grid-cols-2 gap-8 mt-4">
+<div>
+
+**Apache Commons Collections**
+321 tests · alphabetically: failure at **#237**
+
+```java
+public E remove() {
+    if (last == null) {
+        throw new IllegalStateException(...);
+    }
+-   last = null;  // ← this line was removed
+    iterator.remove();
+}
+```
+
+</div>
+<div class="flex flex-col justify-center">
+
+<div class="pull-quote">
+  You already felt position 237.<br/>
+  Let's replay it — with test-order.
+</div>
+
+</div>
+</div>
+
+<!--
+Callback to D0. The audience already lived the 5-minute wait.
+Keep it tight — don't re-explain the bug. One sentence max.
+-->
+
+---
+layout: default
+title: "D2 — commons-collections Live Demo"
+class: slide-base
+---
+
+<DemoCard id="D2" title="Same bug. test-order active.">
+
+```bash
+cd third-party/commons-collections
+# index warm from D0 — no learn needed
+mvn test-order:show       # EnumerationIteratorTest → #1
+mvn test                  # Ctrl+C after first red (~10s)
+```
+
+</DemoCard>
+
+<!--
+DEMO D2 — commons-collections, index warm from D0.
+
+STEPS:
+1. mvn test-order:show  — show ranking: EnumerationIteratorTest at #1
+2. mvn test  — it goes red immediately
+3. Ctrl+C after first red line
+
+NARRATE:
+- "Same project. Same bug. Same 321 tests."
+- "We waited at position 237 ten minutes ago."
+- After red: "That's position 1. Ten seconds instead of five minutes."
+- Pause 3 seconds. Let the contrast with D0 land.
+
+FALLBACK: screenshot pair — D0 terminal (pos 237) vs D2 terminal (pos 1) side by side.
+-->
+
+---
+layout: default
+title: "Benchmark Chart"
+class: slide-base
+---
+
+## 7 repos. 66 bugs. Consistent improvement.
+
+<BenchmarkChart />
+
+<div class="text-sm opacity-60 mt-4 text-center">
+  Results include MISSED and no_failure cases — not cherry-picked.
+  Data: <code>target/bench-apfd/results.csv</code>
+</div>
+
+<!--
+"This isn't one lucky project. Seven open-source repos, 66 bugs total."
+Acknowledge the misses honestly — a few patches don't trigger any test (no_failure), a few are MISSED.
+The chart shows the full picture.
+TRANSITION: "You've seen the terminal. How do you track this over time?"
+-->
