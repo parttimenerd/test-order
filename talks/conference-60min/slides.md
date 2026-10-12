@@ -265,3 +265,198 @@ class: quote-slide slide-base
 Pause 3 seconds. Let it land.
 TRANSITION: "Which leads to a hard logical claim."
 -->
+
+<!-- ═══ ACT 1: THE FIX ════════════════════════════════════════════════════════ -->
+
+---
+layout: center
+title: "Memon Quote"
+class: quote-slide slide-base
+---
+
+<div class="absolute inset-0 bg-zinc-900/52 z-0" />
+
+<div class="quote-text relative z-10">
+  "Very few of our tests ever fail, but those that do are generally 'closer' to the code they test."
+</div>
+<div class="quote-attr relative z-10">Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017</div>
+
+<!--
+The research foundation. "Closer" is doing a lot of work here — we're about to operationalize it.
+-->
+
+---
+layout: center
+title: "Logic Claim"
+---
+
+<div class="big-statement">
+  deps(test) ∩ changed = ∅<br/>
+  <span class="text-2xl opacity-70 mt-4 block">→ cannot fail on this change</span>
+</div>
+
+<!--
+One line. No prose. This is the math behind everything that follows.
+"If a test hasn't called the changed code, it cannot fail on this change."
+-->
+
+---
+layout: default
+title: "Pipeline Diagram"
+class: slide-base
+---
+
+## Record the map once. Rank on every push.
+
+<PipelineDiagram />
+
+<!--
+Learn run builds the dep map. Every subsequent run uses it to reorder.
+Zero overhead in order mode — no instrumentation runs, just a sort.
+-->
+
+---
+layout: default
+title: "Maven POM"
+class: slide-base
+---
+
+## One dependency. Ten lines.
+
+```xml {all|2-3|5|6-10}
+<build>
+  <extensions>
+    <extension>
+      <groupId>me.bechberger</groupId>
+      <artifactId>test-order-maven-plugin</artifactId>
+      <version>0.1.0</version>
+    </extension>
+  </extensions>
+</build>
+```
+
+<!--
+Walk through the highlight steps:
+- all: the full block
+- 2-3: it's a build extension, not a plugin — loads before the build lifecycle
+- 5: groupId me.bechberger
+- 6-10: that's it. No configuration required.
+"That's the entire setup. Everything else is automatic."
+-->
+
+---
+layout: default
+title: "Runtime Auto-Detection"
+class: slide-base
+---
+
+## Two modes. Automatic.
+
+<div class="grid grid-cols-2 gap-8 mt-6">
+<div class="p-6 rounded-xl bg-zinc-800/60 border border-zinc-700">
+
+### No index yet → **Learn**
+
+```
+[test-order] learn mode
+Instrumentation overhead: ~13%
+Recording dep map...
+```
+
+</div>
+<div class="p-6 rounded-xl bg-zinc-800/60 border border-zinc-700">
+
+### Index present → **Order**
+
+```
+[test-order] order mode
+Overhead: zero
+EnumerationIteratorTest → #1
+```
+
+</div>
+</div>
+
+<!--
+5 change modes exist (uncommitted, since-last-commit, since-last-run, auto, explicit) — reference for Q&A only.
+The key message: it detects which mode to use. You never configure this.
+-->
+
+---
+layout: default
+title: "D1 — spring-petclinic Live Demo"
+class: slide-base
+---
+
+<DemoCard id="D1" title="test-order in action">
+
+```bash
+cd third-party/spring-petclinic
+# index is cold — first run will learn
+mvn test
+# edit VisitController.java (one line)
+mvn test          # VisitControllerTests → #1, red immediately
+mvn test-order:show
+```
+
+</DemoCard>
+
+<!--
+DEMO D1 — spring-petclinic, cold index.
+
+SETUP: Maven compile cache pre-warmed (run `mvn test-only` once before talk).
+.test-order/ index ABSENT — D1 live-learns from scratch.
+
+STEPS:
+1. cd third-party/spring-petclinic
+2. mvn test  — first run, learn mode. 15 tests, ~5s. Show the "[test-order] learn mode" output.
+3. nano/vim VisitController.java — add a blank line or trivial change (pre-scripted)
+4. mvn test  — order mode. VisitControllerTests ranked #1. Watch it go red immediately.
+5. Ctrl+C after first red line.
+6. mvn test-order:show  — show the annotated ranking.
+
+NARRATE:
+- After learn run: "It just recorded which classes each test touched."
+- After edit: "I changed VisitController. test-order knows VisitControllerTests covers it."
+- After red: "Same Maven command. One line in pom.xml. Now the right test runs first."
+
+FALLBACK: asciinema play public/demo-d1.cast
+-->
+
+---
+layout: default
+title: "Scoring Breakdown"
+class: slide-base
+---
+
+## Why did VisitControllerTests rank #1?
+
+<ScoringBreakdown />
+
+<!--
+Walk through each signal that contributed to the score.
+depOverlapPoints is the dominant signal here — VisitController is directly in the dep map.
+-->
+
+---
+layout: default
+title: "test-order:show Output"
+class: slide-base
+---
+
+## `mvn test-order:show`
+
+```
+[test-order] Ranked 15 tests (order mode, since-last-commit)
+
+  #1  VisitControllerTests          score=14  ★ dep-overlap=8  fail=4  new=2
+  #2  PetControllerTests            score=9   dep-overlap=6  speed=3
+  #3  OwnerControllerTests          score=7   dep-overlap=5  speed=2
+  ...
+ #15  PetTypeFormatterTests         score=1   speed=1
+```
+
+<!--
+"This is what it tells you before you run. You can see exactly why each test is ranked where it is."
+TRANSITION: "That was 15 tests on a toy project. Does this hold up on a real project with hundreds of tests and a real bug?"
+-->
