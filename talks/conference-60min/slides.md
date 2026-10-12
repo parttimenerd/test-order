@@ -27,43 +27,6 @@ layout: cover
   text-align: center;
   width: 100%;
 }
-:global(.quote-slide) {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  padding: 6rem 4rem;
-  position: relative;
-  width: 100%;
-}
-:global(.quote-slide::before) {
-  content: '\201C';
-  position: absolute;
-  left: 40px;
-  top: 40%;
-  transform: translateY(-50%);
-  font-size: 15rem;
-  font-weight: 900;
-  color: rgba(148, 113, 217, 0.18);
-  line-height: 1;
-  z-index: 0;
-}
-:global(.quote-text) {
-  font-size: 1.85rem;
-  line-height: 1.7;
-  font-style: italic;
-  max-width: 820px;
-  font-weight: 500;
-  position: relative;
-  z-index: 1;
-}
-:global(.quote-attr) {
-  font-size: 1.05rem;
-  opacity: 0.7;
-  margin-top: 1.5rem;
-  font-weight: 500;
-}
 :global(.slidev-slide pre),
 :global(.slidev-slide .shiki) {
   font-size: 1.05rem;
@@ -121,6 +84,57 @@ layout: cover
   margin-right: 0.4rem;
   vertical-align: middle;
 }
+:global(.deco-quote) {
+  font-family: cursive !important;
+  font-size: 14rem;
+  font-weight: 900;
+  line-height: 0.9;
+  position: absolute;
+  top: 0.5rem;
+  left: 1.5rem;
+  user-select: none;
+  pointer-events: none;
+  opacity: 0.13;
+}
+:global(.quote-slide) {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 5rem;
+  position: relative;
+  overflow: hidden;
+}
+:global(.quote-text) {
+  font-size: 2.6rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #f1f5f9;
+  max-width: 52rem;
+  position: relative;
+  z-index: 10;
+}
+:global(.quote-attr) {
+  font-size: 1rem;
+  color: #64748b;
+  margin-top: 2rem;
+  font-weight: 400;
+  font-style: normal;
+  position: relative;
+  z-index: 10;
+}
+:global(.quote-accent-bar) {
+  position: absolute;
+  left: 2.5rem;
+  top: 15%;
+  bottom: 15%;
+  width: 6px;
+  border-radius: 3px;
+  opacity: 0.6;
+}
 </style>
 
 
@@ -156,13 +170,9 @@ class: slide-base
 
 ## The Feedback Loop
 
-<div class="mt-6 text-xl leading-relaxed">
+<FeedbackLoop class="mt-4" />
 
-**Edit** → commit → push → wait → context-switch → finally red → context-switch back → fix → repeat.
-
-</div>
-
-<div v-click class="pull-quote mt-8">
+<div v-click class="pull-quote mt-6">
   The bottleneck isn't how fast your tests run.<br/>
   It's <strong>which one runs first.</strong>
 </div>
@@ -251,17 +261,19 @@ The chart shows first failure landing at ~80% of total runtime in alphabetical s
 <!-- ═══ SLIDE 6: GOOGLE STAT ════════════════════════════════════════════════ -->
 
 ---
-layout: center
+layout: default
 title: "91% Stat"
-class: quote-slide slide-base
 ---
 
-<div class="absolute inset-0 bg-zinc-900/52 z-0" />
-
-<div class="quote-text relative z-10">
-  91.3% of tests at Google passed and never failed.<br/><em>Not once.</em>
+<div class="quote-slide">
+  <div class="deco-quote text-orange-400">"</div>
+  <div class="quote-text font-bold">
+    91.3% of tests at Google passed and never failed.<span class="text-orange-400"> Not once.</span>
+  </div>
+  <div class="quote-attr">
+    Memon et al., <em>Taming Google-Scale Continuous Testing</em>, ICSE-SEIP 2017 · 5.5M targets, 500K+ code changes
+  </div>
 </div>
-<div class="quote-attr relative z-10">Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017 · 5.5M targets, 500K+ code changes</div>
 
 <!--
 Pause 3 seconds. Let it land.
@@ -271,17 +283,21 @@ TRANSITION: "Which leads to a hard logical claim."
 <!-- ═══ ACT 1: THE FIX ════════════════════════════════════════════════════════ -->
 
 ---
-layout: center
+layout: default
 title: "Memon Quote"
-class: quote-slide slide-base
 ---
 
-<div class="absolute inset-0 bg-zinc-900/52 z-0" />
-
-<div class="quote-text relative z-10">
-  "Very few of our tests ever fail, but those that do are generally 'closer' to the code they test."
+<div class="quote-slide">
+  <div class="deco-quote text-purple-400">"</div>
+  <div class="quote-text italic">
+    "Very few of our tests ever fail, but those that do are generally
+    <span class="text-purple-300 not-italic font-bold">'closer'</span>
+    to the code they test."
+  </div>
+  <div class="quote-attr">
+    Memon et al., <em>Taming Google-Scale Continuous Testing</em>, ICSE-SEIP 2017
+  </div>
 </div>
-<div class="quote-attr relative z-10">Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017</div>
 
 <!--
 The research foundation. "Closer" is doing a lot of work here — we're about to operationalize it.
@@ -323,9 +339,14 @@ title: "Maven POM"
 class: slide-base
 ---
 
-## One dependency. Ten lines.
+## Two ways to install. Both take under a minute.
 
-```xml {all|2-3|5|6-10}
+<div class="grid grid-cols-2 gap-6 mt-2">
+<div>
+
+**Option A — `pom.xml`** (per-project)
+
+```xml {all|2-6}
 <build>
   <extensions>
     <extension>
@@ -337,12 +358,31 @@ class: slide-base
 </build>
 ```
 
+</div>
+<div>
+
+**Option B — `.mvn/extensions.xml`** (no pom change)
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+  <extension>
+    <groupId>me.bechberger</groupId>
+    <artifactId>test-order-maven-plugin</artifactId>
+    <version>0.1.0</version>
+  </extension>
+</extensions>
+```
+
+</div>
+</div>
+
+<div class="mt-4 text-slate-400 text-sm">Both load as a Maven build extension — before the build lifecycle. No `mvn` command changes needed.</div>
+
 <!--
 Walk through the highlight steps:
-- all: the full block
-- 2-3: it's a build extension, not a plugin — loads before the build lifecycle
-- 5: groupId me.bechberger
-- 6-10: that's it. No configuration required.
+- Option A: inline in pom.xml — good for projects you own
+- Option B: .mvn/extensions.xml — zero pom.xml change, ideal for trying it out or OSS contributions
 "That's the entire setup. Everything else is automatic."
 -->
 
