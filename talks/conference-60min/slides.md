@@ -998,3 +998,217 @@ class: slide-base
 <!--
 TRANSITION: "Now — how does it actually work?"
 -->
+
+<!-- ═══ ACT 5: UNDER THE HOOD ════════════════════════════════════════════════ -->
+
+---
+layout: default
+title: "Instrumentation Pipeline"
+class: slide-base
+---
+
+## One `invokestatic` per method entry.
+
+<InstrumentationPipeline />
+
+<!--
+The entire recording mechanism is one static method call injected at method entry.
+Everything else (thread-local bitset, batch flush, index server) flows from this single hook.
+-->
+
+---
+layout: default
+title: "Instrumentation Modes"
+class: slide-base
+---
+
+## Three modes. Similar overhead.
+
+| Mode | Tracks | Precision | Index size |
+|------|--------|-----------|-----------|
+| `CLASS` | Which classes load | Coarsest | Smallest |
+| `METHOD` | Per-method calls | Medium | Medium |
+| `MEMBER` *(default)* | Field + method accesses | Most precise | Largest |
+
+<div class="mt-6 text-base opacity-70">
+  All three modes have similar overhead (~11–13%). The real differentiator is precision.<br/>
+  Use <code>CLASS</code> for huge legacy suites where index size matters. <code>MEMBER</code> works everywhere.
+</div>
+
+---
+layout: default
+title: "ASM Injection"
+class: slide-base
+---
+
+## ASM · a handful of bytes per method
+
+```java
+// Before instrumentation
+public void remove() {
+    last = null;
+    iterator.remove();
+}
+
+// After — ASM injects at method entry
+public void remove() {
+    UsageStore.recordMemberUsageIdFast(42);  // ← injected: one invokestatic
+    last = null;
+    iterator.remove();
+}
+```
+
+<!--
+ASM operates at bytecode level — faster than Javassist, no runtime dependency.
+The integer ID maps back to the class/method in the index.
+-->
+
+---
+layout: default
+title: "Thread-Local Bitset"
+class: slide-base
+---
+
+## Zero contention until test method ends
+
+```
+Thread 1: test A runs      [bitset: 0b10110100...]
+Thread 2: test B runs      [bitset: 0b01001011...]
+Thread 3: test C runs      [bitset: 0b11000010...]
+                                        ↓
+                           batch flush at test end
+                                        ↓
+                              index server (TCP)
+```
+
+<!--
+Each test accumulates its dep hits in a thread-local bitset.
+No synchronization during the test — only one flush per test method at the end.
+"Zero overhead to the hot path."
+-->
+
+---
+layout: default
+title: "TCP Socket Batch"
+class: slide-base
+---
+
+## Binary batch over TCP socket
+
+<SocketBatchDiagram />
+
+<!--
+Index server runs in the build tool process (Maven/Gradle).
+Each forked JVM flushes its bitset as a binary batch at the end of the test session.
+TCP (not Unix socket) — works across fork boundaries.
+-->
+
+---
+layout: default
+title: "Index Format"
+class: slide-base
+---
+
+## Radix trie + RoaringBitmap
+
+<div class="grid grid-cols-2 gap-8 mt-6">
+<div>
+
+**Radix trie** maps class FQCNs → integer IDs
+
+- Package prefixes shared → compact storage
+- DFS traversal gives same-package classes contiguous IDs
+
+</div>
+<div>
+
+**RoaringBitmap** stores the dep set per test
+
+- Compressed: contiguous IDs → run containers
+- Fast diff on git change: XOR two bitmaps
+
+</div>
+</div>
+
+---
+layout: default
+title: "Dep Graph Diagram"
+class: slide-base
+---
+
+## The index: test → class → method edges
+
+<DepGraphDiagram />
+
+<!--
+Each test node has a set of class IDs it touched.
+At METHOD/MEMBER level, the edges go deeper — to individual method invocations.
+This is what makes depOverlapPoints precise: it counts exact class-level overlaps with changed_classes.
+-->
+
+---
+layout: default
+title: "Selective Learn"
+class: slide-base
+---
+
+## BFS selective re-learn · 4-hop limit
+
+<SelectiveLearnDiagram />
+
+<!--
+When testorder.learn.selective=true:
+BFS expands from changed classes through the static call graph up to 4 hops.
+Only classes reachable from the change are re-instrumented.
+Unchanged classes reuse their existing dep records.
+"You only pay for what changed."
+-->
+
+---
+layout: default
+title: "Scoring Signals"
+class: slide-base
+---
+
+## 11 signals. Each with a weight and rationale.
+
+| Signal | Default weight | Why |
+|--------|---------------|-----|
+| `depOverlapPoints` | 8 | Direct dep overlap — strongest predictor |
+| `failurePoints` | 4 | Recent failure history |
+| `newTestPoints` | 2 | Never run before — unknown risk |
+| `changedTestPoints` | 2 | Test file itself changed |
+| `setCoverPoints` | 2 | Unique coverage not in higher-ranked tests |
+| `packageProximityPoints` | 2 | Same package as changed class |
+| `nameMatchPoints` | 1 | Name heuristic (e.g. FooTest ↔ Foo) |
+| `complexityPoints` | 1 | High cyclomatic complexity → more paths |
+| `staticFieldPoints` | 1 | Shared state → order sensitivity risk |
+| `killRatePoints` | 1 | Mutation kill rate (PIT) |
+| `speedPoints` | −1 to −3 | Penalise slow tests unless highly relevant |
+
+<!--
+Source: Yoo & Harman 2012 — failure history + code churn = two strongest predictors.
+test-order:optimize tunes these weights using a genetic algorithm against your run history.
+-->
+
+---
+layout: default
+title: "test-order:optimize"
+class: slide-base
+---
+
+## `test-order:optimize`
+
+```
+[test-order] optimize: running genetic algorithm over 47 historical runs...
+[test-order] population=150, generations=200, fitness=APFD
+[test-order] best weights: depOverlap=9.2, failure=4.8, speed=-2.1, ...
+[test-order] APFD improvement: 0.71 → 0.84
+```
+
+<!--
+Jenetics-based genetic algorithm. Population of 150 weight vectors.
+Fitness function: APFD over your run history.
+"The default weights work well. This makes them work better for your specific project."
+TRANSITION: "There's a second problem in your test suite. And reordering is what reveals it."
+-->
