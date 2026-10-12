@@ -1453,20 +1453,18 @@ title: "Q&A"
 <div class="grid grid-cols-3 gap-8 mt-10 text-center">
   <div>
     <div class="text-sm opacity-60 mb-2">Docs</div>
-    <!-- QR code placeholder — replace with actual QR image -->
-    <div class="w-24 h-24 bg-zinc-700 rounded mx-auto flex items-center justify-center text-xs opacity-50">QR</div>
+    <img src="/images/test-order-qr.png" class="w-24 h-24 mx-auto" />
   </div>
   <div>
     <div class="text-sm opacity-60 mb-2">GitHub Issues</div>
-    <div class="w-24 h-24 bg-zinc-700 rounded mx-auto flex items-center justify-center text-xs opacity-50">QR</div>
+    <img src="/images/feedback-qr.png" class="w-24 h-24 mx-auto" />
   </div>
   <div>
     <div class="text-sm opacity-60 mb-2">SapMachine</div>
-    <div class="w-24 h-24 bg-zinc-700 rounded mx-auto flex items-center justify-center text-xs opacity-50">QR</div>
+    <img src="/images/google-scale-ct-qr.png" class="w-24 h-24 mx-auto" />
   </div>
 </div>
 
 <!--
-Replace QR placeholders with actual QR codes before the talk.
-Use public/images/ for the QR code images.
+Open for questions. Point to the QR codes for docs, issues, and SapMachine.
 -->
