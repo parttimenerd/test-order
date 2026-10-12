@@ -558,3 +558,145 @@ Acknowledge the misses honestly — a few patches don't trigger any test (no_fai
 The chart shows the full picture.
 TRANSITION: "You've seen the terminal. How do you track this over time?"
 -->
+
+<!-- ═══ ACT 3: DASHBOARD ══════════════════════════════════════════════════════ -->
+
+---
+layout: center
+title: "Dashboard Transition"
+---
+
+<div class="big-statement">Let's go into the dashboard.</div>
+
+<!--
+Single sentence. Visual breath. Let the audience shift from terminal to browser.
+-->
+
+---
+layout: default
+title: "D3 — Dashboard Live Demo"
+class: slide-base
+---
+
+<DemoCard id="D3" title="test-order:dashboard">
+
+```bash
+cd third-party/spring-petclinic
+mvn test-order:dashboard
+open target/test-order-dashboard/index.html
+```
+
+</DemoCard>
+
+<!--
+DEMO D3 — spring-petclinic, index warm from D1 with multiple runs recorded.
+
+TABS TO SHOW (live, ~5 min):
+1. Tests tab: VisitControllerTests at #1, score bar, breakdown panel, sparklines
+2. Analytics tab: APFD trend across D1 runs, rank heatmap
+3. Weights tab: drag "dep overlap" slider, watch VisitControllerTests move in real time
+
+MENTION BUT DON'T DEMO:
+- ML Health tab, Mutations tab (PIT kill-rate), Static Analysis tab
+- "Three more tabs we won't walk through today."
+
+NARRATE:
+- "You recognise VisitControllerTests — that's the test we just saw go red in D1."
+- "This is your actual run history, not canned data."
+- On weights tab: "You can tune the scoring for your project and see the effect immediately."
+
+FALLBACK: dashboard screenshots from public/images/ (dashboard-tests.png, dashboard-analytics.png, dashboard-weights.png)
+-->
+
+---
+layout: default
+title: "KPI Bar Decoded"
+class: slide-base
+---
+
+## Six numbers that tell the story
+
+<div class="grid grid-cols-3 gap-6 mt-6 text-center">
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="text-3xl font-bold text-green-400">APFD</div>
+    <div class="text-sm opacity-70 mt-2">Average % of faults<br/>detected early</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="text-3xl font-bold text-red-400">Failures</div>
+    <div class="text-sm opacity-70 mt-2">Tests that failed<br/>in recent runs</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="text-3xl font-bold text-yellow-400">Pass streak</div>
+    <div class="text-sm opacity-70 mt-2">Consecutive green<br/>runs per test</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="text-3xl font-bold text-orange-400">At-risk</div>
+    <div class="text-sm opacity-70 mt-2">Tests showing<br/>DEGRADING trend</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="text-3xl font-bold text-blue-400">Time saved</div>
+    <div class="text-sm opacity-70 mt-2">Minutes not spent<br/>on wrong tests</div>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <div class="text-3xl font-bold text-purple-400">Health A–F</div>
+    <div class="text-sm opacity-70 mt-2">Overall suite<br/>quality grade</div>
+  </div>
+</div>
+
+---
+layout: default
+title: "Staleness Flow"
+class: slide-base
+---
+
+## How the index stays fresh
+
+<StalenessFlow />
+
+<!--
+Three mechanisms:
+1. Opcode hash checked on every run — if bytecode changed, invalidate
+2. Dep fingerprint on source changes — trigger selective re-learn
+3. Over-approximate for unknown classes — deferred safety net
+"You never manually refresh the index."
+-->
+
+---
+layout: default
+title: "Landscape Map"
+class: slide-base
+---
+
+## Where test-order fits
+
+<LandscapeMap />
+
+<!--
+Different trade-offs from Ekstazi/STARTS/Skippy/Cloud TIA.
+Don't bash other tools — just show where test-order sits in the space.
+-->
+
+---
+layout: default
+title: "When NOT to Use This"
+class: slide-base
+---
+
+## When NOT to use this
+
+<div class="grid grid-cols-1 gap-4 mt-6 max-w-2xl mx-auto">
+  <div class="p-4 rounded-xl bg-red-900/20 border border-red-800/40">
+    <strong>&lt;20 tests</strong> — the overhead of building a dep map isn't worth it
+  </div>
+  <div class="p-4 rounded-xl bg-red-900/20 border border-red-800/40">
+    <strong>Reflection-only dependencies</strong> — bytecode instrumentation can't see through <code>Class.forName()</code>
+  </div>
+  <div class="p-4 rounded-xl bg-red-900/20 border border-red-800/40">
+    <strong>Dynamic classloaders</strong> — classes loaded at runtime won't appear in the dep map
+  </div>
+</div>
+
+<!--
+Honesty builds trust. Saying "here's where it doesn't work" makes everything else more believable.
+TRANSITION: "Your laptop is sorted. What about the pipeline?"
+-->
