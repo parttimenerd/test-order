@@ -1212,3 +1212,261 @@ Fitness function: APFD over your run history.
 "The default weights work well. This makes them work better for your specific project."
 TRANSITION: "There's a second problem in your test suite. And reordering is what reveals it."
 -->
+
+<!-- ═══ ACT 6: OD TESTS ═══════════════════════════════════════════════════════ -->
+
+---
+layout: center
+title: "OD Tests Intro"
+---
+
+<div class="big-statement">
+  There's a second problem<br/>in your test suite.
+</div>
+
+<!--
+Show-of-hands #3: "Has anyone had a test that passes alone but fails in the suite — or vice versa?"
+Feed: "Some of those are order-dependent tests. Not flaky. Not broken. Just wrong order."
+Alphabetical ordering hides them — they only surface when order changes.
+-->
+
+---
+layout: default
+title: "OD Research"
+class: slide-base
+---
+
+## Order-dependent tests are more common than you think
+
+<div class="grid grid-cols-2 gap-6 mt-6">
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <strong>Luo et al. ICSE 2014</strong><br/>
+    <span class="opacity-70">4.56% of open-source test suites had OD failures. Victim/brittle taxonomy.</span>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <strong>Shi et al. FSE 2019</strong><br/>
+    <span class="opacity-70">Setter/polluter refinement — not just brittle, but the specific cause.</span>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <strong>Bell et al. ASE 2015</strong><br/>
+    <span class="opacity-70">Random shuffle: ~60% detection. Isolation probes confirm root cause.</span>
+  </div>
+  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+    <strong>Li et al. ISSTA 2023</strong><br/>
+    <span class="opacity-70">Tuscan square design: 97.2% detection in ~105 runs.</span>
+  </div>
+</div>
+
+---
+layout: center
+title: "Option 1: Brute Force"
+---
+
+## Option 1: Brute force
+
+<div class="big-statement mt-6">O(N!)</div>
+
+<div class="text-2xl opacity-70 mt-6 text-center">
+  N=10 → 3,628,800 permutations<br/>
+  N=50 → 3 × 10<sup>64</sup>
+</div>
+
+<!--
+"Untenable for any real suite. You'd still be running this talk in heat death of the universe."
+-->
+
+---
+layout: center
+title: "Option 2: Random Shuffle"
+---
+
+## Option 2: Random shuffle
+
+<div class="grid grid-cols-2 gap-12 mt-8 text-center max-w-2xl mx-auto">
+  <div>
+    <div class="text-4xl font-bold text-green-400">~60%</div>
+    <div class="opacity-70 mt-2">detection rate<br/>(Bell et al. 2015)</div>
+  </div>
+  <div>
+    <div class="text-4xl font-bold text-red-400">~40%</div>
+    <div class="opacity-70 mt-2">missed<br/>correlated patterns</div>
+  </div>
+</div>
+
+<!--
+"Cheap. Better than nothing. But misses 40% — including correlated patterns where two tests must be adjacent to trigger the failure."
+-->
+
+---
+layout: default
+title: "Option 3: Tuscan Square"
+class: slide-base
+---
+
+## Option 3: Tuscan square
+
+<TuscanSquareViz />
+
+<div class="mt-6 text-center">
+  N=50 → <strong>50 runs</strong> · every ordered pair covered<br/>
+  vs brute force: <strong>3 × 10<sup>64</sup> permutations</strong>
+</div>
+
+<!--
+Pause after "3 × 10^64". Let the comparison land.
+"A Tuscan square is a combinatorial design that guarantees every ordered pair (A before B) appears in exactly one row.
+N tests → N runs. That's the whole trick."
+-->
+
+---
+layout: default
+title: "detect-dependencies Algorithm"
+class: slide-base
+---
+
+## How `detect-dependencies` works
+
+```
+1. Generate Tuscan square for N tests → N orderings
+2. Run test suite in each ordering → record outcomes
+3. Compare: test T fails in ordering X but passes in Y?
+   → T is a potential victim
+4. Exclusion probes: run T in isolation, then with each
+   predecessor → find the polluter
+5. Classify: victim (broken by polluter) or brittle
+   (depends on prior state)
+```
+
+<!--
+The algorithm combines the Tuscan systematic coverage with targeted isolation probes.
+"You don't run 3×10^64 permutations. You run N orderings, then surgical probes."
+-->
+
+---
+layout: center
+title: "OD Detection Result"
+---
+
+<div class="big-statement">
+  97.2% detection rate.
+</div>
+
+<div class="text-xl opacity-70 mt-6 text-center">
+  Run before release. Fix the test, not the order.
+</div>
+
+<!--
+Li et al. ISSTA 2023.
+"If it finds something: the test has a hidden dependency on execution order.
+That's a bug in the test — fix the test."
+-->
+
+---
+layout: default
+title: "detect-dependencies Goal"
+class: slide-base
+---
+
+## `mvn test-order:detect-dependencies`
+
+```
+[test-order] Generating Tuscan square for 47 tests...
+[test-order] Running 47 orderings...
+[test-order] Potential victims: UserServiceTest, CartTest
+[test-order] Running isolation probes...
+[test-order] FOUND: CartTest is a victim — polluted by UserServiceTest
+[test-order] Suggested fix: CartTest.tearDown() should reset UserRepository
+```
+
+<!--
+The goal runs the full Tuscan + exclusion probe algorithm.
+Output names the victim, the polluter, and suggests a fix location.
+"Run this before a release. Not on every commit — it's expensive. If it finds something, fix the test."
+TRANSITION: "So — where does this leave us?"
+-->
+
+<!-- ═══ CLOSING ══════════════════════════════════════════════════════════════ -->
+
+---
+layout: center
+title: "Closing — Proof of Concept"
+---
+
+<div class="big-statement">
+  The technique works.<br/>
+  The research is solid.<br/>
+  The tool is a proof of concept.
+</div>
+
+<div class="mt-8 text-center opacity-70">
+  v0.1.0 · Maven Central · Apache 2.0 · open for experimentation
+</div>
+
+<!--
+Honest framing: not production-ready, not used in production anywhere.
+This is a research prototype demonstrating the approach is viable.
+"Try it on a project you own. File issues. The approach is sound — the tool needs real-world feedback to mature."
+-->
+
+---
+layout: default
+title: "Three Takeaways"
+class: slide-base
+---
+
+## Three things to take away
+
+<div class="grid grid-cols-1 gap-5 mt-6 max-w-2xl mx-auto">
+  <div class="p-5 rounded-xl bg-zinc-800/60 border border-zinc-700 text-lg">
+    ① Tests closest to the change fail first. This is a law, not a heuristic.
+  </div>
+  <div class="p-5 rounded-xl bg-zinc-800/60 border border-zinc-700 text-lg">
+    ② One line of config to try it. Everything else is automatic.
+  </div>
+  <div class="p-5 rounded-xl bg-zinc-800/60 border border-zinc-700 text-lg">
+    ③ It works on real bugs at scale. The benchmark shows the full picture — misses included.
+  </div>
+</div>
+
+---
+layout: center
+title: "Callback"
+---
+
+<div class="big-statement">One line in pom.xml.</div>
+
+<div class="text-xl opacity-70 mt-6 text-center">
+  That's it. The runner figures out the rest.
+</div>
+
+<!--
+Callback to the opening demo. "Remember position 237? That was before this line existed."
+-->
+
+---
+layout: center
+title: "Q&A"
+---
+
+# Questions?
+
+<div class="grid grid-cols-3 gap-8 mt-10 text-center">
+  <div>
+    <div class="text-sm opacity-60 mb-2">Docs</div>
+    <!-- QR code placeholder — replace with actual QR image -->
+    <div class="w-24 h-24 bg-zinc-700 rounded mx-auto flex items-center justify-center text-xs opacity-50">QR</div>
+  </div>
+  <div>
+    <div class="text-sm opacity-60 mb-2">GitHub Issues</div>
+    <div class="w-24 h-24 bg-zinc-700 rounded mx-auto flex items-center justify-center text-xs opacity-50">QR</div>
+  </div>
+  <div>
+    <div class="text-sm opacity-60 mb-2">SapMachine</div>
+    <div class="w-24 h-24 bg-zinc-700 rounded mx-auto flex items-center justify-center text-xs opacity-50">QR</div>
+  </div>
+</div>
+
+<!--
+Replace QR placeholders with actual QR codes before the talk.
+Use public/images/ for the QR code images.
+-->
