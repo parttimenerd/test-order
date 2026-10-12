@@ -700,3 +700,146 @@ class: slide-base
 Honesty builds trust. Saying "here's where it doesn't work" makes everything else more believable.
 TRANSITION: "Your laptop is sorted. What about the pipeline?"
 -->
+
+<!-- ═══ ACT 4: CI ════════════════════════════════════════════════════════════ -->
+
+---
+layout: center
+title: "CI Transition"
+---
+
+<div class="big-statement">What about the pipeline?</div>
+
+<!--
+Visual breath. Audience shifts from "this works on my machine" to "this works at org scale."
+-->
+
+---
+layout: default
+title: "The CI Problem"
+class: slide-base
+---
+
+## The pipeline pays full price on every push
+
+<div class="mt-6 text-xl leading-relaxed">
+Full suite · every push · dozens per day · every run pays full cost.
+</div>
+
+<div class="hands-up mt-8">✋ Who has CI that takes more than 10 minutes?</div>
+
+<!--
+Second audience interaction. Feed: "That's the norm, not the exception."
+-->
+
+---
+layout: default
+title: "Affected-Only"
+class: slide-base
+---
+
+## `mvn test-order:affected test`
+
+<MavenLog>
+
+```
+[test-order] change detection: since-last-commit
+[test-order] changed class: EnumerationIterator
+[test-order] selected 9 tests (316 deferred)
+
+Running EnumerationIteratorTest ...  FAILED
+```
+
+</MavenLog>
+
+<!--
+Use v-click to reveal "selected 9 tests (316 deferred)" after the changed-class line.
+"One changed class. Nine tests selected. 316 deferred."
+-->
+
+---
+layout: default
+title: "Tiered CI Pipeline"
+class: slide-base
+---
+
+## Three tiers. One index.
+
+<div class="grid grid-cols-3 gap-6 mt-6 text-center">
+  <div class="p-5 rounded-xl bg-zinc-800/60 border border-green-700/60">
+    <div class="text-lg font-bold text-green-400">Tier 1 — Push check</div>
+    <div class="text-sm opacity-70 mt-2"><code>test-order:affected</code><br/>Changed classes only<br/>Seconds to red</div>
+  </div>
+  <div class="p-5 rounded-xl bg-zinc-800/60 border border-yellow-700/60">
+    <div class="text-lg font-bold text-yellow-400">Tier 2 — Nightly</div>
+    <div class="text-sm opacity-70 mt-2"><code>run-tier 1</code><br/>Top-scored tests<br/>Minutes</div>
+  </div>
+  <div class="p-5 rounded-xl bg-zinc-800/60 border border-zinc-600">
+    <div class="text-lg font-bold text-zinc-400">Tier 3 — Pre-release</div>
+    <div class="text-sm opacity-70 mt-2"><code>run-tier 2/3</code><br/>Full suite<br/>Pre-merge gate</div>
+  </div>
+</div>
+
+<!--
+Actual goals: tiered-select + run-tier 1/2/3. Parallel sharding (shard=k/N) available — mention only if asked.
+-->
+
+---
+layout: default
+title: "GitHub Actions YAML"
+class: slide-base
+---
+
+## Ten lines to wire it into CI
+
+```yaml {all|4-7|9-10}
+- name: Run tests
+  run: mvn test
+
+- name: Cache test-order index
+  uses: actions/cache@v4
+  with:
+    path: .test-order/
+    key: test-order-${{ hashFiles('src/**') }}
+
+    # changeMode=since-last-commit detects what changed in this PR
+  env:
+    MAVEN_OPTS: -Dtestorder.changeMode=since-last-commit
+```
+
+<!--
+Highlight steps:
+- 4-7: cache the index between runs — this is what makes it cheap on every PR
+- 9-10: since-last-commit tells test-order what changed relative to the base branch
+Speaker note: mention `download` goal (fetch pre-built index from CI artifacts) as an aside.
+-->
+
+---
+layout: default
+title: "Scale Results"
+class: slide-base
+---
+
+## SAP CDS Services · 52 modules
+
+<div class="grid grid-cols-2 gap-8 mt-6">
+<div class="p-6 rounded-xl bg-red-900/20 border border-red-800/40 text-center">
+  <div class="text-4xl font-bold text-red-400">90s</div>
+  <div class="mt-2 opacity-70"><code>mvn clean test</code></div>
+  <div class="text-sm mt-1 opacity-50">Compile crawl. Zero tests started.</div>
+</div>
+<div class="p-6 rounded-xl bg-green-900/20 border border-green-800/40 text-center">
+  <div class="text-4xl font-bold text-green-400">55s → RED</div>
+  <div class="mt-2 opacity-70"><code>mvn test-order:affected test</code></div>
+  <div class="text-sm mt-1 opacity-50">Right failure. Right away.</div>
+</div>
+</div>
+
+<div class="pull-quote mt-8">
+  80% earlier signal × 30 pushes/day = a completely different dev loop.
+</div>
+
+<!--
+Real numbers from a real run — too big to fake.
+TRANSITION: "Before we go under the hood — a quick tour of what else is in the box."
+-->
