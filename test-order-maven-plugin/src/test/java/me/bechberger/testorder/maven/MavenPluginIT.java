@@ -45,7 +45,9 @@ class MavenPluginIT {
 		Path projectDir = itProjectsDir.resolve("order-mode");
 		assertThat(Files.exists(projectDir)).isTrue();
 
-		Path propsFile = projectDir.resolve("target/test-order-runtime/junit-platform.properties");
+		// junit-platform.properties is merged into target/test-classes so JUnit finds
+		// exactly one copy (avoids JUnit 5.11+ "Discovered 2" warning).
+		Path propsFile = projectDir.resolve("target/test-classes/junit-platform.properties");
 		assertThat(Files.exists(propsFile)).withFailMessage("junit-platform.properties should exist: " + propsFile)
 				.isTrue();
 

@@ -147,10 +147,9 @@ abstract class AbstractEndToEndIT {
 	@DisplayName("Order mode: junit-platform.properties is written with PriorityClassOrderer")
 	void orderModeWritesJunitPlatformProperties() {
 		// Order mode from previous test left target around.
-		// junit-platform.properties is written to target/test-order-runtime (runtime
-		// config dir)
-		// and injected into the test classpath at runtime.
-		String props = project.readFile("target/test-order-runtime/junit-platform.properties");
+		// junit-platform.properties is merged into target/test-classes so JUnit finds
+		// exactly one copy (avoids JUnit 5.11+ "Discovered 2" warning).
+		String props = project.readFile("target/test-classes/junit-platform.properties");
 		assertThat(props).isNotNull().contains("me.bechberger.testorder.junit.PriorityClassOrderer");
 	}
 
