@@ -20,5 +20,6 @@ if git diff --quiet HEAD; then
   echo "✓ Patch applied — EnumerationIterator.remove() missing last=null"
 else
   echo "⚠  Working tree already has changes — patch may already be applied"
-  git diff --stat HEAD
 fi
+
+git diff HEAD

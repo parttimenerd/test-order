@@ -1,0 +1,7 @@
+import{L as e,T as t,V as n,X as r,_ as i,_t as a,b as o,g as s,ht as c,x as l}from"./modules/shiki-DMRAbjcN.js";import{et as u,tt as d}from"./index-DpRp6j57.js";import{t as f}from"./slidev/default-BqOWARef.js";var p={__name:`slides.md__slidev_43`,setup(p){let{$slidev:m,$nav:h,$clicksContext:g,$clicks:_,$page:v,$renderContext:y,$frontmatter:b}=d();return g.setup(),(d,p)=>{let m=n(`CodeBlockWrapper`);return e(),i(f,a(t(c(u)(c(b),42))),{default:r(()=>[p[1]||=s(`h2`,null,`Zero contention until test method ends`,-1),l(m,{title:``,ranges:[]},{default:r(()=>[...p[0]||=[s(`pre`,{class:`shiki shiki-themes vitesse-dark vitesse-light slidev-code`,style:{"--shiki-dark":`#dbd7caee`,"--shiki-light":`#393a34`,"--shiki-dark-bg":`#121212`,"--shiki-light-bg":`#ffffff`}},[s(`code`,{class:`language-text`},[s(`span`,{class:`line`},[s(`span`,null,`Thread 1: test A runs      [bitset: 0b10110100...]`)]),o(`
+`),s(`span`,{class:`line`},[s(`span`,null,`Thread 2: test B runs      [bitset: 0b01001011...]`)]),o(`
+`),s(`span`,{class:`line`},[s(`span`,null,`Thread 3: test C runs      [bitset: 0b11000010...]`)]),o(`
+`),s(`span`,{class:`line`},[s(`span`,null,`                                        ↓`)]),o(`
+`),s(`span`,{class:`line`},[s(`span`,null,`                           batch flush at test end`)]),o(`
+`),s(`span`,{class:`line`},[s(`span`,null,`                                        ↓`)]),o(`
+`),s(`span`,{class:`line`},[s(`span`,null,`                              index server (TCP)`)])])],-1)]]),_:1})]),_:1},16)}}};export{p as default};

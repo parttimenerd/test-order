@@ -1,0 +1,9 @@
+import{L as e,T as t,V as n,X as r,_ as i,_t as a,b as o,g as s,ht as c,v as l,x as u}from"./modules/shiki-DMRAbjcN.js";import{et as d,tt as f}from"./index-DpRp6j57.js";import{t as p}from"./slidev/default-BqOWARef.js";var m={__name:`slides.md__slidev_49`,setup(m){let{$slidev:h,$nav:g,$clicksContext:_,$clicks:v,$page:y,$renderContext:b,$frontmatter:x}=f();return _.setup(),(f,m)=>{let h=n(`CodeBlockWrapper`);return e(),i(p,a(t(c(d)(c(x),48))),{default:r(()=>[m[1]||=s(`h2`,null,[s(`code`,null,`test-order:optimize`)],-1),u(h,{title:``,ranges:[]},{default:r(()=>[...m[0]||=[s(`pre`,{class:`shiki shiki-themes vitesse-dark vitesse-light slidev-code`,style:{"--shiki-dark":`#dbd7caee`,"--shiki-light":`#393a34`,"--shiki-dark-bg":`#121212`,"--shiki-light-bg":`#ffffff`}},[s(`code`,{class:`language-text`},[s(`span`,{class:`line`},[s(`span`,null,`[test-order] optimize: running genetic algorithm over 47 historical runs...`)]),o(`
+`),s(`span`,{class:`line`},[s(`span`,null,`[test-order] population=150, generations=200, fitness=APFD`)]),o(`
+`),s(`span`,{class:`line`},[s(`span`,null,`[test-order] best weights: depOverlap=9.2, failure=4.8, speed=-2.1, ...`)]),o(`
+`),s(`span`,{class:`line`},[s(`span`,null,`[test-order] APFD improvement: 0.71 → 0.84`)])])],-1)]]),_:1}),l(`
+Jenetics-based genetic algorithm. Population of 150 weight vectors.
+Fitness function: APFD over your run history.
+"The default weights work well. This makes them work better for your specific project."
+TRANSITION: "There's a second problem in your test suite. And reordering is what reveals it."
+`)]),_:1},16)}}};export{m as default};

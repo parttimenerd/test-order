@@ -1,0 +1,4 @@
+import{L as e,T as t,X as n,_ as r,_t as i,b as a,g as o,ht as s,v as c,x as l}from"./modules/shiki-DMRAbjcN.js";import{et as u,tt as d}from"./index-DpRp6j57.js";import{t as f}from"./slidev/default-BqOWARef.js";import{t as p}from"./QuoteCard-B2juOgcu.js";var m={__name:`slides.md__slidev_7`,setup(m){let{$slidev:h,$nav:g,$clicksContext:_,$clicks:v,$page:y,$renderContext:b,$frontmatter:x}=d();return _.setup(),(d,m)=>{let h=p;return e(),r(f,i(t(s(u)(s(x),6))),{default:n(()=>[l(h,{attr:`Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017 · 5.5M targets, 500K+ code changes`,accentColor:`#fb923c`},{default:n(()=>[...m[0]||=[o(`strong`,null,[a(`91.3% of tests at Google passed and never failed.`),o(`span`,{class:`text-orange-400`},` Not once.`)],-1)]]),_:1}),c(`
+Pause 3 seconds. Let it land.
+TRANSITION: "Which leads to a hard logical claim."
+`)]),_:1},16)}}};export{m as default};

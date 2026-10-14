@@ -10,6 +10,7 @@
 #   D1  restores commons-collections index from snapshot (re-copy-in-db)
 #   D2  restores VisitController.java from backup (if present)
 #   D3  restores petclinic index from snapshot
+#   D4  nothing to reset — meta-agent.jar stays in .tools/, server exits via Stop button
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

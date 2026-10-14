@@ -1,4 +1,0 @@
-import{$ as e,B as t,D as n,S as r,b as i,bt as a,v as o,vt as s,y as c}from"./modules/shiki-CdGmwcEL.js";import{nt as l,rt as u}from"./index-CfBNjXQS.js";import{t as d}from"./slidev/center-C8iBDIFn.js";var f={__name:`slides.md__slidev_7`,setup(f){let{$slidev:p,$nav:m,$clicksContext:h,$clicks:g,$page:_,$renderContext:v,$frontmatter:y}=u();return h.setup(),(u,f)=>(t(),c(d,a(n(s(l)(s(y),6))),{default:e(()=>[f[0]||=o(`div`,{class:`absolute inset-0 bg-zinc-900/52 z-0`},null,-1),f[1]||=o(`div`,{class:`quote-text relative z-10`},[r(` 91.3% of tests at Google passed and never failed.`),o(`br`),o(`em`,null,`Not once.`)],-1),f[2]||=o(`div`,{class:`quote-attr relative z-10`},`Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017 · 5.5M targets, 500K+ code changes`,-1),i(`
-Pause 3 seconds. Let it land.
-TRANSITION: "Which leads to a hard logical claim."
-`)]),_:1},16))}};export{f as default};

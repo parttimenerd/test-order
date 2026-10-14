@@ -1,3 +1,0 @@
-import{$ as e,B as t,D as n,S as r,b as i,bt as a,v as o,vt as s,y as c}from"./modules/shiki-CdGmwcEL.js";import{nt as l,rt as u}from"./index-CfBNjXQS.js";import{t as d}from"./slidev/center-C8iBDIFn.js";var f={__name:`slides.md__slidev_5`,setup(f){let{$slidev:p,$nav:m,$clicksContext:h,$clicks:g,$page:_,$renderContext:v,$frontmatter:y}=u();return h.setup(),(u,f)=>(t(),c(d,a(n(s(l)(s(y),4))),{default:e(()=>[f[0]||=o(`div`,{class:`big-statement`},[r(` Who's been context-switched out of a problem`),o(`br`),r(`because CI took too long? `)],-1),f[1]||=o(`div`,{class:`hands-up mt-10`},`✋ Keep your hand up if it happened this week.`,-1),i(`
-First audience interaction. Feed the response: "Right. That's what we're fixing today."
-`)]),_:1},16))}};export{f as default};

@@ -20,6 +20,13 @@ layout: cover
 ---
 
 <style>
+:global(.scoring-table) { font-size: 0.78rem; line-height: 1.3; margin-top: 0.25rem; }
+:global(.scoring-table table) { width: 100%; border-collapse: collapse; margin: 0 !important; }
+:global(.scoring-table th) { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; padding: 1px 10px 3px !important; border-bottom: 1px solid #334155; line-height: 1.3 !important; }
+:global(.scoring-table td) { padding: 2px 10px !important; border-bottom: 1px solid #1e293b; vertical-align: middle; line-height: 1.3 !important; margin: 0 !important; }
+:global(.scoring-table tr) { margin: 0 !important; padding: 0 !important; }
+:global(.scoring-table tr:last-child td) { border-bottom: none; }
+:global(.scoring-table td:nth-child(2)) { text-align: center; font-weight: 600; color: #fbbf24; white-space: nowrap; }
 :global(.big-statement) {
   font-size: 3rem;
   font-weight: 700;
@@ -194,22 +201,22 @@ class: slide-base
 
 ```bash
 cd third-party/commons-collections
-# patch already applied — one missing line in remove()
-mvn test -Dtestorder.mode=skip
+./make-change-commons.sh   # remove one line from remove()
+mvn test
 ```
 
 </DemoCard>
 
 <!--
-DEMO D0 — commons-collections with enumerationiterator patch pre-applied. mode=skip forces alphabetical.
+DEMO D0 — commons-collections, NO test-order. prepare-demo.sh ensures .mvn/extensions.xml is absent.
 
 SETUP (run prepare-demo.sh before going on stage):
-- patch already applied via make-change-commons.sh
-- .test-order/ absent — mode=skip would ignore it anyway
+- Source is clean — make-change-commons.sh applies the patch live on stage
+- .test-order/ absent, .mvn/extensions.xml has no test-order plugin
 
 STEPS:
 1. cd third-party/commons-collections
-2. mvn test -Dtestorder.mode=skip  — DO NOT kill it early, let it reach pos 237
+2. mvn test  — DO NOT kill it early, let it reach pos 237
 
 NARRATE as it runs:
 - "This is Apache Commons Collections. Real open-source project. 321 tests."
@@ -265,15 +272,12 @@ layout: default
 title: "91% Stat"
 ---
 
-<div class="quote-slide">
-  <div class="deco-quote text-orange-400">"</div>
-  <div class="quote-text font-bold">
-    91.3% of tests at Google passed and never failed.<span class="text-orange-400"> Not once.</span>
-  </div>
-  <div class="quote-attr">
-    Memon et al., <em>Taming Google-Scale Continuous Testing</em>, ICSE-SEIP 2017 · 5.5M targets, 500K+ code changes
-  </div>
-</div>
+<QuoteCard
+  attr="Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017 · 5.5M targets, 500K+ code changes"
+  accentColor="#fb923c"
+>
+  <strong>91.3% of tests at Google passed and never failed.<span class="text-orange-400"> Not once.</span></strong>
+</QuoteCard>
 
 <!--
 Pause 3 seconds. Let it land.
@@ -287,17 +291,14 @@ layout: default
 title: "Memon Quote"
 ---
 
-<div class="quote-slide">
-  <div class="deco-quote text-purple-400">"</div>
-  <div class="quote-text italic">
-    "Very few of our tests ever fail, but those that do are generally
-    <span class="text-purple-300 not-italic font-bold">'closer'</span>
-    to the code they test."
-  </div>
-  <div class="quote-attr">
-    Memon et al., <em>Taming Google-Scale Continuous Testing</em>, ICSE-SEIP 2017
-  </div>
-</div>
+<QuoteCard
+  attr="Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017"
+  accentColor="#c084fc"
+>
+  "Very few of our tests ever fail, but those that do are generally
+  <span class="text-purple-300 not-italic font-bold">'closer'</span>
+  to the code they test."
+</QuoteCard>
 
 <!--
 The research foundation. "Closer" is doing a lot of work here — we're about to operationalize it.
@@ -313,9 +314,12 @@ title: "Logic Claim"
   <span class="text-2xl opacity-70 mt-4 block">→ cannot fail on this change</span>
 </div>
 
+<div class="text-center text-sm opacity-50 mt-6"><code>changed</code> = classes whose bytecode differs since last compile — detected automatically via opcode hash</div>
+
 <!--
 One line. No prose. This is the math behind everything that follows.
 "If a test hasn't called the changed code, it cannot fail on this change."
+"changed = any class whose compiled bytecode changed — test-order detects this automatically on every run via opcode hash, no manual annotation needed."
 -->
 
 ---
@@ -339,29 +343,9 @@ title: "Maven POM"
 class: slide-base
 ---
 
-## Two ways to install. Both take under a minute.
+## One file. That's the entire setup.
 
-<div class="grid grid-cols-2 gap-6 mt-2">
-<div>
-
-**Option A — `pom.xml`** (per-project)
-
-```xml {all|2-6}
-<build>
-  <extensions>
-    <extension>
-      <groupId>me.bechberger</groupId>
-      <artifactId>test-order-maven-plugin</artifactId>
-      <version>0.1.0</version>
-    </extension>
-  </extensions>
-</build>
-```
-
-</div>
-<div>
-
-**Option B — `.mvn/extensions.xml`** (no pom change)
+**`.mvn/extensions.xml`** — works for single-module and multi-module projects
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -374,15 +358,17 @@ class: slide-base
 </extensions>
 ```
 
-</div>
-</div>
+<div class="mt-5 text-slate-400 text-sm">
 
-<div class="mt-4 text-slate-400 text-sm">Both load as a Maven build extension — before the build lifecycle. No `mvn` command changes needed.</div>
+Loads as a Maven build extension — before the build lifecycle. No `mvn` command changes needed.  
+For single-module projects only: can also go in `pom.xml` under `<build><extensions>`.
+
+</div>
 
 <!--
-Walk through the highlight steps:
-- Option A: inline in pom.xml — good for projects you own
-- Option B: .mvn/extensions.xml — zero pom.xml change, ideal for trying it out or OSS contributions
+Create .mvn/extensions.xml in the project root — that's it.
+This is the only method that works in multi-module projects (the plugin must load before the reactor is built).
+Single-module projects can also use pom.xml <build><extensions>, but .mvn/extensions.xml is simpler and always works.
 "That's the entire setup. Everything else is automatic."
 -->
 
@@ -401,7 +387,7 @@ class: slide-base
 
 ```
 [test-order] learn mode
-Instrumentation overhead: ~13%
+Instrumentation overhead: ~13%  # measured on spring-petclinic, MEMBER mode
 Recording dep map...
 ```
 
@@ -476,8 +462,21 @@ class: slide-base
 <ScoringBreakdown />
 
 <!--
-Walk through each signal that contributed to the score.
-depOverlapPoints is the dominant signal here — VisitController is directly in the dep map.
+Shown on slide (dominant signals for VisitControllerTests):
+- Dep overlap: VisitController is directly in the dep map → +2 (normalized by sqrt(depTotal))
+- Pkg proximity: same package as changed class → +2
+- Change complexity: 1 changed class in dep set → +1
+
+Not shown — all contribute to every score:
+- Fail history: EMA decay over recent runs (test that failed 3 runs ago still gets a fading boost)
+- Changed test: test class itself was edited → large fixed bonus, always top-ranked
+- New test: never run before → moved to position 1 unconditionally
+- Speed: fast tests up, slow tests down — keeps the feedback loop tight
+- Name match: "VisitControllerTests" ↔ "VisitController" — heuristic name proximity bonus
+- Static field overlap: shared static fixture with a changed class
+- Set-cover / kill rate: unique coverage bonus for tests covering ground others don't
+
+Total: 5 → VisitControllerTests ranks #1 out of all suite classes.
 -->
 
 ---
@@ -555,7 +554,7 @@ class: slide-base
 
 ```bash
 cd third-party/commons-collections
-# index warm from D0 — no learn needed
+./setup-test-order.sh     # adds .mvn/extensions.xml + restores index
 mvn test-order:show       # EnumerationIteratorTest → #1
 mvn test                  # Ctrl+C after first red (~10s)
 ```
@@ -563,12 +562,16 @@ mvn test                  # Ctrl+C after first red (~10s)
 </DemoCard>
 
 <!--
-DEMO D2 — commons-collections, index warm from D0.
+DEMO D2 — commons-collections, test-order added live via setup-test-order.sh.
 
 STEPS:
-1. mvn test-order:show  — show ranking: EnumerationIteratorTest at #1
-2. mvn test  — it goes red immediately
-3. Ctrl+C after first red line
+1. ./setup-test-order.sh  — adds test-order to .mvn/extensions.xml (shows diff), restores pre-trained index
+2. mvn test-order:show  — show ranking: EnumerationIteratorTest at #1
+3. mvn test  — it goes red immediately
+4. Ctrl+C after first red line
+
+NARRATE for setup-test-order.sh:
+- "One file. .mvn/extensions.xml. You can see the diff right there."
 
 NARRATE:
 - "Same project. Same bug. Same 321 tests."
@@ -585,19 +588,57 @@ title: "Benchmark Chart"
 class: slide-base
 ---
 
-## 7 repos. 66 bugs. Consistent improvement.
+## 7 repos. 65 bugs. Consistent improvement.
 
 <BenchmarkChart />
 
 <div class="text-sm opacity-60 mt-4 text-center">
-  Results include MISSED and no_failure cases — not cherry-picked.
+  62 of 65 patches triggered a test failure — results include no_failure cases, not cherry-picked.
   Data: <code>target/bench-apfd/results.csv</code>
 </div>
 
 <!--
-"This isn't one lucky project. Seven open-source repos, 66 bugs total."
-Acknowledge the misses honestly — a few patches don't trigger any test (no_failure), a few are MISSED.
-The chart shows the full picture.
+"This isn't one lucky project. Seven open-source repos, 65 bugs total — 62 triggered a test failure."
+Acknowledge the misses honestly — 3 patches hit no_failure (guava locale/timeout issue).
+The chart shows the full picture: commons-collections 26% → 0.9%, jackson-core 13% → 4%.
+TRANSITION: "What does this cost? One question every audience member is thinking."
+-->
+
+---
+layout: default
+title: "Overhead"
+class: slide-base
+---
+
+## The cost: one learn run. Zero overhead after that.
+
+<OverheadChart />
+
+<!--
+spring-petclinic, 15 tests, MEMBER mode (default). Source: docs/PERFORMANCE_OPTIMIZATIONS.md.
+"The instrumentation runs once. Every run after that — no agent, no overhead. The index is just a sort key."
+"Commit .test-order/ to your repo and CI never pays it either."
+TRANSITION: "same story across all benchmark repos — three modes, one pattern"
+-->
+
+---
+layout: default
+title: "Learn overhead across repos and modes"
+class: slide-base
+---
+
+## Same story across all benchmark repos.
+
+<LearnOverheadChart />
+
+<div class="text-sm opacity-50 mt-3 text-center">
+  Mean overhead ± std err · 3 runs each · MEMBER★ is the default mode
+</div>
+
+<!--
+"FULL tracks at class granularity — lightest instrumentation, fewer edges. METHOD adds call edges per method. MEMBER also tracks field accesses — most precise, similar cost."
+"All three modes pay the overhead exactly once. Order runs carry zero instrumentation regardless of mode."
+Variation across repos reflects suite size and test-class coupling density, not mode quality.
 TRANSITION: "You've seen the terminal. How do you track this over time?"
 -->
 
@@ -1028,13 +1069,16 @@ class: slide-base
 
 <div class="grid grid-cols-1 gap-4 mt-6 max-w-2xl mx-auto">
   <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <strong>Opcode hash</strong> — checked on every run. Bytecode changed → invalidate entry.
+    <strong>Opcode hash</strong> — checked on every run. Bytecode changed → invalidate entry.<br/>
+    <span class="text-sm opacity-60">e.g. you edit <code>CartService.java</code> and recompile → its entry is removed, affected tests re-run uncached</span>
   </div>
   <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <strong>Dep fingerprint</strong> — source change triggers selective re-learn for affected classes only.
+    <strong>Dep fingerprint</strong> — source change triggers selective re-learn for affected classes only.<br/>
+    <span class="text-sm opacity-60">e.g. you add a new dependency to <code>pom.xml</code> → plugin switches to learn mode automatically</span>
   </div>
   <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <strong>Unknown classes</strong> — over-approximated and deferred, never silently skipped.
+    <strong>Unknown classes</strong> — over-approximated and deferred, never silently skipped.<br/>
+    <span class="text-sm opacity-60">e.g. a new class with no dep record → all tests that could possibly touch it are included</span>
   </div>
 </div>
 
@@ -1104,6 +1148,49 @@ public void remove() {
 <!--
 ASM operates at bytecode level — faster than Javassist, no runtime dependency.
 The integer ID maps back to the class/method in the index.
+-->
+
+---
+layout: default
+title: "D4 — meta-agent Live Demo"
+class: slide-base
+---
+
+<DemoCard id="D4" title="See the injection live">
+
+```bash
+cd third-party/spring-petclinic
+./learn-with-meta-agent.sh --meta-agent
+# browser opens → http://localhost:7071/classes
+```
+
+</DemoCard>
+
+<!--
+DEMO D4 — spring-petclinic learn run with meta-agent attached, server stays up after tests.
+
+SETUP (run prepare-demo.sh before going on stage):
+  meta-agent.jar present at third-party/spring-petclinic/.tools/meta-agent.jar
+  petclinic index PRESENT (warm from D1 or snapshot) so tests run fast
+
+STEPS:
+1. ./learn-with-meta-agent.sh --meta-agent
+   — browser opens automatically to http://localhost:7071/classes
+   — tests finish in ~5s; server stays up (keepalive)
+2. In browser: click any class (e.g. VisitController)
+   — show the "Original" and "Transformed" decompiled panels side-by-side
+   — point at the injected UsageStore.recordMemberUsageIdFast(…) call at method entry
+3. Open http://localhost:7071/instrumentators
+   — shows test-order's ClassFileTransformer registered
+4. Click Stop in the browser nav to exit the JVM
+
+NARRATE:
+- "We just saw the bytecode diff on a slide. Here it is on a real class."
+- "meta-agent wraps any ClassFileTransformer and decompiles before and after."
+- "That call at the top of every method — that's what records the dep map."
+- "Stop exits the server cleanly."
+
+FALLBACK: screenshot of meta-agent /full-diff/class?pattern=VisitController in public/images/meta-agent-diff.png
 -->
 
 ---
@@ -1213,24 +1300,28 @@ title: "Scoring Signals"
 class: slide-base
 ---
 
-## 11 signals. Each with a weight and rationale.
+<h2 class="!text-2xl !mb-1">8 signals. Three tiers.</h2>
 
-| Signal | Default weight | Why |
-|--------|---------------|-----|
-| `depOverlapPoints` | 8 | Direct dep overlap — strongest predictor |
-| `failurePoints` | 4 | Recent failure history |
+<div class="scoring-table">
+
+| Signal | Weight | Why |
+|--------|--------|-----|
+| `depOverlapPoints` | **8** | Direct dep overlap — strongest predictor |
+| `failurePoints` | **4** | Recent failure history |
 | `newTestPoints` | 2 | Never run before — unknown risk |
 | `changedTestPoints` | 2 | Test file itself changed |
 | `setCoverPoints` | 2 | Unique coverage not in higher-ranked tests |
 | `packageProximityPoints` | 2 | Same package as changed class |
 | `nameMatchPoints` | 1 | Name heuristic (e.g. FooTest ↔ Foo) |
-| `complexityPoints` | 1 | High cyclomatic complexity → more paths |
-| `staticFieldPoints` | 1 | Shared state → order sensitivity risk |
-| `killRatePoints` | 1 | Mutation kill rate (PIT) |
 | `speedPoints` | −1 to −3 | Penalise slow tests unless highly relevant |
+
+</div>
+
+<div class="text-sm opacity-50 mt-3">Weights are defaults — <code>mvn test-order:optimize</code> tunes them against your run history.</div>
 
 <!--
 Source: Yoo & Harman 2012 — failure history + code churn = two strongest predictors.
+Removed from table for clarity: complexityPoints (1), staticFieldPoints (1), killRatePoints (1) — minor contributors, rarely the deciding factor.
 test-order:optimize tunes these weights using a genetic algorithm against your run history.
 -->
 
@@ -1369,16 +1460,12 @@ class: slide-base
 
 ## How `detect-dependencies` works
 
-```
-1. Generate Tuscan square for N tests → N orderings
-2. Run test suite in each ordering → record outcomes
-3. Compare: test T fails in ordering X but passes in Y?
-   → T is a potential victim
-4. Exclusion probes: run T in isolation, then with each
-   predecessor → find the polluter
-5. Classify: victim (broken by polluter) or brittle
-   (depends on prior state)
-```
+<DetectDepsFlow class="mt-6" />
+
+<div class="mt-5 grid grid-cols-2 gap-x-8 text-sm text-slate-400">
+<div>Phase 1 runs N orderings (Tuscan square) — every ordered pair is covered. Any test that flips pass→fail is a <em>potential victim</em>.</div>
+<div>Phase 2 runs surgical isolation probes: T alone, then with each predecessor. Classify as <strong class="text-slate-300">victim</strong> (polluter breaks it) or <strong class="text-slate-300">brittle</strong> (depends on prior state).</div>
+</div>
 
 <!--
 The algorithm combines the Tuscan systematic coverage with targeted isolation probes.
@@ -1504,7 +1591,7 @@ title: "Q&A"
   </div>
   <div>
     <div class="text-sm opacity-60 mb-2">SapMachine</div>
-    <img src="/images/google-scale-ct-qr.png" class="w-24 h-24 mx-auto" />
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://sapmachine.io&bgcolor=18181b&color=ffffff&qzone=1" class="w-24 h-24 mx-auto rounded-lg" />
   </div>
 </div>
 
