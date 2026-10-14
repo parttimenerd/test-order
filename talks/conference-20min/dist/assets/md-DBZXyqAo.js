@@ -1,4 +1,0 @@
-import{_ as n}from"./DemoCard-DW8YXnad.js";import{o as r,K as s,_ as c,Z as i,ao as m,ap as d,u as t}from"./modules/vue-BX9ho2sT.js";import{I as p}from"./slidev/default-UyMiTmZm.js";import{u as _,f as u}from"./slidev/context-B-j2uW20.js";import"./index-CrM3wuoG.js";import"./modules/shiki-CdhS3xfJ.js";const w={__name:"slides.md__slidev_18",setup(l){const{$clicksContext:e,$frontmatter:o}=_();return e.setup(),(h,f)=>{const a=n;return r(),s(p,m(d(t(u)(t(o),17))),{default:c(()=>[i(a,{id:"D2",duration:"2:00",cmd:`# Add null-check to Cart.add(), one line
-$EDITOR src/main/java/com/example/shop/Cart.java
-mvn test
-mvn test-order:show`,title:"Edit one method. Watch CartTest jump to #1.",watch:"Why column: changed-test=9, overlap=5. Score 14. Nothing retrained: a set intersection on the existing index."})]),_:1},16)}}};export{w as default};

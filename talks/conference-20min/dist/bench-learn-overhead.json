@@ -1,0 +1,145 @@
+{
+  "repos": [
+    "commons-collections",
+    "commons-io",
+    "guava",
+    "jackson-core",
+    "logbook",
+    "spring-ai",
+    "spring-petclinic"
+  ],
+  "modes": [
+    "CLASS",
+    "METHOD",
+    "MEMBER"
+  ],
+  "defaultMode": "MEMBER",
+  "data": {
+    "commons-collections": {
+      "n_tests": 329,
+      "CLASS": {
+        "mean": 3.64,
+        "se": 0.26,
+        "n": 5
+      },
+      "METHOD": {
+        "mean": 3.88,
+        "se": 0.53,
+        "n": 5
+      },
+      "MEMBER": {
+        "mean": 5.9,
+        "se": 0.44,
+        "n": 5
+      }
+    },
+    "commons-io": {
+      "n_tests": 252,
+      "CLASS": {
+        "mean": 11.8,
+        "se": 1.01,
+        "n": 3
+      },
+      "METHOD": {
+        "mean": 13.97,
+        "se": 2.14,
+        "n": 3
+      },
+      "MEMBER": {
+        "mean": 12.3,
+        "se": 0.0,
+        "n": 1
+      }
+    },
+    "guava": {
+      "n_tests": 522,
+      "CLASS": {
+        "mean": 17.46,
+        "se": 1.09,
+        "n": 5
+      },
+      "METHOD": {
+        "mean": 16.2,
+        "se": 1.18,
+        "n": 5
+      },
+      "MEMBER": {
+        "mean": 14.98,
+        "se": 1.21,
+        "n": 5
+      }
+    },
+    "jackson-core": {
+      "n_tests": 249,
+      "CLASS": {
+        "mean": 31.1,
+        "se": 4.84,
+        "n": 5
+      },
+      "METHOD": {
+        "mean": 31.02,
+        "se": 2.96,
+        "n": 5
+      },
+      "MEMBER": {
+        "mean": 43.92,
+        "se": 4.58,
+        "n": 5
+      }
+    },
+    "logbook": {
+      "n_tests": 238,
+      "CLASS": {
+        "mean": 49.76,
+        "se": 3.69,
+        "n": 5
+      },
+      "METHOD": {
+        "mean": 51.56,
+        "se": 4.66,
+        "n": 5
+      },
+      "MEMBER": {
+        "mean": 55.62,
+        "se": 5.63,
+        "n": 5
+      }
+    },
+    "spring-ai": {
+      "n_tests": 105,
+      "CLASS": {
+        "mean": 290.08,
+        "se": 3.84,
+        "n": 5
+      },
+      "METHOD": {
+        "mean": 285.3,
+        "se": 3.22,
+        "n": 5
+      },
+      "MEMBER": {
+        "mean": 295.64,
+        "se": 5.06,
+        "n": 5
+      }
+    },
+    "spring-petclinic": {
+      "n_tests": 15,
+      "CLASS": {
+        "mean": 1.98,
+        "se": 2.23,
+        "n": 5
+      },
+      "METHOD": {
+        "mean": 6.94,
+        "se": 1.74,
+        "n": 5
+      },
+      "MEMBER": {
+        "mean": 6.3,
+        "se": 2.27,
+        "n": 5
+      }
+    }
+  }
+}

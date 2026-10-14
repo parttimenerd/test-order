@@ -1,0 +1,1 @@
+var e=`/images/wiki-loc-catalog.jpg`;export{e as t};

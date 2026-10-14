@@ -1,0 +1,1 @@
+var e=`/images/test-order-qr.png`;export{e as t};

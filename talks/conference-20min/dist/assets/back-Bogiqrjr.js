@@ -1,0 +1,1 @@
+var e=1.70158;(function e(t){t=+t;function n(e){return(e=+e)*e*(t*(e-1)+e)}return n.overshoot=e,n})(e);var t=(function e(t){t=+t;function n(e){return--e*e*((e+1)*t+e)+1}return n.overshoot=e,n})(e);(function e(t){t=+t;function n(e){return((e*=2)<1?e*e*((t+1)*e-t):(e-=2)*e*((t+1)*e+t)+2)/2}return n.overshoot=e,n})(e);export{t};

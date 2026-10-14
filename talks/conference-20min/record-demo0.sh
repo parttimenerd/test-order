@@ -1,33 +1,33 @@
 #!/usr/bin/env bash
 # record-demo0.sh — Record the D0 asciinema cast for the 20min talk.
-# D0 shows plain `mvn test` on spring-petclinic WITHOUT test-order.
-# Temporarily disables the extensions.xml, records, then restores it.
+# D0 shows plain `mvn test` on commons-collections with test-order skipped (alphabetical).
+# The EnumerationIterator patch must already be applied before recording.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
-PETCLINIC="$REPO_ROOT/third-party/spring-petclinic"
-EXT="$PETCLINIC/.mvn/extensions.xml"
-CAST_OUT="$SCRIPT_DIR/public/demo.cast"
+COLLECTIONS="$REPO_ROOT/third-party/commons-collections"
+CAST_OUT="$SCRIPT_DIR/public/demo0.cast"
 
-if [ ! -d "$PETCLINIC" ]; then
-  echo "ERROR: spring-petclinic not found at $PETCLINIC" >&2
+if [ ! -d "$COLLECTIONS" ]; then
+  echo "ERROR: commons-collections not found at $COLLECTIONS" >&2
   exit 1
 fi
 
-# Disable test-order for the recording
-if [ -f "$EXT" ]; then
-  mv "$EXT" "$EXT.bak"
-  trap 'mv "$EXT.bak" "$EXT" 2>/dev/null; true' EXIT
-fi
+# Remove any live index — D0 must run alphabetically with mode=skip
+rm -rf "$COLLECTIONS/.test-order"
+
+echo "Applying EnumerationIterator patch for recording..."
+"$SCRIPT_DIR/make-change-commons.sh"
 
 echo "Recording D0 cast to $CAST_OUT ..."
 
 asciinema rec \
-  --cols 100 --rows 28 \
+  --cols 100 --rows 30 \
   --idle-time-limit 2 \
   --overwrite \
-  --command "bash -c 'cd $PETCLINIC && echo \"\$ cd third-party/spring-petclinic\" && echo \"\$ mvn test\" && mvn test 2>&1 | tail -40'" \
+  --command "bash -c 'cd $COLLECTIONS && echo \"\$ mvn test -Dtestorder.mode=skip\" && mvn test -Dtestorder.mode=skip 2>&1'" \
   "$CAST_OUT"
 
 echo "Done: $CAST_OUT"
+echo "NOTE: remember to revert the patch: git -C $COLLECTIONS checkout src/"

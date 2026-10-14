@@ -1,53 +1,47 @@
 #!/usr/bin/env bash
 # prepare-demo.sh — Pre-flight setup for the "You Are Running the Wrong Tests First" talk.
 #
-# Run this once, ~5 minutes before going on stage. It:
+# Run this once, ~10 minutes before going on stage. It:
 #   1. Checks JDK and Maven are on PATH
-#   2. Verifies cloud-sdk-java checkout and enables test-order — D0 and D1 require it
-#   3. Ensures DestinationRetrievalStrategyResolver.java is clean (no leftover bug)
-#   4. Removes any live .test-order index (D0 needs no index)
-#   5. Verifies the pre-trained index snapshot — D1 needs it; auto-builds if missing
-#   6. Prints a ready summary with the exact commands for each demo
+#   2. Verifies commons-collections checkout, reverts any leftover patch
+#   3. Removes live commons-collections index (D0 needs no index)
+#   4. Verifies/builds commons-collections index snapshot (needed by copy-in-db.sh for D1)
+#   5. Verifies spring-petclinic checkout and pom.xml has test-order
+#   6. Verifies/builds petclinic index snapshot (needed by copy-in-db.sh for D2/D3 dashboard)
+#   7. Copies make-change-commons.sh + copy-in-db.sh into each project dir
+#   8. Prints a ready summary with exact demo commands
 #
 # Usage:
-#   ./prepare-demo.sh                   # normal pre-show prep
-#   ./prepare-demo.sh --learn-cloud-sdk # force re-run learn pass (~6 min, builds snapshot)
-#   ./prepare-demo.sh --check-only      # dry-run: just validate, don't change anything
-#
-# Demos in the talk:
-#   D0  cloud-sdk-java, NO test-order — plain mvn test, DestinationRetrievalStrategyResolverTest runs alphabetically
-#   D1  cloud-sdk-java, WITH test-order — same bug, DestinationRetrievalStrategyResolverTest jumps to #1
+#   ./prepare-demo.sh                    # normal pre-show prep
+#   ./prepare-demo.sh --rebuild-indexes  # force-rebuild both index snapshots (~8 min)
+#   ./prepare-demo.sh --check-only       # dry-run: just validate, don't change anything
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Use git to find the main worktree root so this works from a git worktree as well
-REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --show-toplevel 2>/dev/null || cd "$SCRIPT_DIR/../.." && pwd)"
-# If we're in a worktree, find the main working tree
-MAIN_WORKTREE="$(git -C "$SCRIPT_DIR" worktree list --porcelain 2>/dev/null | awk 'NR==1{print $2}')"
-if [ -n "$MAIN_WORKTREE" ] && [ "$MAIN_WORKTREE" != "$REPO_ROOT" ]; then
-  REPO_ROOT="$MAIN_WORKTREE"
-fi
-CLOUD_SDK="$REPO_ROOT/third-party/cloud-sdk-java"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+COLLECTIONS="$REPO_ROOT/third-party/commons-collections"
+PETCLINIC="$REPO_ROOT/third-party/spring-petclinic"
+COLLECTIONS_SNAPSHOT="$SCRIPT_DIR/commons-collections-index-snapshot"
+PETCLINIC_SNAPSHOT="$SCRIPT_DIR/petclinic-index-snapshot"
+PATCH="$REPO_ROOT/scripts/bugs/commons-collections/real-enumerationiterator-remove-no-reset.patch"
 
 BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
-
 say()    { printf "${BOLD}▶ %s${NC}\n" "$*"; }
 ok()     { printf "  ${GREEN}✓${NC}  %s\n" "$*"; }
 warn()   { printf "  ${YELLOW}⚠${NC}  %s\n" "$*"; }
 fail()   { printf "  ${RED}✗${NC}  %s\n" "$*"; FAILURES=$((FAILURES+1)); }
 section(){ printf "\n${CYAN}${BOLD}── %s ──${NC}\n" "$*"; }
 
-learn_cloud_sdk=false
+rebuild_indexes=false
 check_only=false
 FAILURES=0
 
 for arg in "$@"; do
   case "$arg" in
-    --learn-cloud-sdk) learn_cloud_sdk=true ;;
+    --rebuild-indexes) rebuild_indexes=true ;;
     --check-only)      check_only=true ;;
-    -h|--help)
-      sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -74,48 +68,112 @@ else
   fail "mvn not found on PATH"
 fi
 
-if [ $FAILURES -gt 0 ]; then
-  printf "\n${RED}${BOLD}%d prerequisite(s) failed — fix before going on stage.${NC}\n" "$FAILURES"
-  exit 1
-fi
+[ $FAILURES -gt 0 ] && { printf "\n${RED}${BOLD}%d prerequisite(s) failed.${NC}\n" "$FAILURES"; exit 1; }
 
-# ── 2. cloud-sdk-java: D0 and D1 setup ───────────────────────────────────────
+# ── 2. commons-collections: D0 baseline setup ────────────────────────────────
 
-section "D0/D1 — cloud-sdk-java"
+section "D0/D1 — commons-collections"
 
-if [ ! -d "$CLOUD_SDK" ]; then
-  fail "third-party/cloud-sdk-java not found at $CLOUD_SDK"
-  fail "Clone it: git clone --depth=1 https://github.com/SAP/cloud-sdk-java.git $CLOUD_SDK"
+if [ ! -d "$COLLECTIONS" ]; then
+  fail "third-party/commons-collections not found"
+  fail "Clone: git clone --depth=1 https://github.com/apache/commons-collections.git $COLLECTIONS"
 else
-  ok "cloud-sdk-java checkout present"
-fi
+  ok "commons-collections checkout present"
 
-# Copy demo scripts into cloud-sdk-java so they run from that dir
-for script in cloud-sdk-make-change.sh cloud-sdk-reset-change.sh cloud-sdk-copy-in-db.sh; do
-  src="$SCRIPT_DIR/$script"
-  dst_name="${script#cloud-sdk-}"   # strip "cloud-sdk-" prefix → make-change.sh
-  dst="$CLOUD_SDK/$dst_name"
-  if [ -f "$src" ]; then
+  # Revert any leftover patch
+  if ! git -C "$COLLECTIONS" diff --quiet HEAD; then
     if $check_only; then
-      ok "would copy $script → $dst"
+      warn "commons-collections has uncommitted changes — would revert on real run"
     else
-      cp "$src" "$dst"
-      chmod +x "$dst"
-      ok "copied $script → third-party/cloud-sdk-java/$dst_name"
+      git -C "$COLLECTIONS" checkout src/
+      ok "commons-collections patch reverted"
     fi
   else
-    fail "$src not found"
+    ok "commons-collections source clean"
   fi
-done
 
-# Ensure .mvn/extensions.xml has test-order (for D1)
-EXT="$CLOUD_SDK/.mvn/extensions.xml"
-if [ ! -f "$EXT" ]; then
-  if $check_only; then
-    warn "$EXT missing — would create on real run"
+  # Remove live index (D0 must run alphabetically)
+  if [ -d "$COLLECTIONS/.test-order" ]; then
+    if $check_only; then
+      warn "commons-collections .test-order exists — would remove (D0 needs no index)"
+    else
+      rm -rf "$COLLECTIONS/.test-order"
+      ok "commons-collections .test-order removed — D0 will run alphabetically"
+    fi
   else
-    mkdir -p "$CLOUD_SDK/.mvn"
-    cat > "$EXT" <<'XMLEOF'
+    ok "commons-collections .test-order absent — D0 will run alphabetically"
+  fi
+
+  # Copy demo scripts into commons-collections
+  for script in make-change-commons.sh copy-in-db.sh setup-test-order.sh; do
+    src="$SCRIPT_DIR/$script"
+    dst="$COLLECTIONS/$script"
+    if [ -f "$src" ]; then
+      if $check_only; then ok "would copy $script → third-party/commons-collections/"
+      else cp "$src" "$dst"; chmod +x "$dst"; ok "copied $script → commons-collections/"; fi
+    else
+      fail "$src not found"
+    fi
+  done
+
+  # D0 needs NO test-order — remove .mvn/extensions.xml if it has the plugin
+  # (setup-test-order.sh adds it live on stage between D0 and D1)
+  EXT_COLL="$COLLECTIONS/.mvn/extensions.xml"
+  if grep -q "test-order-maven-plugin" "$EXT_COLL" 2>/dev/null; then
+    if $check_only; then
+      warn "commons-collections .mvn/extensions.xml has test-order — would remove (D0 needs no plugin)"
+    else
+      # Remove only the test-order extension entry, or the whole file if it's the only entry
+      python3 - "$EXT_COLL" <<'PYEOF'
+import sys, xml.etree.ElementTree as ET
+path = sys.argv[1]
+tree = ET.parse(path)
+root = tree.getroot()
+to_remove = [e for e in root.findall('extension') if e.findtext('artifactId') == 'test-order-maven-plugin']
+for e in to_remove: root.remove(e)
+if not root.findall('extension'):
+    import os; os.remove(path)
+else:
+    tree.write(path, xml_declaration=True, encoding='UTF-8')
+PYEOF
+      ok "commons-collections .mvn/extensions.xml: test-order removed (D0 will run without plugin)"
+    fi
+  elif [ ! -f "$EXT_COLL" ]; then
+    ok "commons-collections .mvn/extensions.xml absent — D0 will run without plugin"
+  else
+    ok "commons-collections .mvn/extensions.xml has no test-order — D0 ready"
+  fi
+
+  # Remove stale junit-platform.properties generated by a previous learn run.
+  # Without this, D0's plain 'mvn test' logs a ClassNotFoundException for PriorityClassOrderer.
+  JUNIT_PROPS="$COLLECTIONS/target/test-classes/junit-platform.properties"
+  if [ -f "$JUNIT_PROPS" ]; then
+    if $check_only; then
+      warn "stale $JUNIT_PROPS exists — would remove (D0 needs no test-order classpath)"
+    else
+      rm -f "$JUNIT_PROPS"
+      ok "removed stale junit-platform.properties from target/test-classes"
+    fi
+  else
+    ok "no stale junit-platform.properties — D0 clean"
+  fi
+
+  # Verify patch file
+  if [ -f "$PATCH" ]; then
+    ok "EnumerationIterator patch present"
+  else
+    fail "patch not found at $PATCH"
+  fi
+
+  # Build commons-collections index snapshot (needed for setup-test-order.sh in D1)
+  if $rebuild_indexes || [ ! -d "$COLLECTIONS_SNAPSHOT" ]; then
+    if $check_only; then
+      warn "commons-collections snapshot missing — run without --check-only to build (~2 min)"
+    else
+      say "Building commons-collections index snapshot (~2 min)…"
+      # Temporarily inject extension for the learn run, then remove it again
+      mkdir -p "$COLLECTIONS/.mvn"
+      cat > "$COLLECTIONS/.mvn/extensions.xml" <<'XMLEOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <extensions>
   <extension>
@@ -125,118 +183,121 @@ if [ ! -f "$EXT" ]; then
   </extension>
 </extensions>
 XMLEOF
-    ok "created $EXT with test-order 0.1.0"
-  fi
-elif grep -q "test-order-maven-plugin" "$EXT"; then
-  ok "cloud-sdk-java .mvn/extensions.xml has test-order"
-else
-  fail "$EXT exists but test-order is not in it — check manually"
-fi
-
-# Restore DestinationRetrievalStrategyResolver.java if a demo edit was left behind
-DEMO_TARGET="$CLOUD_SDK/cloudplatform/connectivity-destination-service/src/main/java/com/sap/cloud/sdk/cloudplatform/connectivity/DestinationRetrievalStrategyResolver.java"
-if [ -f "$DEMO_TARGET.bak" ]; then
-  if $check_only; then
-    warn "DestinationRetrievalStrategyResolver.java.bak exists — would restore on real run"
+      (cd "$COLLECTIONS" && mvn clean test -q 2>&1 | tail -5) && ok "learn run complete"
+      rm -f "$COLLECTIONS/.mvn/extensions.xml"
+      rmdir "$COLLECTIONS/.mvn" 2>/dev/null || true
+      rm -rf "$COLLECTIONS_SNAPSHOT"
+      cp -r "$COLLECTIONS/.test-order" "$COLLECTIONS_SNAPSHOT"
+      ok "snapshot saved → $COLLECTIONS_SNAPSHOT"
+      rm -rf "$COLLECTIONS/.test-order"
+      ok "live index removed — D0 will run without plugin"
+    fi
   else
-    mv "$DEMO_TARGET.bak" "$DEMO_TARGET"
-    ok "DestinationRetrievalStrategyResolver.java restored from backup"
-  fi
-elif grep -q '!Objects.equals(currentTenantId, providerTenantId)' "$DEMO_TARGET" 2>/dev/null; then
-  if $check_only; then
-    warn "Bug already injected in DestinationRetrievalStrategyResolver.java — would revert on real run"
-  else
-    sed -i '' 's/return !Objects.equals(currentTenantId, providerTenantId);/return Objects.equals(currentTenantId, providerTenantId);/' "$DEMO_TARGET"
-    ok "DestinationRetrievalStrategyResolver.java reverted (! removed)"
-  fi
-else
-  ok "DestinationRetrievalStrategyResolver.java clean"
-fi
-
-# Remove cloud-sdk live .test-order index so D0 runs without any ordering
-CLOUD_SDK_INDEX="$CLOUD_SDK/.test-order"
-if [ -d "$CLOUD_SDK_INDEX" ]; then
-  if $check_only; then
-    warn "cloud-sdk-java index exists — would delete on real run (D0 needs no index)"
-  else
-    rm -rf "$CLOUD_SDK_INDEX"
-    ok "cloud-sdk-java index removed — D0 will run alphabetically"
-  fi
-else
-  ok "cloud-sdk-java index absent — D0 will run alphabetically"
-fi
-
-# D1 needs a pre-trained snapshot
-CLOUD_SDK_SNAPSHOT="$SCRIPT_DIR/cloud-sdk-index-snapshot"
-
-if $learn_cloud_sdk; then
-  say "Building cloud-sdk-java index snapshot (--learn-cloud-sdk, ~6 min)…"
-  say "Step 1/2: installing reactor (mvn install -DskipTests) — needed for SNAPSHOT deps…"
-  if ! $check_only; then
-    (cd "$CLOUD_SDK" && mvn install -DskipTests -q 2>&1 | tail -5) \
-      && ok "reactor installed"
-    say "Step 2/2: learn run (mvn test) — building test-order index…"
-    (cd "$CLOUD_SDK" && mvn test -q 2>&1 | tail -5) \
-      && ok "learn run complete — index written"
-    rm -rf "$CLOUD_SDK_SNAPSHOT"
-    cp -r "$CLOUD_SDK_INDEX" "$CLOUD_SDK_SNAPSHOT"
-    ok "snapshot saved → $CLOUD_SDK_SNAPSHOT"
-    # Remove the live index so D0 runs alphabetically
-    rm -rf "$CLOUD_SDK_INDEX"
-    ok "live index removed — D0 will run alphabetically"
-  fi
-elif [ -d "$CLOUD_SDK_SNAPSHOT" ]; then
-  SNAP_FILES=$(find "$CLOUD_SDK_SNAPSHOT" -type f | wc -l | tr -d ' ')
-  ok "cloud-sdk-java index snapshot present ($SNAP_FILES files) — D1 copy-in-db.sh will work"
-else
-  if $check_only; then
-    warn "cloud-sdk-java index snapshot missing at $CLOUD_SDK_SNAPSHOT"
-    warn "Run: ./prepare-demo.sh --learn-cloud-sdk  (~6 min, builds and saves snapshot)"
-  else
-    say "cloud-sdk-java index snapshot missing — building it now (~6 min)…"
-    say "Step 1/2: installing reactor (mvn install -DskipTests)…"
-    (cd "$CLOUD_SDK" && mvn install -DskipTests -q 2>&1 | tail -5) \
-      && ok "reactor installed"
-    say "Step 2/2: learn run (mvn test)…"
-    (cd "$CLOUD_SDK" && mvn test -q 2>&1 | tail -5) \
-      && ok "learn run complete — index written"
-    rm -rf "$CLOUD_SDK_SNAPSHOT"
-    cp -r "$CLOUD_SDK_INDEX" "$CLOUD_SDK_SNAPSHOT"
-    ok "snapshot saved → $CLOUD_SDK_SNAPSHOT"
-    rm -rf "$CLOUD_SDK_INDEX"
-    ok "live index removed — D0 will run alphabetically"
+    SNAP_FILES=$(find "$COLLECTIONS_SNAPSHOT" -type f | wc -l | tr -d ' ')
+    ok "commons-collections snapshot present ($SNAP_FILES files) — setup-test-order.sh ready"
   fi
 fi
 
-# ── 3. Ready summary ──────────────────────────────────────────────────────────
+# ── 3. spring-petclinic: D2/D3 setup ─────────────────────────────────────────
+
+section "D2/D3 — spring-petclinic"
+
+if [ ! -d "$PETCLINIC" ]; then
+  fail "third-party/spring-petclinic not found"
+  fail "Clone: git clone --depth=1 https://github.com/spring-projects/spring-petclinic.git $PETCLINIC"
+else
+  ok "spring-petclinic checkout present"
+
+  # Copy demo scripts
+  for script in copy-in-db.sh petclinic-make-change.sh; do
+    src="$SCRIPT_DIR/$script"
+    dst="$PETCLINIC/$script"
+    if [ -f "$src" ]; then
+      if $check_only; then ok "would copy $script → third-party/spring-petclinic/"
+      else cp "$src" "$dst"; chmod +x "$dst"; ok "copied $script → spring-petclinic/"; fi
+    else
+      fail "$src not found"
+    fi
+  done
+
+  # Verify VisitController is clean
+  VISIT="$PETCLINIC/src/main/java/org/springframework/samples/petclinic/owner/VisitController.java"
+  if [ -f "$VISIT.bak" ]; then
+    if $check_only; then warn "VisitController.java.bak exists — would restore"
+    else mv "$VISIT.bak" "$VISIT"; ok "VisitController.java restored from backup"; fi
+  else
+    ok "VisitController.java clean"
+  fi
+
+  # Ensure .mvn/extensions.xml has test-order (plugin is wired via extension, not pom)
+  EXT_PETCLINIC="$PETCLINIC/.mvn/extensions.xml"
+  if grep -q "test-order-maven-plugin" "$EXT_PETCLINIC" 2>/dev/null; then
+    ok "spring-petclinic .mvn/extensions.xml has test-order"
+  elif grep -q "test-order-maven-plugin" "$PETCLINIC/pom.xml" 2>/dev/null; then
+    ok "spring-petclinic pom.xml has test-order"
+  else
+    if $check_only; then
+      warn "spring-petclinic has no test-order — would inject .mvn/extensions.xml"
+    else
+      mkdir -p "$PETCLINIC/.mvn"
+      cat > "$EXT_PETCLINIC" <<'XMLEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+  <extension>
+    <groupId>me.bechberger</groupId>
+    <artifactId>test-order-maven-plugin</artifactId>
+    <version>0.1.0</version>
+  </extension>
+</extensions>
+XMLEOF
+      ok "created spring-petclinic .mvn/extensions.xml with test-order 0.1.0"
+    fi
+  fi
+
+  # Build petclinic index snapshot
+  if $rebuild_indexes || [ ! -d "$PETCLINIC_SNAPSHOT" ]; then
+    if $check_only; then
+      warn "petclinic snapshot missing — run without --check-only to build (~3 min)"
+    else
+      say "Building petclinic index snapshot (~3 min)…"
+      # Run twice so dashboard has run history for D3
+      (cd "$PETCLINIC" && mvn clean test -q 2>&1 | tail -5) && ok "petclinic learn run 1 complete"
+      (cd "$PETCLINIC" && mvn clean test -q 2>&1 | tail -5) && ok "petclinic order run 2 complete"
+      rm -rf "$PETCLINIC_SNAPSHOT"
+      cp -r "$PETCLINIC/.test-order" "$PETCLINIC_SNAPSHOT"
+      ok "snapshot saved → $PETCLINIC_SNAPSHOT"
+    fi
+  else
+    SNAP_FILES=$(find "$PETCLINIC_SNAPSHOT" -type f | wc -l | tr -d ' ')
+    ok "petclinic snapshot present ($SNAP_FILES files) — dashboard will have history"
+  fi
+fi
+
+# ── 4. Ready summary ──────────────────────────────────────────────────────────
 
 if [ $FAILURES -gt 0 ]; then
   printf "\n${RED}${BOLD}%d check(s) failed — fix before going on stage.${NC}\n\n" "$FAILURES"
   exit 1
 fi
 
-printf "\n${GREEN}${BOLD}Demo ready.${NC}\n\n"
-printf "${BOLD}Open 2 terminal tabs, cd into each:${NC}\n\n"
+printf "\n${GREEN}${BOLD}Demo ready.${NC} Open 4 terminal tabs:\n\n"
 
-printf "  ${CYAN}Tab 1 — D0${NC} (alphabetical baseline, NO test-order)\n"
-printf "    cd %s\n" "$CLOUD_SDK"
-printf "    ./make-change.sh                # inject ! bug into currentTenantIsProvider()\n"
-printf "    mvn test\n"
-printf "    # DestinationRetrievalStrategyResolverTest fails ~4th alphabetically\n\n"
+printf "  ${CYAN}D0${NC} (alphabetical baseline — NO test-order, ~5 min to failure at test #237):\n"
+printf "    cd %s\n" "$COLLECTIONS"
+printf "    mvn test   # wait for EnumerationIteratorTest at #237\n\n"
 
-printf "  ${CYAN}Tab 2 — D1${NC} (test-order active, same bug → test jumps to #1)\n"
-printf "    cd %s\n" "$CLOUD_SDK"
-printf "    ./copy-in-db.sh                 # restore pre-trained index\n"
-printf "    ./make-change.sh                # inject ! bug\n"
-printf "    mvn test-order:show             # DestinationRetrievalStrategyResolverTest = #1\n"
-printf "    mvn test\n"
-printf "    # DestinationRetrievalStrategyResolverTest runs first — failure surfaces immediately\n\n"
+printf "  ${CYAN}D1${NC} (add test-order, same bug → test #1, Ctrl+C after red):\n"
+printf "    cd %s\n" "$COLLECTIONS"
+printf "    ./setup-test-order.sh   # adds .mvn/extensions.xml + restores index, shows diff\n"
+printf "    ./make-change-commons.sh\n"
+printf "    mvn test-order:show\n"
+printf "    mvn test   # Ctrl+C after first red (~10 seconds)\n\n"
 
-printf "${BOLD}Reset between runs:${NC}\n"
-printf "    cd %s\n" "$CLOUD_SDK"
-printf "    ./reset-change.sh               # restore DestinationRetrievalStrategyResolver.java\n\n"
+printf "  ${CYAN}D2${NC} (petclinic dashboard):\n"
+printf "    cd %s\n" "$PETCLINIC"
+printf "    ./copy-in-db.sh && ./petclinic-make-change.sh\n"
+printf "    mvn test-order:show\n"
+printf "    mvn test-order:dashboard && open target/test-order-dashboard/index.html\n\n"
 
-printf "${BOLD}Mutation details:${NC}\n"
-printf "  File: cloudplatform/connectivity-destination-service/src/.../DestinationRetrievalStrategyResolver.java\n"
-printf "  Change: return Objects.equals(...)  →  return !Objects.equals(...)\n"
-printf "  Scripts: ./make-change.sh  |  ./reset-change.sh\n\n"
+printf "  ${CYAN}Reset between runs:${NC}\n"
+printf "    cd %s && ./reset-demo.sh\n\n" "$SCRIPT_DIR"

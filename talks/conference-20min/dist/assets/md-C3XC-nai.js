@@ -1,4 +1,0 @@
-import{_ as s}from"./DemoCard-DW8YXnad.js";import{o as n,K as a,_ as m,Z as c,ao as d,ap as p,u as e}from"./modules/vue-BX9ho2sT.js";import{I as i}from"./slidev/default-UyMiTmZm.js";import{u,f as _}from"./slidev/context-B-j2uW20.js";import"./index-CrM3wuoG.js";import"./modules/shiki-CdhS3xfJ.js";const k={__name:"slides.md__slidev_14",setup(l){const{$clicksContext:t,$frontmatter:o}=u();return t.setup(),(f,h)=>{const r=s;return n(),a(i,d(p(e(_)(e(o),13))),{default:m(()=>[c(r,{id:"D1",duration:"3:00",cmd:`cd samples/sample-shop
-mvn test                  # learn run
-mvn test                  # order run (order changed)
-mvn test-order:show       # scores + why`,title:"Zero to ordered in two commands",watch:'Run #1: "Auto-instrumenting 42 classes". Run #2: tests reordered, APFD printed. :show gives score + why column per test.'})]),_:1},16)}}};export{k as default};
