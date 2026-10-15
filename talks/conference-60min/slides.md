@@ -170,290 +170,277 @@ image: /images/baselone26-sponsors.png
 title: "Sponsors"
 ---
 
-<!-- ═══ SLIDE 2: FEEDBACK LOOP ════════════════════════════════════════════════ -->
-
----
-layout: default
-title: "The Feedback Loop"
-class: slide-base
----
-
-## The Feedback Loop
-
-<FeedbackLoop class="mt-4" />
-
-<div v-click class="pull-quote mt-6">
-  The bottleneck isn't how fast your tests run.<br/>
-  It's <strong>which one runs first.</strong>
-</div>
-
-<!--
-Don't rush this slide. The audience recognises this loop — it's their daily life.
-Let "which one runs first" land before advancing.
--->
-
-<!-- ═══ SLIDE 3: D0 LIVE DEMO ════════════════════════════════════════════════ -->
-
 ---
 layout: default
 title: "D0 — CI Baseline Demo"
 class: slide-base
 ---
 
-<DemoCard id="D0" title="What we do today">
+<DemoCard id="D0" title="Running tests takes time">
 
 ```bash
 cd third-party/commons-collections
-./make-change-commons.sh   # remove one line from remove()
+./make-change-commons.sh # remove one line from remove()
 mvn test
 ```
 
 </DemoCard>
 
 <!--
-DEMO D0 — commons-collections, NO test-order. prepare-demo.sh ensures .mvn/extensions.xml is absent.
+DEMO D0 — CI baseline, NO test-order. prepare-demo.sh ensures .mvn/extensions.xml is absent.
 
-SETUP (run prepare-demo.sh before going on stage):
+Watch for: EnumerationIteratorTest fails — but it runs alphabetically, at position 237 out of 321.
+That means 236 tests run first, wasting time.
+
+SETUP (before going on stage — run prepare-demo.sh):
 - Source is clean — make-change-commons.sh applies the patch live on stage
-- .test-order/ absent, .mvn/extensions.xml has no test-order plugin
+- NO test-order in .mvn/extensions.xml — setup-test-order.sh adds it live in D1
 
 STEPS:
 1. cd third-party/commons-collections
-2. mvn test  — DO NOT kill it early, let it reach pos 237
+2. ./make-change-commons.sh  — apply the patch
+3. mvn test  — let it scroll, do NOT kill it
 
 NARRATE as it runs:
 - "This is Apache Commons Collections. Real open-source project. 321 tests."
 - "I removed one line from EnumerationIterator.remove() — a `last = null` reset."
 - "Alphabetical order. A… B… C… E… we're at test 80 out of 321… still going…"
 - Keep narrating as it crawls past 150, 200, 237
-- When EnumerationIteratorTest fails: "There it is. Position 237. We ran 236 tests first."
-- "Every one of those was wasted time."
+- When EnumerationIteratorTest finally fails: "There it is. Position 237. We ran 236 tests first."
+- "Every one of those was wasted time. The runner had no idea which test covered that line."
 
-Let it sink in for 2 seconds. Then advance.
+After failure lands: let it sink in for 2 seconds. Then advance.
 
-FALLBACK: asciinema play public/demo-d0.cast
+FALLBACK: asciinema play public/demo-d0.cast  (shows the full scrolling run ending at pos 237)
+NEXT: "Now let's give the runner that map."
 -->
-
-<!-- ═══ SLIDE 4: SHOW OF HANDS ════════════════════════════════════════════════ -->
 
 ---
 layout: center
-title: "Show of Hands"
----
-
-<div class="big-statement">
-  Who's been context-switched <br/> out of a problem<br/>because CI/tests took too long?
-</div>
-
-
-<!--
-First audience interaction. Feed the response: "Right. That's what we're fixing today."
--->
-
-<!--
-═══ SLIDE 5: APFD TIMELINE ════════════════════════════════════════════════
--->
-
----
-layout: default
-title: "APFD Timeline"
+title: "Research: Tests Closer to Changed Code Fail First"
 class: slide-base
 ---
 
-## The Cost of Wrong Order
-
-<ApfdTimeline />
-
-<!--
-The chart shows first failure landing at ~80% of total runtime in alphabetical suites.
-"You already felt this. Position 237 out of 321 — that's 74% of the suite run before the failure."
--->
-
-<!-- ═══ SLIDE 6: GOOGLE STAT ════════════════════════════════════════════════ -->
-
----
-layout: default
-title: "91% Stat"
----
+<div class="absolute inset-0 bg-zinc-900/52 z-0" />
 
 <QuoteCard
   attr="Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017"
-  accentColor="#fb923c"
+  class="relative z-10"
 >
   "Very few of our tests ever fail, but those that do are generally <em>'closer'</em> to the code they test."
 </QuoteCard>
 
-<!--
-Pause 3 seconds. Let it land.
-TRANSITION: "Which leads to a hard logical claim."
--->
-
-<!-- ═══ ACT 1: THE FIX ════════════════════════════════════════════════════════ -->
-
----
-layout: default
-title: "Memon Quote"
----
-
-<QuoteCard
-  attr="Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017"
-  accentColor="#c084fc"
->
-  "Very few of our tests ever fail, but those that do are generally
-  <span class="text-purple-300 not-italic font-bold">'closer'</span>
-  to the code they test."
-</QuoteCard>
+<img src="/images/google-scale-ct-qr.png" class="absolute bottom-6 right-6 w-24 h-24 z-10" />
 
 <!--
-The research foundation. "Closer" is doing a lot of work here — we're about to operationalize it.
+- This is their exact wording. "Closer" = shorter path in the dependency graph.
+- We operationalize "closer" as: deps(test) ∩ changed_classes — set intersection.
+- Bigger intersection → test is more likely to fail on this change → higher score.
+- TRANSITION: "which leads to a hard logical claim"
 -->
 
 ---
 layout: center
-title: "Logic Claim"
+title: "Zero Overlap = Cannot Fail"
+class: slide-base
 ---
+
+<div class="absolute inset-0 bg-zinc-900/58 z-0" />
+
+<div class="relative z-10 flex flex-col items-center">
 
 <div class="big-statement">
-  deps(test) ∩ changed = ∅<br/>
-  <span class="text-2xl opacity-70 mt-4 block">→ cannot fail on this change</span>
+
+If a test <span class="c-blue">hasn't called</span> <br/>the <span class="c-green">changed code</span>,<br/>it <span class="c-orange">cannot fail</span> on this change.
+
 </div>
 
-<div class="text-center text-sm opacity-50 mt-6"><code>changed</code> = classes whose bytecode differs since last compile — detected automatically via opcode hash</div>
+</div>
 
 <!--
-One line. No prose. This is the math behind everything that follows.
-"If a test hasn't called the changed code, it cannot fail on this change."
-"changed = any class whose compiled bytecode changed — test-order detects this automatically on every run via opcode hash, no manual annotation needed."
+- "Cannot" — not "probably won't." Cannot. Emphasize the word
+- "Changed code" = any class whose bytecode changed since last compile — detected automatically via opcode hash, no flags needed.
+- Measured at Google scale; we act on it locally with bytecode instrumentation
+- This is the guarantee that makes affected-test selection sound
+- TRANSITION: "there's a tool that does exactly this — zero config, local, v0.1"
+-->
+
+---
+layout: center
+title: "Zero-Config Local Solution"
+class: slide-base
+---
+
+<div class="absolute inset-0 bg-zinc-900/58 z-0" />
+<div class="relative z-10 flex flex-col items-center text-center">
+
+<div class="big-statement">
+
+There's a zero-config,<br/>local solution.
+
+</div>
+
+<v-click/>
+
+<div class="text-5xl font-bold mt-8 text-blue-400 tracking-wide">test-order</div>
+
+</div>
+
+<img src="/images/test-order-qr.png" class="absolute bottom-6 right-6 w-24 h-24 z-10" />
+
+<!--
+- Pause after "There's a zero-config, local solution." Let it sit. 3 seconds.
+- Click: reveal 'test-order'. Still don't speak.
+- TRANSITION: "Let me show you what that means."
 -->
 
 ---
 layout: default
-title: "Pipeline Diagram"
+title: "Failure detection — earlier vs later"
 class: slide-base
 ---
 
-## Record the map once. Rank on every push.
+<ApfdTimeline />
 
+<div class="mt-3 text-sm text-center opacity-50">Failure found in first 10% of the suite vs. 80% — same tests, different order.</div>
+
+<!--
+- X axis: tests in the order they run. Y axis: cumulative faults found.
+- Alphabetical: OrderTest runs 8th out of 10 — you don't know about the failure until 80% of the suite is done.
+- Ranked: OrderTest runs first — failure at position 1. APFD jumps from ~55% to ~95%.
+- APFD = area under that curve, normalised. Higher = earlier detection.
+- "This is the pain. Every push, every time."
+-->
+
+---
+layout: default
+title: "How approaches compare"
+class: slide-base
+---
+
+<LandscapeMap />
+
+<!--
+- X axis: time to first value — how long before you get meaningful results.
+- Y axis: prioritization intelligence — how well it ranks failing tests first.
+- Random/shuffle: free, immediate. Removes alphabetical bias, doesn't prioritize.
+- Ekstazi/STARTS: re-instrument or re-analyse every run for freshness. Good accuracy, no staleness risk. Trade-off: overhead on every run.
+- test-order: instrument once, pay 13% on run 1, zero extra overhead after that. Index can go stale — we detect and degrade gracefully. Different trade-off, not a better one.
+- Coverage-based (Skippy, OpenClover): source instrumentation overhead on every run.
+- Cloud TIA (Launchable, Develocity): best ceiling, but needs months of CI history and a cloud subscription.
+- "Pick the trade-off that fits your workflow. If freshness is critical and overhead is fine, Ekstazi is a great choice. If you want zero overhead on order runs and can accept a nightly learn, test-order fits."
+- TRANSITION: "Here's the mechanism."
+-->
+
+---
+layout: default
+class: slide-base
+---
+
+# Learn once. Rank on every run.
+
+<div style="max-height: 90%; overflow: hidden; width:120%">
 <PipelineDiagram />
-
-<!--
-Learn run builds the dep map. Every subsequent run uses it to reorder.
-Zero overhead in order mode — no instrumentation runs, just a sort.
--->
-
----
-layout: default
-title: "Maven POM"
-class: slide-base
----
-
-## One file. That's the entire setup.
-
-**`.mvn/extensions.xml`** — works for single-module and multi-module projects
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<extensions>
-  <extension>
-    <groupId>me.bechberger</groupId>
-    <artifactId>test-order-maven-plugin</artifactId>
-    <version>0.1.0</version>
-  </extension>
-</extensions>
-```
-
-<div class="mt-5 text-slate-400 text-sm">
-
-Loads as a Maven build extension — before the build lifecycle. No `mvn` command changes needed.  
-For single-module projects only: can also go in `pom.xml` under `<build><extensions>`.
-
 </div>
 
 <!--
-Create .mvn/extensions.xml in the project root — that's it.
-This is the only method that works in multi-module projects (the plugin must load before the reactor is built).
-Single-module projects can also use pom.xml <build><extensions>, but .mvn/extensions.xml is simpler and always works.
-"That's the entire setup. Everything else is automatic."
+- learn run: bytecode agent on, every method entry recorded → index.lz4
+- order run: agent off, index loaded, git diff intersected → ranked order
+- The index is just a file — commit it or cache it in CI
 -->
+
+<!-- ═══ DEMOS ═══════════════════════════════════════════════════════════════════ -->
 
 ---
 layout: default
-title: "Runtime Auto-Detection"
+title: "D1 — Learn & Order Demo"
 class: slide-base
 ---
 
-## Two modes. Automatic.
-
-<div class="grid grid-cols-2 gap-8 mt-6">
-<div class="p-6 rounded-xl bg-zinc-800/60 border border-zinc-700">
-
-### No index yet → **Learn**
-
-```
-[test-order] learn mode
-Instrumentation overhead: ~13%  # measured on spring-petclinic, MEMBER mode
-Recording dep map...
-```
-
-</div>
-<div class="p-6 rounded-xl bg-zinc-800/60 border border-zinc-700">
-
-### Index present → **Order**
-
-```
-[test-order] order mode
-Overhead: zero
-EnumerationIteratorTest → #1
-```
-
-</div>
-</div>
-
-<!--
-5 change modes exist (uncommitted, since-last-commit, since-last-run, auto, explicit) — reference for Q&A only.
-The key message: it detects which mode to use. You never configure this.
--->
-
----
-layout: default
-title: "D1 — spring-petclinic Live Demo"
-class: slide-base
----
-
-<DemoCard id="D1" title="test-order in action">
+<DemoCard id="D1" title="Same bug. Test jumps from #237 to #1.">
 
 ```bash
-cd third-party/spring-petclinic
-# index is cold — first run will learn
-mvn test
-./petclinic-make-change.sh  # edit VisitController.java
-mvn test          # VisitControllerTests → #1, red immediately
+cd third-party/commons-collections
+./setup-test-order.sh   # adds .mvn/extensions.xml 
+                        # and restores index
+./make-change-commons.sh
 mvn test-order:show
+mvn test
 ```
 
 </DemoCard>
 
 <!--
-DEMO D1 — spring-petclinic, cold index.
+DEMO D1 — same project, same bug, test-order active.
 
-SETUP: Maven compile cache pre-warmed (run `mvn test-only` once before talk).
-.test-order/ index ABSENT — D1 live-learns from scratch.
-VisitController.java clean — petclinic-make-change.sh applies the edit live.
+Watch for: EnumerationIteratorTest jumps to #1 in the ranking table.
+Kill with Ctrl+C as soon as the first red appears — ~10 seconds vs the 5-minute D0 run.
+
+STEPS:
+1. cd third-party/commons-collections
+2. ./setup-test-order.sh  — adds test-order to .mvn/extensions.xml (shows diff), restores pre-trained index
+3. ./make-change-commons.sh  — reapply the missing-last-null patch
+4. mvn test-order:show  — show ranked table; point at Score and Why columns
+5. mvn test  — EnumerationIteratorTest runs first; Ctrl+C after first RED line
+
+NARRATE for setup-test-order.sh:
+- "One file. That's it. .mvn/extensions.xml — you can see the diff right there."
+- "And the pre-trained index is already in place — we learned it this morning."
+
+NARRATE for :show output:
+- "Every test has a score. And every score has a reason — the Why column."
+- "This isn't a black box. You can see exactly why each test was prioritized."
+- Point at EnumerationIteratorTest: "Score driven by direct call into remove() — the exact method I broke."
+
+NARRATE as mvn test runs:
+- "Same bug. Same 321 tests. The only difference: test-order knows which test covers that method."
+- Ctrl+C at first red: "Done. The whole audience just saved four and a half minutes."
+- "From position 237 to position 1. That's what a dep-based ranking buys you."
+
+FALLBACK: asciinema play public/demo1.cast
+NEXT: while it runs, explain what's happening under the hood
+-->
+
+---
+layout: default
+title: "D2 — spring-petclinic live edit"
+class: slide-base
+---
+
+<DemoCard id="D2" title="Real project. Live edit. Wrong test first → right test first.">
+
+```bash
+cd third-party/spring-petclinic
+mvn test                    # learn run — records dep map
+./petclinic-make-change.sh  # edit VisitController.java
+mvn test-order:show
+mvn test                    # VisitControllerTests → #1
+```
+
+</DemoCard>
+
+<!--
+DEMO D2 — spring-petclinic, cold index.
+
+SETUP (run prepare-demo.sh before going on stage):
+- petclinic index ABSENT (or replaced with snapshot so we start fresh for the live learn)
+- VisitController.java clean — make-change script applies it live
 
 STEPS:
 1. cd third-party/spring-petclinic
-2. mvn test  — first run, learn mode. ~5s. Show the "[test-order] learn mode" output.
+2. mvn test  — first run, learn mode. ~5 s. Show "[test-order] learn mode" line.
 3. ./petclinic-make-change.sh  — edits flash message in processNewVisitForm
-4. mvn test  — order mode. VisitControllerTests ranked #1. Watch it go red immediately.
-5. Ctrl+C after first red line.
-6. mvn test-order:show  — show the annotated ranking.
+4. mvn test-order:show  — show ranked table; point at VisitControllerTests at #1
+5. mvn test  — Ctrl+C after first RED line (~2 s)
 
 NARRATE:
-- After learn run: "It just recorded which classes each test touched."
+- After learn: "Spring Boot project. 15 tests, 5 seconds, dep map saved."
 - After edit: "I changed one line in VisitController — a flash message."
-- After red: "Same Maven command. One line in pom.xml. Now the right test runs first."
+- After show: "VisitControllerTests is ranked #1. Dep overlap hit."
+- After red: "Same command. No config change. The right test ran first."
 
-FALLBACK: asciinema play public/demo-d1.cast
+FALLBACK: screenshot pair — mvn test-order:show output + terminal with VisitControllerTests red at #1
+NEXT: "And you can see the full evidence in the dashboard."
 -->
 
 ---
@@ -488,6 +475,7 @@ Total: 5 → VisitControllerTests ranks #1 out of all suite classes.
 layout: default
 title: "test-order:show Output"
 class: slide-base
+hide: t
 ---
 
 ## `mvn test-order:show`
@@ -507,106 +495,92 @@ class: slide-base
 TRANSITION: "That was 15 tests on a toy project. Does this hold up on a real project with hundreds of tests and a real bug?"
 -->
 
-<!-- ═══ ACT 2: PROVE IT ═══════════════════════════════════════════════════════ -->
-
----
-layout: default
-title: "Real Bug Setup + Diff"
-class: slide-base
----
-
-## Position 237. One missing line.
-
-<div class="grid grid-cols-2 gap-8 mt-4">
-<div>
-
-**Apache Commons Collections**
-321 tests · alphabetically: failure at **#237**
-
-```java
-public E remove() {
-    if (last == null) {
-        throw new IllegalStateException(...);
-    }
--   last = null;  // ← this line was removed
-    iterator.remove();
-}
-```
-
-</div>
-<div class="flex flex-col justify-center">
-
-<div class="pull-quote">
-  You already felt position 237.<br/>
-  Let's replay it — with test-order.
-</div>
-
-</div>
-</div>
-
 <!--
-Callback to D0. The audience already lived the 5-minute wait.
-Keep it tight — don't re-explain the bug. One sentence max.
+═══ ACT 2: PROVE IT ═══════════════════════════════════════════════════════
 -->
 
 ---
 layout: default
-title: "D2 — commons-collections Live Demo"
+title: "test-order:show Output"
 class: slide-base
+hide: tur
 ---
 
-<DemoCard id="D2" title="Same bug. test-order active.">
+## `mvn test-order:show`
 
-```bash
-cd third-party/commons-collections
-./setup-test-order.sh     # adds .mvn/extensions.xml + restores index
-mvn test-order:show       # EnumerationIteratorTest → #1
-mvn test                  # Ctrl+C after first red (~10s)
+```
+[test-order] Ranked 15 tests (order mode, since-last-commit)
+
+  #1  VisitControllerTests          score=14  ★ dep-overlap=8  fail=4  new=2
+  #2  PetControllerTests            score=9   dep-overlap=6  speed=3
+  #3  OwnerControllerTests          score=7   dep-overlap=5  speed=2
+  ...
+ #15  PetTypeFormatterTests         score=1   speed=1
 ```
 
-</DemoCard>
+<!--
+"This is what it tells you before you run. You can see exactly why each test is ranked where it is."
+TRANSITION: "That was 15 tests on a toy project. Does this hold up on a real project with hundreds of tests and a real bug?"
+-->
 
 <!--
-DEMO D2 — commons-collections, test-order added live via setup-test-order.sh.
-
-STEPS:
-1. ./setup-test-order.sh  — adds test-order to .mvn/extensions.xml (shows diff), restores pre-trained index
-2. mvn test-order:show  — show ranking: EnumerationIteratorTest at #1
-3. mvn test  — it goes red immediately
-4. Ctrl+C after first red line
-
-NARRATE for setup-test-order.sh:
-- "One file. .mvn/extensions.xml. You can see the diff right there."
-
-NARRATE:
-- "Same project. Same bug. Same 321 tests."
-- "We waited at position 237 ten minutes ago."
-- After red: "That's position 1. Ten seconds instead of five minutes."
-- Pause 3 seconds. Let the contrast with D0 land.
-
-FALLBACK: screenshot pair — D0 terminal (pos 237) vs D2 terminal (pos 1) side by side.
+═══ ACT 2: PROVE IT ═══════════════════════════════════════════════════════
 -->
 
 ---
 layout: default
-title: "Benchmark Chart"
+title: "test-order:show Output"
 class: slide-base
+hide: t
 ---
 
-## 7 repos. 65 bugs. Consistent improvement.
+## `mvn test-order:show`
 
-<BenchmarkChart />
+```
+[test-order] Ranked 15 tests (order mode, since-last-commit)
 
-<div class="text-sm opacity-60 mt-4 text-center">
-  62 of 65 patches triggered a test failure — results include no_failure cases, not cherry-picked.
-  Data: <code>target/bench-apfd/results.csv</code>
-</div>
+  #1  VisitControllerTests          score=14  ★ dep-overlap=8  fail=4  new=2
+  #2  PetControllerTests            score=9   dep-overlap=6  speed=3
+  #3  OwnerControllerTests          score=7   dep-overlap=5  speed=2
+  ...
+ #15  PetTypeFormatterTests         score=1   speed=1
+```
 
 <!--
-"This isn't one lucky project. Seven open-source repos, 65 bugs total — 62 triggered a test failure."
-Acknowledge the misses honestly — 3 patches hit no_failure (guava locale/timeout issue).
-The chart shows the full picture: commons-collections 26% → 0.9%, jackson-core 13% → 4%.
-TRANSITION: "What does this cost? One question every audience member is thinking."
+"This is what it tells you before you run. You can see exactly why each test is ranked where it is."
+TRANSITION: "That was 15 tests on a toy project. Does this hold up on a real project with hundreds of tests and a real bug?"
+-->
+
+<!--
+═══ ACT 2: PROVE IT ═══════════════════════════════════════════════════════
+-->
+
+---
+layout: default
+title: "test-order:show Output"
+class: slide-base
+hide: true
+---
+
+## `mvn test-order:show`
+
+```
+[test-order] Ranked 15 tests (order mode, since-last-commit)
+
+  #1  VisitControllerTests          score=14  ★ dep-overlap=8  fail=4  new=2
+  #2  PetControllerTests            score=9   dep-overlap=6  speed=3
+  #3  OwnerControllerTests          score=7   dep-overlap=5  speed=2
+  ...
+ #15  PetTypeFormatterTests         score=1   speed=1
+```
+
+<!--
+"This is what it tells you before you run. You can see exactly why each test is ranked where it is."
+TRANSITION: "That was 15 tests on a toy project. Does this hold up on a real project with hundreds of tests and a real bug?"
+-->
+
+<!--
+═══ ACT 2: PROVE IT ═══════════════════════════════════════════════════════
 -->
 
 ---
@@ -630,24 +604,26 @@ TRANSITION: "same story across all benchmark repos — three modes, one pattern"
 layout: default
 title: "Learn overhead across repos and modes"
 class: slide-base
+hide: true
 ---
 
 ## Same story across all benchmark repos.
 
-<LearnOverheadChart />
-
-<div class="text-sm opacity-50 mt-3 text-center">
-  Mean overhead ± std err · 3 runs each · MEMBER★ is the default mode
-</div>
+<OverheadChart />
 
 <!--
-"FULL tracks at class granularity — lightest instrumentation, fewer edges. METHOD adds call edges per method. MEMBER also tracks field accesses — most precise, similar cost."
-"All three modes pay the overhead exactly once. Order runs carry zero instrumentation regardless of mode."
-Variation across repos reflects suite size and test-class coupling density, not mode quality.
+Chart shows wall-clock time as a multiple of the no-plugin baseline (1.0×). Three bars per repo = three instrumentation granularities:
+- CLASS (blue): records which classes each test touched — cheapest, coarsest
+- METHOD (purple): adds per-method entry/exit edges — finer-grained, slightly more overhead
+- MEMBER* (pink, default): adds field read/write tracking on top — most precise, highest overhead
+
+The overhead only applies to the learn run. Every subsequent run uses the saved index: no agent, no instrumentation, zero overhead.
 TRANSITION: "You've seen the terminal. How do you track this over time?"
 -->
 
-<!-- ═══ ACT 3: DASHBOARD ══════════════════════════════════════════════════════ -->
+<!--
+═══ ACT 3: DASHBOARD ══════════════════════════════════════════════════════
+-->
 
 ---
 layout: center
@@ -662,11 +638,11 @@ Single sentence. Visual breath. Let the audience shift from terminal to browser.
 
 ---
 layout: default
-title: "D3 — Dashboard Live Demo"
+title: "D4 — Dashboard Live Demo"
 class: slide-base
 ---
 
-<DemoCard id="D3" title="test-order:dashboard">
+<DemoCard id="D4" title="test-order:dashboard">
 
 ```bash
 cd third-party/spring-petclinic
@@ -677,11 +653,11 @@ open target/test-order-dashboard/index.html
 </DemoCard>
 
 <!--
-DEMO D3 — spring-petclinic, index warm from D1 with multiple runs recorded.
+DEMO D4 — spring-petclinic, index warm from D2 with multiple runs recorded.
 
 TABS TO SHOW (live, ~5 min):
 1. Tests tab: VisitControllerTests at #1, score bar, "Why" breakdown, sparkline history
-2. Analytics tab: APFD trend across D1 runs, rank heatmap
+2. Analytics tab: APFD trend across D2 runs, rank heatmap
 3. Weights tab: drag "dep overlap" slider → watch VisitControllerTests move in real time
 
 MENTION BUT DON'T DEMO:
@@ -753,6 +729,7 @@ Three mechanisms:
 layout: default
 title: "Landscape Map"
 class: slide-base
+hide: t
 ---
 
 ## Where test-order fits
@@ -766,64 +743,63 @@ Don't bash other tools — just show where test-order sits in the space.
 
 ---
 layout: default
-title: "When NOT to Use This"
+title: "Landscape Map"
 class: slide-base
+hide: true
 ---
 
-## When NOT to use this
+## Where test-order fits
 
-<div class="grid grid-cols-1 gap-4 mt-6 max-w-2xl mx-auto">
-  <div class="p-4 rounded-xl bg-red-900/20 border border-red-800/40">
-    <strong>&lt;20 tests</strong> — the overhead of building a dep map isn't worth it
-  </div>
-  <div class="p-4 rounded-xl bg-red-900/20 border border-red-800/40">
-    <strong>Reflection-only dependencies</strong> — bytecode instrumentation can't see through <code>Class.forName()</code>
-  </div>
-  <div class="p-4 rounded-xl bg-red-900/20 border border-red-800/40">
-    <strong>Dynamic classloaders</strong> — classes loaded at runtime won't appear in the dep map
-  </div>
-</div>
+<LandscapeMap />
 
 <!--
-Honesty builds trust. Saying "here's where it doesn't work" makes everything else more believable.
-TRANSITION: "Your laptop is sorted. What about the pipeline?"
--->
-
-<!-- ═══ ACT 4: CI ════════════════════════════════════════════════════════════ -->
-
----
-layout: center
-title: "CI Transition"
----
-
-<div class="big-statement">What about the pipeline?</div>
-
-<!--
-Visual breath. Audience shifts from "this works on my machine" to "this works at org scale."
+Different trade-offs from Ekstazi/STARTS/Skippy/Cloud TIA.
+Don't bash other tools — just show where test-order sits in the space.
 -->
 
 ---
 layout: default
-title: "The CI Problem"
+title: "CI Transition"
 class: slide-base
 ---
 
-## The pipeline pays full price on every push
+# CI without paying the learn tax every push
 
-<div class="mt-6 text-xl leading-relaxed">
-Full suite · every push · dozens per day · every run pays full cost.
+<div class="mt-20 grid grid-cols-3 gap-4 text-base">
+
+<div class="p-4 rounded-lg" style="background: rgba(96,165,250,0.1); border: 1px solid rgba(96,165,250,0.3)">
+  <div class="text-blue-400 font-bold mb-2">Nightly / merge</div>
+  <code class="text-sm">mvn test-order:learn test</code>
+  <div class="mt-2 opacity-70">Full learn run. <br/>Commits <code>.test-order/</code> to cache.</div>
 </div>
 
-<div class="hands-up mt-8">✋ Who has CI that takes more than 10 minutes?</div>
+<div class="p-4 rounded-lg" style="background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3)">
+  <div class="text-amber-400 font-bold mb-2">Every PR push</div>
+  <code class="text-sm">mvn test-order:affected test</code>
+  <div class="mt-2 opacity-70">Only runs tests that overlap with changed classes. Fails fast.</div>
+</div>
+
+<div class="p-4 rounded-lg" style="background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3)">
+  <div class="text-green-400 font-bold mb-2">If affected succeed</div>
+  <code class="text-sm">mvn test-order:run-remaining test</code>
+  <div class="mt-2 opacity-70">Remaining tests in ranked order.</div>
+</div>
+
+</div>
 
 <!--
-Second audience interaction. Feed: "That's the norm, not the exception."
+- affected test: runs only tests with dep overlap with changed classes — skips the rest entirely
+- changeMode=since-last-commit: on CI there are no uncommitted changes — compare against last commit, not working tree
+- The index is read-only on push runs — no instrumentation overhead
+- "You learn once nightly. Every developer push gets the benefit of last night's index."
+- TRANSITION: "so what does this buy you? Numbers"
 -->
 
 ---
 layout: default
 title: "Affected-Only"
 class: slide-base
+hide: trru
 ---
 
 ## `mvn test-order:affected test`
@@ -847,60 +823,54 @@ Use v-click to reveal "selected 9 tests (316 deferred)" after the changed-class 
 
 ---
 layout: default
-title: "Tiered CI Pipeline"
+title: "Affected-Only"
 class: slide-base
+hide: tr
 ---
 
-## Three tiers. One index.
+## `mvn test-order:affected test`
 
-<div class="grid grid-cols-3 gap-6 mt-6 text-center">
-  <div class="p-5 rounded-xl bg-zinc-800/60 border border-green-700/60">
-    <div class="text-lg font-bold text-green-400">Tier 1 — Push check</div>
-    <div class="text-sm opacity-70 mt-2"><code>test-order:affected</code><br/>Changed classes only<br/>Seconds to red</div>
-  </div>
-  <div class="p-5 rounded-xl bg-zinc-800/60 border border-yellow-700/60">
-    <div class="text-lg font-bold text-yellow-400">Tier 2 — Nightly</div>
-    <div class="text-sm opacity-70 mt-2"><code>test-order:learn</code> + <code>run-tier 1</code><br/>Refresh index + top-scored tests<br/>Minutes</div>
-  </div>
-  <div class="p-5 rounded-xl bg-zinc-800/60 border border-zinc-600">
-    <div class="text-lg font-bold text-zinc-400">Tier 3 — Pre-release</div>
-    <div class="text-sm opacity-70 mt-2"><code>run-tier 2/3</code><br/>Full suite<br/>Pre-merge gate</div>
-  </div>
-</div>
+<MavenLog>
+
+```
+[test-order] change detection: since-last-commit
+[test-order] changed class: EnumerationIterator
+[test-order] selected 9 tests (316 deferred)
+
+Running EnumerationIteratorTest ...  FAILED
+```
+
+</MavenLog>
 
 <!--
-Actual goals: tiered-select + run-tier 1/2/3. Parallel sharding (shard=k/N) available — mention only if asked.
+Use v-click to reveal "selected 9 tests (316 deferred)" after the changed-class line.
+"One changed class. Nine tests selected. 316 deferred."
 -->
 
 ---
 layout: default
-title: "GitHub Actions YAML"
+title: "Affected-Only"
 class: slide-base
+hide: true
 ---
 
-## Ten lines to wire it into CI
+## `mvn test-order:affected test`
 
-```yaml {all|4-7|9-10}
-- name: Run tests
-  run: mvn test-order:affected test   # PR push — affected only
+<MavenLog>
 
-- name: Cache test-order index
-  uses: actions/cache@v4
-  with:
-    path: .test-order/
-    key: test-order-${{ hashFiles('src/**') }}
+```
+[test-order] change detection: since-last-commit
+[test-order] changed class: EnumerationIterator
+[test-order] selected 9 tests (316 deferred)
 
-    # changeMode=since-last-commit detects what changed in this PR
-  env:
-    MAVEN_OPTS: -Dtestorder.changeMode=since-last-commit
+Running EnumerationIteratorTest ...  FAILED
 ```
 
+</MavenLog>
+
 <!--
-Highlight steps:
-- 4-7: cache the index between runs — this is what makes it cheap on every PR
-- 9-10: since-last-commit tells test-order what changed relative to the base branch
-Nightly job (not shown): `mvn test-order:learn test` — forces a fresh learn run to refresh the index.
-Speaker note: mention `download` goal (fetch pre-built index from CI artifacts) as an aside.
+Use v-click to reveal "selected 9 tests (316 deferred)" after the changed-class line.
+"One changed class. Nine tests selected. 316 deferred."
 -->
 
 ---
@@ -1222,11 +1192,11 @@ The integer ID maps back to the class/method in the index.
 
 ---
 layout: default
-title: "D4 — meta-agent Live Demo"
+title: "D5 — meta-agent Live Demo"
 class: slide-base
 ---
 
-<DemoCard id="D4" title="See the injection live">
+<DemoCard id="D5" title="See the injection live">
 
 ```bash
 cd third-party/spring-petclinic
@@ -1237,7 +1207,7 @@ cd third-party/spring-petclinic
 </DemoCard>
 
 <!--
-DEMO D4 — spring-petclinic learn run with meta-agent attached, server stays up after tests.
+DEMO D5 — spring-petclinic learn run with meta-agent attached, server stays up after tests.
 
 SETUP (run prepare-demo.sh before going on stage):
   meta-agent.jar present at third-party/spring-petclinic/.tools/meta-agent.jar
