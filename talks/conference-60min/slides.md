@@ -242,16 +242,17 @@ title: "Show of Hands"
 ---
 
 <div class="big-statement">
-  Who's been context-switched out of a problem<br/>because CI took too long?
+  Who's been context-switched <br/> out of a problem<br/>because CI/tests took too long?
 </div>
 
-<div class="hands-up mt-10">✋ Keep your hand up if it happened this week.</div>
 
 <!--
 First audience interaction. Feed the response: "Right. That's what we're fixing today."
 -->
 
-<!-- ═══ SLIDE 5: APFD TIMELINE ════════════════════════════════════════════════ -->
+<!--
+═══ SLIDE 5: APFD TIMELINE ════════════════════════════════════════════════
+-->
 
 ---
 layout: default
@@ -276,10 +277,10 @@ title: "91% Stat"
 ---
 
 <QuoteCard
-  attr="Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017 · 5.5M targets, 500K+ code changes"
+  attr="Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017"
   accentColor="#fb923c"
 >
-  <strong>91.3% of tests at Google passed and never failed.<span class="text-orange-400"> Not once.</span></strong>
+  "Very few of our tests ever fail, but those that do are generally <em>'closer'</em> to the code they test."
 </QuoteCard>
 
 <!--
