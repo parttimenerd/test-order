@@ -227,11 +227,9 @@ There's a zero-config,<br/>local solution.
 
 </div>
 
-<v-click>
+<v-click/>
 
 <div class="text-5xl font-bold mt-8 text-blue-400 tracking-wide">test-order</div>
-
-</v-click>
 
 </div>
 
@@ -314,7 +312,7 @@ cd third-party/commons-collections
                         # and restores index
 ./make-change-commons.sh
 mvn test-order:show
-mvn test    # Ctrl+C after first red — ~10 seconds
+mvn test
 ```
 
 </DemoCard>
@@ -348,6 +346,81 @@ NARRATE as mvn test runs:
 
 FALLBACK: asciinema play public/demo1.cast
 NEXT: while it runs, explain what's happening under the hood
+-->
+
+---
+layout: default
+title: "D2 — spring-petclinic live edit"
+class: slide-base
+---
+
+<DemoCard id="D2" title="Real project. Live edit. Wrong test first → right test first.">
+
+```bash
+cd third-party/spring-petclinic
+mvn test                    # learn run — records dep map
+./petclinic-make-change.sh  # edit VisitController.java
+mvn test-order:show
+mvn test                    # VisitControllerTests → #1
+```
+
+</DemoCard>
+
+<!--
+DEMO D2 — spring-petclinic, cold index.
+
+SETUP (run prepare-demo.sh before going on stage):
+- petclinic index ABSENT (or replaced with snapshot so we start fresh for the live learn)
+- VisitController.java clean — make-change script applies it live
+
+STEPS:
+1. cd third-party/spring-petclinic
+2. mvn test  — first run, learn mode. ~5 s. Show "[test-order] learn mode" line.
+3. ./petclinic-make-change.sh  — edits flash message in processNewVisitForm
+4. mvn test-order:show  — show ranked table; point at VisitControllerTests at #1
+5. mvn test  — Ctrl+C after first RED line (~2 s)
+
+NARRATE:
+- After learn: "Spring Boot project. 15 tests, 5 seconds, dep map saved."
+- After edit: "I changed one line in VisitController — a flash message."
+- After show: "VisitControllerTests is ranked #1. Dep overlap hit."
+- After red: "Same command. No config change. The right test ran first."
+
+FALLBACK: screenshot pair — mvn test-order:show output + terminal with VisitControllerTests red at #1
+NEXT: "And you can see the full evidence in the dashboard."
+-->
+
+---
+layout: default
+title: "D3 — Dashboard live demo"
+class: slide-base
+---
+
+<DemoCard id="D3" title="The full picture — test-order:dashboard">
+
+```bash
+cd third-party/spring-petclinic
+mvn test-order:dashboard
+open target/test-order-dashboard/index.html
+```
+
+</DemoCard>
+
+<!--
+DEMO D3 — spring-petclinic, index warm from D2 run.
+
+TABS TO SHOW (live, ~2 min):
+1. Tests tab: VisitControllerTests at #1, score bar, "Why" breakdown, sparkline history
+2. Analytics tab: APFD trend (D2 runs visible), rank heatmap
+3. Weights tab: drag "dep overlap" slider → watch VisitControllerTests move in real time
+
+NARRATE:
+- "You recognise VisitControllerTests — that's the test we just saw go red."
+- "Tests tab: rank, score, dep overlap count, run history. Evidence, not alphabetical order."
+- On weights: "You can tune scoring for your project and see the effect live."
+- "Three more tabs — ML health, mutations (PIT kill rate), static analysis — we won't walk those today."
+
+FALLBACK: screenshots from public/images/ — dashboard-tests.png, dashboard-analytics.png, dashboard-weights.png
 -->
 
 ---
@@ -452,7 +525,7 @@ class: slide-base
   <div>📦 shared index across modules</div>
   <div>🔍 <code>test-order:show</code> · <code>test-order:affected</code></div>
 </div>
-<div class="text-slate-600 text-base mt-3">Single-module: skip this step.</div>
+
 
 <style>
 .slidev-layout pre, .slidev-layout pre code, .slidev-layout .shiki { font-size: 1.3rem !important; line-height: 1.6 !important; }
@@ -531,6 +604,7 @@ title: "The Transformation Pipeline"
 layout: default
 title: "How test-order hooks into JUnit 5 — ClassOrderer"
 class: slide-base
+hide: t
 ---
 
 # JUnit5 `ClassOrderer`
@@ -559,32 +633,6 @@ class PriorityClassOrderer implements ClassOrderer {
 
 ---
 layout: default
-title: "How test-order hooks into JUnit 5 — ClassOrderer registration"
-class: slide-base
----
-
-# JUnit5 `ClassOrderer` registration
-
-```properties
-# junit-platform.properties
-# written automatically by the plugin — you never touch this
-junit.jupiter.testclass.order.default = \
-  me.bechberger.testorder.junit.PriorityClassOrderer
-```
-
-<!--
-- The Maven plugin writes junit-platform.properties into target/test-classes/ automatically. You never touch it.
-- JUnit 5's DefaultLauncher reads junit-platform.properties before any test class is loaded. It instantiates the configured ClassOrderer and calls orderClasses() exactly once.
-- No annotation on your test classes. No changes to your build scripts.
-- "No Surefire hacks. No reflection on internal APIs. One interface, one properties file."
-- TRANSITION: "Same story for method order."
--->
-
-
-<!-- ═══ RESULTS ════════════════════════════════════════════════════════════════ -->
-
----
-layout: default
 class: slide-base
 ---
 
@@ -594,7 +642,7 @@ class: slide-base
 
 <div class="p-4 rounded-lg" style="background: rgba(96,165,250,0.1); border: 1px solid rgba(96,165,250,0.3)">
   <div class="text-blue-400 font-bold mb-2">Nightly / merge</div>
-  <code class="text-sm">mvn test</code>
+  <code class="text-sm">mvn test-order:learn test</code>
   <div class="mt-2 opacity-70">Full learn run. <br/>Commits <code>.test-order/</code> to cache.</div>
 </div>
 
@@ -703,6 +751,7 @@ hide: true
 layout: default
 title: "Per-test coverage"
 class: slide-base
+hide: tr
 ---
 
 # The learn run maps what each test actually touches
@@ -760,99 +809,6 @@ hide: t
 - testorder.flaky.retries=N retries the test N times before marking ABORTED (not FAILED).
 - testorder.flaky.quarantine=true makes ABORTED non-blocking — build stays green while you investigate.
 - TRANSITION: "And two more goals worth knowing about."
--->
-
----
-layout: default
-title: "Flaky quarantine"
-class: slide-base
-hide: true
----
-
-# Flaky tests don't have to break your build
-
-<div class="mt-10 space-y-8 font-mono">
-  <div>
-    <div class="text-slate-500 text-lg mb-3">without</div>
-    <div class="flex items-center gap-3 text-xl">
-      <span class="px-4 py-2 rounded-lg bg-green-900/30 border border-green-600/40 text-green-300">PASS</span>
-      <span class="px-4 py-2 rounded-lg bg-red-900/40 border border-red-500/50 text-red-300">FAIL</span>
-      <span class="px-4 py-2 rounded-lg bg-green-900/30 border border-green-600/40 text-green-300">PASS</span>
-      <span class="text-red-400 font-bold ml-3 text-2xl">→ BUILD FAILED</span>
-    </div>
-  </div>
-  <div>
-    <div class="text-slate-500 text-lg mb-3">with <code class="text-amber-300">retries=2</code></div>
-    <div class="flex items-center gap-3 text-xl">
-      <span class="px-4 py-2 rounded-lg bg-green-900/30 border border-green-600/40 text-green-300">PASS</span>
-      <span class="px-4 py-2 rounded-lg bg-amber-900/40 border border-amber-500/50 text-amber-200">ABORTED</span>
-      <span class="px-4 py-2 rounded-lg bg-green-900/30 border border-green-600/40 text-green-300">PASS</span>
-      <span class="text-green-400 font-bold ml-3 text-2xl">→ BUILD OK</span>
-    </div>
-  </div>
-</div>
-
-<div class="mt-10 text-slate-500 text-lg"><code>testorder.flaky.retries=2</code> &nbsp;·&nbsp; <code>testorder.flaky.quarantine=true</code></div>
-
-<!--
-- testorder.flaky.retries=N retries the test N times before marking ABORTED (not FAILED).
-- testorder.flaky.quarantine=true makes ABORTED non-blocking — build stays green while you investigate.
-- TRANSITION: "And two more goals worth knowing about."
--->
-
----
-layout: default
-title: "PIT mutation scoring"
-class: slide-base
-hide: true
----
-
-# Tests that kill more mutants rank higher
-
-<div class="mt-10 space-y-6">
-  <div class="text-slate-300 text-2xl">Run PIT once. test-order uses kill rates to rank tests that <span class="text-lime-300 font-bold">actually find bugs</span> higher.</div>
-  <div class="text-slate-300 text-2xl"><code class="text-lime-400">mvn test-order:analyze-mutations</code></div>
-  <div class="mt-6 flex items-center gap-8">
-    <div class="flex flex-col items-center gap-2">
-      <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://pitest.org/&bgcolor=18181b&color=4ade80&qzone=1" class="rounded-lg w-36 h-36" />
-      <span class="text-slate-400 text-base">pitest.org</span>
-    </div>
-  </div>
-</div>
-
-<!--
-- analyze-mutations runs PIT programmatically on your indexed classes only — not the whole project.
-- Feeds per-test kill rates into state.lz4 as scoreKillRateBonus.
-- Future ranking runs weight tests that reliably kill mutants higher.
-- PIT is slow (20–60 min) — weekly CI, not per-commit.
-- Both detect-dependencies and analyze-mutations are opt-in, not part of the default `mvn test` flow.
--->
-
----
-
-<img src="/images/black-cat.png" class="absolute right-8 bottom-0 h-4/5 z-0 object-contain object-bottom opacity-90" />
-<div class="absolute inset-0 bg-zinc-900/70 z-[-1]" />
-
-<div class="relative z-10">
-
-# It's still experimental
-
-<div class="mt-4 mb-6 text-base text-amber-400/80 font-semibold">⚠ v0.1.</div>
-
-<div class="space-y-4 text-6xl">
-Works on <span class="c-blue">many</span> projects; breaks on <span class="c-red">some</span>.
-</div>
-
-</div>
-
-<!--
-- "v0.1. I've run it on 20+ OSS projects. Most work. Some don't. That's the deal."
-- Tiny suites (<20): instrumentation overhead isn't worth it; just parallelize
-- Reflection-heavy: Class.forName, runtime-wired proxies — bytecode edges missing → over-approximates (runs extra tests, never skips needed ones), but ranking precision drops
-- Dynamic classloaders: NOT a don't-use — switch to instrumentation=online; handles OSGi/Quarkus dev/plugin systems
-- Flaky: corrupt the EMA failure-history signal; quarantine first with @QuarantinedTest (ABORTED not FAILED — build stays green)
-- Note: Spring AOP and Mockito work fine — they go through bytecode
-- "This earns trust. Nothing works everywhere"
 -->
 
 ---
