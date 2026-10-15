@@ -422,7 +422,7 @@ class: slide-base
 cd third-party/spring-petclinic
 # index is cold — first run will learn
 mvn test
-# edit VisitController.java (one line)
+./petclinic-make-change.sh  # edit VisitController.java
 mvn test          # VisitControllerTests → #1, red immediately
 mvn test-order:show
 ```
@@ -434,18 +434,19 @@ DEMO D1 — spring-petclinic, cold index.
 
 SETUP: Maven compile cache pre-warmed (run `mvn test-only` once before talk).
 .test-order/ index ABSENT — D1 live-learns from scratch.
+VisitController.java clean — petclinic-make-change.sh applies the edit live.
 
 STEPS:
 1. cd third-party/spring-petclinic
-2. mvn test  — first run, learn mode. 15 tests, ~5s. Show the "[test-order] learn mode" output.
-3. nano/vim VisitController.java — add a blank line or trivial change (pre-scripted)
+2. mvn test  — first run, learn mode. ~5s. Show the "[test-order] learn mode" output.
+3. ./petclinic-make-change.sh  — edits flash message in processNewVisitForm
 4. mvn test  — order mode. VisitControllerTests ranked #1. Watch it go red immediately.
 5. Ctrl+C after first red line.
 6. mvn test-order:show  — show the annotated ranking.
 
 NARRATE:
 - After learn run: "It just recorded which classes each test touched."
-- After edit: "I changed VisitController. test-order knows VisitControllerTests covers it."
+- After edit: "I changed one line in VisitController — a flash message."
 - After red: "Same Maven command. One line in pom.xml. Now the right test runs first."
 
 FALLBACK: asciinema play public/demo-d1.cast
@@ -675,9 +676,9 @@ open target/test-order-dashboard/index.html
 DEMO D3 — spring-petclinic, index warm from D1 with multiple runs recorded.
 
 TABS TO SHOW (live, ~5 min):
-1. Tests tab: VisitControllerTests at #1, score bar, breakdown panel, sparklines
+1. Tests tab: VisitControllerTests at #1, score bar, "Why" breakdown, sparkline history
 2. Analytics tab: APFD trend across D1 runs, rank heatmap
-3. Weights tab: drag "dep overlap" slider, watch VisitControllerTests move in real time
+3. Weights tab: drag "dep overlap" slider → watch VisitControllerTests move in real time
 
 MENTION BUT DON'T DEMO:
 - ML Health tab, Mutations tab (PIT kill-rate), Static Analysis tab
@@ -685,8 +686,8 @@ MENTION BUT DON'T DEMO:
 
 NARRATE:
 - "You recognise VisitControllerTests — that's the test we just saw go red in D1."
-- "This is your actual run history, not canned data."
-- On weights tab: "You can tune the scoring for your project and see the effect immediately."
+- "Tests tab: rank, score, dep overlap count, run history. Evidence, not alphabetical order."
+- On weights tab: "You can tune the scoring for your project and see the effect live."
 
 FALLBACK: dashboard screenshots from public/images/ (dashboard-tests.png, dashboard-analytics.png, dashboard-weights.png)
 -->
@@ -855,7 +856,7 @@ class: slide-base
   </div>
   <div class="p-5 rounded-xl bg-zinc-800/60 border border-yellow-700/60">
     <div class="text-lg font-bold text-yellow-400">Tier 2 — Nightly</div>
-    <div class="text-sm opacity-70 mt-2"><code>run-tier 1</code><br/>Top-scored tests<br/>Minutes</div>
+    <div class="text-sm opacity-70 mt-2"><code>test-order:learn</code> + <code>run-tier 1</code><br/>Refresh index + top-scored tests<br/>Minutes</div>
   </div>
   <div class="p-5 rounded-xl bg-zinc-800/60 border border-zinc-600">
     <div class="text-lg font-bold text-zinc-400">Tier 3 — Pre-release</div>
@@ -877,7 +878,7 @@ class: slide-base
 
 ```yaml {all|4-7|9-10}
 - name: Run tests
-  run: mvn test
+  run: mvn test-order:affected test   # PR push — affected only
 
 - name: Cache test-order index
   uses: actions/cache@v4
@@ -894,6 +895,7 @@ class: slide-base
 Highlight steps:
 - 4-7: cache the index between runs — this is what makes it cheap on every PR
 - 9-10: since-last-commit tells test-order what changed relative to the base branch
+Nightly job (not shown): `mvn test-order:learn test` — forces a fresh learn run to refresh the index.
 Speaker note: mention `download` goal (fetch pre-built index from CI artifacts) as an aside.
 -->
 
