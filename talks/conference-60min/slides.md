@@ -1,6 +1,6 @@
 ---
 theme: seriph
-title: "You Are Running the Wrong Tests First"
+title: "Stop Wasting Hours on Tests That Never Fail"
 info: |
   test-order — 60-minute conference talk.
   Local-first, zero-config test prioritization for Maven and Gradle.
@@ -145,11 +145,13 @@ layout: cover
 </style>
 
 
-<!-- ═══ SLIDE 1: COVER ════════════════════════════════════════════════════════ -->
+<!-- ═══ COVER ═════════════════════════════════════════════════════════════════ -->
 
 <div class="relative z-10">
 
-# You Are Running the Wrong Tests First
+# Stop Wasting Hours on Tests 
+# That Never Fail
+
 
 <div class="pt-6 text-base opacity-50">
   Johannes Bechberger · @parttimenerd · SAP SE
@@ -158,7 +160,8 @@ layout: cover
 </div>
 
 <!--
-OPENING LINE (spoken): "Regression testing is an important but costly software engineering task." — Legunsen et al., FSE 2016. Pause. "And yet here we are, still running tests in alphabetical order."
+- Punched cards at Bletchley Park — the original "sort by relevance" problem
+- OPENING LINE (spoken): "Regression testing is an important but costly software engineering task." — Legunsen et al., FSE 2016. Pause. "And yet here we are, still running tests in alphabetical order."
 -->
 
 ---
@@ -992,6 +995,41 @@ class IntegrationTest { }
   Flaky quarantine: <code>testorder.flaky.quarantine=true</code> — reports ABORTED not FAILED. Build stays green.
 </div>
 
+<!--
+SWITCH TO TERMINAL — demo @AlwaysRun live on petclinic:
+  Add @AlwaysRun to VisitControllerTests, then run mvn test-order:show — watch it jump to #1.
+Say: "Let me show you this one live — 30 seconds."
+-->
+
+---
+layout: default
+title: "D2.5 – Annotations Live"
+class: slide-base
+---
+
+<DemoCard id="D2.5" title="@AlwaysRun live — watch the ranking change">
+
+```bash
+cd third-party/spring-petclinic
+
+# Step 1 – see current ranking
+mvn test-order:show
+
+# Step 2 – add @AlwaysRun to VisitControllerTests (one line)
+# Open VisitControllerTests.java, add @AlwaysRun above the class declaration
+
+# Step 3 – ranking preview instantly updates
+mvn test-order:show   # VisitControllerTests → #1
+```
+
+</DemoCard>
+
+<!--
+RETURN TO SLIDES after this demo.
+The point: annotations don't require a re-learn. The plugin reads them at show time.
+Keep it tight — step 1, add annotation, step 3. No more.
+-->
+
 ---
 layout: default
 title: "TDD Enforcement"
@@ -1017,8 +1055,37 @@ BUILD FAILURE
 
 <!--
 Pause for the laugh after "BUILD FAILURE". Let it land.
+SWITCH TO TERMINAL — show TDD enforcement live on petclinic (optional, skip if short on time):
+  mvn test -Dtestorder.tdd=true
+  Watch for TDD VIOLATION in output.
 Then: "This is opt-in. You don't have to use it. But if you care about TDD discipline in CI, one property."
 The v-click reveals the pull-quote after the code — gives the audience time to read the error first.
+RETURN TO SLIDES.
+-->
+
+---
+layout: default
+title: "D2.6 – TDD Enforcement Live"
+class: slide-base
+---
+
+<DemoCard id="D2.6" title="testorder.tdd=true — CI catches the discipline gap">
+
+```bash
+cd third-party/spring-petclinic
+
+# Run with TDD enforcement on
+mvn test -Dtestorder.tdd=true
+
+# Look for: [test-order] TDD VIOLATION: <TestClass>
+# BUILD FAILURE if any test passed on first run with no prior failure
+```
+
+</DemoCard>
+
+<!--
+RETURN TO SLIDES after this demo.
+Optional: skip if short on time — the slide already makes the point.
 -->
 
 ---
@@ -1577,26 +1644,88 @@ Callback to the opening demo. "Remember position 237? That was before this line 
 
 ---
 layout: center
-title: "Q&A"
+title: "CTA — Try It Today"
+class: slide-base
 ---
 
-# Questions?
+<img src="/images/wiki-loc-catalog.jpg" class="absolute inset-0 w-full h-full object-cover opacity-50" />
+<div class="absolute inset-0 bg-zinc-900/52 z-0" />
 
-<div class="grid grid-cols-3 gap-8 mt-10 text-center">
-  <div>
-    <div class="text-sm opacity-60 mb-2">Docs</div>
-    <img src="/images/test-order-qr.png" class="w-24 h-24 mx-auto" />
-  </div>
-  <div>
-    <div class="text-sm opacity-60 mb-2">GitHub Issues</div>
-    <img src="/images/feedback-qr.png" class="w-24 h-24 mx-auto" />
-  </div>
-  <div>
-    <div class="text-sm opacity-60 mb-2">SapMachine</div>
-    <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://sapmachine.io&bgcolor=18181b&color=ffffff&qzone=1" class="w-24 h-24 mx-auto rounded-lg" />
-  </div>
+<div class="relative z-10 flex flex-col items-center text-center">
+
+<div class="big-statement">
+
+You don't have to wait<br/>20 minutes anymore.
+
+</div>
+
+<div class="pt-8 text-xl opacity-70">v0.1 · Apache 2.0 · PRs welcome</div>
+
+<div class="pt-4 text-2xl font-mono text-sky-300">
+  parttimenerd.github.io/test-order
+</div>
+
+<img src="/images/test-order-qr.png" class="rounded-lg" width="80" />
+
 </div>
 
 <!--
-Open for questions. Point to the QR codes for docs, issues, and SapMachine.
+Callback to the opening hands-up question.
+`mvn test-order:affected test` for the inner dev loop.
+-->
+
+---
+layout: none
+title: "Q&A"
+class: slide-base
+---
+
+<img src="/images/wiki-loc-catalog.jpg" class="absolute inset-0 w-full h-full object-cover opacity-45" />
+<div class="absolute inset-0 bg-zinc-900/58" />
+
+<div class="absolute inset-0 flex flex-col items-center justify-center text-center px-12">
+
+<div class="big-statement" style="font-size:4rem">
+
+Questions?
+
+</div>
+
+<div class="mt-12 flex gap-12 items-start justify-center w-full">
+
+<div class="flex flex-col items-center gap-3">
+  <img src="/images/test-order-qr.png" class="rounded-lg" width="180" height="180" />
+  <div class="text-sm font-mono opacity-80">parttimenerd.github.io/test-order</div>
+  <div class="text-xs opacity-50">docs · repo</div>
+</div>
+
+<div class="flex flex-col items-center gap-3">
+  <img src="/images/feedback-qr.png" class="rounded-lg" width="180" height="180" />
+  <div class="text-sm font-mono opacity-80">feedback</div>
+  <div class="text-xs opacity-50">session rating</div>
+</div>
+
+<div class="flex flex-col items-center gap-3">
+  <img src="/images/sapmachine-qr.png" class="rounded-lg" width="180" height="180" />
+  <div class="text-sm font-mono opacity-80">sapmachine.io</div>
+  <div class="text-xs opacity-50">my team</div>
+</div>
+
+</div>
+
+</div>
+
+<!--
+Keep this slide up for the full Q&A.
+
+Likely questions:
+- "Kotlin / Scala?" JVM bytecode — source language is irrelevant.
+- "Parallel test execution?" Class-level: ordering is a scheduling priority, fine.
+  Method-level: per-thread bitset, fine.
+- "Can the index be wrong?" Over-approximation only — false positives, never false negatives.
+- "Develocity PTS / Launchable?" Both are strong once you have months of failure history — ML signal is genuinely powerful at scale. test-order's trade-off: local, no training data needed, useful from run 2; their accuracy grows stronger over time.
+- "CI caching?" Cache `.test-order/` between runs (tiny) or commit to git.
+- "How does APFD relate to wall time?" 22-min suite at 85% APFD = first failure at ~minute 3, not minute 18.
+- "Order-dependent tests?" Li et al. (ISSTA 2023): Tuscan-square designs, 97.2% detection at ~105 test orders vs. n! brute force.
+- "Why not just run tests in parallel?" Parallelism reduces total time; ordering reduces time-to-first-failure. They compose.
 -->

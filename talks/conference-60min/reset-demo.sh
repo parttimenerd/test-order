@@ -6,11 +6,12 @@
 #   ./reset-demo.sh --dry-run # show what would be reset, don't change anything
 #
 # Resets:
-#   D0  reverts commons-collections patch + removes its .test-order index
-#   D1  restores commons-collections index from snapshot (re-copy-in-db)
-#   D2  restores VisitController.java from backup (if present)
-#   D3  restores petclinic index from snapshot
-#   D4  nothing to reset — meta-agent.jar stays in .tools/, server exits via Stop button
+#   D0    reverts commons-collections patch + removes its .test-order index
+#   D1    restores commons-collections index from snapshot
+#   D2    restores petclinic src/ (VisitController, @AlwaysRun on VisitControllerTests)
+#   D2.5  same as D2 — @AlwaysRun annotation reverted by git checkout src/
+#   D3    restores petclinic index from snapshot
+#   D4    nothing to reset — meta-agent.jar stays in .tools/, server exits via Stop button
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,12 +64,20 @@ else
   skip "commons-collections snapshot not found at $COLLECTIONS_SNAPSHOT — skipping"
 fi
 
-# ── D2: restore VisitController.java ─────────────────────────────────────────
-if [ -f "$VISIT.bak" ]; then
-  if $dry; then ok "would restore VisitController.java from backup"
-  else mv "$VISIT.bak" "$VISIT"; ok "VisitController.java restored"; fi
+# ── D2/D2.5: revert petclinic src/ (VisitController + @AlwaysRun annotation) ─
+if [ -d "$PETCLINIC" ]; then
+  HAS_PETCLINIC_CHANGES=$(git -C "$PETCLINIC" diff --quiet HEAD -- src/ && echo "no" || echo "yes")
+  if [ "$HAS_PETCLINIC_CHANGES" = "yes" ]; then
+    if $dry; then ok "would revert petclinic src/ (VisitController, @AlwaysRun, etc.)"
+    else git -C "$PETCLINIC" checkout src/; ok "petclinic src/ reverted"; fi
+  elif [ -f "$VISIT.bak" ]; then
+    if $dry; then ok "would restore VisitController.java from .bak"
+    else mv "$VISIT.bak" "$VISIT"; ok "VisitController.java restored from .bak"; fi
+  else
+    skip "petclinic src/ — already clean"
+  fi
 else
-  skip "VisitController.java — no backup (already clean)"
+  skip "spring-petclinic not found at $PETCLINIC"
 fi
 
 # ── D3: restore petclinic index from snapshot ────────────────────────────────

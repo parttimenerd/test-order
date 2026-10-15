@@ -330,6 +330,16 @@ printf "    ./setup-test-order.sh   # adds .mvn/extensions.xml + restores index\
 printf "    mvn test-order:show\n"
 printf "    mvn test   # Ctrl+C after first red (~10 seconds)\n\n"
 
+printf "  ${CYAN}D2.5${NC} (petclinic — @AlwaysRun annotation live, Feature Catalogue section):\n"
+printf "    cd %s\n" "$PETCLINIC"
+printf "    mvn test-order:show             # before: see current ranking\n"
+printf "    # add @AlwaysRun to VisitControllerTests.java (one line)\n"
+printf "    mvn test-order:show             # after: VisitControllerTests → #1\n\n"
+
+printf "  ${CYAN}D2.6${NC} (petclinic — TDD enforcement, Feature Catalogue section — optional):\n"
+printf "    cd %s\n" "$PETCLINIC"
+printf "    mvn test -Dtestorder.tdd=true   # watch for TDD VIOLATION\n\n"
+
 printf "  ${CYAN}D3${NC} (petclinic dashboard):\n"
 printf "    cd %s\n" "$PETCLINIC"
 printf "    mvn test-order:dashboard && open target/test-order-dashboard/index.html\n\n"
