@@ -54,5 +54,13 @@ public class RestoreInstrumentationMojo extends AbstractTestOrderMojo {
 		} catch (IOException e) {
 			getLog().warn("[test-order] Could not restore instrumented classes before package: " + e.getMessage());
 		}
+		// Drain collectors before the package phase so the non-String registry value
+		// stored in System.getProperties() is removed. Frameworks like Narayana that
+		// copy system properties via Properties.setProperty() NPE on non-String values.
+		int drained = drainAllCollectors();
+		if (drained > 0) {
+			getLog().info("[test-order] IndexCollectorServer merged " + drained
+					+ " test classes (flushed before package phase).");
+		}
 	}
 }

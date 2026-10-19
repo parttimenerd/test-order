@@ -77,13 +77,30 @@ public final class IndexCollectorServer implements AutoCloseable {
 	}
 
 	/**
+	 * Removes {@code port} from the JVM registry and, if the registry map is now
+	 * empty, removes the registry key itself from {@link System#getProperties()}.
+	 * This prevents a non-String value from persisting in the system Properties
+	 * table after all collectors have been drained (which would cause an NPE in
+	 * frameworks like Narayana that copy system properties using
+	 * {@link java.util.Properties#setProperty}).
+	 */
+	private static Object removeFromRegistry(int port) {
+		ConcurrentHashMap<Integer, Object> reg = jvmRegistry();
+		Object removed = reg.remove(port);
+		if (reg.isEmpty()) {
+			System.getProperties().remove(JVM_REGISTRY_KEY);
+		}
+		return removed;
+	}
+
+	/**
 	 * Drain and stop the collector for the given port, writing the index file. Can
 	 * be called from any classloader realm as long as the running server was
 	 * registered in the JVM registry. Uses reflection if the server object was
 	 * loaded by a different classloader realm.
 	 */
 	public static void drainByPort(int port, Path indexFile) {
-		Object server = jvmRegistry().remove(port);
+		Object server = removeFromRegistry(port);
 		if (server == null) {
 			return;
 		}
@@ -217,7 +234,7 @@ public final class IndexCollectorServer implements AutoCloseable {
 		} catch (RuntimeException e) {
 			// If shutdown-hook registration fails (e.g. JVM already shutting down),
 			// clean up what we've started so we don't leak the thread, port, or registry.
-			jvmRegistry().remove(serverSocket.getLocalPort());
+			removeFromRegistry(serverSocket.getLocalPort());
 			running.set(false);
 			acceptThread.interrupt();
 			try {
@@ -307,7 +324,7 @@ public final class IndexCollectorServer implements AutoCloseable {
 		// Remove from registry immediately before merge to prevent concurrent drain
 		// attempts
 		// from using stale state if merge fails partway through
-		jvmRegistry().remove(serverSocket.getLocalPort());
+		removeFromRegistry(serverSocket.getLocalPort());
 		try {
 			acceptThread.join(5000);
 		} catch (InterruptedException e) {
@@ -555,7 +572,7 @@ public final class IndexCollectorServer implements AutoCloseable {
 	@Override
 	public void close() {
 		running.set(false);
-		jvmRegistry().remove(serverSocket.getLocalPort());
+		removeFromRegistry(serverSocket.getLocalPort());
 		closeServerSocket();
 		unregisterShutdownHook();
 		try {

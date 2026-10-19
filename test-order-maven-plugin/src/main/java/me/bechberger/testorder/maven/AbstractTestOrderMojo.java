@@ -1302,6 +1302,51 @@ abstract class AbstractTestOrderMojo extends AbstractMojo {
 		return total;
 	}
 
+	/**
+	 * Drain all active collectors: same-realm static map AND cross-realm servers
+	 * registered in the session-property bridge. Removes the non-String
+	 * {@code ConcurrentHashMap} value from {@link System#getProperties()} so that
+	 * later build steps (e.g. Quarkus {@code NarayanaJtaProcessor}) that copy
+	 * system properties via {@link java.util.Properties#setProperty} do not NPE.
+	 */
+	protected int drainAllCollectors() {
+		// Same-realm path: static map
+		int total = drainAllActiveCollectors();
+		// Cross-realm path: session-property bridge (port:indexFilePath entries)
+		if (session == null) {
+			return total;
+		}
+		String activeEntry;
+		java.util.Properties props = session.getUserProperties();
+		synchronized (props) {
+			activeEntry = props.getProperty(SESSION_ACTIVE_COLLECTORS_KEY, "");
+			if (!activeEntry.isBlank()) {
+				props.remove(SESSION_ACTIVE_COLLECTORS_KEY);
+			}
+		}
+		if (activeEntry.isBlank()) {
+			return total;
+		}
+		for (String entry : activeEntry.split("\\|")) {
+			if (entry.isBlank()) {
+				continue;
+			}
+			int colon = entry.indexOf(':');
+			if (colon <= 0) {
+				continue;
+			}
+			try {
+				int port = Integer.parseInt(entry.substring(0, colon));
+				java.nio.file.Path indexFile = java.nio.file.Path.of(entry.substring(colon + 1)).normalize();
+				// Static map already drained above; this handles the cross-realm case.
+				me.bechberger.testorder.IndexCollectorServer.drainByPort(port, indexFile);
+			} catch (Exception e) {
+				getLog().warn("[test-order] drainAllCollectors: entry error for '" + entry + "': " + e.getMessage());
+			}
+		}
+		return total;
+	}
+
 	protected void autoAggregate(Path depsDirPath, Path idxPath) throws MojoExecutionException {
 		// Stop any running socket collector first — its data is merged directly into
 		// the index

@@ -109,7 +109,7 @@ Don't invent recovery commands — only run what the plugin provides.
 Each manifest task has a `stability` field:
 
 - `stable` — output shape and behaviour are committed.
-- `experimental` — works, but surface may change (`optimize`, `coverage`, `detect-dependencies`, `analyze-mutations`).
+- `experimental` — works, but surface may change (`optimize`, `coverage`, `analyze-mutations`).
 - `deprecated` — stable replacement exists; the manifest description names it.
 
 | Deprecated | Use instead |

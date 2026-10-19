@@ -166,7 +166,6 @@ If your learn run is slow (large projects), you can commit `.test-order/test-dep
 | Diagnose setup | `mvn test-order:diagnose` | `./gradlew testOrderDiagnose` |
 | **Select change-affected tests** | `mvn test-order:affected test` | `./gradlew testOrderAffected` |
 | Run deferred (remaining) tests | `mvn test-order:run-remaining test` | `./gradlew testOrderRunRemaining` |
-| Detect flaky tests | `mvn test-order:detect-dependencies` | `./gradlew testOrderDetectDependencies` |
 | **Mutation testing** | `mvn test-order:analyze-mutations` | `./gradlew testOrderAnalyzeMutations` |
 
 For the full CLI reference, see [docs/CLI_REFERENCE.mdx](docs/CLI_REFERENCE.mdx).
@@ -468,7 +467,6 @@ The time-saved estimate compares the actual (prioritized) order against alphabet
 | **Dashboard** | `mvn test-order:dashboard` / `mvn test-order:serve` | Interactive HTML report — test explorer, run history analytics, weight simulator, and more. See [Dashboard docs](test-order-dashboard/README.md) |
 | **ML predictions** | `mvn test -Dtestorder.ml.enabled=true` | Failure probability predictions using logistic regression on test history |
 | **Mutation testing** | `mvn test-order:analyze-mutations` | Run PIT mutation testing scoped to indexed classes; enriches scoring with kill rates (see below) |
-| **Detect flaky tests** | `mvn test-order:detect-dependencies` | Find order-dependent tests. See [docs/DETECT_DEPENDENCIES.md](docs/DETECT_DEPENDENCIES.md) |
 | **Coverage analysis** | `mvn test-order:coverage` | Identify least-tested production classes |
 | **Method-level ordering** | `mvn test -Dtestorder.methodOrder.enabled=true` | Reorder methods within each class |
 | **Annotations** | `@AlwaysRun` | Pin critical tests to always run first |
@@ -794,7 +792,6 @@ After install, Claude picks it up automatically based on the skill's `descriptio
 | **[Scoring](docs/SCORING.md)** | Formula details, weight customization, auto-tuning |
 | **[Multi-Module Setup](docs/MULTI_MODULE_SETUP.mdx)** | Reactor-level aggregation for multi-module projects |
 | **[CI Examples](docs/ci-examples/)** | Ready-to-use GitHub Actions, GitLab CI, Azure configs |
-| **[Detect Dependencies](docs/DETECT_DEPENDENCIES.md)** | Order-dependent (flaky) test detection |
 | **[Kotest](docs/KOTEST.md)** | Kotlin & Kotest integration |
 | **[For LLM agents](docs/AGENTS.md)** | Driving test-order from an agent — manifest discovery, error recovery |
 | **[Architecture](docs/ARCHITECTURE.md)** | System design and contribution guidance |

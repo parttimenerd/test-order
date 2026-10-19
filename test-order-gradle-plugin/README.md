@@ -347,7 +347,6 @@ All tasks are in the `test-order` group:
 | Task | Maven equivalent | Description |
 |---|---|---|
 | `testOrderOptimize` | `test-order:optimize` | Tune scoring weights based on failure history |
-| `testOrderDetectDependencies` | `test-order:detect-dependencies` | Detect order-dependent (flaky) tests via reordering strategies |
 | `testOrderAnalyzeMutations` | `test-order:analyze-mutations` | Run PIT mutation testing and record kill-rate data for scoring |
 | `testOrderDiagnose` | `test-order:diagnose` | Run diagnostic checks on the test-order setup |
 | `testOrderHelp` | `test-order:help` | List all available test-order tasks and properties |

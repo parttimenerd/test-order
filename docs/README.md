@@ -8,7 +8,6 @@
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Build from source, use the SNAPSHOT locally, common dev commands |
 | [CLI_REFERENCE.mdx](CLI_REFERENCE.mdx) | Goals, properties, change-detection modes, ML configuration, CI patterns |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Stable architecture, data flow, ML subsystem, and contribution guidance |
-| [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) | Order-dependent test detection algorithms and configuration |
 | [INDEX_FORMAT.md](INDEX_FORMAT.md) | Dependency index binary format specification |
 | [KOTEST.md](KOTEST.md) | Kotest framework integration guide |
 | [FRAMEWORK_COMPARISON.md](FRAMEWORK_COMPARISON.md) | JUnit 5 vs TestNG feature comparison and migration guide |
@@ -41,8 +40,7 @@ Pick the path that matches your role:
 - **CI engineer wiring this into a pipeline** → [CI.md](CI.md) plus [ci-examples/](https://github.com/parttimenerd/test-order/tree/main/docs/ci-examples).
 - **Multi-module reactor maintainer** → [MULTI_MODULE_SETUP.mdx](MULTI_MODULE_SETUP.mdx).
 - **Tuning scoring or weights** → [SCORING.md](SCORING.md), then the dashboard's Weights tab.
-- **Hunting a flaky test** → [DETECT_DEPENDENCIES.md](DETECT_DEPENDENCIES.md) + [`samples/sample-od-bugs`](https://github.com/parttimenerd/test-order/tree/main/samples/sample-od-bugs).
-- **Something is broken** → [CHEAT_SHEET.md § Troubleshooting](CHEAT_SHEET.md), then `mvn test-order:diagnose`.
+- **Hunting a flaky test** → [CHEAT_SHEET.md § Troubleshooting](CHEAT_SHEET.md), then `mvn test-order:diagnose`.
 - **Contributing or building from source** → [DEVELOPMENT.md](DEVELOPMENT.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Known limitations

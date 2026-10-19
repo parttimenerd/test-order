@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Quarkus / Narayana NPE in learn mode** — `IndexCollectorServer` stored a `ConcurrentHashMap` as a value in `System.getProperties()` for cross-realm communication. Frameworks that copy system properties via `Properties.setProperty()` (e.g. Narayana's `AbstractPropertiesFactory.applySystemProperties`) NPE'd because `System.getProperty()` returns `null` for non-String values. Fixed by removing the registry key from `System.getProperties()` once the map is empty (`removeFromRegistry`), and by draining all active collectors in the `restore-instrumentation` mojo at `prepare-package` — before any `package`-phase plugins (like `quarkus:build`) run. Fixes [#79](https://github.com/parttimenerd/test-order/issues/79).
+
+### Removed
+- `detect-dependencies` goal removed from user-facing documentation — the order-dependency detection feature does not work reliably enough to recommend.
+
 ## [0.1.0] - 2026-07-22
 
 ### Breaking
