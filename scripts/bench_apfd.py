@@ -236,6 +236,7 @@ _TRANSIENT_PATTERNS = [
     re.compile(r"Could not resolve dependencies"),
 ]
 _MVN_RETRIES = 2  # retry up to this many times on transient failures
+_MVN_TIMEOUT = 30 * 60  # default per-run timeout in seconds (30 min)
 
 def _looks_transient(log_file: Path) -> bool:
     """Return True if the maven log suggests a transient network failure."""
@@ -250,11 +251,13 @@ def run_mvn(
     extra_args: list,
     log_file: Path,
     env: Optional[dict] = None,
+    timeout: int = _MVN_TIMEOUT,
 ) -> tuple:
     """
     Run the maven command in the repo dir, retrying on transient network errors.
     Returns (returncode, wall_seconds).
     stdout goes to log_file; wall time covers all attempts combined.
+    Raises subprocess.TimeoutExpired if the run exceeds `timeout` seconds.
     """
     cmd = ["mvn"] + extra_args
     log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -270,6 +273,7 @@ def run_mvn(
                 stdout=lf,
                 stderr=subprocess.PIPE,
                 env=proc_env,
+                timeout=timeout,
             )
         if proc.returncode == 0 or not _looks_transient(log_file):
             break
@@ -433,6 +437,7 @@ def ensure_learn_index(
     base_args: list[str],
     env: dict,
     trial_dir: Path,
+    timeout: int = _MVN_TIMEOUT,
 ) -> float:
     """
     Make sure a learn index exists. Returns learn wall-time (0.0 if reused).
@@ -443,12 +448,17 @@ def ensure_learn_index(
 
     log(f"  [learn] no index — building from clean state")
     learn_log = trial_dir / "learn.log"
-    _, wall = run_mvn(
-        repo,
-        ["clean", "test", "-Dtestorder.mode=learn"] + base_args,
-        learn_log,
-        env=env,
-    )
+    try:
+        _, wall = run_mvn(
+            repo,
+            ["clean", "test", "-Dtestorder.mode=learn"] + base_args,
+            learn_log,
+            env=env,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        warn(f"  [learn] timed out after {timeout}s — order runs will fall back to alphabetical")
+        return 0.0
     if find_index(repo):
         ok(f"  [learn] index built in {wall:.1f}s")
     else:
@@ -466,6 +476,7 @@ def run_trial(
     learn_s: float,
     writer: CsvWriter,
     patch_name: str,
+    timeout: int = _MVN_TIMEOUT,
 ) -> None:
     """Run one patch trial and write a CSV row immediately on completion."""
     trial_dir.mkdir(parents=True, exist_ok=True)
@@ -500,23 +511,35 @@ def run_trial(
         pre_clean(repo)
         log(f"  [alpha] running baseline...")
         alpha_log = trial_dir / "alpha.log"
-        _, alpha_wall = run_mvn(
-            repo,
-            ["clean", "test", "-Dtestorder.mode=skip"] + base_args,
-            alpha_log,
-            env=env,
-        )
+        try:
+            _, alpha_wall = run_mvn(
+                repo,
+                ["clean", "test", "-Dtestorder.mode=skip"] + base_args,
+                alpha_log,
+                env=env,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            warn(f"  [alpha] timed out after {timeout}s — skipping patch")
+            error_row("timeout")
+            return
 
         # ── 3. test-order run ─────────────────────────────────────────────────
         pre_clean(repo)
         log(f"  [order] running with test-order...")
         order_log = trial_dir / "order.log"
-        _, order_wall = run_mvn(
-            repo,
-            ["clean", "test", "-Dtestorder.mode=auto"] + base_args,
-            order_log,
-            env=env,
-        )
+        try:
+            _, order_wall = run_mvn(
+                repo,
+                ["clean", "test", "-Dtestorder.mode=auto"] + base_args,
+                order_log,
+                env=env,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            warn(f"  [order] timed out after {timeout}s — recording partial")
+            error_row("timeout")
+            return
     finally:
         # ── 4. Restore bug ────────────────────────────────────────────────────
         revert_patch(repo, patch_file)
@@ -585,7 +608,7 @@ def _save_parsed(rows: list[dict], path: Path) -> None:
 
 # ─── Per-repo orchestration ──────────────────────────────────────────────────
 
-def bench_repo(repo: str, writer: CsvWriter, out_dir: Path, only_patch: Optional[str] = None) -> None:
+def bench_repo(repo: str, writer: CsvWriter, out_dir: Path, only_patch: Optional[str] = None, timeout: int = _MVN_TIMEOUT, done_patches: set[str] | None = None) -> None:
     section(f"BENCH: {repo}")
 
     repo_dir = THIRD_PARTY / repo
@@ -631,14 +654,17 @@ def bench_repo(repo: str, writer: CsvWriter, out_dir: Path, only_patch: Optional
 
         # Build learn index once for the whole repo (first trial's dir is good enough)
         first_trial_dir = run_dir / f"patch-0-learn"
-        learn_s = ensure_learn_index(repo, base_args, env, first_trial_dir)
+        learn_s = ensure_learn_index(repo, base_args, env, first_trial_dir, timeout=timeout)
 
         total = len(patches)
         for idx, pf in enumerate(patches, 1):
             patch_name = pf.stem
+            if done_patches and patch_name in done_patches:
+                log(f"Patch {idx}/{total}: {patch_name} — already done, skipping")
+                continue
             trial_dir  = run_dir / f"patch-{idx:02d}-{patch_name}"
             log(f"Patch {idx}/{total}: {patch_name}")
-            run_trial(repo, pf, base_args, env, trial_dir, learn_s, writer, patch_name)
+            run_trial(repo, pf, base_args, env, trial_dir, learn_s, writer, patch_name, timeout=timeout)
             # After first trial the index is already built; mark learn_s=0 for subsequent rows
             learn_s = 0.0
     finally:
@@ -781,6 +807,9 @@ def main() -> None:
                     help="Only run patches whose name contains SUBSTRING")
     ap.add_argument("--append", metavar="RUN_DIR",
                     help="Append results to an existing run directory (e.g. 20261008_223724)")
+    ap.add_argument("--timeout", metavar="SECONDS", type=int, default=_MVN_TIMEOUT,
+                    help=f"Per-run Maven timeout in seconds (default: {_MVN_TIMEOUT}). "
+                         "Timed-out trials are recorded with status=timeout.")
     args = ap.parse_args()
 
     repos = args.repos if args.repos else DEFAULT_REPOS
@@ -797,6 +826,14 @@ def main() -> None:
     csv_path = out_dir / "results.csv"
     writer = CsvWriter(csv_path)
 
+    # When appending, collect already-completed (repo, patch) pairs to skip
+    done_patches_by_repo: dict[str, set[str]] = defaultdict(set)
+    if args.append and csv_path.exists():
+        with open(csv_path, newline="") as f:
+            for row in csv.DictReader(f):
+                if row.get("status") in ("ok", "no_failure", "patch_failed"):
+                    done_patches_by_repo[row["repo"]].add(row["patch"])
+
     # Install latest plugin build
     if not args.no_install:
         section("Installing test-order plugin")
@@ -810,7 +847,8 @@ def main() -> None:
 
     t_total = time.monotonic()
     for repo in repos:
-        bench_repo(repo, writer, out_dir, only_patch=args.patch)
+        bench_repo(repo, writer, out_dir, only_patch=args.patch, timeout=args.timeout,
+                   done_patches=done_patches_by_repo.get(repo))
     elapsed = time.monotonic() - t_total
 
     writer.close()

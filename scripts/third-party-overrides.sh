@@ -551,6 +551,9 @@ detect_bench_extra_args() {
         javaparser) echo "-Dmaven.test.failure.ignore=true '-pl=!javaparser-core-testing-bdd'" ;;
         # commons-lang: locale-dependent test failures (FastDateParser_TimeZoneStrategyTest)
         commons-lang) echo "-Dmaven.test.failure.ignore=true" ;;
+        # logbook uses Surefire <parallel>classesAndMethods</parallel> which test-order blocks
+        # in learn mode (corrupts dependency tracking). Override to serial execution.
+        logbook) echo "-Dparallel=none -Dmaven.test.failure.ignore=true" ;;
         *) echo "" ;;
     esac
 }

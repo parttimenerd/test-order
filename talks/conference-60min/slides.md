@@ -188,12 +188,6 @@ layout: cover
 -->
 
 ---
-layout: image
-image: /images/baselone26-sponsors.png
-title: "Sponsors"
----
-
----
 layout: default
 title: "D0 — CI Baseline Demo"
 class: slide-base
@@ -1875,12 +1869,6 @@ Questions?
   <img src="/images/test-order-qr.png" class="rounded-lg" width="180" height="180" />
   <div class="text-sm font-mono opacity-80">parttimenerd.github.io/test-order</div>
   <div class="text-xs opacity-50">docs · repo</div>
-</div>
-
-<div class="flex flex-col items-center gap-3">
-  <img src="/images/feedback-qr.png" class="rounded-lg" width="180" height="180" />
-  <div class="text-sm font-mono opacity-80">feedback</div>
-  <div class="text-xs opacity-50">session rating</div>
 </div>
 
 <div class="flex flex-col items-center gap-3">

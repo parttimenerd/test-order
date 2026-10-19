@@ -7,9 +7,9 @@
 #   3. Removes live commons-collections index (D0 needs no index)
 #   4. Verifies/builds commons-collections index snapshot (needed by copy-in-db.sh for D1)
 #   5. Verifies spring-petclinic checkout and pom.xml has test-order
-#   6. Verifies/builds petclinic index snapshot (needed by copy-in-db.sh for D2/D3 dashboard)
-#   7. Copies make-change-commons.sh + copy-in-db.sh into each project dir
-#   8. Prints a ready summary with exact demo commands
+#   6. Verifies/builds petclinic index snapshot (needed for D2 learn run and D3 dashboard)
+#   7. Copies make-change-commons.sh + copy-in-db.sh + petclinic-make-change.sh into project dirs
+#   8. Prints a ready summary with exact demo commands (D0–D3, 5 terminal tabs)
 #
 # Usage:
 #   ./prepare-demo.sh                    # normal pre-show prep
@@ -280,7 +280,7 @@ if [ $FAILURES -gt 0 ]; then
   exit 1
 fi
 
-printf "\n${GREEN}${BOLD}Demo ready.${NC} Open 4 terminal tabs:\n\n"
+printf "\n${GREEN}${BOLD}Demo ready.${NC} Open 5 terminal tabs:\n\n"
 
 printf "  ${CYAN}D0${NC} (alphabetical baseline — NO test-order, ~5 min to failure at test #237):\n"
 printf "    cd %s\n" "$COLLECTIONS"
@@ -293,10 +293,15 @@ printf "    ./make-change-commons.sh\n"
 printf "    mvn test-order:show\n"
 printf "    mvn test   # Ctrl+C after first red (~10 seconds)\n\n"
 
-printf "  ${CYAN}D2${NC} (petclinic dashboard):\n"
+printf "  ${CYAN}D2${NC} (petclinic — learn run, live edit, VisitControllerTests → #1):\n"
 printf "    cd %s\n" "$PETCLINIC"
-printf "    ./copy-in-db.sh && ./petclinic-make-change.sh\n"
+printf "    mvn test                   # learn run — first time\n"
+printf "    ./petclinic-make-change.sh\n"
 printf "    mvn test-order:show\n"
+printf "    mvn test   # Ctrl+C after first red (~2 seconds)\n\n"
+
+printf "  ${CYAN}D3${NC} (petclinic dashboard):\n"
+printf "    cd %s\n" "$PETCLINIC"
 printf "    mvn test-order:dashboard && open target/test-order-dashboard/index.html\n\n"
 
 printf "  ${CYAN}Reset between runs:${NC}\n"

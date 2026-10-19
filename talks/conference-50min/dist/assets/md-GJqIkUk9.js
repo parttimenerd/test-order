@@ -1,4 +1,0 @@
-import{_ as n}from"./DemoCard-Dqz1oY4p.js";import{o as s,b as i,w as d,g as c,d as p,v as m,x as l,C as t}from"./modules/vue-S1F8S-Jh.js";import{I as u}from"./slidev/default-D8rpuaCo.js";import{u as _,f}from"./slidev/context-PTAtwiRM.js";import"./index-COT5_59P.js";import"./modules/shiki-DYMu1dN8.js";const P={__name:"slides.md__slidev_23",setup(h){const{$clicksContext:r,$frontmatter:a}=_();return r.setup(),(v,e)=>{const o=n;return s(),i(u,m(l(t(f)(t(a),22))),{default:d(()=>[e[0]||(e[0]=c("h1",null,"Demo 2: spring-petclinic, pre-indexed",-1)),p(o,{id:"D2",duration:"6 min",cmd:`cd third-party/spring-petclinic
-# learn ran last night in CI, zero overhead today
-mvn test
-mvn test-order:dashboard`,title:"Real project. Watch APFD live, then open dashboard.",watch:"Test order in terminal. First failure surfaces early. Then dashboard: APFD trend, run history, cache tab."})]),_:1},16)}}};export{P as default};

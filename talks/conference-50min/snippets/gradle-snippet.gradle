@@ -1,3 +1,0 @@
-plugins {
-  id 'me.bechberger.test-order' version '0.1.1'
-}
