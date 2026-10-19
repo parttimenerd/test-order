@@ -59,6 +59,8 @@ test-order-dashboard/src/main/dashboard/node/
 # Screenshot testing artifacts (Playwright, manual test screenshots)
 *.png
 !docs/*.png
+!talks/conference-20min/public/images/*.png
+!talks/conference-60min/public/images/*.png
 *.out
 
 # External repos cloned for demos and benchmarks
