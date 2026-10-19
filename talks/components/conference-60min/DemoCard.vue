@@ -50,7 +50,6 @@ defineProps({
   margin: 0;
   overflow: hidden;
 }
-/* Slidev renders fenced code blocks as shiki <pre> — match our sizing */
 .cmd :deep(pre) {
   background: #0f172a !important;
   margin: 0;
@@ -65,5 +64,17 @@ defineProps({
 .cmd :deep(code) {
   font-family: 'JetBrains Mono', monospace;
   font-size: 1.35rem !important;
+}
+
+/* light-mode overrides handled in non-scoped block below */
+</style>
+
+<style>
+html:not(.dark) .demo-card .title {
+  color: #0369a1 !important;
+}
+html:not(.dark) .demo-card .cmd pre {
+  background: #f8fafc !important;
+  border: 1px solid rgba(0,0,0,0.10) !important;
 }
 </style>

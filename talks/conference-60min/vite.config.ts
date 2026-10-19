@@ -20,6 +20,7 @@ export default defineConfig({
       { find: /^\/components\/DemoCue\.vue$/, replacement: path.resolve(deckRoot, '../components/common/DemoCue.vue') },
       { find: /^\/components\/(.*)$/, replacement: `${path.resolve(deckRoot, '../components/conference-60min')}/$1` },
       { find: 'd3', replacement: path.resolve(deckRoot, 'node_modules/d3/src/index.js') },
+      { find: '/@slidev/client/logic/dark.ts', replacement: path.resolve(deckRoot, 'node_modules/@slidev/client/logic/dark.ts') },
       { find: 'vue', replacement: path.resolve(deckRoot, 'node_modules/vue/dist/vue.runtime.esm-bundler.js') },
     ],
   },

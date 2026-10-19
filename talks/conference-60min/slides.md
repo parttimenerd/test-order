@@ -6,11 +6,10 @@ info: |
   Local-first, zero-config test prioritization for Maven and Gradle.
 class: text-center
 highlighter: shiki
-colorSchema: 'dark'
 lineNumbers: false
 drawings:
   persist: false
-transition: slide-left
+transition: none
 mdc: true
 fonts:
   sans: 'Merriweather'
@@ -34,12 +33,19 @@ layout: cover
   text-align: center;
   width: 100%;
 }
+:global(.big-statement p) {
+  font-size: inherit !important;
+  line-height: inherit !important;
+  margin: 0 !important;
+}
 :global(.slidev-slide pre),
-:global(.slidev-slide .shiki) {
-  font-size: 1.05rem;
-  line-height: 1.6;
+:global(.slidev-slide .shiki),
+:global(.slidev-layout pre),
+:global(.slidev-layout .shiki) {
+  font-size: 1.3rem !important;
+  line-height: 1.6 !important;
   border-radius: 10px;
-  padding: 18px 22px;
+  padding: 1rem 1.2rem !important;
 }
 :global(.pull-quote) {
   border-left: 4px solid #f97316;
@@ -142,10 +148,27 @@ layout: cover
   border-radius: 3px;
   opacity: 0.6;
 }
+
+/* ── light mode overrides ─────────────────────────────────── */
+:global(html:not(.dark) .scoring-table th) { color: #475569; border-bottom-color: #cbd5e1; }
+:global(html:not(.dark) .scoring-table td) { border-bottom-color: #e2e8f0; }
+:global(html:not(.dark) .scoring-table td:nth-child(2)) { color: #d97706; }
+:global(html:not(.dark) .pull-quote) { color: #1e293b; background: rgba(249,115,22,0.07); }
+:global(html:not(.dark) .hands-up) { color: #854d0e; background: rgba(250,204,21,0.18); border-color: rgba(250,204,21,0.5); }
+:global(html:not(.dark) .tag-bad) { background: rgba(239,68,68,0.10); color: #dc2626; }
+:global(html:not(.dark) .tag-ok)  { background: rgba(148,163,184,0.12); color: #475569; }
+:global(html:not(.dark) .quote-text) { color: #1e293b; }
+:global(html:not(.dark) .quote-attr) { color: #475569; }
+:global(.ci-config pre), :global(.ci-config .shiki) { font-size: 0.92rem !important; line-height: 1.45 !important; }
 </style>
 
 
 <!-- ═══ COVER ═════════════════════════════════════════════════════════════════ -->
+
+<div class="absolute inset-0 z-0" style="background: blue" />
+
+
+<LightModeToggle />
 
 <div class="relative z-10">
 
@@ -221,7 +244,7 @@ title: "Research: Tests Closer to Changed Code Fail First"
 class: slide-base
 ---
 
-<div class="absolute inset-0 bg-zinc-900/52 z-0" />
+<div class="absolute inset-0 z-0" />
 
 <QuoteCard
   attr="Memon et al., Taming Google-Scale Continuous Testing, ICSE-SEIP 2017"
@@ -245,7 +268,7 @@ title: "Zero Overlap = Cannot Fail"
 class: slide-base
 ---
 
-<div class="absolute inset-0 bg-zinc-900/58 z-0" />
+<div class="absolute inset-0  z-0" />
 
 <div class="relative z-10 flex flex-col items-center">
 
@@ -271,7 +294,7 @@ title: "Zero-Config Local Solution"
 class: slide-base
 ---
 
-<div class="absolute inset-0 bg-zinc-900/58 z-0" />
+<div class="absolute inset-0  z-0" />
 <div class="relative z-10 flex flex-col items-center text-center">
 
 <div class="big-statement">
@@ -371,6 +394,16 @@ mvn test
 </DemoCard>
 
 <!--
+mention how simple test-order is, just :affected, :learn, :run-remaining, :show, nothing more
+
+
+
+
+
+
+
+
+
 DEMO D1 — same project, same bug, test-order active.
 
 Watch for: EnumerationIteratorTest jumps to #1 in the ranking table.
@@ -443,6 +476,136 @@ FALLBACK: screenshot pair — mvn test-order:show output + terminal with VisitCo
 NEXT: "And you can see the full evidence in the dashboard."
 -->
 
+---
+layout: default
+title: "Setup — pom.xml"
+class: slide-base
+---
+
+# Step 1: add to `pom.xml`
+
+```xml {all|2-3|4|5|6-10}
+<plugin>
+  <groupId>me.bechberger</groupId>
+  <artifactId>test-order-maven-plugin</artifactId>
+  <version>0.1.0</version>
+  <extensions>true</extensions>
+  <executions><execution>
+    <goals>
+      <goal>prepare</goal>
+    </goals>
+  </execution></executions>
+</plugin>
+```
+
+
+<!--
+Point at the screen as you click through.
+
+- [all visible] "Nine lines. That's the entire install."
+- [click 1] "groupId me.bechberger, artifactId test-order-maven-plugin. Central, no extra repo."
+- [click 2] "<extensions>true</extensions> — this is the one line people miss. It registers the plugin as a build extension so it can hook into Surefire before any tests execute. Without it, the plugin loads too late and does nothing."
+- [click 3] "One goal: prepare. It auto-detects whether to learn or order — you never pass a flag."
+- "mvn test works exactly as before. Nothing else changes."
+- TRANSITION: "If you're in a multi-module reactor, one more file."
+-->
+
+---
+layout: default
+title: "Setup — .mvn/extensions.xml"
+class: slide-base
+---
+
+# Step 2: multi-module? Add `.mvn/extensions.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+  <extension>
+    <groupId>me.bechberger</groupId>
+    <artifactId>test-order-maven-plugin</artifactId>
+    <version>0.1.0</version>
+  </extension>
+</extensions>
+```
+
+<div class="mt-5 flex gap-8 text-lg text-slate-400">
+  <div>📦 shared index across modules</div>
+  <div>🔍 <code>test-order:show</code> · <code>test-order:affected</code></div>
+</div>
+
+
+
+<!--
+- "Root of your reactor. Same folder as the parent pom."
+- "It does two things."
+- "One — shared index. Without it every module writes its own .test-order/. A test in module A that calls code in module B? The scorer never sees that dependency. This file puts the index at the root so the whole reactor shares one picture."
+- "Two — the commands. mvn test-order:show, test-order:affected — they're reactor-level goals. Maven needs to know the plugin exists before it resolves the lifecycle. Without this file those commands just fail: unknown goal."
+- "Large multi-module projects like Spring or Guava have 50–150 modules. One file, eight lines, everything works."
+- "Single module? You don't need this. The pom entry is enough."
+- Bonus: `mvn test-order:reactor-order` — suggests which Maven modules to build first based on the dep index (highest affected-test count first). Useful in very large reactors where even module resolution time matters.
+- TRANSITION: "So what actually happens at runtime?"
+-->
+
+---
+layout: default
+title: "Setup — how it runs"
+class: slide-base
+---
+
+# Step 3: `mvn test` auto-detects
+
+<div class="mt-4 flex flex-col gap-5 text-xl">
+
+<div class="p-4 rounded-xl  border border-red-500/30 flex items-start gap-4">
+  <div class="text-red-400 font-bold text-2xl mt-0.5">①</div>
+  <div>
+    <div class="text-red-300 font-bold">No index found → learn run</div>
+    <div class="text-slate-400 text-base mt-1">Bytecode agent on · records every method call · writes <code>.test-order/</code> · normal test results</div>
+  </div>
+</div>
+
+<div class="p-4 rounded-xl  border border-green-500/30 flex items-start gap-4">
+  <div class="text-green-400 font-bold text-2xl mt-0.5">②</div>
+  <div>
+    <div class="text-green-300 font-bold">Index found → order run</div>
+    <div class="text-slate-400 text-base mt-1">Agent off · loads index · intersects with <code>git diff</code> · reorders tests · zero overhead</div>
+  </div>
+</div>
+
+<div class="mt-1 text-slate-500 text-base">Commit or CI-cache <code>.test-order/</code> to skip the learn run on CI.</div>
+
+</div>
+
+<!--
+- "No new commands. No flags. No profile switching. Just mvn test."
+- "First time you run it — no index exists — the bytecode agent attaches to Surefire. Every method entry in every class is recorded into a thread-local bitset, drained when the test method ends, serialised to .test-order/. Tests still run, results are normal. This costs about 13% overhead (measured on spring-petclinic, MEMBER mode — docs/PERFORMANCE_OPTIMIZATIONS.md)."
+- "Every run after that — index is on disk — the agent is not attached. Maven loads the index, intersects it with git diff, scores every test, reorders. Zero instrumentation, zero overhead."
+- "Commit .test-order/ to your repo, or cache it in CI. Then CI never pays the 13% again."
+- "The index is just files. It travels with your branch. Everyone on the team gets ranked order immediately."
+- TRANSITION: "Let me show it on commons-collections."
+-->
+
+---
+layout: default
+title: "Gradle"
+class: slide-base
+---
+## Gradle? Three lines.
+
+```groovy
+plugins {
+    id 'me.bechberger.test-order' version '0.1.0'
+}
+```
+
+```bash
+./gradlew test   # same index format, same dep map
+```
+
+<!--
+Same index works for both Maven and Gradle. You can share an index across build tools.
+-->
 ---
 layout: default
 title: "Scoring Breakdown"
@@ -585,6 +748,22 @@ TRANSITION: "That was 15 tests on a toy project. Does this hold up on a real pro
 
 ---
 layout: default
+class: slide-base
+---
+
+## When does the first test fail?
+
+<BenchmarkChart />
+
+<!--
+- X-axis: % of suite wall time elapsed when first failure surfaces (lower = better).
+- Red bar = alphabetical order. Green bar = test-order.
+- Error bars are standard error across all patches per repo.
+- TRANSITION: "what does this cost?"
+-->
+
+---
+layout: default
 title: "Overhead"
 class: slide-base
 ---
@@ -681,27 +860,27 @@ class: slide-base
 ## Six numbers that tell the story
 
 <div class="grid grid-cols-3 gap-6 mt-6 text-center">
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+  <div class="p-4 rounded-xl  border border-zinc-700">
     <div class="text-3xl font-bold text-green-400">APFD</div>
     <div class="text-sm opacity-70 mt-2">Average % of faults<br/>detected early</div>
   </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+  <div class="p-4 rounded-xl  border border-zinc-700">
     <div class="text-3xl font-bold text-red-400">Failures</div>
     <div class="text-sm opacity-70 mt-2">Tests that failed<br/>in recent runs</div>
   </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+  <div class="p-4 rounded-xl  border border-zinc-700">
     <div class="text-3xl font-bold text-yellow-400">Pass streak</div>
     <div class="text-sm opacity-70 mt-2">Consecutive green<br/>runs per test</div>
   </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+  <div class="p-4 rounded-xl border border-zinc-700">
     <div class="text-3xl font-bold text-orange-400">At-risk</div>
     <div class="text-sm opacity-70 mt-2">Tests showing<br/>DEGRADING trend</div>
   </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+  <div class="p-4 rounded-xl border border-zinc-700">
     <div class="text-3xl font-bold text-blue-400">Time saved</div>
     <div class="text-sm opacity-70 mt-2">Minutes not spent<br/>on wrong tests</div>
   </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+  <div class="p-4 rounded-xl  border border-zinc-700">
     <div class="text-3xl font-bold text-purple-400">Health A–F</div>
     <div class="text-sm opacity-70 mt-2">Overall suite<br/>quality grade</div>
   </div>
@@ -711,6 +890,7 @@ class: slide-base
 layout: default
 title: "Staleness Flow"
 class: slide-base
+hide: tru
 ---
 
 ## How the index stays fresh
@@ -759,40 +939,112 @@ Don't bash other tools — just show where test-order sits in the space.
 
 ---
 layout: default
-title: "CI Transition"
+title: "Staleness Flow"
+class: slide-base
+hide: true
+---
+
+## How the index stays fresh
+
+<StalenessFlow />
+
+<!--
+Three mechanisms:
+1. Opcode hash checked on every run — if bytecode changed, invalidate
+2. Dep fingerprint on source changes — trigger selective re-learn
+3. Over-approximate for unknown classes — deferred safety net
+"You never manually refresh the index."
+-->
+
+---
+layout: default
+title: "CI Config Sample"
+class: slide-base ci-config
+---
+
+## GitHub Actions — drop-in config (1/2)
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }        # needed for git diff
+
+      - name: Restore test-order index
+        uses: actions/cache@v4
+        with:
+          path: .test-order/
+          key: test-order-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            test-order-refs/heads/main-
+            test-order-
+
+      - name: "Learn: full instrumented run"
+        if: github.ref == 'refs/heads/main'
+        run: mvn test -Dtestorder.mode=learn
+```
+
+<!--
+- fetch-depth: 0 needed so test-order can diff against the merge base
+- restore-keys: PRs fall back to the latest main cache
+- learn run on main keeps the index fresh after every merge
+-->
+
+---
+layout: default
+title: "CI Config Sample 2"
+class: slide-base ci-config
+---
+
+## GitHub Actions — drop-in config (2/2)
+
+```yaml
+      - name: Run affected tests
+        if: github.ref != 'refs/heads/main'
+        run: |
+          mvn test-order:affected test \
+            -Dtestorder.changeMode=since-last-commit
+
+      - name: Run remaining tests (if affected passed)
+        if: github.ref != 'refs/heads/main'
+        run: mvn test-order:run-remaining test
+
+      - name: Save test-order index
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: .test-order/
+          key: test-order-${{ github.ref }}-${{ github.sha }}
+```
+
+<!--
+- affected + run-remaining only on PRs; learn + save only on main
+- run-remaining: completes the full suite after affected tests pass
+-->
+
+---
+layout: default
+title: "CI Live Demo"
 class: slide-base
 ---
 
-# CI without paying the learn tax every push
+# See it live
 
-<div class="mt-20 grid grid-cols-3 gap-4 text-base">
-
-<div class="p-4 rounded-lg" style="background: rgba(96,165,250,0.1); border: 1px solid rgba(96,165,250,0.3)">
-  <div class="text-blue-400 font-bold mb-2">Nightly / merge</div>
-  <code class="text-sm">mvn test-order:learn test</code>
-  <div class="mt-2 opacity-70">Full learn run. <br/>Commits <code>.test-order/</code> to cache.</div>
-</div>
-
-<div class="p-4 rounded-lg" style="background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3)">
-  <div class="text-amber-400 font-bold mb-2">Every PR push</div>
-  <code class="text-sm">mvn test-order:affected test</code>
-  <div class="mt-2 opacity-70">Only runs tests that overlap with changed classes. Fails fast.</div>
-</div>
-
-<div class="p-4 rounded-lg" style="background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3)">
-  <div class="text-green-400 font-bold mb-2">If affected succeed</div>
-  <code class="text-sm">mvn test-order:run-remaining test</code>
-  <div class="mt-2 opacity-70">Remaining tests in ranked order.</div>
-</div>
-
+<div class="flex flex-col items-center justify-center h-64 gap-6">
+  <a href="https://github.com/parttimenerd/sample-ci-test-order/actions" target="_blank"
+     class="text-2xl font-bold text-blue-400 hover:text-blue-300 underline">
+    github.com/parttimenerd/sample-ci-test-order
+  </a>
+  <div class="text-slate-400 text-lg">→ Actions tab</div>
+  <img src="/images/sample-ci-qr.png"/>
 </div>
 
 <!--
-- affected test: runs only tests with dep overlap with changed classes — skips the rest entirely
-- changeMode=since-last-commit: on CI there are no uncommitted changes — compare against last commit, not working tree
-- The index is read-only on push runs — no instrumentation overhead
-- "You learn once nightly. Every developer push gets the benefit of last night's index."
-- TRANSITION: "so what does this buy you? Numbers"
+- Open the Actions tab live
+- Show a green PR run: affected step picks up only the changed tests
+- Show a failing PR run: affected step fails, run-remaining is skipped entirely
 -->
 
 ---
@@ -882,12 +1134,12 @@ class: slide-base
 ## Large multi-module project · 52 modules
 
 <div class="grid grid-cols-2 gap-8 mt-6">
-<div class="p-6 rounded-xl bg-red-900/20 border border-red-800/40 text-center">
+<div class="p-6 rounded-xl border border-red-800/40 text-center">
   <div class="text-4xl font-bold text-red-400">90s</div>
   <div class="mt-2 opacity-70"><code>mvn clean test</code></div>
   <div class="text-sm mt-1 opacity-50">Compile crawl. Zero tests started.</div>
 </div>
-<div class="p-6 rounded-xl bg-green-900/20 border border-green-800/40 text-center">
+<div class="p-6 rounded-xl  border border-green-800/40 text-center">
   <div class="text-4xl font-bold text-green-400">55s → RED</div>
   <div class="mt-2 opacity-70"><code>mvn test-order:affected test</code></div>
   <div class="text-sm mt-1 opacity-50">Right failure. Right away.</div>
@@ -904,12 +1156,15 @@ Don't name the project on stage.
 TRANSITION: "Before we go under the hood — a quick tour of what else is in the box."
 -->
 
-<!-- ═══ INTERLUDE: FEATURE CATALOGUE ══════════════════════════════════════════ -->
+<!--
+═══ INTERLUDE: FEATURE CATALOGUE ══════════════════════════════════════════
+-->
 
 ---
 layout: default
 title: "Gradle"
 class: slide-base
+hide: t
 ---
 
 ## Gradle? Three lines.
@@ -930,18 +1185,26 @@ Same index works for both Maven and Gradle. You can share an index across build 
 
 ---
 layout: default
-title: "Multi-Framework"
+title: "Gradle"
 class: slide-base
+hide: true
 ---
 
-## Works with your test framework
+## Gradle? Three lines.
 
-<div class="grid grid-cols-2 gap-4 mt-6">
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">✓ JUnit 5 / JUnit 6</div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">✓ JUnit 4 via Vintage</div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">✓ TestNG 7.x+</div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">✓ Kotest</div>
-</div>
+```groovy
+plugins {
+    id 'me.bechberger.test-order' version '0.1.0'
+}
+```
+
+```bash
+./gradlew test   # same index format, same dep map
+```
+
+<!--
+Same index works for both Maven and Gradle. You can share an index across build tools.
+-->
 
 ---
 layout: default
@@ -955,16 +1218,12 @@ class: slide-base
 @AlwaysRun          // always ranked #1 regardless of score
 class SmokeTest { }
 
-@TestOrder(scoreBonus = 10)          // flat bonus to score
+@TestOrder(scoreBonus = 10)
 class CriticalPathTest { }
 
-@TestOrder(changeBonus = 5)          // bonus only when deps overlap a change
+@TestOrder(changeBonus = 5) 
 class IntegrationTest { }
 ```
-
-<div class="mt-6 text-base opacity-70">
-  Flaky quarantine: <code>testorder.flaky.quarantine=true</code> — reports ABORTED not FAILED. Build stays green.
-</div>
 
 <!--
 SWITCH TO TERMINAL — demo @AlwaysRun live on petclinic:
@@ -976,6 +1235,7 @@ Say: "Let me show you this one live — 30 seconds."
 layout: default
 title: "D2.5 – Annotations Live"
 class: slide-base
+hide: t
 ---
 
 <DemoCard id="D2.5" title="@AlwaysRun live — watch the ranking change">
@@ -1026,9 +1286,6 @@ BUILD FAILURE
 
 <!--
 Pause for the laugh after "BUILD FAILURE". Let it land.
-SWITCH TO TERMINAL — show TDD enforcement live on petclinic (optional, skip if short on time):
-  mvn test -Dtestorder.tdd=true
-  Watch for TDD VIOLATION in output.
 Then: "This is opt-in. You don't have to use it. But if you care about TDD discipline in CI, one property."
 The v-click reveals the pull-quote after the code — gives the audience time to read the error first.
 RETURN TO SLIDES.
@@ -1036,67 +1293,152 @@ RETURN TO SLIDES.
 
 ---
 layout: default
-title: "D2.6 – TDD Enforcement Live"
+title: "Agentic TDD Flow"
 class: slide-base
 ---
 
-<DemoCard id="D2.6" title="testorder.tdd=true — CI catches the discipline gap">
+## AI agents + CI = TDD enforcement
+
+<AgenticTddFlow class="mt-6" />
+
+<!--
+AI agents write code fast. Without CI enforcement they skip the red-green cycle.
+testorder.tdd=true blocks any PR where a test never failed before it passed.
+The agent is forced back to write the failing test first — TDD discipline without the honour system.
+-->
+
+---
+layout: default
+title: "Agentic Loop — skill"
+class: slide-base
+---
+
+## The test-order skill — agents run it natively
+
+<div class="mt-6 grid grid-cols-2 gap-6">
+
+<div class="p-5 rounded-xl" style="background: rgba(96,165,250,0.08); border: 1px solid rgba(96,165,250,0.25)">
+  <div class="text-blue-400 font-bold mb-3 text-lg">Agent's inner loop</div>
+  <ol class="text-sm space-y-2 opacity-85 list-decimal list-inside">
+    <li>Make a code change</li>
+    <li><code>mvn test-order:affected test</code></li>
+    <li>Read the failure — fix root cause</li>
+    <li>Repeat until green</li>
+    <li>Open PR → CI runs full suite</li>
+  </ol>
+</div>
+
+<div class="p-5 rounded-xl" style="background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.25)">
+  <div class="text-green-400 font-bold mb-3 text-lg">Why it helps agents</div>
+  <ul class="text-sm space-y-2 opacity-85">
+    <li>Affected tests only → <strong>10× faster feedback</strong></li>
+    <li>JSON output → easy to parse failures</li>
+    <li>Skill file ships the exact commands</li>
+    <li>No hallucinated flags — manifest gates every goal</li>
+  </ul>
+</div>
+
+</div>
+
+<div class="mt-4 text-sm opacity-60 text-center">
+  <code>skills/test-order/SKILL.md</code> — drop it in your project, agents auto-load it
+</div>
+
+<!--
+The skill file at skills/test-order/SKILL.md documents every stable goal, JSON output flags, and the Run: error-recovery pattern.
+Claude Code (and any other agent) picks it up automatically via .claude/ discovery.
+The agent never has to guess — it reads the manifest, picks the right command, and gets structured output back.
+-->
+
+---
+layout: default
+title: "D6 — Agentic Loop Live Demo"
+class: slide-base
+---
+
+<DemoCard id="D6" title="Claude Code × test-order: fix a bug in < 60 s">
 
 ```bash
 cd third-party/spring-petclinic
 
-# Run with TDD enforcement on
-mvn test -Dtestorder.tdd=true
+# Agent already has skills/test-order/SKILL.md loaded.
+# Introduce a bug, then hand off to the agent:
 
-# Look for: [test-order] TDD VIOLATION: <TestClass>
-# BUILD FAILURE if any test passed on first run with no prior failure
+claude "There's a regression in VisitController. Find it,
+        fix it, and verify with test-order:affected. Use
+        the test-order skill."
+```
+
+</DemoCard>
+
+<!--
+DEMO D6 — agentic loop live.
+
+SETUP (prepare-demo.sh handles this):
+  spring-petclinic index WARM from D2
+  skills/test-order/SKILL.md present in project root
+  Bug pre-introduced: petclinic-make-change.sh inserts a deliberate regression
+
+STEPS:
+1. Run petclinic-make-change.sh to introduce the bug (or do it live: remove a null-guard in VisitController)
+2. Open a new terminal, cd to spring-petclinic
+3. Run: claude "There's a regression in VisitController. Find it, fix it, and verify with test-order:affected."
+4. Narrate as the agent runs:
+   - "It invokes test-order:affected — only the tests that could possibly be affected by VisitController"
+   - "It reads the structured output, pinpoints the failure, edits the file"
+   - "Second affected run — green. Done."
+5. Show the selected test count vs full suite size (9 tests vs 42)
+
+NARRATE:
+- "The skill file tells the agent exactly which commands are stable. No hallucinated flags."
+- "Affected mode gives the agent a tight feedback loop — it's not waiting for 300 tests when only 9 matter."
+- "On CI the full suite still runs. The agent just doesn't have to wait for it."
+
+FALLBACK: asciinema recording at public/demo-d6.cast
+TIME: aim for 45–60 seconds of agent output on screen
+
+
+
+
+
+
+
+
+# Agent inner loop (watch the terminal):
+#  1. mvn test-order:affected test          ← only relevant tests
+#  2. reads failure, edits source
+#  3. mvn test-order:affected test          ← green
+#  4. opens PR summary
+-->
+
+---
+layout: default
+title: "D2.5 – Annotations Live"
+class: slide-base
+hide: true
+---
+
+<DemoCard id="D2.5" title="@AlwaysRun live — watch the ranking change">
+
+```bash
+cd third-party/spring-petclinic
+
+# Step 1 – see current ranking
+mvn test-order:show
+
+# Step 2 – add @AlwaysRun to VisitControllerTests (one line)
+# Open VisitControllerTests.java, add @AlwaysRun above the class declaration
+
+# Step 3 – ranking preview instantly updates
+mvn test-order:show   # VisitControllerTests → #1
 ```
 
 </DemoCard>
 
 <!--
 RETURN TO SLIDES after this demo.
-Optional: skip if short on time — the slide already makes the point.
--->
-
----
-layout: default
-title: "Goals Overview"
-class: slide-base
----
-
-## Six goals. Zero config.
-
-<div class="grid grid-cols-3 gap-4 mt-6 text-sm">
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <div class="font-bold text-green-400 font-mono">show</div>
-    <div class="opacity-70 mt-1">Ranking preview before you run</div>
-  </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <div class="font-bold text-blue-400 font-mono">affected</div>
-    <div class="opacity-70 mt-1">CI selection — changed classes only</div>
-  </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <div class="font-bold text-purple-400 font-mono">dashboard</div>
-    <div class="opacity-70 mt-1">Local analytics + run history</div>
-  </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <div class="font-bold text-yellow-400 font-mono">optimize</div>
-    <div class="opacity-70 mt-1">Tune scoring weights to your project</div>
-  </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <div class="font-bold text-orange-400 font-mono">analyze-mutations</div>
-    <div class="opacity-70 mt-1">PIT kill-rate per test</div>
-  </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <div class="font-bold text-red-400 font-mono">detect-dependencies</div>
-    <div class="opacity-70 mt-1">Find order-dependent tests</div>
-  </div>
-</div>
-
-<!--
-diagnose and download exist too — mention only if asked.
-TRANSITION: "Now — how does it actually work?"
+The point: annotations don't require a re-learn. The plugin reads them at show time.
+Keep it tight — step 1, add annotation, step 3. No more.
 -->
 
 ---
@@ -1108,15 +1450,15 @@ class: slide-base
 ## The index never goes stale
 
 <div class="grid grid-cols-1 gap-4 mt-6 max-w-2xl mx-auto">
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+  <div class="p-4 rounded-xl border border-zinc-700">
     <strong>Opcode hash</strong> — checked on every run. Bytecode changed → invalidate entry.<br/>
     <span class="text-sm opacity-60">e.g. you edit <code>CartService.java</code> and recompile → its entry is removed, affected tests re-run uncached</span>
   </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+  <div class="p-4 rounded-xl  border border-zinc-700">
     <strong>Dep fingerprint</strong> — source change triggers selective re-learn for affected classes only.<br/>
     <span class="text-sm opacity-60">e.g. you add a new dependency to <code>pom.xml</code> → plugin switches to learn mode automatically</span>
   </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
+  <div class="p-4 rounded-xl border border-zinc-700">
     <strong>Unknown classes</strong> — over-approximated and deferred, never silently skipped.<br/>
     <span class="text-sm opacity-60">e.g. a new class with no dep record → all tests that could possibly touch it are included</span>
   </div>
@@ -1126,7 +1468,9 @@ class: slide-base
 TRANSITION: "Now — how does it actually work?"
 -->
 
-<!-- ═══ ACT 5: UNDER THE HOOD ════════════════════════════════════════════════ -->
+<!--
+═══ ACT 5: UNDER THE HOOD ════════════════════════════════════════════════
+-->
 
 ---
 layout: default
@@ -1177,9 +1521,9 @@ public void remove() {
     iterator.remove();
 }
 
-// After — ASM injects at method entry
+// After
 public void remove() {
-    UsageStore.recordMemberUsageIdFast(42);  // ← injected: one invokestatic
+    UsageStore.recordMemberUsageIdFast(42);
     last = null;
     iterator.remove();
 }
@@ -1188,49 +1532,6 @@ public void remove() {
 <!--
 ASM operates at bytecode level — faster than Javassist, no runtime dependency.
 The integer ID maps back to the class/method in the index.
--->
-
----
-layout: default
-title: "D5 — meta-agent Live Demo"
-class: slide-base
----
-
-<DemoCard id="D5" title="See the injection live">
-
-```bash
-cd third-party/spring-petclinic
-./learn-with-meta-agent.sh --meta-agent
-# browser opens → http://localhost:7071/classes
-```
-
-</DemoCard>
-
-<!--
-DEMO D5 — spring-petclinic learn run with meta-agent attached, server stays up after tests.
-
-SETUP (run prepare-demo.sh before going on stage):
-  meta-agent.jar present at third-party/spring-petclinic/.tools/meta-agent.jar
-  petclinic index PRESENT (warm from D1 or snapshot) so tests run fast
-
-STEPS:
-1. ./learn-with-meta-agent.sh --meta-agent
-   — browser opens automatically to http://localhost:7071/classes
-   — tests finish in ~5s; server stays up (keepalive)
-2. In browser: click any class (e.g. VisitController)
-   — show the "Original" and "Transformed" decompiled panels side-by-side
-   — point at the injected UsageStore.recordMemberUsageIdFast(…) call at method entry
-3. Open http://localhost:7071/instrumentators
-   — shows test-order's ClassFileTransformer registered
-4. Click Stop in the browser nav to exit the JVM
-
-NARRATE:
-- "We just saw the bytecode diff on a slide. Here it is on a real class."
-- "meta-agent wraps any ClassFileTransformer and decompiles before and after."
-- "That call at the top of every method — that's what records the dep map."
-- "Stop exits the server cleanly."
-
-FALLBACK: screenshot of meta-agent /full-diff/class?pattern=VisitController in public/images/meta-agent-diff.png
 -->
 
 ---
@@ -1261,6 +1562,7 @@ No synchronization during the test — only one flush per test method at the end
 layout: default
 title: "TCP Socket Batch"
 class: slide-base
+hide: tr
 ---
 
 ## Binary batch over TCP socket
@@ -1275,35 +1577,26 @@ TCP (not Unix socket) — works across fork boundaries.
 
 ---
 layout: default
-title: "Index Format"
+title: "TCP Socket Batch"
 class: slide-base
+hide: true
 ---
 
-## Radix trie + RoaringBitmap
+## Binary batch over TCP socket
 
-<div class="grid grid-cols-2 gap-8 mt-6">
-<div>
+<SocketBatchDiagram />
 
-**Radix trie** maps class FQCNs → integer IDs
-
-- Package prefixes shared → compact storage
-- DFS traversal gives same-package classes contiguous IDs
-
-</div>
-<div>
-
-**RoaringBitmap** stores the dep set per test
-
-- Compressed: contiguous IDs → run containers
-- Fast diff on git change: XOR two bitmaps
-
-</div>
-</div>
+<!--
+Index server runs in the build tool process (Maven/Gradle).
+Each forked JVM flushes its bitset as a binary batch at the end of the test session.
+TCP (not Unix socket) — works across fork boundaries.
+-->
 
 ---
 layout: default
 title: "Dep Graph Diagram"
 class: slide-base
+hide: rt
 ---
 
 ## The index: test → class → method edges
@@ -1320,6 +1613,7 @@ This is what makes depOverlapPoints precise: it counts exact class-level overlap
 layout: default
 title: "Selective Learn"
 class: slide-base
+hide: tru
 ---
 
 ## BFS selective re-learn · 4-hop limit
@@ -1336,62 +1630,60 @@ Unchanged classes reuse their existing dep records.
 
 ---
 layout: default
-title: "Scoring Signals"
+title: "Selective Learn"
 class: slide-base
+hide: true
 ---
 
-<h2 class="!text-2xl !mb-1">8 signals. Three tiers.</h2>
+## BFS selective re-learn · 4-hop limit
 
-<div class="scoring-table">
-
-| Signal | Weight | Why |
-|--------|--------|-----|
-| `depOverlapPoints` | **8** | Direct dep overlap — strongest predictor |
-| `failurePoints` | **4** | Recent failure history |
-| `newTestPoints` | 2 | Never run before — unknown risk |
-| `changedTestPoints` | 2 | Test file itself changed |
-| `setCoverPoints` | 2 | Unique coverage not in higher-ranked tests |
-| `packageProximityPoints` | 2 | Same package as changed class |
-| `nameMatchPoints` | 1 | Name heuristic (e.g. FooTest ↔ Foo) |
-| `speedPoints` | −1 to −3 | Penalise slow tests unless highly relevant |
-
-</div>
-
-<div class="text-sm opacity-50 mt-3">Weights are defaults — <code>mvn test-order:optimize</code> tunes them against your run history.</div>
+<SelectiveLearnDiagram />
 
 <!--
-Source: Yoo & Harman 2012 — failure history + code churn = two strongest predictors.
-Removed from table for clarity: complexityPoints (1), staticFieldPoints (1), killRatePoints (1) — minor contributors, rarely the deciding factor.
-test-order:optimize tunes these weights using a genetic algorithm against your run history.
+When testorder.learn.selective=true:
+BFS expands from changed classes through the static call graph up to 4 hops.
+Only classes reachable from the change are re-instrumented.
+Unchanged classes reuse their existing dep records.
+"You only pay for what changed."
 -->
 
 ---
 layout: default
-title: "test-order:optimize"
+title: "Dep Graph Diagram"
 class: slide-base
+hide: tr
 ---
 
-## `test-order:optimize`
+## The index: test → class → method edges
 
-```
-[test-order] optimize: running genetic algorithm over 47 historical runs...
-[test-order] population=150, generations=200, fitness=APFD
-[test-order] best weights: depOverlap=9.2, failure=4.8, speed=-2.1, ...
-[test-order] APFD improvement: 0.71 → 0.84
-```
+<DepGraphDiagram />
 
 <!--
-Jenetics-based genetic algorithm. Population of 150 weight vectors.
-Fitness function: APFD over your run history.
-"The default weights work well. This makes them work better for your specific project."
-TRANSITION: "There's a second problem in your test suite. And reordering is what reveals it."
+Each test node has a set of class IDs it touched.
+At METHOD/MEMBER level, the edges go deeper — to individual method invocations.
+This is what makes depOverlapPoints precise: it counts exact class-level overlaps with changed_classes.
 -->
-
-<!-- ═══ ACT 6: OD TESTS ═══════════════════════════════════════════════════════ -->
 
 ---
 layout: center
 title: "OD Tests Intro"
+hide: t
+---
+
+<div class="big-statement">
+  There's a second problem<br/>in your test suite.
+</div>
+
+<!--
+Show-of-hands #3: "Has anyone had a test that passes alone but fails in the suite — or vice versa?"
+Feed: "Some of those are order-dependent tests. Not flaky. Not broken. Just wrong order."
+Alphabetical ordering hides them — they only surface when order changes.
+-->
+
+---
+layout: center
+title: "OD Tests Intro"
+hide: true
 ---
 
 <div class="big-statement">
@@ -1406,182 +1698,103 @@ Alphabetical ordering hides them — they only surface when order changes.
 
 ---
 layout: default
-title: "OD Research"
+title: "Order-dependency detection"
 class: slide-base
+hide: t
 ---
 
-## Order-dependent tests are more common than you think
+## Detecting order-dependent tests
 
-<div class="grid grid-cols-2 gap-6 mt-6">
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <strong>Luo et al. ICSE 2014</strong><br/>
-    <span class="opacity-70">4.56% of open-source test suites had OD failures. Victim/brittle taxonomy.</span>
-  </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <strong>Shi et al. FSE 2019</strong><br/>
-    <span class="opacity-70">Setter/polluter refinement — not just brittle, but the specific cause.</span>
-  </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <strong>Bell et al. ASE 2015</strong><br/>
-    <span class="opacity-70">Random shuffle: ~60% detection. Isolation probes confirm root cause.</span>
-  </div>
-  <div class="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700">
-    <strong>Li et al. ISSTA 2023</strong><br/>
-    <span class="opacity-70">Tuscan square design: 97.2% detection in ~105 runs.</span>
-  </div>
+<div class="grid grid-cols-2 gap-12 mt-4 items-start">
+<div class="text-center pt-4">
+
+<div class="text-8xl font-black text-red-400/70 leading-none">N!</div>
+<div class="text-xl font-bold text-red-300 mt-3">brute force</div>
+<div class="text-sm opacity-50 mt-2">N=50 → 3 × 10<sup>64</sup> runs</div>
+
+</div>
+<div class="text-center">
+
+<div class="text-8xl font-black text-green-400/80 leading-none pt-4">N</div>
+<div class="text-xl font-bold text-green-300 mt-3">Tuscan square</div>
+<div class="text-sm opacity-50 mt-2">every ordered pair covered</div>
+
+<TuscanSquareViz class="mt-4" style="max-height: 180px" />
+
+</div>
 </div>
 
----
-layout: center
-title: "Option 1: Brute Force"
----
+<v-click>
 
-## Option 1: Brute force
-
-<div class="big-statement mt-6">O(N!)</div>
-
-<div class="text-2xl opacity-70 mt-6 text-center">
-  N=10 → 3,628,800 permutations<br/>
-  N=50 → 3 × 10<sup>64</sup>
+<div class="pull-quote mt-4">
+  97.2% detection (Li et al. ISSTA 2023) · Phase 1 finds victims · Phase 2 names the polluter
 </div>
+
+</v-click>
 
 <!--
-"Untenable for any real suite. You'd still be running this talk in heat death of the universe."
--->
-
----
-layout: center
-title: "Option 2: Random Shuffle"
----
-
-## Option 2: Random shuffle
-
-<div class="grid grid-cols-2 gap-12 mt-8 text-center max-w-2xl mx-auto">
-  <div>
-    <div class="text-4xl font-bold text-green-400">~60%</div>
-    <div class="opacity-70 mt-2">detection rate<br/>(Bell et al. 2015)</div>
-  </div>
-  <div>
-    <div class="text-4xl font-bold text-red-400">~40%</div>
-    <div class="opacity-70 mt-2">missed<br/>correlated patterns</div>
-  </div>
-</div>
-
-<!--
-"Cheap. Better than nothing. But misses 40% — including correlated patterns where two tests must be adjacent to trigger the failure."
--->
-
----
-layout: default
-title: "Option 3: Tuscan Square"
-class: slide-base
----
-
-## Option 3: Tuscan square
-
-<TuscanSquareViz />
-
-<div class="mt-6 text-center">
-  N=50 → <strong>50 runs</strong> · every ordered pair covered<br/>
-  vs brute force: <strong>3 × 10<sup>64</sup> permutations</strong>
-</div>
-
-<!--
-Pause after "3 × 10^64". Let the comparison land.
-"A Tuscan square is a combinatorial design that guarantees every ordered pair (A before B) appears in exactly one row.
-N tests → N runs. That's the whole trick."
--->
-
----
-layout: default
-title: "detect-dependencies Algorithm"
-class: slide-base
----
-
-## How `detect-dependencies` works
-
-<DetectDepsFlow class="mt-6" />
-
-<div class="mt-5 grid grid-cols-2 gap-x-8 text-sm text-slate-400">
-<div>Phase 1 runs N orderings (Tuscan square) — every ordered pair is covered. Any test that flips pass→fail is a <em>potential victim</em>.</div>
-<div>Phase 2 runs surgical isolation probes: T alone, then with each predecessor. Classify as <strong class="text-slate-300">victim</strong> (polluter breaks it) or <strong class="text-slate-300">brittle</strong> (depends on prior state).</div>
-</div>
-
-<!--
-The algorithm combines the Tuscan systematic coverage with targeted isolation probes.
-"You don't run 3×10^64 permutations. You run N orderings, then surgical probes."
--->
-
----
-layout: center
-title: "OD Detection Result"
----
-
-<div class="big-statement">
-  97.2% detection rate.
-</div>
-
-<div class="text-xl opacity-70 mt-6 text-center">
-  Run before release. Fix the test, not the order.
-</div>
-
-<!--
-Li et al. ISSTA 2023.
-"If it finds something: the test has a hidden dependency on execution order.
-That's a bug in the test — fix the test."
--->
-
----
-layout: default
-title: "detect-dependencies Goal"
-class: slide-base
----
-
-## `mvn test-order:detect-dependencies`
-
-```
-[test-order] Generating Tuscan square for 47 tests...
-[test-order] Running 47 orderings...
-[test-order] Potential victims: UserServiceTest, CartTest
-[test-order] Running isolation probes...
-[test-order] FOUND: CartTest is a victim — polluted by UserServiceTest
-[test-order] Suggested fix: CartTest.tearDown() should reset UserRepository
-```
-
-<!--
-The goal runs the full Tuscan + exclusion probe algorithm.
-Output names the victim, the polluter, and suggests a fix location.
-"Run this before a release. Not on every commit — it's expensive. If it finds something, fix the test."
+"test-order already knows which pairs to watch — shared static state, dep overlap, run history. That cuts the search before we even start."
+"A Tuscan square guarantees every ordered pair (A before B) appears exactly once. N tests → N runs."
+"Phase 1: any test that flips pass→fail is a potential victim. Phase 2: surgical isolation — run T alone, then with each predecessor. Names the polluter, suggests the fix."
 TRANSITION: "So — where does this leave us?"
 -->
 
-<!-- ═══ CLOSING ══════════════════════════════════════════════════════════════ -->
+<!--
+═══ CLOSING ══════════════════════════════════════════════════════════════
+-->
 
 ---
-layout: center
-title: "Closing — Proof of Concept"
+layout: default
+title: "Order-dependency detection"
+class: slide-base
+hide: true
 ---
 
-<div class="big-statement">
-  The technique works.<br/>
-  The research is solid.<br/>
-  The tool is a proof of concept.
+## Detecting order-dependent tests
+
+<div class="grid grid-cols-2 gap-12 mt-4 items-start">
+<div class="text-center pt-4">
+
+<div class="text-8xl font-black text-red-400/70 leading-none">N!</div>
+<div class="text-xl font-bold text-red-300 mt-3">brute force</div>
+<div class="text-sm opacity-50 mt-2">N=50 → 3 × 10<sup>64</sup> runs</div>
+
+</div>
+<div class="text-center">
+
+<div class="text-8xl font-black text-green-400/80 leading-none pt-4">N</div>
+<div class="text-xl font-bold text-green-300 mt-3">Tuscan square</div>
+<div class="text-sm opacity-50 mt-2">every ordered pair covered</div>
+
+<TuscanSquareViz class="mt-4" style="max-height: 180px" />
+
+</div>
 </div>
 
-<div class="mt-8 text-center opacity-70">
-  v0.1.0 · Maven Central · Apache 2.0 · open for experimentation
+<v-click>
+
+<div class="pull-quote mt-4">
+  97.2% detection (Li et al. ISSTA 2023) · Phase 1 finds victims · Phase 2 names the polluter
 </div>
+
+</v-click>
 
 <!--
-Honest framing: not production-ready, not used in production anywhere.
-This is a research prototype demonstrating the approach is viable.
-"Try it on a project you own. File issues. The approach is sound — the tool needs real-world feedback to mature."
+"test-order already knows which pairs to watch — shared static state, dep overlap, run history. That cuts the search before we even start."
+"A Tuscan square guarantees every ordered pair (A before B) appears exactly once. N tests → N runs."
+"Phase 1: any test that flips pass→fail is a potential victim. Phase 2: surgical isolation — run T alone, then with each predecessor. Names the polluter, suggests the fix."
+TRANSITION: "So — where does this leave us?"
+-->
+
+<!--
+═══ CLOSING ══════════════════════════════════════════════════════════════
 -->
 
 ---
 layout: default
 title: "Three Takeaways"
 class: slide-base
+hide: t
 ---
 
 ## Three things to take away
@@ -1599,14 +1812,24 @@ class: slide-base
 </div>
 
 ---
-layout: center
-title: "Callback"
+layout: default
+title: "Three Takeaways"
+class: slide-base
+hide: true
 ---
 
-<div class="big-statement">One line in pom.xml.</div>
+## Three things to take away
 
-<div class="text-xl opacity-70 mt-6 text-center">
-  That's it. The runner figures out the rest.
+<div class="grid grid-cols-1 gap-5 mt-6 max-w-2xl mx-auto">
+  <div class="p-5 rounded-xl bg-zinc-800/60 border border-zinc-700 text-lg">
+    ① Tests closest to the change fail first. This is a law, not a heuristic.
+  </div>
+  <div class="p-5 rounded-xl bg-zinc-800/60 border border-zinc-700 text-lg">
+    ② One line of config to try it. Everything else is automatic.
+  </div>
+  <div class="p-5 rounded-xl bg-zinc-800/60 border border-zinc-700 text-lg">
+    ③ It works on real bugs at scale. The benchmark shows the full picture — misses included.
+  </div>
 </div>
 
 <!--
@@ -1614,35 +1837,20 @@ Callback to the opening demo. "Remember position 237? That was before this line 
 -->
 
 ---
-layout: center
-title: "CTA — Try It Today"
+layout: default
+title: "Dep Graph Diagram"
 class: slide-base
+hide: true
 ---
 
-<img src="/images/wiki-loc-catalog.jpg" class="absolute inset-0 w-full h-full object-cover opacity-50" />
-<div class="absolute inset-0 bg-zinc-900/52 z-0" />
+## The index: test → class → method edges
 
-<div class="relative z-10 flex flex-col items-center text-center">
-
-<div class="big-statement">
-
-You don't have to wait<br/>20 minutes anymore.
-
-</div>
-
-<div class="pt-8 text-xl opacity-70">v0.1 · Apache 2.0 · PRs welcome</div>
-
-<div class="pt-4 text-2xl font-mono text-sky-300">
-  parttimenerd.github.io/test-order
-</div>
-
-<img src="/images/test-order-qr.png" class="rounded-lg" width="80" />
-
-</div>
+<DepGraphDiagram />
 
 <!--
-Callback to the opening hands-up question.
-`mvn test-order:affected test` for the inner dev loop.
+Each test node has a set of class IDs it touched.
+At METHOD/MEMBER level, the edges go deeper — to individual method invocations.
+This is what makes depOverlapPoints precise: it counts exact class-level overlaps with changed_classes.
 -->
 
 ---
@@ -1651,8 +1859,7 @@ title: "Q&A"
 class: slide-base
 ---
 
-<img src="/images/wiki-loc-catalog.jpg" class="absolute inset-0 w-full h-full object-cover opacity-45" />
-<div class="absolute inset-0 bg-zinc-900/58" />
+<div class="absolute inset-0 " />
 
 <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-12">
 

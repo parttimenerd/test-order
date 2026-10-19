@@ -5,6 +5,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import * as d3 from 'd3'
+import { isDark } from '../../conference-60min/dark'
 
 const container = ref(null)
 
@@ -13,8 +14,6 @@ const M = { top: 28, right: 40, bottom: 72, left: 104 }
 const IW = W - M.left - M.right
 const IH = H - M.top - M.bottom
 
-// x = time-to-first-value (0=immediate, 10=months)
-// y = prioritization intelligence (0=none, 10=high)
 const TOOLS = [
   { name: 'Alphabetical\n(default)',              x: 0.2, y: 0.5, col: '#64748b', anchor: 'right' },
   { name: 'Random / shuffle',                     x: 0.4, y: 1.0, col: '#94a3b8', anchor: 'right' },
@@ -26,6 +25,15 @@ const TOOLS = [
 ]
 
 onMounted(() => {
+  const dark = isDark.value
+  const textHi   = dark ? '#cbd5e1' : '#1e293b'
+  const textMid  = dark ? '#94a3b8' : '#475569'
+  const gridLine = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)'
+  const midDiv   = dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)'
+  const axisClr  = dark ? '#475569' : '#94a3b8'
+  const r1Label  = dark ? 'rgba(251,191,36,0.55)' : 'rgba(180,83,9,0.65)'
+  const r2Label  = dark ? 'rgba(147,197,253,0.50)' : 'rgba(37,99,235,0.55)'
+
   const svg = d3.select(container.value)
     .append('svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
@@ -38,12 +46,11 @@ onMounted(() => {
   const x = d3.scaleLinear().domain([0, 10]).range([0, IW])
   const y = d3.scaleLinear().domain([0, 10]).range([IH, 0])
 
-  // Soft region fills
   const regions = [
-    { x1: 0, y1: 5, x2: 5, y2: 10, col: 'rgba(251,191,36,0.05)' },
-    { x1: 5, y1: 5, x2: 10, y2: 10, col: 'rgba(147,197,253,0.04)' },
-    { x1: 0, y1: 0, x2: 5, y2: 5,  col: 'rgba(148,163,184,0.03)' },
-    { x1: 5, y1: 0, x2: 10, y2: 5, col: 'rgba(148,163,184,0.03)' },
+    { x1: 0, y1: 5, x2: 5, y2: 10, col: dark ? 'rgba(251,191,36,0.05)' : 'rgba(251,191,36,0.06)' },
+    { x1: 5, y1: 5, x2: 10, y2: 10, col: dark ? 'rgba(147,197,253,0.04)' : 'rgba(147,197,253,0.06)' },
+    { x1: 0, y1: 0, x2: 5, y2: 5,  col: dark ? 'rgba(148,163,184,0.03)' : 'rgba(148,163,184,0.04)' },
+    { x1: 5, y1: 0, x2: 10, y2: 5, col: dark ? 'rgba(148,163,184,0.03)' : 'rgba(148,163,184,0.04)' },
   ]
   regions.forEach(r => {
     g.append('rect')
@@ -53,61 +60,53 @@ onMounted(() => {
       .attr('fill', r.col)
   })
 
-  // Subtle grid
   ;[2, 4, 6, 8].forEach(v => {
     g.append('line').attr('x1', x(v)).attr('x2', x(v)).attr('y1', 0).attr('y2', IH)
-      .attr('stroke', 'rgba(255,255,255,0.04)').attr('stroke-dasharray', '2,4')
+      .attr('stroke', gridLine).attr('stroke-dasharray', '2,4')
     g.append('line').attr('x1', 0).attr('x2', IW).attr('y1', y(v)).attr('y2', y(v))
-      .attr('stroke', 'rgba(255,255,255,0.04)').attr('stroke-dasharray', '2,4')
+      .attr('stroke', gridLine).attr('stroke-dasharray', '2,4')
   })
 
-  // Mid dividers
   g.append('line').attr('x1', x(5)).attr('x2', x(5)).attr('y1', 0).attr('y2', IH)
-    .attr('stroke', 'rgba(255,255,255,0.18)').attr('stroke-dasharray', '4,5')
+    .attr('stroke', midDiv).attr('stroke-dasharray', '4,5')
   g.append('line').attr('x1', 0).attr('x2', IW).attr('y1', y(5)).attr('y2', y(5))
-    .attr('stroke', 'rgba(255,255,255,0.18)').attr('stroke-dasharray', '4,5')
+    .attr('stroke', midDiv).attr('stroke-dasharray', '4,5')
 
-  // Axes
   g.append('line').attr('x1', 0).attr('x2', IW).attr('y1', IH).attr('y2', IH)
-    .attr('stroke', '#475569').attr('stroke-width', 1.5)
+    .attr('stroke', axisClr).attr('stroke-width', 1.5)
   g.append('line').attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', IH)
-    .attr('stroke', '#475569').attr('stroke-width', 1.5)
+    .attr('stroke', axisClr).attr('stroke-width', 1.5)
 
-  // Axis labels
   g.append('text').attr('x', IW / 2).attr('y', IH + 58)
-    .attr('text-anchor', 'middle').style('font-size', '18px').attr('fill', '#cbd5e1')
+    .attr('text-anchor', 'middle').style('font-size', '18px').attr('fill', textHi)
     .text('Time to first value  →')
 
-  // Y axis label — rotated text without arrow, plus a separate upward arrow at top
   g.append('text')
     .attr('transform', `translate(-76, ${IH / 2}) rotate(-90)`)
-    .attr('text-anchor', 'middle').style('font-size', '18px').attr('fill', '#cbd5e1')
+    .attr('text-anchor', 'middle').style('font-size', '18px').attr('fill', textHi)
     .text('Prioritization intelligence')
 
   g.append('text')
     .attr('x', -76).attr('y', -10)
-    .attr('text-anchor', 'middle').style('font-size', '18px').attr('fill', '#cbd5e1')
+    .attr('text-anchor', 'middle').style('font-size', '18px').attr('fill', textHi)
     .text('↑')
 
-  // X axis tick labels
   ;[['Immediate', 0], ['Days', 3.3], ['Weeks', 6.6], ['Months', 10]].forEach(([label, v]) => {
     g.append('text').attr('x', x(v)).attr('y', IH + 24)
-      .attr('text-anchor', 'middle').style('font-size', '14px').attr('fill', '#94a3b8')
+      .attr('text-anchor', 'middle').style('font-size', '14px').attr('fill', textMid)
       .text(label)
   })
 
-  // Region labels
   g.append('text').attr('x', x(0.3)).attr('y', y(9.6))
-    .style('font-size', '14px').attr('fill', 'rgba(251,191,36,0.55)')
+    .style('font-size', '14px').attr('fill', r1Label)
     .attr('font-style', 'italic')
     .text('low friction, intelligent')
 
   g.append('text').attr('x', x(5.4)).attr('y', y(9.6))
-    .style('font-size', '14px').attr('fill', 'rgba(147,197,253,0.50)')
+    .style('font-size', '14px').attr('fill', r2Label)
     .attr('font-style', 'italic')
     .text('powerful at scale')
 
-  // Plot tools
   TOOLS.forEach((d, i) => {
     const cx = x(d.x), cy = y(d.y)
     const r = d.highlight ? 12 : 9
@@ -127,7 +126,6 @@ onMounted(() => {
     const lines = d.name.split('\n')
     const lx = d.anchor === 'left' ? cx - r - 10 : cx + r + 10
     const lineH = 19
-    // vertically center the label block on the dot
     const baseY = cy - ((lines.length - 1) * lineH) / 2 + 5
     const textAnchor = d.anchor === 'left' ? 'end' : 'start'
 

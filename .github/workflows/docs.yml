@@ -8,6 +8,7 @@ on:
       - 'website/**'
       - 'scripts/**'
       - 'talks/conference-20min/**'
+      - 'talks/conference-60min/**'
       - 'src/**'
       - '**/pom.xml'
       - '.github/workflows/docs.yml'
@@ -17,6 +18,7 @@ on:
       - 'website/**'
       - 'scripts/**'
       - 'talks/conference-20min/**'
+      - 'talks/conference-60min/**'
       - 'src/**'
       - '**/pom.xml'
       - '.github/workflows/docs.yml'
@@ -52,7 +54,7 @@ jobs:
             BASE=${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD^1' }}
             changed=$(git diff --name-only "$BASE" HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD)
             code_changed=$(echo "$changed"   | grep -qE '^(src/|test-order-core/|test-order-maven-plugin/|test-fixtures/|samples/|[^/]*pom\.xml)' && echo true || echo false)
-            slides_changed=$(echo "$changed" | grep -qE '^talks/conference-20min/' && echo true || echo false)
+            slides_changed=$(echo "$changed" | grep -qE '^talks/conference-(20min|60min)/' && echo true || echo false)
             docs_changed=$(echo "$changed"   | grep -qE '^(docs/|website/|scripts/)' && echo true || echo false)
             wf_changed=$(echo "$changed"     | grep -qE '^\.github/workflows/docs\.yml' && echo true || echo false)
             if [ "$wf_changed" = "true" ]; then
@@ -78,6 +80,7 @@ jobs:
             package-lock.json
             website/package-lock.json
             talks/conference-20min/package-lock.json
+            talks/conference-60min/package-lock.json
 
       - name: Install repo-root tooling (Playwright)
         run: npm install --no-audit --no-fund
@@ -169,6 +172,15 @@ jobs:
           npx slidev build --base /test-order/slides/20m/ slides.md --out dist
           mkdir -p ../../website/static/slides/20m
           cp -r dist/. ../../website/static/slides/20m/
+
+      - name: Build slides (60-min talk)
+        if: steps.changes.outputs.slides == 'true'
+        working-directory: talks/conference-60min
+        run: |
+          npm ci
+          npx slidev build --base /test-order/slides/60m/ slides.md --out dist
+          mkdir -p ../../website/static/slides/60m
+          cp -r dist/. ../../website/static/slides/60m/
 
       - name: Install website deps
         working-directory: website

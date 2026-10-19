@@ -5,6 +5,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import * as d3 from 'd3'
+import { isDark } from '../../conference-60min/dark'
 
 const container = ref(null)
 
@@ -40,7 +41,7 @@ const TESTS_RANKED = [
 
 const ROW_H = IH / 2 - 10
 
-function buildRow(g, tests, offsetY, accentClr, badgeBg, badgeBorder, label, labelClr, failLabel) {
+function buildRow(g, tests, offsetY, accentClr, badgeBg, badgeBorder, label, labelClr, failLabel, rowBg, rowBorder, nonFailCell, textMid) {
   const row = g.append('g').attr('transform', `translate(0,${offsetY})`)
   const segW = IW / tests.length
 
@@ -51,14 +52,14 @@ function buildRow(g, tests, offsetY, accentClr, badgeBg, badgeBorder, label, lab
 
   row.append('rect').attr('x', 0).attr('y', 0)
     .attr('width', IW).attr('height', ROW_H).attr('rx', 4)
-    .attr('fill', 'rgba(255,255,255,0.04)').attr('stroke', 'rgba(255,255,255,0.08)')
+    .attr('fill', rowBg).attr('stroke', rowBorder)
     .attr('opacity', 0).transition().delay(20).duration(300).attr('opacity', 1)
 
   const failIdx = tests.findIndex(t => t.fail)
 
   tests.forEach((t, i) => {
-    const col    = t.fail ? accentClr  : (labelClr === '#f87171' ? '#374151' : '#1f2937')
-    const border = t.fail ? accentClr  : 'rgba(255,255,255,0.08)'
+    const col    = t.fail ? accentClr  : nonFailCell
+    const border = t.fail ? accentClr  : rowBorder
     const delay  = 80 + i * 55
 
     row.append('rect')
@@ -95,6 +96,15 @@ function buildRow(g, tests, offsetY, accentClr, badgeBg, badgeBorder, label, lab
 }
 
 onMounted(() => {
+  const dark = isDark.value
+  const textMid   = dark ? '#94a3b8' : '#475569'
+  const rowBg     = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)'
+  const rowBorder = dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)'
+  const nonFailA  = dark ? '#374151' : '#e5e7eb'
+  const nonFailB  = dark ? '#1f2937' : '#f3f4f6'
+  const axisLine  = dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.20)'
+  const axisTick  = dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.25)'
+
   const svg = d3.select(container.value)
     .append('svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
@@ -107,7 +117,7 @@ onMounted(() => {
 
   buildRow(g, TESTS_ALPHA, 0, '#ef4444',
     'rgba(239,68,68,0.15)', 'rgba(239,68,68,0.4)',
-    'Alphabetical', '#f87171', 'failure at 80%')
+    'Alphabetical', '#f87171', 'failure at 80%', rowBg, rowBorder, nonFailA, textMid)
 
   const rowBOffset = ROW_H + 32
   const rowBDelay = 680
@@ -120,15 +130,15 @@ onMounted(() => {
 
   rowBGroup.append('rect').attr('x', 0).attr('y', 0)
     .attr('width', IW).attr('height', ROW_H).attr('rx', 4)
-    .attr('fill', 'rgba(255,255,255,0.04)').attr('stroke', 'rgba(255,255,255,0.08)')
+    .attr('fill', rowBg).attr('stroke', rowBorder)
     .attr('opacity', 0).transition().delay(rowBDelay).duration(300).attr('opacity', 1)
 
   const segW = IW / TESTS_RANKED.length
   const failIdxB = TESTS_RANKED.findIndex(t => t.fail)
 
   TESTS_RANKED.forEach((t, i) => {
-    const col    = t.fail ? '#16a34a' : '#1f2937'
-    const border = t.fail ? '#4ade80' : 'rgba(255,255,255,0.08)'
+    const col    = t.fail ? '#16a34a' : nonFailB
+    const border = t.fail ? '#4ade80' : rowBorder
     const delay  = rowBDelay + i * 55
 
     rowBGroup.append('rect')
@@ -158,24 +168,22 @@ onMounted(() => {
     .attr('opacity', 0).text('failure at 10%')
     .transition().delay(markerBDelay + 150).duration(200).attr('opacity', 1)
 
-  const badgeBDelay = rowBDelay + (TESTS_RANKED.length - 1) * 55 + 300
-
   // x-axis
   const axisDelay = rowBDelay + TESTS_RANKED.length * 55 + 400
   const axisG = g.append('g').attr('transform', `translate(0,${2 * ROW_H + 36})`)
     .attr('opacity', 0)
   axisG.transition().delay(axisDelay).duration(400).attr('opacity', 1)
   axisG.append('line').attr('x1', 0).attr('x2', IW)
-    .attr('stroke', 'rgba(255,255,255,0.15)').attr('stroke-width', 1)
+    .attr('stroke', axisLine).attr('stroke-width', 1)
   ;[0, 0.25, 0.5, 0.75, 1].forEach(v => {
     axisG.append('line').attr('x1', x(v)).attr('y1', 0).attr('x2', x(v)).attr('y2', 6)
-      .attr('stroke', 'rgba(255,255,255,0.2)')
+      .attr('stroke', axisTick)
     axisG.append('text').attr('x', x(v)).attr('y', 20)
-      .attr('text-anchor', 'middle').style('font-size', '13px').attr('fill', '#94a3b8')
+      .attr('text-anchor', 'middle').style('font-size', '13px').attr('fill', textMid)
       .text(`${v * 100}%`)
   })
   axisG.append('text').attr('x', IW / 2).attr('y', 38)
-    .attr('text-anchor', 'middle').style('font-size', '14px').attr('fill', '#94a3b8')
+    .attr('text-anchor', 'middle').style('font-size', '14px').attr('fill', textMid)
     .text('← test suite execution time →')
 })
 </script>

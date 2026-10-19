@@ -5,6 +5,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import * as d3 from 'd3'
+import { isDark } from '../../conference-60min/dark'
 
 const svg = ref(null)
 
@@ -12,12 +13,19 @@ const W = 1040, H = 380
 const COL = [100, 340, 570, 810]
 const MID = 190
 
-const NODES = [
+const NODES_DARK = [
   { id: 'learn',  x: COL[0], y: MID,      w: 160, h: 106, label: 'mvn test',     sub: 'learn run',              clr: '#60a5fa', bg: 'rgba(30,58,138,0.90)' },
   { id: 'index',  x: COL[1], y: MID - 88, w: 170, h: 92,  label: 'index',        sub: 'test → classes',         clr: '#a78bfa', bg: 'rgba(46,16,101,0.90)', cylinder: true },
   { id: 'diff',   x: COL[1], y: MID + 88, w: 170, h: 92,  label: 'git diff',     sub: 'DestinationRetrieval…',  clr: '#f87171', bg: 'rgba(127,29,29,0.90)' },
   { id: 'score',  x: COL[2], y: MID,      w: 180, h: 106, label: 'score',        sub: 'overlap + history',      clr: '#fbbf24', bg: 'rgba(113,63,18,0.90)' },
   { id: 'ranked', x: COL[3], y: MID,      w: 170, h: 106, label: 'ranked order', sub: 'ResolverTest #1 …',      clr: '#4ade80', bg: 'rgba(20,83,45,0.90)' },
+]
+const NODES_LIGHT = [
+  { id: 'learn',  x: COL[0], y: MID,      w: 160, h: 106, label: 'mvn test',     sub: 'learn run',              clr: '#1d4ed8', bg: 'rgba(219,234,254,0.95)' },
+  { id: 'index',  x: COL[1], y: MID - 88, w: 170, h: 92,  label: 'index',        sub: 'test → classes',         clr: '#7c3aed', bg: 'rgba(237,233,254,0.95)', cylinder: true },
+  { id: 'diff',   x: COL[1], y: MID + 88, w: 170, h: 92,  label: 'git diff',     sub: 'DestinationRetrieval…',  clr: '#dc2626', bg: 'rgba(254,226,226,0.95)' },
+  { id: 'score',  x: COL[2], y: MID,      w: 180, h: 106, label: 'score',        sub: 'overlap + history',      clr: '#b45309', bg: 'rgba(254,249,195,0.95)' },
+  { id: 'ranked', x: COL[3], y: MID,      w: 170, h: 106, label: 'ranked order', sub: 'ResolverTest #1 …',      clr: '#15803d', bg: 'rgba(220,252,231,0.95)' },
 ]
 
 const EDGES = [
@@ -31,6 +39,13 @@ const EDGES = [
 const NODE_ORDER = { learn: 0, index: 1, diff: 2, score: 3, ranked: 4 }
 
 onMounted(() => {
+  const dark = isDark.value
+  const NODES = dark ? NODES_DARK : NODES_LIGHT
+  const ghostTrack = dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'
+  const subColor   = dark ? '#cbd5e1' : '#1e293b'
+  const edgeLbl   = dark ? '#94a3b8' : '#475569'
+  const cylTopFill = dark ? '#4c1d95' : 'rgba(237,233,254,0.95)'
+
   const nm = Object.fromEntries(NODES.map(n => [n.id, n]))
 
   const root = d3.select(svg.value)
@@ -48,40 +63,20 @@ onMounted(() => {
     .attr('viewBox','0 0 10 10').attr('refX',8).attr('refY',5)
     .attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto')
     .append('path').attr('d','M0,1 L9,5 L0,9 z').attr('fill', col)
-  mkArr('arr-b','#60a5fa')
-  mkArr('arr-r','#f87171')
-  mkArr('arr-p','#a78bfa')
-  mkArr('arr-y','#fbbf24')
-  mkArr('arr-g','#4ade80')
+  NODES.forEach(n => mkArr('arr-' + n.id, n.clr))
 
   const rightOf  = n => ({ x: n.x + n.w / 2, y: n.y })
   const leftOf   = n => ({ x: n.x - n.w / 2, y: n.y })
-  const topOf    = n => ({ x: n.x, y: n.y - n.h / 2 })
-  const bottomOf = n => ({ x: n.x, y: n.y + n.h / 2 })
 
-  const arrowFor  = id => ({ learn: 'arr-b', diff: 'arr-r', index: 'arr-p', score: 'arr-y' }[id] ?? 'arr-g')
-  const strokeFor = id => ({ learn: '#60a5fa', diff: '#f87171', index: '#a78bfa', score: '#fbbf24' }[id] ?? '#4ade80')
+  const arrowFor  = id => 'arr-' + id
+  const strokeFor = id => nm[id]?.clr ?? '#4ade80'
 
   EDGES.forEach(e => {
     const sn = nm[e.s], tn = nm[e.t]
-
     let src, dst, pathD
-    if (e.s === 'learn' && e.t === 'index') {
-      // exit right of learn, S-curve up to left of index
-      src = rightOf(sn); dst = leftOf(tn)
-      const mx = (src.x + dst.x) / 2
-      pathD = `M${src.x},${src.y} C${mx},${src.y} ${mx},${dst.y} ${dst.x},${dst.y}`
-    } else if (e.s === 'learn' && e.t === 'diff') {
-      // exit right of learn, S-curve down to left of diff
-      src = rightOf(sn); dst = leftOf(tn)
-      const mx = (src.x + dst.x) / 2
-      pathD = `M${src.x},${src.y} C${mx},${src.y} ${mx},${dst.y} ${dst.x},${dst.y}`
-    } else {
-      // straight horizontal bezier
-      src = rightOf(sn); dst = leftOf(tn)
-      const mx = (src.x + dst.x) / 2
-      pathD = `M${src.x},${src.y} C${mx},${src.y} ${mx},${dst.y} ${dst.x},${dst.y}`
-    }
+    src = rightOf(sn); dst = leftOf(tn)
+    const mx = (src.x + dst.x) / 2
+    pathD = `M${src.x},${src.y} C${mx},${src.y} ${mx},${dst.y} ${dst.x},${dst.y}`
 
     const edgeDelay = 180 + NODE_ORDER[e.s] * 160 + 80
 
@@ -90,7 +85,7 @@ onMounted(() => {
     const len = phantom.getTotalLength ? phantom.getTotalLength() : 200
 
     root.append('path').attr('d', pathD)
-      .attr('stroke', 'rgba(255,255,255,0.05)').attr('stroke-width', 3).attr('fill', 'none')
+      .attr('stroke', ghostTrack).attr('stroke-width', 3).attr('fill', 'none')
 
     root.append('path').attr('d', pathD)
       .attr('stroke', strokeFor(e.s)).attr('stroke-width', 2.5).attr('fill', 'none').attr('opacity', 0.8)
@@ -100,11 +95,11 @@ onMounted(() => {
       .attr('stroke-dashoffset', 0)
 
     if (e.label) {
-      const mx = (src.x + dst.x) / 2
+      const mx2 = (src.x + dst.x) / 2
       root.append('text')
-        .attr('x', mx).attr('y', Math.min(src.y, dst.y) - 8)
+        .attr('x', mx2).attr('y', Math.min(src.y, dst.y) - 8)
         .attr('text-anchor', 'middle').attr('font-size', 15)
-        .attr('fill', '#94a3b8').attr('opacity', 0).text(e.label)
+        .attr('fill', edgeLbl).attr('opacity', 0).text(e.label)
         .transition().delay(edgeDelay + 380).duration(200).attr('opacity', 1)
     }
   })
@@ -123,7 +118,7 @@ onMounted(() => {
       const rx = n.w / 2, ry = 11
       const top = -n.h / 2, bot = n.h / 2
       g.append('ellipse').attr('rx', rx).attr('ry', ry).attr('cy', top)
-        .attr('fill', '#4c1d95').attr('stroke', n.clr).attr('stroke-width', 1.5)
+        .attr('fill', cylTopFill).attr('stroke', n.clr).attr('stroke-width', 1.5)
       g.append('rect').attr('x', -rx).attr('y', top).attr('width', n.w).attr('height', n.h - ry)
         .attr('fill', n.bg).attr('stroke', n.clr).attr('stroke-width', 0)
         .attr('filter', 'url(#pd-shadow)')
@@ -138,7 +133,7 @@ onMounted(() => {
         .attr('fill', n.clr).text(n.label)
       g.append('text').attr('y', 14)
         .attr('text-anchor','middle').attr('font-size', 14)
-        .attr('fill','#c4b5fd').attr('opacity', 0.9).text(n.sub)
+        .attr('fill', subColor).attr('opacity', 0.9).text(n.sub)
     } else {
       g.append('rect').attr('x', -n.w / 2).attr('y', -n.h / 2)
         .attr('width', n.w).attr('height', n.h).attr('rx', 10)
@@ -152,7 +147,7 @@ onMounted(() => {
         .attr('fill', n.clr).text(n.label)
       g.append('text').attr('y', 14)
         .attr('text-anchor','middle').attr('font-size', 14)
-        .attr('fill','#cbd5e1').attr('opacity', 0.9).text(n.sub)
+        .attr('fill', subColor).attr('opacity', 0.9).text(n.sub)
     }
   })
 })
