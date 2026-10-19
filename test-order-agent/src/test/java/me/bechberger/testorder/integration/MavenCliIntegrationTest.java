@@ -230,7 +230,7 @@ class MavenCliIntegrationTest {
 		Files.createDirectories(sharedRepo);
 
 		// CLI simulates downloading
-		Path downloaded = sharedRepo.resolve("test-order-core-0.1.0.jar");
+		Path downloaded = sharedRepo.resolve("test-order-core-0.1.1.jar");
 		Files.writeString(downloaded, "JAR-CONTENT");
 
 		// Maven plugin should find it

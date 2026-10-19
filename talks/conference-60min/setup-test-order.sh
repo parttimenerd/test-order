@@ -10,7 +10,7 @@ TALK_DIR="$SCRIPT_DIR/../../talks/conference-60min"
 SNAPSHOT="$TALK_DIR/${PROJECT_NAME}-index-snapshot"
 MVN_DIR="$SCRIPT_DIR/.mvn"
 EXT_FILE="$MVN_DIR/extensions.xml"
-PLUGIN_VERSION="0.1.0"
+PLUGIN_VERSION="0.1.1"
 
 BOLD='\033[1m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 

@@ -179,7 +179,7 @@ PYEOF
   <extension>
     <groupId>me.bechberger</groupId>
     <artifactId>test-order-maven-plugin</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
   </extension>
 </extensions>
 XMLEOF
@@ -246,11 +246,11 @@ else
   <extension>
     <groupId>me.bechberger</groupId>
     <artifactId>test-order-maven-plugin</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
   </extension>
 </extensions>
 XMLEOF
-      ok "created spring-petclinic .mvn/extensions.xml with test-order 0.1.0"
+      ok "created spring-petclinic .mvn/extensions.xml with test-order 0.1.1"
     fi
   fi
 

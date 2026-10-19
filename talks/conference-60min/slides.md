@@ -488,7 +488,7 @@ class: slide-base
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
   <extensions>true</extensions>
   <executions><execution>
     <goals>
@@ -524,7 +524,7 @@ class: slide-base
   <extension>
     <groupId>me.bechberger</groupId>
     <artifactId>test-order-maven-plugin</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
   </extension>
 </extensions>
 ```
@@ -595,7 +595,7 @@ class: slide-base
 
 ```groovy
 plugins {
-    id 'me.bechberger.test-order' version '0.1.0'
+    id 'me.bechberger.test-order' version '0.1.1'
 }
 ```
 
@@ -1171,7 +1171,7 @@ hide: t
 
 ```groovy
 plugins {
-    id 'me.bechberger.test-order' version '0.1.0'
+    id 'me.bechberger.test-order' version '0.1.1'
 }
 ```
 
@@ -1194,7 +1194,7 @@ hide: true
 
 ```groovy
 plugins {
-    id 'me.bechberger.test-order' version '0.1.0'
+    id 'me.bechberger.test-order' version '0.1.1'
 }
 ```
 

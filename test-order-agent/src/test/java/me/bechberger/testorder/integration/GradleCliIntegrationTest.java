@@ -47,7 +47,7 @@ class GradleCliIntegrationTest {
 		Files.createDirectories(gradleCache);
 
 		// CLI simulates downloading test-order artifacts
-		Path testOrderJar = gradleCache.resolve("test-order-core-0.1.0.jar");
+		Path testOrderJar = gradleCache.resolve("test-order-core-0.1.1.jar");
 		Files.writeString(testOrderJar, "GRADLE-TEST-ORDER-JAR");
 
 		// Gradle plugin should find it
@@ -63,7 +63,7 @@ class GradleCliIntegrationTest {
 
 		String buildGradle = """
 				plugins {
-				    id 'me.bechberger.test-order' version '0.1.0'
+				    id 'me.bechberger.test-order' version '0.1.1'
 				}
 
 				testOrder {
@@ -125,8 +125,8 @@ class GradleCliIntegrationTest {
 		// Scenario: Gradle plugin version must be compatible with CLI version
 		// Expected: Clear error if versions are incompatible
 
-		String gradlePluginVersion = "0.1.0";
-		String cliVersion = "0.1.0";
+		String gradlePluginVersion = "0.1.1";
+		String cliVersion = "0.1.1";
 
 		// Simple version comparison
 		String[] gVersion = gradlePluginVersion.split("\\.");
@@ -227,7 +227,7 @@ class GradleCliIntegrationTest {
 		Files.createDirectories(cliCache);
 
 		// First "build" - CLI downloads
-		Path artifact1 = cliCache.resolve("test-order-0.1.0.jar");
+		Path artifact1 = cliCache.resolve("test-order-0.1.1.jar");
 		Files.writeString(artifact1, "original-artifact");
 		long firstDownloadTime = System.currentTimeMillis();
 

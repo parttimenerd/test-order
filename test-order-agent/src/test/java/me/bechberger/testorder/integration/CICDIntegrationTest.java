@@ -87,7 +87,7 @@ class CICDIntegrationTest {
 		// Scenario: CI caches artifacts between builds
 		// Expected: Cached artifacts used, build faster
 
-		Path buildArtifact = ciCache.resolve("test-order-0.1.0.jar");
+		Path buildArtifact = ciCache.resolve("test-order-0.1.1.jar");
 		Files.writeString(buildArtifact, "cached-artifact");
 
 		// Second run uses cache

@@ -13,7 +13,7 @@ set -euo pipefail
 PROJECT="third-party/spring-ai"
 MODULE="spring-ai-commons"
 MVN="./mvnw"
-PLUGIN="me.bechberger:test-order-maven-plugin:0.1.0-SNAPSHOT"
+PLUGIN="me.bechberger:test-order-maven-plugin:0.1.1-SNAPSHOT"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 CYAN='\033[0;36m'

@@ -127,11 +127,11 @@ class DataConsistencyIntegrationTest {
 	@Test
 	@DisplayName("INT-CONS-004: Version Mismatch Between Cache and Tool")
 	void testVersionMismatchHandling() throws IOException {
-		// Scenario: Cache created by v0.1.0, tool is v0.2.0
+		// Scenario: Cache created by v0.1.1, tool is v0.2.0
 		// Expected: Tools detect version mismatch and handle gracefully
 
 		Path versionFile = stateDir.resolve("version.txt");
-		Files.writeString(versionFile, "0.1.0");
+		Files.writeString(versionFile, "0.1.1");
 
 		String currentVersion = "0.2.0";
 		String cacheVersion = Files.readString(versionFile);

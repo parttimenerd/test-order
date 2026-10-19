@@ -52,7 +52,7 @@ DEFAULT_REPOS=(
     "spring-ai"
 )
 
-PLUGIN_VERSION="0.1.0"
+PLUGIN_VERSION="0.1.1"
 PLUGIN_GROUP="me.bechberger"
 PLUGIN_ARTIFACT="test-order-maven-plugin"
 

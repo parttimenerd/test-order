@@ -71,7 +71,7 @@ class GradleAdvancedIntegrationTest {
 		// Add test-order Gradle plugin configuration
 		String buildGradle = Files.readString(project.resolve("build.gradle"));
 		String withTestOrder = buildGradle.replace("plugins {",
-				"plugins {\n    id 'me.bechberger.test-order' version '0.1.0'");
+				"plugins {\n    id 'me.bechberger.test-order' version '0.1.1'");
 		Files.writeString(project.resolve("build.gradle"), withTestOrder);
 
 		String content = Files.readString(project.resolve("build.gradle"));

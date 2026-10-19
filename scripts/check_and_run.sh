@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "=== Checking if plugin is installed ==="
-if [ -f ~/.m2/repository/me/bechberger/test-order-maven-plugin/0.1.0-SNAPSHOT/test-order-maven-plugin-0.1.0-SNAPSHOT.jar ]; then
+if [ -f ~/.m2/repository/me/bechberger/test-order-maven-plugin/0.1.1-SNAPSHOT/test-order-maven-plugin-0.1.1-SNAPSHOT.jar ]; then
   echo "Plugin JAR found"
 else
   echo "Plugin JAR NOT found, installing..."

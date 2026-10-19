@@ -1,6 +1,6 @@
 # Building & Using the Development Version
 
-This guide helps you build test-order from source and use the `0.1.0` in your own projects.
+This guide helps you build test-order from source and use the `0.1.1` in your own projects.
 
 ## Prerequisites
 
@@ -38,7 +38,7 @@ Add the plugin to your project's `pom.xml`:
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
   <extensions>true</extensions>  <!-- required: registers the lifecycle participant that writes the index -->
   <executions>
     <execution>
@@ -63,7 +63,7 @@ pluginManagement {
 
 // build.gradle
 plugins {
-    id 'me.bechberger.test-order' version '0.1.0'
+    id 'me.bechberger.test-order' version '0.1.1'
 }
 
 repositories {
@@ -144,7 +144,7 @@ Releases are managed by `release.py` in the project root. The script handles:
 # Patch release (0.0.1 → 0.0.2)
 python release.py --patch
 
-# Minor release (0.0.1 → 0.1.0)
+# Minor release (0.0.1 → 0.1.1)
 python release.py --minor
 
 # Preview what would change without modifying anything

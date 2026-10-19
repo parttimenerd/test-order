@@ -7,13 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed
+### Security
+
+## [0.1.1] - 2026-10-19
+
 ### Fixed
 - **Quarkus / Narayana NPE in learn mode** — `IndexCollectorServer` stored a `ConcurrentHashMap` as a value in `System.getProperties()` for cross-realm communication. Frameworks that copy system properties via `Properties.setProperty()` (e.g. Narayana's `AbstractPropertiesFactory.applySystemProperties`) NPE'd because `System.getProperty()` returns `null` for non-String values. Fixed by removing the registry key from `System.getProperties()` once the map is empty (`removeFromRegistry`), and by draining all active collectors in the `restore-instrumentation` mojo at `prepare-package` — before any `package`-phase plugins (like `quarkus:build`) run. Fixes [#79](https://github.com/parttimenerd/test-order/issues/79).
 
 ### Removed
 - `detect-dependencies` goal removed from user-facing documentation — the order-dependency detection feature does not work reliably enough to recommend.
 
-## [0.1.0] - 2026-07-22
+## [0.1.1] - 2026-07-22
 
 ### Breaking
 - **Property namespace renamed:** `testorder.select.*` → `testorder.affected.*`. Affected keys: `topN`, `randomM`, `seed`, `selectedFile`, `remainingFile`. CI configurations and shell aliases pinning `-Dtestorder.select.topN` (and friends) must be updated. No backward-compatibility shim is provided — using the old names yields an "unknown property" warning with a suggestion to the new name.
@@ -76,5 +86,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SA auto-mode (`changeMode=uncommitted`) — zero-config change detection from `git diff`
 - Multi-module Maven reactor support with module-level affectedCount reporting
 
-[Unreleased]: https://github.com/parttimenerd/test-order/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/parttimenerd/test-order/releases/tag/v0.1.0
+[Unreleased]: https://github.com/parttimenerd/test-order/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/parttimenerd/test-order/compare/v0.1.1...v0.1.1

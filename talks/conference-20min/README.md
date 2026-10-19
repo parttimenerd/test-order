@@ -26,7 +26,7 @@ node --version   # 18+
 
 ### 1. Build the plugin locally
 
-The order-run path requires `test-order-core-0.1.0-all.jar` (shaded, includes lz4).
+The order-run path requires `test-order-core-0.1.1-all.jar` (shaded, includes lz4).
 It is not published to Maven Central — build it from source:
 
 ```bash
@@ -36,7 +36,7 @@ mvn install -pl test-order-core -am -DskipTests -q
 
 Verify:
 ```bash
-ls ~/.m2/repository/me/bechberger/test-order-core/0.1.0/test-order-core-0.1.0-all.jar
+ls ~/.m2/repository/me/bechberger/test-order-core/0.1.1/test-order-core-0.1.1-all.jar
 ```
 
 ### 2. Clone spring-petclinic

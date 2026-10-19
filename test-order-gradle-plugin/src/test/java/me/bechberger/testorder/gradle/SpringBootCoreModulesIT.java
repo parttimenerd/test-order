@@ -505,7 +505,7 @@ class SpringBootCoreModulesIT {
                         mavenCentral()
                     }
                     dependencies {
-                        classpath 'me.bechberger:test-order-gradle-plugin:0.1.0'
+                        classpath 'me.bechberger:test-order-gradle-plugin:0.1.1'
                     }
                 }
 

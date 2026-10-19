@@ -476,7 +476,7 @@ class: slide-base
 <plugin>
   <groupId>me.bechberger</groupId>
   <artifactId>test-order-maven-plugin</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
   <extensions>true</extensions>
   <executions><execution>
     <goals>
@@ -516,7 +516,7 @@ class: slide-base
   <extension>
     <groupId>me.bechberger</groupId>
     <artifactId>test-order-maven-plugin</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
   </extension>
 </extensions>
 ```

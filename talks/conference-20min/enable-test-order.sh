@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXT="$SCRIPT_DIR/.mvn/extensions.xml"
-PLUGIN_VERSION="0.1.0"
+PLUGIN_VERSION="0.1.1"
 
 if grep -q "test-order-maven-plugin" "$EXT" 2>/dev/null; then
   echo "test-order already enabled in $EXT"
