@@ -10,7 +10,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "chart.js": "^4.4.7",
+    "chart.js": "^4.6.1",
     "d3": "^7.9.0",
     "vue": "^3.5.44"
   },
