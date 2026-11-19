@@ -22,6 +22,18 @@ final class GitSupport {
 	}
 
 	/**
+	 * Monotonic count of git subprocesses spawned through this class. Test seam:
+	 * lets tests assert that snapshot-based filtering performs zero git spawns (a
+	 * PATH-shim git wrapper cannot intercept {@code ProcessBuilder("git")} inside
+	 * the JVM, since the process environment is immutable).
+	 */
+	private static final java.util.concurrent.atomic.AtomicLong SPAWN_COUNT = new java.util.concurrent.atomic.AtomicLong();
+
+	static long spawnCount() {
+		return SPAWN_COUNT.get();
+	}
+
+	/**
 	 * Runs a git command in {@code workDir} and returns its stdout lines (stripped
 	 * of trailing whitespace, empty lines excluded).
 	 *
@@ -31,6 +43,7 @@ final class GitSupport {
 	 *            instead
 	 */
 	static List<String> runGit(Path workDir, boolean throwOnError, String... args) throws IOException {
+		SPAWN_COUNT.incrementAndGet();
 		List<String> command = new ArrayList<>();
 		command.add("git");
 		Collections.addAll(command, args);

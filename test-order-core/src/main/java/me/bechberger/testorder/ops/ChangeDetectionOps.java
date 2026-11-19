@@ -9,6 +9,7 @@ import java.util.Set;
 
 import me.bechberger.testorder.changes.ChangeDetectionSupport;
 import me.bechberger.testorder.changes.MethodHashStore;
+import me.bechberger.testorder.changes.RepoChangeListings;
 
 /**
  * Shared change-detection operations that are framework-agnostic.
@@ -42,9 +43,20 @@ public final class ChangeDetectionOps {
 	 */
 	public static Set<String> detectChangedClasses(String changeMode, Path projectRoot, Path sourceRoot, Path hashPath,
 			String changedClasses, boolean readOnly, PluginLog log) {
+		return detectChangedClasses(changeMode, projectRoot, sourceRoot, hashPath, changedClasses, readOnly, null, log);
+	}
+
+	/**
+	 * As
+	 * {@link #detectChangedClasses(String, Path, Path, Path, String, boolean, PluginLog)}
+	 * with a shared repo-level git listing snapshot ({@link RepoChangeListings})
+	 * threaded into git-based change detection.
+	 */
+	public static Set<String> detectChangedClasses(String changeMode, Path projectRoot, Path sourceRoot, Path hashPath,
+			String changedClasses, boolean readOnly, RepoChangeListings.Snapshot shared, PluginLog log) {
 		try {
 			return ChangeDetectionSupport.detectChangedClasses(changeMode, projectRoot, sourceRoot, hashPath,
-					changedClasses, readOnly);
+					changedClasses, readOnly, shared);
 		} catch (IOException e) {
 			log.warn("[test-order] Change detection failed: " + e.getMessage() + " — falling back to no changes");
 			return Set.of();
@@ -66,13 +78,26 @@ public final class ChangeDetectionOps {
 	 */
 	public static Set<String> detectChangedTestClasses(String changeMode, Path projectRoot, Path testSourceRoot,
 			Path testHashPath, String explicitChangedTestClasses, boolean readOnly, PluginLog log) {
+		return detectChangedTestClasses(changeMode, projectRoot, testSourceRoot, testHashPath,
+				explicitChangedTestClasses, readOnly, null, log);
+	}
+
+	/**
+	 * As
+	 * {@link #detectChangedTestClasses(String, Path, Path, Path, String, boolean, PluginLog)}
+	 * with a shared repo-level git listing snapshot ({@link RepoChangeListings})
+	 * threaded into git-based change detection.
+	 */
+	public static Set<String> detectChangedTestClasses(String changeMode, Path projectRoot, Path testSourceRoot,
+			Path testHashPath, String explicitChangedTestClasses, boolean readOnly, RepoChangeListings.Snapshot shared,
+			PluginLog log) {
 		Set<String> explicit = parseCsv(explicitChangedTestClasses);
 		if ("explicit".equalsIgnoreCase(changeMode)) {
 			return explicit;
 		}
 		try {
 			Set<String> detected = ChangeDetectionSupport.detectChangedTestClasses(changeMode, projectRoot,
-					testSourceRoot, testHashPath, readOnly);
+					testSourceRoot, testHashPath, readOnly, shared);
 			if (explicit.isEmpty()) {
 				return detected;
 			}
@@ -223,6 +248,21 @@ public final class ChangeDetectionOps {
 	 */
 	public static Set<String> mergeKotlinChanges(Set<String> base, Path sourceRoot, Path hashPath, String changeMode,
 			String changedClasses, Path projectRoot, boolean readOnly, boolean skipExplicit, PluginLog log) {
+		return mergeKotlinChanges(base, sourceRoot, hashPath, changeMode, changedClasses, projectRoot, readOnly,
+				skipExplicit, null, log);
+	}
+
+	/**
+	 * As
+	 * {@link #mergeKotlinChanges(Set, Path, Path, String, String, Path, boolean, boolean, PluginLog)}
+	 * with a shared repo-level git listing snapshot ({@link RepoChangeListings})
+	 * threaded into the Kotlin-side git-based change detection (the Kotlin sibling
+	 * detection routes through {@link ChangeDetectionSupport}, which spawns the
+	 * same git commands).
+	 */
+	public static Set<String> mergeKotlinChanges(Set<String> base, Path sourceRoot, Path hashPath, String changeMode,
+			String changedClasses, Path projectRoot, boolean readOnly, boolean skipExplicit,
+			RepoChangeListings.Snapshot shared, PluginLog log) {
 		if (sourceRoot == null) {
 			return base;
 		}
@@ -238,10 +278,10 @@ public final class ChangeDetectionOps {
 			Set<String> kotlinChanges;
 			if (skipExplicit) {
 				kotlinChanges = ChangeDetectionSupport.detectChangedTestClasses(changeMode, projectRoot, kotlinRoot,
-						kotlinHashPath, readOnly);
+						kotlinHashPath, readOnly, shared);
 			} else {
 				kotlinChanges = ChangeDetectionSupport.detectChangedClasses(changeMode, projectRoot, kotlinRoot,
-						kotlinHashPath, changedClasses, readOnly);
+						kotlinHashPath, changedClasses, readOnly, shared);
 			}
 			if (kotlinChanges.isEmpty()) {
 				return base;
@@ -260,10 +300,24 @@ public final class ChangeDetectionOps {
 	 */
 	public static Set<String> detectChangedClassesWithKotlin(String changeMode, Path projectRoot, Path sourceRoot,
 			Path hashPath, String changedClasses, boolean readOnly, PluginLog log) {
+		return detectChangedClassesWithKotlin(changeMode, projectRoot, sourceRoot, hashPath, changedClasses, readOnly,
+				null, log);
+	}
+
+	/**
+	 * As
+	 * {@link #detectChangedClassesWithKotlin(String, Path, Path, Path, String, boolean, PluginLog)}
+	 * with a shared repo-level git listing snapshot ({@link RepoChangeListings}):
+	 * both the Java detection and the Kotlin sibling detection filter the
+	 * snapshot's cached listings in-memory instead of spawning per-root scoped git
+	 * commands.
+	 */
+	public static Set<String> detectChangedClassesWithKotlin(String changeMode, Path projectRoot, Path sourceRoot,
+			Path hashPath, String changedClasses, boolean readOnly, RepoChangeListings.Snapshot shared, PluginLog log) {
 		Set<String> changed = detectChangedClasses(changeMode, projectRoot, sourceRoot, hashPath, changedClasses,
-				readOnly, log);
+				readOnly, shared, log);
 		return mergeKotlinChanges(changed, sourceRoot, hashPath, changeMode, changedClasses, projectRoot, readOnly,
-				false, log);
+				false, shared, log);
 	}
 
 	/**
@@ -272,9 +326,7 @@ public final class ChangeDetectionOps {
 	 */
 	public static Set<String> detectChangedTestClassesWithKotlin(String changeMode, Path projectRoot,
 			Path testSourceRoot, Path testHashPath, boolean readOnly, PluginLog log) {
-		Set<String> changed = detectChangedTestClasses(changeMode, projectRoot, testSourceRoot, testHashPath, readOnly,
-				log);
-		return mergeKotlinChanges(changed, testSourceRoot, testHashPath, changeMode, null, projectRoot, readOnly, true,
+		return detectChangedTestClassesWithKotlin(changeMode, projectRoot, testSourceRoot, testHashPath, null, readOnly,
 				log);
 	}
 
@@ -285,9 +337,22 @@ public final class ChangeDetectionOps {
 	public static Set<String> detectChangedTestClassesWithKotlin(String changeMode, Path projectRoot,
 			Path testSourceRoot, Path testHashPath, String explicitChangedTestClasses, boolean readOnly,
 			PluginLog log) {
+		return detectChangedTestClassesWithKotlin(changeMode, projectRoot, testSourceRoot, testHashPath,
+				explicitChangedTestClasses, readOnly, null, log);
+	}
+
+	/**
+	 * As
+	 * {@link #detectChangedTestClassesWithKotlin(String, Path, Path, Path, String, boolean, PluginLog)}
+	 * with a shared repo-level git listing snapshot ({@link RepoChangeListings})
+	 * threaded into git-based change detection.
+	 */
+	public static Set<String> detectChangedTestClassesWithKotlin(String changeMode, Path projectRoot,
+			Path testSourceRoot, Path testHashPath, String explicitChangedTestClasses, boolean readOnly,
+			RepoChangeListings.Snapshot shared, PluginLog log) {
 		Set<String> changed = detectChangedTestClasses(changeMode, projectRoot, testSourceRoot, testHashPath,
-				explicitChangedTestClasses, readOnly, log);
+				explicitChangedTestClasses, readOnly, shared, log);
 		return mergeKotlinChanges(changed, testSourceRoot, testHashPath, changeMode, null, projectRoot, readOnly, true,
-				log);
+				shared, log);
 	}
 }

@@ -65,6 +65,15 @@ public class AutoMojo extends AbstractTestOrderMojo {
 	@Parameter(property = MavenPluginConfigKeys.AUTO_OPTIMIZE_EVERY, defaultValue = "10")
 	private int optimizeEvery;
 
+	/**
+	 * If true, fail the build when the selected test subset does not exercise every
+	 * changed element (coverage-closure failure) and the deferred tests are NOT run
+	 * (runRemaining=false). With runRemaining=true (default) the full suite runs
+	 * anyway, so the closure check only reports. Default false: WARN only.
+	 */
+	@Parameter(property = "testorder.coverage.enforce", defaultValue = "false")
+	private boolean coverageEnforce;
+
 	@Override
 	public void execute() throws MojoExecutionException {
 		initContext();
@@ -128,8 +137,8 @@ public class AutoMojo extends AbstractTestOrderMojo {
 		PluginContext pctx = buildPluginContextBuilder().instrumentationMode(instrumentationMode)
 				.includePackages(includePackages).filterByGroupId(filterByGroupId)
 				.autoLearnRunThreshold(autoLearnRunThreshold).autoLearnDiffThreshold(autoLearnDiffThreshold)
-				.optimizeEvery(optimizeEvery).topN(topN).randomM(randomM).seed(seed).selectedFile(Path.of(selectedFile))
-				.remainingFile(Path.of(remainingFile)).build();
+				.optimizeEvery(optimizeEvery).topN(topN).randomM(randomM).seed(seed).coverageEnforce(coverageEnforce)
+				.selectedFile(Path.of(selectedFile)).remainingFile(Path.of(remainingFile)).build();
 
 		// ── Execute shared workflow ─────────────────────────────────
 		AutoWorkflow.Result result;
@@ -144,7 +153,8 @@ public class AutoMojo extends AbstractTestOrderMojo {
 					me.bechberger.testorder.ci.CiDepDownloadManager.downloadIfConfigured(ciConfigRoot, idxPath)
 							.ifPresent(p -> getLog().info("[test-order] CI index downloaded to " + p));
 				}
-			}, Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath) ? depsDirPath : null).execute();
+			}, Files.isDirectory(depsDirPath) && hasDepsFiles(depsDirPath) ? depsDirPath : null, runRemaining)
+					.execute();
 		} catch (IllegalArgumentException e) {
 			throw new MojoExecutionException(e.getMessage(), e);
 		} catch (IOException e) {

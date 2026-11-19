@@ -54,15 +54,40 @@ public final class CiSummaryWriter {
 	 *            up to 5 source classes whose change most influenced the selection
 	 *            (may be empty)
 	 * @param mode
-	 *            one of: {@code auto}, {@code tiered-select}, {@code run-tiered}
+	 *            one of: {@code auto}, {@code affected}, {@code tiered-select},
+	 *            {@code run-tiered}, or a marker like
+	 *            {@code affected-nonsource-select-all}
 	 * @param tier
 	 *            tier number (1, 2, or 3) for tiered mode; 0 for non-tiered
 	 * @param buildDir
 	 *            project build output directory
+	 * @param changedElementsTotal
+	 *            number of changed elements in the coverage-closure universe. The
+	 *            universe counts CLASSES (the changed production classes;
+	 *            member-level precision enters via the per-test coverage sets, not
+	 *            via member keys in the universe — see
+	 *            {@link me.bechberger.testorder.CoverageClosure}); {@code null}
+	 *            when the workflow did not run the closure (the coverage line is
+	 *            then omitted from md/json)
+	 * @param changedElementsCovered
+	 *            universe elements exercised by the selected subset; {@code null}
+	 *            when not provided
+	 * @param changedElementsUncovered
+	 *            universe elements no selected test exercises; {@code null} when
+	 *            not provided
 	 */
 	public record SummaryInput(int totalTestsInIndex, List<String> selectedTests, List<String> deferredTests,
 			Set<String> changedClasses, Set<String> changedTests, List<String> topChangedDrivers, String mode, int tier,
-			Path buildDir) {
+			Path buildDir, Integer changedElementsTotal, Integer changedElementsCovered,
+			Integer changedElementsUncovered) {
+
+		/** Backward-compatible constructor without coverage-closure counts. */
+		public SummaryInput(int totalTestsInIndex, List<String> selectedTests, List<String> deferredTests,
+				Set<String> changedClasses, Set<String> changedTests, List<String> topChangedDrivers, String mode,
+				int tier, Path buildDir) {
+			this(totalTestsInIndex, selectedTests, deferredTests, changedClasses, changedTests, topChangedDrivers, mode,
+					tier, buildDir, null, null, null);
+		}
 	}
 
 	/**
@@ -210,7 +235,26 @@ public final class CiSummaryWriter {
 		if (!input.changedTests().isEmpty()) {
 			sb.append("| **Changed test classes** | ").append(input.changedTests().size()).append(" |\n");
 		}
+		appendChangedElementsCoverage(sb, input);
 		sb.append("\n");
+	}
+
+	/**
+	 * Coverage-closure row: "Changed elements covered: X/Y (+N uncovered)" —
+	 * emitted only when the workflow supplied coverage status data.
+	 */
+	private static void appendChangedElementsCoverage(StringBuilder sb, SummaryInput input) {
+		if (input.changedElementsTotal() == null) {
+			return;
+		}
+		int total = input.changedElementsTotal();
+		int covered = input.changedElementsCovered() != null ? input.changedElementsCovered() : 0;
+		int uncovered = input.changedElementsUncovered() != null ? input.changedElementsUncovered() : 0;
+		sb.append("| **Changed elements covered** | ").append(covered).append("/").append(total);
+		if (uncovered > 0) {
+			sb.append(" (+").append(uncovered).append(" uncovered)");
+		}
+		sb.append(" |\n");
 	}
 
 	private static void appendChangedClasses(StringBuilder sb, SummaryInput input) {
@@ -304,6 +348,14 @@ public final class CiSummaryWriter {
 		sb.append("  \"quarantinedTests\": ").append(jsonStringArray(flaky.quarantined())).append(",\n");
 		sb.append("  \"changedSourceClasses\": ").append(jsonStringArray(input.changedClasses())).append(",\n");
 		sb.append("  \"changedTestClasses\": ").append(jsonStringArray(input.changedTests())).append(",\n");
+		if (input.changedElementsTotal() != null) {
+			sb.append("  \"changedElementsCovered\": ")
+					.append(input.changedElementsCovered() != null ? input.changedElementsCovered() : 0).append(",\n");
+			sb.append("  \"changedElementsTotal\": ").append(input.changedElementsTotal()).append(",\n");
+			sb.append("  \"changedElementsUncovered\": ")
+					.append(input.changedElementsUncovered() != null ? input.changedElementsUncovered() : 0)
+					.append(",\n");
+		}
 		sb.append("  \"topChangedDrivers\": ").append(jsonStringArray(input.topChangedDrivers())).append("\n");
 		sb.append("}\n");
 		Path out = input.buildDir().resolve("test-order-summary.json");

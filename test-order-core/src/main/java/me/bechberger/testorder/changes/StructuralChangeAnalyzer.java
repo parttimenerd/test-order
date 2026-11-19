@@ -259,6 +259,14 @@ public class StructuralChangeAnalyzer {
 		if (changedClasses.isEmpty()) {
 			return classLevelOverlapClasses(testClassDeps, changedMembers.changedClasses());
 		}
+		// Short-circuit the union below: when the class-level set already contains
+		// every structurally changed class, the union is the class-level set itself.
+		// On the coverage-closure path changedClasses IS the (universe-sized) match
+		// set passed once per candidate test, so skipping the per-test union copy
+		// avoids an O(|universe|) LinkedHashSet rebuild per affected test.
+		if (changedClasses.containsAll(changedMembers.changedClasses())) {
+			return classLevelOverlapClasses(testClassDeps, changedClasses);
+		}
 		Set<String> effective = new java.util.LinkedHashSet<>(changedMembers.changedClasses());
 		effective.addAll(changedClasses);
 		return classLevelOverlapClasses(testClassDeps, effective);

@@ -34,7 +34,13 @@ public class TieredTestSelector {
 	}
 
 	/** Result of tiered selection — three ordered lists. */
-	public record TieredSelection(List<String> tier1, List<String> tier2, List<String> tier3) {
+	public record TieredSelection(List<String> tier1, List<String> tier2, List<String> tier3,
+			CoverageClosure.Status coverageStatus) {
+
+		/** Backward-compatible constructor without the tier-1 coverage status. */
+		public TieredSelection(List<String> tier1, List<String> tier2, List<String> tier3) {
+			this(tier1, tier2, tier3, null);
+		}
 
 		/** Returns all tests in tier order. */
 		public List<String> allInOrder() {
@@ -58,10 +64,23 @@ public class TieredTestSelector {
 	private final TestOrderState.ScoringWeights weights;
 	private final Config config;
 	private final Set<String> alwaysRunClasses;
+	/**
+	 * Coverage-closure view over the changed-element universe (nullable). When
+	 * present, every cover-core test is retained in tier 1 — a test covering a
+	 * universe element no other tier-1 test covers must never be demoted to tier
+	 * 2/3.
+	 */
+	private final CoverageClosure coverageClosure;
 
 	public TieredTestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
 			Set<String> alwaysRunClasses) {
+		this(depMap, state, changedClasses, changedTestClasses, weights, config, alwaysRunClasses, null);
+	}
+
+	public TieredTestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
+			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
+			Set<String> alwaysRunClasses, CoverageClosure coverageClosure) {
 		this.depMap = depMap;
 		this.state = state;
 		this.changedClasses = changedClasses;
@@ -69,6 +88,7 @@ public class TieredTestSelector {
 		this.weights = weights;
 		this.config = config;
 		this.alwaysRunClasses = alwaysRunClasses != null ? alwaysRunClasses : Set.of();
+		this.coverageClosure = coverageClosure;
 	}
 
 	/**
@@ -79,9 +99,15 @@ public class TieredTestSelector {
 
 		// ── Tier 1: change-affected ─────────────────────────────────
 		// Single pass over the score-sorted list so tier 1 preserves score order.
+		// Cover-core retention: a test in the coverage-closure cover core must stay
+		// in tier 1 even when it carries no dep-overlap/changed/new signal —
+		// dropping it to tier 2/3 would leave changed universe elements unexercised
+		// whenever tier 1 passes but later tiers are skipped.
+		Set<String> coverCore = coverageClosure != null ? new LinkedHashSet<>(coverageClosure.coverCore()) : Set.of();
 		Set<String> tier1Set = new LinkedHashSet<>();
 		for (ScoredTest s : scored) {
-			if (alwaysRunClasses.contains(s.name()) || s.isNew() || s.isChanged() || s.depOverlap() > 0) {
+			if (alwaysRunClasses.contains(s.name()) || s.isNew() || s.isChanged() || s.depOverlap() > 0
+					|| coverCore.contains(s.name())) {
 				tier1Set.add(s.name());
 			}
 		}
@@ -119,7 +145,11 @@ public class TieredTestSelector {
 		List<String> tier2Out = collapseToOuter(tier2, seen);
 		List<String> tier3Out = collapseToOuter(tier3, seen);
 
-		return new TieredSelection(tier1Out, tier2Out, tier3Out);
+		// Tier-1 closure status over the RAW tier-1 names (pre-collapse: coverage
+		// keys may be nested-class FQCNs that the outer-class collapse would lose).
+		CoverageClosure.Status coverageStatus = coverageClosure != null ? coverageClosure.status(tier1Set) : null;
+
+		return new TieredSelection(tier1Out, tier2Out, tier3Out, coverageStatus);
 	}
 
 	/**

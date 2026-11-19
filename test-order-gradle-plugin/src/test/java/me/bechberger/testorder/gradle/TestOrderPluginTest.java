@@ -304,6 +304,48 @@ class TestOrderPluginTest {
         }
 
     @org.junit.jupiter.api.Test
+    void coverageEnforceDefaultsToFalseAndPlumbsIntoPluginContext() {
+        Project project = newProject();
+        TestOrderPlugin plugin = new TestOrderPlugin();
+        TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
+        extension.applyDefaults(project);
+
+        // Default false — uncovered changed elements only WARN
+        assertFalse(extension.getTestOrderCoverageEnforce().get());
+        assertFalse(plugin.buildPluginContext(project, extension).coverageEnforce());
+
+        // DSL property maps to the testorder.coverage.enforce config key
+        extension.getTestOrderCoverageEnforce().set(true);
+        assertTrue(plugin.buildPluginContext(project, extension).coverageEnforce());
+    }
+
+    @org.junit.jupiter.api.Test
+    void coverageEnforceSystemPropertyOverridesDslValue() {
+        Project project = newProject();
+        TestOrderPlugin plugin = new TestOrderPlugin();
+        TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
+        extension.applyDefaults(project);
+
+        String old = System.getProperty("testorder.coverage.enforce");
+        try {
+            // -D overrides the DSL (same precedence as the other boolean properties)
+            extension.getTestOrderCoverageEnforce().set(false);
+            System.setProperty("testorder.coverage.enforce", "true");
+            assertTrue(plugin.buildPluginContext(project, extension).coverageEnforce());
+
+            extension.getTestOrderCoverageEnforce().set(true);
+            System.setProperty("testorder.coverage.enforce", "false");
+            assertFalse(plugin.buildPluginContext(project, extension).coverageEnforce());
+        } finally {
+            if (old == null) {
+                System.clearProperty("testorder.coverage.enforce");
+            } else {
+                System.setProperty("testorder.coverage.enforce", old);
+            }
+        }
+    }
+
+    @org.junit.jupiter.api.Test
     void alwaysLearnInOrderModeAttachesLearnAgent() throws Exception {
         Project project = newProject();
         project.getPluginManager().apply("java");

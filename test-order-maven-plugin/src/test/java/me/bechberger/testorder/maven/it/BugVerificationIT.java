@@ -401,8 +401,29 @@ class BugVerificationIT {
 				return m.find() ? Integer.parseInt(m.group(1)) : 0;
 			}).sum();
 
-			assertThat(totalTestsRun).as("select with topN=0, randomM=0 should run 0 tests, not %d", totalTestsRun)
-					.isEqualTo(0);
+			// Coverage-closure guarantee (notes/tia-contract.md): the cover core
+			// survives topN capping and only ADDS tests — with topN=0/randomM=0 the
+			// selection is exactly the cover core: the class exercising the changed
+			// Product (ProductTest) is force-included and the other 2 classes are
+			// deferred to the remaining file.
+			String selected = project.readFile("target/test-order-selected.txt");
+			assertThat(selected).as("selected file should exist for the cover-core selection").isNotNull();
+			List<String> selectedTests = selected.lines().filter(l -> !l.isBlank() && !l.startsWith("#")).toList();
+			assertThat(selectedTests).as("topN=0, randomM=0 selects exactly the cover core (ProductTest)")
+					.containsExactly(PRODUCT_TEST);
+			String remaining = project.readFile("target/test-order-remaining.txt");
+			assertThat(remaining).as("remaining file should exist for the 2 deferred classes").isNotNull();
+			List<String> remainingTests = remaining.lines().filter(l -> !l.isBlank() && !l.startsWith("#")).toList();
+			assertThat(remainingTests).as("the other 2 test classes are deferred (remaining file)")
+					.containsExactlyInAnyOrder(CART_TEST, INVOICE_TEST);
+
+			// The original bug must stay fixed: the WHOLE suite (14 tests) still must
+			// NOT run. "Tests run:" lines double-count (per-class line + summary line),
+			// so the single cover-core class of 5 tests yields 10; 11+ would mean more
+			// than the cover core ran.
+			assertThat(totalTestsRun).as(
+					"select with topN=0, randomM=0 runs only the cover core, not the whole suite (14 tests; got %d)",
+					totalTestsRun).isLessThan(11);
 		}
 		// Failing is also acceptable
 	}
@@ -865,12 +886,15 @@ class BugVerificationIT {
 		String selected = project.readFile("target/test-order-selected.txt");
 		assertThat(selected).isNotNull();
 		List<String> selectedTests = selected.lines().filter(l -> !l.isBlank() && !l.startsWith("#")).toList();
-		assertThat(selectedTests).as("topN=1, randomM=0 should select exactly 1 test").hasSize(1);
+		// Coverage-closure guarantee (notes/tia-contract.md): the topN cap applies to
+		// the remainder only; the cover core (1 test exercising the changed Product)
+		// is force-included on top of it — 1 + 1 = 2 selected.
+		assertThat(selectedTests).as("topN=1, randomM=0 selects cover core (1) + capped remainder (1)").hasSize(2);
 
 		String remaining = project.readFile("target/test-order-remaining.txt");
 		assertThat(remaining).isNotNull();
 		List<String> remainingTests = remaining.lines().filter(l -> !l.isBlank() && !l.startsWith("#")).toList();
-		assertThat(remainingTests).as("remaining should have the other 2 tests").hasSize(2);
+		assertThat(remainingTests).as("remaining should have the 1 deferred test (3 total − 2 selected)").hasSize(1);
 
 		// run-remaining should execute the deferred tests
 		MavenResult remainingResult = project.maven().runRemaining();

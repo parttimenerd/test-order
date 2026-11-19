@@ -97,7 +97,18 @@ public class StructuralDiff {
 	 * Diff all Java files changed in git (uncommitted + staged) against HEAD.
 	 */
 	public static List<FileDiff> diffUncommitted(Path projectRoot) throws IOException {
-		return diffGitChanges(projectRoot, false, null);
+		return diffGitChanges(projectRoot, false, null, null);
+	}
+
+	/**
+	 * As {@link #diffUncommitted(Path)} with a pre-validated repo-level snapshot
+	 * ({@link RepoChangeListings#acquire}): when it was validated against the same
+	 * git root, its cached listings are reused and no state validation spawn is
+	 * spent. A {@code null} or foreign-root snapshot self-validates.
+	 */
+	public static List<FileDiff> diffUncommitted(Path projectRoot, RepoChangeListings.Snapshot shared)
+			throws IOException {
+		return diffGitChanges(projectRoot, false, null, shared);
 	}
 
 	/**
@@ -105,7 +116,7 @@ public class StructuralDiff {
 	 * ref.
 	 */
 	public static List<FileDiff> diffUncommitted(Path projectRoot, String gitRef) throws IOException {
-		return diffGitChanges(projectRoot, false, gitRef);
+		return diffGitChanges(projectRoot, false, gitRef, null);
 	}
 
 	/**
@@ -113,7 +124,16 @@ public class StructuralDiff {
 	 * uncommitted.
 	 */
 	public static List<FileDiff> diffSinceLastCommit(Path projectRoot) throws IOException {
-		return diffGitChanges(projectRoot, true, null);
+		return diffGitChanges(projectRoot, true, null, null);
+	}
+
+	/**
+	 * As {@link #diffSinceLastCommit(Path)} with a shared pre-validated snapshot
+	 * (see {@link #diffUncommitted(Path, RepoChangeListings.Snapshot)}).
+	 */
+	public static List<FileDiff> diffSinceLastCommit(Path projectRoot, RepoChangeListings.Snapshot shared)
+			throws IOException {
+		return diffGitChanges(projectRoot, true, null, shared);
 	}
 
 	/**
@@ -121,7 +141,70 @@ public class StructuralDiff {
 	 * HEAD~1..HEAD changes as well as uncommitted ones. If {@code explicitRef} is
 	 * non-null, it overrides the auto-detected baseline ref.
 	 */
-	private static List<FileDiff> diffGitChanges(Path projectRoot, boolean includeLastCommit, String explicitRef)
+	private static List<FileDiff> diffGitChanges(Path projectRoot, boolean includeLastCommit, String explicitRef,
+			RepoChangeListings.Snapshot shared) throws IOException {
+		if (explicitRef == null) {
+			try {
+				return diffGitChangesCached(projectRoot, includeLastCommit, shared);
+			} catch (IOException | RuntimeException e) {
+				// Fail-safe: any cache/validation failure falls back to the direct git path.
+			}
+		}
+		return diffGitChangesDirect(projectRoot, includeLastCommit, explicitRef);
+	}
+
+	/**
+	 * Cached variant of {@link #diffGitChanges}: resolves the git root once per
+	 * process (per project root), validates the repository state with a single
+	 * {@code git status --porcelain=v2} fingerprint, and reuses repo-level change
+	 * listings across modules/builds while the fingerprint matches. The per-module
+	 * work (path filtering, worktree reads, parsing) is identical to the direct
+	 * path, so results are byte-identical.
+	 */
+	private static List<FileDiff> diffGitChangesCached(Path projectRoot, boolean includeLastCommit,
+			RepoChangeListings.Snapshot shared) throws IOException {
+		Path absProjectRoot = projectRoot.toAbsolutePath().normalize();
+		Path gitRoot = RepoChangeListings.resolveGitRoot(projectRoot);
+		RepoChangeListings.Snapshot snapshot = shared != null && shared.gitRoot().equals(gitRoot)
+				? shared
+				: RepoChangeListings.acquire(gitRoot);
+		if (snapshot == null) {
+			throw new IOException("git state could not be validated for " + gitRoot);
+		}
+		Set<String> changedFiles = new TreeSet<>();
+		changedFiles.addAll(snapshot.uncommittedPaths());
+		RepoChangeListings.LastCommitData lastCommit = includeLastCommit ? snapshot.lastCommit() : null;
+		boolean hasHeadParent = lastCommit != null && lastCommit.hasHeadParent;
+		if (hasHeadParent) {
+			changedFiles.addAll(lastCommit.diffPaths);
+		}
+
+		String gitRef = hasHeadParent ? "HEAD~1" : "HEAD";
+		List<String> relevantPaths = new ArrayList<>();
+		for (String relPath : changedFiles) {
+			if (!relPath.endsWith(".java") && !relPath.endsWith(".kt")) {
+				continue;
+			}
+			Path absFile = gitRoot.resolve(relPath).normalize();
+			if (!absFile.startsWith(absProjectRoot)) {
+				continue;
+			}
+			relevantPaths.add(relPath);
+		}
+
+		Map<String, String> oldSources = snapshot.oldSources(gitRef, relevantPaths);
+		return buildDiffs(gitRoot, absProjectRoot, relevantPaths, oldSources);
+	}
+
+	/**
+	 * Test seam: runs the DIRECT (uncached) git diff path, bypassing the repo-level
+	 * listing cache — lets tests assert cached/direct equivalence.
+	 */
+	static List<FileDiff> diffGitChangesDirectForTest(Path projectRoot, boolean includeLastCommit) throws IOException {
+		return diffGitChangesDirect(projectRoot, includeLastCommit, null);
+	}
+
+	private static List<FileDiff> diffGitChangesDirect(Path projectRoot, boolean includeLastCommit, String explicitRef)
 			throws IOException {
 		Path absProjectRoot = projectRoot.toAbsolutePath().normalize();
 		Path gitRoot = resolveGitRoot(projectRoot);
@@ -152,7 +235,15 @@ public class StructuralDiff {
 		}
 
 		Map<String, String> oldSources = readFilesFromGit(gitRoot, gitRef, relevantPaths);
+		return buildDiffs(gitRoot, absProjectRoot, relevantPaths, oldSources);
+	}
 
+	/**
+	 * Shared tail of both diff paths: read worktree sources and parse (in-memory,
+	 * byte-identical).
+	 */
+	private static List<FileDiff> buildDiffs(Path gitRoot, Path absProjectRoot, List<String> relevantPaths,
+			Map<String, String> oldSources) throws IOException {
 		// Read new sources in bulk (I/O) before parsing
 		record FilePair(Path absFile, String oldSource, String newSource) {
 		}
@@ -584,6 +675,21 @@ public class StructuralDiff {
 		}
 
 		// Phase 2: fetch blobs by OID via git cat-file --batch.
+		contents.putAll(fetchBlobContents(projectRoot, oidToRelPath));
+		return contents;
+	}
+
+	/**
+	 * Fetches blob contents for the given oid → path mapping via one
+	 * {@code git cat-file --batch} invocation. Package-private so the repo-level
+	 * listing cache can reuse the exact same fetch semantics.
+	 */
+	static Map<String, String> fetchBlobContents(Path projectRoot, Map<String, String> oidToRelPath)
+			throws IOException {
+		Map<String, String> contents = new LinkedHashMap<>();
+		if (oidToRelPath.isEmpty()) {
+			return contents;
+		}
 		ProcessBuilder pb = new ProcessBuilder("git", "cat-file", "--batch");
 		pb.directory(projectRoot.toFile());
 		pb.redirectErrorStream(true);

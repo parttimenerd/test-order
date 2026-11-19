@@ -40,7 +40,7 @@ Full speed bonus at $d_t \le \tilde{d}/8$; full penalty at $d_t \ge 8\tilde{d}$;
 
 | Signal | Default | Config key | Notes |
 |---|:---:|---|---|
-| **New test** | **15** | `testorder.score.newTest` | Any test not yet in the dependency index |
+| **New test** | **15** | `testorder.score.newTest` | Any test not yet in the dependency index — **bonus applies only while the index is cold (empty)**. Once any index exists, absence from the index means *unknown*, not *new*: the test is still selected (and never cache-skipped), but it no longer outranks change-affected tests |
 | **Changed test** | **9** | `testorder.score.changedTest` | Test source file itself was modified |
 | **Failure recency** | **5** max | `testorder.score.maxFailure` | Exponential decay — see [below](#failure-scoring-exponential-decay) |
 | **Dep overlap** | **5** max | `testorder.score.depOverlap` | $\sqrt{}$-normalised count of changed classes the test exercises |

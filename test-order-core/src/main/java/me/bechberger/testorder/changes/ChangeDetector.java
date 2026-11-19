@@ -45,7 +45,19 @@ public class ChangeDetector {
 	 */
 	public static Set<String> detect(Mode mode, Path projectRoot, Path sourceRoot, Path hashFile,
 			String explicitClasses) throws IOException {
-		return doDetect(mode, projectRoot, sourceRoot, hashFile, explicitClasses, false);
+		return detect(mode, projectRoot, sourceRoot, hashFile, explicitClasses, null);
+	}
+
+	/**
+	 * As {@link #detect(Mode, Path, Path, Path, String)} with a shared repo-level
+	 * git listing snapshot ({@link RepoChangeListings}): git-based modes filter the
+	 * snapshot's cached listings in-memory instead of spawning scoped git commands.
+	 * SINCE_LAST_RUN and EXPLICIT ignore the snapshot; a {@code null} or
+	 * foreign-root snapshot falls back to the direct git behavior.
+	 */
+	public static Set<String> detect(Mode mode, Path projectRoot, Path sourceRoot, Path hashFile,
+			String explicitClasses, RepoChangeListings.Snapshot shared) throws IOException {
+		return doDetect(mode, projectRoot, sourceRoot, hashFile, explicitClasses, false, shared);
 	}
 
 	/**
@@ -54,11 +66,21 @@ public class ChangeDetector {
 	 */
 	public static Set<String> detectReadOnly(Mode mode, Path projectRoot, Path sourceRoot, Path hashFile,
 			String explicitClasses) throws IOException {
-		return doDetect(mode, projectRoot, sourceRoot, hashFile, explicitClasses, true);
+		return doDetect(mode, projectRoot, sourceRoot, hashFile, explicitClasses, true, null);
+	}
+
+	/**
+	 * As {@link #detectReadOnly(Mode, Path, Path, Path, String)} with a shared
+	 * repo-level git listing snapshot (see
+	 * {@link #detect(Mode, Path, Path, Path, String, RepoChangeListings.Snapshot)}).
+	 */
+	public static Set<String> detectReadOnly(Mode mode, Path projectRoot, Path sourceRoot, Path hashFile,
+			String explicitClasses, RepoChangeListings.Snapshot shared) throws IOException {
+		return doDetect(mode, projectRoot, sourceRoot, hashFile, explicitClasses, true, shared);
 	}
 
 	private static Set<String> doDetect(Mode mode, Path projectRoot, Path sourceRoot, Path hashFile,
-			String explicitClasses, boolean readOnly) throws IOException {
+			String explicitClasses, boolean readOnly, RepoChangeListings.Snapshot shared) throws IOException {
 		Path absoluteSourceRoot = projectRoot.resolve(sourceRoot);
 		try {
 			return switch (mode) {
@@ -67,9 +89,10 @@ public class ChangeDetector {
 					Path gitRoot = findGitRoot(projectRoot);
 					String gitPrefix = toGitPrefix(projectRoot, sourceRoot, gitRoot);
 					yield switch (mode) {
-						case SINCE_LAST_COMMIT -> mergeUncommitted(
-								GitChangeDetector.changedSinceLastCommit(gitRoot, gitPrefix), gitRoot, gitPrefix);
-						case UNCOMMITTED -> GitChangeDetector.uncommittedChanges(gitRoot, gitPrefix);
+						case SINCE_LAST_COMMIT ->
+							mergeUncommitted(GitChangeDetector.changedSinceLastCommit(gitRoot, gitPrefix, shared),
+									gitRoot, gitPrefix, shared);
+						case UNCOMMITTED -> GitChangeDetector.uncommittedChanges(gitRoot, gitPrefix, shared);
 						default -> throw new AssertionError();
 					};
 				}
@@ -93,9 +116,10 @@ public class ChangeDetector {
 	}
 
 	/** Best-effort merge of uncommitted changes on top of a base result. */
-	private static Set<String> mergeUncommitted(Set<String> base, Path gitRoot, String gitPrefix) {
+	private static Set<String> mergeUncommitted(Set<String> base, Path gitRoot, String gitPrefix,
+			RepoChangeListings.Snapshot shared) {
 		try {
-			Set<String> uncommitted = GitChangeDetector.uncommittedChanges(gitRoot, gitPrefix);
+			Set<String> uncommitted = GitChangeDetector.uncommittedChanges(gitRoot, gitPrefix, shared);
 			if (!uncommitted.isEmpty()) {
 				Set<String> merged = new TreeSet<>(base);
 				merged.addAll(uncommitted);
@@ -129,9 +153,18 @@ public class ChangeDetector {
 		} else {
 			absoluteSource = projectRoot.resolve(sourceRoot);
 		}
+		// Canonicalize (link-following) so relativize against the git root works on
+		// symlinked roots (e.g. macOS /var vs rev-parse's /private/var) — otherwise
+		// the prefix becomes a ../..-relative path git rejects as outside the repo.
+		Path absoluteSourceCanonical;
+		try {
+			absoluteSourceCanonical = absoluteSource.toAbsolutePath().toRealPath();
+		} catch (IOException e) {
+			absoluteSourceCanonical = absoluteSource.toAbsolutePath().normalize();
+		}
 		Path relative;
 		try {
-			relative = gitRoot.relativize(absoluteSource.toAbsolutePath().normalize());
+			relative = gitRoot.relativize(absoluteSourceCanonical);
 		} catch (IllegalArgumentException e) {
 			// Fallback: if git root and source are on different roots (e.g. different
 			// Windows drives)

@@ -93,6 +93,18 @@ class DepsAndScoringTest {
 
 	@Test
 	void testScorerNewTestBonus() {
+		// Cold index (nothing learned yet): every test is equally unknown and the
+		// newTest bonus applies.
+		TestScorer coldScorer = new TestScorer(TestOrderState.ScoringWeights.DEFAULT, new DependencyMap(),
+				stateWithDurations(Map.of()), Set.of(), Set.of(), java.util.Set.of());
+		var coldResult = coldScorer.score("com.Unknown");
+		assertTrue(coldResult.isNew());
+		assertTrue(coldResult.score() >= TestOrderState.ScoringWeights.DEFAULT.newTest(),
+				"on a cold index the newTest bonus must apply");
+
+		// Partial index (some tests learned): an unindexed test is still flagged
+		// isNew, but must NOT receive the newTest score bonus — it would outrank
+		// change-affected tests and bury them at the back of the queue.
 		DependencyMap depMap = buildDepMap(Map.of("com.Known", Set.of("app.X")));
 		TestOrderState state = stateWithDurations(Map.of("com.Known", 100L));
 
@@ -102,7 +114,8 @@ class DepsAndScoringTest {
 		// com.Unknown is not in depMap → isNew
 		var result = scorer.score("com.Unknown");
 		assertTrue(result.isNew());
-		assertTrue(result.score() >= TestOrderState.ScoringWeights.DEFAULT.newTest());
+		assertTrue(result.score() < TestOrderState.ScoringWeights.DEFAULT.newTest(),
+				"on a non-cold index an unindexed test must not receive the newTest bonus");
 	}
 
 	@Test
@@ -245,8 +258,10 @@ class DepsAndScoringTest {
 		assertTrue(result.isNew());
 		assertTrue(result.isChanged());
 		assertTrue(result.failScore() > 0);
-		// new(10) + changed(8) + failure(min(ceil(1.0), 5) = 1) = 19
-		assertEquals(19, result.score());
+		// changed(8) + failure(min(ceil(1.0), 5) = 1) = 9. The newTest bonus does NOT
+		// apply: the index is non-cold, so the unindexed test is known-unknown, not
+		// new (partial-index scoring contract).
+		assertEquals(9, result.score());
 	}
 
 	@Test
@@ -2182,7 +2197,8 @@ class DepsAndScoringTest {
 		// --- NewFreshTest: not in depMap → new ---
 		var fresh = scorer.score("com.test.NewFreshTest");
 		assertTrue(fresh.isNew(), "NewFreshTest is not in depMap");
-		assertEquals(10, fresh.score(), "only the newTest bonus applies");
+		assertEquals(0, fresh.score(),
+				"unindexed on a non-cold index: known-unknown, no newTest bonus (partial-index contract)");
 
 		// ── Global ordering invariant ───────────────────────────────
 		// HeroTest (all bonuses) > SpeedyTest > SlowTest > NewFreshTest >

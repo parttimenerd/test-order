@@ -3,6 +3,7 @@ package me.bechberger.testorder.gradle;
 import org.gradle.api.Project;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
+import org.gradle.api.invocation.Gradle;
 import org.gradle.api.provider.Property;
 
 /**
@@ -291,6 +292,17 @@ public abstract class TestOrderExtension {
     /** Minimum number of exercising tests for a class to be "well-tested". */
     public abstract Property<Integer> getCoverageThreshold();
 
+    /**
+     * Coverage-closure enforcement for the selection tasks (auto / testOrderAffected):
+     * when true, the build fails when the selected test subset does not exercise every
+     * changed element (class or member); when false (default), uncovered changed
+     * elements only produce a WARN. Maps to the {@code testorder.coverage.enforce}
+     * config key (a {@code -Dtestorder.coverage.enforce=} system property or
+     * {@code -Ptestorder.coverage.enforce=} Gradle property overrides this DSL value,
+     * same precedence as the other boolean properties).
+     */
+    public abstract Property<Boolean> getTestOrderCoverageEnforce();
+
     /** Output directory for coverage reports. */
     public abstract DirectoryProperty getCoverageOutputDir();
 
@@ -307,6 +319,24 @@ public abstract class TestOrderExtension {
         // level (like Maven's ReactorContext). This ensures a single shared index
         // across all subprojects without requiring manual configuration.
         var rootDir = project.getRootProject().getLayout().getProjectDirectory();
+        // Included build (composite participant or buildSrc): the PARENT build is where
+        // `mode=learn` runs write the index and where the composite's shared test-order
+        // state lives. Resolve to the parent build's root so order mode inside an
+        // included build sees the composite's index instead of silently degrading to
+        // skip mode ("Index file ... not found — skipping order mode"). Conventions
+        // only — an explicitly set indexFile/stateFile still wins. If cross-build
+        // access is refused (e.g. configuration-cache restrictions), fall back to
+        // this build's own root.
+        Gradle parentBuild = project.getGradle().getParent();
+        if (parentBuild != null) {
+            try {
+                rootDir = parentBuild.getRootProject().getLayout().getProjectDirectory();
+            } catch (RuntimeException e) {
+                project.getLogger().debug(
+                        "[test-order] Could not resolve parent build root for included-build "
+                                + "index sharing: {}", e.getMessage());
+            }
+        }
         var localDir = rootDir.dir(".test-order");
 
         getIndexFile().convention(localDir.file("test-dependencies.lz4"));
@@ -366,6 +396,7 @@ public abstract class TestOrderExtension {
         getDumpOutputFile().convention("");
         getCoverageThreshold().convention(2);
         getCoverageOutputDir().convention(project.getLayout().getBuildDirectory().dir("coverage-reports"));
+        getTestOrderCoverageEnforce().convention(false);
         // Score weight conventions intentionally omitted — when not explicitly configured,
         // PriorityClassOrderer uses weights from the state file (possibly optimizer-tuned)
         // or its own built-in defaults (newTest=100, changedTest=80, maxFailure=60, etc.).

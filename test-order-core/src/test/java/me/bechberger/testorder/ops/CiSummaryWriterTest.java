@@ -392,4 +392,72 @@ class CiSummaryWriterTest {
 		assertTrue(md.contains("Retried (flaky)"));
 		assertTrue(md.contains("Quarantined"));
 	}
+
+	// ── Coverage-closure line (T3b) ───────────────────────────────────────
+
+	private CiSummaryWriter.SummaryInput inputWithCoverage(int total, List<String> selected, List<String> deferred,
+			Set<String> changedClasses, Set<String> changedTests, String mode, int tier, int elementsTotal,
+			int elementsCovered, int elementsUncovered) {
+		return new CiSummaryWriter.SummaryInput(total, selected, deferred, changedClasses, changedTests, List.of(),
+				mode, tier, buildDir, elementsTotal, elementsCovered, elementsUncovered);
+	}
+
+	@Test
+	void buildMd_coverageLinePresentWhenCoverageStatusProvided() {
+		CiSummaryWriter.SummaryInput in = inputWithCoverage(10, List.of("A", "B"), List.of(), Set.of("Foo"), Set.of(),
+				"affected", 0, 5, 3, 2);
+		String md = CiSummaryWriter.buildMd(in);
+		assertTrue(md.contains("Changed elements covered"), "coverage row present when status provided");
+		assertTrue(md.contains("3/5"), "shows covered/total, got: " + md);
+		assertTrue(md.contains("(+2 uncovered)"), "shows uncovered count");
+	}
+
+	@Test
+	void buildMd_coverageLineAbsentWhenCoverageStatusNotProvided() {
+		CiSummaryWriter.SummaryInput in = input(10, List.of("A"), List.of(), Set.of("Foo"), Set.of(), List.of(),
+				"affected", 0);
+		String md = CiSummaryWriter.buildMd(in);
+		assertFalse(md.contains("Changed elements covered"), "coverage row omitted without coverage status");
+	}
+
+	@Test
+	void buildMd_coverageLineAllCovered_hasNoUncoveredSuffix() {
+		CiSummaryWriter.SummaryInput in = inputWithCoverage(10, List.of("A"), List.of(), Set.of(), Set.of(), "affected",
+				0, 4, 4, 0);
+		String md = CiSummaryWriter.buildMd(in);
+		assertTrue(md.contains("4/4"), "shows covered/total");
+		assertFalse(md.contains("uncovered"), "no uncovered suffix when everything is covered");
+	}
+
+	@Test
+	void writeSummary_mdFileContainsCoverageLineWhenProvided() throws IOException {
+		System.setProperty("testorder.ci.summary", "true");
+		CiSummaryWriter.writeSummary(
+				inputWithCoverage(10, List.of("A"), List.of(), Set.of("Foo"), Set.of(), "affected", 0, 5, 3, 2),
+				PluginLog.NOOP);
+		String md = Files.readString(buildDir.resolve("test-order-summary.md"));
+		assertTrue(md.contains("Changed elements covered"));
+		assertTrue(md.contains("3/5 (+2 uncovered)"));
+	}
+
+	@Test
+	void writeSummary_jsonContainsCoverageFieldsWhenProvided() throws IOException {
+		System.setProperty("testorder.ci.summary", "true");
+		CiSummaryWriter.writeSummary(
+				inputWithCoverage(10, List.of("A"), List.of("B"), Set.of("Foo"), Set.of(), "affected", 0, 5, 3, 2),
+				PluginLog.NOOP);
+		String json = Files.readString(buildDir.resolve("test-order-summary.json"));
+		assertTrue(json.contains("\"changedElementsTotal\": 5"), "JSON has changedElementsTotal");
+		assertTrue(json.contains("\"changedElementsCovered\": 3"), "JSON has changedElementsCovered");
+		assertTrue(json.contains("\"changedElementsUncovered\": 2"), "JSON has changedElementsUncovered");
+	}
+
+	@Test
+	void writeSummary_jsonOmitsCoverageFieldsWhenNotProvided() throws IOException {
+		System.setProperty("testorder.ci.summary", "true");
+		CiSummaryWriter.writeSummary(input(5, List.of("T1"), List.of(), Set.of(), Set.of(), List.of(), "auto", 0),
+				PluginLog.NOOP);
+		String json = Files.readString(buildDir.resolve("test-order-summary.json"));
+		assertFalse(json.contains("changedElements"), "coverage fields omitted without coverage status");
+	}
 }

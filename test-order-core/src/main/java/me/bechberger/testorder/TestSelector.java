@@ -12,6 +12,9 @@ import java.util.*;
  * <li>all <em>new</em> test classes (not in the dependency index)</li>
  * <li>the top-<em>n</em> test classes by score (changed, failures, deps,
  * …)</li>
+ * <li>the coverage-closure <em>cover core</em>: a minimal test set exercising
+ * every changed element, force-included before the top-<em>n</em> cap (when a
+ * coverage view is provided)</li>
  * <li><em>m</em> random <em>fast</em> test classes chosen greedily by coverage
  * diversity (Jaccard distance against already-covered dependencies)</li>
  * </ol>
@@ -66,10 +69,16 @@ public class TestSelector {
 	}
 
 	/** Result of the selection algorithm. */
-	public record Selection(List<String> selected, List<String> remaining, int randomFastCount, List<String> cached) {
-		/** Backward-compat constructor: no cached entries. */
+	public record Selection(List<String> selected, List<String> remaining, int randomFastCount, List<String> cached,
+			CoverageClosure.Status coverageStatus) {
+		/** Backward-compat constructor: no cached entries, no coverage status. */
 		public Selection(List<String> selected, List<String> remaining, int randomFastCount) {
-			this(selected, remaining, randomFastCount, List.of());
+			this(selected, remaining, randomFastCount, List.of(), null);
+		}
+
+		/** Backward-compat constructor: no coverage status. */
+		public Selection(List<String> selected, List<String> remaining, int randomFastCount, List<String> cached) {
+			this(selected, remaining, randomFastCount, cached, null);
 		}
 	}
 
@@ -86,6 +95,12 @@ public class TestSelector {
 	private final Set<String> alwaysRunClasses;
 	private final Map<String, Double> changeComplexity;
 	private final CacheConfig cacheConfig;
+	/**
+	 * Coverage-closure view (changed-element universe + per-test coverage sets).
+	 * {@code null} disables the closure (legacy behavior for callers that don't
+	 * thread change-universe data, e.g. show/diagnostic goals).
+	 */
+	private final CoverageClosure coverageClosure;
 
 	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config) {
@@ -110,6 +125,14 @@ public class TestSelector {
 	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
 			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
 			Set<String> alwaysRunClasses, Map<String, Double> changeComplexity, CacheConfig cacheConfig) {
+		this(depMap, state, changedClasses, changedTestClasses, weights, config, alwaysRunClasses, changeComplexity,
+				cacheConfig, null);
+	}
+
+	public TestSelector(DependencyMap depMap, TestOrderState state, Set<String> changedClasses,
+			Set<String> changedTestClasses, TestOrderState.ScoringWeights weights, Config config,
+			Set<String> alwaysRunClasses, Map<String, Double> changeComplexity, CacheConfig cacheConfig,
+			CoverageClosure coverageClosure) {
 		this.depMap = depMap;
 		this.state = state;
 		this.changedClasses = changedClasses;
@@ -119,11 +142,21 @@ public class TestSelector {
 		this.alwaysRunClasses = alwaysRunClasses != null ? alwaysRunClasses : Set.of();
 		this.changeComplexity = changeComplexity != null ? changeComplexity : Map.of();
 		this.cacheConfig = cacheConfig != null ? cacheConfig : CacheConfig.DISABLED;
+		this.coverageClosure = coverageClosure;
 	}
 
 	/**
-	 * Runs the full selection algorithm: score → sort → pick new → pick top-N →
-	 * pick diverse fast → (optionally) apply skip-if-unchanged cache.
+	 * Populated during {@link #select()}: the force-included cover core (Phase
+	 * 1.5).
+	 */
+	private Set<String> coverCoreSelected = Set.of();
+	/** Sole coverers of universe elements — exempt from cache-skip. */
+	private Set<String> soleCovererTests = Set.of();
+
+	/**
+	 * Runs the full selection algorithm: score → sort → pick new → force-include
+	 * the coverage-closure cover core → pick top-N → pick diverse fast →
+	 * (optionally) apply skip-if-unchanged cache.
 	 */
 	public Selection select() {
 		List<ScoredTest> scored = scoreAndSort();
@@ -131,6 +164,10 @@ public class TestSelector {
 		Set<String> selected = new LinkedHashSet<>();
 		selectAlwaysRun(scored, selected);
 		selectNewTests(scored, selected);
+		// Phase 1.5 (coverage closure) BEFORE the topN cap: cover-core tests are
+		// additive and must not consume topN budget — the cap applies to the
+		// affected-but-uncapped remainder (see selectTopN budget accounting).
+		selectCoverCore(selected);
 		selectTopN(scored, selected);
 		int beforeRandom = selected.size();
 		selectDiverseFast(scored, selected);
@@ -143,6 +180,10 @@ public class TestSelector {
 		}
 
 		List<String> cached = applyCacheSkip(scored, selected, remaining);
+
+		// Coverage status of the FINAL selection (post cap, post cache-skip) —
+		// computed before outer-class collapse so nested depMap keys resolve.
+		CoverageClosure.Status coverageStatus = coverageClosure != null ? coverageClosure.status(selected) : null;
 
 		// BUG-170: @Nested inner test classes are indexed as separate Outer$Nested
 		// FQCNs, but Surefire runs the OUTER class (nested tests execute as its
@@ -162,7 +203,7 @@ public class TestSelector {
 			}
 		}
 		List<String> cachedOuter = collapseToOuter(cached);
-		return new Selection(selectedOuter, remainingOuter, randomActual, cachedOuter);
+		return new Selection(selectedOuter, remainingOuter, randomActual, cachedOuter, coverageStatus);
 	}
 
 	/**
@@ -221,6 +262,25 @@ public class TestSelector {
 	}
 
 	/**
+	 * Phase 1.5 (coverage closure): force-include the minimal cover core BEFORE the
+	 * topN cap is applied. Cover-core tests are additive — they must never be
+	 * dropped by the cap or by cache-skip (a sole coverer of a changed element
+	 * would otherwise vanish from the run). If no candidate test covers some
+	 * universe element, that element stays uncovered and is reported via the
+	 * coverage status; the closure never fabricates a coverer.
+	 */
+	private void selectCoverCore(Set<String> selected) {
+		if (coverageClosure == null || coverageClosure.isEmpty()) {
+			return;
+		}
+		coverCoreSelected = new LinkedHashSet<>(coverageClosure.coverCore());
+		for (String t : coverCoreSelected) {
+			selected.add(t);
+		}
+		soleCovererTests = coverageClosure.soleCovererTests();
+	}
+
+	/**
 	 * Phase 2: include change-affected tests, capped at topN when topN >= 0.
 	 * <p>
 	 * Semantics:
@@ -256,8 +316,11 @@ public class TestSelector {
 			// Building selectedOuter from the full selected set (including alwaysRun) still
 			// correctly deduplicates outer classes shared between alwaysRun and new tests.
 			Set<String> selectedOuter = outerSet(selected);
-			int counted = outerSet(selected.stream().filter(t -> !alwaysRunClasses.contains(t))
-					.collect(java.util.stream.Collectors.toSet())).size();
+			// @AlwaysRun and cover-core tests are additive (never cap-counted)
+			int counted = outerSet(
+					selected.stream().filter(t -> !alwaysRunClasses.contains(t) && !coverCoreSelected.contains(t))
+							.collect(java.util.stream.Collectors.toSet()))
+					.size();
 			for (ScoredTest s : scored) {
 				if (counted >= cap)
 					break;
@@ -285,8 +348,9 @@ public class TestSelector {
 		// Count tests already selected by Phase 1 (new tests) toward the topN budget
 		// so that topN acts as a hard cap on total selected tests. BUG-170: count by
 		// outer class so nested siblings collapse to one budget unit.
-		Set<String> selectedOuter = outerSet(selected.stream().filter(t -> !alwaysRunClasses.contains(t))
-				.collect(java.util.stream.Collectors.toSet()));
+		Set<String> selectedOuter = outerSet(
+				selected.stream().filter(t -> !alwaysRunClasses.contains(t) && !coverCoreSelected.contains(t))
+						.collect(java.util.stream.Collectors.toSet()));
 		int counted = selectedOuter.size();
 		for (ScoredTest s : scored) {
 			if (counted >= config.topN())
@@ -389,6 +453,11 @@ public class TestSelector {
 		List<ScoredTest> eligible = new ArrayList<>();
 		for (ScoredTest s : scored) {
 			if (alwaysRunClasses.contains(s.name()))
+				continue;
+			// hard invariant: cover-core tests (and a fortiori sole coverers of a
+			// changed element) must never be cache-skipped — dropping one could leave
+			// a changed element unexercised by the final selection
+			if (coverCoreSelected.contains(s.name()) || soleCovererTests.contains(s.name()))
 				continue;
 			if (affectedByDeps.contains(s.name()) || changedTestClasses.contains(s.name()))
 				continue;

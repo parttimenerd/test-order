@@ -179,6 +179,13 @@ public class TestScorer {
 	 * explain()).
 	 */
 	private final Map<String, Set<String>> cachedOverlapClasses;
+	/**
+	 * Per-selection overlap-join memo shared with {@link CoverageClosure}, picked
+	 * up from the thread-confined {@link CoverageClosure.OverlapIndex#current()}
+	 * installed by the selection orchestration. {@code null} outside a selection
+	 * run (show/diagnostic paths) — those keep the direct computation.
+	 */
+	private final CoverageClosure.OverlapIndex overlapIndex;
 
 	/**
 	 * Builder for {@link TestScorer} to avoid constructor overload ambiguity.
@@ -299,6 +306,7 @@ public class TestScorer {
 		this.medianDuration = computeMedianDuration(state, testClassNames);
 		this.cachedOverlapCounts = new HashMap<>();
 		this.cachedOverlapClasses = new HashMap<>();
+		this.overlapIndex = CoverageClosure.OverlapIndex.current();
 
 		// Build effective changed set: production classes + test utility classes.
 		// This ensures that tests depending on changed test helpers get a depOverlap
@@ -347,10 +355,19 @@ public class TestScorer {
 		// Build coverage map only for affected tests
 		Map<String, Set<String>> coverage = new LinkedHashMap<>();
 		for (String test : affectedTests) {
-			Set<String> deps = depMap.get(test);
-			Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(test) : null;
-			Set<String> covered = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
-					effectiveChangedForOverlap);
+			Set<String> covered;
+			if (overlapIndex != null) {
+				// shared per-selection join: the index memoizes the raw overlap against
+				// the union match set once per test; filtering with our match set
+				// (changed production ∪ changed test classes) yields exactly what the
+				// direct computeOverlapClasses call below would return.
+				covered = overlapIndex.overlapFor(test, effectiveChangedForOverlap);
+			} else {
+				Set<String> deps = depMap.get(test);
+				Set<String> memberDeps = depMap.hasMemberDeps() ? depMap.getMemberDeps(test) : null;
+				covered = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
+						effectiveChangedForOverlap);
+			}
 			// cache both overlap count and classes to avoid re-calling
 			// computeOverlapClasses in score() and explain()
 			cachedOverlapCounts.put(test, covered.size());
@@ -389,7 +406,9 @@ public class TestScorer {
 	 */
 	private OverlapData resolveOverlap(String testClassName, Set<String> deps, Set<String> memberDeps) {
 		Set<String> overlapClasses;
-		if (!setCoverBonuses.isEmpty() || cachedOverlapClasses.containsKey(testClassName)) {
+		if (overlapIndex != null) {
+			overlapClasses = overlapIndex.overlapFor(testClassName, effectiveChangedForOverlap);
+		} else if (!setCoverBonuses.isEmpty() || cachedOverlapClasses.containsKey(testClassName)) {
 			overlapClasses = cachedOverlapClasses.getOrDefault(testClassName, null);
 			if (overlapClasses == null) {
 				overlapClasses = StructuralChangeAnalyzer.computeOverlapClasses(deps, memberDeps, changedMembers,
@@ -521,7 +540,15 @@ public class TestScorer {
 		boolean isNew = !depMap.testClasses().contains(testClassName)
 				&& (topLevel.equals(testClassName) || !depMap.testClasses().contains(topLevel))
 				&& !isKnownContainer(testClassName, depMap) && !isKnownContainer(topLevel, depMap);
-		if (isNew) {
+		// The newTest score bonus applies only on a COLD index (nothing learned yet,
+		// every test is equally unknown). Once ANY index exists, "absent from index"
+		// means "unknown", not "new": on an incompletely-learned repo (e.g. the learn
+		// run itself failed partway), awarding the full newTest bonus to every
+		// unlearned test outranks the change-overlap bonus and buries the genuinely
+		// change-affected test at the back of the queue. The isNew FLAG is unchanged
+		// — unindexed tests are still selected (TestSelector phase 1 / changedAndNew)
+		// and never cache-skipped; they just no longer outrank affected tests.
+		if (isNew && depMap.testClasses().isEmpty()) {
 			score += weights.newTest();
 			LOG.fine(() -> "New test class (not in dependency map): " + testClassName + " — awarded newTest bonus of "
 					+ weights.newTest());
@@ -650,11 +677,14 @@ public class TestScorer {
 		totalScore += failurePts;
 
 		// New test — same logic as score(): inner classes and pure container classes
-		// whose nested classes are known are not considered new.
+		// whose nested classes are known are not considered new. The score bonus is
+		// gated on a cold index — see the comment in score(): once any index exists,
+		// absence from the index means "unknown", not "new", and must not outrank
+		// change-affected tests.
 		boolean isNew = !depMap.testClasses().contains(testClassName)
 				&& (topLevel.equals(testClassName) || !depMap.testClasses().contains(topLevel))
 				&& !isKnownContainer(testClassName, depMap) && !isKnownContainer(topLevel, depMap);
-		int newTestPts = isNew ? weights.newTest() : 0;
+		int newTestPts = isNew && depMap.testClasses().isEmpty() ? weights.newTest() : 0;
 		totalScore += newTestPts;
 
 		// Speed

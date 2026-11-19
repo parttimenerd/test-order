@@ -246,6 +246,18 @@ Configure via `-Dtestorder.changeMode=<mode>`:
 </details>
 
 <details>
+<summary><strong>Affected-test selection (coverage closure)</strong></summary>
+
+`mvn test-order:affected test` / `./gradlew testOrderAffected` (and the tier-1 / `auto` selection paths) guarantee that the selected subset exercises every changed class/method that at least one indexed test can exercise:
+
+- A greedy **cover core** — the minimal test set covering all changed elements per the dependency index — is force-included **before** the topN cap; the cap applies only to the remainder. Tests that are the sole coverer of a changed element are exempt from skip-if-unchanged caching.
+- **`testorder.coverage.enforce`** (default `false`): with `true`, the build fails when a changed element has no selected covering test. With `false`, uncovered elements only produce a WARN plus the `Changed elements covered: X/Y` summary line. Gradle: `testOrderCoverageEnforce` DSL property (a `-Dtestorder.coverage.enforce=` system property or `-Ptestorder.coverage.enforce=` Gradle property overrides it). In `auto` mode with deferred tests running (`testorder.auto.runRemaining=true`, the default), the check reports but never fails — the full suite runs anyway.
+- **Non-source changes** — files under `src/main/resources`/`src/test/resources`, build files (`pom.xml`, `build.gradle(.kts)`, `settings.gradle(.kts)`), i.e. any file under the resource roots regardless of type — are invisible to source-based change detection. When one changes, the module becomes unselectable: **all** of its tests run, a WARN is logged, and (Gradle `testOrderAffected`, with `testorder.ci.summary=true`) the CI summary mode is `affected-nonsource-select-all`. Detection only runs for git-based change modes (`uncommitted` / since-last-commit); in hash-based or explicit change modes, or when git is unavailable, detection is skipped and the change is treated as unchanged (pre-existing behavior).
+- **Fail-safe**: when static analysis degrades, all tests of the module run (select-all); a cold start (no index yet) behaves as before — learn fallback / all tests. If the index has no `MEMBER` instrumentation data, the coverage closure runs at class-level precision and an INFO-level message is logged.
+
+</details>
+
+<details>
 <summary><strong>Framework support</strong></summary>
 
 | Framework | Learn mode | Order mode | Auto-discovery |
@@ -608,6 +620,7 @@ Run `mvn test-order:diagnose` first — it checks everything automatically.
 | Agent attachment warning on Java 21+ | Add `--add-opens` flags to the Surefire `<argLine>` |
 | "Failed to load JUnit Platform" (Gradle) | Snapshot repo added to project `repositories {}` instead of `pluginManagement.repositories {}` | Move it to `pluginManagement.repositories {}` only — see Gradle setup above |
 | Tests skip unexpectedly on first run | No index yet — `affected` and tiered goals fall back to running all tests on cold start |
+| `Coverage closure: X/Y changed elements ... uncovered` warning | Some changed classes aren't exercised by the selected subset — the index may be stale. Run a learn phase (`mvn test -Dtestorder.mode=learn`) or the full suite; set `-Dtestorder.coverage.enforce=true` to fail the build instead of warning (affected / tiered-select; in `auto` mode with deferred tests running it only reports, never fails) |
 
 Nuclear option: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 
@@ -617,6 +630,8 @@ Nuclear option: `rm -rf .test-order && mvn test -Dtestorder.mode=learn`
 <summary><strong>Does test-order skip tests?</strong></summary>
 
 No. By default, all tests still run — they're just **reordered** so the most relevant ones execute first. If a test fails, you see it sooner. If you want to actually select a subset, use `mvn test-order:affected test` (runs only high-priority tests) followed by `mvn test-order:run-remaining test`.
+
+The `affected` subset is coverage-complete: tests exercising changed code are force-included (the coverage-closure cover core) even beyond the topN cap, and a resource or build-file change runs the whole module.
 
 </details>
 

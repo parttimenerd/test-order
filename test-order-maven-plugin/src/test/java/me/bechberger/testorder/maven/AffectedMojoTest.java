@@ -291,4 +291,21 @@ class AffectedMojoTest {
 		assertTrue(ex.getMessage().contains("None of the explicitly specified changed classes"),
 				"Should fail with informative message about non-existent classes, got: " + ex.getMessage());
 	}
+
+	/**
+	 * Every goal that threads the coverage-enforce flag into the PluginContext must
+	 * declare the same boolean parameter. The annotation property string
+	 * ({@code testorder.coverage.enforce}) is source-retained
+	 * (maven-plugin-annotations are consumed at descriptor-generation time), so the
+	 * key itself is verified by the workflow-level enforce tests plus compilation
+	 * of the @Parameter declaration.
+	 */
+	@Test
+	void coverageEnforceParameterDeclaredOnAllGoals() throws Exception {
+		for (Class<?> mojoClass : List.of(AffectedMojo.class, AutoMojo.class, TieredSelectMojo.class)) {
+			Field field = mojoClass.getDeclaredField("coverageEnforce");
+			assertEquals(boolean.class, field.getType(),
+					mojoClass.getSimpleName() + " must declare coverageEnforce as a boolean parameter");
+		}
+	}
 }

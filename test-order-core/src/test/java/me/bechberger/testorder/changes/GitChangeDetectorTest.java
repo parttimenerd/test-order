@@ -1,6 +1,7 @@
 package me.bechberger.testorder.changes;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -181,5 +182,115 @@ class GitChangeDetectorTest {
 		@SuppressWarnings("unchecked")
 		Map<String, String> result = (Map<String, String>) method.invoke(null, tempDir, "HEAD", List.of());
 		assertTrue(result.isEmpty());
+	}
+
+	// ── Snapshot-based overloads (RepoChangeListings wiring) ─────────
+
+	/**
+	 * Fixture: initial commit, then a second commit that modifies, renames and adds
+	 * Java files (plus, when {@code deleteFile} is set, deletes a multi-class
+	 * file), plus uncommitted work on top (modification + untracked file in a
+	 * tracked directory).
+	 */
+	private void commitHistory(boolean deleteFile) throws Exception {
+		git("init");
+		git("config", "user.email", "test@test.com");
+		git("config", "user.name", "Test");
+		Path srcDir = tempDir.resolve("src/main/java/com/example");
+		Files.createDirectories(srcDir);
+		Files.writeString(srcDir.resolve("Multi.java"),
+				"package com.example;\npublic class Multi {}\nclass MultiHelper {}");
+		Files.writeString(srcDir.resolve("Old.java"), "package com.example;\npublic class Old {}");
+		Files.writeString(srcDir.resolve("Foo.java"), "package com.example;\npublic class Foo {}");
+		git("add", ".");
+		git("commit", "-m", "initial");
+
+		Files.writeString(srcDir.resolve("Foo.java"), "package com.example;\npublic class Foo { int x; }");
+		if (deleteFile) {
+			Files.delete(srcDir.resolve("Multi.java"));
+			git("add", "src/main/java/com/example/Multi.java");
+		}
+		git("mv", "src/main/java/com/example/Old.java", "src/main/java/com/example/Renamed.java");
+		Files.writeString(srcDir.resolve("Added.java"), "package com.example;\npublic class Added {}");
+		git("add", ".");
+		git("commit", "-m", "second");
+
+		// uncommitted work on top
+		Files.writeString(srcDir.resolve("Renamed.java"), "package com.example;\npublic class Renamed { int y; }");
+		Files.writeString(srcDir.resolve("Untracked.java"), "package com.example;\npublic class Untracked {}");
+	}
+
+	private void commitRichHistory() throws Exception {
+		commitHistory(true);
+	}
+
+	private void commitHistoryWithoutDeletion() throws Exception {
+		commitHistory(false);
+	}
+
+	@Test
+	void snapshotPathMatchesDirectForAddedModifiedDeletedRenamed() throws Exception {
+		commitRichHistory();
+		RepoChangeListings.Snapshot snapshot = RepoChangeListings.acquire(RepoChangeListings.resolveGitRoot(tempDir));
+		assumeTrue(snapshot != null, "git state could not be validated");
+
+		// since-last-commit: added/modified/deleted/renamed committed in one go
+		Set<String> directCommit = GitChangeDetector.changedSinceLastCommit(tempDir, "src/main/java/");
+		Set<String> snapshotCommit = GitChangeDetector.changedSinceLastCommit(tempDir, "src/main/java/", snapshot);
+		assertEquals(directCommit, snapshotCommit);
+		assertTrue(directCommit.contains("com.example.Foo"), "modified: " + directCommit);
+		assertTrue(directCommit.contains("com.example.Multi") && directCommit.contains("com.example.MultiHelper"),
+				"deleted file classes read from HEAD~1: " + directCommit);
+		assertTrue(directCommit.contains("com.example.Renamed"), "renamed: " + directCommit);
+		assertTrue(directCommit.contains("com.example.Added"), "added: " + directCommit);
+
+		// uncommitted: modification + untracked file, snapshot acquired AFTER the
+		// change
+		Set<String> directUncommitted = GitChangeDetector.uncommittedChanges(tempDir, "src/main/java/");
+		Set<String> snapshotUncommitted = GitChangeDetector.uncommittedChanges(tempDir, "src/main/java/", snapshot);
+		assertEquals(directUncommitted, snapshotUncommitted);
+		assertTrue(directUncommitted.contains("com.example.Renamed"));
+		assertTrue(directUncommitted.contains("com.example.Untracked"));
+	}
+
+	@Test
+	void changeDetectorSnapshotOverloadMatchesNullSnapshotOverload() throws Exception {
+		commitRichHistory();
+		RepoChangeListings.Snapshot snapshot = RepoChangeListings.acquire(RepoChangeListings.resolveGitRoot(tempDir));
+		assumeTrue(snapshot != null, "git state could not be validated");
+
+		Path srcRoot = tempDir.resolve("src/main/java");
+		assertEquals(ChangeDetector.detectReadOnly(ChangeDetector.Mode.UNCOMMITTED, tempDir, srcRoot, null, null),
+				ChangeDetector.detectReadOnly(ChangeDetector.Mode.UNCOMMITTED, tempDir, srcRoot, null, null, snapshot));
+		assertEquals(ChangeDetector.detectReadOnly(ChangeDetector.Mode.SINCE_LAST_COMMIT, tempDir, srcRoot, null, null),
+				ChangeDetector.detectReadOnly(ChangeDetector.Mode.SINCE_LAST_COMMIT, tempDir, srcRoot, null, null,
+						snapshot));
+	}
+
+	/**
+	 * The snapshot path's own filtering must not spawn git. A PATH-shim git wrapper
+	 * cannot intercept {@code ProcessBuilder("git")} inside the JVM (the process
+	 * environment is immutable), so the honest seam is GitSupport's spawn counter.
+	 * Deletions are excluded here by design: reading a deleted file's old content
+	 * via {@code git cat-file --batch} is post-filtering work shared with the
+	 * direct path, not snapshot filtering.
+	 */
+	@Test
+	void snapshotFilteringSpawnsNoGit() throws Exception {
+		commitHistoryWithoutDeletion();
+		// Deletion-free history by design: reading a deleted file's old content via
+		// git cat-file --batch is post-filtering work shared with the direct path,
+		// not snapshot filtering, and would legitimately spawn git in both paths.
+		RepoChangeListings.Snapshot snapshot = RepoChangeListings.acquire(RepoChangeListings.resolveGitRoot(tempDir));
+		assumeTrue(snapshot != null, "git state could not be validated");
+		// warm the lazily computed listings the snapshot path reads
+		snapshot.statusPorcelainPaths();
+		snapshot.lastCommit();
+		snapshot.trackedPaths();
+
+		long before = GitSupport.spawnCount();
+		GitChangeDetector.uncommittedChanges(tempDir, "src/main/java/", snapshot);
+		GitChangeDetector.changedSinceLastCommit(tempDir, "src/main/java/", snapshot);
+		assertEquals(before, GitSupport.spawnCount(), "snapshot-based filtering must not spawn git");
 	}
 }

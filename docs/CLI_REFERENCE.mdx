@@ -221,6 +221,7 @@ Jump to the relevant table below — properties are organized by purpose:
 | `testorder.affected.seed` | unset | Reproducible random selection |
 | `testorder.affected.selectedFile` | `${project.build.directory}/test-order-selected.txt` | Selected list output |
 | `testorder.affected.remainingFile` | `${project.build.directory}/test-order-remaining.txt` | Deferred list output |
+| `testorder.coverage.enforce` | `false` | Fail the build (affected / auto / tiered-select) when the selected subset does not exercise every changed element (coverage closure). Default `false`: WARN plus summary coverage line only. In `auto` mode with deferred tests running, the check reports but never fails |
 | `testorder.exportJson.output` | unset | Output path for `export-json` goal (stdout when unset) |
 
 ### Tiered CI
@@ -255,6 +256,8 @@ Writes per-run summaries to `target/` (Maven) / `build/` (Gradle) after each tes
 | `testorder.ci.summary` | `false` | Enable summary output (`test-order-summary.md`, `.json`, `test-order-selection-report.xml`) |
 | `testorder.ci.githubStepSummary` | `false` | Append Markdown summary to `$GITHUB_STEP_SUMMARY` (GitHub Actions only) |
 | `testorder.ci.prComment` | `false` | Post/update a PR comment with the Markdown summary (requires `GITHUB_TOKEN` env var and GitHub Actions context) |
+
+Affected-mode summaries: `./gradlew testOrderAffected` also writes a summary when `testorder.ci.summary=true` (mode `affected`; `affected-nonsource-select-all` when a resource/build-file change forces select-all for the module). When coverage-closure data is available, summaries include a `**Changed elements covered** | X/Y (+N uncovered)` row in the Markdown table and `changedElementsCovered` / `changedElementsTotal` / `changedElementsUncovered` fields in the JSON; the console selection summary shows the same `Changed elements covered: X/Y (+N uncovered)` line.
 
 ### Show (unified)
 

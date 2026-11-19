@@ -61,7 +61,17 @@ public class GitChangeDetector {
 		// Single git status call instead of 3 separate commands (diff, diff --cached,
 		// ls-files)
 		List<String> statusLines = runGit(projectRoot, "status", "--porcelain", "--", sourcePrefix);
-		Set<String> all = new TreeSet<>();
+		List<String> paths = parseStatusPorcelainPaths(statusLines);
+		return javaFilesToClassNames(paths, sourcePrefix, projectRoot, "HEAD");
+	}
+
+	/**
+	 * Parses {@code git status --porcelain} lines into repo-relative paths,
+	 * handling renames ("R old -> new" contributes both paths). Shared by the
+	 * direct and snapshot-based {@link #uncommittedChanges} paths so their parsed
+	 * input is byte-identical.
+	 */
+	static List<String> parseStatusPorcelainPaths(List<String> statusLines) {
 		List<String> paths = new ArrayList<>();
 		for (String line : statusLines) {
 			// porcelain format: XY filename (or XY orig -> renamed)
@@ -76,8 +86,98 @@ public class GitChangeDetector {
 			}
 			paths.add(filePath);
 		}
-		all.addAll(javaFilesToClassNames(paths, sourcePrefix, projectRoot, "HEAD"));
-		return all;
+		return paths;
+	}
+
+	/**
+	 * As {@link #uncommittedChanges(Path, String)} with a shared repo-level
+	 * snapshot ({@link RepoChangeListings}): when the snapshot belongs to the same
+	 * git root, its repo-wide {@code git status --porcelain} paths are filtered
+	 * in-memory (prefix match) instead of spawning a scoped {@code git status}.
+	 * Falls back to the direct git path when the snapshot is {@code null}, belongs
+	 * to a different git root, or cannot be used.
+	 */
+	public static Set<String> uncommittedChanges(Path projectRoot, String sourcePrefix,
+			RepoChangeListings.Snapshot shared) throws IOException {
+		if (matchesGitRoot(projectRoot, shared)) {
+			try {
+				List<String> paths = filterByPrefix(shared.statusPorcelainPaths(), sourcePrefix);
+				return javaFilesToClassNames(paths, sourcePrefix, projectRoot, "HEAD");
+			} catch (IOException | RuntimeException e) {
+				// fail-safe: any snapshot problem falls back to the direct git path
+			}
+		}
+		return uncommittedChanges(projectRoot, sourcePrefix);
+	}
+
+	/**
+	 * As {@link #changedSinceLastCommit(Path, String)} with a shared repo-level
+	 * snapshot ({@link RepoChangeListings}): when the snapshot belongs to the same
+	 * git root, its cached HEAD~1..HEAD diff paths (or, when HEAD~1 is unavailable,
+	 * its cached tracked-file listing) are filtered in-memory instead of spawning
+	 * scoped git commands. Falls back to the direct git path when the snapshot is
+	 * {@code null}, belongs to a different git root, or cannot be used.
+	 */
+	public static Set<String> changedSinceLastCommit(Path projectRoot, String sourcePrefix,
+			RepoChangeListings.Snapshot shared) throws IOException {
+		if (matchesGitRoot(projectRoot, shared)) {
+			try {
+				RepoChangeListings.LastCommitData lastCommit = shared.lastCommit();
+				if (lastCommit.hasHeadParent && !lastCommit.diffFailed) {
+					List<String> paths = filterByPrefix(new ArrayList<>(lastCommit.diffPaths), sourcePrefix);
+					// HEAD~1 as the content ref mirrors the direct path's
+					// changedSinceCommit(projectRoot, "HEAD~1", sourcePrefix)
+					return javaFilesToClassNames(paths, sourcePrefix, projectRoot, "HEAD~1");
+				}
+				// HEAD~1 unavailable (or its diff failed) — mirror the direct ls-files fallback
+				if (warnedUnavailableRoots.add(projectRoot.toAbsolutePath().normalize())) {
+					TestOrderLogger
+							.warn("git revision HEAD~1 is unavailable; treating all tracked source files as changed");
+				}
+				List<String> trackedFiles = filterByPrefix(shared.trackedPaths(), sourcePrefix);
+				return javaFilesToClassNames(trackedFiles, sourcePrefix, projectRoot, "HEAD");
+			} catch (IOException | RuntimeException e) {
+				// fail-safe: any snapshot problem falls back to the direct git path
+			}
+		}
+		return changedSinceLastCommit(projectRoot, sourcePrefix);
+	}
+
+	/**
+	 * True when the snapshot was validated for the same (canonicalized) git root
+	 * the direct git path would use for {@code projectRoot}.
+	 */
+	private static boolean matchesGitRoot(Path projectRoot, RepoChangeListings.Snapshot shared) {
+		if (shared == null) {
+			return false;
+		}
+		try {
+			Path absolute = projectRoot.toAbsolutePath();
+			Path canonical;
+			try {
+				canonical = absolute.toRealPath();
+			} catch (IOException e) {
+				canonical = absolute.normalize();
+			}
+			return shared.gitRoot().equals(canonical);
+		} catch (RuntimeException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Keeps the paths under {@code sourcePrefix} (a plain directory prefix such as
+	 * {@code src/main/java/}), replicating the git pathscope semantics of
+	 * {@code git ... -- <sourcePrefix>} for those prefixes in-memory.
+	 */
+	private static List<String> filterByPrefix(List<String> paths, String sourcePrefix) {
+		List<String> filtered = new ArrayList<>();
+		for (String path : paths) {
+			if (path.startsWith(sourcePrefix)) {
+				filtered.add(path);
+			}
+		}
+		return filtered;
 	}
 
 	private static Set<String> javaFilesToClassNames(List<String> gitPaths, String sourcePrefix, Path projectRoot,

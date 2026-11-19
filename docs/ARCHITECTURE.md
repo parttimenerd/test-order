@@ -89,11 +89,16 @@ flowchart TD
 
 `mvn test-order:affected test` (or `./gradlew testOrderAffected`) skips tests
 that cannot be affected by recent changes, reducing suite execution to just the
-relevant subset.
+relevant subset. The selected subset is coverage-complete: every changed
+class/member that at least one indexed test can exercise is exercised by the
+selection, and non-source changes (resources, build files) disable selection
+for the module.
 
 ```mermaid
 flowchart TD
-    A[Git diff / file hashes] -->|changed source classes| B[DependencyMap\ninverted index]
+    A[Git diff / file hashes\n+ non-source check] --> N{Non-source change?\nresources · build files}
+    N -->|yes| SA[Select ALL tests of the module\nWARN: module unselectable]
+    N -->|no| B[DependencyMap\ninverted index]
     B -->|sourceClass → Set of testClasses| C{Intersection\nnon-empty?}
     C -->|yes| D[Candidate affected tests]
     C -->|no| Z[Test skipped]
@@ -101,13 +106,25 @@ flowchart TD
     E -->|yes| F[Filter: test must use\na changed method or field]
     E -->|no| G[All candidates pass]
     F --> G
-    G --> H[TestSelector\ngreedy top-N + random-M]
-    H --> I[/"target/test-order-selected.txt"/]
+    G --> K[Coverage closure\ngreedy cover core over\nchanged elements]
+    K --> H[TestSelector\ncover core + greedy top-N + random-M]
+    SA --> I[/"target/test-order-selected.txt"/]
+    H --> I
     H --> J[/"target/test-order-remaining.txt"/]
 
     classDef output fill:#e8f4fd,stroke:#2d6a9f,color:#1a3d5c
     class I,J output
 ```
+
+- **Coverage closure**: before the topN cap is applied, a greedy cover core —
+  the minimal test set exercising every changed element per the dependency
+  index — is force-included; the cap applies only to the remainder. Tests that
+  are the sole coverer of a changed element are exempt from
+  skip-if-unchanged caching. Elements no test can cover are reported:
+  WARN by default, build failure with `testorder.coverage.enforce=true`.
+- **Fail-safe select-all**: non-source changes (resource roots, build files)
+  and static-analysis degradation bypass selection — all tests of the module
+  run instead of a selected subset.
 
 See [CLI Reference → affected goal](./CLI_REFERENCE.mdx) for configuration options.
 

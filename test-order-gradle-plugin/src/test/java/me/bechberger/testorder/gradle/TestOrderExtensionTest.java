@@ -25,7 +25,19 @@ class TestOrderExtensionTest {
         assertEquals(10, extension.getSelectRandomM().get());
         assertFalse(extension.getMethodOrderingEnabled().get());
         assertFalse(extension.getTdd().get());
+        assertFalse(extension.getTestOrderCoverageEnforce().get());
         assertFalse(extension.getScoreNewTest().isPresent());
+    }
+
+    @Test
+    void coverageEnforceExplicitValueIsNotOverridden() {
+        Project project = ProjectBuilder.builder().build();
+        TestOrderExtension extension = project.getExtensions().create("testOrder", TestOrderExtension.class);
+        extension.getTestOrderCoverageEnforce().set(true);
+
+        extension.applyDefaults(project);
+
+        assertTrue(extension.getTestOrderCoverageEnforce().get());
     }
 
     @Test

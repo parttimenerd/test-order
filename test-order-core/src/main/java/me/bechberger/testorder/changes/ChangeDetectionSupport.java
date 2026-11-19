@@ -111,6 +111,16 @@ public final class ChangeDetectionSupport {
 	 */
 	public static Set<String> detectChangedClasses(String changeMode, Path projectRoot, Path sourceRoot, Path hashFile,
 			String changedClasses, boolean readOnly) throws IOException {
+		return detectChangedClasses(changeMode, projectRoot, sourceRoot, hashFile, changedClasses, readOnly, null);
+	}
+
+	/**
+	 * As {@link #detectChangedClasses(String, Path, Path, Path, String, boolean)}
+	 * with a shared repo-level git listing snapshot ({@link RepoChangeListings})
+	 * threaded into git-based change detection.
+	 */
+	public static Set<String> detectChangedClasses(String changeMode, Path projectRoot, Path sourceRoot, Path hashFile,
+			String changedClasses, boolean readOnly, RepoChangeListings.Snapshot shared) throws IOException {
 		String normalized = normalizeMode(changeMode);
 		// Explicit classes always take precedence over git/hash-based detection,
 		// regardless of changeMode. This lets users override detection in any mode.
@@ -124,7 +134,7 @@ public final class ChangeDetectionSupport {
 		if (mode == ChangeDetector.Mode.EXPLICIT) {
 			return Set.of();
 		}
-		return invoke(mode, projectRoot, sourceRoot, hashFile, changedClasses, readOnly);
+		return invoke(mode, projectRoot, sourceRoot, hashFile, changedClasses, readOnly, shared);
 	}
 
 	/**
@@ -137,6 +147,16 @@ public final class ChangeDetectionSupport {
 	 */
 	public static Set<String> detectChangedTestClasses(String changeMode, Path projectRoot, Path testSourceRoot,
 			Path testHashFile, boolean readOnly) throws IOException {
+		return detectChangedTestClasses(changeMode, projectRoot, testSourceRoot, testHashFile, readOnly, null);
+	}
+
+	/**
+	 * As {@link #detectChangedTestClasses(String, Path, Path, Path, boolean)} with
+	 * a shared repo-level git listing snapshot ({@link RepoChangeListings})
+	 * threaded into git-based change detection.
+	 */
+	public static Set<String> detectChangedTestClasses(String changeMode, Path projectRoot, Path testSourceRoot,
+			Path testHashFile, boolean readOnly, RepoChangeListings.Snapshot shared) throws IOException {
 		String normalized = normalizeMode(changeMode);
 		if ("explicit".equals(normalized)) {
 			return Set.of();
@@ -148,7 +168,7 @@ public final class ChangeDetectionSupport {
 		if (mode == ChangeDetector.Mode.EXPLICIT) {
 			return Set.of();
 		}
-		return invoke(mode, projectRoot, testSourceRoot, testHashFile, null, readOnly);
+		return invoke(mode, projectRoot, testSourceRoot, testHashFile, null, readOnly, shared);
 	}
 
 	/**
@@ -175,10 +195,10 @@ public final class ChangeDetectionSupport {
 	}
 
 	private static Set<String> invoke(ChangeDetector.Mode mode, Path projectRoot, Path sourceRoot, Path hashFile,
-			String changedClasses, boolean readOnly) throws IOException {
+			String changedClasses, boolean readOnly, RepoChangeListings.Snapshot shared) throws IOException {
 		if (readOnly) {
-			return ChangeDetector.detectReadOnly(mode, projectRoot, sourceRoot, hashFile, changedClasses);
+			return ChangeDetector.detectReadOnly(mode, projectRoot, sourceRoot, hashFile, changedClasses, shared);
 		}
-		return ChangeDetector.detect(mode, projectRoot, sourceRoot, hashFile, changedClasses);
+		return ChangeDetector.detect(mode, projectRoot, sourceRoot, hashFile, changedClasses, shared);
 	}
 }

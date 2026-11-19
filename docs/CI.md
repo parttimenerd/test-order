@@ -251,6 +251,28 @@ If you commit the index, add machine-local files to `.gitignore`:
 
 ---
 
+## Affected-mode selection (coverage closure)
+
+The two-phase workflow (`mvn test-order:affected test` + `run-remaining`, or `./gradlew testOrderAffected`) guarantees that the selected subset exercises every changed class or method that at least one indexed test can exercise. The coverage-closure **cover core** — the minimal test set covering all changed elements per the dependency index — is force-included before the topN cap, and tests that are the sole coverer of a changed element are never dropped by skip-if-unchanged caching.
+
+### Coverage enforcement
+
+- **`testorder.coverage.enforce`** (default `false`): with `true`, the build fails when a changed element has no selected covering test. With `false`, uncovered elements only produce a WARN. In `auto` mode with deferred tests running (`testorder.auto.runRemaining=true`, the default), the check reports but never fails — the full suite runs anyway.
+- Gradle: set the `testOrderCoverageEnforce` DSL property; a `testorder.coverage.enforce` system property (`-D`) or Gradle property (`-P`) overrides it.
+
+### Non-source changes select all
+
+Changed files under `src/main/resources` / `src/test/resources` (any file type, including deletions) and build files (`pom.xml`, `build.gradle(.kts)`, `settings.gradle(.kts)`, including ancestors up to the git root) are invisible to source-based change detection. When one changes, the module becomes unselectable: **all** of its tests run and a WARN names the matched files. With `testorder.ci.summary=true`, Gradle `testOrderAffected` emits the summary with mode `affected-nonsource-select-all` (instead of `affected`). Detection only runs for git-based change modes (`uncommitted`, `since-last-commit`); in hash-based or explicit change modes, or when git is unavailable, detection is skipped and the pre-existing behavior (treated as unchanged) is kept.
+
+### Fail-safety
+
+- Static analysis degraded (unreliable changed-element universe) → select-all for the module.
+- Cold start (no index yet) is unchanged: learn fallback / all tests run.
+- If the index has no `MEMBER` instrumentation data, the coverage closure runs at class-level precision (an INFO-level message is logged).
+- Affected-mode CI summaries (Gradle `testOrderAffected` with `testorder.ci.summary=true`) include a `Changed elements covered: X/Y (+N uncovered)` line when coverage data is available.
+
+---
+
 ## Tips
 
 - Always save the cache even when tests fail (`if: always()`) — failure history improves future scoring.

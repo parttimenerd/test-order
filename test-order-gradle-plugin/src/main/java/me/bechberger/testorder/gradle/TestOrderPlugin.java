@@ -356,6 +356,18 @@ public class TestOrderPlugin implements Plugin<Project> {
         coreDep.setTransitive(false);
         project.getDependencies().add("testRuntimeOnly", coreDep);
 
+        // Agent jar (OfflineRuntimeBootstrap/UsageStore) — non-transitive. Contributed
+        // at APPLY time, not in offline-learn task wiring: convention plugins that
+        // reassign the Test task classpath wholesale wipe a task-classpath append, and
+        // a dependency added during task wiring would conflict with classpath resolution
+        // performed at derived-task realization ("Cannot mutate the dependencies of
+        // configuration ':testRuntimeOnly' after ... was resolved"). Harmless when the
+        // agent is not used: it only activates via -javaagent or the offline bootstrap.
+        ExternalModuleDependency agentDep = (ExternalModuleDependency) project.getDependencies().create(
+                GROUP_ID + ":test-order-agent:" + VERSION);
+        agentDep.setTransitive(false);
+        project.getDependencies().add("testRuntimeOnly", agentDep);
+
         // TestNG support: add after evaluation so user dependencies are resolved
         if (project.getState().getExecuted()) {
             if (isTestNGOnTestClasspath(project)) {
@@ -885,19 +897,13 @@ public class TestOrderPlugin implements Plugin<Project> {
         testTask.doFirst("snapshotHashes", t -> {
             snapshotHashes(project, ext);
         });
-        testTask.doLast("aggregateDeps", t -> {
-            // Stop IndexCollectorServer if running (agent mode)
-            CollectorEntry entry = COLLECTOR_REGISTRY.remove(testTask.getPath());
-            if (entry != null) {
-                final CollectorEntry e = entry;
-                int merged = withScopedCompression(e.compression(), () -> e.collector().stopAndMerge());
-                if (merged > 0) {
-                    project.getLogger().lifecycle("[test-order] IndexCollectorServer merged {} test classes via socket",
-                            merged);
-                }
-            }
-            aggregateDependencyFiles(project, ext, false);
-        });
+        // Index aggregation runs as a project-level FINALIZER, not a doLast hook:
+        // Gradle skips a failed task's remaining actions, so a doLast aggregation
+        // would never run when tests fail — leaving the collector unmerged and the
+        // index unwritten exactly when ordering matters most (failing runs).
+        // finalizedBy runs even on failure (same guarantee testOrderOfflineRestore
+        // relies on); when tests succeed it performs the same merge the doLast did.
+        testTask.finalizedBy("testOrderAggregateDeps");
     }
 
     /**
@@ -1054,16 +1060,6 @@ public class TestOrderPlugin implements Plugin<Project> {
         // stops/merges every IndexCollectorServer in the registry, regardless of which test
         // task triggered it.
         testTask.finalizedBy("testOrderOfflineRestore");
-
-        // Add runtime jar to test classpath (UsageStore accessible without agent).
-        // Use a per-task name so that multiple Test tasks in the same project each
-        // get their own configuration — avoids "cannot mutate after resolved" errors
-        // when a second task's configureEach fires after the first config was resolved.
-        String runtimeConfName = "testOrderOfflineRuntime_" + testTask.getName();
-        Configuration runtimeConf = createHiddenConfiguration(project, runtimeConfName, false);
-        project.getDependencies().add(runtimeConf.getName(),
-                GROUP_ID + ":test-order-agent:" + VERSION);
-        testTask.setClasspath(testTask.getClasspath().plus(runtimeConf));
     }
 
     /**
@@ -1331,6 +1327,13 @@ public class TestOrderPlugin implements Plugin<Project> {
                 ((Test) t).systemProperty(entry.getKey(), entry.getValue());
             }
         });
+
+        // Finalize order-mode test tasks with the aggregation task as well: it merges
+        // pending .deps/fallback payloads left by a previously FAILED learn run (whose
+        // doLast-time aggregation never ran) in the SAME build, and is a cheap no-op
+        // when nothing is pending. Without this, an order-mode run after a failed
+        // learn scores against the stale pre-learn index.
+        testTask.finalizedBy("testOrderAggregateDeps");
     }
 
     // -----------------------------------------------------------------------
@@ -1369,38 +1372,26 @@ public class TestOrderPlugin implements Plugin<Project> {
                 }
                 // Drain every collector for this project so socket-based deps are merged
                 // regardless of which test task triggered the finalizer.
-                // Root-project tasks have the form ":taskName" (a single leading colon,
-                // no further colons). Subproject tasks have the form ":sub:taskName".
-                // Using childPrefix ":" for the root would match *everything*, so we
-                // special-case root: keep only paths that contain no second colon.
-                String projectPath = project.getPath();
-                final boolean isRoot = projectPath.equals(":");
-                String childPrefix = isRoot ? null : projectPath + ":";
-                java.util.Iterator<java.util.Map.Entry<String, CollectorEntry>> it =
-                        COLLECTOR_REGISTRY.entrySet().iterator();
-                while (it.hasNext()) {
-                    java.util.Map.Entry<String, CollectorEntry> entry = it.next();
-                    String taskPath = entry.getKey();
-                    boolean belongs;
-                    if (isRoot) {
-                        // Root-project task paths: ":taskName" — exactly one colon (at index 0)
-                        belongs = taskPath.startsWith(":") && taskPath.indexOf(':', 1) < 0;
-                    } else {
-                        belongs = taskPath.startsWith(childPrefix) || taskPath.equals(projectPath);
-                    }
-                    if (!belongs) {
-                        continue;
-                    }
-                    CollectorEntry ce = entry.getValue();
-                    it.remove();
-                    final CollectorEntry c = ce;
-                    int merged = withScopedCompression(c.compression(), () -> c.collector().stopAndMerge());
-                    if (merged > 0) {
-                        project.getLogger().lifecycle(
-                                "[test-order] IndexCollectorServer merged {} test classes via socket (task {})",
-                                merged, taskPath);
-                    }
-                }
+                drainProjectCollectors(project);
+            });
+        });
+
+        // Project-level aggregation finalizer for learn AND order mode test tasks.
+        // Gradle skips a failed task's remaining actions, so a doLast aggregation
+        // hook never runs when tests fail — which is exactly when ordering matters
+        // most. As a finalizedBy task this runs even when the test task fails: the
+        // collector is stopped and stopAndMerge writes the index in the SAME run,
+        // and pending .deps/fallback payloads from a previously failed learn run are
+        // merged by the next order-mode run instead of sitting stale in the daemon.
+        // When no collector is registered and no pending payloads exist, this is a
+        // cheap no-op.
+        project.getTasks().register("testOrderAggregateDeps", task -> {
+            task.setGroup("test-order");
+            task.setDescription(
+                    "Merge collected dependencies into the index (project-level finalizer for test tasks; runs even when tests fail)");
+            task.doLast("testOrderAggregateDeps", t -> {
+                drainProjectCollectors(project);
+                aggregateDependencyFiles(project, ext, false);
             });
         });
 
@@ -1799,9 +1790,25 @@ public class TestOrderPlugin implements Plugin<Project> {
 
                 Path depsDir = ext.getDepsDir().get().getAsFile().toPath();
                 Path effectiveDepsDir = Files.isDirectory(depsDir) ? depsDir : null;
+
+                // Non-source select-all (parity with Maven AffectedWorkflow.selectWithAnalysis):
+                // a resources / build-file change is invisible to source-based change
+                // detection, so the module is unselectable — run ALL tests of the module
+                // instead of a selected subset. Only git-based change modes carry a
+                // non-source signal; NOT_DETERMINED (git unavailable) is treated as
+                // unchanged (pre-existing behavior). Requires an index so a cold start
+                // still resolves to learn via AutoWorkflow below.
+                if (Files.exists(indexPath) && applyNonSourceSelectAll(project, ext, pctx, (Test) t)) {
+                    return;
+                }
+
                 try {
+                    // runRemaining gates the coverage-enforce fail path in AutoWorkflow:
+                    // when the deferred tests run too (full suite), the closure check only
+                    // reports; when they do NOT run (testOrderAffected default), enforce
+                    // applies — parity with Maven AffectedMojo.
                     AutoWorkflow.Result result = new AutoWorkflow(
-                            pctx, "order", ciDownloadCb, effectiveDepsDir).execute();
+                            pctx, "order", ciDownloadCb, effectiveDepsDir, effectiveRunRemaining).execute();
 
                     if (result instanceof AutoWorkflow.Result.OrderSelect os) {
                         TestSelector.Selection selection = os.selection();
@@ -1819,6 +1826,12 @@ public class TestOrderPlugin implements Plugin<Project> {
                                 project.getLogger().lifecycle(line);
                             }
                         }
+
+                        // CI summary (mode "affected") — closes the parity gap where only
+                        // auto/tiered runs emitted a summary. Includes the coverage-closure
+                        // counts; no-op unless testorder.ci.summary=true.
+                        writeAffectedCiSummary(project, pctx, selection, os.changedClasses(), os.changedTests(),
+                                os.selectResult().coverageStatus(), "affected");
 
                         if (!effectiveRunRemaining && !selection.remaining().isEmpty()) {
                             project.getLogger().warn(
@@ -1999,18 +2012,24 @@ public class TestOrderPlugin implements Plugin<Project> {
                 try {
                     me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result analysis =
                             me.bechberger.testorder.ops.workflows.ChangeAnalysis.analyze(
-                                    pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.FOR_SELECTION);
+                                    pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.FOR_SELECTION_DETAILED);
 
                     Path testClassesDir = resolveTestClassesDir(project);
                     Set<String> alwaysRun = me.bechberger.testorder.ops.AlwaysRunScanner.scan(testClassesDir);
 
+                    // Coverage-closure parity with Maven tiered-select: thread the
+                    // member universe + enforce flag (testorder.coverage.enforce) into
+                    // the tier-1 closure, and the degradation flag so a degraded
+                    // analysis falls back to select-all instead of enforcing on an
+                    // unreliable universe.
                     me.bechberger.testorder.ops.TieredSelectOperation.TieredSelectResult result =
                             me.bechberger.testorder.ops.TieredSelectOperation.select(
                                     new me.bechberger.testorder.ops.TieredSelectOperation.TieredSelectConfig(
                                             analysis.depMap(), analysis.state(), analysis.changedClasses(),
                                             analysis.changedTests(), analysis.weights(), tier2Fraction,
                                             weightByDuration, alwaysRun, tier1File, tier2File, tier3File,
-                                            wrapLog(project)));
+                                            wrapLog(project), analysis.changedMembers(),
+                                            pctx.coverageEnforce(), analysis.staticAnalysisDegraded()));
 
                     me.bechberger.testorder.TieredTestSelector.TieredSelection selection = result.selection();
 
@@ -2296,18 +2315,24 @@ public class TestOrderPlugin implements Plugin<Project> {
                 try {
                     me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result analysis =
                             me.bechberger.testorder.ops.workflows.ChangeAnalysis.analyze(
-                                    pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.FOR_SELECTION);
+                                    pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.FOR_SELECTION_DETAILED);
 
                     Path testClassesDir = resolveTestClassesDir(project);
                     Set<String> alwaysRun = me.bechberger.testorder.ops.AlwaysRunScanner.scan(testClassesDir);
 
+                    // Coverage-closure parity with Maven tiered-select: thread the
+                    // member universe + enforce flag (testorder.coverage.enforce) into
+                    // the tier-1 closure, and the degradation flag so a degraded
+                    // analysis falls back to select-all instead of enforcing on an
+                    // unreliable universe.
                     me.bechberger.testorder.ops.TieredSelectOperation.TieredSelectResult result =
                             me.bechberger.testorder.ops.TieredSelectOperation.select(
                                     new me.bechberger.testorder.ops.TieredSelectOperation.TieredSelectConfig(
                                             analysis.depMap(), analysis.state(), analysis.changedClasses(),
                                             analysis.changedTests(), analysis.weights(), tier2Fraction,
                                             weightByDuration, alwaysRun, tier1File, tier2File, tier3File,
-                                            wrapLog(project)));
+                                            wrapLog(project), analysis.changedMembers(),
+                                            pctx.coverageEnforce(), analysis.staticAnalysisDegraded()));
 
                     me.bechberger.testorder.TieredTestSelector.TieredSelection selection = result.selection();
 
@@ -3003,6 +3028,8 @@ public class TestOrderPlugin implements Plugin<Project> {
                                 ext.getStaticAnalysisDepth().get()))
                 .selectiveLearn(resolveSelectiveLearn(project, ext))
                 .alwaysLearn(resolveAlwaysLearn(project, ext))
+                .coverageEnforce(resolveBoolean(gradleOrSystemProperty(project, "testorder.coverage.enforce"),
+                        ext.getTestOrderCoverageEnforce().get()))
                 .verboseFile(ext.getVerboseFile().get() != null && !ext.getVerboseFile().get().isBlank()
                         ? Path.of(ext.getVerboseFile().get()) : null)
                 .projectName(project.getName())
@@ -3904,6 +3931,17 @@ public class TestOrderPlugin implements Plugin<Project> {
         // we wire the source set only after the Java plugin (and thus the "test" source set) exists.
         // If Java is already applied, withType fires immediately (synchronously).
         project.getPlugins().withType(JavaPlugin.class, ignored -> wireDerivedTaskSourceSet(project, task));
+        // Mirror the convention Test task's classpath at derived-task REALIZATION time
+        // (task graph calculation, after every afterEvaluate has run). Convention
+        // plugins may route test dependencies through their own configuration and
+        // assign them only to their own Test tasks in a later afterEvaluate (e.g. the
+        // Datadog ProfilerTestPlugin), leaving the raw test source set's
+        // runtimeClasspath without the JUnit platform — the derived task then fails
+        // with "Failed to load JUnit Platform". Realization time is the first point
+        // where the convention task and its final classpath are both guaranteed
+        // visible. Source-set wiring above stays as the fallback for projects whose
+        // convention task we cannot identify.
+        mirrorConventionTestClasspath(project, task);
         task.useJUnitPlatform();
         task.systemProperty("testorder.state.path",
                 ext.getStateFile().get().getAsFile().getAbsolutePath());
@@ -3926,6 +3964,104 @@ public class TestOrderPlugin implements Plugin<Project> {
         task.setClasspath(testSourceSet.getRuntimeClasspath());
         task.dependsOn(project.getTasks().named("testClasses"));
         task.shouldRunAfter(project.getTasks().named("test"));
+    }
+
+    /**
+     * Copies the classpath of the project's convention Test task onto the derived
+     * task. Called at derived task realization time — see the call site comment in
+     * {@link #configureDerivedTestTask} for why earlier points are too early.
+     */
+    private static void mirrorConventionTestClasspath(Project project, Test task) {
+        Test convention = findConventionTestTask(project, task);
+        if (convention == null) {
+            return;
+        }
+        task.setClasspath(convention.getClasspath());
+        // Mirror the classpath's build dependencies too: a FileCollection copy carries
+        // the files but not the task wiring that rebuilds pinned artifacts. A convention
+        // plugin may pin a library JAR file on the convention task's classpath and rely
+        // on its own dependsOn(configuration) to rebuild it — without this, the derived
+        // task can execute against a STALE JAR from before the source change it is
+        // supposed to test (observed: the affected-test run loaded a pre-change JAR and
+        // passed a test that fails against the recompiled sources).
+        task.dependsOn(convention.getClasspath().getBuildDependencies());
+    }
+
+    private static Test findConventionTestTask(Project project, Test derived) {
+        // Enumerate NAMES first: getNames() does not realize tasks, so we never cascade
+        // into realizing other derived tasks here — their config actions run heavy wiring
+        // that conflicts with the classpath probing below once a configuration has been
+        // resolved ("Cannot mutate the dependencies of configuration X after the
+        // configuration's child configuration was resolved").
+        java.util.List<String> variantNames = new java.util.ArrayList<>();
+        String bareTestName = null;
+        for (String name : project.getTasks().getNames()) {
+            if (name.startsWith("testOrder") || name.equals(derived.getName())) {
+                continue;
+            }
+            // Variant Test tasks follow the `test…` naming in the shapes we target
+            // (test, testDebug, testRelease, testUnitTest, …).
+            if (name.equals("test")) {
+                bareTestName = name;
+            } else if (name.startsWith("test")) {
+                variantNames.add(name);
+            }
+        }
+        // Probe order — convention plugins shape the candidate pool in two ways, and
+        // mirroring the wrong one reproduces the original "Failed to load JUnit
+        // Platform" failure:
+        // (1) the bare `test` task is the correctly configured convention task in most
+        //     projects — prefer it WHEN its classpath actually carries the JUnit platform
+        //     launcher (Gradle 9 requires it on the test runtime classpath to start a
+        //     JUnit Platform run);
+        // (2) some convention plugins (e.g. the Datadog ProfilerTestPlugin) leave the
+        //     java-plugin default `test` task UNCONFIGURED and generate variant tasks
+        //     (testDebug, …) carrying the real classpath (test dependencies routed
+        //     through their own configuration) — then the first launcher-carrying
+        //     variant wins;
+        // (3) when no candidate carries the launcher, fall back to the bare `test` task
+        //     if present, else the first variant — the run then surfaces the original
+        //     missing-platform problem.
+        java.util.Collections.sort(variantNames);
+        Test bareTest = null;
+        Test firstVariant = null;
+        if (bareTestName != null) {
+            Task t = project.getTasks().findByName(bareTestName);
+            if (t instanceof Test test && test != derived) {
+                bareTest = test;
+                if (classpathCarriesJUnitPlatformLauncher(test)) {
+                    return test;
+                }
+            }
+        }
+        for (String name : variantNames) {
+            // Realizes this candidate only — candidates are ordinary user Test tasks.
+            Task t = project.getTasks().findByName(name);
+            if (!(t instanceof Test test) || test == derived) {
+                continue;
+            }
+            if (firstVariant == null) {
+                firstVariant = test;
+            }
+            if (classpathCarriesJUnitPlatformLauncher(test)) {
+                return test;
+            }
+        }
+        return bareTest != null ? bareTest : firstVariant;
+    }
+
+    private static boolean classpathCarriesJUnitPlatformLauncher(Test task) {
+        try {
+            for (java.io.File f : task.getClasspath()) {
+                if (f.getName().startsWith("junit-platform-launcher")) {
+                    return true;
+                }
+            }
+        } catch (RuntimeException e) {
+            // Candidate classpath not resolvable (missing deps in a variant
+            // configuration, …) — skip this candidate rather than failing from the mirror.
+        }
+        return false;
     }
 
     private static void ensureJdk17OrHigher(Project project, Test task) {
@@ -4046,6 +4182,217 @@ public class TestOrderPlugin implements Plugin<Project> {
             msg.append(" Set -Dtestorder.affected.preserveForkConfig=true to keep your config.");
             project.getLogger().lifecycle(msg.toString());
         }
+    }
+
+    /**
+     * Detects non-source changes (resources, build files) for the current project,
+     * mirroring core {@code AffectedWorkflow.detectNonSourceChanges} (package-private
+     * there, so re-implemented over the same public API): only git-based change
+     * modes carry a non-source signal — {@code uncommitted} inspects the working
+     * tree, {@code since-last-commit} diffs {@code HEAD~1}; hash-based
+     * ({@code since-last-run}) and {@code explicit} modes keep the pre-existing
+     * behavior (no detection — treated as unchanged). NOT_DETERMINED (git
+     * unavailable/failed) is treated as unchanged by the caller.
+     */
+    private static me.bechberger.testorder.changes.NonSourceChangeDetector.Detection detectNonSourceChanges(
+            Project project, PluginContext pctx, TestOrderExtension ext) {
+        me.bechberger.testorder.changes.ChangeDetector.Mode mode;
+        try {
+            mode = me.bechberger.testorder.changes.ChangeDetectionSupport.resolveMode(
+                    resolveChangeMode(project, ext), pctx.hashFile());
+        } catch (IOException e) {
+            pctx.log().debug("[test-order] Non-source change detection skipped: " + e.getMessage());
+            return me.bechberger.testorder.changes.NonSourceChangeDetector.Detection.NOT_DETERMINED;
+        }
+        if (mode != me.bechberger.testorder.changes.ChangeDetector.Mode.SINCE_LAST_COMMIT
+                && mode != me.bechberger.testorder.changes.ChangeDetector.Mode.UNCOMMITTED) {
+            // Hash-based or explicit mode: no git baseline to inspect — keep the
+            // pre-existing behavior (treated as unchanged).
+            pctx.log().debug("[test-order] Non-source change detection skipped for change mode " + mode);
+            return me.bechberger.testorder.changes.NonSourceChangeDetector.Detection.NOT_DETERMINED;
+        }
+        // PluginContext.repoRoot is the ROOT PROJECT directory, which may be nested
+        // inside the git work tree (monorepo: repo/settings.gradle under repo/sub/).
+        // `git status --porcelain` prints work-tree-relative paths, so passing the
+        // root project dir would make every module-relative prefix mismatch and
+        // silently defeat non-source detection. Resolve the real work-tree top
+        // first; NOT_DETERMINED when git is unavailable/failed (treated as unchanged
+        // by the caller).
+        java.nio.file.Path workTreeTop = resolveWorkTreeTop(pctx.projectRoot());
+        if (workTreeTop == null) {
+            pctx.log().debug("[test-order] Non-source change detection skipped: git work-tree root unavailable");
+            return me.bechberger.testorder.changes.NonSourceChangeDetector.Detection.NOT_DETERMINED;
+        }
+        return me.bechberger.testorder.changes.NonSourceChangeDetector.detect(
+                pctx.projectRoot(), workTreeTop, mode == me.bechberger.testorder.changes.ChangeDetector.Mode.SINCE_LAST_COMMIT);
+    }
+
+    /** Cache of project dir → git work-tree top (same keying as core ChangeDetector). */
+    private static final java.util.concurrent.ConcurrentHashMap<Path, Path> workTreeTopCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Resolves the real git work-tree top via {@code git rev-parse --show-toplevel}
+     * (mirrors core {@code ChangeDetector.resolveGitRoot}, including the drain
+     * thread, the GitTimeout budget, and the destroyForcibly + drainer interrupt
+     * cleanup on the interrupted path). Returns {@code null} when git is
+     * unavailable or fails — the caller then treats non-source detection as
+     * NOT_DETERMINED (unchanged).
+     */
+    private static Path resolveWorkTreeTop(Path projectRoot) {
+        if (projectRoot == null) {
+            return null;
+        }
+        Path normalized = projectRoot.toAbsolutePath().normalize();
+        Path cached = workTreeTopCache.get(normalized);
+        if (cached != null) {
+            return cached;
+        }
+        Process process = null;
+        Thread drainer = null;
+        try {
+            ProcessBuilder pb = new ProcessBuilder("git", "rev-parse", "--show-toplevel");
+            pb.directory(normalized.toFile());
+            pb.redirectErrorStream(true);
+            process = pb.start();
+            final Process proc = process;
+            java.util.concurrent.atomic.AtomicReference<String> outputRef =
+                    new java.util.concurrent.atomic.AtomicReference<>("");
+            drainer = new Thread(() -> {
+                try (var is = proc.getInputStream()) {
+                    outputRef.set(new String(is.readAllBytes()).trim());
+                } catch (IOException ignored) {
+                }
+            }, "test-order-gradle-git-root-drain");
+            drainer.setDaemon(true);
+            drainer.start();
+            if (!process.waitFor(me.bechberger.testorder.changes.GitTimeout.seconds(),
+                    java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                drainer.interrupt();
+                return null;
+            }
+            drainer.join(2000);
+            if (drainer.isAlive()) {
+                // Drain thread still running: output may be truncated — fail safe.
+                return null;
+            }
+            String output = outputRef.get();
+            if (process.exitValue() == 0 && !output.isEmpty()) {
+                Path top = Path.of(output).toAbsolutePath().normalize();
+                workTreeTopCache.put(normalized, top);
+                return top;
+            }
+            return null;
+        } catch (IOException e) {
+            return null;
+        } catch (InterruptedException e) {
+            if (process != null) {
+                process.destroyForcibly();
+            }
+            if (drainer != null) {
+                drainer.interrupt();
+            }
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    /**
+     * Non-source select-all (parity with Maven AffectedWorkflow.selectWithAnalysis):
+     * when a resources/build-file change is detected, the module is unselectable via
+     * source-based change detection — select ALL tests of the module (indexed plus
+     * unindexed new/changed), write the selected list, remove a stale remaining file,
+     * and emit a CI summary with mode {@code affected-nonsource-select-all}.
+     *
+     * @return true when a non-source change was detected and select-all was applied
+     */
+    private static boolean applyNonSourceSelectAll(Project project, TestOrderExtension ext,
+            PluginContext pctx, Test testTask) {
+        me.bechberger.testorder.changes.NonSourceChangeDetector.Detection nonSource =
+                detectNonSourceChanges(project, pctx, ext);
+        if (!nonSource.changed()) {
+            return false;
+        }
+        pctx.log().warn("[test-order] Non-source change detected — module behavior may change without a "
+                + "source-level change signal. Matched files: " + String.join(", ", nonSource.files()));
+        try {
+            // FOR_SELECTION_DETAILED: member-level change universe for the coverage
+            // closure, module-filtered and read-only (the baseline is NOT advanced —
+            // parity with Maven's affected goal, where a broken build must never look
+            // clean next run).
+            me.bechberger.testorder.ops.workflows.ChangeAnalysis.Result a =
+                    me.bechberger.testorder.ops.workflows.ChangeAnalysis.analyze(
+                            pctx, me.bechberger.testorder.ops.workflows.ChangeAnalysis.Options.FOR_SELECTION_DETAILED);
+
+            // Augment changedTests with unindexed tests from testClassesDir (same logic
+            // as AffectedWorkflow): handles modules whose tests haven't been learned yet.
+            Set<String> changedAndNew = new LinkedHashSet<>(a.changedTests());
+            Set<String> depMapTests = a.depMap().testClasses();
+            for (String testClass : me.bechberger.testorder.ops.ShowOrderOperation.collectAllTests(
+                    a.depMap(), a.changedTests(), pctx.testClassesDir())) {
+                if (!depMapTests.contains(testClass)) {
+                    changedAndNew.add(testClass);
+                }
+            }
+
+            Set<String> all = new LinkedHashSet<>(a.depMap().testClasses());
+            all.addAll(changedAndNew);
+            pctx.log().warn("[test-order] selecting ALL " + all.size()
+                    + " tests of this module (select-all; module is unselectable via source-based "
+                    + "change detection).");
+
+            me.bechberger.testorder.CoverageClosure closure = me.bechberger.testorder.CoverageClosure.compute(
+                    a.depMap(), a.changedClasses(), changedAndNew, a.changedMembers());
+            me.bechberger.testorder.CoverageClosure.Status covStatus = closure.status(all);
+            TestSelector.Selection selection = new TestSelector.Selection(
+                    new ArrayList<>(all), List.of(), 0, List.of(), covStatus);
+
+            // Parity with AffectedWorkflow.fullSelection: persist the selected list and
+            // remove a stale remaining file so run-remaining does not re-execute old
+            // deferrals.
+            if (pctx.selectedFile() != null) {
+                TestSelector.writeTestList(selection.selected(), pctx.selectedFile());
+            }
+            if (pctx.remainingFile() != null) {
+                Files.deleteIfExists(pctx.remainingFile());
+            }
+            applySelectedTests(testTask, selection.selected());
+
+            writeAffectedCiSummary(project, pctx, selection, a.changedClasses(), a.changedTests(),
+                    covStatus, "affected-nonsource-select-all");
+            return true;
+        } catch (IOException e) {
+            throw new GradleException("Failed to apply non-source select-all", e);
+        }
+    }
+
+    /**
+     * Emits a CI summary for the affected task (opt-in via {@code testorder.ci.summary},
+     * no-op otherwise). Includes the coverage-closure counts when the workflow ran the
+     * closure over a non-empty universe; omits the coverage row otherwise (same as the
+     * other selection paths).
+     */
+    private static void writeAffectedCiSummary(Project project, PluginContext pctx,
+            TestSelector.Selection selection, Set<String> changedClasses, Set<String> changedTests,
+            me.bechberger.testorder.CoverageClosure.Status coverageStatus, String mode) {
+        int totalInIndex = selection.selected().size() + selection.remaining().size()
+                + selection.cached().size();
+        Integer total = coverageStatus != null && coverageStatus.totalElements() > 0
+                ? coverageStatus.totalElements() : null;
+        Integer covered = total != null ? coverageStatus.coveredCount() : null;
+        Integer uncovered = total != null ? coverageStatus.uncoveredElements().size() : null;
+        Path stateDir = pctx.stateFile() != null && pctx.stateFile().getParent() != null
+                ? pctx.stateFile().getParent() : null;
+        me.bechberger.testorder.ops.CiSummaryWriter.writeSummary(
+                new me.bechberger.testorder.ops.CiSummaryWriter.SummaryInput(
+                        totalInIndex, selection.selected(), selection.remaining(),
+                        changedClasses, changedTests, List.of(), mode, 0,
+                        project.getLayout().getBuildDirectory().get().getAsFile().toPath(),
+                        total, covered, uncovered),
+                new me.bechberger.testorder.ops.CiSummaryWriter.RuntimeExtras(
+                        selection.cached(), 0L, stateDir),
+                pctx.log());
     }
 
     private static void applySelectedTests(Test task, List<String> tests) {
@@ -4196,6 +4543,43 @@ public class TestOrderPlugin implements Plugin<Project> {
     }
 
     /** Atomically prune-if-needed then register a collector. */
+    /**
+     * Drains every collector registered for the given project: stops the server and
+     * merges its recorded dependencies into the index. Root-project task paths have
+     * the form ":taskName" (a single leading colon, no further colons); subproject
+     * task paths have the form ":sub:taskName". The root case is special-cased
+     * because a childPrefix of ":" would match every path.
+     */
+    private static void drainProjectCollectors(Project project) {
+        String projectPath = project.getPath();
+        final boolean isRoot = projectPath.equals(":");
+        String childPrefix = isRoot ? null : projectPath + ":";
+        java.util.Iterator<java.util.Map.Entry<String, CollectorEntry>> it =
+                COLLECTOR_REGISTRY.entrySet().iterator();
+        while (it.hasNext()) {
+            java.util.Map.Entry<String, CollectorEntry> entry = it.next();
+            String taskPath = entry.getKey();
+            boolean belongs;
+            if (isRoot) {
+                belongs = taskPath.startsWith(":") && taskPath.indexOf(':', 1) < 0;
+            } else {
+                belongs = taskPath.startsWith(childPrefix) || taskPath.equals(projectPath);
+            }
+            if (!belongs) {
+                continue;
+            }
+            CollectorEntry ce = entry.getValue();
+            it.remove();
+            final CollectorEntry c = ce;
+            int merged = withScopedCompression(c.compression(), () -> c.collector().stopAndMerge());
+            if (merged > 0) {
+                project.getLogger().lifecycle(
+                        "[test-order] IndexCollectorServer merged {} test classes via socket (task {})",
+                        merged, taskPath);
+            }
+        }
+    }
+
     private static synchronized void registerCollector(String taskPath, CollectorEntry entry) {
         if (COLLECTOR_REGISTRY.size() >= MAX_COLLECTOR_ENTRIES) {
             pruneCollectorRegistry();

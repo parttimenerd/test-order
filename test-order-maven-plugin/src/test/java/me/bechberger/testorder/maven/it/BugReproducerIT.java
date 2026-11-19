@@ -150,9 +150,18 @@ class BugReproducerIT {
 
 		String selected = shopProject.readFile("target/test-order-selected.txt");
 		assertThat(selected).isNotNull();
-		// topN=0 means no tests via topN phase; randomM=2 picks 2 diverse fast tests
+		// topN=0 means no tests via topN phase; randomM=2 picks 2 diverse fast tests.
+		// Coverage-closure guarantee (notes/tia-contract.md): the cover core survives
+		// topN capping and only ADDS tests — 1 cover-core test exercising the changed
+		// Product is force-included on top of randomM (1 + 2 = 3).
 		long selectedCount = selected.lines().filter(l -> !l.isBlank()).count();
-		assertThat(selectedCount).as("topN=0 should select only randomM tests (max 2)").isLessThanOrEqualTo(2);
+		assertThat(selectedCount).as("topN=0 selects the cover core (1 test covering Product) + randomM (2)")
+				.isEqualTo(3);
+		// Cover-core identity (defense-in-depth): the force-included test must be the
+		// class exercising the changed Product (ProductTest) — a broken sole-coverer
+		// computation that force-included an unrelated test would still total 3.
+		assertThat(selected).as("cover core must be the test class exercising the changed Product")
+				.contains(PRODUCT_TEST);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

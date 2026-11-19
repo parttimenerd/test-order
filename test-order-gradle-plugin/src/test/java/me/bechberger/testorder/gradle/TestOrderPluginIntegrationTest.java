@@ -188,7 +188,10 @@ class TestOrderPluginIntegrationTest {
 
     private GradleRunner runner(String... args) {
         return GradleRunner.create()
-                .withGradleVersion("8.14.3")
+                // Pinned to the Gradle version the downstream consumers run (9.9.1);
+                // 8.14.3-era pins cannot parse JDK 25 class files ("Unsupported class
+                // file major version 69"), so TestKit on a Java 25 host failed.
+                .withGradleVersion("9.9.1")
                 .withProjectDir(projectDir.toFile())
                 .withArguments(args)
                 .forwardOutput();
@@ -350,6 +353,341 @@ class TestOrderPluginIntegrationTest {
         assertTrue(result.getOutput().contains("[test-order] Selected 1 tests (") && result.getOutput().contains("), deferred 1"));
         assertTrue(Files.exists(projectDir.resolve("build/test-results/testOrderAffected/TEST-" + selected.get(0) + ".xml")));
         assertFalse(Files.exists(projectDir.resolve("build/test-results/testOrderAffected/TEST-" + remaining.get(0) + ".xml")));
+    }
+
+    @Test
+    @DisplayName("testOrderAffected writes a CI summary (mode affected) with coverage counts")
+    void affectedTaskWritesCiSummary() throws IOException {
+        scaffoldProject();
+        runner("test", "-Dtestorder.mode=learn").build();
+
+        BuildResult result = runner("testOrderAffected",
+                "-Dtestorder.changeMode=explicit",
+                "-Dtestorder.changed.classes=com.example.app.Calculator",
+                "-Dtestorder.affected.topN=1",
+                "-Dtestorder.affected.randomM=0",
+                "-Dtestorder.ci.summary=true").build();
+
+        assertEquals(SUCCESS, result.task(":testOrderAffected").getOutcome());
+        assertTrue(Files.exists(projectDir.resolve("build/test-order-summary.md")),
+                "Markdown summary should be written for affected mode");
+        assertTrue(Files.exists(projectDir.resolve("build/test-order-summary.json")),
+                "JSON summary should be written for affected mode");
+        String md = Files.readString(projectDir.resolve("build/test-order-summary.md"));
+        assertTrue(md.contains("affected"), "Summary mode should be 'affected':\n" + md);
+        assertTrue(md.contains("Changed elements covered"),
+                "Summary should carry the coverage-closure row:\n" + md);
+        String json = Files.readString(projectDir.resolve("build/test-order-summary.json"));
+        assertTrue(json.contains("\"mode\": \"affected\""));
+        assertTrue(json.contains("changedElementsCovered"),
+                "JSON summary should carry coverage counts:\n" + json);
+    }
+
+    @Test
+    @DisplayName("testOrderAffected selects ALL tests on a non-source (resources) change")
+    void affectedTaskSelectsAllOnNonSourceChange() throws Exception {
+        scaffoldProject();
+        writeFile("src/main/resources/app.properties", "greeting=hello\n");
+        // Baseline: learn, then commit everything so the working tree is clean
+        runner("test", "-Dtestorder.mode=learn").build();
+        git(projectDir, "init");
+        git(projectDir, "config", "user.email", "test@example.com");
+        git(projectDir, "config", "user.name", "Test");
+        git(projectDir, "add", "-A");
+        git(projectDir, "commit", "-m", "baseline");
+        // Non-source change: a tracked resource file changes — invisible to
+        // source-based change detection
+        writeFile("src/main/resources/app.properties", "greeting=changed\n");
+
+        BuildResult result = runner("testOrderAffected",
+                "-Dtestorder.affected.topN=1",
+                "-Dtestorder.affected.randomM=0",
+                "-Dtestorder.ci.summary=true").build();
+
+        assertEquals(SUCCESS, result.task(":testOrderAffected").getOutcome());
+        assertTrue(result.getOutput().contains("Non-source change detected"),
+                "Non-source select-all must be logged:\n" + result.getOutput());
+        assertTrue(result.getOutput().contains("select-all"),
+                "Select-all must be explicit:\n" + result.getOutput());
+        List<String> selected = Files.readAllLines(projectDir.resolve("build/test-order-selected.txt"));
+        assertEquals(Set.of("com.example.app.CalculatorTest", "com.example.app.StringUtilsTest"),
+                Set.copyOf(selected),
+                "ALL tests of the module must be selected, got: " + selected);
+        assertFalse(Files.exists(projectDir.resolve("build/test-order-remaining.txt")),
+                "Stale remaining file must be removed by the select-all path");
+        String json = Files.readString(projectDir.resolve("build/test-order-summary.json"));
+        assertTrue(json.contains("\"mode\": \"affected-nonsource-select-all\""),
+                "Summary should carry the non-source select-all marker:\n" + json);
+    }
+
+    @Test
+    @DisplayName("learn mode writes the index in the SAME run even when tests fail")
+    void learnWritesIndexDespiteFailingTests() throws Exception {
+        scaffoldProject();
+        // A systematically failing test: the learn run must still aggregate the
+        // collected dependencies into the index (previously the aggregation was a
+        // doLast hook, which Gradle skips when the task fails — the index was only
+        // written by a LATER passing learn run, so ordering never saw the data).
+        writeFile("src/test/java/com/example/app/BrokenTest.java", """
+                package com.example.app;
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.*;
+                class BrokenTest {
+                    @Test void alwaysFails() { fail("systematic failure"); }
+                }
+                """);
+
+        BuildResult result = runner("test", "-Dtestorder.mode=learn").buildAndFail();
+
+        assertEquals(FAILED, result.task(":test").getOutcome());
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")),
+                "The dependency index must be written in the same run even when the learn run fails");
+        String output = result.getOutput();
+        assertTrue(output.contains("merged") || output.contains("Aggregated"),
+                "Aggregation must run despite the failing tests:\n" + output);
+    }
+
+    @Test
+    @DisplayName("order mode after a failed learn run merges pending dependencies in the same build")
+    void orderModeMergesPendingDepsFromFailedLearn() throws Exception {
+        scaffoldProject();
+        writeFile("src/test/java/com/example/app/BrokenTest.java", """
+                package com.example.app;
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.*;
+                class BrokenTest {
+                    @Test void alwaysFails() { fail("systematic failure"); }
+                }
+                """);
+        // First run: learn with a failing test. Before the finalizer fix this run
+        // left its collected dependencies unmerged (collector leaked in the daemon,
+        // .deps files pending).
+        runner("test", "-Dtestorder.mode=learn").buildAndFail();
+        // Remove the failing test so the order-mode run itself succeeds.
+        Files.deleteIfExists(projectDir.resolve("src/test/java/com/example/app/BrokenTest.java"));
+
+        BuildResult result = runner("testOrderAffected").build();
+
+        assertEquals(SUCCESS, result.task(":testOrderAffected").getOutcome());
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")),
+                "The index must exist after the order-mode run (pending .deps merged in the same build)");
+    }
+
+    @Test
+    @DisplayName("order mode inside an included build resolves the composite (parent) index")
+    void includedBuildResolvesCompositeIndex() throws Exception {
+        scaffoldProject();
+        // Included build with its own settings (plugin resolved from mavenLocal —
+        // TestKit plugin classpath injection does not reach included builds).
+        writeFile("included-lib/settings.gradle", """
+                pluginManagement {
+                    repositories {
+                        mavenLocal()
+                        gradlePluginPortal()
+                        mavenCentral()
+                    }
+                }
+                rootProject.name = 'included-lib'
+                """);
+        writeFile("included-lib/build.gradle", """
+                plugins {
+                    id 'java'
+                    id 'me.bechberger.test-order' version '0.1.1'
+                }
+                group = 'com.example.inc'
+                version = '1.0.0'
+                repositories {
+                    mavenLocal()
+                    mavenCentral()
+                }
+                dependencies {
+                    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+                    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+                }
+                test {
+                    useJUnitPlatform()
+                }
+                """);
+        writeFile("included-lib/src/test/java/com/example/inc/IncTest.java", """
+                package com.example.inc;
+                import org.junit.jupiter.api.Test;
+                class IncTest {
+                    @Test void passes() {}
+                }
+                """);
+        // Composite: main build includes included-lib.
+        writeFile("settings.gradle", """
+                pluginManagement {
+                    repositories {
+                        mavenLocal()
+                        gradlePluginPortal()
+                        mavenCentral()
+                    }
+                }
+                rootProject.name = 'test-project'
+                includeBuild 'included-lib'
+                """);
+
+        // Learn in the MAIN build writes the composite index at main/.test-order.
+        runner("test", "-Dtestorder.mode=learn").build();
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")));
+
+        // Order mode inside the INCLUDED build must resolve the parent build's index.
+        // Without the composite resolution it would look at included-lib/.test-order,
+        // find nothing, and print "Index file ... not found — skipping order mode".
+        // --info is needed because the order-mode confirmation logs at info level.
+        BuildResult result = runner(":included-lib:test", "-Dtestorder.mode=order", "--info").build();
+
+        String output = result.getOutput();
+        assertTrue(output.contains("Configuring order mode"),
+                "included build must resolve the composite index and configure order mode:\n" + output);
+        assertFalse(output.contains("skipping order mode"),
+                "included build must NOT degrade to skip mode:\n" + output);
+    }
+
+    @Test
+    @DisplayName("offline learn survives a convention plugin reassigning the Test task classpath")
+    void offlineLearnSurvivesTestClasspathReassignment() throws Exception {
+        scaffoldProject();
+        // Simulate convention plugins (e.g. Datadog ProfilerTestPlugin) that replace
+        // the Test task classpath wholesale. A task-classpath append (the previous
+        // wiring) is wiped by this; a testRuntimeOnly contribution survives it. The
+        // simulated reassignment keeps the test classes output (as real convention
+        // plugins do) and replaces the dependency classpath wholesale.
+        writeFile("reassign-classpath.gradle", """
+                def customConf = configurations.create('reassignedTestClasspath')
+                afterEvaluate {
+                    customConf.extendsFrom(configurations.testRuntimeClasspath)
+                    tasks.named('test') { classpath = sourceSets.main.output + sourceSets.test.output + customConf }
+                }
+                """);
+        // Append the apply from the existing build.gradle.
+        String build = Files.readString(projectDir.resolve("build.gradle"));
+        Files.writeString(projectDir.resolve("build.gradle"),
+                build + "\napply from: 'reassign-classpath.gradle'\n");
+
+        BuildResult result = runner("test", "-Dtestorder.mode=learn").build();
+
+        assertEquals(SUCCESS, result.task(":test").getOutcome(),
+                "offline learn must not die with 'OfflineRuntimeBootstrap class not found' "
+                        + "when the classpath is reassigned:\n" + result.getOutput());
+        assertTrue(Files.exists(projectDir.resolve(".test-order/test-dependencies.lz4")),
+                "offline learn must still write the index under a reassigned classpath");
+    }
+
+    @Test
+    @DisplayName("derived tasks mirror the convention variant task that carries the JUnit platform")
+    void derivedTasksMirrorConventionTestClasspath() throws Exception {
+        scaffoldProject();
+        // Simulate convention plugins (e.g. Datadog ProfilerTestPlugin) that route test
+        // dependencies through their OWN configuration, generate variant Test tasks
+        // (testDebug) carrying it in a later afterEvaluate, and leave the java-plugin
+        // default `test` task UNCONFIGURED — its raw source-set classpath has NO JUnit
+        // platform. A derived task must mirror testDebug, not the bare `test` task
+        // (which would fail with "Failed to load JUnit Platform").
+        writeFile("convention-routed-deps.gradle", """
+                def routedConf = configurations.create('routedTestDeps')
+                routedConf.extendsFrom(configurations.testRuntimeClasspath)
+                routedConf.dependencies.add(project.dependencies.create('org.junit.jupiter:junit-jupiter:5.11.4'))
+                routedConf.dependencies.add(project.dependencies.create('org.junit.platform:junit-platform-launcher:1.11.4'))
+                // JUnit API for test compilation only — at RUNTIME the convention
+                // configuration above is the sole source of the JUnit platform.
+                configurations.testCompileOnly.dependencies.add(
+                        project.dependencies.create('org.junit.jupiter:junit-jupiter:5.11.4'))
+                afterEvaluate {
+                    tasks.register('testDebug', Test) {
+                        classpath = sourceSets.main.output + sourceSets.test.output + routedConf
+                        testClassesDirs = sourceSets.test.output.classesDirs
+                        useJUnitPlatform()
+                    }
+                }
+                """);
+        // Override the scaffolded build: NO junit on testImplementation — the convention
+        // configuration is the only source of the JUnit platform, and the bare `test`
+        // task is deliberately NOT given it (mirrors the java-profiler shape where the
+        // bare `test` classpath resolves with junit=0).
+        String build = Files.readString(projectDir.resolve("build.gradle"));
+        build = build.replace("testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'\n", "");
+        build = build.replace("testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'\n", "");
+        Files.writeString(projectDir.resolve("build.gradle"),
+                build + "\napply from: 'convention-routed-deps.gradle'\n");
+
+        // Learn on the convention variant task (the bare `test` task cannot even run).
+        runner("testDebug", "-Dtestorder.mode=learn").build();
+
+        // Pre-fix the derived task mirrored the bare `test` task (junit=0 classpath)
+        // and failed to even start.
+        BuildResult result = runner("testOrderAffected",
+                "-Dtestorder.changeMode=explicit",
+                "-Dtestorder.changed.classes=com.example.app.Calculator",
+                "-Dtestorder.affected.topN=1",
+                "-Dtestorder.affected.randomM=0").build();
+
+        assertEquals(SUCCESS, result.task(":testOrderAffected").getOutcome(),
+                "derived task must inherit the convention variant task's classpath (JUnit platform)");
+    }
+
+    @Test
+    @DisplayName("testOrderAffected with coverage.enforce fails when no test covers a changed class")
+    void affectedTaskEnforceFailsOnUncoveredChangedClass() throws Exception {
+        scaffoldProject();
+        runner("test", "-Dtestorder.mode=learn").build();
+
+        // 'Unknown' is an explicit changed class no test exercises — the closure
+        // reports it uncovered; enforce=true must fail the task (before the
+        // selected list is written).
+        BuildResult result = runner("testOrderAffected",
+                "-Dtestorder.changeMode=explicit",
+                "-Dtestorder.changed.classes=com.example.app.Unknown",
+                "-Dtestorder.affected.topN=1",
+                "-Dtestorder.affected.randomM=0",
+                "-Dtestorder.coverage.enforce=true").buildAndFail();
+
+        assertEquals(FAILED, result.task(":testOrderAffected").getOutcome());
+        assertTrue(result.getOutput().contains("Coverage closure failed"),
+                "Enforce failure must name the uncovered element:\n" + result.getOutput());
+        assertFalse(Files.exists(projectDir.resolve("build/test-order-selected.txt")),
+                "Enforce must fail BEFORE the selected list is written");
+    }
+
+    @Test
+    @DisplayName("testOrderAffected force-includes cover-core tests beyond the topN cap")
+    void affectedTaskCoverCoreSurvivesTopNCap() throws Exception {
+        scaffoldProject();
+        runner("test", "-Dtestorder.mode=learn").build();
+
+        // Both Calculator and StringUtils change; each is exercised by exactly one
+        // test class (sole coverer). With topN=1 a cap-only selection would run one
+        // test class; the cover core must force-include BOTH.
+        BuildResult result = runner("testOrderAffected",
+                "-Dtestorder.changeMode=explicit",
+                "-Dtestorder.changed.classes=com.example.app.Calculator,com.example.app.StringUtils",
+                "-Dtestorder.affected.topN=1",
+                "-Dtestorder.affected.randomM=0").build();
+
+        assertEquals(SUCCESS, result.task(":testOrderAffected").getOutcome());
+        List<String> selected = Files.readAllLines(projectDir.resolve("build/test-order-selected.txt")).stream()
+                .filter(l -> !l.isBlank() && !l.startsWith("#")).toList();
+        assertEquals(Set.of("com.example.app.CalculatorTest", "com.example.app.StringUtilsTest"),
+                Set.copyOf(selected),
+                "Cover core (both sole coverers) must survive topN=1, got: " + selected);
+        assertFalse(Files.exists(projectDir.resolve("build/test-order-remaining.txt")),
+                "Nothing is deferred when the cap-only remainder is empty");
+    }
+
+    /** Runs a git command in the given directory, failing the test on non-zero exit. */
+    private static void git(Path dir, String... args) throws Exception {
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add("git");
+        cmd.addAll(java.util.Arrays.asList(args));
+        Process process = new ProcessBuilder(cmd)
+                .directory(dir.toFile())
+                .inheritIO()
+                .start();
+        assertTrue(process.waitFor(60, TimeUnit.SECONDS),
+                "git " + String.join(" ", args) + " timed out");
+        assertEquals(0, process.exitValue(),
+                "git " + String.join(" ", args) + " failed");
     }
 
     @Test
@@ -606,7 +944,7 @@ class TestOrderPluginIntegrationTest {
 
         Path initScript = projectDir.resolve("test-order-init.gradle");
         BuildResult result = GradleRunner.create()
-                .withGradleVersion("8.14.3")
+                .withGradleVersion("9.9.1")
                 .withProjectDir(projectDir.toFile())
                 .withArguments("test", "-Dtestorder.mode=learn",
                         "--init-script", initScript.toString())

@@ -118,6 +118,28 @@ public final class ChangeAnalysis {
 		 */
 		public static final Options FOR_SELECTION = new Options(false, false, false, true, true);
 
+		/**
+		 * Detailed member-level analysis for the coverage-closure selection path
+		 * ({@code AffectedWorkflow#selectWithAnalysis}). Like {@link #FOR_SELECTION}
+		 * (module-filtered, read-only) but with structural analysis and method-level
+		 * test-change detection enabled, so the result carries a member-level change
+		 * universe ({@code ChangedMembers} incl. bytecode-derived method keys) and the
+		 * {@code staticAnalysisDegraded} flag instead of class-level changes only.
+		 *
+		 * <p>
+		 * {@code readOnly=true} is preserved: the select path is a pure pre-test filter
+		 * and must never advance the bytecode baseline before tests run — a broken
+		 * build would otherwise look clean on the next invocation.
+		 *
+		 * <p>
+		 * Degradation contract: when structural analysis cannot run (e.g.
+		 * {@code since-last-run} mode, where {@link #resolveStructuralDiffMode} returns
+		 * {@code null}), the universe degrades to class-level changes plus
+		 * bytecode-derived method keys — {@link Result#changedMembers()} may be
+		 * {@code null} and consumers must fall back to {@link Result#changedClasses()}.
+		 */
+		public static final Options FOR_SELECTION_DETAILED = new Options(true, true, false, true, true);
+
 		/** Method changes + module filtering. Used by auto (combined select+order). */
 		public static final Options FOR_AUTO = new Options(true, false, false, true);
 	}
@@ -135,6 +157,19 @@ public final class ChangeAnalysis {
 	 *             if loading index/state fails
 	 */
 	public static Result analyze(PluginContext ctx, Options opts) throws IOException {
+		return analyze(ctx, opts, null);
+	}
+
+	/**
+	 * As {@link #analyze(PluginContext, Options)} with a pre-validated repo-level
+	 * git listing snapshot ({@code RepoChangeListings}): when non-null, the
+	 * structural analysis filters the cached repo-wide listings in-memory instead
+	 * of re-running per-module git commands, and the state validation (one git
+	 * spawn) is shared with the caller (e.g. the non-source check that already ran
+	 * for this module).
+	 */
+	public static Result analyze(PluginContext ctx, Options opts,
+			me.bechberger.testorder.changes.RepoChangeListings.Snapshot sharedRepoSnapshot) throws IOException {
 		Path indexPath = ctx.indexFile();
 		if (!Files.exists(indexPath)) {
 			throw new IOException(
@@ -215,12 +250,13 @@ public final class ChangeAnalysis {
 
 		// ── Change detection ────────────────────────────────────────
 		// Parallelize production and test source detection (independent git operations)
-		var prodChangeFuture = java.util.concurrent.CompletableFuture
-				.supplyAsync(() -> ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(),
-						ctx.projectRoot(), ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, ctx.log()));
-		var testChangeFuture = java.util.concurrent.CompletableFuture.supplyAsync(
-				() -> ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
-						ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true, ctx.log()));
+		var prodChangeFuture = java.util.concurrent.CompletableFuture.supplyAsync(
+				() -> ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(), ctx.projectRoot(),
+						ctx.sourceRoot(), ctx.hashFile(), ctx.changedClasses(), true, sharedRepoSnapshot, ctx.log()));
+		var testChangeFuture = java.util.concurrent.CompletableFuture
+				.supplyAsync(() -> ChangeDetectionOps.detectChangedTestClassesWithKotlin(ctx.changeMode(),
+						ctx.projectRoot(), ctx.testSourceRoot(), ctx.testHashFile(), ctx.changedTestClasses(), true,
+						sharedRepoSnapshot, ctx.log()));
 
 		Set<String> changed = joinOrRethrow(prodChangeFuture);
 		Set<String> changedTests = joinOrRethrow(testChangeFuture);
@@ -249,7 +285,7 @@ public final class ChangeAnalysis {
 					continue;
 				moduleFutures.add(java.util.concurrent.CompletableFuture
 						.supplyAsync(() -> ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(),
-								ctx.projectRoot(), mRoot, mHash, null, true, ctx.log())));
+								ctx.projectRoot(), mRoot, mHash, null, true, sharedRepoSnapshot, ctx.log())));
 			}
 			if (!moduleFutures.isEmpty()) {
 				Set<String> mergedChanged = new java.util.LinkedHashSet<>(changed);
@@ -275,7 +311,7 @@ public final class ChangeAnalysis {
 					continue;
 				siblingFutures.add(java.util.concurrent.CompletableFuture
 						.supplyAsync(() -> ChangeDetectionOps.detectChangedClassesWithKotlin(ctx.changeMode(),
-								ctx.projectRoot(), siblingRoot, null, null, true, ctx.log())));
+								ctx.projectRoot(), siblingRoot, null, null, true, sharedRepoSnapshot, ctx.log())));
 			}
 			if (!siblingFutures.isEmpty()) {
 				Set<String> mergedChanged = new java.util.LinkedHashSet<>(changed);
@@ -332,8 +368,20 @@ public final class ChangeAnalysis {
 					}
 					bytecodeChangedMethodKeys = curr.getChangedMethodKeys(prev);
 				} else {
-					// First run — no prior snapshot; treat every current method as changed.
-					bytecodeChangedMethodKeys = curr.getChangedMethodKeys(prev);
+					if (explicitClassesAuthoritative) {
+						// First run AND an explicit changed-class list is authoritative (BUG-165):
+						// treating every current method as changed would flood the member-level
+						// universe (changedMembers.changedClasses()) with ALL production classes,
+						// which makes every test a sole coverer in the coverage-closure cover core
+						// and defeats topN capping on the first selection after a fresh learn.
+						// The explicit list stays authoritative; method keys stay empty.
+						ctx.log().debug("[test-order] no bytecode baseline yet — explicit changed-class list is "
+								+ "authoritative, skipping first-run all-methods treatment.");
+						bytecodeChangedMethodKeys = Set.of();
+					} else {
+						// First run — no prior snapshot; treat every current method as changed.
+						bytecodeChangedMethodKeys = curr.getChangedMethodKeys(prev);
+					}
 				}
 				if (!opts.readOnly()) {
 					try {
@@ -368,15 +416,27 @@ public final class ChangeAnalysis {
 		TestOrderState.ScoringWeights sw = applyOverrides(lw.weights(), ctx.scoreOverrides());
 
 		// ── Structural analysis (optional) ──────────────────────────
+		// Uses the repo-level listing cache (RepoChangeListings) so that a
+		// multi-module build resolves the changed-source listings once per git
+		// state instead of once per module; per-module path filtering, worktree
+		// reads and parsing are identical to the direct path. Fail-safe: any cache
+		// failure falls back to the direct git behavior inside StructuralDiff.
 		ChangedMembers changedMembers = null;
 		List<StructuralDiff.FileDiff> structuralDiffs = null;
 		if (opts.includeStructuralAnalysis() && !changed.isEmpty()) {
 			String structMode = resolveStructuralDiffMode(ctx.changeMode(), ctx.changedClasses(), ctx.hashFile());
-			StructuralChangeAnalyzer.AnalysisResult analysis = ShowOrderOperation
-					.analyzeStructuralChanges(ctx.projectRoot(), structMode);
-			if (analysis != null) {
-				changedMembers = analysis.changedMembers();
-				structuralDiffs = analysis.diffs();
+			if (structMode != null) {
+				try {
+					List<StructuralDiff.FileDiff> diffs = "since-last-commit".equalsIgnoreCase(structMode)
+							? me.bechberger.testorder.changes.StructuralDiff.diffSinceLastCommit(ctx.projectRoot(),
+									sharedRepoSnapshot)
+							: me.bechberger.testorder.changes.StructuralDiff.diffUncommitted(ctx.projectRoot(),
+									sharedRepoSnapshot);
+					changedMembers = StructuralChangeAnalyzer.fromDiffs(diffs);
+					structuralDiffs = diffs;
+				} catch (IOException e) {
+					// best effort — leave members/diffs unset (same as the direct path)
+				}
 			}
 		}
 

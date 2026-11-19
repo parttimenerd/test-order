@@ -82,6 +82,13 @@ public final class PluginContext {
 	private final int staticAnalysisDepth;
 	private final boolean bytecodeChangeDetectionEnabled;
 	private final boolean bytecodeAugmentDependencyMapEnabled;
+	/**
+	 * Coverage-closure enforcement (config key {@code testorder.coverage.enforce},
+	 * default {@code false}). When {@code true}, a selection whose selected subset
+	 * does not exercise every changed element fails the build with an actionable
+	 * message instead of only warning.
+	 */
+	private final boolean coverageEnforce;
 
 	// ── Selection config ─────────────────────────────────────────────
 	private final int topN;
@@ -149,6 +156,7 @@ public final class PluginContext {
 		this.staticAnalysisDepth = b.staticAnalysisDepth;
 		this.bytecodeChangeDetectionEnabled = b.bytecodeChangeDetectionEnabled;
 		this.bytecodeAugmentDependencyMapEnabled = b.bytecodeAugmentDependencyMapEnabled;
+		this.coverageEnforce = b.coverageEnforce;
 		this.topN = b.topN;
 		this.randomM = b.randomM;
 		this.selectiveLearn = b.selectiveLearn;
@@ -253,6 +261,15 @@ public final class PluginContext {
 	}
 	public boolean bytecodeAugmentDependencyMapEnabled() {
 		return bytecodeAugmentDependencyMapEnabled;
+	}
+
+	/**
+	 * Coverage-closure enforcement flag ({@code testorder.coverage.enforce}). When
+	 * {@code true} and the selected subset leaves changed elements unexercised, the
+	 * selection workflow fails the build.
+	 */
+	public boolean coverageEnforce() {
+		return coverageEnforce;
 	}
 	public int topN() {
 		return topN;
@@ -379,6 +396,7 @@ public final class PluginContext {
 		private int staticAnalysisDepth = 2;
 		private boolean bytecodeChangeDetectionEnabled = true;
 		private boolean bytecodeAugmentDependencyMapEnabled = true;
+		private boolean coverageEnforce = false;
 		private int topN = -1;
 		private int randomM = 10;
 		private boolean selectiveLearn = false;
@@ -508,6 +526,11 @@ public final class PluginContext {
 		}
 		public Builder bytecodeAugmentDependencyMapEnabled(boolean v) {
 			this.bytecodeAugmentDependencyMapEnabled = v;
+			return this;
+		}
+
+		public Builder coverageEnforce(boolean v) {
+			this.coverageEnforce = v;
 			return this;
 		}
 		public Builder topN(int v) {
